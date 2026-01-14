@@ -1,0 +1,172 @@
+/* =============================================
+   FERRALLA MODEN - Dashboard Profesional
+   Tema: Industria del Hierro y Construcción
+   ============================================= */
+
+/* Fuentes cargadas desde index.html */
+
+:root {
+  --steel-dark: #1a1a2e;
+  --steel-medium: #2d2d44;
+  --steel-light: #4a4a6a;
+  --iron-gray: #6b6b7b;
+  --safety-orange: #ff6b35;
+  --safety-orange-dark: #e55a2b;
+  --construction-yellow: #ffc107;
+  --metal-shine: #c0c0c0;
+  --white: #ffffff;
+  --text-muted: #a0a0b0;
+}
+
+/* Header */
+header {
+  height: 70px;
+  background: linear-gradient(135deg, var(--steel-dark) 0%, var(--steel-medium) 100%);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 30px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+  border-bottom: 3px solid var(--safety-orange);
+}
+
+header::before {
+  content: 'mod:en';
+  font-family: 'Oswald', sans-serif;
+  font-size: 1.4rem;
+  font-weight: 600;
+  letter-spacing: 2px;
+  color: var(--white);
+}
+
+header button {
+  padding: 12px 24px;
+  border: 2px solid var(--safety-orange);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--safety-orange);
+  font-family: 'Roboto', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 500;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+header button:hover {
+  background: var(--safety-orange);
+  color: var(--white);
+}
+
+/* Main Content */
+main {
+  min-height: calc(100vh - 70px);
+  background: linear-gradient(180deg, var(--steel-medium) 0%, var(--steel-dark) 100%);
+  padding: 40px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 30px;
+}
+
+/* Task Containers */
+.example-container {
+  width: 350px;
+  max-width: 100%;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  padding: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+}
+
+.example-container h2 {
+  font-family: 'Oswald', sans-serif;
+  font-size: 1.2rem;
+  font-weight: 500;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--safety-orange);
+  margin: 0 0 15px 0;
+  padding-bottom: 10px;
+  border-bottom: 2px solid var(--steel-light);
+}
+
+/* Task Lists */
+.example-list {
+  border: none;
+  min-height: 80px;
+  background: var(--steel-dark);
+  border-radius: 8px;
+  overflow: hidden;
+  display: block;
+}
+
+/* Task Items */
+.example-box {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--steel-light);
+  color: var(--white);
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  box-sizing: border-box;
+  cursor: move;
+  background: var(--steel-medium);
+  font-family: 'Roboto', sans-serif;
+  font-size: 0.95rem;
+  font-weight: 400;
+  transition: all 0.2s ease;
+}
+
+.example-box:hover {
+  background: var(--steel-light);
+  padding-left: 25px;
+}
+
+.example-box:last-child {
+  border: none;
+}
+
+/* Drag Preview */
+.cdk-drag-preview {
+  box-sizing: border-box;
+  border-radius: 8px;
+  background: var(--safety-orange);
+  color: var(--white);
+  box-shadow:
+    0 10px 20px rgba(0, 0, 0, 0.3),
+    0 0 0 2px var(--safety-orange);
+}
+
+.cdk-drag-placeholder {
+  opacity: 0;
+}
+
+.cdk-drag-animating {
+  transition: transform 250ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+.example-list.cdk-drop-list-dragging .example-box:not(.cdk-drag-placeholder) {
+  transition: transform 250ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  main {
+    padding: 20px;
+  }
+
+  .example-container {
+    width: 100%;
+  }
+
+  header {
+    padding: 0 15px;
+  }
+
+  header::before {
+    font-size: 1.1rem;
+  }
+}

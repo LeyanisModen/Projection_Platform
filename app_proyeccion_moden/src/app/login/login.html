@@ -1,0 +1,15 @@
+<main>
+    <div class="card">
+        <div>
+            <p>Usuario</p>
+            <input type="text" placeholder="Introduce tu usuario">
+            <i #user_icon class="fa fa-user"></i>
+        </div>
+        <div>
+            <p>Contraseña</p>
+            <input #password type="password" placeholder="Introduce tu contraseña">
+            <i #password_icon class="fa fa-eye" (click)="toggle_pass()"></i>
+        </div>   
+        <button (click)="submit()">Iniciar Sesión</button>
+    </div>
+</main>

@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15
+    container_name: proyeccion_db
+    restart: always
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: proyeccion_moden
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: admin
+    ports:
+      - "5432:5432"
+
+  backend:
+    build: ./api_proyeccion_moden
+    container_name: proyeccion_backend
+    volumes:
+      - ./api_proyeccion_moden:/app
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgres://postgres:admin@db:5432/proyeccion_moden
+    depends_on:
+      - db
+
+  frontend:
+    build: ./app_proyeccion_moden
+    container_name: proyeccion_frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:

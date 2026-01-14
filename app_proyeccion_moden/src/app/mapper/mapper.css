@@ -1,0 +1,361 @@
+@keyframes show {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+
+* {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    -webkit-user-select: none; 
+    user-select: none;
+    font-family: sans-serif;
+}
+
+main {
+    width: 100vw;
+    height: 100vh;
+    background: black;
+    overflow: hidden;
+    color: white;
+    font-family: sans-serif;
+    text-align: center;
+    min-width: 300px;
+    min-height: 200px;
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    opacity: 0;
+    animation: show 0s 1s forwards;
+}
+
+/* main.setup {
+    opacity: 1;
+    animation: none;
+} */
+
+main > * {
+    cursor: default;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+main.correctingSource:not(.transition) {
+    overflow: auto;
+}
+
+
+main:not(.polygonError) .corner.grabbing {
+    background-image: none;
+    opacity: 0.5;
+    /* z-index: unset; */
+}
+
+main.transition * {
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+main.transition iframe {
+    opacity: 1 !important;
+    transition: transform 0.5s ease;
+}
+
+main:not(.correctingSource)
+    #sourceCorrectButton
+    > span.sourceCorrect {
+    display: none;
+}
+
+main.correctingSource > *:not(.sourceCorrect) {
+    display: none;
+}
+
+main.correctingSource #guidesButton {
+    display: none;
+}
+
+main.correctingSource
+    #sourceCorrectButton
+    > *:not(.sourceCorrect):not(.shortcuts) {
+    display: none;
+}
+
+#sourceIframe {
+    position: absolute;
+    top: 0px;
+    left: 0px;
+    transform-origin: 0 0;
+    overflow: hidden;
+    z-index: 1;
+}
+
+.corner,
+.line,
+#buttonsContainer {
+    transition-property: opacity;
+    transition-duration: 0.25s;
+    transition-timing-function: ease;
+    z-index: 250;
+}
+
+.corner {
+    position: absolute;
+    width: 60px;
+    height: 60px;
+    color: black;
+    filter: invert(100%) sepia(1%) saturate(994%) hue-rotate(224deg) brightness(116%) contrast(100%);
+    background-color: rgba(0, 0, 255, 0.5);
+    border-radius: 100%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    font-size: 50px;
+    cursor: grab;
+    z-index: 500;
+    background-size: 25%;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+.corner:hover {
+    cursor: grab;
+}
+
+.corner:before {
+    content: "⨯";
+}
+
+.corner.tr {
+    transform: translate(-50%, -50%) rotate(90deg);
+}
+
+.corner.br {
+    transform: translate(-50%, -50%) rotate(180deg);
+}
+
+.corner.bl {
+    transform: translate(-50%, -50%) rotate(-90deg);
+}
+    
+.corner.grabbing {
+    cursor: grabbing;
+}
+
+.corner.selected {
+    background-color: thistle;
+    opacity:0.5;
+}
+
+iframe {
+    pointer-events: none;
+}
+
+.correctingSource iframe {
+    pointer-events: all;
+    transform: none !important;
+}
+
+.line {
+    position: absolute;
+    background: white;
+    pointer-events: none;
+    border-radius: 2px;
+    border-left: 2px solid transparent;
+    box-shadow: 0 0 1px rgba(255, 255, 255, 0); /* anti aliasing for Chrome on Windows */
+}
+
+#line1,
+#line3 {
+    margin-left: -1px;
+}
+
+#line2 {
+    margin-left: -2px;
+}
+
+.boundsError .line {
+    background: orange;
+}
+
+.boundsError .corner {
+    background-color: rgba(255, 165, 0, 0.5);
+}
+
+.polygonError .line {
+    background: red;
+
+}
+
+.polygonError .corner {
+    background-color: rgba(255, 0, 0, 0.5);
+}
+
+.polygonError:not(.correctingSource) #sourceIframe {
+    visibility: hidden;
+}
+
+#buttonsContainer {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: start;
+}
+
+#buttonsContainer > button,
+#buttonsContainer > select {
+    position: relative;
+    z-index: 500;
+    padding: 5px;
+    margin: 2.5px;
+    background: white;
+    color: #aaa;
+    border-radius: 20px;
+}
+
+#buttonsContainer > button:not(:disabled),
+#buttonsContainer > select:not(:disabled) {
+    cursor: pointer;
+    border: 2px solid #ff6600;
+    background:white;
+    color: #ff6600;
+}
+
+#buttonsContainer > button:not(:disabled) :hover,
+#buttonsContainer > select:not(:disabled) :hover {
+    cursor: pointer;
+    background:#ff6600;
+    color: white;
+}
+
+#buttonsContainer > button > .shortcuts {
+    font-family: monospace;
+    color: black;
+}
+
+#videoSource {
+    max-width: 100px;
+    height: 23px;
+    border-radius: 0;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+}
+
+
+.dirPath{
+    color:greenyellow;
+    margin-top:-40px; 
+    font-size:16px;
+    width:500;
+    z-index:500;
+    display:flex
+}
+
+/* .corrected-video {
+    background: black;
+    pointer-events: none;
+    width: 100%;
+    height: 100%;
+    object-fit: fill;
+} */
+
+#controller {
+    width: 100vw;
+    height: 100vh;
+    box-sizing: border-box;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transform: scale(0);
+    transition-property: transform;
+    transition-duration: 0.25s;
+    transition-timing-function: ease;
+    transition-delay: 0s;
+    overflow: visible;
+}
+
+html > main.sourceCorrectMode #controller {
+    transform: scale(1);
+    transition-delay: 0.25s;
+}
+
+#video-and-corners-wrapper {
+    position: relative;
+}
+
+/* #result {
+    
+    width: 100vw;
+    height: 100vh;
+    position: absolute;
+    top: 0;
+    left: 0;
+} */
+
+/* #result:before {
+    content: "Invalid source correction.";
+    background: darkred;
+    display: block;
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    right: 2px;
+    bottom: 2px;
+    color: white;
+    font-size: 5vw;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+} */
+
+#result {
+    overflow: hidden;
+    position: absolute;
+    content: " ";
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    font-size: 5vw;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: blue;
+    background-color: white;
+
+    /* background-image: url(./public/img/guia.jpg); */
+    background-repeat: no-repeat;
+    background-attachment: fixed; 
+    background-size: 100% 100%;
+    z-index: 1;
+}
+
+/* html > main.sourceCorrectMode #result:before {
+    content: "";
+} */
+
+#correctedVideo {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    transform-origin: 0 0;
+    object-fit: fill;
+    transform: "";
+    transform-origin: "0 0";
+    z-index: 1;
+}
+
+p{
+    z-index: 500;
+    align-self: flex-start;
+    justify-self: left;
+    margin: 5px;
+}
