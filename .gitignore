@@ -1,20 +1,19 @@
 # --- Python / Django ---
-__pycache__/
+**/__pycache__/
 *.py[cod]
 *$py.class
 .env
-.venv
-env/
-venv/
-ENV/
-db.sqlite3
-api_proyeccion_moden/static/
-api_proyeccion_moden/media/
+**/.venv/
+**/venv/
+**/ENV/
+**/db.sqlite3
+**/static/
+**/media/
 
 # --- Node / Angular ---
-node_modules/
-dist/
-.angular/
+**/node_modules/
+**/dist/
+**/.angular/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
