@@ -1,5 +1,7 @@
 export interface Imagen {
     id: number;
     url: string;
-    tipo: string
+    src: string;
+    tipo: string;
+    modulo_id: string;
 }

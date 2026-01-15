@@ -1,0 +1,141 @@
+TÍTULO: mod:en Projection Manager — Pautas/Ideas guía (no pasos rígidos) para Antigravity
+
+OBJETIVO (lo que tiene que pasar sí o sí)
+- Que en taller sea USABLE: un supervisor/operario entra, elige una imagen/plano y la asigna a una mesa.
+- Que cada mesa/proyector muestre su imagen asignada de forma estable.
+- Que sea razonablemente seguro: control de acceso + trazabilidad + mínima exposición del plano.
+- Que sea escalable: muchas mesas, muchas imágenes, varios módulos/proyectos.
+
+IDEA BASE (modelo mental correcto)
+- Esto NO es un Kanban de estados tipo “To do / Done”.
+- Es un “tablero de ASIGNACIÓN”: imágenes disponibles → destinos (mesas).
+- La mesa tiene un estado “imagen_actual” (o vacío).
+- Lo “Done” (si existe) debería ser “Histórico/Últimas usadas/Recientes” o directamente no existe.
+
+ARQUITECTURA RECOMENDADA (simple y robusta)
+- Control Panel (web):
+  - Selecciona proyecto + módulo
+  - Ve imágenes del módulo
+  - Ve mesas del módulo
+  - Arrastra una imagen a una mesa → asigna
+- Player por mesa (kiosko):
+  - Una URL fija por mesa (o mesa registrada)
+  - Muestra pantalla completa
+  - Se actualiza si cambia la asignación
+- Backend:
+  - API CRUD (proyectos/módulos/imagenes/mesas)
+  - Canal de actualización (al principio polling; luego WebSocket)
+- Storage:
+  - Metadatos en Postgres
+  - Imágenes en storage privado (local/MinIO/S3/Blob)
+  - Evitar servir “archivo descargable” directo
+
+PRINCIPIO CLAVE DE PROYECCIÓN (WIFI sin cables largos)
+- No “empujar” imágenes al proyector por casting como solución principal.
+- El proyector es una pantalla. El “Player” es quien pinta.
+- Con Epson EB-L210SF: usar un stick/mini-PC por proyector es lo más estable.
+  - HDMI corto stick→proyector (no cable largo)
+  - stick por Wi-Fi a vuestra app
+
+DECISIONES IMPORTANTES (para no re-trabajar)
+1) “Mesa” debe tener un scope claro:
+   - Mesa pertenece a un módulo, proyecto o ferralla.
+   - Recomendación: mesa->modulo (si las imágenes ya dependen del módulo).
+2) “Imagen” debe tener versionado:
+   - nombre, url, tipo, módulo, versión, activa/inactiva
+3) “Asignación” debe ser explícita:
+   - mesa.imagen_actual (FK) + registro (histórico opcional pero recomendable)
+
+EXPERIENCIA DE USUARIO EN TALLER (lo que importa)
+- Todo grande, simple y rápido.
+- Zero dudas: una mesa siempre muestra claramente:
+  - nombre mesa
+  - miniatura de lo asignado (o “vacío”)
+  - botón “vaciar”
+  - “última actualización”
+- Panel de estado: mesas online/offline (aunque sea básico)
+- Feedback inmediato al asignar (toast “Asignada a Mesa X”)
+
+PRINCIPIOS DE ROBUSTEZ (industria)
+- “Si se cae internet 2 minutos, no paramos la producción”
+  - Player mantiene el último plano visible
+  - cache local (última imagen) como fallback
+- “Una mesa caída no debe tirar el resto”
+  - players independientes
+
+SEGURIDAD REALISTA (sin prometer imposibles)
+- Hecho incómodo: si alguien quiere, puede hacer una foto al proyector.
+- Lo que SÍ reduce riesgo:
+  1) Roles y permisos (operario/supervisor/admin)
+  2) Mesa/Player registrado (device token por mesa)
+  3) No descarga: acceso por URLs cortas/firmadas
+  4) Watermark dinámico: obra + mesa + fecha/hora (+ usuario si aplica)
+  5) Auditoría: quién asignó qué y cuándo
+- “Auto-borrado” solo como higiene:
+  - cache con TTL, limpiar al cerrar, evitar carpetas accesibles
+
+MEDIDAS DE RED (mínimas para dormir tranquilos)
+- Red/SSID/VLAN para proyectores/players (si es posible)
+- Firewall: Players solo salen a vuestra app (HTTPS/WSS) + DNS/NTP
+- En proyector: contraseña de administración + limitar gestión
+
+CONVERSIÓN/FORMATO DE PLANOS (ya son imágenes)
+- Mantener pipeline simple:
+  - Validar tamaño/resolución
+  - Generar miniaturas
+  - Guardar metadata (width/height, checksum)
+- Más adelante:
+  - “tiles” para reducir extracción y mejorar performance en pantallas grandes
+
+MAPPER / CALIBRACIÓN (clave del valor)
+- Cada mesa tiene su calibración (homografía/4 puntos).
+- Guardar parámetros por mesa.
+- El Player siempre aplica el mapper antes de mostrar.
+- Pantalla de calibración sencilla:
+  - rejilla + 4 esquinas + guardar + test
+
+OBSERVABILIDAD (lo que os ahorra tickets)
+- Log de asignaciones y errores del Player.
+- “Último ping” de cada mesa.
+- Panel simple para ver si una mesa lleva mucho offline.
+
+CRITERIOS DE “HECHO” (cuando algo está bien implementado)
+- Asignación consistente:
+  - arrastro imagen → mesa cambia → recargo y sigue igual
+- Player consistente:
+  - si reasigno, cambia en un tiempo razonable
+  - si se cae red, mantiene lo último sin pantallazo
+- Seguridad mínima:
+  - usuario sin permisos no ve imágenes
+  - no hay enlaces directos descargables
+- Operación:
+  - puedo ver qué mesa muestra qué, en un panel
+
+EVITAR (lo que suele dar problemas)
+- Casting/mirroring para muchas mesas con contenidos diferentes.
+- Meter WebSockets, seguridad avanzada y mapper complejo todo a la vez.
+- Guardar imágenes “dentro de la BD”.
+- Diseñar UI con controles pequeños o demasiados clics.
+
+PRIORIDADES RECOMENDADAS (orden lógico, no pasos)
+1) Flujo base: asignación mesa↔imagen know-how de negocio
+2) Player estable: pantalla kiosko + cache último plano
+3) Mapper/calibración por mesa
+4) Panel estado + auditoría
+5) Tiempo real (WebSocket) + seguridad avanzada (tokens/URLs firmadas/watermark)
+
+PREGUNTAS GUÍA PARA MATIZAR SEGÚN AVANCEMOS
+- ¿Las mesas se reutilizan entre módulos/proyectos o son fijas por ferralla?
+- ¿Una mesa puede tener “cola” de imágenes o solo 1 actual?
+- ¿Hace falta zoom/rotación/medidas en pantalla?
+- ¿Cuánto dura un plano en “activo” y política de borrado/archivo?
+- ¿Cuántas mesas a la vez por nave (20/40/80) y qué hardware de players?
+
+INSTRUCCIONES PARA ANTIGRAVITY
+- Úsalo como “brújula”, no como checklist rígida.
+- Cada vez que propongamos una feature, evalúala contra:
+  - estabilidad en taller
+  - simplicidad operativa
+  - seguridad realista
+  - escalabilidad a muchas mesas
+- Mantén decisiones escritas y versionadas (README/ADR) para evitar re-trabajo.

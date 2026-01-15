@@ -1,0 +1,89 @@
+========================================================================
+MANIFIESTO TÉCNICO Y ESTRATÉGICO: PROYECTO MOD:EN
+========================================================================
+
+ROL DE LA IA: Eres mi Arquitecto de Software Senior y Lead Developer.
+CONTEXTO: Estamos construyendo una plataforma industrial para ferrallas.
+STACK ACTUAL: Django 5 (Backend), Angular 18 (Frontend), PostgreSQL 15, Nginx, Docker.
+
+---
+1. EL PIVOTE DE CONCEPTO (LA VISIÓN)
+---
+OBJETIVO: Eliminar la idea de un "Kanban" (To Do / Done).
+NUEVO PARADIGMA: "Tablero de Asignación (Dispatcher)".
+- El sistema no gestiona estados de tareas, gestiona ASIGNACIONES de recursos.
+- COLUMNA A (Biblioteca): Planos/Módulos disponibles.
+- COLUMNA B (Planta): Mesas de trabajo físicas (Proyectores).
+- ACCIÓN: El supervisor arrastra un Plano -> Lo suelta en una Mesa -> El proyector físico se enciende con esa imagen.
+
+---
+2. ARQUITECTURA "ZERO CABLES" (HARDWARE & RED)
+---
+RESTRICCIÓN FÍSICA: No podemos tirar cables HDMI por toda la nave.
+SOLUCIÓN: Modelo Cliente-Servidor Desacoplado.
+1. NODO CENTRAL (SUPERVISOR): PC o Tablet que accede al Dashboard. Solo envía órdenes JSON a la API.
+2. NODOS DE VISUALIZACIÓN (MESAS):
+   - Hardware: Proyector Epson EB-L210SF + Stick HDMI (FireTV/Chromecast/RPi) conectado por WiFi.
+   - Software: Navegador web en modo Kiosko ejecutando nuestra App Angular (`/visor`).
+   - Lógica: No reciben streaming de vídeo. Reciben un "ping" de sincronización y descargan la imagen localmente.
+
+---
+3. PRINCIPIOS DE DESARROLLO (NON-NEGOTIABLES)
+---
+
+A. EXPERIENCIA DE USUARIO (UX INDUSTRIAL)
+   - "Zero Doubt": Botones grandes, contrastes altos ("Steel & Safety Orange").
+   - Feedback Inmediato: Al soltar un plano en el PC, la tarjeta de la mesa debe indicar "Cargando..." y luego "Proyectando: [Nombre Plano]".
+   - Observabilidad: El panel debe mostrar si una mesa está Online u Offline.
+
+B. SEGURIDAD REALISTA (PROTECCIÓN DE PATENTES)
+   - Las imágenes son sensibles.
+   - NUNCA exponer carpetas `/media/` públicas.
+   - USAR: Signed URLs (Enlaces temporales generados por Django con expiración).
+   - DISUASIÓN: Marca de agua dinámica en el Visor (Nombre Ferralla + ID Mesa + Timestamp) superpuesta a la proyección.
+
+C. ROBUSTEZ (MODO OFFLINE-FIRST)
+   - En una obra, el WiFi falla. La producción no puede parar.
+   - ESTRATEGIA: El Visor (Angular PWA) debe usar Service Workers para cachear la imagen actual.
+   - Si se cae la red, el proyector mantiene la última imagen visible. No muestra el "Dinosaurio de Chrome".
+
+D. EL MAPPER (CALIBRACIÓN)
+   - La proyección rara vez es perfecta geométricamente.
+   - El Visor debe tener un modo "Ajuste": permitir arrastrar las 4 esquinas de la imagen (CSS Matrix/Transform) para encajar el plano en la mesa física. Guardar esa calibración en LocalStorage/DB.
+
+---
+4. ESTRUCTURA DE DATOS Y FLUJO (Backend)
+---
+La base de datos PostgreSQL ya existe, pero el flujo lógico es:
+1. `api_mesa`: Representa el Stick HDMI. Tiene un campo `imagen_actual_id`.
+2. `api_imagen`: El archivo en sí (encriptado/protegido).
+3. `api_proyecto`: El contenedor global.
+
+FLUJO DE ASIGNACIÓN:
+User Drag&Drop -> Frontend POST `/api/assign/` -> Backend actualiza `api_mesa` -> Backend notifica al Stick (vía Polling o WebSocket) -> Stick descarga imagen.
+
+---
+5. HOJA DE RUTA PRIORIZADA (ROADMAP)
+---
+No intentes hacer todo a la vez. Sigue este orden de valor:
+
+FASE 1: EL TUBO DE CONEXIÓN (CORE)
+- Objetivo: Que al cambiar un dato en la DB, se refleje en una pantalla remota.
+- Tareas: Endpoint de asignación, vista básica del Visor (fondo negro), polling simple.
+
+FASE 2: LA INTERFAZ DE GESTIÓN (DASHBOARD)
+- Objetivo: Usabilidad para el supervisor.
+- Tareas: Convertir el Kanban actual en el "Dispatcher". Filtrado de planos por proyecto.
+
+FASE 3: SEGURIDAD Y PERSISTENCIA
+- Objetivo: Proteger la IP.
+- Tareas: Signed URLs, sistema de subida privada, marcas de agua.
+
+FASE 4: EL MAPPER (WOW FACTOR)
+- Objetivo: Precisión milimétrica.
+- Tareas: Interfaz de calibración de esquinas en el Visor.
+
+---
+INSTRUCCIONES PARA ANTIGRAVITY
+---
+Usa este documento como brújula. Cuando te pida código, asegúrate de que cumpla con estos principios (especialmente la seguridad y el modo offline). Empezaremos por la FASE 1.

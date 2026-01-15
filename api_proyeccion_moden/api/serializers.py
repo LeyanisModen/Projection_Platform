@@ -1,7 +1,7 @@
 from django.contrib.auth.models import User
 from rest_framework import serializers
 
-from api.models import Proyecto, Modulo
+from api.models import Proyecto, Modulo, Imagen, Mesa
 
 
 class UserSerializer(serializers.HyperlinkedModelSerializer):
@@ -18,3 +18,14 @@ class ModuloSerializer(serializers.HyperlinkedModelSerializer):
     class Meta:
         model = Modulo
         fields = ["id", "url", "nombre", "planta", "proyecto_id"]
+
+class ImagenSerializer(serializers.HyperlinkedModelSerializer):
+    src = serializers.CharField(source='url')
+    class Meta:
+        model = Imagen
+        fields = ["id", "url", "src", "tipo", "modulo_id"]
+
+class MesaSerializer(serializers.HyperlinkedModelSerializer):
+    class Meta:
+        model = Mesa
+        fields = ["id", "url", "nombre", "usuario_id", "imagen_actual", "ultima_actualizacion"]

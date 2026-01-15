@@ -28,6 +28,8 @@ class Mesa(models.Model):
     id = models.AutoField(primary_key=True)
     nombre = models.CharField(max_length=200)
     usuario_id = models.ForeignKey(User, on_delete=models.CASCADE)
-    imagen_id = models.ForeignKey(Imagen, on_delete=models.CASCADE)
+    imagen_actual = models.ForeignKey(Imagen, on_delete=models.SET_NULL, null=True, blank=True, related_name='mesas_asignadas')
+    ultima_actualizacion = models.DateTimeField(auto_now=True)
+
     def __str__(self):
         return self.nombre

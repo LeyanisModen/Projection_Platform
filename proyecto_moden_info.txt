@@ -1,0 +1,60 @@
+========================================================================
+    MOD:EN - PLATAFORMA DE GESTIÓN (FERRALLAS Y CONSTRUCCIÓN)
+========================================================================
+
+1. DESCRIPCIÓN GENERAL DEL PROYECTO
+----------------------------------
+mod:en es una aplicación integral diseñada para la gestión de proyectos de construcción y ferralla. Permite la visualización de planos, gestión de inventario de módulos y mesas, y la proyección de datos técnicos sobre superficies de trabajo. La plataforma se ha modernizado recientemente con un diseño industrial profesional ("Steel & Safety Orange") adecuado para el entorno de construcción.
+
+2. ARQUITECTURA TÉCNICA (STACK TECNOLÓGICO)
+------------------------------------------
+El proyecto utiliza una arquitectura de microservicios dockerizada, dividida en tres servicios principales:
+
+A. FRONTEND (app_proyeccion_moden):
+   - Tecnología: Angular 18+ (SPA - Single Page Application).
+   - Servidor Web: Nginx (Configurado para soportar rutas SPA).
+   - Estilos: CSS3 personalizado con diseño industrial, Google Fonts (Oswald/Roboto) e iconos de FontAwesome.
+   - Puertos: Expuesto en el puerto 80.
+
+B. BACKEND (api_proyeccion_moden):
+   - Tecnología: Django 5.x + Django REST Framework (DRF).
+   - API: Suministra endpoints JSON para la gestión de datos.
+   - Lenguaje: Python 3.11.
+   - Puertos: Expuesto internamente para Docker e externamente en el puerto 8000.
+
+C. BASE DE DATOS (db):
+   - Tecnología: PostgreSQL 15.
+   - Persistencia: Gestión de Proyectos, Módulos, Imágenes y Mesas.
+
+3. ESTRUCTURA DE DATOS Y CRUD
+-----------------------------
+La API soporta operaciones CRUD completas (Crear, Leer, Actualizar, Borrar) para las entidades principales:
+- Proyectos: Contenedor principal de la obra.
+- Módulos: Unidades de ferralla/material vinculadas a un proyecto.
+- Mesas/Imágenes: Datos técnicos para la proyección en planta.
+
+4. FLUJO DE FUNCIONAMIENTO
+--------------------------
+1. Acceso: El usuario accede vía navegador (Puerto 80).
+2. Autenticación: Sistema de login con diseño industrial. Una vez logueado, se accede al Dashboard.
+3. Dashboard: Panel de tareas y gestión de proyectos.
+4. Gestión de Datos: A través de la API REST (Puerto 8000/proyectos/, /modulos/) se pueden gestionar los datos técnicos que luego consume el frontend.
+5. Mapper: Componente especializado para la proyección y ajuste de planos sobre mesas de trabajo.
+
+5. DESPLIEGUE (DOCKER)
+----------------------
+Todo el sistema se levanta con un solo comando:
+> docker-compose up -d
+
+- Docker Compose orquestra la red interna para que el frontend hable con el backend y el backend con la DB de forma transparente.
+- Los volúmenes permiten que los cambios en el código de la API se reflejen en tiempo real.
+
+6. REPOSITORIO UNIFICADO
+------------------------
+Tras la última consolidación, ambos proyectos (API y APP) conviven en un único repositorio:
+Repositorio: JonInak/proyection_platform
+Esto permite gestionar versiones de toda la plataforma de forma sincronizada.
+
+========================================================================
+Documentación generada el 14/01/2026
+========================================================================
