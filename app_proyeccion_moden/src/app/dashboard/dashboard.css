@@ -43,6 +43,17 @@
   border-bottom: 1px solid var(--border-light);
 }
 
+.header-logo {
+  height: 48px;
+  width: auto;
+  border-radius: 8px;
+}
+
+.header-text {
+  display: flex;
+  flex-direction: column;
+}
+
 .dashboard-header h1 {
   margin: 0;
   font-family: 'Inter', sans-serif;

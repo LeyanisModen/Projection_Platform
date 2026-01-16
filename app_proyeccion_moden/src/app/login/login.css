@@ -81,27 +81,24 @@ main::after {
     z-index: 1;
 }
 
-/* Logo / Título */
-.card::before {
-    content: 'mod:en';
-    display: block;
-    font-family: 'Oswald', sans-serif;
-    font-size: 1.6rem;
-    font-weight: 600;
-    letter-spacing: 3px;
-    color: var(--white);
-    text-align: center;
-    margin-bottom: 15px;
+/* Logo / Header */
+.login-header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    margin-bottom: 20px;
     padding-bottom: 20px;
     border-bottom: 2px solid var(--safety-orange);
-    width: 100%;
 }
 
-/* Subtítulo */
-.card::after {
-    content: 'Sistema de Gestión de Proyectos';
-    position: absolute;
-    top: 95px;
+.login-logo {
+    height: 60px;
+    width: auto;
+    margin-bottom: 10px;
+}
+
+.login-subtitle {
     font-family: 'Roboto', sans-serif;
     font-size: 0.75rem;
     font-weight: 300;
@@ -110,7 +107,7 @@ main::after {
     text-transform: uppercase;
 }
 
-.card>div {
+.input-group {
     width: 100%;
     margin: 15px 0;
     position: relative;
