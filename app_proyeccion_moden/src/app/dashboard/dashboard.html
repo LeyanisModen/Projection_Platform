@@ -23,7 +23,6 @@
                     <li class="proyecto-item" cdkDrag [class.selected]="selectedProyecto?.id === proyecto.id"
                         (click)="selectProyecto(proyecto)">
                         <span class="proyecto-nombre">{{ proyecto.nombre }}</span>
-                        <span class="drag-handle" cdkDragHandle>☰</span>
                     </li>
                     }
                 </ul>
