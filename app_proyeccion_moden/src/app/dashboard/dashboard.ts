@@ -1,5 +1,6 @@
 import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { DragDropModule, CdkDragDrop, moveItemInArray } from '@angular/cdk/drag-drop';
 import {
   ApiService,
   Proyecto, Modulo, Mesa, ModuloQueueItem, MesaQueueItem, Imagen
@@ -9,7 +10,7 @@ import { Subject, takeUntil } from 'rxjs';
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, DragDropModule],
   templateUrl: './dashboard.html',
   styleUrl: './dashboard.css',
 })
@@ -307,5 +308,15 @@ export class Dashboard implements OnInit, OnDestroy {
 
   trackByItem(index: number, item: MesaQueueItem): number {
     return item.id;
+  }
+
+  // =========================================================================
+  // PROJECT REORDERING (CDK Drag Drop)
+  // =========================================================================
+  onProjectDrop(event: CdkDragDrop<Proyecto[]>): void {
+    console.log('[Dashboard] Project drop:', event.previousIndex, '->', event.currentIndex);
+    moveItemInArray(this.proyectos, event.previousIndex, event.currentIndex);
+    this.cdr.detectChanges();
+    // TODO: Optionally persist the new order to backend
   }
 }
