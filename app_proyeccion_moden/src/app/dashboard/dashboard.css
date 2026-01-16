@@ -1,14 +1,32 @@
 /* =============================================================================
-   MOD:EN DASHBOARD - 3 SECTION LAYOUT
+   FERRALLA MODEN - Dashboard (Login Style / Light Theme)
+   Tema: Clean, White, Orange Accents
    ============================================================================= */
 
 :host {
+  /* Palette extracted from Login Image */
+  --bg-main: #f0f2f5;
+  /* Light Grey Background */
+  --card-bg: #ffffff;
+  /* Pure White Cards */
+  --text-primary: #1a1a2e;
+  /* Dark text */
+  --text-secondary: #6b6b7b;
+  /* Muted text */
+  --accent-orange: #ff6b35;
+  /* Orange from mod:en logo */
+
+  --shadow-soft: 0 4px 20px rgba(0, 0, 0, 0.05);
+  --shadow-hover: 0 8px 25px rgba(0, 0, 0, 0.1);
+  --border-radius: 16px;
+  --border-light: #e0e0e0;
+
   display: block;
   height: 100vh;
   overflow: hidden;
-  background: #0a0a0f;
-  color: #e0e0e0;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: var(--bg-main);
+  color: var(--text-primary);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 /* =============================================================================
@@ -18,28 +36,47 @@
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 12px 24px;
-  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-  border-bottom: 1px solid #2a2a4a;
+  padding: 16px 32px;
+  background: var(--card-bg);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.02);
+  z-index: 10;
+  border-bottom: 1px solid var(--border-light);
 }
 
 .dashboard-header h1 {
   margin: 0;
-  font-size: 1.5rem;
+  font-family: 'Inter', sans-serif;
+  /* Clean modern font */
+  font-size: 1.8rem;
   font-weight: 700;
-  background: linear-gradient(90deg, #00d4ff, #7b2cbf);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--text-primary);
+  letter-spacing: -0.5px;
+}
+
+/* Simulate mod:en logo style if possible simply with text */
+.dashboard-header h1 span.mod {
+  color: var(--text-primary);
+}
+
+.dashboard-header h1 span.colon {
+  color: var(--accent-orange);
+}
+
+.dashboard-header h1 span.en {
+  color: var(--text-primary);
 }
 
 .dashboard-header .subtitle {
   font-size: 0.85rem;
-  color: #888;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 500;
+  margin-top: 4px;
 }
 
 /* =============================================================================
-   MAIN CONTAINER - 3 SECTIONS
+   LAYOUT & SECTIONS
    ============================================================================= */
 .dashboard-container {
   display: flex;
@@ -49,180 +86,209 @@
 
 .dashboard-main {
   display: grid;
-  grid-template-columns: 250px 350px 1fr;
+  grid-template-columns: 260px 360px 1fr;
   flex: 1;
   overflow: hidden;
+  padding: 24px;
+  gap: 24px;
+  background: var(--bg-main);
 }
 
-/* =============================================================================
-   SECTIONS
-   ============================================================================= */
 .section {
   display: flex;
   flex-direction: column;
-  border-right: 1px solid #2a2a4a;
+  background: var(--card-bg);
+  border-radius: var(--border-radius);
+  box-shadow: var(--shadow-soft);
   overflow: hidden;
-}
-
-.section:last-child {
-  border-right: none;
+  border: 1px solid white;
+  /* Clean border */
 }
 
 .section-header {
-  padding: 16px 20px;
-  background: #12121c;
-  border-bottom: 1px solid #2a2a4a;
+  padding: 20px 24px;
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--border-light);
 }
 
 .section-header h2 {
   margin: 0;
   font-size: 0.9rem;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 1px;
-  color: #00d4ff;
+  letter-spacing: 1.2px;
+  color: var(--text-secondary);
 }
 
 .section-subtitle {
   display: block;
-  font-size: 0.75rem;
-  color: #888;
+  font-size: 1rem;
+  color: var(--accent-orange);
+  font-weight: 600;
   margin-top: 4px;
 }
 
 .section-content {
   flex: 1;
   overflow-y: auto;
-  padding: 12px;
+  padding: 16px;
 }
 
 /* =============================================================================
-   PROYECTOS LIST
+   LIST ITEMS (Clean White Cards)
    ============================================================================= */
-.proyecto-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.proyecto-item {
-  padding: 12px 16px;
-  margin-bottom: 8px;
-  background: #1a1a2e;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  border: 1px solid transparent;
-}
-
-.proyecto-item:hover {
-  background: #252540;
-  border-color: #3a3a5a;
-}
-
-.proyecto-item.selected {
-  background: linear-gradient(135deg, #1e3a5f 0%, #2a1a5f 100%);
-  border-color: #00d4ff;
-}
-
-.proyecto-nombre {
-  font-weight: 500;
-}
-
-/* =============================================================================
-   MODULOS LIST
-   ============================================================================= */
+.proyecto-list,
 .modulo-list {
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
+.proyecto-item,
 .modulo-item {
+  background: var(--bg-main);
+  /* Slightly darker than card for contrast */
+  border-radius: 10px;
+  margin-bottom: 12px;
+  border: 1px solid transparent;
+  transition: all 0.2s ease;
+}
+
+.proyecto-item:hover,
+.modulo-item:hover {
+  background: #e8eaf0;
+  /* Slightly darker grey on hover */
+  transform: translateY(-2px);
+}
+
+.proyecto-item {
+  padding: 14px 20px;
+  cursor: pointer;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.proyecto-item.selected {
+  background: var(--text-primary);
+  color: white;
+  box-shadow: 0 4px 12px rgba(26, 26, 46, 0.2);
+}
+
+/* =============================================================================
+   MODULOS
+   ============================================================================= */
+.modulo-item {
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+}
+
+.modulo-item.expanded {
+  background: white;
+  border: 2px solid var(--accent-orange);
+  box-shadow: var(--shadow-hover);
+}
+
+.modulo-header {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 16px;
-  margin-bottom: 8px;
-  background: #1a1a2e;
-  border-radius: 8px;
-  cursor: grab;
-  transition: all 0.2s ease;
-  border: 1px solid transparent;
-}
-
-.modulo-item:hover {
-  background: #252540;
-  transform: translateX(4px);
-}
-
-.modulo-item:active {
-  cursor: grabbing;
-}
-
-.modulo-item.estado-pendiente {
-  border-left: 3px solid #888;
-}
-
-.modulo-item.estado-en_progreso {
-  border-left: 3px solid #f59e0b;
-}
-
-.modulo-item.estado-completado {
-  border-left: 3px solid #10b981;
-}
-
-.modulo-item.estado-cerrado {
-  border-left: 3px solid #6366f1;
-  opacity: 0.6;
+  padding: 14px 16px;
 }
 
 .modulo-info {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 2px;
 }
 
 .modulo-nombre {
-  font-weight: 500;
+  font-weight: 600;
+  color: var(--text-primary);
 }
 
 .modulo-planta {
   font-size: 0.75rem;
-  color: #888;
-}
-
-.modulo-phases {
-  display: flex;
-  gap: 4px;
+  color: var(--text-secondary);
 }
 
 .modulo-phases .phase {
   font-size: 0.8rem;
-  color: #555;
+  color: #ccc;
 }
 
 .modulo-phases .phase.done {
-  color: #10b981;
+  color: var(--accent-orange);
 }
 
 .modulo-estado {
   font-size: 0.65rem;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: #2a2a4a;
-  color: #888;
+  padding: 3px 8px;
+  border-radius: 12px;
+  background: #eee;
+  color: #666;
+  font-weight: 600;
 }
 
-.drag-hint {
-  margin-top: 16px;
-  padding: 12px;
-  text-align: center;
-  font-size: 0.75rem;
-  color: #666;
-  border: 1px dashed #3a3a5a;
+.modulo-expand {
+  color: var(--text-secondary);
+}
+
+/* =============================================================================
+   MODULO IMAGES (Expanded)
+   ============================================================================= */
+.modulo-imagenes {
+  display: flex;
+  gap: 10px;
+  padding: 0 16px 16px 16px;
+  border-top: 1px solid var(--border-light);
+  margin-top: -4px;
+  padding-top: 16px;
+  background: #fafafa;
+  border-bottom-left-radius: 10px;
+  border-bottom-right-radius: 10px;
+}
+
+.imagen-item {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  background: white;
+  border: 1px solid var(--border-light);
   border-radius: 8px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+  cursor: grab;
+  transition: all 0.2s;
+}
+
+.imagen-item:hover {
+  border-color: var(--accent-orange);
+  box-shadow: 0 4px 10px rgba(255, 107, 53, 0.15);
+  transform: translateY(-2px);
+}
+
+.imagen-fase {
+  font-size: 1.1rem;
+}
+
+.imagen-item.inferior .imagen-fase {
+  color: var(--accent-orange);
+}
+
+.imagen-item.superior .imagen-fase {
+  color: var(--text-primary);
+}
+
+/* Or keep distinct colors? Let's use orange for both or distinct */
+/* Actually user wants clean style. Let's keep it simple. */
+
+.imagen-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  word-break: break-all;
 }
 
 /* =============================================================================
@@ -231,228 +297,131 @@
 .mesas-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
+  gap: 20px;
 }
 
 .mesa-card {
-  background: #1a1a2e;
+  background: var(--bg-main);
+  /* Light grey card inside white section? No, section-mesas content has white bg? 
+     Actually section content has transparent bg. 
+     Let's make mesa cards look like "slots". */
+  background: #f8f9fa;
+  border: 1px solid var(--border-light);
   border-radius: 12px;
-  border: 1px solid #2a2a4a;
-  overflow: hidden;
-  transition: all 0.2s ease;
-}
-
-.mesa-card:hover {
-  border-color: #3a3a5a;
-}
-
-.mesa-card.locked {
-  opacity: 0.7;
-}
-
-.mesa-card.blackout {
-  background: #0a0a0f;
+  display: flex;
+  flex-direction: column;
 }
 
 .mesa-header {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-light);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 16px;
-  background: #12121c;
-  border-bottom: 1px solid #2a2a4a;
 }
 
 .mesa-header h3 {
   margin: 0;
-  font-size: 1rem;
-  font-weight: 600;
-}
-
-.mesa-badge {
-  font-size: 0.75rem;
-}
-
-/* =============================================================================
-   DROP ZONES
-   ============================================================================= */
-.drop-zones {
-  display: flex;
-  gap: 8px;
-  padding: 12px;
-  background: #12121c;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-primary);
 }
 
 .drop-zone {
-  flex: 1;
-  padding: 12px;
-  text-align: center;
-  border: 2px dashed #3a3a5a;
-  border-radius: 8px;
-  font-size: 0.75rem;
-  color: #666;
-  transition: all 0.2s ease;
+  margin: 16px;
+  padding: 24px;
+  border: 2px dashed #ccc;
+  border-radius: 12px;
+  background: white;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  transition: all 0.2s;
 }
 
 .drop-zone:hover,
-.drop-zone.dragover {
-  border-color: #00d4ff;
-  background: rgba(0, 212, 255, 0.1);
-  color: #00d4ff;
+.drop-zone.drag-over {
+  border-color: var(--accent-orange);
+  background: rgba(255, 107, 53, 0.03);
+  color: var(--accent-orange);
 }
 
-.drop-zone.inferior span {
-  color: #f59e0b;
+.drop-icon {
+  font-size: 1.5rem;
 }
 
-.drop-zone.superior span {
-  color: #8b5cf6;
-}
-
-/* =============================================================================
-   MESA QUEUE
-   ============================================================================= */
-.mesa-queue {
-  padding: 12px;
-  min-height: 80px;
-}
-
-.queue-empty {
-  text-align: center;
-  color: #555;
+.drop-text {
   font-size: 0.8rem;
-  padding: 20px;
+  font-weight: 500;
+}
+
+/* Mesa Queue Items */
+.mesa-queue {
+  padding: 0 16px 16px 16px;
 }
 
 .queue-item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px;
+  padding: 10px 14px;
   margin-bottom: 8px;
-  background: #252540;
-  border-radius: 6px;
-  border-left: 3px solid #555;
-}
-
-.queue-item.status-en-cola {
-  border-left-color: #888;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.03);
+  border-left: 3px solid #ccc;
 }
 
 .queue-item.status-mostrando {
-  border-left-color: #00d4ff;
-  background: #1e3a5f;
+  border-left-color: var(--accent-orange);
+  background: #fff8f5;
+  /* Very light orange tint */
 }
 
 .queue-item.status-hecho {
-  border-left-color: #10b981;
+  border-left-color: #4caf50;
   opacity: 0.6;
 }
 
-.queue-item-info {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 1;
-}
-
-.queue-item-fase {
-  font-size: 0.9rem;
-}
-
-.queue-item-fase.inferior {
-  color: #f59e0b;
-}
-
-.queue-item-fase.superior {
-  color: #8b5cf6;
-}
-
 .queue-item-nombre {
-  font-weight: 500;
-  font-size: 0.85rem;
-}
-
-.queue-item-status {
-  font-size: 0.65rem;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: #1a1a2e;
-  color: #888;
-}
-
-.queue-item-actions {
-  display: flex;
-  gap: 4px;
-}
-
-.btn-action {
-  width: 28px;
-  height: 28px;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
   font-size: 0.8rem;
-  transition: all 0.2s ease;
+  font-weight: 500;
+  margin-left: 8px;
+  flex: 1;
+  color: var(--text-primary);
 }
 
-.btn-mostrar {
-  background: #1e3a5f;
-  color: #00d4ff;
+/* Actions */
+.btn-action {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--text-secondary);
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s;
 }
 
-.btn-mostrar:hover {
-  background: #00d4ff;
-  color: #000;
+.btn-action:hover {
+  background: #f0f0f0;
+  color: var(--text-primary);
 }
 
-.btn-hecho {
-  background: #1a3a2e;
-  color: #10b981;
-}
-
-.btn-hecho:hover {
-  background: #10b981;
-  color: #000;
-}
-
-.btn-eliminar {
-  background: #3a1a1a;
-  color: #ef4444;
-}
-
-.btn-eliminar:hover {
-  background: #ef4444;
-  color: #fff;
-}
-
-/* =============================================================================
-   LOADING & EMPTY STATES
-   ============================================================================= */
-.loading,
-.empty-state {
-  text-align: center;
-  padding: 40px 20px;
-  color: #666;
-  font-size: 0.9rem;
-}
-
-/* =============================================================================
-   SCROLLBAR
-   ============================================================================= */
+/* Scrollbars */
 ::-webkit-scrollbar {
   width: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #1a1a2e;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #3a3a5a;
-  border-radius: 3px;
+  background: #ccc;
+  border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #4a4a6a;
+  background: #bbb;
 }

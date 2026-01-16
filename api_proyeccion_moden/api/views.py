@@ -157,7 +157,7 @@ class ModuloQueueViewSet(viewsets.ModelViewSet):
     """
     queryset = ModuloQueue.objects.all()
     serializer_class = ModuloQueueSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
 
     def get_queryset(self):
         queryset = ModuloQueue.objects.all()
@@ -173,7 +173,7 @@ class ModuloQueueItemViewSet(viewsets.ModelViewSet):
     """
     queryset = ModuloQueueItem.objects.all().order_by('queue', 'position')
     serializer_class = ModuloQueueItemSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
 
     def get_queryset(self):
         queryset = ModuloQueueItem.objects.all().order_by('position')
@@ -205,7 +205,7 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
     """
     queryset = MesaQueueItem.objects.all().order_by('mesa', 'position')
     serializer_class = MesaQueueItemSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
 
     def get_queryset(self):
         queryset = MesaQueueItem.objects.all().order_by('position')

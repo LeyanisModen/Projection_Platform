@@ -2,9 +2,9 @@ import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
   ApiService,
-  Proyecto, Modulo, Mesa, ModuloQueueItem, MesaQueueItem
+  Proyecto, Modulo, Mesa, ModuloQueueItem, MesaQueueItem, Imagen
 } from '../services/api.service';
-import { Subject, takeUntil, forkJoin } from 'rxjs';
+import { Subject, takeUntil } from 'rxjs';
 
 @Component({
   selector: 'app-dashboard',
@@ -20,18 +20,23 @@ export class Dashboard implements OnInit, OnDestroy {
   mesas: Mesa[] = [];
   queueItems: ModuloQueueItem[] = [];
   mesaQueueItems: Map<number, MesaQueueItem[]> = new Map();
+  moduloImagenes: Map<number, Imagen[]> = new Map();
 
   // Selection state
   selectedProyecto: Proyecto | null = null;
   selectedModulo: Modulo | null = null;
+  expandedModulo: number | null = null;
 
   // Loading states
   loadingProyectos = true;
   loadingModulos = false;
   loadingMesas = true;
+  loadingImagenes = false;
 
   // Drag state
+  draggedImagen: Imagen | null = null;
   draggedModulo: Modulo | null = null;
+  dragOverMesa: number | null = null;
 
   private destroy$ = new Subject<void>();
 
@@ -51,13 +56,11 @@ export class Dashboard implements OnInit, OnDestroy {
   // LOAD DATA
   // =========================================================================
   loadProyectos(): void {
-    console.log('[Dashboard] loadProyectos() called');
     this.loadingProyectos = true;
     this.api.getProyectos()
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (data) => {
-          console.log('[Dashboard] Proyectos received:', data);
           this.proyectos = data;
           this.loadingProyectos = false;
           this.cdr.detectChanges();
@@ -78,7 +81,6 @@ export class Dashboard implements OnInit, OnDestroy {
           this.mesas = data;
           this.loadingMesas = false;
           this.cdr.detectChanges();
-          // Load queue items for each mesa
           this.mesas.forEach(mesa => this.loadMesaQueueItems(mesa.id));
         },
         error: (err) => {
@@ -94,6 +96,7 @@ export class Dashboard implements OnInit, OnDestroy {
       .subscribe({
         next: (items) => {
           this.mesaQueueItems.set(mesaId, items);
+          this.cdr.detectChanges();
         },
         error: (err) => console.error(`Error loading queue for mesa ${mesaId}`, err)
       });
@@ -105,6 +108,8 @@ export class Dashboard implements OnInit, OnDestroy {
   selectProyecto(proyecto: Proyecto): void {
     this.selectedProyecto = proyecto;
     this.selectedModulo = null;
+    this.expandedModulo = null;
+    this.moduloImagenes.clear();
     this.loadModulosForProyecto(proyecto.id);
   }
 
@@ -126,21 +131,62 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   // =========================================================================
-  // DRAG AND DROP
+  // MODULE EXPANSION (to show images)
   // =========================================================================
-  onDragStart(event: DragEvent, modulo: Modulo): void {
+  toggleModulo(modulo: Modulo): void {
+    if (this.expandedModulo === modulo.id) {
+      this.expandedModulo = null;
+    } else {
+      this.expandedModulo = modulo.id;
+      this.loadImagenesForModulo(modulo.id);
+    }
+    this.cdr.detectChanges();
+  }
+
+  loadImagenesForModulo(moduloId: number): void {
+    if (this.moduloImagenes.has(moduloId)) return;
+
+    this.loadingImagenes = true;
+    this.api.getModuloImagenes(moduloId)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (imagenes) => {
+          this.moduloImagenes.set(moduloId, imagenes);
+          this.loadingImagenes = false;
+          this.cdr.detectChanges();
+        },
+        error: (err) => {
+          console.error('Error loading imagenes', err);
+          this.loadingImagenes = false;
+        }
+      });
+  }
+
+  getModuloImagenes(moduloId: number): Imagen[] {
+    return this.moduloImagenes.get(moduloId) || [];
+  }
+
+  // =========================================================================
+  // IMAGE DRAG AND DROP
+  // =========================================================================
+  onImageDragStart(event: DragEvent, imagen: Imagen, modulo: Modulo): void {
+    this.draggedImagen = imagen;
     this.draggedModulo = modulo;
     if (event.dataTransfer) {
       event.dataTransfer.effectAllowed = 'copy';
       event.dataTransfer.setData('text/plain', JSON.stringify({
+        imagenId: imagen.id,
         moduloId: modulo.id,
-        moduloNombre: modulo.nombre
+        fase: imagen.fase
       }));
     }
   }
 
   onDragEnd(event: DragEvent): void {
+    this.draggedImagen = null;
     this.draggedModulo = null;
+    this.dragOverMesa = null;
+    this.cdr.detectChanges();
   }
 
   onDragOver(event: DragEvent): void {
@@ -150,44 +196,38 @@ export class Dashboard implements OnInit, OnDestroy {
     }
   }
 
-  onDrop(event: DragEvent, mesa: Mesa, fase: 'INFERIOR' | 'SUPERIOR'): void {
-    event.preventDefault();
-    if (!this.draggedModulo) return;
+  onDragLeave(event: DragEvent): void {
+    this.dragOverMesa = null;
+    this.cdr.detectChanges();
+  }
 
+  onImageDrop(event: DragEvent, mesa: Mesa): void {
+    event.preventDefault();
+    this.dragOverMesa = null;
+
+    if (!this.draggedImagen || !this.draggedModulo) return;
+
+    const imagen = this.draggedImagen;
     const modulo = this.draggedModulo;
+
+    this.draggedImagen = null;
     this.draggedModulo = null;
 
-    // First get the images for this module to find the correct one for the fase
-    this.api.getModuloImagenes(modulo.id)
+    // Get current queue length for position
+    const currentItems = this.mesaQueueItems.get(mesa.id) || [];
+    const newPosition = currentItems.length + 1;
+
+    // Create the queue item
+    this.api.createMesaQueueItem(mesa.id, modulo.id, imagen.fase, imagen.id, newPosition)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
-        next: (imagenes) => {
-          const imagen = imagenes.find(img => img.fase === fase);
-          if (!imagen) {
-            alert(`El módulo ${modulo.nombre} no tiene imagen ${fase}`);
-            return;
-          }
-
-          // Get current queue length for position
-          const currentItems = this.mesaQueueItems.get(mesa.id) || [];
-          const newPosition = currentItems.length + 1;
-
-          // Create the queue item
-          this.api.createMesaQueueItem(mesa.id, modulo.id, fase, imagen.id, newPosition)
-            .pipe(takeUntil(this.destroy$))
-            .subscribe({
-              next: (item) => {
-                // Refresh mesa queue
-                this.loadMesaQueueItems(mesa.id);
-              },
-              error: (err) => {
-                console.error('Error creating mesa queue item', err);
-                alert('Error al asignar trabajo a la mesa');
-              }
-            });
+        next: (item) => {
+          this.loadMesaQueueItems(mesa.id);
+          this.cdr.detectChanges();
         },
         error: (err) => {
-          console.error('Error loading imagenes', err);
+          console.error('Error creating mesa queue item', err);
+          alert('Error al asignar trabajo a la mesa');
         }
       });
   }
@@ -199,10 +239,7 @@ export class Dashboard implements OnInit, OnDestroy {
     this.api.mostrarMesaQueueItem(item.id)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
-        next: () => {
-          // Extract mesa ID from URL or reload all
-          this.loadMesas();
-        },
+        next: () => this.loadMesas(),
         error: (err) => console.error('Error mostrando item', err)
       });
   }
@@ -213,7 +250,6 @@ export class Dashboard implements OnInit, OnDestroy {
       .subscribe({
         next: () => {
           this.loadMesas();
-          // Reload modulos to see updated state
           if (this.selectedProyecto) {
             this.loadModulosForProyecto(this.selectedProyecto.id);
           }

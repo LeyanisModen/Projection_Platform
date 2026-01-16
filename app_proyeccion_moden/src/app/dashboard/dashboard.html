@@ -30,7 +30,7 @@
             </div>
         </section>
 
-        <!-- SECTION 2: MODULOS -->
+        <!-- SECTION 2: MODULOS (con imágenes) -->
         <section class="section section-modulos">
             <div class="section-header">
                 <h2>Módulos</h2>
@@ -48,28 +48,54 @@
                 } @else {
                 <ul class="modulo-list">
                     @for (modulo of modulos; track trackByModulo($index, modulo)) {
-                    <li class="modulo-item" [class]="getModuloEstadoClass(modulo)" draggable="true"
-                        (dragstart)="onDragStart($event, modulo)" (dragend)="onDragEnd($event)">
-                        <div class="modulo-info">
-                            <span class="modulo-nombre">{{ modulo.nombre }}</span>
-                            <span class="modulo-planta">{{ modulo.planta }}</span>
+                    <li class="modulo-item" [class]="getModuloEstadoClass(modulo)"
+                        [class.expanded]="expandedModulo === modulo.id" (click)="toggleModulo(modulo)">
+                        <div class="modulo-header">
+                            <div class="modulo-info">
+                                <span class="modulo-nombre">{{ modulo.nombre }}</span>
+                                <span class="modulo-planta">{{ modulo.planta }}</span>
+                            </div>
+                            <div class="modulo-phases">
+                                <span class="phase" [class.done]="modulo.inferior_hecho" title="Inferior">▼</span>
+                                <span class="phase" [class.done]="modulo.superior_hecho" title="Superior">▲</span>
+                            </div>
+                            <span class="modulo-estado">{{ modulo.estado }}</span>
+                            <span class="modulo-expand">{{ expandedModulo === modulo.id ? '▾' : '▸' }}</span>
                         </div>
-                        <div class="modulo-phases">
-                            <span class="phase" [class.done]="modulo.inferior_hecho" title="Inferior">▼</span>
-                            <span class="phase" [class.done]="modulo.superior_hecho" title="Superior">▲</span>
+
+                        <!-- Imágenes del módulo (expandible) -->
+                        @if (expandedModulo === modulo.id) {
+                        <div class="modulo-imagenes" (click)="$event.stopPropagation()">
+                            @if (loadingImagenes) {
+                            <div class="loading-small">Cargando imágenes...</div>
+                            } @else {
+                            @for (imagen of getModuloImagenes(modulo.id); track imagen.id) {
+                            <div class="imagen-item" draggable="true"
+                                (dragstart)="onImageDragStart($event, imagen, modulo)" (dragend)="onDragEnd($event)"
+                                [class.inferior]="imagen.fase === 'INFERIOR'"
+                                [class.superior]="imagen.fase === 'SUPERIOR'">
+                                <span class="imagen-fase">{{ imagen.fase === 'INFERIOR' ? '▼' : '▲' }}</span>
+                                <span class="imagen-label">{{ imagen.nombre }}</span>
+                                <span class="imagen-drag-hint">☰</span>
+                            </div>
+                            }
+                            @if (getModuloImagenes(modulo.id).length === 0) {
+                            <div class="no-imagenes">Sin imágenes</div>
+                            }
+                            }
                         </div>
-                        <span class="modulo-estado">{{ modulo.estado }}</span>
+                        }
                     </li>
                     }
                 </ul>
                 <div class="drag-hint">
-                    ↔ Arrastra un módulo a una mesa para asignar trabajo
+                    ↔ Expande un módulo y arrastra sus imágenes a una mesa
                 </div>
                 }
             </div>
         </section>
 
-        <!-- SECTION 3: MESAS -->
+        <!-- SECTION 3: MESAS (drop zone único) -->
         <section class="section section-mesas">
             <div class="section-header">
                 <h2>Mesas de Trabajo</h2>
@@ -93,16 +119,11 @@
                             }
                         </div>
 
-                        <!-- Drop zones for phases -->
-                        <div class="drop-zones">
-                            <div class="drop-zone inferior" (dragover)="onDragOver($event)"
-                                (drop)="onDrop($event, mesa, 'INFERIOR')">
-                                <span>▼ INFERIOR</span>
-                            </div>
-                            <div class="drop-zone superior" (dragover)="onDragOver($event)"
-                                (drop)="onDrop($event, mesa, 'SUPERIOR')">
-                                <span>▲ SUPERIOR</span>
-                            </div>
+                        <!-- Single drop zone for any image -->
+                        <div class="drop-zone" (dragover)="onDragOver($event)" (dragleave)="onDragLeave($event)"
+                            (drop)="onImageDrop($event, mesa)" [class.drag-over]="dragOverMesa === mesa.id">
+                            <span class="drop-icon">📥</span>
+                            <span class="drop-text">Soltar imagen aquí</span>
                         </div>
 
                         <!-- Queue items -->

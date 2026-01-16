@@ -35,13 +35,20 @@ class ModuloSerializer(serializers.HyperlinkedModelSerializer):
 
 class ImagenSerializer(serializers.HyperlinkedModelSerializer):
     src = serializers.CharField(source='url', read_only=True)
+    nombre = serializers.SerializerMethodField()
     
     class Meta:
         model = Imagen
         fields = [
-            "id", "url", "src", "modulo",
+            "id", "url", "src", "nombre", "modulo",
             "fase", "orden", "version", "activo", "checksum"
         ]
+
+    def get_nombre(self, obj):
+        # Format: INF-001-MOD-A1
+        fase_pref = "INF" if obj.fase == "INFERIOR" else "SUP"
+        modulo_nombre = obj.modulo.nombre if obj.modulo else "UNKNOWN"
+        return f"{fase_pref}-{obj.orden:03d}-{modulo_nombre}"
 
 
 class MesaSerializer(serializers.HyperlinkedModelSerializer):

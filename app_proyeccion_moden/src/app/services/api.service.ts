@@ -39,6 +39,7 @@ export interface Imagen {
     id: number;
     url: string;
     src: string;
+    nombre: string;
     modulo: string;
     fase: 'INFERIOR' | 'SUPERIOR';
     orden: number;
