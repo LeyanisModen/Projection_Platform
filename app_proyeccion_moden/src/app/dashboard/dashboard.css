@@ -261,6 +261,9 @@
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
   cursor: grab;
   transition: all 0.2s;
+  /* Native drag support */
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .imagen-item:hover {

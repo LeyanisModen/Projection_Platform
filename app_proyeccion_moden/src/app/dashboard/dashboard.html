@@ -65,12 +65,12 @@
 
                         <!-- Imágenes del módulo (expandible) -->
                         @if (expandedModulo === modulo.id) {
-                        <div class="modulo-imagenes" (click)="$event.stopPropagation()">
+                        <div class="modulo-imagenes">
                             @if (loadingImagenes) {
                             <div class="loading-small">Cargando imágenes...</div>
                             } @else {
                             @for (imagen of getModuloImagenes(modulo.id); track imagen.id) {
-                            <div class="imagen-item" draggable="true"
+                            <div class="imagen-item" draggable="true" (mousedown)="$event.stopPropagation()"
                                 (dragstart)="onImageDragStart($event, imagen, modulo)" (dragend)="onDragEnd($event)"
                                 [class.inferior]="imagen.fase === 'INFERIOR'"
                                 [class.superior]="imagen.fase === 'SUPERIOR'">
@@ -120,7 +120,7 @@
                         </div>
 
                         <!-- Single drop zone for any image -->
-                        <div class="drop-zone" (dragover)="onDragOver($event)" (dragleave)="onDragLeave($event)"
+                        <div class="drop-zone" (dragover)="onDragOver($event, mesa)" (dragleave)="onDragLeave($event)"
                             (drop)="onImageDrop($event, mesa)" [class.drag-over]="dragOverMesa === mesa.id">
                             <span class="drop-icon">📥</span>
                             <span class="drop-text">Soltar imagen aquí</span>

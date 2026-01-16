@@ -170,6 +170,7 @@ export class Dashboard implements OnInit, OnDestroy {
   // IMAGE DRAG AND DROP
   // =========================================================================
   onImageDragStart(event: DragEvent, imagen: Imagen, modulo: Modulo): void {
+    console.log('[Dashboard] Drag Start:', imagen.nombre, modulo.nombre);
     this.draggedImagen = imagen;
     this.draggedModulo = modulo;
     if (event.dataTransfer) {
@@ -183,14 +184,17 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   onDragEnd(event: DragEvent): void {
+    console.log('[Dashboard] Drag End');
     this.draggedImagen = null;
     this.draggedModulo = null;
     this.dragOverMesa = null;
     this.cdr.detectChanges();
   }
 
-  onDragOver(event: DragEvent): void {
+  onDragOver(event: DragEvent, mesa: Mesa): void {
     event.preventDefault();
+    event.stopPropagation();
+    this.dragOverMesa = mesa.id;
     if (event.dataTransfer) {
       event.dataTransfer.dropEffect = 'copy';
     }
@@ -203,9 +207,14 @@ export class Dashboard implements OnInit, OnDestroy {
 
   onImageDrop(event: DragEvent, mesa: Mesa): void {
     event.preventDefault();
+    event.stopPropagation();
+    console.log('[Dashboard] Drop on Mesa:', mesa.nombre, 'Imagen:', this.draggedImagen?.nombre);
     this.dragOverMesa = null;
 
-    if (!this.draggedImagen || !this.draggedModulo) return;
+    if (!this.draggedImagen || !this.draggedModulo) {
+      console.warn('[Dashboard] Drop failed: No dragged imagen/modulo');
+      return;
+    }
 
     const imagen = this.draggedImagen;
     const modulo = this.draggedModulo;
