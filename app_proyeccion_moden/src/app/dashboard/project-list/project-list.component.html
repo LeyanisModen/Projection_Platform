@@ -1,0 +1,20 @@
+<div class="project-list-container">
+    <h2>Proyectos Activos</h2>
+
+    <div *ngIf="loading" class="loading-state">
+        Cargando proyectos...
+    </div>
+
+    <div *ngIf="!loading && proyectos.length === 0" class="empty-state">
+        No hay proyectos. ¡Crea uno en el Admin!
+    </div>
+
+    <div class="grid-container">
+        <div *ngFor="let proyecto of proyectos" class="project-card">
+            <h3>{{ proyecto.nombre }}</h3>
+            <div class="actions">
+                <button class="btn-primary">Ver Módulos</button>
+            </div>
+        </div>
+    </div>
+</div>

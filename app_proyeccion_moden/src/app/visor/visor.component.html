@@ -1,0 +1,14 @@
+<div class="visor-container">
+    <div *ngIf="!mesa" class="loading">
+        <h1>Cargando mesa...</h1>
+    </div>
+
+    <div *ngIf="mesa && !mesa.imagen_actual" class="waiting">
+        <h1>Esperando asignación...</h1>
+        <p>Mesa: {{ mesa.nombre }}</p>
+    </div>
+
+    <div *ngIf="mesa && mesa.imagen" class="projection">
+        <img [src]="mesa.imagen.src" alt="Proyección" class="projected-image">
+    </div>
+</div>

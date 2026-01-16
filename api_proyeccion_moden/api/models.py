@@ -1,35 +1,333 @@
 from django.db import models
 from django.contrib.auth.models import User
 
+
+# =============================================================================
+# FASE CHOICES
+# =============================================================================
+class Fase(models.TextChoices):
+    INFERIOR = 'INFERIOR', 'Inferior'
+    SUPERIOR = 'SUPERIOR', 'Superior'
+
+
+class MesaQueueStatus(models.TextChoices):
+    EN_COLA = 'EN_COLA', 'En Cola'
+    MOSTRANDO = 'MOSTRANDO', 'Mostrando'
+    HECHO = 'HECHO', 'Hecho'
+
+
+class ModuloEstado(models.TextChoices):
+    PENDIENTE = 'PENDIENTE', 'Pendiente'
+    EN_PROGRESO = 'EN_PROGRESO', 'En Progreso'
+    COMPLETADO = 'COMPLETADO', 'Completado'
+    CERRADO = 'CERRADO', 'Cerrado'
+
+
+# =============================================================================
+# CORE MODELS
+# =============================================================================
 class Proyecto(models.Model):
     id = models.AutoField(primary_key=True)
     nombre = models.CharField(max_length=200)
-    usuario_id = models.ForeignKey(User, on_delete=models.CASCADE)
+    usuario = models.ForeignKey(User, on_delete=models.CASCADE, related_name='proyectos')
+
     def __str__(self):
         return self.nombre
-    
+
+    class Meta:
+        db_table = 'api_proyecto'
+
+
 class Modulo(models.Model):
     id = models.AutoField(primary_key=True)
     nombre = models.CharField(max_length=200)
     planta = models.CharField(max_length=200)
-    proyecto_id = models.ForeignKey(Proyecto, on_delete=models.CASCADE)
+    proyecto = models.ForeignKey(Proyecto, on_delete=models.CASCADE, related_name='modulos')
+    
+    # Estado por fase
+    inferior_hecho = models.BooleanField(default=False)
+    superior_hecho = models.BooleanField(default=False)
+    estado = models.CharField(
+        max_length=20,
+        choices=ModuloEstado.choices,
+        default=ModuloEstado.PENDIENTE
+    )
+    
+    # Cierre por supervisor
+    cerrado = models.BooleanField(default=False)
+    cerrado_at = models.DateTimeField(null=True, blank=True)
+    cerrado_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='modulos_cerrados'
+    )
+
     def __str__(self):
-        return self.nombre + " " + self.planta
+        return f"{self.nombre} {self.planta}"
+
+    def actualizar_estado(self):
+        """Update estado based on phase completion."""
+        if self.cerrado:
+            self.estado = ModuloEstado.CERRADO
+        elif self.inferior_hecho and self.superior_hecho:
+            self.estado = ModuloEstado.COMPLETADO
+        elif self.inferior_hecho or self.superior_hecho:
+            self.estado = ModuloEstado.EN_PROGRESO
+        else:
+            self.estado = ModuloEstado.PENDIENTE
+        self.save(update_fields=['estado'])
+
+    class Meta:
+        db_table = 'api_modulo'
+
 
 class Imagen(models.Model):
     id = models.AutoField(primary_key=True)
-    url = models.CharField(max_length=200)
-    tipo = models.CharField(max_length=200)
-    modulo_id = models.ForeignKey(Modulo, on_delete=models.CASCADE)
-    def __str__(self):
-        return self.tipo + " " + self.url
+    url = models.CharField(max_length=500)
+    tipo = models.CharField(max_length=200, blank=True, null=True)  # Legacy field
+    modulo = models.ForeignKey(Modulo, on_delete=models.CASCADE, related_name='imagenes')
     
+    # New fields for phase/sequence management
+    fase = models.CharField(
+        max_length=20,
+        choices=Fase.choices,
+        default=Fase.INFERIOR
+    )
+    orden = models.PositiveIntegerField(default=1)
+    version = models.PositiveIntegerField(default=1)
+    activo = models.BooleanField(default=True)
+    checksum = models.CharField(max_length=64, blank=True, null=True)
+
+    def __str__(self):
+        return f"{self.fase} - {self.orden} - {self.url}"
+
+    class Meta:
+        db_table = 'api_imagen'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['modulo', 'fase', 'orden', 'version'],
+                name='unique_imagen_modulo_fase_orden_version'
+            ),
+            models.CheckConstraint(
+                check=models.Q(fase__in=[Fase.INFERIOR, Fase.SUPERIOR]),
+                name='check_imagen_fase_valid'
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['modulo']),
+            models.Index(fields=['modulo', 'fase']),
+            models.Index(fields=['modulo', 'fase', 'orden']),
+        ]
+
+
 class Mesa(models.Model):
     id = models.AutoField(primary_key=True)
     nombre = models.CharField(max_length=200)
-    usuario_id = models.ForeignKey(User, on_delete=models.CASCADE)
-    imagen_actual = models.ForeignKey(Imagen, on_delete=models.SET_NULL, null=True, blank=True, related_name='mesas_asignadas')
+    usuario = models.ForeignKey(User, on_delete=models.CASCADE, related_name='mesas')
+    
+    # Cache visual (source of truth is MesaQueueItem with status MOSTRANDO)
+    imagen_actual = models.ForeignKey(
+        Imagen,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='mesas_asignadas'
+    )
     ultima_actualizacion = models.DateTimeField(auto_now=True)
+    
+    # Operational state
+    locked = models.BooleanField(default=False)
+    blackout = models.BooleanField(default=False)
+    last_seen = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
         return self.nombre
+
+    class Meta:
+        db_table = 'api_mesa'
+
+
+# =============================================================================
+# QUEUE MODELS
+# =============================================================================
+class ModuloQueue(models.Model):
+    """
+    Cola de planificación de módulos por proyecto.
+    Una cola por proyecto.
+    """
+    id = models.AutoField(primary_key=True)
+    proyecto = models.OneToOneField(
+        Proyecto,
+        on_delete=models.CASCADE,
+        related_name='modulo_queue'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='modulo_queues_creadas'
+    )
+    activa = models.BooleanField(default=True)
+
+    def __str__(self):
+        return f"Cola: {self.proyecto.nombre}"
+
+    class Meta:
+        db_table = 'api_modulo_queue'
+
+
+class ModuloQueueItem(models.Model):
+    """
+    Item en la cola de módulos (ordenable).
+    """
+    id = models.AutoField(primary_key=True)
+    queue = models.ForeignKey(
+        ModuloQueue,
+        on_delete=models.CASCADE,
+        related_name='items'
+    )
+    modulo = models.ForeignKey(
+        Modulo,
+        on_delete=models.CASCADE,
+        related_name='queue_items'
+    )
+    position = models.PositiveIntegerField(default=0)
+    added_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='modulo_queue_items_added'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.queue.proyecto.nombre} - {self.modulo.nombre} (pos: {self.position})"
+
+    class Meta:
+        db_table = 'api_modulo_queue_item'
+        ordering = ['position']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['queue', 'modulo'],
+                name='unique_modulo_in_queue'
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['queue', 'position']),
+            models.Index(fields=['modulo']),
+        ]
+
+
+class MesaQueueItem(models.Model):
+    """
+    WorkItem: trabajo asignado a una mesa (cola ejecutable).
+    Cada item es una fase de un módulo con su imagen concreta.
+    """
+    id = models.AutoField(primary_key=True)
+    mesa = models.ForeignKey(
+        Mesa,
+        on_delete=models.CASCADE,
+        related_name='queue_items'
+    )
+    modulo = models.ForeignKey(
+        Modulo,
+        on_delete=models.CASCADE,
+        related_name='mesa_queue_items'
+    )
+    fase = models.CharField(
+        max_length=20,
+        choices=Fase.choices
+    )
+    imagen = models.ForeignKey(
+        Imagen,
+        on_delete=models.PROTECT,
+        related_name='mesa_queue_items'
+    )
+    position = models.PositiveIntegerField(default=0)
+    status = models.CharField(
+        max_length=20,
+        choices=MesaQueueStatus.choices,
+        default=MesaQueueStatus.EN_COLA
+    )
+    
+    # Assignment tracking
+    assigned_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='mesa_queue_items_assigned'
+    )
+    assigned_at = models.DateTimeField(auto_now_add=True)
+    
+    # Completion tracking
+    done_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='mesa_queue_items_done'
+    )
+    done_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"Mesa {self.mesa.nombre} - {self.modulo.nombre} ({self.fase}) - {self.status}"
+
+    def save(self, *args, **kwargs):
+        # Validate that imagen belongs to the same modulo and fase
+        if self.imagen.modulo_id != self.modulo_id:
+            raise ValueError(
+                f"Imagen {self.imagen_id} no pertenece al módulo {self.modulo_id}"
+            )
+        if self.imagen.fase != self.fase:
+            raise ValueError(
+                f"Imagen {self.imagen_id} es fase {self.imagen.fase}, no {self.fase}"
+            )
+        super().save(*args, **kwargs)
+
+    def marcar_hecho(self, user=None):
+        """Mark this item as done and update module phase status."""
+        from django.utils import timezone
+        
+        self.status = MesaQueueStatus.HECHO
+        self.done_by = user
+        self.done_at = timezone.now()
+        self.save()
+        
+        # Update module phase status
+        if self.fase == Fase.INFERIOR:
+            self.modulo.inferior_hecho = True
+            self.modulo.save(update_fields=['inferior_hecho'])
+        elif self.fase == Fase.SUPERIOR:
+            self.modulo.superior_hecho = True
+            self.modulo.save(update_fields=['superior_hecho'])
+        
+        self.modulo.actualizar_estado()
+
+    class Meta:
+        db_table = 'api_mesa_queue_item'
+        ordering = ['position']
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(fase__in=[Fase.INFERIOR, Fase.SUPERIOR]),
+                name='check_mesa_queue_item_fase_valid'
+            ),
+            models.CheckConstraint(
+                check=models.Q(status__in=[
+                    MesaQueueStatus.EN_COLA,
+                    MesaQueueStatus.MOSTRANDO,
+                    MesaQueueStatus.HECHO
+                ]),
+                name='check_mesa_queue_item_status_valid'
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['mesa', 'position']),
+            models.Index(fields=['mesa', 'status']),
+            models.Index(fields=['modulo', 'fase']),
+        ]

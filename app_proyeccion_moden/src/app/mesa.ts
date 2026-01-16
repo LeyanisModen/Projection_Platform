@@ -6,5 +6,6 @@ export interface Mesa {
     nombre: string;
     usuario_id: string;
     imagen_actual: string | null;
+    imagen?: Imagen;
     ultima_actualizacion: string;
 }

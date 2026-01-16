@@ -1,39 +1,147 @@
-<header>  
-    <button [routerLink]="'/'">CERRAR SESION</button>
-</header>
-<main>
-    <div class="example-container">
-        <h2>To do</h2>
-        <div
-            cdkDropList
-            #todoList="cdkDropList"
-            [cdkDropListData]="todo"
-            [cdkDropListConnectedTo]="[doneList]"
-            class="example-list"
-            (cdkDropListDropped)="drop($event)"
-        >
-            @for (item of todo; track item) {
-                <div class="example-box" cdkDrag>{{ item }}</div>
-            }
-        </div>
-    </div>
-    <div class="example-container">
-        <h2>Done</h2>
-        <div
-            cdkDropList
-            #doneList="cdkDropList"
-            [cdkDropListData]="done"
-            [cdkDropListConnectedTo]="[todoList]"
-            class="example-list"
-            (cdkDropListDropped)="drop($event)"
-        >
-            @for (item of done; track item) {
-                <div class="example-box" cdkDrag>{{ item }}</div>
-            }
-        </div>
-    </div>
-</main>
+<div class="dashboard-container">
+    <!-- HEADER -->
+    <header class="dashboard-header">
+        <h1>MOD:EN</h1>
+        <span class="subtitle">Sistema de Gestión de Proyección</span>
+    </header>
 
+    <!-- 3-SECTION LAYOUT -->
+    <main class="dashboard-main">
+        <!-- SECTION 1: PROYECTOS -->
+        <section class="section section-proyectos">
+            <div class="section-header">
+                <h2>Proyectos</h2>
+            </div>
+            <div class="section-content">
+                @if (loadingProyectos) {
+                <div class="loading">Cargando proyectos...</div>
+                } @else if (proyectos.length === 0) {
+                <div class="empty-state">No hay proyectos</div>
+                } @else {
+                <ul class="proyecto-list">
+                    @for (proyecto of proyectos; track trackByProyecto($index, proyecto)) {
+                    <li class="proyecto-item" [class.selected]="selectedProyecto?.id === proyecto.id"
+                        (click)="selectProyecto(proyecto)">
+                        <span class="proyecto-nombre">{{ proyecto.nombre }}</span>
+                    </li>
+                    }
+                </ul>
+                }
+            </div>
+        </section>
 
+        <!-- SECTION 2: MODULOS -->
+        <section class="section section-modulos">
+            <div class="section-header">
+                <h2>Módulos</h2>
+                @if (selectedProyecto) {
+                <span class="section-subtitle">{{ selectedProyecto.nombre }}</span>
+                }
+            </div>
+            <div class="section-content">
+                @if (!selectedProyecto) {
+                <div class="empty-state">Selecciona un proyecto</div>
+                } @else if (loadingModulos) {
+                <div class="loading">Cargando módulos...</div>
+                } @else if (modulos.length === 0) {
+                <div class="empty-state">No hay módulos en este proyecto</div>
+                } @else {
+                <ul class="modulo-list">
+                    @for (modulo of modulos; track trackByModulo($index, modulo)) {
+                    <li class="modulo-item" [class]="getModuloEstadoClass(modulo)" draggable="true"
+                        (dragstart)="onDragStart($event, modulo)" (dragend)="onDragEnd($event)">
+                        <div class="modulo-info">
+                            <span class="modulo-nombre">{{ modulo.nombre }}</span>
+                            <span class="modulo-planta">{{ modulo.planta }}</span>
+                        </div>
+                        <div class="modulo-phases">
+                            <span class="phase" [class.done]="modulo.inferior_hecho" title="Inferior">▼</span>
+                            <span class="phase" [class.done]="modulo.superior_hecho" title="Superior">▲</span>
+                        </div>
+                        <span class="modulo-estado">{{ modulo.estado }}</span>
+                    </li>
+                    }
+                </ul>
+                <div class="drag-hint">
+                    ↔ Arrastra un módulo a una mesa para asignar trabajo
+                </div>
+                }
+            </div>
+        </section>
 
+        <!-- SECTION 3: MESAS -->
+        <section class="section section-mesas">
+            <div class="section-header">
+                <h2>Mesas de Trabajo</h2>
+            </div>
+            <div class="section-content">
+                @if (loadingMesas) {
+                <div class="loading">Cargando mesas...</div>
+                } @else if (mesas.length === 0) {
+                <div class="empty-state">No hay mesas configuradas</div>
+                } @else {
+                <div class="mesas-grid">
+                    @for (mesa of mesas; track trackByMesa($index, mesa)) {
+                    <div class="mesa-card" [class.locked]="mesa.locked" [class.blackout]="mesa.blackout">
+                        <div class="mesa-header">
+                            <h3>{{ mesa.nombre }}</h3>
+                            @if (mesa.locked) {
+                            <span class="mesa-badge locked">🔒</span>
+                            }
+                            @if (mesa.blackout) {
+                            <span class="mesa-badge blackout">⬛</span>
+                            }
+                        </div>
 
+                        <!-- Drop zones for phases -->
+                        <div class="drop-zones">
+                            <div class="drop-zone inferior" (dragover)="onDragOver($event)"
+                                (drop)="onDrop($event, mesa, 'INFERIOR')">
+                                <span>▼ INFERIOR</span>
+                            </div>
+                            <div class="drop-zone superior" (dragover)="onDragOver($event)"
+                                (drop)="onDrop($event, mesa, 'SUPERIOR')">
+                                <span>▲ SUPERIOR</span>
+                            </div>
+                        </div>
+
+                        <!-- Queue items -->
+                        <div class="mesa-queue">
+                            @for (item of getMesaQueueItems(mesa.id); track trackByItem($index, item)) {
+                            <div class="queue-item" [class]="getItemStatusClass(item.status)">
+                                <div class="queue-item-info">
+                                    <span class="queue-item-fase" [class.inferior]="item.fase === 'INFERIOR'"
+                                        [class.superior]="item.fase === 'SUPERIOR'">
+                                        {{ item.fase === 'INFERIOR' ? '▼' : '▲' }}
+                                    </span>
+                                    <span class="queue-item-nombre">{{ item.modulo_nombre }}</span>
+                                    <span class="queue-item-status">{{ item.status }}</span>
+                                </div>
+                                <div class="queue-item-actions">
+                                    @if (item.status === 'EN_COLA') {
+                                    <button class="btn-action btn-mostrar" (click)="mostrarItem(item)"
+                                        title="Mostrar">▶</button>
+                                    }
+                                    @if (item.status === 'MOSTRANDO') {
+                                    <button class="btn-action btn-hecho" (click)="marcarHecho(item)"
+                                        title="Marcar hecho">✓</button>
+                                    }
+                                    @if (item.status !== 'HECHO') {
+                                    <button class="btn-action btn-eliminar" (click)="eliminarItem(item)"
+                                        title="Eliminar">✕</button>
+                                    }
+                                </div>
+                            </div>
+                            }
+                            @if (getMesaQueueItems(mesa.id).length === 0) {
+                            <div class="queue-empty">Sin trabajos asignados</div>
+                            }
+                        </div>
+                    </div>
+                    }
+                </div>
+                }
+            </div>
+        </section>
+    </main>
+</div>
