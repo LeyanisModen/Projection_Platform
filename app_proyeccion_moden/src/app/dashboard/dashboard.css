@@ -30,14 +30,12 @@ header {
   border-bottom: 3px solid var(--safety-orange);
 }
 
-header::before {
-  content: 'mod:en';
-  font-family: 'Oswald', sans-serif;
-  font-size: 1.4rem;
-  font-weight: 600;
-  letter-spacing: 2px;
-  color: var(--white);
+.header-logo {
+  height: 40px;
+  /* Adjust based on header height */
+  width: auto;
 }
+
 
 header button {
   padding: 12px 24px;

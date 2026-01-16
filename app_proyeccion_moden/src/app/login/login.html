@@ -1,5 +1,7 @@
 <main>
     <div class="card">
+        <img src="assets/logo.png" alt="Mod:en Logo" class="logo">
+        <p class="subtitle">Sistema de Gestión de Proyectos</p>
         <div>
             <p>Usuario</p>
             <input type="text" placeholder="Introduce tu usuario">
@@ -9,7 +11,7 @@
             <p>Contraseña</p>
             <input #password type="password" placeholder="Introduce tu contraseña">
             <i #password_icon class="fa fa-eye" (click)="toggle_pass()"></i>
-        </div>   
+        </div>
         <button (click)="submit()">Iniciar Sesión</button>
     </div>
 </main>
