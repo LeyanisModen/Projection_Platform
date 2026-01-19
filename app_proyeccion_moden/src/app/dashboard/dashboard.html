@@ -190,3 +190,17 @@
         </section>
     </main>
 </div>
+
+<!-- Custom Confirm Modal -->
+@if (showConfirmModal) {
+<div class="modal-overlay" (click)="cerrarConfirmModal()">
+    <div class="modal-content" (click)="$event.stopPropagation()">
+        <div class="modal-icon">⚠️</div>
+        <p class="modal-message">{{ confirmModalMessage }}</p>
+        <div class="modal-actions">
+            <button class="btn-modal btn-cancel" (click)="cerrarConfirmModal()">Cancelar</button>
+            <button class="btn-modal btn-confirm" (click)="confirmarEliminar()">Eliminar</button>
+        </div>
+    </div>
+</div>
+}

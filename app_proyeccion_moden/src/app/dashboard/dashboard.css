@@ -426,13 +426,16 @@
 
 /* Module Complete Banner */
 .modulo-complete-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   background: linear-gradient(90deg, #4caf50 0%, #66bb6a 100%);
   color: white;
   font-weight: 600;
-  text-align: center;
-  padding: 8px 16px;
-  border-radius: 6px;
-  font-size: 0.85rem;
+  padding: 6px 16px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  margin: 0 auto;
 }
 
 .workspace-hint {
@@ -630,4 +633,99 @@
 .queue-item-actions {
   display: flex;
   gap: 4px;
+}
+
+/* =============================================================================
+   CONFIRM MODAL
+   ============================================================================= */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.modal-content {
+  background: white;
+  padding: 28px 32px;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+  text-align: center;
+  max-width: 360px;
+  animation: slideUp 0.2s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.modal-icon {
+  font-size: 2.5rem;
+  margin-bottom: 12px;
+}
+
+.modal-message {
+  font-size: 1rem;
+  color: var(--text-primary);
+  margin: 0 0 24px 0;
+  line-height: 1.5;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.btn-modal {
+  padding: 10px 24px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s;
+}
+
+.btn-cancel {
+  background: #f0f0f0;
+  color: var(--text-secondary);
+}
+
+.btn-cancel:hover {
+  background: #e0e0e0;
+}
+
+.btn-confirm {
+  background: #ef5350;
+  color: white;
+}
+
+.btn-confirm:hover {
+  background: #e53935;
 }

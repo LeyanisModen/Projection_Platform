@@ -50,6 +50,11 @@ export class Dashboard implements OnInit, OnDestroy {
   draggedImagen: Imagen | null = null;
   draggedModulo: Modulo | null = null;
 
+  // Confirm Modal State
+  showConfirmModal = false;
+  confirmModalMessage = '';
+  pendingDeleteItem: MesaQueueItem | null = null;
+
   // Maps for tracking
   moduloImagenes = new Map<number, Imagen[]>(); // moduloId -> images
   // imagenId -> { mesaName, status: 'EN_COLA' | 'MOSTRANDO' | 'HECHO' }
@@ -380,8 +385,22 @@ export class Dashboard implements OnInit, OnDestroy {
             this.imagenAssignedToMesa.set(imagenId, { mesaName: mesa?.nombre || `Mesa ${mesaId}`, status: 'HECHO' });
           }
           if (mesaId) this.loadMesaQueueItems(mesaId);
+
+          // Reload modules to get updated inferior_hecho/superior_hecho
           if (this.selectedPlanta) {
-            this.loadModulosForPlanta(this.selectedPlanta.id);
+            this.api.getModulos(this.selectedPlanta.id)
+              .pipe(takeUntil(this.destroy$))
+              .subscribe({
+                next: (modulos) => {
+                  this.modulos = modulos;
+                  // Update selectedModulo with fresh data
+                  if (this.selectedModulo) {
+                    const updated = modulos.find(m => m.id === this.selectedModulo!.id);
+                    if (updated) this.selectedModulo = updated;
+                  }
+                  this.cdr.detectChanges();
+                }
+              });
           }
           this.cdr.detectChanges();
         },
@@ -389,9 +408,18 @@ export class Dashboard implements OnInit, OnDestroy {
       });
   }
 
+  // Show custom confirm modal for delete
   eliminarItem(item: MesaQueueItem): void {
-    if (!confirm(`¿Eliminar ${item.modulo_nombre} (${item.fase}) de la cola?`)) return;
+    this.pendingDeleteItem = item;
+    this.confirmModalMessage = `¿Eliminar ${item.modulo_nombre} (${item.fase}) de la cola?`;
+    this.showConfirmModal = true;
+    this.cdr.detectChanges();
+  }
 
+  // Confirm delete action
+  confirmarEliminar(): void {
+    if (!this.pendingDeleteItem) return;
+    const item = this.pendingDeleteItem;
     const mesaId = this.extractIdFromUrl(item.mesa);
     const imagenId = this.extractIdFromUrl(item.imagen);
 
@@ -403,10 +431,21 @@ export class Dashboard implements OnInit, OnDestroy {
           if (imagenId) this.imagenAssignedToMesa.delete(imagenId);
           // Reload only the affected mesa's queue
           if (mesaId) this.loadMesaQueueItems(mesaId);
-          this.cdr.detectChanges();
+          this.cerrarConfirmModal();
         },
-        error: (err) => console.error('Error eliminando item', err)
+        error: (err) => {
+          console.error('Error eliminando item', err);
+          this.cerrarConfirmModal();
+        }
       });
+  }
+
+  // Cancel and close modal
+  cerrarConfirmModal(): void {
+    this.showConfirmModal = false;
+    this.pendingDeleteItem = null;
+    this.confirmModalMessage = '';
+    this.cdr.detectChanges();
   }
 
   // Helper to extract ID from DRF URL or handle numeric ID
