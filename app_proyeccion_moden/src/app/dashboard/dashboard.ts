@@ -1,6 +1,7 @@
 import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { DragDropModule, CdkDragDrop, moveItemInArray } from '@angular/cdk/drag-drop';
+
 import {
   ApiService,
   Proyecto, Planta, Modulo, Mesa, ModuloQueueItem, MesaQueueItem, Imagen
@@ -10,39 +11,48 @@ import { Subject, takeUntil } from 'rxjs';
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, DragDropModule],
   templateUrl: './dashboard.html',
   styleUrl: './dashboard.css',
+  imports: [CommonModule, DragDropModule]
 })
 export class Dashboard implements OnInit, OnDestroy {
+  // Sidebar State
+  panelState: 'collapsed' | 'expanded' = 'expanded';
+  navLevel: 'projects' | 'plants' | 'modules' = 'projects';
+
   // Data
   proyectos: Proyecto[] = [];
   plantas: Planta[] = [];
   modulos: Modulo[] = [];
+  mesaQueueItems = new Map<number, MesaQueueItem[]>(); // mesaId -> items
+  imagenes: Imagen[] = []; // Images for expanded module
   mesas: Mesa[] = [];
-  queueItems: ModuloQueueItem[] = [];
-  mesaQueueItems: Map<number, MesaQueueItem[]> = new Map();
-  moduloImagenes: Map<number, Imagen[]> = new Map();
-  // Track assigned images: imagenId -> mesaNombre
-  imagenAssignedToMesa: Map<number, string> = new Map();
 
-  // Selection state
+  // Data Loading States
+  loadingProyectos = false;
+  loadingPlantas = false;
+  loadingModulos = false;
+  loadingImagenes = false; // Loading images for expanded module
+  loadingMesas = false;
+
+  // Selection State
+  // Selection State
   selectedProyecto: Proyecto | null = null;
   selectedPlanta: Planta | null = null;
   selectedModulo: Modulo | null = null;
-  expandedModulo: number | null = null;
 
-  // Loading states
-  loadingProyectos = true;
-  loadingPlantas = false;
-  loadingModulos = false;
-  loadingMesas = true;
-  loadingImagenes = false;
+  // UI State
+  expandedModulo: number | null = null; // ID of expanded module
+  droppedImage: Imagen | null = null; // Temp holder for drop logic
+  dragOverMesa: number | null = null; // ID of mesa being dragged over
 
-  // Drag state
+  // Drag State
   draggedImagen: Imagen | null = null;
   draggedModulo: Modulo | null = null;
-  dragOverMesa: number | null = null;
+
+  // Maps for tracking
+  moduloImagenes = new Map<number, Imagen[]>(); // moduloId -> images
+  imagenAssignedToMesa = new Map<number, string>(); // imagenId -> mesaName
 
   private destroy$ = new Subject<void>();
 
@@ -52,6 +62,36 @@ export class Dashboard implements OnInit, OnDestroy {
     this.loadProyectos();
     this.loadMesas();
   }
+
+  // =========================================================================
+  // SIDEBAR ACTIONS
+  // =========================================================================
+  togglePanel(): void {
+    this.panelState = this.panelState === 'expanded' ? 'collapsed' : 'expanded';
+    this.cdr.detectChanges();
+  }
+
+  navigateBack(): void {
+    if (this.navLevel === 'modules') {
+      this.navLevel = 'plants';
+      this.selectedModulo = null;
+      this.expandedModulo = null;
+    } else if (this.navLevel === 'plants') {
+      this.navLevel = 'projects';
+      this.selectedPlanta = null;
+      this.selectedModulo = null;
+      this.expandedModulo = null;
+    }
+  }
+
+  getHeaderTitle(): string {
+    if (this.navLevel === 'projects') return 'Proyectos';
+    if (this.navLevel === 'plants') return this.selectedProyecto?.nombre || 'Plantas';
+    if (this.navLevel === 'modules') return this.selectedPlanta?.nombre || 'Módulos';
+    return '';
+  }
+
+
 
   ngOnDestroy(): void {
     this.destroy$.next();
@@ -138,10 +178,7 @@ export class Dashboard implements OnInit, OnDestroy {
     this.selectedProyecto = proyecto;
     this.selectedPlanta = null;
     this.selectedModulo = null;
-    this.expandedModulo = null;
-    this.plantas = [];
-    this.modulos = [];
-    this.moduloImagenes.clear();
+    this.navLevel = 'plants'; // Drill down
     this.loadPlantasForProyecto(proyecto.id);
   }
 
@@ -168,9 +205,7 @@ export class Dashboard implements OnInit, OnDestroy {
   selectPlanta(planta: Planta): void {
     this.selectedPlanta = planta;
     this.selectedModulo = null;
-    this.expandedModulo = null;
-    this.modulos = [];
-    this.moduloImagenes.clear();
+    this.navLevel = 'modules'; // Drill down
     this.loadModulosForPlanta(planta.id);
   }
 
@@ -195,12 +230,16 @@ export class Dashboard implements OnInit, OnDestroy {
   // MODULE EXPANSION (to show images)
   // =========================================================================
   toggleModulo(modulo: Modulo): void {
-    if (this.expandedModulo === modulo.id) {
-      this.expandedModulo = null;
-    } else {
-      this.expandedModulo = modulo.id;
-      this.loadImagenesForModulo(modulo.id);
-    }
+    // In new layout, selecting a module loads it into the main area
+    // We don't toggle expansion in sidebar necessarily (or we can)
+    // Let's make it select effectively
+    this.selectedModulo = modulo;
+    this.expandedModulo = modulo.id; // Keep tracking for CSS selected state
+    this.loadImagenesForModulo(modulo.id);
+
+    // Optional: Auto-collapse sidebar on selection? User said configurable.
+    // Let's keep it open for now for rapid selection.
+
     this.cdr.detectChanges();
   }
 

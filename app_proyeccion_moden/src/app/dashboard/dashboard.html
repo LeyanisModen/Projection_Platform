@@ -5,156 +5,138 @@
         <span class="subtitle">Sistema de Gestión de Proyección</span>
     </header>
 
-    <!-- 3-SECTION LAYOUT -->
     <main class="dashboard-main">
-        <!-- SECTION 1: PROYECTOS -->
-        <section class="section section-proyectos">
-            <div class="section-header">
-                <h2>Proyectos</h2>
-            </div>
-            <div class="section-content">
-                @if (loadingProyectos) {
-                <div class="loading">Cargando proyectos...</div>
-                } @else if (proyectos.length === 0) {
-                <div class="empty-state">No hay proyectos</div>
-                } @else {
-                <ul class="proyecto-list" cdkDropList (cdkDropListDropped)="onProjectDrop($event)">
-                    @for (proyecto of proyectos; track trackByProyecto($index, proyecto)) {
-                    <li class="proyecto-item" cdkDrag [class.selected]="selectedProyecto?.id === proyecto.id"
-                        (click)="selectProyecto(proyecto)">
-                        <span class="proyecto-nombre">{{ proyecto.nombre }}</span>
-                    </li>
+        <!-- SIDEBAR: PROJECTS PANEL (Collapsible) -->
+        <aside class="projects-panel" [class.collapsed]="panelState === 'collapsed'">
+            <!-- Sidebar Header -->
+            <div class="panel-header">
+                <button class="btn-menu" (click)="togglePanel()">☰</button>
+                <div class="header-title" *ngIf="panelState === 'expanded'">
+                    @if (navLevel !== 'projects') {
+                    <button class="btn-back" (click)="navigateBack()">←</button>
                     }
-                </ul>
-                }
-            </div>
-        </section>
-
-        <!-- SECTION 2: PLANTAS -->
-        <section class="section section-plantas">
-            <div class="section-header">
-                <h2>Plantas</h2>
-                @if (selectedProyecto) {
-                <span class="section-subtitle">{{ selectedProyecto.nombre }}</span>
-                }
-            </div>
-            <div class="section-content">
-                @if (!selectedProyecto) {
-                <div class="empty-state">Selecciona un proyecto</div>
-                } @else if (loadingPlantas) {
-                <div class="loading">Cargando plantas...</div>
-                } @else if (plantas.length === 0) {
-                <div class="empty-state">No hay plantas en este proyecto</div>
-                } @else {
-                <ul class="planta-list">
-                    @for (planta of plantas; track planta.id) {
-                    <li class="planta-item" [class.selected]="selectedPlanta?.id === planta.id"
-                        (click)="selectPlanta(planta)">
-                        <span class="planta-nombre">{{ planta.nombre }}</span>
-                        <span class="planta-count">{{ planta.modulos_count }} módulos</span>
-                    </li>
-                    }
-                </ul>
-                }
-            </div>
-        </section>
-
-        <!-- SECTION 3: MODULOS (con imágenes) -->
-        <section class="section section-modulos">
-            <div class="section-header">
-                <h2>Módulos</h2>
-                @if (selectedPlanta) {
-                <span class="section-subtitle">{{ selectedPlanta.nombre }}</span>
-                }
-            </div>
-            <div class="section-content">
-                @if (!selectedPlanta) {
-                <div class="empty-state">Selecciona una planta</div>
-                } @else if (loadingModulos) {
-                <div class="loading">Cargando módulos...</div>
-                } @else if (modulos.length === 0) {
-                <div class="empty-state">No hay módulos en esta planta</div>
-                } @else {
-                <ul class="modulo-list">
-                    @for (modulo of modulos; track trackByModulo($index, modulo)) {
-                    <li class="modulo-item" [class]="getModuloEstadoClass(modulo)"
-                        [class.expanded]="expandedModulo === modulo.id" (click)="toggleModulo(modulo)">
-                        <div class="modulo-header">
-                            <div class="modulo-info">
-                                <span class="modulo-nombre">{{ modulo.nombre }}</span>
-                            </div>
-                            <div class="modulo-phases">
-                                <span class="phase" [class.done]="modulo.inferior_hecho" title="Inferior">▼</span>
-                                <span class="phase" [class.done]="modulo.superior_hecho" title="Superior">▲</span>
-                            </div>
-                            <span class="modulo-estado">{{ modulo.estado }}</span>
-                            <span class="modulo-expand">{{ expandedModulo === modulo.id ? '▾' : '▸' }}</span>
-                        </div>
-
-                        <!-- Imágenes del módulo (expandible) -->
-                        @if (expandedModulo === modulo.id) {
-                        <div class="modulo-imagenes">
-                            @if (loadingImagenes) {
-                            <div class="loading-small">Cargando imágenes...</div>
-                            } @else {
-                            @for (imagen of getModuloImagenes(modulo.id); track imagen.id) {
-                            <div class="imagen-item" draggable="true" (mousedown)="$event.stopPropagation()"
-                                (dragstart)="onImageDragStart($event, imagen, modulo)" (dragend)="onDragEnd($event)"
-                                [class.inferior]="imagen.fase === 'INFERIOR'"
-                                [class.superior]="imagen.fase === 'SUPERIOR'">
-                                <span class="imagen-fase">{{ imagen.fase === 'INFERIOR' ? '▼' : '▲' }}</span>
-                                <span class="imagen-label">{{ imagen.nombre }}</span>
-                                <span class="imagen-drag-hint">☰</span>
-                            </div>
-                            }
-                            @if (getModuloImagenes(modulo.id).length === 0) {
-                            <div class="no-imagenes">Sin imágenes</div>
-                            }
-                            }
-                        </div>
-                        }
-                    </li>
-                    }
-                </ul>
-                <div class="drag-hint">
-                    ↔ Expande un módulo y arrastra sus imágenes a una mesa
+                    <h2>{{ getHeaderTitle() }}</h2>
                 </div>
+            </div>
+
+            <!-- Sidebar Content -->
+            <div class="panel-content" *ngIf="panelState === 'expanded'">
+                @if (navLevel === 'projects') {
+                <ul class="nav-list">
+                    @if (loadingProyectos) { <div class="loading">Cargando...</div> }
+                    @for (proyecto of proyectos; track proyecto.id) {
+                    <li class="nav-item" [class.selected]="selectedProyecto?.id === proyecto.id"
+                        (click)="selectProyecto(proyecto)">
+                        <span class="nav-icon">📁</span>
+                        <span class="nav-text">{{ proyecto.nombre }}</span>
+                        <span class="nav-arrow">›</span>
+                    </li>
+                    }
+                </ul>
+                }
+
+                @if (navLevel === 'plants') {
+                <ul class="nav-list">
+                    @if (loadingPlantas) { <div class="loading">Cargando...</div> }
+                    @for (planta of plantas; track planta.id) {
+                    <li class="nav-item" [class.selected]="selectedPlanta?.id === planta.id"
+                        (click)="selectPlanta(planta)">
+                        <span class="nav-icon">🏭</span>
+                        <span class="nav-text">{{ planta.nombre }}</span>
+                        <span class="nav-arrow">›</span>
+                    </li>
+                    }
+                </ul>
+                }
+
+                @if (navLevel === 'modules') {
+                <ul class="nav-list">
+                    @if (loadingModulos) { <div class="loading">Cargando...</div> }
+                    @for (modulo of modulos; track modulo.id) {
+                    <li class="nav-item" [class.selected]="selectedModulo?.id === modulo.id"
+                        (click)="toggleModulo(modulo)">
+                        <span class="nav-icon">📦</span>
+                        <div class="nav-item-content">
+                            <span class="nav-text">{{ modulo.nombre }}</span>
+                            <div class="nav-phases">
+                                <span class="phase-dot" [class.done]="modulo.inferior_hecho" title="Inferior"></span>
+                                <span class="phase-dot" [class.done]="modulo.superior_hecho" title="Superior"></span>
+                            </div>
+                        </div>
+                    </li>
+                    }
+                </ul>
                 }
             </div>
-        </section>
+        </aside>
 
-        <!-- SECTION 4: MESAS (drop zone único) -->
-        <section class="section section-mesas">
-            <div class="section-header">
-                <h2>Mesas de Trabajo</h2>
+        <!-- WORKSPACE: IMAGES & MESAS -->
+        <section class="dashboard-workspace">
+
+            <!-- SOURCE ZONE: IMAGES PANEL (Visible when a module is selected) -->
+            <div class="images-panel" *ngIf="selectedModulo">
+                <div class="panel-header-workspace">
+                    <h3>Imágenes: {{ selectedModulo.nombre }}</h3>
+                    <span class="subtitle">{{ selectedProyecto?.nombre }} / {{ selectedPlanta?.nombre }}</span>
+                </div>
+
+                <div class="images-scroll-container">
+                    @if (loadingImagenes) {
+                    <div class="loading">Cargando imágenes...</div>
+                    } @else if (getModuloImagenes(selectedModulo.id).length === 0) {
+                    <div class="empty-state">Sin imágenes</div>
+                    } @else {
+                    @for (imagen of getModuloImagenes(selectedModulo.id); track imagen.id) {
+                    <div class="imagen-card" draggable="true"
+                        (dragstart)="onImageDragStart($event, imagen, selectedModulo!)" (dragend)="onDragEnd($event)"
+                        [class.inferior]="imagen.fase === 'INFERIOR'" [class.superior]="imagen.fase === 'SUPERIOR'">
+                        <span class="imagen-fase">{{ imagen.fase === 'INFERIOR' ? '▼' : '▲' }}</span>
+                        <span class="imagen-name">{{ imagen.nombre }}</span>
+                        <span class="imagen-drag-hint">⋮⋮</span>
+                    </div>
+                    }
+                    }
+                </div>
+                <!-- Drag hint if active -->
+                <div class="workspace-hint">
+                    Arrestra las imágenes a una mesa abajo ↓
+                </div>
             </div>
-            <div class="section-content">
-                @if (loadingMesas) {
-                <div class="loading">Cargando mesas...</div>
-                } @else if (mesas.length === 0) {
-                <div class="empty-state">No hay mesas configuradas</div>
-                } @else {
+
+            <!-- EMPTY STATE if no module selected -->
+            <div class="workspace-empty" *ngIf="!selectedModulo">
+                <div class="empty-message">
+                    <span class="icon">👈</span>
+                    <h3>Selecciona un módulo en el menú lateral</h3>
+                    <p>Navega por Proyectos → Plantas → Módulos para comenzar.</p>
+                </div>
+            </div>
+
+            <!-- TARGET ZONE: MESAS GRID -->
+            <div class="mesas-section">
+                <div class="section-header">
+                    <h2>Mesas de Trabajo</h2>
+                </div>
                 <div class="mesas-grid">
+                    @if (loadingMesas) {
+                    <div class="loading">Cargando mesas...</div>
+                    } @else {
                     @for (mesa of mesas; track trackByMesa($index, mesa)) {
                     <div class="mesa-card" [class.locked]="mesa.locked" [class.blackout]="mesa.blackout">
                         <div class="mesa-header">
                             <h3>{{ mesa.nombre }}</h3>
-                            @if (mesa.locked) {
-                            <span class="mesa-badge locked">🔒</span>
-                            }
-                            @if (mesa.blackout) {
-                            <span class="mesa-badge blackout">⬛</span>
-                            }
+                            @if (mesa.locked) { <span class="mesa-badge locked">🔒</span> }
+                            @if (mesa.blackout) { <span class="mesa-badge blackout">⬛</span> }
                         </div>
 
-                        <!-- Single drop zone for any image -->
+                        <!-- Drop Zone -->
                         <div class="drop-zone" (dragover)="onDragOver($event, mesa)" (dragleave)="onDragLeave($event)"
                             (drop)="onImageDrop($event, mesa)" [class.drag-over]="dragOverMesa === mesa.id">
                             <span class="drop-icon">📥</span>
-                            <span class="drop-text">Soltar imagen aquí</span>
+                            <span class="drop-text">Soltar imagen</span>
                         </div>
 
-                        <!-- Queue items -->
+                        <!-- Queue -->
                         <div class="mesa-queue">
                             @for (item of getMesaQueueItems(mesa.id); track trackByItem($index, item)) {
                             <div class="queue-item" [class]="getItemStatusClass(item.status)">
@@ -182,15 +164,13 @@
                                 </div>
                             </div>
                             }
-                            @if (getMesaQueueItems(mesa.id).length === 0) {
-                            <div class="queue-empty">Sin trabajos asignados</div>
-                            }
                         </div>
                     </div>
                     }
+                    }
                 </div>
-                }
             </div>
+
         </section>
     </main>
 </div>

@@ -1,24 +1,21 @@
 /* =============================================================================
-   FERRALLA MODEN - Dashboard (Login Style / Light Theme)
+   FERRALLA MODEN - Dashboard (Sidebar Layout)
    Tema: Clean, White, Orange Accents
    ============================================================================= */
 
 :host {
-  /* Palette extracted from Login Image */
   --bg-main: #f0f2f5;
-  /* Light Grey Background */
   --card-bg: #ffffff;
-  /* Pure White Cards */
   --text-primary: #1a1a2e;
-  /* Dark text */
   --text-secondary: #6b6b7b;
-  /* Muted text */
   --accent-orange: #ff6b35;
-  /* Orange from mod:en logo */
+  --sidebar-width: 280px;
+  --sidebar-collapsed-width: 60px;
+  --header-height: 64px;
 
   --shadow-soft: 0 4px 20px rgba(0, 0, 0, 0.05);
   --shadow-hover: 0 8px 25px rgba(0, 0, 0, 0.1);
-  --border-radius: 16px;
+  --border-radius: 12px;
   --border-light: #e0e0e0;
 
   display: block;
@@ -26,68 +23,11 @@
   overflow: hidden;
   background: var(--bg-main);
   color: var(--text-primary);
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Inter', system-ui, sans-serif;
 }
 
 /* =============================================================================
-   HEADER
-   ============================================================================= */
-.dashboard-header {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 16px 32px;
-  background: var(--card-bg);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.02);
-  z-index: 10;
-  border-bottom: 1px solid var(--border-light);
-}
-
-.header-logo {
-  height: 48px;
-  width: auto;
-  border-radius: 8px;
-}
-
-.header-text {
-  display: flex;
-  flex-direction: column;
-}
-
-.dashboard-header h1 {
-  margin: 0;
-  font-family: 'Inter', sans-serif;
-  /* Clean modern font */
-  font-size: 1.8rem;
-  font-weight: 700;
-  color: var(--text-primary);
-  letter-spacing: -0.5px;
-}
-
-/* Simulate mod:en logo style if possible simply with text */
-.dashboard-header h1 span.mod {
-  color: var(--text-primary);
-}
-
-.dashboard-header h1 span.colon {
-  color: var(--accent-orange);
-}
-
-.dashboard-header h1 span.en {
-  color: var(--text-primary);
-}
-
-.dashboard-header .subtitle {
-  font-size: 0.85rem;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  font-weight: 500;
-  margin-top: 4px;
-}
-
-/* =============================================================================
-   LAYOUT & SECTIONS
+   LAYOUT CONTAINER
    ============================================================================= */
 .dashboard-container {
   display: flex;
@@ -95,308 +35,413 @@
   height: 100vh;
 }
 
-.dashboard-main {
-  display: grid;
-  grid-template-columns: 220px 220px 280px 1fr;
-  flex: 1;
-  overflow: hidden;
-  padding: 24px;
-  gap: 24px;
-  background: var(--bg-main);
-}
-
-.section {
-  display: flex;
-  flex-direction: column;
-  background: var(--card-bg);
-  border-radius: var(--border-radius);
-  box-shadow: var(--shadow-soft);
-  overflow: hidden;
-  border: 1px solid white;
-  /* Clean border */
-}
-
-.section-header {
-  padding: 20px 24px;
-  background: var(--card-bg);
-  border-bottom: 1px solid var(--border-light);
-}
-
-.section-header h2 {
-  margin: 0;
-  font-size: 0.9rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 1.2px;
-  color: var(--text-secondary);
-}
-
-.section-subtitle {
-  display: block;
-  font-size: 1rem;
-  color: var(--accent-orange);
-  font-weight: 600;
-  margin-top: 4px;
-}
-
-.section-content {
-  flex: 1;
-  overflow-y: auto;
-  padding: 16px;
-}
-
-.proyecto-list,
-.planta-list,
-.modulo-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.proyecto-item,
-.planta-item,
-.modulo-item {
-  background: var(--bg-main);
-  /* Slightly darker than card for contrast */
-  border-radius: 10px;
-  margin-bottom: 12px;
-  border: 1px solid transparent;
-  transition: all 0.2s ease;
-}
-
-.proyecto-item:hover,
-.planta-item:hover,
-.modulo-item:hover {
-  background: #e8eaf0;
-  /* Slightly darker grey on hover */
-  transform: translateY(-2px);
-}
-
-.proyecto-item {
-  padding: 14px 20px;
-  cursor: pointer;
-  font-weight: 500;
-  color: var(--text-primary);
-}
-
-.proyecto-item.selected {
-  background: var(--text-primary);
-  color: white;
-  box-shadow: 0 4px 12px rgba(26, 26, 46, 0.2);
-}
-
-/* Planta Items */
-.planta-item {
-  padding: 12px 16px;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.planta-item.selected {
-  background: var(--text-primary);
-  color: white;
-  box-shadow: 0 4px 12px rgba(26, 26, 46, 0.2);
-}
-
-.planta-nombre {
-  font-weight: 500;
-  color: var(--text-primary);
-}
-
-.planta-item.selected .planta-nombre {
-  color: white;
-}
-
-.planta-count {
-  font-size: 0.75rem;
-  color: var(--text-secondary);
-}
-
-.planta-item.selected .planta-count {
-  color: rgba(255, 255, 255, 0.7);
-}
-
-.proyecto-item .drag-handle {
-  cursor: grab;
-  color: var(--text-secondary);
-  margin-left: auto;
-  font-size: 0.9rem;
-}
-
-.proyecto-item:hover .drag-handle {
-  color: var(--accent-orange);
-}
-
-/* CDK Drag & Drop States */
-.proyecto-item.cdk-drag-preview {
-  background: white;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-  border: 2px solid var(--accent-orange);
-  border-radius: 10px;
-  padding: 14px 20px;
-  font-weight: 500;
-}
-
-.proyecto-item.cdk-drag-placeholder {
-  opacity: 0.3;
-  background: #ddd;
-  border: 2px dashed var(--accent-orange);
-  border-radius: 10px;
-}
-
-.proyecto-item.cdk-drag-animating {
-  transition: transform 200ms cubic-bezier(0, 0, 0.2, 1);
-}
-
-.proyecto-list.cdk-drop-list-dragging .proyecto-item:not(.cdk-drag-placeholder) {
-  transition: transform 200ms cubic-bezier(0, 0, 0.2, 1);
-}
-
-/* =============================================================================
-   MODULOS
-   ============================================================================= */
-.modulo-item {
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-}
-
-.modulo-item.expanded {
-  background: white;
-  border: 2px solid var(--accent-orange);
-  box-shadow: var(--shadow-hover);
-}
-
-.modulo-header {
+/* HEADER */
+.dashboard-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 14px 16px;
+  gap: 16px;
+  padding: 0 24px;
+  height: var(--header-height);
+  background: var(--card-bg);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.02);
+  z-index: 20;
+  border-bottom: 1px solid var(--border-light);
+  flex-shrink: 0;
 }
 
-.modulo-info {
-  flex: 1;
+.header-logo {
+  height: 40px;
+  border-radius: 6px;
+}
+
+.subtitle {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+  margin-left: auto;
+}
+
+/* MAIN LAYOUT (Sidebar + Workspace) */
+.dashboard-main {
   display: flex;
-  flex-direction: column;
-}
-
-.modulo-nombre {
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.modulo-planta {
-  font-size: 0.75rem;
-  color: var(--text-secondary);
-}
-
-.modulo-phases .phase {
-  font-size: 0.8rem;
-  color: #ccc;
-}
-
-.modulo-phases .phase.done {
-  color: var(--accent-orange);
-}
-
-.modulo-estado {
-  font-size: 0.65rem;
-  padding: 3px 8px;
-  border-radius: 12px;
-  background: #eee;
-  color: #666;
-  font-weight: 600;
-}
-
-.modulo-expand {
-  color: var(--text-secondary);
+  flex: 1;
+  overflow: hidden;
+  position: relative;
 }
 
 /* =============================================================================
-   MODULO IMAGES (Expanded)
+   SIDEBAR: PROJECTS PANEL
    ============================================================================= */
-.modulo-imagenes {
+.projects-panel {
+  width: var(--sidebar-width);
+  background: var(--card-bg);
+  border-right: 1px solid var(--border-light);
   display: flex;
-  gap: 10px;
-  padding: 0 16px 16px 16px;
-  border-top: 1px solid var(--border-light);
-  margin-top: -4px;
-  padding-top: 16px;
-  background: #fafafa;
-  border-bottom-left-radius: 10px;
-  border-bottom-right-radius: 10px;
+  flex-direction: column;
+  transition: width 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  z-index: 10;
+  flex-shrink: 0;
 }
 
-.imagen-item {
-  flex: 1;
+.projects-panel.collapsed {
+  width: var(--sidebar-collapsed-width);
+}
+
+/* Sidebar Header */
+.panel-header {
+  height: 60px;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border-light);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.header-title {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px;
+  margin-left: 8px;
+  opacity: 1;
+  transition: opacity 0.2s;
+}
+
+.projects-panel.collapsed .header-title {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.panel-header h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Buttons */
+.btn-menu {
+  background: transparent;
+  border: none;
+  font-size: 1.4rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+}
+
+.btn-menu:hover {
+  background: #f5f5f5;
+  color: var(--text-primary);
+}
+
+.btn-back {
+  background: transparent;
+  border: none;
+  font-size: 1.2rem;
+  cursor: pointer;
+  color: var(--accent-orange);
+  padding: 0 4px;
+}
+
+/* Sidebar Content */
+.panel-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0;
+  opacity: 1;
+  transition: opacity 0.2s 0.1s;
+  /* delay fade in */
+}
+
+.projects-panel.collapsed .panel-content {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Nav Lists */
+.nav-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  padding: 14px 20px;
+  cursor: pointer;
+  border-bottom: 1px solid #f9f9f9;
+  transition: background 0.2s;
+  gap: 12px;
+}
+
+.nav-item:hover {
+  background: #f8f9fa;
+}
+
+.nav-item.selected {
+  background: rgba(255, 107, 53, 0.08);
+  /* Light orange bg */
+  border-left: 3px solid var(--accent-orange);
+  padding-left: 17px;
+  /* Compensate for border */
+}
+
+.nav-item.selected .nav-text {
+  color: var(--accent-orange);
+  font-weight: 600;
+}
+
+.nav-icon {
+  font-size: 1.1rem;
+  color: #999;
+}
+
+.nav-item.selected .nav-icon {
+  color: var(--accent-orange);
+}
+
+.nav-text {
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nav-arrow {
+  color: #ccc;
+  font-size: 1.1rem;
+}
+
+/* Module Phases in List */
+.nav-item-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.nav-phases {
+  display: flex;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.phase-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #eee;
+}
+
+.phase-dot.done {
+  background: var(--accent-orange);
+}
+
+
+/* =============================================================================
+   WORKSPACE (Main Area)
+   ============================================================================= */
+.dashboard-workspace {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-main);
+  padding: 24px;
+  gap: 24px;
+}
+
+/* Empty Workspace State */
+.workspace-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+}
+
+.empty-message {
+  text-align: center;
+  max-width: 400px;
   background: white;
+  padding: 40px;
+  border-radius: 16px;
+  box-shadow: var(--shadow-soft);
+}
+
+.empty-message .icon {
+  font-size: 3rem;
+  display: block;
+  margin-bottom: 16px;
+}
+
+/* Source Zone: Images Panel */
+.images-panel {
+  background: var(--card-bg);
+  border-radius: var(--border-radius);
+  padding: 20px;
+  box-shadow: var(--shadow-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex-shrink: 0;
+  max-height: 220px;
+  /* Limit height */
+}
+
+.panel-header-workspace {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  border-bottom: 1px solid var(--border-light);
+  padding-bottom: 12px;
+}
+
+.panel-header-workspace h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: var(--text-primary);
+}
+
+.panel-header-workspace .subtitle {
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.images-scroll-container {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  /* For scrollbar */
+  min-height: 100px;
+}
+
+/* Horizontal Scrollbar style */
+.images-scroll-container::-webkit-scrollbar {
+  height: 6px;
+}
+
+.images-scroll-container::-webkit-scrollbar-thumb {
+  background: #ccc;
+  border-radius: 10px;
+}
+
+/* Workspace Image Cards */
+.imagen-card {
+  min-width: 140px;
+  height: 100px;
+  background: #f9f9f9;
   border: 1px solid var(--border-light);
   border-radius: 8px;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
   cursor: grab;
   transition: all 0.2s;
-  /* Native drag support */
-  -webkit-user-select: none;
+  position: relative;
   user-select: none;
 }
 
-.imagen-item:hover {
+.imagen-card:hover {
   border-color: var(--accent-orange);
-  box-shadow: 0 4px 10px rgba(255, 107, 53, 0.15);
+  background: white;
+  box-shadow: 0 4px 12px rgba(255, 107, 53, 0.15);
   transform: translateY(-2px);
 }
 
 .imagen-fase {
-  font-size: 1.1rem;
+  font-size: 1.5rem;
+  margin-bottom: 4px;
 }
 
-.imagen-item.inferior .imagen-fase {
+.imagen-card.inferior .imagen-fase {
   color: var(--accent-orange);
 }
 
-.imagen-item.superior .imagen-fase {
+.imagen-card.superior .imagen-fase {
   color: var(--text-primary);
 }
 
-/* Or keep distinct colors? Let's use orange for both or distinct */
-/* Actually user wants clean style. Let's keep it simple. */
-
-.imagen-label {
-  font-size: 0.75rem;
+.imagen-name {
+  font-size: 0.8rem;
   font-weight: 500;
-  color: var(--text-primary);
-  word-break: break-all;
+  color: var(--text-secondary);
+}
+
+.imagen-drag-hint {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  color: #ddd;
+  font-size: 10px;
+}
+
+.workspace-hint {
+  text-align: center;
+  font-size: 0.8rem;
+  color: #aaa;
+  font-style: italic;
+}
+
+.loading,
+.empty-state {
+  padding: 20px;
+  text-align: center;
+  width: 100%;
+  color: #999;
 }
 
 /* =============================================================================
-   MESAS GRID
+   TARGET ZONE: MESAS GRID
    ============================================================================= */
-.mesas-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 20px;
-}
-
-.mesa-card {
-  background: var(--bg-main);
-  /* Light grey card inside white section? No, section-mesas content has white bg? 
-     Actually section content has transparent bg. 
-     Let's make mesa cards look like "slots". */
-  background: #f8f9fa;
-  border: 1px solid var(--border-light);
-  border-radius: 12px;
+.mesas-section {
+  flex: 1;
+  /* Take remaining space */
   display: flex;
   flex-direction: column;
+  background: transparent;
+  overflow: hidden;
+}
+
+.section-header h2 {
+  font-size: 1rem;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.mesas-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 20px;
+  overflow-y: auto;
+  padding-bottom: 20px;
+}
+
+/* Mesa Cards (Reused Logic) */
+.mesa-card {
+  background: white;
+  border-radius: var(--border-radius);
+  box-shadow: var(--shadow-soft);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .mesa-header {
-  padding: 14px 16px;
+  padding: 12px 16px;
+  background: #fcfcfc;
   border-bottom: 1px solid var(--border-light);
   display: flex;
   justify-content: space-between;
@@ -406,28 +451,26 @@
 .mesa-header h3 {
   margin: 0;
   font-size: 0.95rem;
-  font-weight: 700;
-  color: var(--text-primary);
+  font-weight: 600;
 }
 
 .drop-zone {
   margin: 16px;
   padding: 24px;
-  border: 2px dashed #ccc;
-  border-radius: 12px;
-  background: white;
+  border: 2px dashed #ddd;
+  border-radius: 8px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  color: var(--text-secondary);
+  color: #bbb;
   transition: all 0.2s;
+  background: #fafafa;
 }
 
 .drop-zone:hover,
 .drop-zone.drag-over {
   border-color: var(--accent-orange);
-  background: rgba(255, 107, 53, 0.03);
+  background: rgba(255, 107, 53, 0.04);
   color: var(--accent-orange);
 }
 
@@ -437,10 +480,10 @@
 
 .drop-text {
   font-size: 0.8rem;
-  font-weight: 500;
+  margin-top: 4px;
 }
 
-/* Mesa Queue Items */
+/* Mesa Queue */
 .mesa-queue {
   padding: 0 16px 16px 16px;
 }
@@ -448,31 +491,33 @@
 .queue-item {
   display: flex;
   align-items: center;
-  padding: 10px 14px;
+  padding: 8px 12px;
   margin-bottom: 8px;
   background: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.03);
+  border-radius: 6px;
+  border: 1px solid #eee;
   border-left: 3px solid #ccc;
 }
 
 .queue-item.status-mostrando {
   border-left-color: var(--accent-orange);
   background: #fff8f5;
-  /* Very light orange tint */
 }
 
 .queue-item.status-hecho {
   border-left-color: #4caf50;
-  opacity: 0.6;
+  opacity: 0.7;
 }
 
-.queue-item-nombre {
-  font-size: 0.8rem;
-  font-weight: 500;
-  margin-left: 8px;
+.queue-item-info {
   flex: 1;
-  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.queue-item-fase {
+  font-weight: bold;
 }
 
 .queue-item-fase.inferior {
@@ -483,36 +528,20 @@
   color: var(--text-primary);
 }
 
-/* Actions */
-.btn-action {
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  color: var(--text-secondary);
-  padding: 4px;
-  border-radius: 4px;
-  transition: all 0.2s;
-}
-
-.btn-action:hover {
-  background: #f0f0f0;
+.queue-item-nombre {
+  font-size: 0.85rem;
   color: var(--text-primary);
 }
 
-/* Scrollbars */
-::-webkit-scrollbar {
-  width: 6px;
+.queue-item-status {
+  font-size: 0.7rem;
+  color: #999;
+  background: #f0f0f0;
+  padding: 2px 6px;
+  border-radius: 4px;
 }
 
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #ccc;
-  border-radius: 10px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #bbb;
+.queue-item-actions {
+  display: flex;
+  gap: 4px;
 }
