@@ -475,6 +475,14 @@
   color: var(--text-primary);
 }
 
+.queue-item-fase.inferior {
+  color: var(--accent-orange);
+}
+
+.queue-item-fase.superior {
+  color: var(--text-primary);
+}
+
 /* Actions */
 .btn-action {
   border: none;
