@@ -38,10 +38,40 @@ class Proyecto(models.Model):
         db_table = 'api_proyecto'
 
 
+class Planta(models.Model):
+    """
+    Planta/Nivel dentro de un proyecto.
+    Jerarquía: Proyecto -> Planta -> Modulo
+    """
+    id = models.AutoField(primary_key=True)
+    nombre = models.CharField(max_length=200)
+    proyecto = models.ForeignKey(Proyecto, on_delete=models.CASCADE, related_name='plantas')
+    orden = models.PositiveIntegerField(default=0)
+
+    def __str__(self):
+        return f"{self.proyecto.nombre} - {self.nombre}"
+
+    class Meta:
+        db_table = 'api_planta'
+        ordering = ['orden', 'nombre']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['proyecto', 'nombre'],
+                name='unique_planta_nombre_per_proyecto'
+            ),
+        ]
+
+
 class Modulo(models.Model):
     id = models.AutoField(primary_key=True)
     nombre = models.CharField(max_length=200)
-    planta = models.CharField(max_length=200)
+    planta = models.ForeignKey(
+        Planta,
+        on_delete=models.CASCADE,
+        related_name='modulos',
+        null=True,  # Temporarily nullable for migration
+        blank=True
+    )
     proyecto = models.ForeignKey(Proyecto, on_delete=models.CASCADE, related_name='modulos')
     
     # Estado por fase
@@ -65,7 +95,8 @@ class Modulo(models.Model):
     )
 
     def __str__(self):
-        return f"{self.nombre} {self.planta}"
+        planta_nombre = self.planta.nombre if self.planta else "Sin planta"
+        return f"{self.nombre} ({planta_nombre})"
 
     def actualizar_estado(self):
         """Update estado based on phase completion."""

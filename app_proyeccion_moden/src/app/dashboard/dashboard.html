@@ -30,10 +30,10 @@
             </div>
         </section>
 
-        <!-- SECTION 2: MODULOS (con imágenes) -->
-        <section class="section section-modulos">
+        <!-- SECTION 2: PLANTAS -->
+        <section class="section section-plantas">
             <div class="section-header">
-                <h2>Módulos</h2>
+                <h2>Plantas</h2>
                 @if (selectedProyecto) {
                 <span class="section-subtitle">{{ selectedProyecto.nombre }}</span>
                 }
@@ -41,10 +41,39 @@
             <div class="section-content">
                 @if (!selectedProyecto) {
                 <div class="empty-state">Selecciona un proyecto</div>
+                } @else if (loadingPlantas) {
+                <div class="loading">Cargando plantas...</div>
+                } @else if (plantas.length === 0) {
+                <div class="empty-state">No hay plantas en este proyecto</div>
+                } @else {
+                <ul class="planta-list">
+                    @for (planta of plantas; track planta.id) {
+                    <li class="planta-item" [class.selected]="selectedPlanta?.id === planta.id"
+                        (click)="selectPlanta(planta)">
+                        <span class="planta-nombre">{{ planta.nombre }}</span>
+                        <span class="planta-count">{{ planta.modulos_count }} módulos</span>
+                    </li>
+                    }
+                </ul>
+                }
+            </div>
+        </section>
+
+        <!-- SECTION 3: MODULOS (con imágenes) -->
+        <section class="section section-modulos">
+            <div class="section-header">
+                <h2>Módulos</h2>
+                @if (selectedPlanta) {
+                <span class="section-subtitle">{{ selectedPlanta.nombre }}</span>
+                }
+            </div>
+            <div class="section-content">
+                @if (!selectedPlanta) {
+                <div class="empty-state">Selecciona una planta</div>
                 } @else if (loadingModulos) {
                 <div class="loading">Cargando módulos...</div>
                 } @else if (modulos.length === 0) {
-                <div class="empty-state">No hay módulos en este proyecto</div>
+                <div class="empty-state">No hay módulos en esta planta</div>
                 } @else {
                 <ul class="modulo-list">
                     @for (modulo of modulos; track trackByModulo($index, modulo)) {
@@ -53,7 +82,6 @@
                         <div class="modulo-header">
                             <div class="modulo-info">
                                 <span class="modulo-nombre">{{ modulo.nombre }}</span>
-                                <span class="modulo-planta">{{ modulo.planta }}</span>
                             </div>
                             <div class="modulo-phases">
                                 <span class="phase" [class.done]="modulo.inferior_hecho" title="Inferior">▼</span>
@@ -95,7 +123,7 @@
             </div>
         </section>
 
-        <!-- SECTION 3: MESAS (drop zone único) -->
+        <!-- SECTION 4: MESAS (drop zone único) -->
         <section class="section section-mesas">
             <div class="section-header">
                 <h2>Mesas de Trabajo</h2>

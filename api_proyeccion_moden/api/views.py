@@ -4,12 +4,12 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from api.serializers import (
-    ProyectoSerializer, UserSerializer, ModuloSerializer,
+    ProyectoSerializer, PlantaSerializer, UserSerializer, ModuloSerializer,
     ImagenSerializer, MesaSerializer,
     ModuloQueueSerializer, ModuloQueueItemSerializer, MesaQueueItemSerializer
 )
 from api.models import (
-    Modulo, Proyecto, Imagen, Mesa,
+    Modulo, Proyecto, Planta, Imagen, Mesa,
     ModuloQueue, ModuloQueueItem, MesaQueueItem
 )
 
@@ -63,6 +63,23 @@ class ProyectoViewSet(viewsets.ModelViewSet):
             return Response([])
 
 
+class PlantaViewSet(viewsets.ModelViewSet):
+    """
+    API endpoint para ver, crear, editar y borrar plantas.
+    Filtrar por proyecto con ?proyecto=ID
+    """
+    queryset = Planta.objects.all().order_by('orden', 'nombre')
+    serializer_class = PlantaSerializer
+    permission_classes = [permissions.AllowAny]  # For demo, adjust later
+
+    def get_queryset(self):
+        queryset = Planta.objects.all().order_by('orden', 'nombre')
+        proyecto_id = self.request.query_params.get('proyecto', None)
+        if proyecto_id is not None:
+            queryset = queryset.filter(proyecto_id=proyecto_id)
+        return queryset
+
+
 class ModuloViewSet(viewsets.ModelViewSet):
     """
     API endpoint que permite ver, crear, editar y borrar módulos.
@@ -74,7 +91,10 @@ class ModuloViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = Modulo.objects.all().order_by("id")
         proyecto_id = self.request.query_params.get('proyecto', None)
-        if proyecto_id is not None:
+        planta_id = self.request.query_params.get('planta', None)
+        if planta_id is not None:
+            queryset = queryset.filter(planta_id=planta_id)
+        elif proyecto_id is not None:
             queryset = queryset.filter(proyecto_id=proyecto_id)
         return queryset
 

@@ -2,7 +2,7 @@ from django.contrib.auth.models import User
 from rest_framework import serializers
 
 from api.models import (
-    Proyecto, Modulo, Imagen, Mesa,
+    Proyecto, Planta, Modulo, Imagen, Mesa,
     ModuloQueue, ModuloQueueItem, MesaQueueItem
 )
 
@@ -20,6 +20,17 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
     class Meta:
         model = Proyecto
         fields = ["id", "url", "nombre", "usuario"]
+
+
+class PlantaSerializer(serializers.ModelSerializer):
+    modulos_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Planta
+        fields = ["id", "nombre", "proyecto", "orden", "modulos_count"]
+
+    def get_modulos_count(self, obj):
+        return obj.modulos.count()
 
 
 class ModuloSerializer(serializers.HyperlinkedModelSerializer):
@@ -75,7 +86,7 @@ class ModuloQueueSerializer(serializers.ModelSerializer):
 
 class ModuloQueueItemSerializer(serializers.ModelSerializer):
     modulo_nombre = serializers.CharField(source='modulo.nombre', read_only=True)
-    modulo_planta = serializers.CharField(source='modulo.planta', read_only=True)
+    modulo_planta = serializers.CharField(source='modulo.planta.nombre', read_only=True)
     
     class Meta:
         model = ModuloQueueItem

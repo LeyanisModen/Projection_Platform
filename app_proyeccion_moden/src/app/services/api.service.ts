@@ -21,11 +21,19 @@ export interface Proyecto {
     usuario: string;
 }
 
+export interface Planta {
+    id: number;
+    nombre: string;
+    proyecto: number;
+    orden: number;
+    modulos_count: number;
+}
+
 export interface Modulo {
     id: number;
     url: string;
     nombre: string;
-    planta: string;
+    planta: number | null;
     proyecto: string;
     inferior_hecho: boolean;
     superior_hecho: boolean;
@@ -137,11 +145,21 @@ export class ApiService {
     }
 
     // =========================================================================
+    // PLANTAS
+    // =========================================================================
+    getPlantas(proyectoId: number): Observable<Planta[]> {
+        return this.http.get<PagedResponse<Planta>>(`${this.baseUrl}/plantas/?proyecto=${proyectoId}`, { headers: this.getHeaders() })
+            .pipe(map(response => response.results));
+    }
+
+    // =========================================================================
     // MODULOS (paginated)
     // =========================================================================
-    getModulos(proyectoId?: number): Observable<Modulo[]> {
+    getModulos(plantaId?: number, proyectoId?: number): Observable<Modulo[]> {
         let url = `${this.baseUrl}/modulos/`;
-        if (proyectoId) {
+        if (plantaId) {
+            url += `?planta=${plantaId}`;
+        } else if (proyectoId) {
             url += `?proyecto=${proyectoId}`;
         }
         return this.http.get<PagedResponse<Modulo>>(url, { headers: this.getHeaders() })
