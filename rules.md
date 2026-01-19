@@ -133,4 +133,4 @@ No te limites a decir “cómo”. Muéstrame “por qué” esta solución es l
 - ¿Cómo se protege sin complicar la operación?
 - ¿Cómo se entrega valor en pasos pequeños?
 
-**Construimos MOD:EN para que funcione el lunes a las 7:00 en una nave real.**
+**Construimos MOD:EN para que funcione el lunes a las 6:00 en naves reales.**
