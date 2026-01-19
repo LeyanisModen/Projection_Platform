@@ -391,10 +391,9 @@
   font-weight: 500;
   color: var(--text-secondary);
   text-align: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 90px;
+  word-break: break-word;
+  line-height: 1.2;
+  max-width: 100%;
 }
 
 .imagen-drag-hint {
@@ -620,6 +619,8 @@
 .queue-item-nombre {
   font-size: 0.85rem;
   color: var(--text-primary);
+  word-break: break-word;
+  line-height: 1.3;
 }
 
 .queue-item-status {
