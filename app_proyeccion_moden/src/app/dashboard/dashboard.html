@@ -80,6 +80,13 @@
                     <span class="subtitle">{{ selectedProyecto?.nombre }} / {{ selectedPlanta?.nombre }}</span>
                 </div>
 
+                <!-- Module Complete Banner -->
+                @if (isModuloComplete(selectedModulo)) {
+                <div class="modulo-complete-banner">
+                    ✓ Módulo terminado
+                </div>
+                }
+
                 <div class="images-scroll-container">
                     @if (loadingImagenes) {
                     <div class="loading">Cargando imágenes...</div>
@@ -87,19 +94,30 @@
                     <div class="empty-state">Sin imágenes</div>
                     } @else {
                     @for (imagen of getModuloImagenes(selectedModulo.id); track imagen.id) {
-                    <div class="imagen-card" draggable="true"
-                        (dragstart)="onImageDragStart($event, imagen, selectedModulo!)" (dragend)="onDragEnd($event)"
-                        [class.inferior]="imagen.fase === 'INFERIOR'" [class.superior]="imagen.fase === 'SUPERIOR'">
-                        <span class="imagen-fase">{{ imagen.fase === 'INFERIOR' ? '▼' : '▲' }}</span>
-                        <span class="imagen-name">{{ imagen.nombre }}</span>
-                        <span class="imagen-drag-hint">⋮⋮</span>
+                    <div class="imagen-card-wrapper">
+                        <div class="imagen-card" draggable="true"
+                            (dragstart)="onImageDragStart($event, imagen, selectedModulo!)"
+                            (dragend)="onDragEnd($event)" [class.inferior]="imagen.fase === 'INFERIOR'"
+                            [class.superior]="imagen.fase === 'SUPERIOR'"
+                            [class.assigned]="imagenAssignedToMesa.has(imagen.id)">
+                            <span class="imagen-fase">{{ imagen.fase === 'INFERIOR' ? '▼' : '▲' }}</span>
+                            <span class="imagen-name">{{ imagen.nombre }}</span>
+                            <span class="imagen-drag-hint" *ngIf="!imagenAssignedToMesa.has(imagen.id)">⋮⋮</span>
+                        </div>
+                        <!-- Status Label -->
+                        @if (getImageAssignmentLabel(imagen.id)) {
+                        <span class="imagen-status"
+                            [class.status-hecho]="imagenAssignedToMesa.get(imagen.id)?.status === 'HECHO'">
+                            {{ getImageAssignmentLabel(imagen.id) }}
+                        </span>
+                        }
                     </div>
                     }
                     }
                 </div>
                 <!-- Drag hint if active -->
                 <div class="workspace-hint">
-                    Arrestra las imágenes a una mesa abajo ↓
+                    Arrastra las imágenes a una mesa abajo ↓
                 </div>
             </div>
 

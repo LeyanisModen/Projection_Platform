@@ -52,7 +52,8 @@ export class Dashboard implements OnInit, OnDestroy {
 
   // Maps for tracking
   moduloImagenes = new Map<number, Imagen[]>(); // moduloId -> images
-  imagenAssignedToMesa = new Map<number, string>(); // imagenId -> mesaName
+  // imagenId -> { mesaName, status: 'EN_COLA' | 'MOSTRANDO' | 'HECHO' }
+  imagenAssignedToMesa = new Map<number, { mesaName: string, status: string }>();
 
   private destroy$ = new Subject<void>();
 
@@ -158,11 +159,10 @@ export class Dashboard implements OnInit, OnDestroy {
           items.forEach(item => {
             const imagenId = this.extractIdFromUrl(item.imagen);
             if (imagenId) {
-              const statusLabel = item.status === 'HECHO' ? '(COMPLETADO)' : '';
-              this.imagenAssignedToMesa.set(
-                imagenId,
-                `${mesa?.nombre || `Mesa ${mesaId}`} ${statusLabel}`.trim()
-              );
+              this.imagenAssignedToMesa.set(imagenId, {
+                mesaName: mesa?.nombre || `Mesa ${mesaId}`,
+                status: item.status
+              });
             }
           });
           this.cdr.detectChanges();
@@ -323,9 +323,9 @@ export class Dashboard implements OnInit, OnDestroy {
     this.draggedModulo = null;
 
     // Check if image is already assigned
-    const assignedMesa = this.imagenAssignedToMesa.get(imagen.id);
-    if (assignedMesa) {
-      alert(`⚠️ Esta imagen (${imagen.nombre}) ya está asignada a ${assignedMesa}`);
+    const assignment = this.imagenAssignedToMesa.get(imagen.id);
+    if (assignment) {
+      alert(`⚠️ Esta imagen (${imagen.nombre}) ya está asignada a ${assignment.mesaName}`);
       this.cdr.detectChanges();
       return;
     }
@@ -340,7 +340,7 @@ export class Dashboard implements OnInit, OnDestroy {
       .subscribe({
         next: (item) => {
           // Track the new assignment
-          this.imagenAssignedToMesa.set(imagen.id, mesa.nombre);
+          this.imagenAssignedToMesa.set(imagen.id, { mesaName: mesa.nombre, status: 'EN_COLA' });
           this.loadMesaQueueItems(mesa.id);
           this.cdr.detectChanges();
         },
@@ -377,7 +377,7 @@ export class Dashboard implements OnInit, OnDestroy {
           const imagenId = this.extractIdFromUrl(item.imagen);
           if (imagenId) {
             const mesa = this.mesas.find(m => m.id === mesaId);
-            this.imagenAssignedToMesa.set(imagenId, `${mesa?.nombre || `Mesa ${mesaId}`} (COMPLETADO)`);
+            this.imagenAssignedToMesa.set(imagenId, { mesaName: mesa?.nombre || `Mesa ${mesaId}`, status: 'HECHO' });
           }
           if (mesaId) this.loadMesaQueueItems(mesaId);
           if (this.selectedPlanta) {
@@ -428,6 +428,28 @@ export class Dashboard implements OnInit, OnDestroy {
 
   getMesaQueueItems(mesaId: number): MesaQueueItem[] {
     return this.mesaQueueItems.get(mesaId) || [];
+  }
+
+  // Returns formatted status label for an image (e.g., "En cola en Mesa-01...")
+  getImageAssignmentLabel(imagenId: number): string {
+    const assignment = this.imagenAssignedToMesa.get(imagenId);
+    if (!assignment) return '';
+
+    switch (assignment.status) {
+      case 'EN_COLA':
+        return `En cola: ${assignment.mesaName}`;
+      case 'MOSTRANDO':
+        return `Mostrando: ${assignment.mesaName}`;
+      case 'HECHO':
+        return `Realizado: ${assignment.mesaName}`;
+      default:
+        return assignment.mesaName;
+    }
+  }
+
+  // Check if both phases of a module are complete
+  isModuloComplete(modulo: Modulo): boolean {
+    return modulo.inferior_hecho && modulo.superior_hecho;
   }
 
   getItemStatusClass(status: string): string {
