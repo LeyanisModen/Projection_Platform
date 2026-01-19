@@ -95,14 +95,16 @@
                     } @else {
                     @for (imagen of getModuloImagenes(selectedModulo.id); track imagen.id) {
                     <div class="imagen-card-wrapper">
-                        <div class="imagen-card" draggable="true"
+                        <div class="imagen-card" [attr.draggable]="!isModuloComplete(selectedModulo)"
                             (dragstart)="onImageDragStart($event, imagen, selectedModulo!)"
                             (dragend)="onDragEnd($event)" [class.inferior]="imagen.fase === 'INFERIOR'"
                             [class.superior]="imagen.fase === 'SUPERIOR'"
-                            [class.assigned]="imagenAssignedToMesa.has(imagen.id)">
+                            [class.assigned]="imagenAssignedToMesa.has(imagen.id) || isModuloComplete(selectedModulo)"
+                            [class.completed]="isModuloComplete(selectedModulo)">
                             <span class="imagen-fase">{{ imagen.fase === 'INFERIOR' ? '▼' : '▲' }}</span>
                             <span class="imagen-name">{{ imagen.nombre }}</span>
-                            <span class="imagen-drag-hint" *ngIf="!imagenAssignedToMesa.has(imagen.id)">⋮⋮</span>
+                            <span class="imagen-drag-hint"
+                                *ngIf="!imagenAssignedToMesa.has(imagen.id) && !isModuloComplete(selectedModulo)">⋮⋮</span>
                         </div>
                         <!-- Status Label -->
                         @if (getImageAssignmentLabel(imagen.id)) {
