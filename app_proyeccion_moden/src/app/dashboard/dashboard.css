@@ -286,14 +286,12 @@
 .images-panel {
   background: var(--card-bg);
   border-radius: var(--border-radius);
-  padding: 20px;
+  padding: 16px 20px;
   box-shadow: var(--shadow-soft);
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 10px;
   flex-shrink: 0;
-  max-height: 220px;
-  /* Limit height */
 }
 
 .panel-header-workspace {
@@ -319,8 +317,8 @@
   display: flex;
   gap: 12px;
   overflow-x: auto;
-  padding-bottom: 8px;
-  /* For scrollbar */
+  padding: 8px 0;
+  /* For scrollbar and hover effects */
   min-height: 100px;
 }
 
@@ -439,9 +437,10 @@
 
 .workspace-hint {
   text-align: center;
-  font-size: 0.8rem;
-  color: #aaa;
+  font-size: 0.75rem;
+  color: #bbb;
   font-style: italic;
+  margin-top: 4px;
 }
 
 .loading,
