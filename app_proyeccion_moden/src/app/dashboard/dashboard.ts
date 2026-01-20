@@ -498,6 +498,18 @@ export class Dashboard implements OnInit, OnDestroy {
     return this.activePhases.has(key);
   }
 
+  getAssignmentText(imagen: Imagen): string {
+    if (this.imagenAssignedToMesa.has(imagen.id)) {
+      const info = this.imagenAssignedToMesa.get(imagen.id);
+      if (info && info.status === 'HECHO') {
+        return `Realizado en ${info.mesaName}`;
+      } else if (info) {
+        return `Asignada en ${info.mesaName}`;
+      }
+    }
+    return '';
+  }
+
   updateActivePhases(): void {
     this.activePhases.clear();
     this.mesaQueueItems.forEach((items) => {

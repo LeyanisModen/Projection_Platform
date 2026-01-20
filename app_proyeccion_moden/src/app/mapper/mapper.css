@@ -1,17 +1,18 @@
 @keyframes show {
-        from {
-          opacity: 0;
-        }
-        to {
-          opacity: 1;
-        }
-      }
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
 
 * {
     margin: 0;
     padding: 0;
     border: 0;
-    -webkit-user-select: none; 
+    -webkit-user-select: none;
     user-select: none;
     font-family: sans-serif;
 }
@@ -40,7 +41,7 @@ main {
     animation: none;
 } */
 
-main > * {
+main>* {
     cursor: default;
     -webkit-user-select: none;
     user-select: none;
@@ -67,13 +68,11 @@ main.transition iframe {
     transition: transform 0.5s ease;
 }
 
-main:not(.correctingSource)
-    #sourceCorrectButton
-    > span.sourceCorrect {
+main:not(.correctingSource) #sourceCorrectButton>span.sourceCorrect {
     display: none;
 }
 
-main.correctingSource > *:not(.sourceCorrect) {
+main.correctingSource>*:not(.sourceCorrect) {
     display: none;
 }
 
@@ -81,9 +80,7 @@ main.correctingSource #guidesButton {
     display: none;
 }
 
-main.correctingSource
-    #sourceCorrectButton
-    > *:not(.sourceCorrect):not(.shortcuts) {
+main.correctingSource #sourceCorrectButton>*:not(.sourceCorrect):not(.shortcuts) {
     display: none;
 }
 
@@ -142,14 +139,14 @@ main.correctingSource
 .corner.bl {
     transform: translate(-50%, -50%) rotate(-90deg);
 }
-    
+
 .corner.grabbing {
     cursor: grabbing;
 }
 
 .corner.selected {
     background-color: thistle;
-    opacity:0.5;
+    opacity: 0.5;
 }
 
 iframe {
@@ -167,7 +164,8 @@ iframe {
     pointer-events: none;
     border-radius: 2px;
     border-left: 2px solid transparent;
-    box-shadow: 0 0 1px rgba(255, 255, 255, 0); /* anti aliasing for Chrome on Windows */
+    box-shadow: 0 0 1px rgba(255, 255, 255, 0);
+    /* anti aliasing for Chrome on Windows */
 }
 
 #line1,
@@ -208,8 +206,8 @@ iframe {
     align-items: start;
 }
 
-#buttonsContainer > button,
-#buttonsContainer > select {
+#buttonsContainer>button,
+#buttonsContainer>select {
     position: relative;
     z-index: 500;
     padding: 5px;
@@ -219,22 +217,22 @@ iframe {
     border-radius: 20px;
 }
 
-#buttonsContainer > button:not(:disabled),
-#buttonsContainer > select:not(:disabled) {
+#buttonsContainer>button:not(:disabled),
+#buttonsContainer>select:not(:disabled) {
     cursor: pointer;
     border: 2px solid #ff6600;
-    background:white;
+    background: white;
     color: #ff6600;
 }
 
-#buttonsContainer > button:not(:disabled) :hover,
-#buttonsContainer > select:not(:disabled) :hover {
+#buttonsContainer>button:not(:disabled) :hover,
+#buttonsContainer>select:not(:disabled) :hover {
     cursor: pointer;
-    background:#ff6600;
+    background: #ff6600;
     color: white;
 }
 
-#buttonsContainer > button > .shortcuts {
+#buttonsContainer>button>.shortcuts {
     font-family: monospace;
     color: black;
 }
@@ -248,13 +246,13 @@ iframe {
 }
 
 
-.dirPath{
-    color:greenyellow;
-    margin-top:-40px; 
-    font-size:16px;
-    width:500;
-    z-index:500;
-    display:flex
+.dirPath {
+    color: greenyellow;
+    margin-top: -40px;
+    font-size: 16px;
+    width: 500;
+    z-index: 500;
+    display: flex
 }
 
 /* .corrected-video {
@@ -280,7 +278,7 @@ iframe {
     overflow: visible;
 }
 
-html > main.sourceCorrectMode #controller {
+html>main.sourceCorrectMode #controller {
     transform: scale(1);
     transition-delay: 0.25s;
 }
@@ -331,7 +329,7 @@ html > main.sourceCorrectMode #controller {
 
     /* background-image: url(./public/img/guia.jpg); */
     background-repeat: no-repeat;
-    background-attachment: fixed; 
+    background-attachment: fixed;
     background-size: 100% 100%;
     z-index: 1;
 }
@@ -353,9 +351,35 @@ html > main.sourceCorrectMode #controller {
     z-index: 1;
 }
 
-p{
+p {
     z-index: 500;
     align-self: flex-start;
     justify-self: left;
     margin: 5px;
+}
+
+/* Calibration Grid */
+.calibration-grid {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    background-image:
+        linear-gradient(to right, rgba(0, 255, 0, 0.5) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(0, 255, 0, 0.5) 1px, transparent 1px);
+    background-size: 50px 50px;
+    z-index: 10;
+    border: 2px solid green;
+}
+
+.blackout-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: black;
+    z-index: 9999;
 }

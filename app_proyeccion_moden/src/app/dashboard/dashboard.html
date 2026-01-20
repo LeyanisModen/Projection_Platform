@@ -99,6 +99,9 @@
                             <div class="sidebar-img-info">
                                 <span class="sidebar-img-name">{{ imagen.nombre }}</span>
                                 <span class="sidebar-img-type">{{ imagen.fase }}</span>
+                                @if (getAssignmentText(imagen)) {
+                                <span class="sidebar-img-assigment">{{ getAssignmentText(imagen) }}</span>
+                                }
                             </div>
                             <span class="drag-handle"
                                 *ngIf="!imagenAssignedToMesa.has(imagen.id) && !isModuloComplete(selectedModulo!)">⋮⋮</span>

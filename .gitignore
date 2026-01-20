@@ -12,6 +12,7 @@
 
 # --- Node / Angular ---
 **/node_modules/
+app_proyeccion_moden/public/
 **/dist/
 **/.angular/
 npm-debug.log*
@@ -29,3 +30,7 @@ Thumbs.db
 .idea/
 *.swp
 *.bak
+
+# --- Documentation ---
+docs/E04*
+app_proyeccion_moden/public/

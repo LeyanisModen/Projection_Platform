@@ -823,6 +823,15 @@ min-width: 32px;
   font-size: 0.7rem;
   color: var(--text-secondary);
   text-transform: uppercase;
+  display: block;
+}
+
+.sidebar-img-assigment {
+  font-size: 0.7rem;
+  color: var(--accent-orange);
+  font-weight: 500;
+  margin-top: 2px;
+  display: block;
 }
 
 .drag-handle {
