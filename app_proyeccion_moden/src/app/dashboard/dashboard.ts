@@ -59,6 +59,7 @@ export class Dashboard implements OnInit, OnDestroy {
   moduloImagenes = new Map<number, Imagen[]>(); // moduloId -> images
   // imagenId -> { mesaName, status: 'EN_COLA' | 'MOSTRANDO' | 'HECHO' }
   imagenAssignedToMesa = new Map<number, { mesaName: string, status: string }>();
+  activePhases = new Set<string>(); // "moduloId-FASE" (e.g. "101-INFERIOR")
 
   private destroy$ = new Subject<void>();
 
@@ -170,6 +171,7 @@ export class Dashboard implements OnInit, OnDestroy {
               });
             }
           });
+          this.updateActivePhases();
           this.cdr.detectChanges();
         },
         error: (err) => console.error(`Error loading queue for mesa ${mesaId}`, err)
@@ -489,6 +491,22 @@ export class Dashboard implements OnInit, OnDestroy {
   // Check if both phases of a module are complete
   isModuloComplete(modulo: Modulo): boolean {
     return modulo.inferior_hecho && modulo.superior_hecho;
+  }
+
+  isPhaseInProgress(modulo: Modulo, fase: string): boolean {
+    const key = `${modulo.id}-${fase}`;
+    return this.activePhases.has(key);
+  }
+
+  updateActivePhases(): void {
+    this.activePhases.clear();
+    this.mesaQueueItems.forEach((items) => {
+      items.forEach(item => {
+        if (item.status !== 'HECHO') {
+          this.activePhases.add(`${item.modulo}-${item.fase}`);
+        }
+      });
+    });
   }
 
   getItemStatusClass(status: string): string {

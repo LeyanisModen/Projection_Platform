@@ -68,8 +68,12 @@
                         <div class="nav-item-content">
                             <span class="nav-text">{{ modulo.nombre }}</span>
                             <div class="nav-phases">
-                                <span class="phase-dot" [class.done]="modulo.inferior_hecho" title="Inferior"></span>
-                                <span class="phase-dot" [class.done]="modulo.superior_hecho" title="Superior"></span>
+                                <span class="phase-dot" [class.done]="modulo.inferior_hecho"
+                                    [class.in-progress]="!modulo.inferior_hecho && isPhaseInProgress(modulo, 'INFERIOR')"
+                                    title="Inferior"></span>
+                                <span class="phase-dot" [class.done]="modulo.superior_hecho"
+                                    [class.in-progress]="!modulo.superior_hecho && isPhaseInProgress(modulo, 'SUPERIOR')"
+                                    title="Superior"></span>
                             </div>
                         </div>
                     </li>

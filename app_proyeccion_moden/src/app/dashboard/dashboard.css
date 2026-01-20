@@ -255,6 +255,11 @@ min-width: 32px;
   background: var(--accent-orange);
 }
 
+.phase-dot.in-progress {
+  background: #9e9e9e;
+  /* Gray for in-progress */
+}
+
 
 /* =============================================================================
    WORKSPACE (Main Area)
