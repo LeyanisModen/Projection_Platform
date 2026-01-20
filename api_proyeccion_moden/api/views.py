@@ -403,6 +403,32 @@ class DeviceViewSet(viewsets.ViewSet):
         return Response({'status': 'ok'})
 
     @action(detail=False, methods=['post'])
+    def unbind(self, request):
+        """
+        Unbind a device from a Mesa. Called from Dashboard.
+        Requires: mesa_id
+        """
+        mesa_id = request.data.get('mesa_id')
+        if not mesa_id:
+            return Response({'detail': 'mesa_id required'}, status=400)
+        
+        try:
+            mesa = Mesa.objects.get(id=mesa_id)
+        except Mesa.DoesNotExist:
+            return Response({'detail': 'Mesa not found'}, status=404)
+        
+        if not mesa.device_token_hash:
+            return Response({'detail': 'Mesa has no linked device'}, status=400)
+        
+        # Clear device link
+        mesa.device_token_hash = None
+        mesa.pairing_code = None
+        mesa.last_error = None
+        mesa.save(update_fields=['device_token_hash', 'pairing_code', 'last_error'])
+        
+        return Response({'status': 'ok'})
+
+    @action(detail=False, methods=['post'])
     def heartbeat(self, request):
         mesa = self._authenticate_device(request)
         if not mesa:

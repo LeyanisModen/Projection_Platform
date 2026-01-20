@@ -156,6 +156,7 @@
                         <div class="mesa-link-status" [class.linked]="mesa.is_linked">
                             @if (mesa.is_linked) {
                             <span class="link-indicator linked">✓ Vinculado</span>
+                            <button class="btn-unbind" (click)="openUnbindModal(mesa)" title="Desvincular">✕</button>
                             } @else {
                             <button class="btn-vincular" (click)="openPairingModal(mesa)">
                                 🔗 Vincular Mesa
@@ -255,6 +256,25 @@
             </button>
         </div>
         }
+    </div>
+</div>
+}
+
+<!-- Unbind Confirmation Modal -->
+@if (showUnbindModal) {
+<div class="modal-overlay" (click)="closeUnbindModal()">
+    <div class="modal-content unbind-modal" (click)="$event.stopPropagation()">
+        <div class="modal-icon">⚠️</div>
+        <h3>¿Desvincular dispositivo?</h3>
+        <p class="modal-message">El dispositivo vinculado a <strong>{{ unbindMesa?.nombre }}</strong> dejará de recibir
+            proyecciones.</p>
+        <div class="modal-actions">
+            <button class="btn-modal btn-cancel" (click)="closeUnbindModal()"
+                [disabled]="unbindLoading">Cancelar</button>
+            <button class="btn-modal btn-confirm" (click)="confirmUnbind()" [disabled]="unbindLoading">
+                @if (unbindLoading) { Desvinculando... } @else { Desvincular }
+            </button>
+        </div>
     </div>
 </div>
 }

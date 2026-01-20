@@ -202,6 +202,15 @@ export class ApiService {
         });
     }
 
+    /**
+     * Unbind a device from a Mesa.
+     */
+    unbindDevice(mesaId: number): Observable<{ status: string }> {
+        return this.http.post<{ status: string }>(`${this.baseUrl}/device/unbind/`, {
+            mesa_id: mesaId
+        });
+    }
+
     // =========================================================================
     // MODULO QUEUE ITEMS
     // =========================================================================

@@ -69,6 +69,11 @@ export class Dashboard implements OnInit, OnDestroy {
   pairingLoading = false;
   pairingSuccess = false;
 
+  // Unbind Modal State
+  showUnbindModal = false;
+  unbindMesa: Mesa | null = null;
+  unbindLoading = false;
+
   private destroy$ = new Subject<void>();
 
   constructor(private api: ApiService, private cdr: ChangeDetectorRef) { }
@@ -614,5 +619,35 @@ export class Dashboard implements OnInit, OnDestroy {
   onPairingCodeInput(event: Event): void {
     const input = event.target as HTMLInputElement;
     this.pairingCode = input.value.toUpperCase();
+  }
+
+  // Unbind Modal Methods
+  openUnbindModal(mesa: Mesa): void {
+    this.unbindMesa = mesa;
+    this.unbindLoading = false;
+    this.showUnbindModal = true;
+  }
+
+  closeUnbindModal(): void {
+    this.showUnbindModal = false;
+    this.unbindMesa = null;
+    this.unbindLoading = false;
+  }
+
+  confirmUnbind(): void {
+    if (!this.unbindMesa) return;
+
+    this.unbindLoading = true;
+    this.api.unbindDevice(this.unbindMesa.id)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: () => {
+          this.loadMesas();
+          this.closeUnbindModal();
+        },
+        error: () => {
+          this.unbindLoading = false;
+        }
+      });
   }
 }
