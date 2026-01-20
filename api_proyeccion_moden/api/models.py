@@ -203,6 +203,33 @@ class Mesa(models.Model):
 
 
 # =============================================================================
+# DEVICE PAIRING SESSION (Option B - Generic Pairing)
+# =============================================================================
+class PairingSession(models.Model):
+    """
+    Temporary session for device pairing when mesa is not yet known.
+    Allows device to show code, then admin chooses which mesa to link.
+    """
+    id = models.AutoField(primary_key=True)
+    pairing_code = models.CharField(max_length=10, unique=True)
+    expires_at = models.DateTimeField()
+    
+    # Once paired, store the token hash and linked mesa
+    device_token_hash = models.CharField(max_length=128, null=True, blank=True)
+    mesa = models.ForeignKey(Mesa, on_delete=models.CASCADE, null=True, blank=True)
+    
+    # Session metadata
+    created_at = models.DateTimeField(auto_now_add=True)
+    device_info = models.JSONField(null=True, blank=True)  # User-agent, IP, etc.
+    
+    class Meta:
+        db_table = 'api_pairing_session'
+    
+    def __str__(self):
+        return f"Pairing {self.pairing_code} -> {self.mesa.nombre if self.mesa else 'unlinked'}"
+
+
+# =============================================================================
 # QUEUE MODELS
 # =============================================================================
 class ModuloQueue(models.Model):

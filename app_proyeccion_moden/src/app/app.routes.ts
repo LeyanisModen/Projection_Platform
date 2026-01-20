@@ -15,6 +15,11 @@ export const routes: Routes = [{
   title: 'Visor Mesa',
 },
 {
+  path: 'player',
+  component: VisorComponent,
+  title: 'Visor Player',
+},
+{
   path: 'dashboard',
   component: Dashboard,
   title: 'Dashboard',

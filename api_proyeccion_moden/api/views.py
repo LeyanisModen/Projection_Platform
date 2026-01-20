@@ -232,8 +232,11 @@ class DeviceViewSet(viewsets.ViewSet):
     def init(self, request):
         """
         Device requests a new pairing code.
+        Option A: mesa_id provided → code saved to Mesa directly
+        Option B: no mesa_id → code saved to PairingSession (flexible linking later)
         """
         from api.serializers import DeviceInitSerializer
+        from api.models import PairingSession
         import secrets
         from django.utils import timezone
         
@@ -242,98 +245,118 @@ class DeviceViewSet(viewsets.ViewSet):
             return Response(serializer.errors, status=400)
             
         mesa_id = serializer.validated_data.get('mesa_id')
-        mesa = None
         
+        # Option A: Mesa ID known
         if mesa_id:
             try:
                 mesa = Mesa.objects.get(id=mesa_id)
             except Mesa.DoesNotExist:
                 return Response({'detail': 'Mesa not found'}, status=404)
-        
-        # If mesa known, check for existing valid code first
-        if mesa:
+            
             # Reuse existing code if still valid
             if mesa.pairing_code and mesa.pairing_code_expires_at and mesa.pairing_code_expires_at > timezone.now():
-                return Response({'pairing_code': mesa.pairing_code, 'expires_at': mesa.pairing_code_expires_at})
+                return Response({'pairing_code': mesa.pairing_code, 'expires_at': mesa.pairing_code_expires_at, 'mode': 'mesa'})
             
-            # Generate new code only if none exists or expired
-            code = secrets.token_hex(3).upper() # 6 chars
+            # Generate new code
+            code = secrets.token_hex(3).upper()
             mesa.pairing_code = code
             mesa.pairing_code_expires_at = timezone.now() + timezone.timedelta(minutes=10)
             mesa.save(update_fields=['pairing_code', 'pairing_code_expires_at'])
-            return Response({'pairing_code': code, 'expires_at': mesa.pairing_code_expires_at})
+            return Response({'pairing_code': code, 'expires_at': mesa.pairing_code_expires_at, 'mode': 'mesa'})
         
-        # If no mesa selected (flexible flow), we would need a temporary session.
-        # For PoC, we enforce mesa_id or just return code if we had a session model.
-        # Keeping it simple: Require mesa_id OR find a free mesa?
-        # Let's assume for PoC we might pass mesa_id if known, OR we create a placeholder?
-        # User prompt said: "Option 1 (simpler): endpoint receives mesa_id".
-        if not mesa:
-             return Response({'detail': 'mesa_id required for this PoC phase'}, status=400)
+        # Option B: No mesa_id - create a PairingSession
+        # Check for existing valid session from this device (by code in request if refreshing)
+        existing_code = request.data.get('existing_code')
+        if existing_code:
+            try:
+                session = PairingSession.objects.get(pairing_code=existing_code)
+                if session.expires_at > timezone.now():
+                    return Response({
+                        'pairing_code': session.pairing_code, 
+                        'expires_at': session.expires_at,
+                        'mode': 'session',
+                        'mesa': session.mesa.id if session.mesa else None
+                    })
+            except PairingSession.DoesNotExist:
+                pass
+        
+        # Generate new session
+        code = secrets.token_hex(3).upper()
+        expires_at = timezone.now() + timezone.timedelta(minutes=10)
+        session = PairingSession.objects.create(
+            pairing_code=code,
+            expires_at=expires_at,
+            device_info={'user_agent': request.META.get('HTTP_USER_AGENT', 'unknown')}
+        )
+        return Response({
+            'pairing_code': code, 
+            'expires_at': expires_at,
+            'mode': 'session'
+        })
 
     @action(detail=False, methods=['get'])
     def status(self, request):
         """
         Device polls for pairing status using the code.
+        Checks both Mesa (Option A) and PairingSession (Option B).
         """
         code = request.query_params.get('code')
         if not code:
             return Response({'detail': 'Code required'}, status=400)
             
         from django.utils import timezone
-        # Find mesa with this code
+        from api.models import PairingSession
+        
+        # Option A: Check Mesa with this code
         mesa = Mesa.objects.filter(pairing_code=code).first()
-        
-        if not mesa:
-            return Response({'status': 'EXPIRED'}) # Or INVALID
+        if mesa:
+            if mesa.pairing_code_expires_at and mesa.pairing_code_expires_at < timezone.now():
+                return Response({'status': 'EXPIRED'})
             
-        if mesa.pairing_code_expires_at and mesa.pairing_code_expires_at < timezone.now():
+            # Check if paired (pending token in last_error)
+            if mesa.last_error and mesa.last_error.startswith("PENDING_TOKEN:"):
+                token = mesa.last_error.split(":", 1)[1]
+                mesa.last_error = None
+                mesa.pairing_code = None
+                mesa.save(update_fields=['last_error', 'pairing_code'])
+                return Response({'status': 'PAIRED', 'device_token': token, 'mesa_id': mesa.id})
+                
+            return Response({'status': 'WAITING', 'mode': 'mesa'})
+        
+        # Option B: Check PairingSession
+        try:
+            session = PairingSession.objects.get(pairing_code=code)
+        except PairingSession.DoesNotExist:
             return Response({'status': 'EXPIRED'})
-            
-        # Check if paired (has token hash AND code is cleared/consumed)
-        # Actually, in 'pair' action we clear the code.
-        # But here we need to return the token ONCE.
-        # So 'pair' action should probably generates the token, saves hash to DB, 
-        # and saves the RAW token temporarily (maybe in pairing_code field? No unsafe).
-        # Better strategy:
-        # The 'pair' action sets a flag or we check if device_token_hash is set.
-        # But how to get the raw token to the device?
-        # Option: 'pair' action updates DB. Device calls 'status'.
-        # We need a way to pass the token.
-        # Let's use a temporary field or just rely on the fact that if we just paired,
-        # we might have stored the raw token in a cache or similar?
-        # User prompt says: "If linked -> { status: 'PAIRED', device_token: '...' }"
-        # And: "Invalidate code immediately".
-        # So we can store the raw token in `pairing_code` temporarily? No, likely too short.
-        # Let's add a temporary `temp_token_storage` to Mesa model? 
-        # Or simpler: The `pair` action returns the token to the Dashboard?
-        # No, User says: "return OK (and DO NOT return token here; token is picked up by mini-PC via /status)".
         
-        # Solution: Store the RAW token in the `pairing_code` field for the brief moment between Pair and Status check?
-        # Or add a `temp_token` field to Mesa model.
-        # Since I can't easily add fields without migration, I will use `pairing_code` field to store the token 
-        # prefixed with "TOKEN:" if it fits (max 10 chars is small).
-        # Wait, `pairing_code` is 10 chars. Token is 32 bytes. Won't fit.
-        # I need a place to store existing token for one-time retrieval.
-        # I'll rely on a hack for PoC: Use `last_error` field to store "PENDING_TOKEN:<token>" momentarily?
-        # Yes, good enough for PoC.
+        if session.expires_at < timezone.now():
+            return Response({'status': 'EXPIRED'})
         
-        if mesa.last_error and mesa.last_error.startswith("PENDING_TOKEN:"):
-            token = mesa.last_error.split(":", 1)[1]
-            # Clear it
-            mesa.last_error = None
-            mesa.pairing_code = None # Clear code
-            mesa.save(update_fields=['last_error', 'pairing_code'])
-            return Response({'status': 'PAIRED', 'device_token': token})
+        # Check if session has been linked to a mesa and has a token
+        if session.device_token_hash and session.mesa:
+            # Token was generated - return it once
+            # We need to store it temporarily somewhere. Use mesa.last_error for consistency.
+            if session.mesa.last_error and session.mesa.last_error.startswith("PENDING_TOKEN:"):
+                token = session.mesa.last_error.split(":", 1)[1]
+                session.mesa.last_error = None
+                session.mesa.save(update_fields=['last_error'])
+                # Also copy the token hash to mesa for future auth
+                session.mesa.device_token_hash = session.device_token_hash
+                session.mesa.save(update_fields=['device_token_hash'])
+                return Response({'status': 'PAIRED', 'device_token': token, 'mesa_id': session.mesa.id})
             
-        return Response({'status': 'WAITING'})
+            return Response({'status': 'PAIRED', 'mesa_id': session.mesa.id})  # Token already retrieved
+        
+        return Response({'status': 'WAITING', 'mode': 'session'})
 
     @action(detail=False, methods=['post'])
     def pair(self, request):
         """
         Dashboard confirms pairing for a mesa and code.
+        Supports linking via Mesa directly (Option A) or via Session (Option B).
         """
         from api.serializers import DevicePairSerializer
+        from api.models import PairingSession
         import secrets
         import hashlib
         
@@ -348,18 +371,34 @@ class DeviceViewSet(viewsets.ViewSet):
             mesa = Mesa.objects.get(id=mesa_id)
         except Mesa.DoesNotExist:
             return Response({'detail': 'Mesa not found'}, status=404)
-            
-        if mesa.pairing_code != code:
-             return Response({'detail': 'Invalid code for this mesa'}, status=400)
-             
+        
+        # Check if code matches Mesa (Option A)
+        if mesa.pairing_code == code:
+            # Proceed with direct pairing
+            pass
+        else:
+            # Check if code matches a Session (Option B)
+            try:
+                session = PairingSession.objects.get(pairing_code=code)
+                # Link session to this mesa
+                session.mesa = mesa
+            except PairingSession.DoesNotExist:
+                return Response({'detail': 'Invalid pairing code'}, status=400)
+        
         # Generate Token
         raw_token = secrets.token_urlsafe(32)
         token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
         
+        # Save token to Mesa
         mesa.device_token_hash = token_hash
-        # Store raw token temporarily for retrieval by device
+        # Store raw token temporarily for retrieval by device (via status endpoint)
         mesa.last_error = f"PENDING_TOKEN:{raw_token}"
         mesa.save(update_fields=['device_token_hash', 'last_error'])
+        
+        # If using session, save token hash there too so status check knows it's done
+        if 'session' in locals() and session:
+            session.device_token_hash = token_hash
+            session.save(update_fields=['mesa', 'device_token_hash'])
         
         return Response({'status': 'ok'})
 

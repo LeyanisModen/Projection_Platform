@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, Inject, PLATFORM_ID, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, OnDestroy, Inject, PLATFORM_ID, ChangeDetectorRef, NgZone } from '@angular/core';
 import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
@@ -39,7 +39,7 @@ export class VisorComponent implements OnInit, OnDestroy {
   errorMessage: string = '';
   deviceToken: string | null = null;
   mesaState: MesaState | null = null;
-  mesaIdForPairing: number = 1; // Default for PoC, could be route param
+  mesaIdForPairing: number | null = null; // Can be null for generic player mode
 
   // Subscriptions
   private pairingPollSub: Subscription | null = null;
@@ -53,6 +53,7 @@ export class VisorComponent implements OnInit, OnDestroy {
     private route: ActivatedRoute,
     private http: HttpClient,
     private cdr: ChangeDetectorRef,
+    private ngZone: NgZone,
     @Inject(PLATFORM_ID) platformId: Object
   ) {
     this.isBrowser = isPlatformBrowser(platformId);
@@ -88,10 +89,13 @@ export class VisorComponent implements OnInit, OnDestroy {
   // =========================================================================
   requestPairingCode(): void {
     this.mode = 'LOADING';
-    console.log('[Visor] Requesting pairing code for mesa:', this.mesaIdForPairing);
+    console.log('[Visor] Requesting pairing code. Mesa ID:', this.mesaIdForPairing);
     console.log('[Visor] API URL:', `${this.apiUrl}init/`);
 
-    this.http.post<PairingResponse>(`${this.apiUrl}init/`, { mesa_id: this.mesaIdForPairing })
+    // Payload depends on whether we have a specific mesa ID or not
+    const payload = this.mesaIdForPairing ? { mesa_id: this.mesaIdForPairing } : {};
+
+    this.http.post<PairingResponse>(`${this.apiUrl}init/`, payload)
       .subscribe({
         next: (res) => {
           console.log('[Visor] Received pairing code:', res);
@@ -129,7 +133,6 @@ export class VisorComponent implements OnInit, OnDestroy {
           this.pairingPollSub?.unsubscribe();
           this.requestPairingCode();
         }
-        // WAITING: keep polling
       }
     });
   }
@@ -138,10 +141,18 @@ export class VisorComponent implements OnInit, OnDestroy {
   // PROJECTION MODE
   // =========================================================================
   enterProjectionMode(): void {
-    this.mode = 'PROJECTION';
-    this.startStatePolling();
-    this.startHeartbeat();
+    this.ngZone.run(() => {
+      console.log('[Visor] Entering Projection Mode (Zone aware)');
+      this.mode = 'PROJECTION';
+      this.cdr.detectChanges(); // Double safety
+      this.startStatePolling();
+      this.startHeartbeat();
+    });
   }
+
+  // ... (unchanged methods) ...
+
+
 
   private getAuthHeaders(): HttpHeaders {
     return new HttpHeaders({
