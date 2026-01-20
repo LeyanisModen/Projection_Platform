@@ -511,6 +511,8 @@ export class Dashboard implements OnInit, OnDestroy {
       const info = this.imagenAssignedToMesa.get(imagen.id);
       if (info && info.status === 'HECHO') {
         return `Realizado en ${info.mesaName}`;
+      } else if (info && info.status === 'MOSTRANDO') {
+        return `Proyectando en ${info.mesaName}`;
       } else if (info) {
         return `Asignada en ${info.mesaName}`;
       }
