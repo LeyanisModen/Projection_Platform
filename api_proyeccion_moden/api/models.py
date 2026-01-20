@@ -114,9 +114,17 @@ class Modulo(models.Model):
         db_table = 'api_modulo'
 
 
+class ImagenStatus(models.TextChoices):
+    DRAFT = 'DRAFT', 'Borrador'
+    PUBLISHED = 'PUBLISHED', 'Publicado'
+    ARCHIVED = 'ARCHIVED', 'Archivado'
+
+
 class Imagen(models.Model):
     id = models.AutoField(primary_key=True)
-    url = models.CharField(max_length=500)
+    url = models.CharField(max_length=500, blank=True, null=True)
+    archivo = models.FileField(upload_to='imagenes/', blank=True, null=True)
+    uploaded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     tipo = models.CharField(max_length=200, blank=True, null=True)  # Legacy field
     modulo = models.ForeignKey(Modulo, on_delete=models.CASCADE, related_name='imagenes')
     
@@ -128,6 +136,11 @@ class Imagen(models.Model):
     )
     orden = models.PositiveIntegerField(default=1)
     version = models.PositiveIntegerField(default=1)
+    status = models.CharField(
+        max_length=20,
+        choices=ImagenStatus.choices,
+        default=ImagenStatus.DRAFT
+    )
     activo = models.BooleanField(default=True)
     checksum = models.CharField(max_length=64, blank=True, null=True)
 

@@ -15,7 +15,15 @@
                     @if (navLevel !== 'projects') {
                     <button class="btn-back" (click)="navigateBack()">←</button>
                     }
-                    <h2>{{ getHeaderTitle() }}</h2>
+                    <div class="header-text-group">
+                        @if (navLevel === 'projects') {
+                        <h2>Proyectos</h2>
+                        } @else if (navLevel === 'plants') {
+                        <h2>Plantas</h2>
+                        } @else if (navLevel === 'modules') {
+                        <h2>Módulos</h2>
+                        }
+                    </div>
                 </div>
             </div>
 

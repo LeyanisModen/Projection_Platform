@@ -9,7 +9,7 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'proyeccion_moden.settings')
 django.setup()
 
 from django.contrib.auth.models import User
-from api.models import Proyecto, Planta, Modulo, Imagen, Mesa, ModuloQueue, Fase
+from api.models import Proyecto, Planta, Modulo, Imagen, Mesa, ModuloQueue, Fase, ImagenStatus
 
 # Obtener usuario admin
 admin = User.objects.get(username='admin')
@@ -225,6 +225,7 @@ for proyecto in proyectos:
                 fase=Fase.INFERIOR,
                 orden=1,
                 version=1,
+                status=ImagenStatus.PUBLISHED,
                 activo=True
             )
             
@@ -235,6 +236,7 @@ for proyecto in proyectos:
                 fase=Fase.SUPERIOR,
                 orden=1,
                 version=1,
+                status=ImagenStatus.PUBLISHED,
                 activo=True
             )
             
@@ -246,15 +248,15 @@ for proyecto in proyectos:
 print("\n[4] Creando Mesas de Trabajo...")
 
 mesas_data = [
-    "Mesa-01 Zona A",
-    "Mesa-02 Zona A", 
-    "Mesa-03 Zona B",
-    "Mesa-04 Zona B",
-    "Mesa-05 Zona C",
-    "Mesa-06 Zona C",
-    "Mesa-07 Exterior",
-    "Mesa-08 Exterior",
-    "Mesa Test",
+    "MESA-01",
+    "MESA-02", 
+    "MESA-03",
+    "MESA-04",
+    "MESA-05",
+    "MESA-06",
+    "MESA-07",
+    "MESA-08",
+    "MESA-TEST",
 ]
 
 for mesa_nombre in mesas_data:
