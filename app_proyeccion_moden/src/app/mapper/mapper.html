@@ -1,35 +1,28 @@
-<main #mapperWrapper id="mapperWrapper" tabindex="0" (mousemove)="this.move($event)" (mouseup)="this.mouseupHandler()" (mousedown)="this.mousedownHandler($event)" (keydown)="this.keydownHandler($event)" (blur)="this.setInactiveImmediately()">
-    
-    <div #sourceIframe id="sourceIframe" class="sourceCorrect" (ontransitionend)="transitionEndHandler()" draggable="false">
+<main #mapperWrapper id="mapperWrapper" tabindex="0" (mousemove)="this.move($event)" (mouseup)="this.mouseupHandler()"
+    (mousedown)="this.mousedownHandler($event)" (blur)="this.setInactiveImmediately()">
+
+    <div #sourceIframe id="sourceIframe" class="sourceCorrect" (ontransitionend)="transitionEndHandler()"
+        draggable="false">
         <div #result id="result">
-            <img #correctedVideo id="correctedVideo" width="100%" height="100%"/>
+            <img #correctedVideo id="correctedVideo" width="100%" height="100%" />
         </div>
+        @if (showGrid) {
+        <div class="calibration-grid"></div>
+        }
     </div>
     <div #markertl id="marker0" class="corner tl"></div>
     <div #markertr id="marker2" class="corner tr"></div>
     <div #markerbl id="marker4" class="corner bl"></div>
     <div #markerbr id="marker6" class="corner br"></div>
-    <div #buttonsContainer id="buttonsContainer" class="sourceCorrect">
-        <button #guidesButton id="guidesButton" (click)="this.setEditMode()">
-            Plantilla referencia <span class="shortcuts">G</span>
-        </button>
-        <button #fullScreenButton id="fullScreenButton" (click)="this.toggleFullScreen()">
-            Pantalla completa <span class="shortcuts">Enter</span>
-        </button>
-        <button #exportConfig id="exportConfig" (click)="this.setExportCofig()">
-            Guardar configuracion <span class="shortcuts">E</span>
-        </button>
-        <button #importConfig id="importConfig" (click)="this.setImportCofig()">
-            Cargar configuracion <span class="shortcuts">I</span>
-        </button>
-        <!-- <button #openDirectory id="openDirectory" (click)="this.setDirectory()">
-            Abrir carpeta <span class="shortcuts">O</span>
-        </button> -->
-    </div>
-    
+    <div #buttonsContainer id="buttonsContainer" class="sourceCorrect" style="display: none;"></div>
+
     <div #line1 class="line" id="line1"></div>
     <div #line2 class="line" id="line2"></div>
     <div #line3 class="line" id="line3"></div>
     <div #line4 class="line" id="line4"></div>
-    <p #dirPath id="dirPath">Directorio: Modulo A1 Archivo: INFERIOR.jpg</p>
+
+    @if (isBlackout) {
+    <div class="blackout-overlay"></div>
+    }
+
 </main>

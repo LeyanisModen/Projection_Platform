@@ -10,7 +10,13 @@ Lograr un sistema "Zero Touch" (Cero Interacción) para los nodos de visualizaci
 
 ---
 
+## Requisitos
+- **Sistema Operativo**: Windows 11 Pro (Recomendado para gestión avanzada de políticas y modo kiosco nativo si fuera necesario, aunque este método "casero" funciona en Home, Pro permite mejor control de actualizaciones y GPO).
+- **Hardware**: Mini PC con soporte para "AC Power Loss" en BIOS.
+
 ## Guía Paso a Paso
+windows11 pro
+
 
 ### Paso 1: Arranque Automático al recibir corriente (BIOS)
 Recuperación automática tras corte de luz o apagado general.

@@ -1,6 +1,19 @@
-import { Component, ElementRef, inject, PLATFORM_ID, Renderer2, ViewChild } from '@angular/core';
+import { Component, ElementRef, inject, PLATFORM_ID, Renderer2, ViewChild, HostListener } from '@angular/core';
 import { DOCUMENT, isPlatformBrowser } from '@angular/common';
+import { ActivatedRoute } from '@angular/router';
 import fixPerspective from './css3-perspective';
+
+interface Submodule {
+  id: string;
+  name: string;
+  status: 'waiting' | 'processing' | 'done';
+  images: string[];
+}
+
+interface TableData {
+  id: string;
+  submodules: Submodule[];
+}
 
 @Component({
   selector: 'app-mapper',
@@ -9,7 +22,7 @@ import fixPerspective from './css3-perspective';
   styleUrl: './mapper.css',
 })
 export class Mapper {
-  @ViewChild('dirPath') dirPath!: ElementRef<HTMLInputElement>;
+  // @ViewChild('dirPath') dirPath!: ElementRef<HTMLInputElement>;
   @ViewChild('sourceIframe') sourceIframe!: ElementRef<HTMLInputElement>;
   @ViewChild('markertl') markertl!: ElementRef<HTMLInputElement>;
   @ViewChild('markertr') markertr!: ElementRef<HTMLInputElement>;
@@ -26,14 +39,59 @@ export class Mapper {
   private platformId = inject(PLATFORM_ID);
   private inactiveDelay = 2000;
   private previewPaddingSize = 40; // in pixels
-  private nextImage='';
+  private nextImage = '';
   private dirIndex = 0;
   private imgIndex = 0;
-  private images = ["icons\\guia.jpg"];
+  private images: string[] = [];
   // private callbackExportConfig: () => {};
   // private callbackImportConfig;
   // private callbackOpenDirectory;
   private calibrating = false;
+
+  // Mock Data
+  private mockTableData: Record<string, TableData> = {
+    '1': {
+      id: '1',
+      submodules: [
+        {
+          id: 'sub1',
+          name: 'Submódulo A',
+          status: 'waiting',
+          images: [
+            'assets/demo/E04 (2025-07-30)/JPG(PSY)_01.sup_Xtmp.jpg',
+            'assets/demo/E04 (2025-07-30)/JPG(PSY)_02.sup_MALLAtmp.jpg',
+            'assets/demo/E04 (2025-07-30)/JPG(PSY)_03.sup_X_soldartmp.jpg',
+            'assets/demo/E04 (2025-07-30)/JPG(PSY)_04.sup_RETIRARtmp.jpg',
+            'assets/demo/E04 (2025-07-30)/JPG(PSY)_05.inf_X.jpg',
+            'assets/demo/E04 (2025-07-30)/JPG(PSY)_06.inf_MALLA.jpg',
+            'assets/demo/E04 (2025-07-30)/JPG(PSY)_07.inf_X_soldar.jpg',
+            'assets/demo/E04 (2025-07-30)/JPG(PSY)_08.inf_Y_soldartmp.jpg',
+            'assets/demo/E04 (2025-07-30)/JPG(PSY)_09.inf_Y_soldartmp.jpg',
+            'assets/demo/E04 (2025-07-30)/JPG(PSY)_10.inf_XYtmp.jpg',
+            'assets/demo/E04 (2025-07-30)/JPG(PSY)_11.intermtmp.jpg',
+            'assets/demo/E04 (2025-07-30)/JPG(PSY)_12.inf_piezas_encajetmp.jpg',
+            'assets/demo/E04 (2025-07-30)/JPG(PSY)_13.sup_SOLDARtmp.jpg',
+            'assets/demo/E04 (2025-07-30)/JPG(PSY)_14.sup_Ytmp.jpg',
+            'assets/demo/E04 (2025-07-30)/JPG(PSY)_15.sup_Y_posictmp.jpg',
+            'assets/demo/E04 (2025-07-30)/JPG(PSY)_16.sup_Y_soldartmp.jpg',
+            'assets/demo/E04 (2025-07-30)/JPG(PSY)_17.sup_XYtmp.jpg',
+            'assets/demo/E04 (2025-07-30)/JPG(PSY)_18.inf+sup_encaje_quitartmp.jpg',
+            'assets/demo/E04 (2025-07-30)/JPG(PSY)_19.inf_guiado_hembratmp.jpg',
+            'assets/demo/E04 (2025-07-30)/JPG(PSY)_20.sup_guiado_macho.jpg',
+            'assets/demo/E04 (2025-07-30)/JPG(PSY)_21.FINtmp.jpg'
+          ]
+        },
+        {
+          id: 'sub2',
+          name: 'Submódulo B',
+          status: 'waiting',
+          images: ['assets/parts/part3.png']
+        }
+      ]
+    }
+  };
+
+  public showGrid = false;
 
   // const document = window.document;
   private corners: number[] = [];
@@ -49,31 +107,36 @@ export class Mapper {
   private currentScreenHeight = 0;
   private currentStream = "";
   private correctingSource = false;
-  private userInactiveTimer!: NodeJS.Timeout;
+  private userInactiveTimer: any;
+  constructor(private renderer: Renderer2, private route: ActivatedRoute) { }
 
-  constructor(private renderer: Renderer2) { }
-  
-  setCurrentCorner(newCorner: HTMLInputElement | null){
+  private saveCalibration() {
+    if (isPlatformBrowser(this.platformId)) {
+      localStorage.setItem('mapper_corners', JSON.stringify(this.corners));
+    }
+  }
+
+  setCurrentCorner(newCorner: HTMLInputElement | null) {
     this.currentCorner = newCorner;
   };
 
-  setCurrentCornerArrow(newCorner: HTMLInputElement | null){
+  setCurrentCornerArrow(newCorner: HTMLInputElement | null) {
     this.currentCornerArrow = newCorner;
   };
 
-  setDeselectCorner(){
+  setDeselectCorner() {
     this.setCurrentCornerArrow(null);
     this.markers.forEach(el => {
       el.nativeElement.classList.remove("selected");
     });
   };
 
-  async setExportCofig(){
+  async setExportCofig() {
     return
     // await callbackExportConfig()
   };
 
-  async setImportCofig(){
+  async setImportCofig() {
     return
     // var values =  await callbackImportConfig()
     // var pardedValues = JSON.parse(values)
@@ -82,33 +145,43 @@ export class Mapper {
     // this.update()
   };
 
-  async setDirectory(){
+  async setDirectory() {
     // var values =  await callbackOpenDirectory()
-    var values =  [""]
+    var values = [""]
     // console.log(values)
     this.images = values
     this.dirIndex = 0
     this.imgIndex = 0
     this.changeImage(values[0]);
     var path = values[0].split("\\")
-    this.dirPath.nativeElement.innerText = "Directorio: " + path[path.length-2] + "\n Archivo: " + path[path.length-1];
+    // this.dirPath.nativeElement.innerText = "Directorio: " + path[path.length - 2] + "\n Archivo: " + path[path.length - 1];
   };
 
-  async setEditMode(){
-    this.calibrating = !this.calibrating
+  toggleCalibration() {
+    this.calibrating = !this.calibrating;
+    this.showGrid = this.calibrating;
+
     this.markers.forEach(marker => {
-      if (marker.nativeElement.style.visibility === "hidden") {
+      if (this.calibrating) {
         marker.nativeElement.style.visibility = "visible";
       } else {
         marker.nativeElement.style.visibility = "hidden";
       }
     });
-    this.setDeselectCorner();
-    this.toggleGuides();
+
+    if (!this.calibrating) {
+      this.setDeselectCorner();
+    }
+  }
+
+  async setEditMode() {
+    // Deprecated in favor of toggleCalibration logic, keeping if needed for other calls
+    // but keydown 'g' will now point to toggleCalibration
+    this.toggleCalibration();
   };
 
   // Get the determinant of given 3 points
-  getDeterminant(p0: {x:number, y:number}, p1: {x:number, y:number}, p2: {x:number, y:number}){
+  getDeterminant(p0: { x: number, y: number }, p1: { x: number, y: number }, p2: { x: number, y: number }) {
     return (
       p0.x * p1.y +
       p1.x * p2.y +
@@ -119,7 +192,7 @@ export class Mapper {
     );
   };
 
-  hasBoundsError(){
+  hasBoundsError() {
     const clientWidth = this.document.documentElement.clientWidth;
     const clientHeight = this.document.documentElement.clientHeight;
     var currentBoundsError = false;
@@ -146,7 +219,7 @@ export class Mapper {
   };
 
   // Return true if it is a concave polygon. Otherwise return true;
-  haspolygonError(){
+  haspolygonError() {
     var det1 = this.getDeterminant(
       // Topleft
       { x: this.corners[0], y: this.corners[1] },
@@ -188,13 +261,13 @@ export class Mapper {
     return false;
   };
 
-  transform2d(srcCorners: number[], dstCorners: number[]){
+  transform2d(srcCorners: number[], dstCorners: number[]) {
     const H = fixPerspective(srcCorners, dstCorners);
     const t = "matrix3d(" + H.join(", ") + ")";
     this.sourceIframe.nativeElement.style.transform = t;
   };
 
-  adjustLine(from: {x: number, y: number}, to: {x: number, y: number}, line: ElementRef<HTMLInputElement>){
+  adjustLine(from: { x: number, y: number }, to: { x: number, y: number }, line: ElementRef<HTMLInputElement>) {
     var fT = from.y;
     var tT = to.y;
     var fL = from.x;
@@ -232,7 +305,7 @@ export class Mapper {
     line.nativeElement.style.height = H + "px";
   };
 
-  adjustLines(corners: number[]){
+  adjustLines(corners: number[]) {
     this.adjustLine(
       { x: corners[0], y: corners[1] },
       { x: corners[2], y: corners[3] },
@@ -258,7 +331,7 @@ export class Mapper {
     );
   };
 
-  updateResolution(){
+  updateResolution() {
     var changed = false;
     if (this.screenWidth !== this.currentScreenWidth) {
       this.screenWidth = this.currentScreenWidth;
@@ -279,7 +352,7 @@ export class Mapper {
     return changed;
   };
 
-  update(){
+  update() {
     var w = this.sourceIframe.nativeElement.offsetWidth,
       h = this.sourceIframe.nativeElement.offsetHeight;
 
@@ -307,12 +380,12 @@ export class Mapper {
     }
   };
 
-  move(e: MouseEvent){
-    
+  move(e: MouseEvent) {
+
     this.scheduleUserInactive();
 
     if (this.currentCorner) {
-      
+
       const targetX = e.pageX - this.grabOffset.x;
       const targetY = e.pageY - this.grabOffset.y;
       const cornerIndex = parseInt(
@@ -330,7 +403,7 @@ export class Mapper {
     }
   };
 
-  moveArrows(pos: string){
+  moveArrows(pos: string) {
     this.scheduleUserInactive();
     if (this.currentCornerArrow) {
       const cornerIndex = parseInt(
@@ -341,28 +414,29 @@ export class Mapper {
         if (targetX <= this.document.documentElement.clientWidth && targetX >= 0) {
           this.corners[cornerIndex] = targetX;
         }
-      } else if(pos == "r") {
+      } else if (pos == "r") {
         var targetX = this.corners[cornerIndex] + 1;
         if (targetX <= this.document.documentElement.clientWidth && targetX >= 0) {
           this.corners[cornerIndex] = targetX;
         }
-      } else if(pos == "d") {
+      } else if (pos == "d") {
         var targetY = this.corners[cornerIndex + 1] + 1;
         if (targetY <= this.document.documentElement.clientHeight && targetY >= 0) {
           this.corners[cornerIndex + 1] = targetY;
         }
-      } else if(pos == "u") {
+      } else if (pos == "u") {
         var targetY = this.corners[cornerIndex + 1] - 1;
         if (targetY <= this.document.documentElement.clientHeight && targetY >= 0) {
           this.corners[cornerIndex + 1] = targetY;
         }
       }
-   
+
       this.update();
+      this.saveCalibration();
     }
   };
 
-  initCorners(initialTargetCorners: any[]){
+  initCorners(initialTargetCorners: any[]) {
     if (this.correctingSource) {
       return;
     }
@@ -396,23 +470,23 @@ export class Mapper {
     this.hasBoundsError();
   };
 
-  transitionEndHandler(){
+  transitionEndHandler() {
     this.renderer.removeClass(this.mapperWrapper.nativeElement, "transition");
   };
 
-  setInactiveImmediately(){
+  setInactiveImmediately() {
     clearTimeout(this.userInactiveTimer);
     this.renderer.addClass(this.mapperWrapper.nativeElement, "inactive");
   };
 
-  startSourceCorrect(){
+  startSourceCorrect() {
     this.correctingSource = true;
     this.renderer.addClass(this.mapperWrapper.nativeElement, "correctingSource");
     this.renderer.addClass(this.mapperWrapper.nativeElement, "transition");
     this.setInactiveImmediately();
   };
 
-  endSourceCorrect(){
+  endSourceCorrect() {
     this.correctingSource = false;
     this.renderer.addClass(this.mapperWrapper.nativeElement, "transition");
     this.renderer.removeClass(this.mapperWrapper.nativeElement, "correctingSource");
@@ -422,7 +496,7 @@ export class Mapper {
     this.renderer.addClass(this.mapperWrapper.nativeElement, "inactive");
   };
 
-  toggleGuides(){
+  toggleGuides() {
     return
     // this.sourceIframe &&
     //   this.sourceIframe.contentWindow &&
@@ -430,11 +504,11 @@ export class Mapper {
     //   this.sourceIframe.contentWindow.toggleGuides();
   };
 
-  changeImage(imageUrl: string){
+  changeImage(imageUrl: string) {
     this.correctedVideo.nativeElement.src = imageUrl;
   };
 
-  toggleSourceCorrect(){
+  toggleSourceCorrect() {
     if (this.correctingSource) {
       this.endSourceCorrect();
     } else {
@@ -442,7 +516,7 @@ export class Mapper {
     }
   };
 
-  scheduleUserInactive(){
+  scheduleUserInactive() {
     if (typeof this.document.hasFocus === 'function') {
       if (!this.document.hasFocus()) {
         this.setInactiveImmediately();
@@ -460,7 +534,7 @@ export class Mapper {
     }, this.inactiveDelay);
   };
 
-  toggleFullScreen(){
+  toggleFullScreen() {
     if (!this.document.fullscreenElement) {
       this.document.documentElement.requestFullscreen();
     } else {
@@ -468,9 +542,12 @@ export class Mapper {
     }
   };
 
-  mouseupHandler(){ 
+  mouseupHandler() {
     if (this.calibrating) {
       this.scheduleUserInactive();
+      if (this.currentCorner) {
+        this.saveCalibration();
+      }
       this.setCurrentCorner(null);
       this.markers.forEach(marker => {
         marker.nativeElement.classList.remove("grabbing");
@@ -478,8 +555,8 @@ export class Mapper {
     }
   }
 
-  mousedownHandler(e: MouseEvent){
-    
+  mousedownHandler(e: MouseEvent) {
+
     var target: HTMLInputElement = e.target as HTMLInputElement
     if (this.calibrating) {
       this.scheduleUserInactive();
@@ -502,9 +579,12 @@ export class Mapper {
     }
   }
 
+  public isBlackout = false;
+
+  @HostListener('document:keydown', ['$event'])
   async keydownHandler(e: KeyboardEvent) {
     this.scheduleUserInactive();
-    
+
     if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) {
       return;
     }
@@ -513,29 +593,30 @@ export class Mapper {
       this.toggleFullScreen();
     } else if ((e.key === "g" || e.key === "G") && !this.correctingSource) {
       e.preventDefault();
-      this.setEditMode();
-    }else if (e.key === "i" || e.key === "I") {
+      this.toggleCalibration();
+    } else if (e.key === "i" || e.key === "I") {
       e.preventDefault();
       // this.setImportCofig()
-    }else if (e.key === "e" || e.key === "E") {
+    } else if (e.key === "e" || e.key === "E") {
       e.preventDefault();
       // this.setExportCofig()
-    }else if (e.key === "o" || e.key === "O") {
+    } else if (e.key === "o" || e.key === "O") {
       e.preventDefault();
       this.setDirectory();
-    }else if (e.key === " ") {
+    } else if (e.key === " ") {
       e.preventDefault();
-    } else if (e.key == "Home" || e.key == "PageUp" || e.key == "End" || e.key == "PageDown"){
+      this.isBlackout = !this.isBlackout;
+    } else if (e.key == "Home" || e.key == "PageUp" || e.key == "End" || e.key == "PageDown") {
       if (this.calibrating) {
         this.scheduleUserInactive();
         var markerIndex = 0
-        if (e.key == "Home"){
+        if (e.key == "Home") {
           markerIndex = 0
-        }else if(e.key == "PageUp"){
-          markerIndex = 1    
-        }else if(e.key == "End"){
+        } else if (e.key == "PageUp") {
+          markerIndex = 1
+        } else if (e.key == "End") {
           markerIndex = 2
-        }else if(e.key == "PageDown"){
+        } else if (e.key == "PageDown") {
           markerIndex = 3
         }
         // console.log(markerIndex)
@@ -558,10 +639,12 @@ export class Mapper {
         this.grabOffset.x = calcX;
         this.grabOffset.y = calcY;
       }
-    }else if (e.key === "ArrowDown") {
+    } else if (e.key === "c" || e.key === "C") {
+      this.toggleCalibration();
+    } else if (e.key === "ArrowDown") {
       e.preventDefault();
       this.moveArrows('d');
-    }else if (e.key === "ArrowLeft") {
+    } else if (e.key === "ArrowLeft") {
       e.preventDefault();
       if (this.currentCornerArrow) {
         this.moveArrows('l');
@@ -571,10 +654,9 @@ export class Mapper {
         }
         this.nextImage = this.images[this.imgIndex];
         this.changeImage(this.nextImage);
-        var path = this.nextImage.split("\\")
-        this.dirPath.nativeElement.innerText = "Directorio: " + path[path.length-2] + "\n Archivo: " + path[path.length-1];
+        console.log("Showing image: " + this.nextImage);
       }
-    }else if (e.key === "ArrowRight") {
+    } else if (e.key === "ArrowRight") {
       e.preventDefault();
       if (this.currentCornerArrow) {
         this.moveArrows('r');
@@ -584,11 +666,10 @@ export class Mapper {
         }
         this.nextImage = this.images[this.imgIndex];
         this.changeImage(this.nextImage);
-        var path = this.nextImage.split("\\")
-        this.dirPath.nativeElement.innerText = "Directorio: " + path[path.length-2] + "\n Archivo: " + path[path.length-1];
+        console.log("Showing image: " + this.nextImage);
       }
-    }else if (e.key === "ArrowUp") {
-      e.preventDefault(); 
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
       this.moveArrows('u');
     }
   };
@@ -597,24 +678,55 @@ export class Mapper {
     if (isPlatformBrowser(this.platformId)) {
       this.currentScreenHeight = window.innerHeight
       this.currentScreenWidth = window.innerWidth
-    }
 
-    
+      this.route.queryParams.subscribe((params: any) => {
+        const tableId = params['tableId'];
+        if (tableId && this.mockTableData[tableId]) {
+          console.log("Loading data for table: " + tableId);
+          const tableData = this.mockTableData[tableId];
+          if (tableData.submodules.length > 0) {
+            const firstSubmodule = tableData.submodules[0];
+            if (firstSubmodule.status === 'waiting') {
+              firstSubmodule.status = 'processing';
+            }
+            this.images = firstSubmodule.images;
+            this.imgIndex = 0;
+            if (this.images.length > 0) {
+              this.nextImage = this.images[0];
+              // changeImage will be called in ngAfterViewInit or manually here if view is ready 
+              // but better to set nextImage and let init handle it or call changeImage if elements exist
+            }
+          }
+        }
+      });
+    }
   }
 
   ngAfterViewInit() {
     console.log("ngAfterViewInit START")
     var stream = ""
-    var initialState = {targetCorners: [0,0,this.currentScreenWidth,0,0,this.currentScreenHeight,this.currentScreenWidth,this.currentScreenHeight], sourceCorners: []}
+    var initialState = { targetCorners: [0, 0, this.currentScreenWidth, 0, 0, this.currentScreenHeight, this.currentScreenWidth, this.currentScreenHeight], sourceCorners: [] }
     console.log(initialState)
     this.markers.push(this.markertl, this.markertr, this.markerbl, this.markerbr)
-    if (this.nextImage == ""){
+    if (this.nextImage == "") {
       this.currentStream = stream;
-    } 
-    
-    var initialTargetCorners:any[] = [];
-    var initialSourceCorners:any[] = [];
-    if (initialState) {
+    }
+
+    var initialTargetCorners: any[] = [];
+    var initialSourceCorners: any[] = [];
+    if (isPlatformBrowser(this.platformId)) {
+      const savedCorners = localStorage.getItem('mapper_corners');
+      if (savedCorners) {
+        try {
+          initialTargetCorners = JSON.parse(savedCorners);
+          console.log("Loaded calibration from LocalStorage", initialTargetCorners);
+        } catch (e) {
+          console.error("Error parsing saved calibration", e);
+        }
+      }
+    }
+
+    if (initialTargetCorners.length === 0 && initialState) {
       if (
         initialState.targetCorners &&
         initialState.targetCorners.length === 8
@@ -639,7 +751,11 @@ export class Mapper {
     setInterval(this.updateResolution, 1000);
 
     this.scheduleUserInactive();
-    this.correctedVideo.nativeElement.src = "img/guia.jpg";
+    if (this.nextImage) {
+      this.correctedVideo.nativeElement.src = this.nextImage;
+    } else {
+      this.correctedVideo.nativeElement.src = "img/guia.jpg";
+    }
     this.correctedVideo.nativeElement.oncontextmenu = () => {
       return false;
     };
@@ -649,6 +765,5 @@ export class Mapper {
     this.markers.forEach(marker => {
       marker.nativeElement.style.visibility = "hidden";
     });
-    // console.log("ngAfterViewInit END")
   };
 };
