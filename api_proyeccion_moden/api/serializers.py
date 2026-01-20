@@ -132,3 +132,34 @@ class MesaQueueItemSerializer(serializers.ModelSerializer):
             })
         
         return data
+
+# =============================================================================
+# DEVICE PAIRING SERIALIZERS
+# =============================================================================
+class DeviceInitSerializer(serializers.Serializer):
+    mesa_id = serializers.IntegerField(required=False)
+
+class DeviceStatusSerializer(serializers.Serializer):
+    code = serializers.CharField(required=True)
+
+class DevicePairSerializer(serializers.Serializer):
+    mesa_id = serializers.IntegerField(required=True)
+    pairing_code = serializers.CharField(required=True)
+
+class DeviceHeartbeatSerializer(serializers.Serializer):
+    current_item_id = serializers.IntegerField(required=False, allow_null=True)
+    mode = serializers.CharField(required=False, allow_blank=True)
+    player_version = serializers.CharField(required=False, allow_blank=True)
+    last_error = serializers.CharField(required=False, allow_blank=True)
+
+class MesaStateSerializer(serializers.ModelSerializer):
+    image_url = serializers.CharField(source='imagen_actual.url', read_only=True)
+    
+    class Meta:
+        model = Mesa
+        fields = [
+            'id', 'nombre', 
+            'imagen_actual', 'image_url',
+            'mapper_enabled', 'calibration_json',
+            'blackout', 'locked', 'last_seen'
+        ]

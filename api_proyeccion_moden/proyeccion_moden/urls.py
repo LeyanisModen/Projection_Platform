@@ -31,6 +31,7 @@ router.register(r"mesas", views.MesaViewSet)
 router.register(r"modulo-queues", views.ModuloQueueViewSet)
 router.register(r"modulo-queue-items", views.ModuloQueueItemViewSet)
 router.register(r"mesa-queue-items", views.MesaQueueItemViewSet)
+router.register(r"device", views.DeviceViewSet, basename="device")
 
 # Wire up our API using automatic URL routing.
 # Additionally, we include login URLs for the browsable API.

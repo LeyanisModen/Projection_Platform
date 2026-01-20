@@ -182,9 +182,18 @@ class Mesa(models.Model):
     ultima_actualizacion = models.DateTimeField(auto_now=True)
     
     # Operational state
+    # Operational state
     locked = models.BooleanField(default=False)
     blackout = models.BooleanField(default=False)
     last_seen = models.DateTimeField(null=True, blank=True)
+    
+    # Device Pairing (PoC)
+    device_token_hash = models.CharField(max_length=128, null=True, blank=True, unique=True)
+    pairing_code = models.CharField(max_length=10, null=True, blank=True)
+    pairing_code_expires_at = models.DateTimeField(null=True, blank=True)
+    mapper_enabled = models.BooleanField(default=False)
+    calibration_json = models.JSONField(null=True, blank=True)
+    last_error = models.TextField(null=True, blank=True)
 
     def __str__(self):
         return self.nombre
