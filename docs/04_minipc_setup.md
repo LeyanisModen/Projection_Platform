@@ -12,11 +12,11 @@ Lograr un sistema "Zero Touch" (Cero Interacción) para los nodos de visualizaci
 
 ## Requisitos
 - **Sistema Operativo**: Windows 11 Pro (Recomendado para gestión avanzada de políticas y modo kiosco nativo si fuera necesario, aunque este método "casero" funciona en Home, Pro permite mejor control de actualizaciones y GPO).
+- **Activar AutoLogin**
+- **Activar Actualización Automática**
 - **Hardware**: Mini PC con soporte para "AC Power Loss" en BIOS.
 
 ## Guía Paso a Paso
-windows11 pro
-
 
 ### Paso 1: Arranque Automático al recibir corriente (BIOS)
 Recuperación automática tras corte de luz o apagado general.
@@ -43,14 +43,21 @@ Usaremos un acceso directo modificado de Chrome/Edge en la carpeta de inicio par
 2. Crear un **Acceso Directo** de Chrome en el escritorio.
 3. Clic derecho en el acceso directo -> **Propiedades**.
 4. En el campo **"Destino"**, añadir al final de la ruta (fuera de las comillas):
-   ```text
+   ```
    --kiosk --incognito "https://tu-aplicacion-web.com/visor?mesa=X"
    ```
    *(Sustituir `mesa=X` por el ID de la mesa correspondiente: 1, 2, 3...)*
+   **otra variante**
+   ```
+   --kiosk --disable-session-crashed-bubble --disable-infobars --check-for-update-interval=31536000 "https://tu-app.com/visor"
+   ```
 
    **Explicación de flags**:
    - `--kiosk`: Pantalla completa real (sin bordes, sin cierre).
    - `--incognito`: Evita cacheo agresivo y mensajes de "Restaurar sesión" tras cortes de luz.
+   - `--disable-session-crashed-bubble`: Evita la pantalla de error de sesión caída.
+   - `--disable-infobars`: Evita la barra de información de Chrome/Edge.
+   - `--check-for-update-interval=31536000`: Aumenta el intervalo de actualización a un año.
 
 ### Paso 4: Ejecución al Inicio
 1. Pulsar `Tecla Windows + R`.
