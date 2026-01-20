@@ -64,6 +64,7 @@
                     <li class="nav-item" [class.selected]="selectedModulo?.id === modulo.id"
                         (click)="toggleModulo(modulo)">
                         <span class="nav-icon">📦</span>
+
                         <div class="nav-item-content">
                             <span class="nav-text">{{ modulo.nombre }}</span>
                             <div class="nav-phases">
@@ -72,6 +73,44 @@
                             </div>
                         </div>
                     </li>
+
+                    <!-- NESTED IMAGES LIST (visible when selected) -->
+                    @if (selectedModulo?.id === modulo.id) {
+                    <div class="sidebar-module-images">
+                        @if (loadingImagenes) {
+                        <div class="sidebar-loading">Cargando...</div>
+                        } @else if (getModuloImagenes(selectedModulo!.id).length === 0) {
+                        <div class="sidebar-empty">Sin imágenes</div>
+                        } @else {
+                        @for (imagen of getModuloImagenes(selectedModulo!.id); track imagen.id) {
+                        <div class="sidebar-image-item" [attr.draggable]="!isModuloComplete(selectedModulo!)"
+                            (dragstart)="onImageDragStart($event, imagen, selectedModulo!)"
+                            (dragend)="onDragEnd($event)"
+                            [class.assigned]="imagenAssignedToMesa.has(imagen.id) || isModuloComplete(selectedModulo!)"
+                            [style.opacity]="(imagenAssignedToMesa.has(imagen.id) || isModuloComplete(selectedModulo!)) ? '0.5' : '1'">
+
+                            <span class="sidebar-img-icon" [class.inferior]="imagen.fase === 'INFERIOR'"
+                                [class.superior]="imagen.fase === 'SUPERIOR'">{{ imagen.fase === 'INFERIOR' ? '▼' : '▲'
+                                }}</span>
+                            <div class="sidebar-img-info">
+                                <span class="sidebar-img-name">{{ imagen.nombre }}</span>
+                                <span class="sidebar-img-type">{{ imagen.fase }}</span>
+                            </div>
+                            <span class="drag-handle"
+                                *ngIf="!imagenAssignedToMesa.has(imagen.id) && !isModuloComplete(selectedModulo!)">⋮⋮</span>
+
+                            <!-- Status Badge -->
+                            @if (imagenAssignedToMesa.has(imagen.id)) {
+                            <span class="sidebar-status-badge"
+                                [class.hecho]="imagenAssignedToMesa.get(imagen.id)?.status === 'HECHO'">
+                                {{ imagenAssignedToMesa.get(imagen.id)?.status === 'HECHO' ? '✓' : '⟳' }}
+                            </span>
+                            }
+                        </div>
+                        }
+                        }
+                    </div>
+                    }
                     }
                 </ul>
                 }
@@ -82,54 +121,8 @@
         <section class="dashboard-workspace">
 
             <!-- SOURCE ZONE: IMAGES PANEL (Visible when a module is selected) -->
-            <div class="images-panel" *ngIf="selectedModulo">
-                <div class="panel-header-workspace">
-                    <h3>Imágenes: {{ selectedModulo.nombre }}</h3>
-                    <span class="subtitle">{{ selectedProyecto?.nombre }} / {{ selectedPlanta?.nombre }}</span>
-                </div>
-
-                <!-- Module Complete Banner -->
-                @if (isModuloComplete(selectedModulo)) {
-                <div class="modulo-complete-banner">
-                    ✓ Módulo terminado
-                </div>
-                }
-
-                <div class="images-scroll-container">
-                    @if (loadingImagenes) {
-                    <div class="loading">Cargando imágenes...</div>
-                    } @else if (getModuloImagenes(selectedModulo.id).length === 0) {
-                    <div class="empty-state">Sin imágenes</div>
-                    } @else {
-                    @for (imagen of getModuloImagenes(selectedModulo.id); track imagen.id) {
-                    <div class="imagen-card-wrapper">
-                        <div class="imagen-card" [attr.draggable]="!isModuloComplete(selectedModulo)"
-                            (dragstart)="onImageDragStart($event, imagen, selectedModulo!)"
-                            (dragend)="onDragEnd($event)" [class.inferior]="imagen.fase === 'INFERIOR'"
-                            [class.superior]="imagen.fase === 'SUPERIOR'"
-                            [class.assigned]="imagenAssignedToMesa.has(imagen.id) || isModuloComplete(selectedModulo)"
-                            [class.completed]="isModuloComplete(selectedModulo)">
-                            <span class="imagen-fase">{{ imagen.fase === 'INFERIOR' ? '▼' : '▲' }}</span>
-                            <span class="imagen-name">{{ imagen.nombre }}</span>
-                            <span class="imagen-drag-hint"
-                                *ngIf="!imagenAssignedToMesa.has(imagen.id) && !isModuloComplete(selectedModulo)">⋮⋮</span>
-                        </div>
-                        <!-- Status Label -->
-                        @if (getImageAssignmentLabel(imagen.id)) {
-                        <span class="imagen-status"
-                            [class.status-hecho]="imagenAssignedToMesa.get(imagen.id)?.status === 'HECHO'">
-                            {{ getImageAssignmentLabel(imagen.id) }}
-                        </span>
-                        }
-                    </div>
-                    }
-                    }
-                </div>
-                <!-- Drag hint if active -->
-                <div class="workspace-hint">
-                    Arrastra las imágenes a una mesa abajo ↓
-                </div>
-            </div>
+            <!-- SOURCE ZONE: MOVED TO SIDEBAR -->
+            <!-- Dashboard Workspace now only shows Mesas -->
 
             <!-- INLINE EMPTY STATE if no module selected -->
             @if (!selectedModulo) {

@@ -741,6 +741,114 @@ min-width: 32px;
   background: #e53935;
 }
 
+/* =============================================================================
+   SIDEBAR MODULE IMAGES (Nested under selected module)
+   ============================================================================= */
+.sidebar-module-images {
+  background-color: #f8f9fa;
+  padding: 8px 12px 8px 32px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.sidebar-image-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: white;
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  margin-bottom: 8px;
+  cursor: grab;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.sidebar-image-item:last-child {
+  margin-bottom: 0;
+}
+
+.sidebar-image-item:hover {
+  border-color: var(--accent-orange);
+  box-shadow: 0 2px 8px rgba(255, 107, 53, 0.15);
+  transform: translateX(2px);
+}
+
+.sidebar-image-item:active {
+  cursor: grabbing;
+}
+
+.sidebar-image-item.assigned {
+  cursor: not-allowed;
+  background: #f5f5f5;
+}
+
+.sidebar-img-icon {
+  font-size: 1rem;
+  min-width: 20px;
+  text-align: center;
+}
+
+.sidebar-img-icon.inferior {
+  color: var(--accent-orange);
+}
+
+.sidebar-img-icon.superior {
+  color: var(--text-primary);
+}
+
+.sidebar-img-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.sidebar-img-name {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-img-type {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+}
+
+.drag-handle {
+  color: #ccc;
+  font-size: 1rem;
+  cursor: grab;
+}
+
+.sidebar-status-badge {
+  font-size: 0.75rem;
+  font-weight: bold;
+  color: #ff9800;
+  background: #fff3e0;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.sidebar-status-badge.hecho {
+  color: #4caf50;
+  background: #e8f5e9;
+}
+
+.sidebar-loading,
+.sidebar-empty {
+  padding: 12px;
+  text-align: center;
+  color: #999;
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
 / *   S E A R C H   &   F I L T E R S   * /     . s i d e b a r - f i l t e r s    {
                p a d d i n g :    0   1 6 p x   1 6 p x   1 6 p x ;
                b o r d e r - b o t t o m :    1 p x   s o l i d   v a r ( - - b o r d e r - c o l o r ) ;
