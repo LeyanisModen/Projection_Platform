@@ -838,6 +838,7 @@ min-width: 32px;
   border-radius: 8px;
   background: #f8f9fa;
   transition: all 0.2s;
+  box-sizing: border-box;
 }
 
 .pairing-input:focus {
@@ -890,10 +891,19 @@ min-width: 32px;
 }
 
 .pairing-success p {
-  margin: 0;
+  margin: 0 0 20px 0;
   font-size: 1.1rem;
   color: #4caf50;
   font-weight: 600;
+}
+
+.btn-accept {
+  background: #4caf50;
+  color: white;
+}
+
+.btn-accept:hover {
+  background: #43a047;
 }
 
 /* =============================================================================
