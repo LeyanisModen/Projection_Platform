@@ -598,6 +598,8 @@ export class Dashboard implements OnInit, OnDestroy {
           this.pairingLoading = false;
           if (res.status === 'ok') {
             this.pairingSuccess = true;
+            // Reload mesas to update is_linked status
+            this.loadMesas();
             // Auto-close after 1.5 seconds
             setTimeout(() => this.closePairingModal(), 1500);
           } else {

@@ -66,6 +66,7 @@ export interface Mesa {
     locked: boolean;
     blackout: boolean;
     last_seen: string | null;
+    is_linked: boolean;
 }
 
 export interface ModuloQueue {

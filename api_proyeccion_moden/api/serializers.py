@@ -64,14 +64,19 @@ class ImagenSerializer(serializers.HyperlinkedModelSerializer):
 
 class MesaSerializer(serializers.HyperlinkedModelSerializer):
     imagen = ImagenSerializer(source='imagen_actual', read_only=True)
+    is_linked = serializers.SerializerMethodField()
     
     class Meta:
         model = Mesa
         fields = [
             "id", "url", "nombre", "usuario",
             "imagen_actual", "ultima_actualizacion", "imagen",
-            "locked", "blackout", "last_seen"
+            "locked", "blackout", "last_seen", "is_linked"
         ]
+
+    def get_is_linked(self, obj):
+        """Returns True if a device is linked to this Mesa."""
+        return bool(obj.device_token_hash)
 
 
 # =============================================================================

@@ -756,18 +756,42 @@ min-width: 32px;
 }
 
 .btn-vincular {
-  background: none;
-  border: none;
-  font-size: 1rem;
+  background: #f0f0f0;
+  border: 1px dashed #ccc;
+  font-size: 0.8rem;
   cursor: pointer;
-  padding: 4px;
-  opacity: 0.6;
+  padding: 6px 12px;
+  border-radius: 6px;
+  color: var(--text-secondary);
   transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .btn-vincular:hover {
-  opacity: 1;
-  transform: scale(1.1);
+  background: #e8e8e8;
+  border-color: var(--accent-orange);
+  color: var(--accent-orange);
+}
+
+.mesa-link-status {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-light);
+  display: flex;
+  justify-content: center;
+}
+
+.link-indicator {
+  font-size: 0.75rem;
+  padding: 4px 10px;
+  border-radius: 12px;
+}
+
+.link-indicator.linked {
+  background: #e8f5e9;
+  color: #2e7d32;
+  font-weight: 600;
 }
 
 .pairing-modal {

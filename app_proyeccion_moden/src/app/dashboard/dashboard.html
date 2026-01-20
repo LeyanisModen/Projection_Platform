@@ -149,9 +149,18 @@
                             <div class="mesa-badges">
                                 @if (mesa.locked) { <span class="mesa-badge locked">🔒</span> }
                                 @if (mesa.blackout) { <span class="mesa-badge blackout">⬛</span> }
-                                <button class="btn-vincular" (click)="openPairingModal(mesa)"
-                                    title="Vincular dispositivo">🔗</button>
                             </div>
+                        </div>
+
+                        <!-- Link Status -->
+                        <div class="mesa-link-status" [class.linked]="mesa.is_linked">
+                            @if (mesa.is_linked) {
+                            <span class="link-indicator linked">✓ Vinculado</span>
+                            } @else {
+                            <button class="btn-vincular" (click)="openPairingModal(mesa)">
+                                🔗 Vincular Mesa
+                            </button>
+                            }
                         </div>
 
                         <!-- Drop Zone -->
