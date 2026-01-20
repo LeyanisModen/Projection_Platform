@@ -747,6 +747,132 @@ min-width: 32px;
 }
 
 /* =============================================================================
+   PAIRING MODAL & BUTTON
+   ============================================================================= */
+.mesa-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-vincular {
+  background: none;
+  border: none;
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 4px;
+  opacity: 0.6;
+  transition: all 0.2s;
+}
+
+.btn-vincular:hover {
+  opacity: 1;
+  transform: scale(1.1);
+}
+
+.pairing-modal {
+  min-width: 320px;
+}
+
+.pairing-modal .modal-header {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.pairing-modal .modal-header h3 {
+  margin: 0 0 8px 0;
+  font-size: 1.2rem;
+  color: var(--text-primary);
+}
+
+.pairing-modal .modal-subtitle {
+  margin: 0;
+  color: var(--accent-orange);
+  font-weight: 600;
+}
+
+.pairing-modal .modal-body {
+  margin-bottom: 20px;
+}
+
+.pairing-modal label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.pairing-input {
+  width: 100%;
+  padding: 14px 16px;
+  font-size: 1.5rem;
+  font-weight: 700;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.3em;
+  border: 2px solid var(--border-light);
+  border-radius: 8px;
+  background: #f8f9fa;
+  transition: all 0.2s;
+}
+
+.pairing-input:focus {
+  outline: none;
+  border-color: var(--accent-orange);
+  background: white;
+}
+
+.pairing-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.pairing-error {
+  color: #ef5350;
+  font-size: 0.85rem;
+  margin-top: 8px;
+  text-align: center;
+}
+
+.pairing-modal .btn-confirm {
+  background: var(--accent-orange);
+}
+
+.pairing-modal .btn-confirm:hover {
+  background: #e65a2c;
+}
+
+.pairing-modal .btn-confirm:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pairing-success {
+  text-align: center;
+  padding: 20px;
+}
+
+.pairing-success .success-icon {
+  font-size: 3rem;
+  color: #4caf50;
+  background: #e8f5e9;
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 16px;
+}
+
+.pairing-success p {
+  margin: 0;
+  font-size: 1.1rem;
+  color: #4caf50;
+  font-weight: 600;
+}
+
+/* =============================================================================
    SIDEBAR MODULE IMAGES (Nested under selected module)
    ============================================================================= */
 .sidebar-module-images {

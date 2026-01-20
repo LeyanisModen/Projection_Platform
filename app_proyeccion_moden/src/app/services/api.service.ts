@@ -190,6 +190,17 @@ export class ApiService {
         return this.http.get<MesaQueueItem[]>(`${this.baseUrl}/mesas/${id}/queue_items/`, { headers: this.getHeaders() });
     }
 
+    /**
+     * Link a device to a Mesa using a pairing code.
+     * This is used from the Dashboard to pair Mini-PCs showing a code.
+     */
+    pairDevice(mesaId: number, pairingCode: string): Observable<{ status: string }> {
+        return this.http.post<{ status: string }>(`${this.baseUrl}/device/pair/`, {
+            mesa_id: mesaId,
+            pairing_code: pairingCode
+        });
+    }
+
     // =========================================================================
     // MODULO QUEUE ITEMS
     // =========================================================================
