@@ -781,7 +781,15 @@ export class Mapper implements OnChanges {
 
     console.log(initialTargetCorners)
 
-    this.correctedVideo.nativeElement.src = this.currentStream
+    // Only set src if we have an actual image to display
+    // This prevents the browser from rendering a black/empty image box
+    if (this.nextImage) {
+      this.correctedVideo.nativeElement.src = this.nextImage;
+    } else if (this.currentStream) {
+      this.correctedVideo.nativeElement.src = this.currentStream;
+    }
+    // If neither exists, leave src unset to avoid black box
+
     this.buttonsContainer.nativeElement.height = this.previewPaddingSize;
 
     this.initCorners(initialTargetCorners);
@@ -789,9 +797,6 @@ export class Mapper implements OnChanges {
     setInterval(this.updateResolution, 1000);
 
     this.scheduleUserInactive();
-    if (this.nextImage) {
-      this.correctedVideo.nativeElement.src = this.nextImage;
-    }
 
     this.correctedVideo.nativeElement.oncontextmenu = () => {
       return false;
