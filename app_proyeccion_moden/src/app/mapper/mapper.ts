@@ -787,9 +787,8 @@ export class Mapper implements OnChanges {
     this.scheduleUserInactive();
     if (this.nextImage) {
       this.correctedVideo.nativeElement.src = this.nextImage;
-    } else {
-      this.correctedVideo.nativeElement.src = "img/guia.jpg";
     }
+
     this.correctedVideo.nativeElement.oncontextmenu = () => {
       return false;
     };

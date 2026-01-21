@@ -4,7 +4,8 @@
     <div #sourceIframe id="sourceIframe" class="sourceCorrect" (ontransitionend)="transitionEndHandler()"
         draggable="false">
         <div #result id="result">
-            <img #correctedVideo id="correctedVideo" width="100%" height="100%" />
+            <img #correctedVideo id="correctedVideo" width="100%" height="100%"
+                [style.display]="imageUrl ? 'block' : 'none'" />
             @if (!imageUrl) {
             <div class="no-image-text">Imagen/Plano no asignado</div>
             }
