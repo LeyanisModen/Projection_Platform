@@ -170,7 +170,7 @@ class MesaViewSet(viewsets.ModelViewSet):
             return Response(serializer.data)
         return Response({'detail': 'No item currently showing'}, status=404)
 
-    @action(detail=True, methods=['post', 'get'])
+    @action(detail=True, methods=['post', 'get'], permission_classes=[permissions.AllowAny])
     def calibration(self, request, pk=None):
         """
         GET: Retrieve current calibration JSON for a mesa.
