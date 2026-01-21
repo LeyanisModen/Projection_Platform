@@ -1,0 +1,50 @@
+<div class="visor-container" [class.blackout]="mesaState?.blackout">
+
+    <!-- LOADING STATE -->
+    @if (mode === 'LOADING') {
+    <div class="loading-screen">
+        <div class="spinner"></div>
+        <p>Conectando...</p>
+    </div>
+    }
+
+    <!-- PAIRING MODE -->
+    @if (mode === 'PAIRING') {
+    <div class="pairing-screen">
+        <p class="pairing-label">CÓDIGO DE VINCULACIÓN</p>
+        <p class="pairing-code">{{ pairingCode }}</p>
+        <p class="pairing-hint">Introduce este código en el Dashboard para vincular esta mesa.</p>
+    </div>
+    }
+
+    <!-- ERROR STATE -->
+    @if (mode === 'ERROR') {
+    <div class="error-screen">
+        <p class="error-title">Error</p>
+        <p class="error-message">{{ errorMessage }}</p>
+        <button (click)="requestPairingCode()">Reintentar</button>
+    </div>
+    }
+
+    <!-- PROJECTION MODE -->
+    @if (mode === 'PROJECTION') {
+    <div class="projection-screen">
+        @if (mesaState?.image_url) {
+        <img [src]="mesaState?.image_url" alt="Proyección" class="projected-image" />
+        } @else {
+        <div class="no-image">
+            <p>Sin imagen asignada</p>
+            <p class="mesa-name">{{ mesaState?.nombre }}</p>
+        </div>
+        }
+
+        <!-- Mapper Overlay (placeholder for future) -->
+        @if (mesaState?.mapper_enabled) {
+        <div class="mapper-overlay">
+            <!-- Grid would go here -->
+        </div>
+        }
+    </div>
+    }
+
+</div>

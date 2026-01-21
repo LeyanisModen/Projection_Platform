@@ -1,13 +1,15 @@
 <main>
     <div class="card">
-        <img src="assets/logo.png" alt="Mod:en Logo" class="logo">
-        <p class="subtitle">Sistema de Gestión de Proyectos</p>
-        <div>
+        <div class="login-header">
+            <img src="assets/logo-moden.jpg" alt="MOD:EN Logo" class="login-logo">
+            <span class="login-subtitle">Sistema de Gestión de Proyectos</span>
+        </div>
+        <div class="input-group">
             <p>Usuario</p>
             <input type="text" placeholder="Introduce tu usuario">
             <i #user_icon class="fa fa-user"></i>
         </div>
-        <div>
+        <div class="input-group">
             <p>Contraseña</p>
             <input #password type="password" placeholder="Introduce tu contraseña">
             <i #password_icon class="fa fa-eye" (click)="toggle_pass()"></i>

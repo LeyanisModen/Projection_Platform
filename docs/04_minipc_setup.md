@@ -17,6 +17,8 @@ Lograr un sistema "Zero Touch" (Cero Interacción) para los nodos de visualizaci
 - **Hardware**: Mini PC con soporte para "AC Power Loss" en BIOS.
 
 ## Guía Paso a Paso
+windows11 pro
+
 
 ### Paso 1: Arranque Automático al recibir corriente (BIOS)
 Recuperación automática tras corte de luz o apagado general.

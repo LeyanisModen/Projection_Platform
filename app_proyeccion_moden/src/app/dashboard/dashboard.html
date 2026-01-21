@@ -1,24 +1,280 @@
-<header>
-    <img src="assets/logo.png" alt="Mod:en Logo" class="header-logo">
-    <button [routerLink]="'/'">CERRAR SESION</button>
-</header>
-<main>
-    <div class="example-container">
-        <h2>To do</h2>
-        <div cdkDropList #todoList="cdkDropList" [cdkDropListData]="todo" [cdkDropListConnectedTo]="[doneList]"
-            class="example-list" (cdkDropListDropped)="drop($event)">
-            @for (item of todo; track item) {
-            <div class="example-box" cdkDrag>{{ item }}</div>
-            }
+<div class="dashboard-container">
+    <!-- HEADER -->
+    <header class="dashboard-header">
+        <img src="assets/logo-moden.jpg" alt="MOD:EN Logo" class="header-logo">
+        <span class="subtitle">Sistema de Gestión de Proyección</span>
+    </header>
+
+    <main class="dashboard-main">
+        <!-- SIDEBAR: PROJECTS PANEL (Collapsible) -->
+        <aside class="projects-panel" [class.collapsed]="panelState === 'collapsed'">
+            <!-- Sidebar Header -->
+            <div class="panel-header">
+                <button class="btn-menu" (click)="togglePanel()">☰</button>
+                <div class="header-title" *ngIf="panelState === 'expanded'">
+                    @if (navLevel !== 'projects') {
+                    <button class="btn-back" (click)="navigateBack()">←</button>
+                    }
+                    <div class="header-text-group">
+                        @if (navLevel === 'projects') {
+                        <h2>Proyectos</h2>
+                        } @else if (navLevel === 'plants') {
+                        <h2>Plantas</h2>
+                        } @else if (navLevel === 'modules') {
+                        <h2>Módulos</h2>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sidebar Content -->
+            <div class="panel-content" *ngIf="panelState === 'expanded'">
+                @if (navLevel === 'projects') {
+                <ul class="nav-list">
+                    @if (loadingProyectos) { <div class="loading">Cargando...</div> }
+                    @for (proyecto of proyectos; track proyecto.id) {
+                    <li class="nav-item" [class.selected]="selectedProyecto?.id === proyecto.id"
+                        (click)="selectProyecto(proyecto)">
+                        <span class="nav-icon">📁</span>
+                        <span class="nav-text">{{ proyecto.nombre }}</span>
+                        <span class="nav-arrow">›</span>
+                    </li>
+                    }
+                </ul>
+                }
+
+                @if (navLevel === 'plants') {
+                <ul class="nav-list">
+                    @if (loadingPlantas) { <div class="loading">Cargando...</div> }
+                    @for (planta of plantas; track planta.id) {
+                    <li class="nav-item" [class.selected]="selectedPlanta?.id === planta.id"
+                        (click)="selectPlanta(planta)">
+                        <span class="nav-icon">🏭</span>
+                        <span class="nav-text">{{ planta.nombre }}</span>
+                        <span class="nav-arrow">›</span>
+                    </li>
+                    }
+                </ul>
+                }
+
+                @if (navLevel === 'modules') {
+                <ul class="nav-list">
+                    @if (loadingModulos) { <div class="loading">Cargando...</div> }
+                    @for (modulo of modulos; track modulo.id) {
+                    <li class="nav-item" [class.selected]="selectedModulo?.id === modulo.id"
+                        (click)="toggleModulo(modulo)">
+                        <span class="nav-icon">📦</span>
+
+                        <div class="nav-item-content">
+                            <span class="nav-text">{{ modulo.nombre }}</span>
+                            <div class="nav-phases">
+                                <span class="phase-dot" [class.done]="modulo.inferior_hecho"
+                                    [class.in-progress]="!modulo.inferior_hecho && isPhaseInProgress(modulo, 'INFERIOR')"
+                                    title="Inferior"></span>
+                                <span class="phase-dot" [class.done]="modulo.superior_hecho"
+                                    [class.in-progress]="!modulo.superior_hecho && isPhaseInProgress(modulo, 'SUPERIOR')"
+                                    title="Superior"></span>
+                            </div>
+                        </div>
+                    </li>
+
+                    <!-- NESTED IMAGES LIST (visible when selected) -->
+                    @if (selectedModulo?.id === modulo.id) {
+                    <div class="sidebar-module-images">
+                        @if (loadingImagenes) {
+                        <div class="sidebar-loading">Cargando...</div>
+                        } @else if (getModuloImagenes(selectedModulo!.id).length === 0) {
+                        <div class="sidebar-empty">Sin imágenes</div>
+                        } @else {
+                        @for (imagen of getModuloImagenes(selectedModulo!.id); track imagen.id) {
+                        <div class="sidebar-image-item" [attr.draggable]="!isModuloComplete(selectedModulo!)"
+                            (dragstart)="onImageDragStart($event, imagen, selectedModulo!)"
+                            (dragend)="onDragEnd($event)"
+                            [class.assigned]="imagenAssignedToMesa.has(imagen.id) || isModuloComplete(selectedModulo!)"
+                            [style.opacity]="(imagenAssignedToMesa.has(imagen.id) || isModuloComplete(selectedModulo!)) ? '0.5' : '1'">
+
+                            <span class="sidebar-img-icon" [class.inferior]="imagen.fase === 'INFERIOR'"
+                                [class.superior]="imagen.fase === 'SUPERIOR'">{{ imagen.fase === 'INFERIOR' ? '▼' : '▲'
+                                }}</span>
+                            <div class="sidebar-img-info">
+                                <span class="sidebar-img-name">{{ imagen.nombre }}</span>
+                                <span class="sidebar-img-type">{{ imagen.fase }}</span>
+                                @if (getAssignmentText(imagen)) {
+                                <span class="sidebar-img-assigment">{{ getAssignmentText(imagen) }}</span>
+                                }
+                            </div>
+                            <span class="drag-handle"
+                                *ngIf="!imagenAssignedToMesa.has(imagen.id) && !isModuloComplete(selectedModulo!)">⋮⋮</span>
+
+                            <!-- Status Badge -->
+                            @if (imagenAssignedToMesa.has(imagen.id)) {
+                            <span class="sidebar-status-badge"
+                                [class.hecho]="imagenAssignedToMesa.get(imagen.id)?.status === 'HECHO'">
+                                {{ imagenAssignedToMesa.get(imagen.id)?.status === 'HECHO' ? '✓' : '⟳' }}
+                            </span>
+                            }
+                        </div>
+                        }
+                        }
+                    </div>
+                    }
+                    }
+                </ul>
+                }
+            </div>
+        </aside>
+
+        <!-- WORKSPACE: IMAGES & MESAS -->
+        <section class="dashboard-workspace">
+
+            <!-- SOURCE ZONE: IMAGES PANEL (Visible when a module is selected) -->
+            <!-- SOURCE ZONE: MOVED TO SIDEBAR -->
+            <!-- Dashboard Workspace now only shows Mesas -->
+
+
+
+            <!-- TARGET ZONE: MESAS GRID -->
+            <div class="mesas-section">
+                <div class="section-header">
+                    <h2>Mesas de Trabajo</h2>
+                </div>
+                <div class="mesas-grid">
+                    @if (loadingMesas) {
+                    <div class="loading">Cargando mesas...</div>
+                    } @else {
+                    @for (mesa of mesas; track trackByMesa($index, mesa)) {
+                    <div class="mesa-card" [class.locked]="mesa.locked" [class.blackout]="mesa.blackout">
+                        <div class="mesa-header">
+                            <h3>{{ mesa.nombre }}</h3>
+                            <div class="mesa-badges">
+                                @if (mesa.locked) { <span class="mesa-badge locked">🔒</span> }
+                                @if (mesa.blackout) { <span class="mesa-badge blackout">⬛</span> }
+                            </div>
+                        </div>
+
+                        <!-- Link Status -->
+                        <div class="mesa-link-status" [class.linked]="mesa.is_linked">
+                            @if (mesa.is_linked) {
+                            <span class="link-indicator linked">✓ Vinculado</span>
+                            <button class="btn-unbind" (click)="openUnbindModal(mesa)" title="Desvincular">✕</button>
+                            } @else {
+                            <button class="btn-vincular" (click)="openPairingModal(mesa)">
+                                🔗 Vincular Mesa
+                            </button>
+                            }
+                        </div>
+
+                        <!-- Drop Zone -->
+                        <div class="drop-zone" (dragover)="onDragOver($event, mesa)" (dragleave)="onDragLeave($event)"
+                            (drop)="onImageDrop($event, mesa)" [class.drag-over]="dragOverMesa === mesa.id">
+                            <span class="drop-icon">📥</span>
+                            <span class="drop-text">Soltar imagen</span>
+                        </div>
+
+                        <!-- Queue -->
+                        <div class="mesa-queue">
+                            @for (item of getMesaQueueItems(mesa.id); track trackByItem($index, item)) {
+                            <div class="queue-item" [class]="getItemStatusClass(item.status)">
+                                <div class="queue-item-info">
+                                    <span class="queue-item-fase" [class.inferior]="item.fase === 'INFERIOR'"
+                                        [class.superior]="item.fase === 'SUPERIOR'">
+                                        {{ item.fase === 'INFERIOR' ? '▼' : '▲' }}
+                                    </span>
+                                    <span class="queue-item-nombre">{{ item.modulo_nombre }}</span>
+                                    <span class="queue-item-status">{{ item.status }}</span>
+                                </div>
+                                <div class="queue-item-actions">
+                                    @if (item.status === 'EN_COLA') {
+                                    <button class="btn-action btn-mostrar" (click)="mostrarItem(item)"
+                                        title="Mostrar">▶</button>
+                                    }
+                                    @if (item.status === 'MOSTRANDO') {
+                                    <button class="btn-action btn-hecho" (click)="marcarHecho(item)"
+                                        title="Marcar hecho">✓</button>
+                                    }
+                                    @if (item.status !== 'HECHO') {
+                                    <button class="btn-action btn-eliminar" (click)="eliminarItem(item)"
+                                        title="Eliminar">✕</button>
+                                    }
+                                </div>
+                            </div>
+                            }
+                        </div>
+                    </div>
+                    }
+                    }
+                </div>
+            </div>
+
+        </section>
+    </main>
+</div>
+
+<!-- Custom Confirm Modal -->
+@if (showConfirmModal) {
+<div class="modal-overlay" (click)="cerrarConfirmModal()">
+    <div class="modal-content" (click)="$event.stopPropagation()">
+        <div class="modal-icon">⚠️</div>
+        <p class="modal-message">{{ confirmModalMessage }}</p>
+        <div class="modal-actions">
+            <button class="btn-modal btn-cancel" (click)="cerrarConfirmModal()">Cancelar</button>
+            <button class="btn-modal btn-confirm" (click)="confirmarEliminar()">Eliminar</button>
         </div>
     </div>
-    <div class="example-container">
-        <h2>Done</h2>
-        <div cdkDropList #doneList="cdkDropList" [cdkDropListData]="done" [cdkDropListConnectedTo]="[todoList]"
-            class="example-list" (cdkDropListDropped)="drop($event)">
-            @for (item of done; track item) {
-            <div class="example-box" cdkDrag>{{ item }}</div>
+</div>
+}
+
+<!-- Pairing Modal -->
+@if (showPairingModal) {
+<div class="modal-overlay" (click)="closePairingModal()">
+    <div class="modal-content pairing-modal" (click)="$event.stopPropagation()">
+        @if (pairingSuccess) {
+        <div class="pairing-success">
+            <div class="success-icon">✓</div>
+            <p>¡Dispositivo vinculado!</p>
+            <button class="btn-modal btn-accept" (click)="closePairingModal()">Aceptar</button>
+        </div>
+        } @else {
+        <div class="modal-header">
+            <h3>Vincular Dispositivo</h3>
+            <p class="modal-subtitle">{{ pairingMesa?.nombre }}</p>
+        </div>
+        <div class="modal-body">
+            <label for="pairingCode">Código de 6 caracteres:</label>
+            <input type="text" id="pairingCode" class="pairing-input" maxlength="6" [value]="pairingCode"
+                (input)="onPairingCodeInput($event)" placeholder="ABC123" [disabled]="pairingLoading" />
+            @if (pairingError) {
+            <p class="pairing-error">{{ pairingError }}</p>
             }
         </div>
+        <div class="modal-actions">
+            <button class="btn-modal btn-cancel" (click)="closePairingModal()"
+                [disabled]="pairingLoading">Cancelar</button>
+            <button class="btn-modal btn-confirm" (click)="submitPairing()"
+                [disabled]="pairingLoading || pairingCode.length < 6">
+                @if (pairingLoading) { Vinculando... } @else { Vincular }
+            </button>
+        </div>
+        }
     </div>
-</main>
+</div>
+}
+
+<!-- Unbind Confirmation Modal -->
+@if (showUnbindModal) {
+<div class="modal-overlay" (click)="closeUnbindModal()">
+    <div class="modal-content unbind-modal" (click)="$event.stopPropagation()">
+        <div class="modal-icon">⚠️</div>
+        <h3>¿Desvincular dispositivo?</h3>
+        <p class="modal-message">El dispositivo vinculado a <strong>{{ unbindMesa?.nombre }}</strong> dejará de recibir
+            proyecciones.</p>
+        <div class="modal-actions">
+            <button class="btn-modal btn-cancel" (click)="closeUnbindModal()"
+                [disabled]="unbindLoading">Cancelar</button>
+            <button class="btn-modal btn-confirm" (click)="confirmUnbind()" [disabled]="unbindLoading">
+                @if (unbindLoading) { Desvinculando... } @else { Desvincular }
+            </button>
+        </div>
+    </div>
+</div>
+}

@@ -81,23 +81,24 @@ main::after {
     z-index: 1;
 }
 
-/* Logo / Título */
-/* Logo Styles */
-.logo {
-    width: 200px;
-    /* Adjust size as needed */
-    height: auto;
-    margin-bottom: 10px;
+/* Logo / Header */
+.login-header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    margin-bottom: 20px;
     padding-bottom: 20px;
     border-bottom: 2px solid var(--safety-orange);
 }
 
+.login-logo {
+    height: 60px;
+    width: auto;
+    margin-bottom: 10px;
+}
 
-/* Subtítulo */
-/* Subtítulo */
-.subtitle {
-    display: block;
-    margin-bottom: 25px;
+.login-subtitle {
     font-family: 'Roboto', sans-serif;
     font-size: 0.75rem;
     font-weight: 300;
@@ -106,9 +107,7 @@ main::after {
     text-transform: uppercase;
 }
 
-
-
-.card>div {
+.input-group {
     width: 100%;
     margin: 15px 0;
     position: relative;
