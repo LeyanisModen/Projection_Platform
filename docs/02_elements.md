@@ -5,6 +5,7 @@
 ### Ferrallas (Organization/Factory)
 - Entidad de desarrollo principal (La Fábrica/Empresa).
 - Puede gestionar múltiples **Proyectos**.
+- Un usuario por ferralla.
 
 ### Proyecto (Project)
 - Obra o encargo específico asignado a una Ferralla.

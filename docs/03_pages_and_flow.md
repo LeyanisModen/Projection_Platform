@@ -22,7 +22,7 @@
 ## 2. Flujo de Trabajo (Happy Path)
 
 1.  **Inicio de Jornada**:
-    - Las mesas (Sticks) se encienden y abren `/visor/:id`.
+    - Las mesas se encienden y abren `/visor/:id`.
     - Muestran "Esperando asignación" o la última imagen cacheada.
 
 2.  **Asignación**:
