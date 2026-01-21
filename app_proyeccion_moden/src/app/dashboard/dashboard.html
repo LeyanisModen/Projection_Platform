@@ -156,6 +156,8 @@
                         <div class="mesa-link-status" [class.linked]="mesa.is_linked">
                             @if (mesa.is_linked) {
                             <span class="link-indicator linked">✓ Vinculado</span>
+                            <button class="btn-view-projection" (click)="openProjectionView(mesa)"
+                                title="Ver Proyección">👁️</button>
                             <button class="btn-unbind" (click)="openUnbindModal(mesa)" title="Desvincular">✕</button>
                             } @else {
                             <button class="btn-vincular" (click)="openPairingModal(mesa)">

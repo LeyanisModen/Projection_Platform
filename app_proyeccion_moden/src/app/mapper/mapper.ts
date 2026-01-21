@@ -1,6 +1,7 @@
-import { Component, ElementRef, inject, PLATFORM_ID, Renderer2, ViewChild, HostListener, Input, OnChanges, SimpleChanges } from '@angular/core';
+import { Component, ElementRef, inject, PLATFORM_ID, Renderer2, ViewChild, HostListener, Input, Output, EventEmitter, OnChanges, SimpleChanges } from '@angular/core';
 import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
+import { HttpClient } from '@angular/common/http';
 import fixPerspective from './css3-perspective';
 
 interface Submodule {
@@ -25,6 +26,13 @@ interface TableData {
 export class Mapper implements OnChanges {
   @Input() imageUrl: string | null = null;
   @Input() isCalibrationActive: boolean = false;
+  @Input() mesaId: number | null = null;
+  @Input() calibrationJson: any = null;
+  @Output() calibrationSaved = new EventEmitter<any>();
+
+  private http = inject(HttpClient);
+  public isSaving = false;
+  public saveMessage = '';
 
   // @ViewChild('dirPath') dirPath!: ElementRef<HTMLInputElement>;
   @ViewChild('sourceIframe') sourceIframe!: ElementRef<HTMLInputElement>;
@@ -144,9 +152,75 @@ export class Mapper implements OnChanges {
         }
       }
     }
+
+    // Apply calibration from server if provided
+    if (changes['calibrationJson'] && changes['calibrationJson'].currentValue) {
+      this.applyCalibrationFromServer(changes['calibrationJson'].currentValue);
+    }
   }
 
   constructor(private renderer: Renderer2, private route: ActivatedRoute) { }
+
+  // Apply calibration received from server
+  private applyCalibrationFromServer(calibration: any): void {
+    if (!calibration?.corners || !this.markers?.length) return;
+
+    // Apply the corner positions
+    this.corners = calibration.corners;
+
+    // Update marker positions on screen
+    if (isPlatformBrowser(this.platformId) && this.markers.length === 4) {
+      const cornerPositions = [
+        { x: this.corners[0], y: this.corners[1] }, // TL
+        { x: this.corners[2], y: this.corners[3] }, // TR
+        { x: this.corners[4], y: this.corners[5] }, // BL
+        { x: this.corners[6], y: this.corners[7] }, // BR
+      ];
+
+      this.markers.forEach((marker, idx) => {
+        marker.nativeElement.style.left = cornerPositions[idx].x + 'px';
+        marker.nativeElement.style.top = cornerPositions[idx].y + 'px';
+      });
+
+      // Recalculate perspective transform
+      this.update();
+    }
+  }
+
+  // Save calibration to server
+  public saveCalibrationToServer(): void {
+    if (!this.mesaId) {
+      console.warn('Cannot save calibration: mesaId not set');
+      return;
+    }
+
+    this.isSaving = true;
+    this.saveMessage = '';
+
+    const calibrationData = {
+      corners: this.corners,
+      screenWidth: this.screenWidth,
+      screenHeight: this.screenHeight,
+      timestamp: new Date().toISOString()
+    };
+
+    this.http.post(`/api/mesas/${this.mesaId}/calibration/`, {
+      calibration_json: calibrationData
+    }).subscribe({
+      next: (response: any) => {
+        this.isSaving = false;
+        this.saveMessage = '✓ Guardado';
+        this.calibrationSaved.emit(calibrationData);
+        setTimeout(() => this.saveMessage = '', 3000);
+      },
+      error: (err) => {
+        this.isSaving = false;
+        this.saveMessage = '✗ Error al guardar';
+        console.error('Error saving calibration:', err);
+        setTimeout(() => this.saveMessage = '', 3000);
+      }
+    });
+  }
 
   private saveCalibration() {
     if (isPlatformBrowser(this.platformId)) {

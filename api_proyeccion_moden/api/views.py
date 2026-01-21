@@ -170,6 +170,39 @@ class MesaViewSet(viewsets.ModelViewSet):
             return Response(serializer.data)
         return Response({'detail': 'No item currently showing'}, status=404)
 
+    @action(detail=True, methods=['post', 'get'])
+    def calibration(self, request, pk=None):
+        """
+        GET: Retrieve current calibration JSON for a mesa.
+        POST: Save calibration JSON (corner positions) for a mesa.
+        """
+        mesa = self.get_object()
+        
+        if request.method == 'GET':
+            return Response({
+                'id': mesa.id,
+                'nombre': mesa.nombre,
+                'calibration_json': mesa.calibration_json
+            })
+        
+        # POST: Save calibration
+        calibration_data = request.data.get('calibration_json')
+        if calibration_data is None:
+            return Response(
+                {'detail': 'calibration_json is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        mesa.calibration_json = calibration_data
+        mesa.save(update_fields=['calibration_json'])
+        
+        return Response({
+            'id': mesa.id,
+            'nombre': mesa.nombre,
+            'calibration_json': mesa.calibration_json,
+            'message': 'Calibration saved successfully'
+        })
+
 
 class ModuloQueueViewSet(viewsets.ModelViewSet):
     """

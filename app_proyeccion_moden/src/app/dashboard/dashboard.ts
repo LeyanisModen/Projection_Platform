@@ -650,4 +650,12 @@ export class Dashboard implements OnInit, OnDestroy {
         }
       });
   }
+
+  // =========================================================================
+  // PROJECTION VIEW
+  // =========================================================================
+  openProjectionView(mesa: any): void {
+    // Open visor in new tab for this mesa
+    window.open(`/visor/${mesa.id}`, '_blank');
+  }
 }

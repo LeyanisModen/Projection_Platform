@@ -29,4 +29,19 @@
     <div class="blackout-overlay"></div>
     }
 
+    @if (mesaId && calibrating) {
+    <div class="calibration-controls">
+        <button class="btn-save-calibration" (click)="saveCalibrationToServer()" [disabled]="isSaving">
+            @if (isSaving) {
+            <span>Guardando...</span>
+            } @else {
+            <span>💾 Guardar Calibración</span>
+            }
+        </button>
+        @if (saveMessage) {
+        <span class="save-message">{{ saveMessage }}</span>
+        }
+    </div>
+    }
+
 </main>
