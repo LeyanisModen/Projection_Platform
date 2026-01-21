@@ -79,6 +79,12 @@ export class Dashboard implements OnInit, OnDestroy {
   constructor(private api: ApiService, private cdr: ChangeDetectorRef) { }
 
   ngOnInit(): void {
+    // Prevent back navigation
+    history.pushState(null, '', location.href);
+    window.onpopstate = function () {
+      history.go(1);
+    };
+
     this.loadProyectos();
     this.loadMesas();
   }

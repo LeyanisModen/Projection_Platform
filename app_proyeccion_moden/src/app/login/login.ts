@@ -10,11 +10,11 @@ import { Router, RouterLink } from '@angular/router';
 })
 export class Login {
   private router = inject(Router);
-  @ViewChild('password')input!: ElementRef<HTMLInputElement>;
+  @ViewChild('password') input!: ElementRef<HTMLInputElement>;
   @ViewChild('password_icon') icon!: ElementRef<HTMLInputElement>;
-  constructor(private renderer: Renderer2) {}
+  constructor(private renderer: Renderer2) { }
   submit() {
-    this.router.navigate(['/dashboard']);
+    this.router.navigate(['/dashboard'], { replaceUrl: true });
   }
   toggle_pass() {
     var input_el = this.input.nativeElement
@@ -29,7 +29,7 @@ export class Login {
       this.renderer.addClass(icon_el, 'fa-eye');
     }
   }
-  
-    
-  
+
+
+
 }
