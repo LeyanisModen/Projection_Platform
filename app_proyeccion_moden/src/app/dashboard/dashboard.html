@@ -62,7 +62,8 @@
                     @if (loadingModulos) { <div class="loading">Cargando...</div> }
                     @for (modulo of modulos; track modulo.id) {
                     <li class="nav-item" [class.selected]="selectedModulo?.id === modulo.id"
-                        (click)="toggleModulo(modulo)">
+                        [class.disabled]="isModuloComplete(modulo)"
+                        (click)="!isModuloComplete(modulo) && toggleModulo(modulo)">
                         <span class="nav-icon">📦</span>
 
                         <div class="nav-item-content">
@@ -143,33 +144,34 @@
                     <div class="loading">Cargando mesas...</div>
                     } @else {
                     @for (mesa of mesas; track trackByMesa($index, mesa)) {
-                    <div class="mesa-card" [class.locked]="mesa.locked" [class.blackout]="mesa.blackout">
+                    <div class="mesa-card" [class.locked]="mesa.locked" [class.blackout]="mesa.blackout"
+                        (dragover)="onDragOver($event, mesa)" (dragleave)="onDragLeave($event)"
+                        (drop)="onImageDrop($event, mesa)" [class.drag-over]="dragOverMesa === mesa.id">
                         <div class="mesa-header">
                             <h3>{{ mesa.nombre }}</h3>
-                            <div class="mesa-badges">
+                            <div class="mesa-header-actions">
                                 @if (mesa.locked) { <span class="mesa-badge locked">🔒</span> }
                                 @if (mesa.blackout) { <span class="mesa-badge blackout">⬛</span> }
+
+                                <!-- Link Status (Moved to Header) -->
+                                <div class="header-link-status">
+                                    @if (mesa.is_linked) {
+                                    <span class="link-indicator-sm" title="Vinculado">✓</span>
+                                    <button class="btn-unbind-sm" (click)="openUnbindModal(mesa)"
+                                        title="Desvincular">✕</button>
+                                    } @else {
+                                    <button class="btn-vincular-sm" (click)="openPairingModal(mesa)"
+                                        title="Vincular Mesa">
+                                        🔗
+                                    </button>
+                                    }
+                                </div>
                             </div>
                         </div>
 
-                        <!-- Link Status -->
-                        <div class="mesa-link-status" [class.linked]="mesa.is_linked">
-                            @if (mesa.is_linked) {
-                            <span class="link-indicator linked">✓ Vinculado</span>
-                            <button class="btn-unbind" (click)="openUnbindModal(mesa)" title="Desvincular">✕</button>
-                            } @else {
-                            <button class="btn-vincular" (click)="openPairingModal(mesa)">
-                                🔗 Vincular Mesa
-                            </button>
-                            }
-                        </div>
 
-                        <!-- Drop Zone -->
-                        <div class="drop-zone" (dragover)="onDragOver($event, mesa)" (dragleave)="onDragLeave($event)"
-                            (drop)="onImageDrop($event, mesa)" [class.drag-over]="dragOverMesa === mesa.id">
-                            <span class="drop-icon">📥</span>
-                            <span class="drop-text">Soltar imagen</span>
-                        </div>
+
+
 
                         <!-- Queue -->
                         <div class="mesa-queue">

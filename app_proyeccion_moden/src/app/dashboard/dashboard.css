@@ -208,6 +208,20 @@ min-width: 32px;
   font-weight: 600;
 }
 
+.nav-item.disabled {
+  opacity: 0.5;
+  background-color: #f5f5f5;
+  cursor: not-allowed;
+  pointer-events: none;
+  /* Double check to prevent interactions */
+}
+
+.nav-item.disabled .nav-icon,
+.nav-item.disabled .nav-text,
+.nav-item.disabled .nav-arrow {
+  color: #aaa;
+}
+
 .nav-icon {
   font-size: 1.1rem;
   color: #999;
@@ -520,8 +534,11 @@ min-width: 32px;
   box-shadow: var(--shadow-soft);
   display: flex;
   flex-direction: column;
-  max-height: 320px;
-  /* Limit card height */
+  /* max-height: 320px;  Removed to allow filling */
+  min-height: 350px;
+  /* Uniform substantial height */
+  height: 100%;
+  /* Fill grid cell */
   overflow: hidden;
 }
 
@@ -573,13 +590,14 @@ min-width: 32px;
 
 /* Mesa Queue */
 .mesa-queue {
-  padding: 0 16px 16px 16px;
+  padding: 8px 16px 16px 16px;
   flex: 1;
   /* Take available space */
   overflow-y: auto;
   /* Scroll if queue is long */
-  max-height: 180px;
-  /* Limit queue height */
+  /* max-height: 180px; Removed to allow filling */
+  min-height: 100px;
+  /* Minimum drop area */
 }
 
 .mesa-queue::-webkit-scrollbar {
@@ -1063,6 +1081,64 @@ min-width: 32px;
   color: #999;
   font-size: 0.85rem;
   font-style: italic;
+}
+
+/* Drag and Drop Refactor - Mesa Card Highlighting */
+.mesa-card.drag-over {
+  border-color: var(--accent-orange) !important;
+  background-color: rgba(255, 107, 53, 0.05);
+  box-shadow: 0 0 15px rgba(255, 107, 53, 0.2);
+  transform: scale(1.01);
+  transition: all 0.2s ease;
+}
+
+/* Header Link Controls */
+.mesa-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-link-status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btn-vincular-sm {
+  background: none;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 2px 6px;
+  font-size: 1rem;
+  transition: all 0.2s;
+  background: #fafafa;
+}
+
+.btn-vincular-sm:hover {
+  background: var(--accent-orange);
+  border-color: var(--accent-orange);
+  color: white;
+}
+
+.link-indicator-sm {
+  color: #43a047;
+  font-weight: bold;
+  font-size: 1rem;
+}
+
+.btn-unbind-sm {
+  background: none;
+  border: none;
+  color: #ccc;
+  cursor: pointer;
+  font-size: 0.9rem;
+  padding: 0 4px;
+}
+
+.btn-unbind-sm:hover {
+  color: #ef5350;
 }
 
 / *   S E A R C H   &   F I L T E R S   * /     . s i d e b a r - f i l t e r s    {
