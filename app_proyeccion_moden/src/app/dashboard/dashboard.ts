@@ -170,8 +170,9 @@ export class Dashboard implements OnInit, OnDestroy {
             if (oldImagenId) this.imagenAssignedToMesa.delete(oldImagenId);
           });
 
-          // Update the map with new items
-          this.mesaQueueItems.set(mesaId, items);
+          // Update the map with new items (Filter out HECHO for display)
+          const activeItems = items.filter(i => i.status !== 'HECHO');
+          this.mesaQueueItems.set(mesaId, activeItems);
 
           // Track assigned images for this mesa (including HECHO to prevent re-assignment)
           const mesa = this.mesas.find(m => m.id === mesaId);
@@ -235,7 +236,12 @@ export class Dashboard implements OnInit, OnDestroy {
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (data) => {
-          this.modulos = data;
+          // Sort: Incomplete first, Complete last
+          // Sort: Incomplete first, Complete last
+          // Sort: Incomplete first, Complete last
+          // Force new array reference
+          this.modulos = [...this.sortModulos(data)];
+          console.log('[Dashboard] Loaded modules:', this.modulos.map(m => `${m.nombre}:${this.isModuloComplete(m)}`));
           this.loadingModulos = false;
           this.cdr.detectChanges();
         },
@@ -250,16 +256,16 @@ export class Dashboard implements OnInit, OnDestroy {
   // MODULE EXPANSION (to show images)
   // =========================================================================
   toggleModulo(modulo: Modulo): void {
-    // In new layout, selecting a module loads it into the main area
-    // We don't toggle expansion in sidebar necessarily (or we can)
-    // Let's make it select effectively
-    this.selectedModulo = modulo;
-    this.expandedModulo = modulo.id; // Keep tracking for CSS selected state
-    this.loadImagenesForModulo(modulo.id);
-
-    // Optional: Auto-collapse sidebar on selection? User said configurable.
-    // Let's keep it open for now for rapid selection.
-
+    // Toggle logic: If already selected, deselect (collapse)
+    if (this.selectedModulo?.id === modulo.id) {
+      this.selectedModulo = null;
+      this.expandedModulo = null;
+    } else {
+      // Select logic
+      this.selectedModulo = modulo;
+      this.expandedModulo = modulo.id;
+      this.loadImagenesForModulo(modulo.id);
+    }
     this.cdr.detectChanges();
   }
 
@@ -407,11 +413,24 @@ export class Dashboard implements OnInit, OnDestroy {
               .pipe(takeUntil(this.destroy$))
               .subscribe({
                 next: (modulos) => {
-                  this.modulos = modulos;
+                  console.log('[Dashboard] API returned modules after update');
+                  // Force new array reference
+                  this.modulos = [...this.sortModulos(modulos)];
+
+                  // Update selectedModulo with fresh data
                   // Update selectedModulo with fresh data
                   if (this.selectedModulo) {
                     const updated = modulos.find(m => m.id === this.selectedModulo!.id);
-                    if (updated) this.selectedModulo = updated;
+                    if (updated) {
+                      // Check if it just became complete -> Deselect/Collapse
+                      if (this.isModuloComplete(updated)) {
+                        console.log('[Dashboard] Module completed -> Auto-collapsing:', updated.nombre);
+                        this.selectedModulo = null;
+                        this.expandedModulo = null;
+                      } else {
+                        this.selectedModulo = updated;
+                      }
+                    }
                   }
                   this.cdr.detectChanges();
                 }
@@ -554,6 +573,18 @@ export class Dashboard implements OnInit, OnDestroy {
 
   trackByItem(index: number, item: MesaQueueItem): number {
     return item.id;
+  }
+
+  // Sort helper: Incomplete first, Complete last, then by Name
+  sortModulos(data: Modulo[]): Modulo[] {
+    return data.sort((a, b) => {
+      const aComplete = this.isModuloComplete(a);
+      const bComplete = this.isModuloComplete(b);
+      if (aComplete === bComplete) {
+        return a.nombre.localeCompare(b.nombre);
+      }
+      return aComplete ? 1 : -1;
+    });
   }
 
   // =========================================================================
