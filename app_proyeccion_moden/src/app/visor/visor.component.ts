@@ -3,6 +3,7 @@ import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { interval, Subscription, switchMap, of, catchError } from 'rxjs';
+import { Mapper } from '../mapper/mapper';
 
 interface MesaState {
   id: number;
@@ -28,7 +29,7 @@ interface StatusResponse {
 @Component({
   selector: 'app-visor',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, Mapper],
   templateUrl: './visor.component.html',
   styleUrl: './visor.component.css'
 })

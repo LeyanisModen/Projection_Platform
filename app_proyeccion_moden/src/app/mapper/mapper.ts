@@ -1,4 +1,4 @@
-import { Component, ElementRef, inject, PLATFORM_ID, Renderer2, ViewChild, HostListener } from '@angular/core';
+import { Component, ElementRef, inject, PLATFORM_ID, Renderer2, ViewChild, HostListener, Input, OnChanges, SimpleChanges } from '@angular/core';
 import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
 import fixPerspective from './css3-perspective';
@@ -17,11 +17,15 @@ interface TableData {
 
 @Component({
   selector: 'app-mapper',
+  standalone: true,
   imports: [],
   templateUrl: './mapper.html',
   styleUrl: './mapper.css',
 })
-export class Mapper {
+export class Mapper implements OnChanges {
+  @Input() imageUrl: string | null = null;
+  @Input() isCalibrationActive: boolean = false;
+
   // @ViewChild('dirPath') dirPath!: ElementRef<HTMLInputElement>;
   @ViewChild('sourceIframe') sourceIframe!: ElementRef<HTMLInputElement>;
   @ViewChild('markertl') markertl!: ElementRef<HTMLInputElement>;
@@ -46,7 +50,7 @@ export class Mapper {
   // private callbackExportConfig: () => {};
   // private callbackImportConfig;
   // private callbackOpenDirectory;
-  private calibrating = false;
+  public calibrating = false;
 
   // Mock Data
   private mockTableData: Record<string, TableData> = {
@@ -91,6 +95,7 @@ export class Mapper {
     }
   };
 
+
   public showGrid = false;
 
   // const document = window.document;
@@ -108,6 +113,35 @@ export class Mapper {
   private currentStream = "";
   private correctingSource = false;
   private userInactiveTimer: any;
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['imageUrl']) {
+      const url = changes['imageUrl'].currentValue;
+      if (url) {
+        this.nextImage = url;
+        if (this.correctedVideo?.nativeElement) {
+          this.changeImage(url);
+        }
+      }
+    }
+
+    if (changes['isCalibrationActive']) {
+      const active = changes['isCalibrationActive'].currentValue;
+      if (active !== this.calibrating) {
+        // Sync internal state with input
+        // We might need to call toggleCalibration, but toggleCalibration toggles.
+        // Better to set it explicitly.
+        this.calibrating = active;
+        this.showGrid = active;
+        if (this.markers) { // markers populated in ngAfterViewInit
+          this.markers.forEach(marker => {
+            marker.nativeElement.style.visibility = active ? "visible" : "hidden";
+          });
+        }
+      }
+    }
+  }
+
   constructor(private renderer: Renderer2, private route: ActivatedRoute) { }
 
   private saveCalibration() {
@@ -763,7 +797,7 @@ export class Mapper {
       return false;
     };
     this.markers.forEach(marker => {
-      marker.nativeElement.style.visibility = "hidden";
+      marker.nativeElement.style.visibility = this.calibrating ? "visible" : "hidden";
     });
   };
 };

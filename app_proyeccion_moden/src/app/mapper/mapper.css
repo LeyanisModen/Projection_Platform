@@ -17,9 +17,15 @@
     font-family: sans-serif;
 }
 
+:host {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
 main {
-    width: 100vw;
-    height: 100vh;
+    width: 100%;
+    height: 100%;
     background: black;
     overflow: hidden;
     color: white;
@@ -324,8 +330,8 @@ html>main.sourceCorrectMode #controller {
     display: flex;
     align-items: center;
     justify-content: center;
-    color: blue;
-    background-color: white;
+    color: white;
+    background-color: black;
 
     /* background-image: url(./public/img/guia.jpg); */
     background-repeat: no-repeat;
@@ -382,4 +388,19 @@ p {
     height: 100vh;
     background-color: black;
     z-index: 9999;
+}
+
+.no-image-text {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 2rem;
+    color: rgba(255, 255, 255, 0.3);
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    pointer-events: none;
+    user-select: none;
+    white-space: nowrap;
+    z-index: 5;
 }
