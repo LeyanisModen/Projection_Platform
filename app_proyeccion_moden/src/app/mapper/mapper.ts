@@ -117,10 +117,14 @@ export class Mapper implements OnChanges {
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['imageUrl']) {
       const url = changes['imageUrl'].currentValue;
-      if (url) {
-        this.nextImage = url;
-        if (this.correctedVideo?.nativeElement) {
+      this.nextImage = url || ''; // Update nextImage even if null
+
+      if (this.correctedVideo?.nativeElement) {
+        if (url) {
           this.changeImage(url);
+        } else {
+          // Must clear the src if null, though display:none should handle it visually
+          this.correctedVideo.nativeElement.src = '';
         }
       }
     }
