@@ -2,7 +2,7 @@ import { Component, OnInit, OnDestroy, Inject, PLATFORM_ID, ChangeDetectorRef, N
 import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
-import { interval, Subscription, switchMap, of, catchError } from 'rxjs';
+import { interval, Subscription, switchMap, of, catchError, exhaustMap, startWith } from 'rxjs';
 import { Mapper } from '../mapper/mapper';
 
 interface MesaState {
@@ -169,9 +169,10 @@ export class VisorComponent implements OnInit, OnDestroy {
     // Immediate load
     this.fetchMesaState();
 
-    // Poll every 5 seconds
-    this.statePollSub = interval(5000).pipe(
-      switchMap(() => this.http.get<MesaState>(`${this.apiUrl}state/`, { headers: this.getAuthHeaders() })),
+    // Poll every 0.1 seconds (experimental fast poll)
+    this.statePollSub = interval(100).pipe(
+      startWith(0),
+      exhaustMap(() => this.http.get<MesaState>(`${this.apiUrl}state/`, { headers: this.getAuthHeaders() })),
       catchError(err => {
         if (err.status === 401) {
           // Token revoked, go back to pairing

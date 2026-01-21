@@ -1,4 +1,4 @@
-import { Component, ElementRef, inject, PLATFORM_ID, Renderer2, ViewChild, HostListener, Input, Output, EventEmitter, OnChanges, SimpleChanges } from '@angular/core';
+import { Component, ElementRef, inject, PLATFORM_ID, Renderer2, ViewChild, HostListener, Input, Output, EventEmitter, OnChanges, SimpleChanges, AfterViewInit } from '@angular/core';
 import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
@@ -27,8 +27,32 @@ export class Mapper implements OnChanges {
   @Input() imageUrl: string | null = null;
   @Input() isCalibrationActive: boolean = false;
   @Input() mesaId: number | null = null;
-  @Input() calibrationJson: any = null;
   @Input() allowInteraction: boolean = true;
+
+  // Setter-based input for calibration to ensure updates are always applied
+  private _calibrationJson: any = null;
+  private _lastCalibrationHash: string = '';
+
+  @Input()
+  set calibrationJson(value: any) {
+    this._calibrationJson = value;
+
+    // Compare using hash to detect actual changes
+    const newHash = value?.corners ? JSON.stringify(value.corners) : '';
+    if (newHash !== this._lastCalibrationHash && newHash !== '') {
+      this._lastCalibrationHash = newHash;
+      console.log('[Mapper] Calibration changed, applying:', value);
+
+      // Apply immediately if markers are ready and not actively calibrating
+      if (this.markers?.length === 4 && !this.calibrating) {
+        this.applyCalibrationFromServer(value);
+      }
+    }
+  }
+
+  get calibrationJson(): any {
+    return this._calibrationJson;
+  }
   @Output() calibrationSaved = new EventEmitter<any>();
 
   private http = inject(HttpClient);
@@ -154,20 +178,27 @@ export class Mapper implements OnChanges {
       }
     }
 
-    // Apply calibration from server if provided
-    if (changes['calibrationJson'] && changes['calibrationJson'].currentValue) {
-      this.applyCalibrationFromServer(changes['calibrationJson'].currentValue);
-    }
+    // Note: calibrationJson is now handled by setter, not here
   }
 
   constructor(private renderer: Renderer2, private route: ActivatedRoute) { }
 
+
+
   // Apply calibration received from server
   private applyCalibrationFromServer(calibration: any): void {
-    if (!calibration?.corners || !this.markers?.length) return;
+    console.log('[Mapper] applyCalibrationFromServer called with:', calibration);
+    console.log('[Mapper] markers length:', this.markers?.length);
+    console.log('[Mapper] calibrating:', this.calibrating);
+
+    if (!calibration?.corners || !this.markers?.length) {
+      console.log('[Mapper] BAILING: no corners or no markers');
+      return;
+    }
 
     // Apply the corner positions
     this.corners = calibration.corners;
+    console.log('[Mapper] corners set to:', this.corners);
 
     // Update marker positions on screen
     if (isPlatformBrowser(this.platformId) && this.markers.length === 4) {
@@ -184,7 +215,11 @@ export class Mapper implements OnChanges {
       });
 
       // Recalculate perspective transform
+      console.log('[Mapper] calling update()');
       this.update();
+      console.log('[Mapper] update() completed');
+    } else {
+      console.log('[Mapper] SKIPPED update: not browser or markers != 4');
     }
   }
 
@@ -469,9 +504,19 @@ export class Mapper implements OnChanges {
     var w = this.sourceIframe.nativeElement.offsetWidth,
       h = this.sourceIframe.nativeElement.offsetHeight;
 
+    // Check if dimensions are valid
+    if (w === 0 || h === 0) {
+      console.log('[Mapper] update() - INVALID dimensions w=', w, 'h=', h);
+      // Try using screen dimensions as fallback
+      w = this.screenWidth || window.innerWidth;
+      h = this.screenHeight || window.innerHeight;
+      console.log('[Mapper] update() - using fallback dimensions w=', w, 'h=', h);
+    }
+
     const from = [0, 0, w, 0, 0, h, w, h];
     const to = this.corners;
 
+    console.log('[Mapper] update() - transform2d from:', from, 'to:', to);
     this.transform2d(from, to);
 
     for (var i = 0; i != 8; i += 2) {
@@ -491,6 +536,9 @@ export class Mapper implements OnChanges {
       }
       this.polygonError = currentPolygonError;
     }
+
+    // Force browser repaint
+    void this.sourceIframe.nativeElement.offsetHeight;
   };
 
   move(e: MouseEvent) {
@@ -829,7 +877,14 @@ export class Mapper implements OnChanges {
 
     var initialTargetCorners: any[] = [];
     var initialSourceCorners: any[] = [];
-    if (isPlatformBrowser(this.platformId)) {
+
+    // Priority 1: Use server calibration if available
+    if (this.calibrationJson?.corners) {
+      initialTargetCorners = this.calibrationJson.corners;
+      console.log("Using server calibration", initialTargetCorners);
+    }
+    // Priority 2: Fallback to localStorage
+    else if (isPlatformBrowser(this.platformId)) {
       const savedCorners = localStorage.getItem('mapper_corners');
       if (savedCorners) {
         try {
