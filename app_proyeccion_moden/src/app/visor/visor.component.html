@@ -32,16 +32,9 @@
         @if (mesaState?.image_url) {
         <img [src]="mesaState?.image_url" alt="Proyección" class="projected-image" />
         } @else {
-        <div class="no-image">
-            <p>Sin imagen asignada</p>
-            <p class="mesa-name">{{ mesaState?.nombre }}</p>
-        </div>
-        }
-
-        <!-- Mapper Overlay (placeholder for future) -->
-        @if (mesaState?.mapper_enabled) {
+        <!-- Default Mapper when no image is assigned -->
         <div class="mapper-overlay">
-            <!-- Grid would go here -->
+            <div class="mapper-text">{{ mesaState?.nombre }}</div>
         </div>
         }
     </div>
