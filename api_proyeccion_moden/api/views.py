@@ -13,6 +13,14 @@ from api.models import (
     ModuloQueue, ModuloQueueItem, MesaQueueItem
 )
 
+from rest_framework import renderers
+
+class ServerSentEventRenderer(renderers.BaseRenderer):
+    media_type = 'text/event-stream'
+    format = 'txt'
+    def render(self, data, accepted_media_type=None, renderer_context=None):
+        return data
+
 
 class UserViewSet(viewsets.ReadOnlyModelViewSet):
     """
@@ -194,7 +202,8 @@ class MesaViewSet(viewsets.ModelViewSet):
             )
         
         mesa.calibration_json = calibration_data
-        mesa.save(update_fields=['calibration_json'])
+        # Update calibration_json AND trigger auto_now for ultima_actualizacion
+        mesa.save()
         
         return Response({
             'id': mesa.id,
@@ -479,6 +488,50 @@ class DeviceViewSet(viewsets.ViewSet):
             
         return Response({'status': 'ok'})
 
+
+    @action(detail=False, methods=['get'], renderer_classes=[ServerSentEventRenderer])
+    def stream(self, request):
+        """
+        Server-Sent Events (SSE) stream for real-time updates.
+        """
+        mesa = self._authenticate_device(request)
+        if not mesa:
+            return Response({'detail': 'Unauthorized'}, status=401)
+            
+        import time
+        import json
+        from django.http import StreamingHttpResponse
+        
+        def event_stream():
+            last_check = mesa.ultima_actualizacion
+            
+            # Send initial state immediately
+            initial_data = {
+                'type': 'calibration',
+                'data': {'corners': mesa.calibration_json.get('corners')} if mesa.calibration_json else {}
+            }
+            yield f"data: {json.dumps(initial_data)}\n\n"
+            
+            while True:
+                # Refresh from DB to check for updates
+                mesa.refresh_from_db()
+                
+                if mesa.ultima_actualizacion > last_check:
+                    last_check = mesa.ultima_actualizacion
+                    payload = {
+                        'type': 'calibration',
+                        'data': {'corners': mesa.calibration_json.get('corners')} if mesa.calibration_json else {}
+                    }
+                    yield f"data: {json.dumps(payload)}\n\n"
+                
+                # Check every 100ms
+                time.sleep(0.1)
+
+        response = StreamingHttpResponse(event_stream(), content_type='text/event-stream')
+        response['Cache-Control'] = 'no-cache'
+        response['X-Accel-Buffering'] = 'no'  # Disable Nginx buffering
+        return response
+
     @action(detail=False, methods=['get'])
     def state(self, request):
         mesa = self._authenticate_device(request)
@@ -521,10 +574,15 @@ class DeviceViewSet(viewsets.ViewSet):
         """Helper to validate Bearer token against hashes."""
         import hashlib
         auth_header = request.headers.get('Authorization')
-        if not auth_header or not auth_header.startswith('Bearer '):
-            return None
+        token = None
+        
+        if auth_header and auth_header.startswith('Bearer '):
+            token = auth_header.split(' ')[1]
+        elif request.query_params.get('token'):
+            token = request.query_params.get('token')
             
-        token = auth_header.split(' ')[1]
+        if not token:
+            return None
         token_hash = hashlib.sha256(token.encode()).hexdigest()
         
         return Mesa.objects.filter(device_token_hash=token_hash).first()
