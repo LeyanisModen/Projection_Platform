@@ -30,7 +30,7 @@
     @if (mode === 'PROJECTION') {
     <div class="projection-screen">
         <app-mapper [imageUrl]="mesaState?.image_url ?? null"
-            [isCalibrationActive]="(!mesaState?.image_url || mesaState?.mapper_enabled) ?? false"
+            [isCalibrationActive]="isSupervisor && ((!mesaState?.image_url || mesaState?.mapper_enabled) ?? false)"
             [mesaId]="mesaState?.id ?? null" [calibrationJson]="mesaState?.calibration_json ?? null"
             [allowInteraction]="isSupervisor">
         </app-mapper>
