@@ -939,5 +939,13 @@ export class Mapper implements OnChanges {
     this.markers.forEach(marker => {
       marker.nativeElement.style.visibility = this.calibrating ? "visible" : "hidden";
     });
+
+    // Handle background tab throttling: force update when tab becomes visible
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && this.corners.length === 8) {
+        console.log('[Mapper] Tab became visible, forcing update');
+        this.update();
+      }
+    });
   };
 };
