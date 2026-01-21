@@ -42,6 +42,10 @@ export class VisorComponent implements OnInit, OnDestroy {
   mesaState: MesaState | null = null;
   mesaIdForPairing: number | null = null; // Can be null for generic player mode
 
+  get isSupervisor(): boolean {
+    return !!this.mesaIdForPairing;
+  }
+
   // Subscriptions
   private pairingPollSub: Subscription | null = null;
   private statePollSub: Subscription | null = null;

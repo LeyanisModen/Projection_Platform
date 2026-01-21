@@ -28,6 +28,7 @@ export class Mapper implements OnChanges {
   @Input() isCalibrationActive: boolean = false;
   @Input() mesaId: number | null = null;
   @Input() calibrationJson: any = null;
+  @Input() allowInteraction: boolean = true;
   @Output() calibrationSaved = new EventEmitter<any>();
 
   private http = inject(HttpClient);
@@ -695,6 +696,8 @@ export class Mapper implements OnChanges {
 
   @HostListener('document:keydown', ['$event'])
   async keydownHandler(e: KeyboardEvent) {
+    if (!this.allowInteraction) return;
+
     this.scheduleUserInactive();
 
     if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) {

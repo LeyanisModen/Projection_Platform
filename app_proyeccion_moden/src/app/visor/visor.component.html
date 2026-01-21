@@ -31,7 +31,8 @@
     <div class="projection-screen">
         <app-mapper [imageUrl]="mesaState?.image_url ?? null"
             [isCalibrationActive]="(!mesaState?.image_url || mesaState?.mapper_enabled) ?? false"
-            [mesaId]="mesaState?.id ?? null" [calibrationJson]="mesaState?.calibration_json ?? null">
+            [mesaId]="mesaState?.id ?? null" [calibrationJson]="mesaState?.calibration_json ?? null"
+            [allowInteraction]="isSupervisor">
         </app-mapper>
     </div>
     }
