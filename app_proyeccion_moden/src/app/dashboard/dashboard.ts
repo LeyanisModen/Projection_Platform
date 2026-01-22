@@ -53,7 +53,8 @@ export class Dashboard implements OnInit, OnDestroy {
   // Confirm Modal State
   showConfirmModal = false;
   confirmModalMessage = '';
-  pendingDeleteItem: MesaQueueItem | null = null;
+  pendingActionItem: MesaQueueItem | null = null;
+  pendingActionType: 'DELETE' | 'FINISH' | null = null;
 
   // Maps for tracking
   moduloImagenes = new Map<number, Imagen[]>(); // moduloId -> images
@@ -394,6 +395,15 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   marcarHecho(item: MesaQueueItem): void {
+    this.pendingActionItem = item;
+    this.pendingActionType = 'FINISH';
+    this.confirmModalMessage = `¿Finalizar ${item.modulo_nombre} (${item.fase})?`;
+    this.showConfirmModal = true;
+    this.cdr.detectChanges();
+  }
+
+  // Ejecutar acción de marcar hecho (llamado desde confirmarAccion)
+  private ejecutarMarcarHecho(item: MesaQueueItem): void {
     const mesaId = this.extractIdFromUrl(item.mesa);
     this.api.marcarMesaQueueItemHecho(item.id)
       .pipe(takeUntil(this.destroy$))
@@ -444,16 +454,30 @@ export class Dashboard implements OnInit, OnDestroy {
 
   // Show custom confirm modal for delete
   eliminarItem(item: MesaQueueItem): void {
-    this.pendingDeleteItem = item;
+    this.pendingActionItem = item;
+    this.pendingActionType = 'DELETE';
     this.confirmModalMessage = `¿Eliminar ${item.modulo_nombre} (${item.fase}) de la cola?`;
     this.showConfirmModal = true;
     this.cdr.detectChanges();
   }
 
-  // Confirm delete action
+  // Generic Confirm Action
+  confirmarAccion(): void {
+    if (!this.pendingActionItem || !this.pendingActionType) return;
+
+    if (this.pendingActionType === 'DELETE') {
+      this.ejecutarEliminar(this.pendingActionItem);
+    } else if (this.pendingActionType === 'FINISH') {
+      this.ejecutarMarcarHecho(this.pendingActionItem);
+    }
+  }
+
   confirmarEliminar(): void {
-    if (!this.pendingDeleteItem) return;
-    const item = this.pendingDeleteItem;
+    // Deprecated, redirected to generic
+    this.confirmarAccion();
+  }
+
+  private ejecutarEliminar(item: MesaQueueItem): void {
     const mesaId = this.extractIdFromUrl(item.mesa);
     const imagenId = this.extractIdFromUrl(item.imagen);
 
@@ -477,7 +501,8 @@ export class Dashboard implements OnInit, OnDestroy {
   // Cancel and close modal
   cerrarConfirmModal(): void {
     this.showConfirmModal = false;
-    this.pendingDeleteItem = null;
+    this.pendingActionItem = null;
+    this.pendingActionType = null;
     this.confirmModalMessage = '';
     this.cdr.detectChanges();
   }
