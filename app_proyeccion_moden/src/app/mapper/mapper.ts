@@ -561,6 +561,8 @@ export class Mapper implements OnChanges {
       }
       // console.log(this.currentCorner.id)
       this.update();
+      // Real-time sync while dragging
+      this.throttledSaveToServer();
     }
   };
 
@@ -594,8 +596,8 @@ export class Mapper implements OnChanges {
 
       this.update();
       this.saveCalibration();
-      // Debounced save to server for real-time sync with player
-      this.debouncedSaveToServer();
+      // Throttled save to server for real-time sync with player
+      this.throttledSaveToServer();
     }
   };
 
@@ -607,6 +609,16 @@ export class Mapper implements OnChanges {
     this.arrowSaveTimeout = setTimeout(() => {
       this.saveCalibrationToServer();
     }, 150); // 150ms debounce
+  }
+
+  // Throttle for real-time sync during drag (sends every 100ms)
+  private lastThrottleSave: number = 0;
+  private throttledSaveToServer() {
+    const now = Date.now();
+    if (now - this.lastThrottleSave >= 100) {
+      this.lastThrottleSave = now;
+      this.saveCalibrationToServer();
+    }
   }
 
   initCorners(initialTargetCorners: any[]) {
