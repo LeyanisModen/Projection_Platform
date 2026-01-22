@@ -708,6 +708,8 @@ export class Mapper implements OnChanges {
       this.scheduleUserInactive();
       if (this.currentCorner) {
         this.saveCalibration();
+        // Auto-save on drag release for real-time sync with player
+        this.saveCalibrationToServer();
       }
       this.setCurrentCorner(null);
       this.markers.forEach(marker => {
@@ -866,6 +868,10 @@ export class Mapper implements OnChanges {
   }
 
   ngAfterViewInit() {
+    // SSR/Prerender guard: this component is DOM-heavy and must not run on the server.
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
     console.log("ngAfterViewInit START")
     var stream = ""
     var initialState = { targetCorners: [0, 0, this.currentScreenWidth, 0, 0, this.currentScreenHeight, this.currentScreenWidth, this.currentScreenHeight], sourceCorners: [] }
@@ -941,7 +947,7 @@ export class Mapper implements OnChanges {
     });
 
     // Handle background tab throttling: force update when tab becomes visible
-    document.addEventListener('visibilitychange', () => {
+    this.document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible' && this.corners.length === 8) {
         console.log('[Mapper] Tab became visible, forcing update');
         this.update();
