@@ -106,12 +106,15 @@ class MesaQueueItemSerializer(serializers.ModelSerializer):
     modulo_nombre = serializers.CharField(source='modulo.nombre', read_only=True)
     imagen_url = serializers.CharField(source='imagen.url', read_only=True)
     mesa_nombre = serializers.CharField(source='mesa.nombre', read_only=True)
+    modulo_planta_id = serializers.IntegerField(source='modulo.planta.id', read_only=True)
+    modulo_proyecto_id = serializers.IntegerField(source='modulo.planta.proyecto.id', read_only=True)
     
     class Meta:
         model = MesaQueueItem
         fields = [
             "id", "mesa", "mesa_nombre",
-            "modulo", "modulo_nombre", "fase", "imagen", "imagen_url",
+            "modulo", "modulo_nombre", "modulo_planta_id", "modulo_proyecto_id",
+            "fase", "imagen", "imagen_url",
             "position", "status",
             "assigned_by", "assigned_at",
             "done_by", "done_at"

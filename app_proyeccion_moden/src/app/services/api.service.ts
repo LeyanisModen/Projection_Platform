@@ -90,10 +90,12 @@ export interface ModuloQueueItem {
 
 export interface MesaQueueItem {
     id: number;
-    mesa: string;
+    mesa: number;
     mesa_nombre: string;
-    modulo: string;
+    modulo: number;
     modulo_nombre: string;
+    modulo_planta_id?: number;
+    modulo_proyecto_id?: number;
     fase: 'INFERIOR' | 'SUPERIOR';
     imagen: string;
     imagen_url: string;

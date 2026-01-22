@@ -172,18 +172,24 @@
 
 
                         <!-- Queue -->
-                        <div class="mesa-queue">
+                        <div class="mesa-queue" cdkDropList (cdkDropListDropped)="onMesaQueueDrop($event, mesa.id)">
                             @for (item of getMesaQueueItems(mesa.id); track trackByItem($index, item)) {
-                            <div class="queue-item" [class]="getItemStatusClass(item.status)">
+                            <div class="queue-item" [class]="getItemStatusClass(item.status)" cdkDrag>
                                 <div class="queue-item-info">
                                     <span class="queue-item-fase" [class.inferior]="item.fase === 'INFERIOR'"
                                         [class.superior]="item.fase === 'SUPERIOR'">
                                         {{ item.fase === 'INFERIOR' ? '▼' : '▲' }}
                                     </span>
-                                    <span class="queue-item-nombre">{{ item.modulo_nombre }}</span>
+                                    <!-- Click to navigate -->
+                                    <span class="queue-item-nombre clickable" (click)="navigateToModule(item)"
+                                        title="Ver en Proyectos">
+                                        {{ item.modulo_nombre }}
+                                        <span class="link-icon">↗</span>
+                                    </span>
                                     <span class="queue-item-status">{{ item.status }}</span>
                                 </div>
                                 <div class="queue-item-actions">
+                                    <div class="drag-handle" cdkDragHandle title="Arrastrar para reordenar">⋮⋮</div>
                                     @if (item.status === 'EN_COLA') {
                                     <button class="btn-action btn-mostrar" (click)="mostrarItem(item)"
                                         title="Mostrar">▶</button>
