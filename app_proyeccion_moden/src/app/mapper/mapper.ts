@@ -594,8 +594,20 @@ export class Mapper implements OnChanges {
 
       this.update();
       this.saveCalibration();
+      // Debounced save to server for real-time sync with player
+      this.debouncedSaveToServer();
     }
   };
+
+  private arrowSaveTimeout: any = null;
+  private debouncedSaveToServer() {
+    if (this.arrowSaveTimeout) {
+      clearTimeout(this.arrowSaveTimeout);
+    }
+    this.arrowSaveTimeout = setTimeout(() => {
+      this.saveCalibrationToServer();
+    }, 150); // 150ms debounce
+  }
 
   initCorners(initialTargetCorners: any[]) {
     if (this.correctingSource) {
