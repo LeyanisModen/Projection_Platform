@@ -54,6 +54,11 @@ export class VisorComponent implements OnInit, OnDestroy {
   private apiUrl = '/api/device/';
   private isBrowser: boolean;
 
+  // Helper to get token storage key (mesa-specific when ID is present)
+  private getTokenKey(): string {
+    return this.mesaIdForPairing ? `device_token_${this.mesaIdForPairing}` : 'device_token';
+  }
+
   constructor(
     private route: ActivatedRoute,
     private http: HttpClient,
@@ -73,14 +78,37 @@ export class VisorComponent implements OnInit, OnDestroy {
       this.mesaIdForPairing = parseInt(idParam, 10);
     }
 
-    // Check localStorage for existing token
-    this.deviceToken = localStorage.getItem('device_token');
+    // SUPERVISOR MODE: /visor/:id - Load mesa directly by ID (no token needed)
+    if (this.mesaIdForPairing) {
+      this.loadMesaDirectly(this.mesaIdForPairing);
+      return;
+    }
+
+    // PLAYER MODE: /player - Use device token for pairing
+    this.deviceToken = localStorage.getItem(this.getTokenKey());
 
     if (this.deviceToken) {
       this.enterProjectionMode();
     } else {
       this.requestPairingCode();
     }
+  }
+
+  // Load mesa directly by ID (for supervisor mode)
+  private loadMesaDirectly(mesaId: number): void {
+    this.mode = 'LOADING';
+    this.http.get<MesaState>(`/api/mesas/${mesaId}/`).subscribe({
+      next: (mesa) => {
+        this.mesaState = mesa;
+        this.mode = 'PROJECTION';
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        console.error('[Visor] Error loading mesa:', err);
+        this.errorMessage = 'No se pudo cargar la mesa';
+        this.mode = 'ERROR';
+      }
+    });
   }
 
   ngOnDestroy(): void {
@@ -130,7 +158,7 @@ export class VisorComponent implements OnInit, OnDestroy {
         if (res.status === 'PAIRED' && res.device_token) {
           // Save token and switch mode
           this.deviceToken = res.device_token;
-          localStorage.setItem('device_token', res.device_token);
+          localStorage.setItem(this.getTokenKey(), res.device_token);
           this.pairingPollSub?.unsubscribe();
           this.enterProjectionMode();
         } else if (res.status === 'EXPIRED') {
@@ -248,7 +276,7 @@ export class VisorComponent implements OnInit, OnDestroy {
       this.eventSource.close();
       this.eventSource = null;
     }
-    localStorage.removeItem('device_token');
+    localStorage.removeItem(this.getTokenKey());
     this.deviceToken = null;
     this.mesaState = null;
     this.statePollSub?.unsubscribe();

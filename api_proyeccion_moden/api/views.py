@@ -157,7 +157,7 @@ class MesaViewSet(viewsets.ModelViewSet):
     """
     queryset = Mesa.objects.all().order_by("nombre")
     serializer_class = MesaSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]  # Allow visor access without auth
 
     @action(detail=True, methods=['get'])
     def queue_items(self, request, pk=None):

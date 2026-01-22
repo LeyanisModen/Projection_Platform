@@ -34,6 +34,11 @@
             [mesaId]="mesaState?.id ?? null" [calibrationJson]="mesaState?.calibration_json ?? null"
             [allowInteraction]="isSupervisor">
         </app-mapper>
+
+        <!-- Mesa Watermark for debugging -->
+        <div class="mesa-watermark">
+            {{ mesaState?.nombre || 'Mesa ID: ' + mesaState?.id }}
+        </div>
     </div>
     }
 
