@@ -604,7 +604,26 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(mesa_id=mesa_id)
         if status_filter is not None:
             queryset = queryset.filter(status=status_filter)
+        if status_filter is not None:
+            queryset = queryset.filter(status=status_filter)
         return queryset
+
+    def perform_create(self, serializer):
+        item = serializer.save()
+        from api.models import MesaQueueStatus
+        
+        # Check if there are any active items (MOSTRANDO)
+        # If not, auto-promote this new item
+        active_exists = MesaQueueItem.objects.filter(
+            mesa=item.mesa,
+            status=MesaQueueStatus.MOSTRANDO
+        ).exists()
+        
+        if not active_exists:
+            item.status = MesaQueueStatus.MOSTRANDO
+            item.save(update_fields=['status'])
+            item.mesa.imagen_actual = item.imagen
+            item.mesa.save(update_fields=['imagen_actual'])
 
     @action(detail=True, methods=['post'])
     def marcar_hecho(self, request, pk=None):

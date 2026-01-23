@@ -193,10 +193,7 @@
                                 </div>
                                 <div class="queue-item-actions">
                                     <div class="drag-handle" cdkDragHandle title="Arrastrar para reordenar">⋮⋮</div>
-                                    @if (item.status === 'EN_COLA') {
-                                    <button class="btn-action btn-mostrar" (click)="mostrarItem(item)"
-                                        title="Mostrar">▶</button>
-                                    }
+                                    <!-- Play button removed (auto-project) -->
                                     @if (item.status === 'MOSTRANDO') {
                                     <button class="btn-action btn-hecho" (click)="marcarHecho(item)"
                                         title="Marcar hecho">✓</button>
