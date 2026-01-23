@@ -504,6 +504,15 @@ export class Dashboard implements OnInit, OnDestroy {
   // =========================================================================
   onMesaQueueDrop(event: CdkDragDrop<MesaQueueItem[]>, mesaId: number): void {
     if (event.previousContainer === event.container) {
+      // 1. Check if first item is locked (MOSTRANDO)
+      const currentItems = event.container.data;
+      if (currentItems.length > 0 && currentItems[0].status === 'MOSTRANDO') {
+        // If user tries to drop at index 0, force to index 1
+        if (event.currentIndex === 0) {
+          event.currentIndex = 1;
+        }
+      }
+
       moveItemInArray(event.container.data, event.previousIndex, event.currentIndex);
       // Update the Map locally so UI reflects change immediately
       this.mesaQueueItems.set(mesaId, event.container.data);

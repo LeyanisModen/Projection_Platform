@@ -172,10 +172,13 @@
 
 
                         <!-- Queue -->
-                        <div class="mesa-queue" cdkDropList (cdkDropListDropped)="onMesaQueueDrop($event, mesa.id)">
+                        <div class="mesa-queue" cdkDropList [cdkDropListData]="getMesaQueueItems(mesa.id)"
+                            (cdkDropListDropped)="onMesaQueueDrop($event, mesa.id)">
                             @for (item of getMesaQueueItems(mesa.id); track trackByItem($index, item)) {
-                            <div class="queue-item" [class]="getItemStatusClass(item.status)" cdkDrag>
+                            <div class="queue-item" [class]="getItemStatusClass(item.status)"
+                                [cdkDragDisabled]="item.status === 'MOSTRANDO'" cdkDrag>
                                 <div class="queue-item-info">
+                                    <span class="queue-index">{{ $index + 1 }}.</span>
                                     <span class="queue-item-fase" [class.inferior]="item.fase === 'INFERIOR'"
                                         [class.superior]="item.fase === 'SUPERIOR'">
                                         {{ item.fase === 'INFERIOR' ? '▼' : '▲' }}

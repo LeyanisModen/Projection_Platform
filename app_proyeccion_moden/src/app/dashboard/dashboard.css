@@ -524,8 +524,9 @@ min-width: 32px;
   /* Default: Attempt to fit 3 columns, but respect min-width. 
      Using 1fr ensures they fill space. 
      We use media queries below to force 3 columns on desktop. */
-  grid-template-columns: repeat(3, 1fr); 
-  gap: 24px; /* Increased gap slightly for breathing room */
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  /* Increased gap slightly for breathing room */
   overflow-y: auto;
   padding-bottom: 20px;
 }
@@ -624,6 +625,13 @@ min-width: 32px;
   border-radius: 10px;
 }
 
+.cdk-drag-disabled {
+  opacity: 0.8;
+  cursor: default !important;
+  border-left-color: var(--accent-orange) !important;
+  background-color: #fff8f5;
+}
+
 .queue-item {
   display: flex;
   align-items: center;
@@ -643,6 +651,14 @@ min-width: 32px;
 .queue-item.status-hecho {
   border-left-color: #4caf50;
   opacity: 0.7;
+}
+
+.queue-index {
+  font-weight: bold;
+  color: #888;
+  margin-right: 8px;
+  min-width: 20px;
+  font-size: 0.9rem;
 }
 
 .queue-item-info {
