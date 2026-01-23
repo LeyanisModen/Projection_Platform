@@ -30,17 +30,8 @@
     }
 
     @if (mesaId && calibrating) {
-    <div class="calibration-controls">
-        <button class="btn-save-calibration" (click)="saveCalibrationToServer()" [disabled]="isSaving">
-            @if (isSaving) {
-            <span>Guardando...</span>
-            } @else {
-            <span>💾 Guardar Calibración</span>
-            }
-        </button>
-        @if (saveMessage) {
-        <span class="save-message">{{ saveMessage }}</span>
-        }
+    <!-- Auto-save active, manual button removed -->
+    <div class="calibration-controls" style="display: none;">
     </div>
     }
 
