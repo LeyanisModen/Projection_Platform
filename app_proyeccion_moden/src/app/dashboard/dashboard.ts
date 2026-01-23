@@ -447,6 +447,7 @@ export class Dashboard implements OnInit, OnDestroy {
               });
           }
           this.cdr.detectChanges();
+          this.cerrarConfirmModal();
         },
         error: (err) => console.error('Error marcando hecho', err)
       });
