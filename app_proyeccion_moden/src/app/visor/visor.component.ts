@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, Inject, PLATFORM_ID, ChangeDetectorRef, NgZone } from '@angular/core';
+import { Component, OnInit, OnDestroy, Inject, PLATFORM_ID, ChangeDetectorRef, NgZone, HostListener } from '@angular/core';
 import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
@@ -115,6 +115,7 @@ export class VisorComponent implements OnInit, OnDestroy {
     this.pairingPollSub?.unsubscribe();
     this.statePollSub?.unsubscribe();
     this.heartbeatSub?.unsubscribe();
+    this.itemPollSub?.unsubscribe();
   }
 
   // =========================================================================
@@ -240,12 +241,142 @@ export class VisorComponent implements OnInit, OnDestroy {
     };
   }
 
-  startStatePolling(): void {
-    // Legacy polling replaced by SSE
-    // But we still fetch initial state once to get full data (name, etc)
-    this.fetchMesaState();
-    this.connectToSSE();
+  // Player Logic State
+  activeItem: any | null = null;
+  images: any[] = [];
+  currentIndex: number = 0;
+  loadingImages = false;
+  private itemPollSub: Subscription | null = null;
+
+  @HostListener('window:keydown', ['$event'])
+  handleKeyboardEvent(event: KeyboardEvent) {
+    if (this.mode !== 'PROJECTION' || !this.images.length) return;
+
+    if (event.key === 'ArrowRight') {
+      this.nextImage();
+    } else if (event.key === 'ArrowLeft') {
+      this.prevImage();
+    }
   }
+
+  nextImage(): void {
+    if (this.currentIndex < this.images.length - 1) {
+      this.currentIndex++;
+      this.updateProjectedImage();
+    } else {
+      // End of list -> Complete Item
+      this.finishActiveItem();
+    }
+  }
+
+  prevImage(): void {
+    if (this.currentIndex > 0) {
+      this.currentIndex--;
+      this.updateProjectedImage();
+    }
+  }
+
+  // Optional: Update local mesa state visually if needed (though we just show the image)
+  updateProjectedImage(): void {
+    // We could locally allow "previewing" next image, 
+    // but the requirement implies we just navigate LOCALLY in the player 
+    // and only update backend when finished?
+    // "dado una lista permitía cambiar de imagen utilizando las teclas"
+    // So yes, local navigation. 
+    this.cdr.detectChanges();
+  }
+
+  finishActiveItem(): void {
+    if (!this.activeItem) return;
+
+    console.log('[Visor] Finishing item:', this.activeItem.id);
+    this.http.post(`/api/mesa-queue-items/${this.activeItem.id}/marcar_hecho/`, {})
+      .subscribe({
+        next: () => {
+          console.log('[Visor] Item finished');
+          // Clear current state and wait for next poll to pick up new item
+          this.activeItem = null;
+          this.images = [];
+          this.currentIndex = 0;
+          this.cdr.detectChanges();
+          // Force immediate poll
+          this.checkActiveItem();
+        },
+        error: (err) => console.error('[Visor] Error finishing item:', err)
+      });
+  }
+
+  startStatePolling(): void {
+    // 1. Fetch initial Mesa State (Name, ID)
+    this.fetchMesaState();
+
+    // 2. Connect to SSE for Calibration
+    this.connectToSSE();
+
+    // 3. Start Polling for Active Work Item (Content)
+    this.itemPollSub = interval(2000).pipe(
+      startWith(0),
+      switchMap(() => {
+        if (!this.mesaState?.id) return of(null);
+        return this.http.get<any>(`/api/mesas/${this.mesaState.id}/current_item/`).pipe(
+          catchError(err => of(null)) // 404 if no item showing
+        );
+      })
+    ).subscribe(item => {
+      this.handleActiveItemUpdate(item);
+    });
+  }
+
+  checkActiveItem(): void {
+    if (!this.mesaState?.id) return;
+    this.http.get<any>(`/api/mesas/${this.mesaState.id}/current_item/`)
+      .pipe(catchError(() => of(null)))
+      .subscribe(item => this.handleActiveItemUpdate(item));
+  }
+
+  handleActiveItemUpdate(item: any): void {
+    // If no item showing
+    if (!item) {
+      if (this.activeItem) {
+        // We had an item, now gone
+        this.activeItem = null;
+        this.images = [];
+        this.cdr.detectChanges();
+      }
+      return;
+    }
+
+    // If new item detected
+    if (!this.activeItem || this.activeItem.id !== item.id) {
+      console.log('[Visor] New active item:', item);
+      this.activeItem = item;
+      this.loadImagesForActiveItem();
+    }
+  }
+
+  loadImagesForActiveItem(): void {
+    if (!this.activeItem) return;
+
+    this.loadingImages = true;
+    // Fetch images for Module + Fase
+    // Query: /api/imagenes/?modulo=X&fase=Y
+    const url = `/api/imagenes/?modulo=${this.activeItem.modulo}&fase=${this.activeItem.fase}`;
+
+    this.http.get<any[]>(url).subscribe({
+      next: (imgs) => {
+        console.log(`[Visor] Loaded ${imgs.length} images`);
+        this.images = imgs;
+        this.currentIndex = 0;
+        this.loadingImages = false;
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        console.error('[Visor] Error loading images:', err);
+        this.loadingImages = false;
+      }
+    });
+  }
+
 
   fetchMesaState(): void {
     this.http.get<MesaState>(`${this.apiUrl}state/`, { headers: this.getAuthHeaders() })
