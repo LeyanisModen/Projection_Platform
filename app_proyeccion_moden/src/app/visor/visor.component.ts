@@ -2,7 +2,8 @@ import { Component, OnInit, OnDestroy, Inject, PLATFORM_ID, ChangeDetectorRef, N
 import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
-import { interval, Subscription, switchMap, of, catchError } from 'rxjs';
+import { interval, Subscription, switchMap, of, catchError, exhaustMap, startWith } from 'rxjs';
+import { Mapper } from '../mapper/mapper';
 
 interface MesaState {
   id: number;
@@ -28,7 +29,7 @@ interface StatusResponse {
 @Component({
   selector: 'app-visor',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, Mapper],
   templateUrl: './visor.component.html',
   styleUrl: './visor.component.css'
 })
@@ -41,6 +42,10 @@ export class VisorComponent implements OnInit, OnDestroy {
   mesaState: MesaState | null = null;
   mesaIdForPairing: number | null = null; // Can be null for generic player mode
 
+  get isSupervisor(): boolean {
+    return !!this.mesaIdForPairing;
+  }
+
   // Subscriptions
   private pairingPollSub: Subscription | null = null;
   private statePollSub: Subscription | null = null;
@@ -48,6 +53,11 @@ export class VisorComponent implements OnInit, OnDestroy {
 
   private apiUrl = '/api/device/';
   private isBrowser: boolean;
+
+  // Helper to get token storage key (mesa-specific when ID is present)
+  private getTokenKey(): string {
+    return this.mesaIdForPairing ? `device_token_${this.mesaIdForPairing}` : 'device_token';
+  }
 
   constructor(
     private route: ActivatedRoute,
@@ -68,14 +78,37 @@ export class VisorComponent implements OnInit, OnDestroy {
       this.mesaIdForPairing = parseInt(idParam, 10);
     }
 
-    // Check localStorage for existing token
-    this.deviceToken = localStorage.getItem('device_token');
+    // SUPERVISOR MODE: /visor/:id - Load mesa directly by ID (no token needed)
+    if (this.mesaIdForPairing) {
+      this.loadMesaDirectly(this.mesaIdForPairing);
+      return;
+    }
+
+    // PLAYER MODE: /player - Use device token for pairing
+    this.deviceToken = localStorage.getItem(this.getTokenKey());
 
     if (this.deviceToken) {
       this.enterProjectionMode();
     } else {
       this.requestPairingCode();
     }
+  }
+
+  // Load mesa directly by ID (for supervisor mode)
+  private loadMesaDirectly(mesaId: number): void {
+    this.mode = 'LOADING';
+    this.http.get<MesaState>(`/api/mesas/${mesaId}/`).subscribe({
+      next: (mesa) => {
+        this.mesaState = mesa;
+        this.mode = 'PROJECTION';
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        console.error('[Visor] Error loading mesa:', err);
+        this.errorMessage = 'No se pudo cargar la mesa';
+        this.mode = 'ERROR';
+      }
+    });
   }
 
   ngOnDestroy(): void {
@@ -125,7 +158,7 @@ export class VisorComponent implements OnInit, OnDestroy {
         if (res.status === 'PAIRED' && res.device_token) {
           // Save token and switch mode
           this.deviceToken = res.device_token;
-          localStorage.setItem('device_token', res.device_token);
+          localStorage.setItem(this.getTokenKey(), res.device_token);
           this.pairingPollSub?.unsubscribe();
           this.enterProjectionMode();
         } else if (res.status === 'EXPIRED') {
@@ -160,25 +193,58 @@ export class VisorComponent implements OnInit, OnDestroy {
     });
   }
 
-  startStatePolling(): void {
-    // Immediate load
-    this.fetchMesaState();
+  private eventSource: EventSource | null = null;
+  private reconnectTimer: any = null;
 
-    // Poll every 5 seconds
-    this.statePollSub = interval(5000).pipe(
-      switchMap(() => this.http.get<MesaState>(`${this.apiUrl}state/`, { headers: this.getAuthHeaders() })),
-      catchError(err => {
-        if (err.status === 401) {
-          // Token revoked, go back to pairing
-          this.handleUnauthorized();
+  connectToSSE(): void {
+    if (this.eventSource) {
+      this.eventSource.close();
+    }
+
+    const url = `${this.apiUrl}stream/?token=${this.deviceToken}`;
+    console.log('[Visor] Connecting to SSE:', url);
+
+    this.eventSource = new EventSource(url);
+
+    this.eventSource.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload.type === 'calibration') {
+          console.log('[Visor] SSE Calibration received:', payload.data);
+          // If we receive data, construct a partial MesaState to update calibration
+          if (this.mesaState) {
+            this.mesaState = { ...this.mesaState, calibration_json: payload.data };
+          } else {
+            // Initial state if null
+            this.mesaState = { calibration_json: payload.data } as any;
+          }
+          this.cdr.detectChanges();
         }
-        return of(null);
-      })
-    ).subscribe({
-      next: (state) => {
-        if (state) this.mesaState = state;
+      } catch (e) {
+        console.error('[Visor] SSE Parse Error:', e);
       }
-    });
+    };
+
+    this.eventSource.onerror = (err) => {
+      console.error('[Visor] SSE Error:', err);
+      this.eventSource?.close();
+      this.eventSource = null;
+
+      // Reconnect after 3 seconds
+      if (!this.reconnectTimer) {
+        this.reconnectTimer = setTimeout(() => {
+          this.reconnectTimer = null;
+          this.connectToSSE();
+        }, 3000);
+      }
+    };
+  }
+
+  startStatePolling(): void {
+    // Legacy polling replaced by SSE
+    // But we still fetch initial state once to get full data (name, etc)
+    this.fetchMesaState();
+    this.connectToSSE();
   }
 
   fetchMesaState(): void {
@@ -187,7 +253,13 @@ export class VisorComponent implements OnInit, OnDestroy {
         if (err.status === 401) this.handleUnauthorized();
         return of(null);
       }))
-      .subscribe(state => { if (state) this.mesaState = state; });
+      .subscribe(state => {
+        if (state) {
+          this.mesaState = state;
+          // After fetching state, ensure we are connected to stream
+          if (!this.eventSource) this.connectToSSE();
+        }
+      });
   }
 
   startHeartbeat(): void {
@@ -200,7 +272,11 @@ export class VisorComponent implements OnInit, OnDestroy {
 
   handleUnauthorized(): void {
     // Clear token and return to pairing
-    localStorage.removeItem('device_token');
+    if (this.eventSource) {
+      this.eventSource.close();
+      this.eventSource = null;
+    }
+    localStorage.removeItem(this.getTokenKey());
     this.deviceToken = null;
     this.mesaState = null;
     this.statePollSub?.unsubscribe();

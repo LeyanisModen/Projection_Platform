@@ -156,6 +156,8 @@
                                 <div class="header-link-status">
                                     @if (mesa.is_linked) {
                                     <span class="link-indicator-sm" title="Vinculado">✓</span>
+                                    <button class="btn-view-projection-sm" (click)="openProjectionView(mesa)"
+                                        title="Ver Proyección">👁️</button>
                                     <button class="btn-unbind-sm" (click)="openUnbindModal(mesa)"
                                         title="Desvincular">✕</button>
                                     } @else {
@@ -168,27 +170,29 @@
                             </div>
                         </div>
 
-
-
-
-
                         <!-- Queue -->
-                        <div class="mesa-queue">
+                        <div class="mesa-queue" cdkDropList [cdkDropListData]="getMesaQueueItems(mesa.id)"
+                            (cdkDropListDropped)="onMesaQueueDrop($event, mesa.id)">
                             @for (item of getMesaQueueItems(mesa.id); track trackByItem($index, item)) {
-                            <div class="queue-item" [class]="getItemStatusClass(item.status)">
+                            <div class="queue-item" [class]="getItemStatusClass(item.status)"
+                                [cdkDragDisabled]="item.status === 'MOSTRANDO'" cdkDrag>
                                 <div class="queue-item-info">
+                                    <span class="queue-index">{{ $index + 1 }}.</span>
                                     <span class="queue-item-fase" [class.inferior]="item.fase === 'INFERIOR'"
                                         [class.superior]="item.fase === 'SUPERIOR'">
                                         {{ item.fase === 'INFERIOR' ? '▼' : '▲' }}
                                     </span>
-                                    <span class="queue-item-nombre">{{ item.modulo_nombre }}</span>
+                                    <!-- Click to navigate -->
+                                    <span class="queue-item-nombre clickable" (click)="navigateToModule(item)"
+                                        title="Ver en Proyectos">
+                                        {{ item.modulo_nombre }}
+                                        <span class="link-icon">↗</span>
+                                    </span>
                                     <span class="queue-item-status">{{ item.status }}</span>
                                 </div>
                                 <div class="queue-item-actions">
-                                    @if (item.status === 'EN_COLA') {
-                                    <button class="btn-action btn-mostrar" (click)="mostrarItem(item)"
-                                        title="Mostrar">▶</button>
-                                    }
+                                    <div class="drag-handle" cdkDragHandle title="Arrastrar para reordenar">⋮⋮</div>
+                                    <!-- Play button removed (auto-project) -->
                                     @if (item.status === 'MOSTRANDO') {
                                     <button class="btn-action btn-hecho" (click)="marcarHecho(item)"
                                         title="Marcar hecho">✓</button>
@@ -219,7 +223,9 @@
         <p class="modal-message">{{ confirmModalMessage }}</p>
         <div class="modal-actions">
             <button class="btn-modal btn-cancel" (click)="cerrarConfirmModal()">Cancelar</button>
-            <button class="btn-modal btn-confirm" (click)="confirmarEliminar()">Eliminar</button>
+            <button class="btn-modal btn-confirm" (click)="confirmarAccion()">
+                {{ pendingActionType === 'DELETE' ? 'Eliminar' : 'Confirmar' }}
+            </button>
         </div>
     </div>
 </div>

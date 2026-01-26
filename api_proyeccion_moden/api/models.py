@@ -409,6 +409,19 @@ class MesaQueueItem(models.Model):
         
         self.modulo.actualizar_estado()
 
+        # Auto-promote next 'EN_COLA' item
+        # If there is another item in queue, set it to MOSTRANDO immediately
+        next_item = MesaQueueItem.objects.filter(
+            mesa=self.mesa,
+            status=MesaQueueStatus.EN_COLA
+        ).order_by('position').first()
+
+        if next_item:
+            next_item.status = MesaQueueStatus.MOSTRANDO
+            next_item.save(update_fields=['status'])
+            self.mesa.imagen_actual = next_item.imagen
+            self.mesa.save(update_fields=['imagen_actual'])
+
     class Meta:
         db_table = 'api_mesa_queue_item'
         ordering = ['position']

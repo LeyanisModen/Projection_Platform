@@ -29,21 +29,16 @@
     <!-- PROJECTION MODE -->
     @if (mode === 'PROJECTION') {
     <div class="projection-screen">
-        @if (mesaState?.image_url) {
-        <img [src]="mesaState?.image_url" alt="Proyección" class="projected-image" />
-        } @else {
-        <div class="no-image">
-            <p>Sin imagen asignada</p>
-            <p class="mesa-name">{{ mesaState?.nombre }}</p>
-        </div>
-        }
+        <app-mapper [imageUrl]="mesaState?.image_url ?? null"
+            [isCalibrationActive]="isSupervisor && ((!mesaState?.image_url || mesaState?.mapper_enabled) ?? false)"
+            [mesaId]="mesaState?.id ?? null" [calibrationJson]="mesaState?.calibration_json ?? null"
+            [allowInteraction]="isSupervisor">
+        </app-mapper>
 
-        <!-- Mapper Overlay (placeholder for future) -->
-        @if (mesaState?.mapper_enabled) {
-        <div class="mapper-overlay">
-            <!-- Grid would go here -->
+        <!-- Mesa Watermark for debugging -->
+        <div class="mesa-watermark">
+            {{ mesaState?.nombre || 'Mesa ID: ' + mesaState?.id }}
         </div>
-        }
     </div>
     }
 

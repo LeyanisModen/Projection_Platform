@@ -1,6 +1,7 @@
-import { Component, ElementRef, inject, PLATFORM_ID, Renderer2, ViewChild, HostListener } from '@angular/core';
+import { Component, ElementRef, inject, PLATFORM_ID, Renderer2, ViewChild, HostListener, Input, Output, EventEmitter, OnChanges, SimpleChanges, AfterViewInit } from '@angular/core';
 import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
+import { HttpClient } from '@angular/common/http';
 import fixPerspective from './css3-perspective';
 
 interface Submodule {
@@ -17,11 +18,50 @@ interface TableData {
 
 @Component({
   selector: 'app-mapper',
+  standalone: true,
   imports: [],
   templateUrl: './mapper.html',
   styleUrl: './mapper.css',
 })
-export class Mapper {
+// Clase Mapper: Implementa OnChanges para detectar cambios en inputs.
+export class Mapper implements OnChanges {
+  // Configuración básica (Imágen, Estado, ID, Interacción)
+  @Input() imageUrl: string | null = null;
+  @Input() isCalibrationActive: boolean = false;
+  @Input() mesaId: number | null = null;
+  @Input() allowInteraction: boolean = true;
+
+  // Variables para gestionar la lógica del setter de calibración
+  private _calibrationJson: any = null;
+  private _lastCalibrationHash: string = ''; // Hash para comparar y evitar reaplicar calibraciones idénticas
+
+  // Setter personalizado para detectar cambios reales en el JSON de calibración
+  @Input()
+  set calibrationJson(value: any) {
+    this._calibrationJson = value;
+
+    // Compare using hash to detect actual changes
+    const newHash = value?.corners ? JSON.stringify(value.corners) : '';
+    if (newHash !== this._lastCalibrationHash && newHash !== '') {
+      this._lastCalibrationHash = newHash;
+      console.log('[Mapper] Calibration changed, applying:', value);
+
+      // Apply immediately if markers are ready and not actively calibrating
+      if (this.markers?.length === 4 && !this.calibrating) {
+        this.applyCalibrationFromServer(value);
+      }
+    }
+  }
+
+  get calibrationJson(): any {
+    return this._calibrationJson;
+  }
+  @Output() calibrationSaved = new EventEmitter<any>();
+
+  private http = inject(HttpClient);
+  public isSaving = false;
+  public saveMessage = '';
+
   // @ViewChild('dirPath') dirPath!: ElementRef<HTMLInputElement>;
   @ViewChild('sourceIframe') sourceIframe!: ElementRef<HTMLInputElement>;
   @ViewChild('markertl') markertl!: ElementRef<HTMLInputElement>;
@@ -46,7 +86,7 @@ export class Mapper {
   // private callbackExportConfig: () => {};
   // private callbackImportConfig;
   // private callbackOpenDirectory;
-  private calibrating = false;
+  public calibrating = false;
 
   // Mock Data
   private mockTableData: Record<string, TableData> = {
@@ -91,6 +131,7 @@ export class Mapper {
     }
   };
 
+
   public showGrid = false;
 
   // const document = window.document;
@@ -108,7 +149,117 @@ export class Mapper {
   private currentStream = "";
   private correctingSource = false;
   private userInactiveTimer: any;
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['imageUrl']) {
+      const url = changes['imageUrl'].currentValue;
+      this.nextImage = url || ''; // Update nextImage even if null
+
+      if (this.correctedVideo?.nativeElement) {
+        if (url) {
+          this.changeImage(url);
+        } else {
+          // Must clear the src if null, though display:none should handle it visually
+          this.correctedVideo.nativeElement.src = '';
+        }
+      }
+    }
+
+    if (changes['isCalibrationActive']) {
+      const active = changes['isCalibrationActive'].currentValue;
+      if (active !== this.calibrating) {
+        // Sync internal state with input
+        // We might need to call toggleCalibration, but toggleCalibration toggles.
+        // Better to set it explicitly.
+        this.calibrating = active;
+        this.showGrid = active;
+        if (this.markers) { // markers populated in ngAfterViewInit
+          this.markers.forEach(marker => {
+            marker.nativeElement.style.visibility = active ? "visible" : "hidden";
+          });
+        }
+      }
+    }
+
+    // Note: calibrationJson is now handled by setter, not here
+  }
+
   constructor(private renderer: Renderer2, private route: ActivatedRoute) { }
+
+
+
+  // Apply calibration received from server
+  private applyCalibrationFromServer(calibration: any): void {
+    console.log('[Mapper] applyCalibrationFromServer called with:', calibration);
+    console.log('[Mapper] markers length:', this.markers?.length);
+    console.log('[Mapper] calibrating:', this.calibrating);
+
+    if (!calibration?.corners || !this.markers?.length) {
+      console.log('[Mapper] BAILING: no corners or no markers');
+      return;
+    }
+
+    // Apply the corner positions
+    this.corners = calibration.corners;
+    console.log('[Mapper] corners set to:', this.corners);
+
+    // Update marker positions on screen
+    if (isPlatformBrowser(this.platformId) && this.markers.length === 4) {
+      const cornerPositions = [
+        { x: this.corners[0], y: this.corners[1] }, // TL
+        { x: this.corners[2], y: this.corners[3] }, // TR
+        { x: this.corners[4], y: this.corners[5] }, // BL
+        { x: this.corners[6], y: this.corners[7] }, // BR
+      ];
+
+      this.markers.forEach((marker, idx) => {
+        marker.nativeElement.style.left = cornerPositions[idx].x + 'px';
+        marker.nativeElement.style.top = cornerPositions[idx].y + 'px';
+      });
+
+      // Recalculate perspective transform
+      console.log('[Mapper] calling update()');
+      this.update();
+      console.log('[Mapper] update() completed');
+    } else {
+      console.log('[Mapper] SKIPPED update: not browser or markers != 4');
+    }
+  }
+
+  // Save calibration to server
+  public saveCalibrationToServer(): void {
+    if (!this.mesaId) {
+      console.warn('Cannot save calibration: mesaId not set');
+      return;
+    }
+
+    this.isSaving = true;
+    this.saveMessage = '';
+
+    const calibrationData = {
+      corners: this.corners,
+      screenWidth: this.screenWidth,
+      screenHeight: this.screenHeight,
+      timestamp: new Date().toISOString()
+    };
+
+    this.http.post(`/api/mesas/${this.mesaId}/calibration/`, {
+      calibration_json: calibrationData
+    }).subscribe({
+      next: (response: any) => {
+        this.isSaving = false;
+        this.saveMessage = '✓ Guardado';
+        this.calibrationSaved.emit(calibrationData);
+        setTimeout(() => this.saveMessage = '', 3000);
+      },
+      error: (err) => {
+        this.isSaving = false;
+        this.saveMessage = '✗ Error al guardar';
+        console.error('Error saving calibration:', err);
+        setTimeout(() => this.saveMessage = '', 3000);
+      }
+    });
+  }
 
   private saveCalibration() {
     if (isPlatformBrowser(this.platformId)) {
@@ -356,9 +507,19 @@ export class Mapper {
     var w = this.sourceIframe.nativeElement.offsetWidth,
       h = this.sourceIframe.nativeElement.offsetHeight;
 
+    // Check if dimensions are valid
+    if (w === 0 || h === 0) {
+      console.log('[Mapper] update() - INVALID dimensions w=', w, 'h=', h);
+      // Try using screen dimensions as fallback
+      w = this.screenWidth || window.innerWidth;
+      h = this.screenHeight || window.innerHeight;
+      console.log('[Mapper] update() - using fallback dimensions w=', w, 'h=', h);
+    }
+
     const from = [0, 0, w, 0, 0, h, w, h];
     const to = this.corners;
 
+    console.log('[Mapper] update() - transform2d from:', from, 'to:', to);
     this.transform2d(from, to);
 
     for (var i = 0; i != 8; i += 2) {
@@ -378,6 +539,9 @@ export class Mapper {
       }
       this.polygonError = currentPolygonError;
     }
+
+    // Force browser repaint
+    void this.sourceIframe.nativeElement.offsetHeight;
   };
 
   move(e: MouseEvent) {
@@ -400,6 +564,8 @@ export class Mapper {
       }
       // console.log(this.currentCorner.id)
       this.update();
+      // Real-time sync while dragging
+      this.throttledSaveToServer();
     }
   };
 
@@ -433,8 +599,30 @@ export class Mapper {
 
       this.update();
       this.saveCalibration();
+      // Throttled save to server for real-time sync with player
+      this.throttledSaveToServer();
     }
   };
+
+  private arrowSaveTimeout: any = null;
+  private debouncedSaveToServer() {
+    if (this.arrowSaveTimeout) {
+      clearTimeout(this.arrowSaveTimeout);
+    }
+    this.arrowSaveTimeout = setTimeout(() => {
+      this.saveCalibrationToServer();
+    }, 150); // 150ms debounce
+  }
+
+  // Throttle for real-time sync during drag (sends every 100ms)
+  private lastThrottleSave: number = 0;
+  private throttledSaveToServer() {
+    const now = Date.now();
+    if (now - this.lastThrottleSave >= 100) {
+      this.lastThrottleSave = now;
+      this.saveCalibrationToServer();
+    }
+  }
 
   initCorners(initialTargetCorners: any[]) {
     if (this.correctingSource) {
@@ -547,6 +735,8 @@ export class Mapper {
       this.scheduleUserInactive();
       if (this.currentCorner) {
         this.saveCalibration();
+        // Auto-save on drag release for real-time sync with player
+        this.saveCalibrationToServer();
       }
       this.setCurrentCorner(null);
       this.markers.forEach(marker => {
@@ -583,6 +773,8 @@ export class Mapper {
 
   @HostListener('document:keydown', ['$event'])
   async keydownHandler(e: KeyboardEvent) {
+    if (!this.allowInteraction) return;
+
     this.scheduleUserInactive();
 
     if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) {
@@ -703,6 +895,10 @@ export class Mapper {
   }
 
   ngAfterViewInit() {
+    // SSR/Prerender guard: this component is DOM-heavy and must not run on the server.
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
     console.log("ngAfterViewInit START")
     var stream = ""
     var initialState = { targetCorners: [0, 0, this.currentScreenWidth, 0, 0, this.currentScreenHeight, this.currentScreenWidth, this.currentScreenHeight], sourceCorners: [] }
@@ -714,7 +910,14 @@ export class Mapper {
 
     var initialTargetCorners: any[] = [];
     var initialSourceCorners: any[] = [];
-    if (isPlatformBrowser(this.platformId)) {
+
+    // Priority 1: Use server calibration if available
+    if (this.calibrationJson?.corners) {
+      initialTargetCorners = this.calibrationJson.corners;
+      console.log("Using server calibration", initialTargetCorners);
+    }
+    // Priority 2: Fallback to localStorage
+    else if (isPlatformBrowser(this.platformId)) {
       const savedCorners = localStorage.getItem('mapper_corners');
       if (savedCorners) {
         try {
@@ -743,7 +946,15 @@ export class Mapper {
 
     console.log(initialTargetCorners)
 
-    this.correctedVideo.nativeElement.src = this.currentStream
+    // Only set src if we have an actual image to display
+    // This prevents the browser from rendering a black/empty image box
+    if (this.nextImage) {
+      this.correctedVideo.nativeElement.src = this.nextImage;
+    } else if (this.currentStream) {
+      this.correctedVideo.nativeElement.src = this.currentStream;
+    }
+    // If neither exists, leave src unset to avoid black box
+
     this.buttonsContainer.nativeElement.height = this.previewPaddingSize;
 
     this.initCorners(initialTargetCorners);
@@ -751,11 +962,7 @@ export class Mapper {
     setInterval(this.updateResolution, 1000);
 
     this.scheduleUserInactive();
-    if (this.nextImage) {
-      this.correctedVideo.nativeElement.src = this.nextImage;
-    } else {
-      this.correctedVideo.nativeElement.src = "img/guia.jpg";
-    }
+
     this.correctedVideo.nativeElement.oncontextmenu = () => {
       return false;
     };
@@ -763,7 +970,15 @@ export class Mapper {
       return false;
     };
     this.markers.forEach(marker => {
-      marker.nativeElement.style.visibility = "hidden";
+      marker.nativeElement.style.visibility = this.calibrating ? "visible" : "hidden";
+    });
+
+    // Handle background tab throttling: force update when tab becomes visible
+    this.document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && this.corners.length === 8) {
+        console.log('[Mapper] Tab became visible, forcing update');
+        this.update();
+      }
     });
   };
 };

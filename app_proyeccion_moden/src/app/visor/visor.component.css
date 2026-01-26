@@ -145,12 +145,19 @@
 }
 
 /* Mapper Overlay */
-.mapper-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
+
+/* Mesa Watermark - for debugging/identification */
+.mesa-watermark {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: rgba(0, 0, 0, 0.7);
+    color: #ff9800;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 1.2rem;
+    font-weight: bold;
+    z-index: 9999;
     pointer-events: none;
-    /* Grid pattern would be added here */
+    border: 1px solid rgba(255, 152, 0, 0.3);
 }

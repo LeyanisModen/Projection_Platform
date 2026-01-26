@@ -63,7 +63,8 @@ export class Dashboard implements OnInit, OnDestroy {
   // Confirm Modal State
   showConfirmModal = false;
   confirmModalMessage = '';
-  pendingDeleteItem: MesaQueueItem | null = null;
+  pendingActionItem: MesaQueueItem | null = null;
+  pendingActionType: 'DELETE' | 'FINISH' | null = null;
 
   // Maps for tracking
   moduloImagenes = new Map<number, Imagen[]>(); // moduloId -> images
@@ -468,6 +469,15 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   marcarHecho(item: MesaQueueItem): void {
+    this.pendingActionItem = item;
+    this.pendingActionType = 'FINISH';
+    this.confirmModalMessage = `¿Finalizar ${item.modulo_nombre} (${item.fase})?`;
+    this.showConfirmModal = true;
+    this.cdr.detectChanges();
+  }
+
+  // Ejecutar acción de marcar hecho (llamado desde confirmarAccion)
+  private ejecutarMarcarHecho(item: MesaQueueItem): void {
     const mesaId = this.extractIdFromUrl(item.mesa);
     this.api.marcarMesaQueueItemHecho(item.id)
       .pipe(takeUntil(this.destroy$))
@@ -492,6 +502,7 @@ export class Dashboard implements OnInit, OnDestroy {
                   this.modulos = [...this.sortModulos(modulos)];
 
                   // Update selectedModulo with fresh data
+                  // Update selectedModulo with fresh data
                   if (this.selectedModulo) {
                     const updated = modulos.find(m => m.id === this.selectedModulo!.id);
                     if (updated) {
@@ -510,6 +521,7 @@ export class Dashboard implements OnInit, OnDestroy {
               });
           }
           this.cdr.detectChanges();
+          this.cerrarConfirmModal();
         },
         error: (err) => console.error('Error marcando hecho', err)
       });
@@ -517,16 +529,30 @@ export class Dashboard implements OnInit, OnDestroy {
 
   // Show custom confirm modal for delete
   eliminarItem(item: MesaQueueItem): void {
-    this.pendingDeleteItem = item;
+    this.pendingActionItem = item;
+    this.pendingActionType = 'DELETE';
     this.confirmModalMessage = `¿Eliminar ${item.modulo_nombre} (${item.fase}) de la cola?`;
     this.showConfirmModal = true;
     this.cdr.detectChanges();
   }
 
-  // Confirm delete action
+  // Generic Confirm Action
+  confirmarAccion(): void {
+    if (!this.pendingActionItem || !this.pendingActionType) return;
+
+    if (this.pendingActionType === 'DELETE') {
+      this.ejecutarEliminar(this.pendingActionItem);
+    } else if (this.pendingActionType === 'FINISH') {
+      this.ejecutarMarcarHecho(this.pendingActionItem);
+    }
+  }
+
   confirmarEliminar(): void {
-    if (!this.pendingDeleteItem) return;
-    const item = this.pendingDeleteItem;
+    // Deprecated, redirected to generic
+    this.confirmarAccion();
+  }
+
+  private ejecutarEliminar(item: MesaQueueItem): void {
     const mesaId = this.extractIdFromUrl(item.mesa);
 
     this.api.deleteMesaQueueItem(item.id)
@@ -548,10 +574,130 @@ export class Dashboard implements OnInit, OnDestroy {
       });
   }
 
+  // =========================================================================
+  // QUEUE REORDERING
+  // =========================================================================
+  onMesaQueueDrop(event: CdkDragDrop<MesaQueueItem[]>, mesaId: number): void {
+    if (event.previousContainer === event.container) {
+      // 1. Check if first item is locked (MOSTRANDO)
+      const currentItems = event.container.data;
+      if (currentItems.length > 0 && currentItems[0].status === 'MOSTRANDO') {
+        // If user tries to drop at index 0, force to index 1
+        if (event.currentIndex === 0) {
+          event.currentIndex = 1;
+        }
+      }
+
+      moveItemInArray(event.container.data, event.previousIndex, event.currentIndex);
+      // Update the Map locally so UI reflects change immediately
+      this.mesaQueueItems.set(mesaId, event.container.data);
+
+      // Prepare payload for backend
+      const payload = event.container.data.map((item, index) => ({
+        id: item.id,
+        position: index
+      }));
+
+      // Call API (silent update)
+      this.api.reorderMesaQueue(payload).subscribe({
+        next: () => console.log('Reorder saved'),
+        error: (err) => console.error('Reorder failed', err)
+      });
+    }
+  }
+
+  // =========================================================================
+  // NAVIGATION (Context Switch)
+  // =========================================================================
+  navigateToModule(item: MesaQueueItem): void {
+    if (!item.modulo_proyecto_id || !item.modulo_planta_id) {
+      console.warn('Navigation IDs missing', item);
+      return;
+    }
+
+    // Helper to finish selection once Modulos are loaded
+    const finishSelection = () => {
+      const targetModuloId = item.modulo; // Now typed as number
+      const mod = this.modulos.find(m => m.id === targetModuloId);
+      if (mod) {
+        if (this.selectedModulo?.id !== mod.id) {
+          this.toggleModulo(mod);
+        } else if (!this.expandedModulo) {
+          this.toggleModulo(mod);
+        }
+      } else {
+        console.warn('Module not found in list', targetModuloId);
+      }
+    };
+
+    // Helper to chain Planta selection
+    const selectPlantaStep = () => {
+      if (this.selectedPlanta?.id !== item.modulo_planta_id) {
+        const planta = this.plantas.find(p => p.id === item.modulo_planta_id);
+        if (planta) {
+          this.selectedPlanta = planta;
+          this.selectedModulo = null;
+          this.navLevel = 'modules';
+
+          this.loadingModulos = true;
+          this.api.getModulos(planta.id).subscribe({
+            next: (modulos) => {
+              this.modulos = this.sortModulos(modulos);
+              this.loadingModulos = false;
+              this.cdr.detectChanges();
+              finishSelection();
+            },
+            error: (err) => {
+              this.loadingModulos = false;
+              console.error(err);
+            }
+          });
+        }
+      } else {
+        if (this.modulos.length === 0) {
+          this.api.getModulos(item.modulo_planta_id!).subscribe(modulos => {
+            this.modulos = this.sortModulos(modulos);
+            finishSelection();
+          });
+        } else {
+          finishSelection();
+        }
+      }
+    };
+
+    // 1. Check Project
+    if (this.selectedProyecto?.id !== item.modulo_proyecto_id) {
+      const proj = this.proyectos.find(p => p.id === item.modulo_proyecto_id);
+      if (proj) {
+        this.selectedProyecto = proj;
+        this.selectedPlanta = null;
+        this.selectedModulo = null;
+        this.navLevel = 'plants';
+
+        this.loadingPlantas = true;
+        this.api.getPlantas(proj.id).subscribe({
+          next: (plantas) => {
+            this.plantas = plantas;
+            this.loadingPlantas = false;
+            this.cdr.detectChanges();
+            selectPlantaStep();
+          },
+          error: (err) => {
+            this.loadingPlantas = false;
+            console.error(err);
+          }
+        });
+      }
+    } else {
+      selectPlantaStep();
+    }
+  }
+
   // Cancel and close modal
   cerrarConfirmModal(): void {
     this.showConfirmModal = false;
-    this.pendingDeleteItem = null;
+    this.pendingActionItem = null;
+    this.pendingActionType = null;
     this.confirmModalMessage = '';
     this.cdr.detectChanges();
   }
@@ -750,5 +896,13 @@ export class Dashboard implements OnInit, OnDestroy {
           this.unbindLoading = false;
         }
       });
+  }
+
+  // =========================================================================
+  // PROJECTION VIEW
+  // =========================================================================
+  openProjectionView(mesa: any): void {
+    // Open visor in new tab for this mesa
+    window.open(`/visor/${mesa.id}`, '_blank');
   }
 }

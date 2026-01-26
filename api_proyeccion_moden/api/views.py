@@ -13,6 +13,14 @@ from api.models import (
     ModuloQueue, ModuloQueueItem, MesaQueueItem
 )
 
+from rest_framework import renderers
+
+class ServerSentEventRenderer(renderers.BaseRenderer):
+    media_type = 'text/event-stream'
+    format = 'txt'
+    def render(self, data, accepted_media_type=None, renderer_context=None):
+        return data
+
 
 class UserViewSet(viewsets.ModelViewSet):
     """
@@ -277,6 +285,40 @@ class MesaViewSet(viewsets.ModelViewSet):
             serializer = MesaQueueItemSerializer(item, context={'request': request})
             return Response(serializer.data)
         return Response({'detail': 'No item currently showing'}, status=404)
+
+    @action(detail=True, methods=['post', 'get'], permission_classes=[permissions.AllowAny])
+    def calibration(self, request, pk=None):
+        """
+        GET: Retrieve current calibration JSON for a mesa.
+        POST: Save calibration JSON (corner positions) for a mesa.
+        """
+        mesa = self.get_object()
+        
+        if request.method == 'GET':
+            return Response({
+                'id': mesa.id,
+                'nombre': mesa.nombre,
+                'calibration_json': mesa.calibration_json
+            })
+        
+        # POST: Save calibration
+        calibration_data = request.data.get('calibration_json')
+        if calibration_data is None:
+            return Response(
+                {'detail': 'calibration_json is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        mesa.calibration_json = calibration_data
+        # Update calibration_json AND trigger auto_now for ultima_actualizacion
+        mesa.save()
+        
+        return Response({
+            'id': mesa.id,
+            'nombre': mesa.nombre,
+            'calibration_json': mesa.calibration_json,
+            'message': 'Calibration saved successfully'
+        })
 
 
 class ModuloQueueViewSet(viewsets.ModelViewSet):
@@ -554,6 +596,50 @@ class DeviceViewSet(viewsets.ViewSet):
             
         return Response({'status': 'ok'})
 
+
+    @action(detail=False, methods=['get'], renderer_classes=[ServerSentEventRenderer])
+    def stream(self, request):
+        """
+        Server-Sent Events (SSE) stream for real-time updates.
+        """
+        mesa = self._authenticate_device(request)
+        if not mesa:
+            return Response({'detail': 'Unauthorized'}, status=401)
+            
+        import time
+        import json
+        from django.http import StreamingHttpResponse
+        
+        def event_stream():
+            last_check = mesa.ultima_actualizacion
+            
+            # Send initial state immediately
+            initial_data = {
+                'type': 'calibration',
+                'data': {'corners': mesa.calibration_json.get('corners')} if mesa.calibration_json else {}
+            }
+            yield f"data: {json.dumps(initial_data)}\n\n"
+            
+            while True:
+                # Refresh from DB to check for updates
+                mesa.refresh_from_db()
+                
+                if mesa.ultima_actualizacion > last_check:
+                    last_check = mesa.ultima_actualizacion
+                    payload = {
+                        'type': 'calibration',
+                        'data': {'corners': mesa.calibration_json.get('corners')} if mesa.calibration_json else {}
+                    }
+                    yield f"data: {json.dumps(payload)}\n\n"
+                
+                # Check every 100ms
+                time.sleep(0.1)
+
+        response = StreamingHttpResponse(event_stream(), content_type='text/event-stream')
+        response['Cache-Control'] = 'no-cache'
+        response['X-Accel-Buffering'] = 'no'  # Disable Nginx buffering
+        return response
+
     @action(detail=False, methods=['get'])
     def state(self, request):
         mesa = self._authenticate_device(request)
@@ -596,10 +682,15 @@ class DeviceViewSet(viewsets.ViewSet):
         """Helper to validate Bearer token against hashes."""
         import hashlib
         auth_header = request.headers.get('Authorization')
-        if not auth_header or not auth_header.startswith('Bearer '):
-            return None
+        token = None
+        
+        if auth_header and auth_header.startswith('Bearer '):
+            token = auth_header.split(' ')[1]
+        elif request.query_params.get('token'):
+            token = request.query_params.get('token')
             
-        token = auth_header.split(' ')[1]
+        if not token:
+            return None
         token_hash = hashlib.sha256(token.encode()).hexdigest()
         
         return Mesa.objects.filter(device_token_hash=token_hash).first()
@@ -621,7 +712,26 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(mesa_id=mesa_id)
         if status_filter is not None:
             queryset = queryset.filter(status=status_filter)
+        if status_filter is not None:
+            queryset = queryset.filter(status=status_filter)
         return queryset
+
+    def perform_create(self, serializer):
+        item = serializer.save()
+        from api.models import MesaQueueStatus
+        
+        # Check if there are any active items (MOSTRANDO)
+        # If not, auto-promote this new item
+        active_exists = MesaQueueItem.objects.filter(
+            mesa=item.mesa,
+            status=MesaQueueStatus.MOSTRANDO
+        ).exists()
+        
+        if not active_exists:
+            item.status = MesaQueueStatus.MOSTRANDO
+            item.save(update_fields=['status'])
+            item.mesa.imagen_actual = item.imagen
+            item.mesa.save(update_fields=['imagen_actual'])
 
     @action(detail=True, methods=['post'])
     def marcar_hecho(self, request, pk=None):
