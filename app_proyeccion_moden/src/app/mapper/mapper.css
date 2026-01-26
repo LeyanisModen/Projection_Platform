@@ -27,7 +27,7 @@ main {
     width: 100%;
     height: 100%;
     background: black;
-    overflow: hidden;
+    overflow: visible;
     color: white;
     font-family: sans-serif;
     text-align: center;
@@ -119,6 +119,11 @@ main.correctingSource #sourceCorrectButton>*:not(.sourceCorrect):not(.shortcuts)
     transform: translate(-50%, -50%);
     text-align: center;
     font-size: 50px;
+    line-height: 60px;
+    /* Ensure vertical centering */
+    display: flex;
+    justify-content: center;
+    align-items: center;
     cursor: grab;
     z-index: 500;
     background-size: 25%;
