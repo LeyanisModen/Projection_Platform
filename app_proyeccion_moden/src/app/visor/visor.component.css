@@ -161,3 +161,30 @@
     pointer-events: none;
     border: 1px solid rgba(255, 152, 0, 0.3);
 }
+
+/* Active Item Info Overlay */
+.active-item-info {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    background: rgba(0, 0, 0, 0.6);
+    color: white;
+    padding: 10px 15px;
+    border-radius: 8px;
+    pointer-events: none;
+    font-family: sans-serif;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    z-index: 100;
+}
+
+.info-title {
+    font-weight: bold;
+    font-size: 1.1rem;
+}
+
+.info-progress {
+    font-size: 0.9rem;
+    color: #ccc;
+}

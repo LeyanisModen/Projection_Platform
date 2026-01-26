@@ -248,6 +248,22 @@ export class VisorComponent implements OnInit, OnDestroy {
   loadingImages = false;
   private itemPollSub: Subscription | null = null;
 
+  get projectedImage(): string | null {
+    if (this.images && this.images.length > 0 && this.images[this.currentIndex]) {
+      return this.images[this.currentIndex].url;
+    }
+    return this.mesaState?.image_url ?? null;
+  }
+
+  get showOverlay(): boolean {
+    return !!(this.activeItem && this.images && this.images.length > 0);
+  }
+
+  get isCalibrationActive(): boolean {
+    // Enable calibration if supervisor AND (no image projected OR mapper explicitly enabled)
+    return this.isSupervisor && (!this.projectedImage || !!this.mesaState?.mapper_enabled);
+  }
+
   @HostListener('window:keydown', ['$event'])
   handleKeyboardEvent(event: KeyboardEvent) {
     if (this.mode !== 'PROJECTION' || !this.images.length) return;

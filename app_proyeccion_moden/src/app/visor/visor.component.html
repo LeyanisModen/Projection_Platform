@@ -29,16 +29,16 @@
     <!-- PROJECTION MODE -->
     @if (mode === 'PROJECTION') {
     <div class="projection-screen">
-        <app-mapper [imageUrl]="(images.length > 0 ? images[currentIndex].url : null) ?? mesaState?.image_url"
-            [isCalibrationActive]="isSupervisor && ((!images.length && !mesaState?.image_url) || mesaState?.mapper_enabled)"
+        <!-- Simplified Mapper for Debug -->
+        <app-mapper [imageUrl]="projectedImage" [isCalibrationActive]="isCalibrationActive"
             [mesaId]="mesaState?.id ?? null" [calibrationJson]="mesaState?.calibration_json ?? null"
             [allowInteraction]="isSupervisor">
         </app-mapper>
 
         <!-- Active Item Info Overlay -->
-        @if (activeItem && images.length > 0) {
+        @if (showOverlay) {
         <div class="active-item-info">
-            <span class="info-title">{{ activeItem.modulo_nombre }} - {{ activeItem.fase }}</span>
+            <span class="info-title">{{ activeItem?.modulo_nombre }} - {{ activeItem?.fase }}</span>
             <span class="info-progress">{{ currentIndex + 1 }} / {{ images.length }}</span>
         </div>
         }
