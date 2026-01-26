@@ -88,6 +88,22 @@ export class Dashboard implements OnInit, OnDestroy {
   unbindMesa: Mesa | null = null;
   unbindLoading = false;
 
+  // Breadcrumb Navigation
+  navigateTo(level: 'projects' | 'plants'): void {
+    if (level === 'projects') {
+      this.selectedProyecto = null;
+      this.selectedPlanta = null;
+      this.selectedModulo = null;
+      this.navLevel = 'projects';
+      this.loadProyectos();
+    } else if (level === 'plants' && this.selectedProyecto) {
+      this.selectedPlanta = null;
+      this.selectedModulo = null;
+      this.navLevel = 'plants';
+      this.loadPlantasForProyecto(this.selectedProyecto.id);
+    }
+  }
+
   private destroy$ = new Subject<void>();
 
   constructor(private api: ApiService, private cdr: ChangeDetectorRef) { }

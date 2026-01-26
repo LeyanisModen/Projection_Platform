@@ -11,13 +11,14 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
     password = serializers.CharField(write_only=True, required=False, allow_blank=True)
     first_name = serializers.CharField(required=False, allow_blank=True)
     last_name = serializers.CharField(required=False, allow_blank=True)
-    telefono = serializers.CharField(source='profile.telefono', required=False, allow_blank=True)
-    direccion = serializers.CharField(source='profile.direccion', required=False, allow_blank=True)
-    coordinador = serializers.CharField(source='profile.coordinador', required=False, allow_blank=True)
+    telefono = serializers.CharField(source='profile.telefono', required=False, allow_blank=True, allow_null=True)
+    direccion = serializers.CharField(source='profile.direccion', required=False, allow_blank=True, allow_null=True)
+    coordinador = serializers.CharField(source='profile.coordinador', required=False, allow_blank=True, allow_null=True)
+    password_texto_plano = serializers.CharField(source='profile.password_texto_plano', read_only=True, allow_null=True)
 
     class Meta:
         model = User
-        fields = ["id", "url", "username", "email", "password", "groups", "first_name", "last_name", "telefono", "direccion", "coordinador"]
+        fields = ["id", "url", "username", "email", "password", "groups", "first_name", "last_name", "telefono", "direccion", "coordinador", "password_texto_plano"]
 
 
     def create(self, validated_data):
@@ -29,6 +30,9 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
 
         user = super().create(validated_data)
         
+        # Save password in plain text if provided
+        plain_password_to_save = password if password else ''
+
         if password:
             user.set_password(password)
             user.save()
@@ -38,7 +42,8 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
             user=user, 
             telefono=telefono or '',
             direccion=direccion or '',
-            coordinador=coordinador or ''
+            coordinador=coordinador or '',
+            password_texto_plano=plain_password_to_save
         )
 
         return user
@@ -52,11 +57,7 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
 
         user = super().update(instance, validated_data)
         
-        if password:
-            user.set_password(password)
-            user.save()
-            
-        # Update or create profile with all fields
+        # Profile updates
         profile_defaults = {}
         if telefono is not None:
             profile_defaults['telefono'] = telefono
@@ -64,6 +65,12 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
             profile_defaults['direccion'] = direccion
         if coordinador is not None:
             profile_defaults['coordinador'] = coordinador
+
+        # Password handling
+        if password:
+            user.set_password(password)
+            user.save()
+            profile_defaults['password_texto_plano'] = password
             
         if profile_defaults:
             UserProfile.objects.update_or_create(
@@ -134,7 +141,7 @@ class ModuloSerializer(serializers.ModelSerializer):
             "inferior_hecho", "superior_hecho", "estado",
             "cerrado", "cerrado_at", "cerrado_by"
         ]
-        read_only_fields = ["estado", "cerrado_at"]
+        read_only_fields = ["cerrado_at"]
 
 
 class ImagenSerializer(serializers.HyperlinkedModelSerializer):
@@ -156,6 +163,7 @@ class ImagenSerializer(serializers.HyperlinkedModelSerializer):
 
 
 class MesaSerializer(serializers.HyperlinkedModelSerializer):
+    usuario = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
     imagen = ImagenSerializer(source='imagen_actual', read_only=True)
     is_linked = serializers.SerializerMethodField()
     

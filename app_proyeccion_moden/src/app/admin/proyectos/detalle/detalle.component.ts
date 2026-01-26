@@ -2,7 +2,7 @@ import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterModule } from '@angular/router';
-import { ApiService, Proyecto, Planta, Modulo } from '../../../services/api.service';
+import { ApiService, Proyecto, Planta, Modulo, User } from '../../../services/api.service';
 import { switchMap, forkJoin, of } from 'rxjs';
 
 @Component({
@@ -18,6 +18,7 @@ export class ProyectoDetailComponent implements OnInit {
     plantas: Planta[] = [];
     selectedPlanta: Planta | null = null;
     modulos: Modulo[] = [];
+    users: User[] = [];
 
     loading = false;
     showPlantaForm = false;
@@ -33,6 +34,13 @@ export class ProyectoDetailComponent implements OnInit {
     };
     loadingBulk = false;
 
+    // Module status options
+    statusOptions = ['PENDIENTE', 'EN_PROGRESO', 'COMPLETADO'];
+
+    // Import State
+    importing = false;
+    importProgress = '';
+
     constructor(
         private route: ActivatedRoute,
         private api: ApiService,
@@ -40,29 +48,30 @@ export class ProyectoDetailComponent implements OnInit {
     ) { }
 
     ngOnInit(): void {
-        this.route.params.pipe(
-            switchMap(params => {
-                if (params['id']) {
-                    this.proyectoId = +params['id'];
-                    this.loading = true;
-                    return forkJoin({
-                        proyecto: this.api.getProyecto(this.proyectoId),
-                        plantas: this.api.getPlantas(this.proyectoId)
-                    });
-                }
-                return of(null);
-            })
-        ).subscribe({
+        this.route.params.subscribe(params => {
+            if (params['id']) {
+                this.proyectoId = +params['id'];
+                this.loadData();
+            }
+        });
+    }
+
+    loadData() {
+        if (!this.proyectoId) return;
+        this.loading = true;
+        forkJoin({
+            proyecto: this.api.getProyecto(this.proyectoId),
+            plantas: this.api.getPlantas(this.proyectoId),
+            users: this.api.getUsers()
+        }).subscribe({
             next: (data) => {
-                console.log('Project Detail Data:', data);
                 if (data && data.proyecto && data.plantas) {
                     this.proyecto = data.proyecto;
                     this.plantas = data.plantas.sort((a: Planta, b: Planta) => a.orden - b.orden);
+                    this.users = data.users || [];
                     this.loading = false;
-                    console.log('Loading disabled, triggering CD');
                     this.cdr.detectChanges();
                 } else {
-                    console.error('Missing data in response', data);
                     this.loading = false;
                     this.cdr.detectChanges();
                 }
@@ -180,5 +189,162 @@ export class ProyectoDetailComponent implements OnInit {
                 this.cdr.detectChanges();
             }
         });
+    }
+
+    // Change project ferralla assignment
+    changeFerralla(userUrl: string | null): void {
+        if (!this.proyectoId) return;
+
+        this.loading = true;
+        this.api.updateProyecto(this.proyectoId, { usuario: userUrl }).subscribe({
+            next: (proyecto: Proyecto) => {
+                this.proyecto = proyecto;
+                this.loading = false;
+                this.cdr.detectChanges();
+            },
+            error: (err: any) => {
+                console.error('Error updating ferralla', err);
+                this.loading = false;
+                alert('Error al cambiar la ferralla');
+                this.cdr.detectChanges();
+            }
+        });
+    }
+
+    // Update module status
+    updateModuloStatus(modulo: Modulo, newStatus: string): void {
+        console.log('CLICKED updateModuloStatus', modulo.id, newStatus);
+
+        if (modulo.estado === newStatus) {
+            console.log('Status is already', newStatus, 'skipping');
+            return;
+        }
+
+        this.api.updateModulo(modulo.id, { estado: newStatus }).subscribe({
+            next: (updated: Modulo) => {
+                console.log('Update success', updated);
+                const index = this.modulos.findIndex(m => m.id === modulo.id);
+                if (index !== -1) {
+                    this.modulos[index] = updated;
+                }
+                this.cdr.detectChanges();
+            },
+            error: (err: any) => {
+                console.error('Error updating module status', err);
+                alert('Error al cambiar el estado del módulo');
+            }
+        });
+    }
+
+    // Get user display name from URL
+    getUserName(userUrl: string | null): string {
+        if (!userUrl) return 'Sin asignar';
+        const user = this.users.find(u => u.url === userUrl);
+        return user ? (user.first_name || user.username) : 'Sin asignar';
+    }
+
+    async importPlantaFromFolder() {
+        if (!this.proyectoId) return;
+
+        try {
+            // Use File System Access API
+            const plantaHandle = await (window as any).showDirectoryPicker();
+            if (!plantaHandle) return;
+
+            this.importing = true;
+            this.importProgress = `Analizando carpeta: ${plantaHandle.name}...`;
+            this.cdr.detectChanges();
+
+            const formData = new FormData();
+            const validExtensions = ['.png', '.jpg', '.jpeg'];
+
+            // Calculate next order
+            const nextOrder = this.plantas.length > 0
+                ? Math.max(...this.plantas.map(p => p.orden)) + 1
+                : 1;
+
+            const plantaData: any = {
+                nombre: plantaHandle.name,
+                orden: nextOrder,
+                modulos: []
+            };
+
+            // Iterate modules (children of plantaHandle)
+            for await (const [moduloName, moduloHandle] of (plantaHandle as any).entries()) {
+                if (moduloHandle.kind !== 'directory') continue;
+
+                this.importProgress = `Procesando módulo: ${moduloName}...`;
+                this.cdr.detectChanges();
+
+                const moduloData: any = {
+                    nombre: moduloName,
+                    imagenes: []
+                };
+
+                // Check for INF and SUP subfolders
+                for await (const [faseName, faseHandle] of moduloHandle.entries()) {
+                    if (faseHandle.kind !== 'directory') continue;
+
+                    const faseNormalizada = faseName.toUpperCase();
+                    if (faseNormalizada !== 'INF' && faseNormalizada !== 'SUP') continue;
+
+                    const fase = faseNormalizada === 'INF' ? 'INFERIOR' : 'SUPERIOR';
+                    let ordenImg = 1;
+
+                    // Read images in fase folder
+                    for await (const [fileName, fileHandle] of faseHandle.entries()) {
+                        if (fileHandle.kind !== 'file') continue;
+
+                        const ext = fileName.toLowerCase().substring(fileName.lastIndexOf('.'));
+                        if (!validExtensions.includes(ext) && ext !== '.png' && ext !== '.jpg' && ext !== '.jpeg') continue;
+
+                        const file = await fileHandle.getFile();
+                        // Append file to FormData with filename as key
+                        formData.append(fileName, file);
+
+                        moduloData.imagenes.push({
+                            filename: fileName,
+                            fase: fase,
+                            orden: ordenImg++
+                        });
+                    }
+                }
+                plantaData.modulos.push(moduloData);
+            }
+
+            this.importProgress = 'Subiendo datos...';
+            this.cdr.detectChanges();
+
+            // Add structure to FormData
+            formData.append('plantas', JSON.stringify([plantaData]));
+
+            // Upload
+            this.api.importProjectStructure(this.proyectoId, formData).subscribe({
+                next: (res) => {
+                    this.importing = false;
+                    this.importProgress = '';
+                    alert(`Planta importada correctamente: ${res.stats.modulos} módulos creados.`);
+                    this.loadData();
+                },
+                error: (err) => {
+                    console.error('Error uploading plant', err);
+                    this.importing = false;
+                    this.importProgress = '';
+                    alert('Error importando la planta');
+                    this.cdr.detectChanges();
+                }
+            });
+
+        } catch (err: any) {
+            if (err.name !== 'AbortError') {
+                console.error('Error reading folder:', err);
+                this.importing = false;
+                alert('Error leyendo la carpeta: ' + err.message);
+                this.cdr.detectChanges();
+            } else {
+                this.importing = false;
+                this.importProgress = '';
+            }
+        }
     }
 }

@@ -9,6 +9,7 @@ interface ProjectGroup {
   username: string;
   userUrl: string;
   projects: Proyecto[];
+  collapsed: boolean;
 }
 
 interface ImportStats {
@@ -77,7 +78,8 @@ export class ProyectosComponent implements OnInit {
       groups[user.url] = {
         username: user.first_name || user.username,
         userUrl: user.url,
-        projects: []
+        projects: [],
+        collapsed: false
       };
     });
 
@@ -85,7 +87,8 @@ export class ProyectosComponent implements OnInit {
     groups['__unassigned__'] = {
       username: 'Sin Asignar',
       userUrl: '',
-      projects: []
+      projects: [],
+      collapsed: false
     };
 
     // Distribute projects
@@ -321,8 +324,7 @@ export class ProyectosComponent implements OnInit {
   }
 
   manageProject(project: Proyecto) {
-    alert(`Gestión de proyecto ${project.nombre} (Plantas/Módulos) pendiente de implementar.`);
-    // TODO: Navigate to detail view or open modal for Planta/Modulo management
+    this.router.navigate(['/admin-dashboard/proyectos', project.id]);
   }
 
   confirmDelete(project: Proyecto) {

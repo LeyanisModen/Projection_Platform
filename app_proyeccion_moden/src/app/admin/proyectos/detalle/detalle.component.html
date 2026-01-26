@@ -3,7 +3,16 @@
         <div class="header-content">
             <a routerLink="/admin-dashboard/proyectos" class="btn btn-secondary btn-sm mb-2">← Volver</a>
             <h1>{{ proyecto.nombre }}</h1>
-            <span class="badge user-badge">👤 {{ proyecto.usuario }}</span>
+            <div class="ferralla-selector">
+                <label>Ferralla asignada:</label>
+                <select class="form-control form-control-sm d-inline-block w-auto ml-2" [ngModel]="proyecto.usuario"
+                    (ngModelChange)="changeFerralla($event)">
+                    <option [ngValue]="null">Sin asignar</option>
+                    <option *ngFor="let user of users" [ngValue]="user.url">
+                        {{ user.first_name || user.username }}
+                    </option>
+                </select>
+            </div>
         </div>
     </div>
 
@@ -13,26 +22,20 @@
             <div class="card">
                 <div class="card-header">
                     <h3>Plantas (Niveles)</h3>
-                    <button class="btn btn-sm btn-primary" (click)="togglePlantaForm()">+ Añadir</button>
+                    <div>
+                        <button class="btn btn-sm btn-info" (click)="importPlantaFromFolder()"
+                            [disabled]="importing">Importar Planta</button>
+                    </div>
                 </div>
 
-                <!-- Formulario Nueva Planta -->
-                <div class="p-3 bg-light border-bottom" *ngIf="showPlantaForm">
-                    <form (ngSubmit)="createPlanta()" #plantaForm="ngForm">
-                        <div class="form-group">
-                            <label>Nombre (ej. Planta 1)</label>
-                            <input type="text" class="form-control" [(ngModel)]="newPlanta.nombre" name="nombre"
-                                required>
-                        </div>
-                        <div class="form-group">
-                            <label>Orden</label>
-                            <input type="number" class="form-control" [(ngModel)]="newPlanta.orden" name="orden"
-                                required>
-                        </div>
-                        <button type="submit" class="btn btn-sm btn-success btn-block"
-                            [disabled]="!plantaForm.valid">Guardar</button>
-                    </form>
+                <div class="p-3 bg-warning-light border-bottom" *ngIf="importing">
+                    <div class="d-flex align-items-center">
+                        <div class="spinner spinner-sm mr-2"></div>
+                        <small>{{ importProgress }}</small>
+                    </div>
                 </div>
+
+
 
                 <div class="list-group">
                     <button *ngFor="let planta of plantas" class="list-group-item list-group-item-action"
@@ -52,44 +55,40 @@
             <div class="card h-100" *ngIf="selectedPlanta; else noPlantaSelected">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h3>Módulos de {{ selectedPlanta.nombre }}</h3>
-                    <button class="btn btn-sm btn-primary" (click)="toggleModuloForm()">+ Crear Módulos</button>
-                </div>
-
-                <!-- Formulario Nuevos Módulos (Bulk) -->
-                <div class="p-3 bg-light border-bottom" *ngIf="showModuloForm">
-                    <h5>Creación Masiva</h5>
-                    <p class="text-muted small">Crea múltiples módulos automáticamente (ej. MOD-01 a MOD-10)</p>
-                    <form (ngSubmit)="createModulosBulk()" #moduloForm="ngForm">
-                        <div class="form-row">
-                            <div class="col">
-                                <label>Prefijo</label>
-                                <input type="text" class="form-control" [(ngModel)]="bulkModulo.prefix" name="prefix"
-                                    placeholder="MOD-" required>
-                            </div>
-                            <div class="col">
-                                <label>Inicio #</label>
-                                <input type="number" class="form-control" [(ngModel)]="bulkModulo.start" name="start"
-                                    required>
-                            </div>
-                            <div class="col">
-                                <label>Cantidad</label>
-                                <input type="number" class="form-control" [(ngModel)]="bulkModulo.count" name="count"
-                                    required>
-                            </div>
-                        </div>
-                        <button type="submit" class="btn btn-sm btn-success mt-2" [disabled]="loadingBulk">Generar
-                            Módulos</button>
-                    </form>
                 </div>
 
                 <div class="card-body">
-                    <div class="modules-grid">
-                        <div *ngFor="let modulo of modulos" class="module-card">
-                            <div class="module-icon">📦</div>
-                            <div class="module-name">{{ modulo.nombre }}</div>
-                            <div class="module-status badge" [class.badge-success]="modulo.estado === 'COMPLETADO'"
-                                [class.badge-warning]="modulo.estado !== 'COMPLETADO'">
-                                {{ modulo.estado }}
+                    <!-- Leyenda -->
+                    <div class="legend mb-3 d-flex align-items-center flex-wrap">
+                        <small class="mr-2 font-weight-bold">Estados:</small>
+                        <span class="badge badge-pendiente mr-2">Pendiente</span>
+                        <span class="badge badge-progreso mr-2">En Progreso</span>
+                        <span class="badge badge-completado">Completado</span>
+                    </div>
+
+                    <div class="modules-grid-compact">
+                        <div *ngFor="let modulo of modulos" class="module-compact"
+                            [class.status-pendiente]="modulo.estado === 'PENDIENTE'"
+                            [class.status-en-progreso]="modulo.estado === 'EN_PROGRESO'"
+                            [class.status-completado]="modulo.estado === 'COMPLETADO'">
+
+                            <div class="module-header">
+                                <span class="module-name">{{ modulo.nombre }}</span>
+                                <span class="current-status">{{ modulo.estado }}</span>
+                            </div>
+
+                            <div class="status-actions">
+                                <button type="button" class="btn-status btn-pendiente" title="Pendiente"
+                                    (click)="updateModuloStatus(modulo, 'PENDIENTE'); $event.stopPropagation()"
+                                    [class.active]="modulo.estado === 'PENDIENTE'"></button>
+
+                                <button type="button" class="btn-status btn-progreso" title="En Progreso"
+                                    (click)="updateModuloStatus(modulo, 'EN_PROGRESO'); $event.stopPropagation()"
+                                    [class.active]="modulo.estado === 'EN_PROGRESO'"></button>
+
+                                <button type="button" class="btn-status btn-completado" title="Completado"
+                                    (click)="updateModuloStatus(modulo, 'COMPLETADO'); $event.stopPropagation()"
+                                    [class.active]="modulo.estado === 'COMPLETADO'"></button>
                             </div>
                         </div>
                     </div>

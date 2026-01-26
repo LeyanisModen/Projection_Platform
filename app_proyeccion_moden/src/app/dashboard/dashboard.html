@@ -18,14 +18,18 @@
                     <div class="header-text-group">
                         @if (navLevel === 'projects') {
                         <h2>Proyectos</h2>
+                        <small class="text-muted">Lista de Proyectos</small>
                         } @else if (navLevel === 'plants') {
-                        <h2>Plantas</h2>
+                        <h2>{{ selectedProyecto?.nombre }}</h2>
+                        <small class="text-muted">Plantas</small>
                         } @else if (navLevel === 'modules') {
-                        <h2>Módulos</h2>
+                        <h2>{{ selectedProyecto?.nombre }}</h2>
+                        <small class="text-muted">{{ selectedPlanta?.nombre }}</small>
                         }
                     </div>
                 </div>
             </div>
+
 
             <!-- Sidebar Content -->
             <div class="panel-content" *ngIf="panelState === 'expanded'">

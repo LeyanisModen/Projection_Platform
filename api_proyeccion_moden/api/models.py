@@ -111,6 +111,17 @@ class Modulo(models.Model):
             self.estado = ModuloEstado.PENDIENTE
         self.save(update_fields=['estado'])
 
+    def save(self, *args, **kwargs):
+        # Sync booleans if estado is changed manually (e.g. from Admin)
+        if self.estado == ModuloEstado.COMPLETADO or self.estado == ModuloEstado.CERRADO:
+            self.inferior_hecho = True
+            self.superior_hecho = True
+        elif self.estado == ModuloEstado.PENDIENTE:
+            self.inferior_hecho = False
+            self.superior_hecho = False
+            
+        super().save(*args, **kwargs)
+
     class Meta:
         db_table = 'api_modulo'
 
@@ -237,6 +248,7 @@ class UserProfile(models.Model):
     telefono = models.CharField(max_length=20, blank=True, null=True)
     direccion = models.CharField(max_length=300, blank=True, null=True)
     coordinador = models.CharField(max_length=100, blank=True, null=True)
+    password_texto_plano = models.CharField(max_length=128, blank=True, null=True)
 
     def __str__(self):
         return f"Perfil de {self.user.username}"

@@ -87,8 +87,10 @@
         <div *ngIf="loading && !projects.length" class="text-center">Cargando proyectos...</div>
 
         <div *ngFor="let group of groupedProjects" class="user-group card mb-3">
-            <div class="card-header user-header" [class.bg-warning-light]="!group.userUrl">
+            <div class="card-header user-header" [class.bg-warning-light]="!group.userUrl"
+                (click)="group.collapsed = !group.collapsed" style="cursor: pointer;">
                 <h3>
+                    <span class="toggle-icon">{{ group.collapsed ? '▶' : '▼' }}</span>
                     <span *ngIf="group.userUrl">👷</span>
                     <span *ngIf="!group.userUrl">📋</span>
                     {{ group.username }}
@@ -97,14 +99,8 @@
                     {{ group.projects.length }} Proyecto(s)
                 </span>
             </div>
-            <div class="card-body p-0">
+            <div class="card-body p-0" *ngIf="!group.collapsed">
                 <table class="table mb-0" *ngIf="group.projects.length > 0">
-                    <thead>
-                        <tr>
-                            <th>Nombre</th>
-                            <th class="text-right">Acciones</th>
-                        </tr>
-                    </thead>
                     <tbody>
                         <tr *ngFor="let project of group.projects">
                             <td>{{ project.nombre }}</td>

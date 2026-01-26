@@ -115,6 +115,13 @@ export class FerrallasComponent implements OnInit {
     });
   }
 
+  // Add Mesa Logic
+  showAddMesaForm = false;
+
+  toggleAddMesaForm() {
+    this.showAddMesaForm = !this.showAddMesaForm;
+  }
+
   addMesa(nombreInput: HTMLInputElement) {
     if (!this.selectedUser || !nombreInput.value.trim()) return;
 
@@ -129,12 +136,173 @@ export class FerrallasComponent implements OnInit {
         this.mesas.push(mesa);
         nombreInput.value = ''; // Reset input
         this.loadingMesas = false;
+        this.showAddMesaForm = false; // Hide form after adding
         this.cdr.detectChanges();
       },
       error: (err) => {
         console.error('Error creating mesa', err);
         this.loadingMesas = false;
         alert('Error creando mesa');
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  // Pairing Modal State
+  showPairingModal = false;
+  pairingMesa: any = null;
+  pairingCode = '';
+  pairingError = '';
+  pairingLoading = false;
+  pairingSuccess = false;
+
+  // Unbind Modal State
+  showUnbindModal = false;
+  unbindMesa: any = null;
+  unbindLoading = false;
+
+  // Pairing Methods
+  openPairingModal(mesa: any): void {
+    this.pairingMesa = mesa;
+    this.pairingCode = '';
+    this.pairingError = '';
+    this.pairingLoading = false;
+    this.pairingSuccess = false;
+    this.showPairingModal = true;
+    this.cdr.detectChanges();
+  }
+
+  closePairingModal(): void {
+    this.showPairingModal = false;
+    this.pairingMesa = null;
+    this.pairingCode = '';
+    this.pairingError = '';
+    this.pairingLoading = false;
+    this.pairingSuccess = false;
+    this.cdr.detectChanges();
+  }
+
+  submitPairing(): void {
+    if (!this.pairingMesa || !this.pairingCode.trim()) {
+      this.pairingError = 'Introduce un código válido';
+      return;
+    }
+
+    this.pairingLoading = true;
+    this.pairingError = '';
+
+    this.api.pairDevice(this.pairingMesa.id, this.pairingCode.trim().toUpperCase())
+      .subscribe({
+        next: (res) => {
+          this.pairingLoading = false;
+          if (res.status === 'ok') {
+            this.pairingSuccess = true;
+            // Reload mesas to update is_linked status
+            if (this.selectedUser) this.loadMesas(this.selectedUser.id);
+          } else {
+            this.pairingError = 'Error desconocido';
+          }
+          this.cdr.detectChanges();
+        },
+        error: (err) => {
+          this.pairingLoading = false;
+          this.pairingError = err.error?.detail || 'Error al vincular dispositivo';
+          this.cdr.detectChanges();
+        }
+      });
+  }
+
+  onPairingCodeInput(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    this.pairingCode = input.value.toUpperCase();
+  }
+
+  // Unbind Methods
+  openUnbindModal(mesa: any): void {
+    this.unbindMesa = mesa;
+    this.unbindLoading = false;
+    this.showUnbindModal = true;
+    this.cdr.detectChanges();
+  }
+
+  closeUnbindModal(): void {
+    this.showUnbindModal = false;
+    this.unbindMesa = null;
+    this.unbindLoading = false;
+    this.cdr.detectChanges();
+  }
+
+  confirmUnbind(): void {
+    if (!this.unbindMesa) return;
+
+    this.unbindLoading = true;
+    this.api.unbindDevice(this.unbindMesa.id)
+      .subscribe({
+        next: () => {
+          if (this.selectedUser) this.loadMesas(this.selectedUser.id);
+          this.closeUnbindModal();
+        },
+        error: () => {
+          this.unbindLoading = false;
+          this.cdr.detectChanges();
+        }
+      });
+  }
+
+  // Credentials Modal Logic
+  showCredentialsModal = false;
+  credentialUser: User | null = null;
+  newCredentialPassword = '';
+  credentialError = '';
+  credentialSuccess = '';
+  credentialLoading = false;
+
+  openCredentialsModal(user: User): void {
+    this.credentialUser = user;
+    this.newCredentialPassword = '';
+    this.credentialError = '';
+    this.credentialSuccess = '';
+    this.credentialLoading = false;
+    this.showCredentialsModal = true;
+    this.cdr.detectChanges();
+  }
+
+  closeCredentialsModal(): void {
+    this.showCredentialsModal = false;
+    this.credentialUser = null;
+    this.newCredentialPassword = '';
+    this.credentialError = '';
+    this.credentialSuccess = '';
+    this.cdr.detectChanges();
+  }
+
+  generatePassword(): void {
+    this.newCredentialPassword = Math.random().toString(36).slice(-8);
+  }
+
+  generateFormPassword(): void {
+    this.newUser.password = Math.random().toString(36).slice(-8);
+  }
+
+  updateCredentials(): void {
+    if (!this.credentialUser || !this.newCredentialPassword) return;
+
+    this.credentialLoading = true;
+    this.credentialError = '';
+
+    // We only update the password.
+    const payload = { password: this.newCredentialPassword };
+
+    this.api.updateUser(this.credentialUser.id, payload).subscribe({
+      next: () => {
+        this.credentialLoading = false;
+        this.credentialSuccess = 'Contraseña actualizada correctamente';
+        this.newCredentialPassword = ''; // Clear for security
+        this.cdr.detectChanges();
+      },
+      error: (err: any) => {
+        this.credentialLoading = false;
+        this.credentialError = 'Error actualizando contraseña';
         this.cdr.detectChanges();
       }
     });

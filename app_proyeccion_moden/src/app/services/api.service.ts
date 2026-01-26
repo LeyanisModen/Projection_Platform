@@ -25,6 +25,7 @@ export interface User {
     telefono?: string;
     direccion?: string;
     coordinador?: string;
+    password_texto_plano?: string;
 }
 
 
@@ -168,6 +169,10 @@ export class ApiService {
         return this.http.delete<void>(`${this.baseUrl}/proyectos/${id}/`, { headers: this.getHeaders() });
     }
 
+    updateProyecto(id: number, data: any): Observable<Proyecto> {
+        return this.http.patch<Proyecto>(`${this.baseUrl}/proyectos/${id}/`, data, { headers: this.getHeaders() });
+    }
+
     /**
      * Import project structure with images from folder.
      * @param proyectoId - The project ID to import into
@@ -238,6 +243,10 @@ export class ApiService {
 
     cerrarModulo(id: number): Observable<Modulo> {
         return this.http.post<Modulo>(`${this.baseUrl}/modulos/${id}/cerrar/`, {}, { headers: this.getHeaders() });
+    }
+
+    updateModulo(id: number, data: any): Observable<Modulo> {
+        return this.http.patch<Modulo>(`${this.baseUrl}/modulos/${id}/`, data, { headers: this.getHeaders() });
     }
 
     // =========================================================================

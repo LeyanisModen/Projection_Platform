@@ -348,6 +348,25 @@
   min-height: 100px;
 }
 
+/* Panel Header */
+.header-text-group {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.header-text-group h2 {
+  margin: 0;
+  font-size: 1.2rem;
+  color: #cbd5e0;
+}
+
+.header-text-group small {
+  font-size: 0.8rem;
+  color: #718096;
+  margin-top: 2px;
+}
+
 /* Horizontal Scrollbar style */
 .images-scroll-container::-webkit-scrollbar {
   height: 6px;

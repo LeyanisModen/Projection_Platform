@@ -18,7 +18,7 @@
                     <label for="first_name">Nombre de la Ferralla</label>
                     <input type="text" id="first_name" name="first_name" class="form-control"
                         [(ngModel)]="newUser.first_name" required placeholder="Ej: Ferrallas del Norte S.L."
-                        autocomplete="off">
+                        autocomplete="new-password">
                 </div>
 
                 <!-- Usuario y Contraseña en la misma fila -->
@@ -26,12 +26,22 @@
                     <div class="col-md-6 form-group">
                         <label for="username">Usuario (Login)</label>
                         <input type="text" id="username" name="username" class="form-control"
-                            [(ngModel)]="newUser.username" required placeholder="Ej: ferrallasnorte" autocomplete="off">
+                            [(ngModel)]="newUser.username" required placeholder="Ej: ferrallasnorte"
+                            autocomplete="new-password">
                     </div>
                     <div class="col-md-6 form-group">
                         <label for="password">Contraseña</label>
-                        <input type="text" id="password" name="password" class="form-control"
-                            [(ngModel)]="newUser.password" placeholder="Contraseña" autocomplete="new-password">
+                        <div class="input-group d-flex flex-nowrap">
+                            <input type="text" id="password" name="password" class="form-control"
+                                [(ngModel)]="newUser.password" placeholder="Contraseña" autocomplete="new-password"
+                                [required]="!isEditing">
+                            <div class="input-group-append">
+                                <button type="button" class="btn btn-outline-secondary text-nowrap"
+                                    (click)="generateFormPassword()" title="Generar contraseña">
+                                    <i class="fa fa-refresh"></i>
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -40,19 +50,24 @@
                     <div class="col-md-6 form-group">
                         <label for="coordinador">Coordinador</label>
                         <input type="text" id="coordinador" name="coordinador" class="form-control"
-                            [(ngModel)]="newUser.coordinador" placeholder="Ej: Juan García" autocomplete="off">
+                            [(ngModel)]="newUser.coordinador" placeholder="Ej: Juan García" autocomplete="new-password">
                     </div>
                     <div class="col-md-6 form-group">
                         <label for="telefono">Teléfono</label>
                         <input type="text" id="telefono" name="telefono" class="form-control"
-                            [(ngModel)]="newUser.telefono" placeholder="Ej: +34 600 000 000" autocomplete="off">
+                            [(ngModel)]="newUser.telefono" placeholder="Ej: +34 600 000 000"
+                            autocomplete="new-password">
                     </div>
                 </div>
 
                 <!-- Email -->
                 <div class="form-group">
                     <label for="email">Email</label>
-                    <input type="email" id="email" name="email" class="form-control" [(ngModel)]="newUser.email"
+                    <!-- Dummy input to trick browser -->
+                    <input style="display:none" type="text" name="fakeusernameremembered" />
+                    <input style="display:none" type="password" name="fakepasswordremembered" />
+
+                    <input type="text" id="email" name="email" class="form-control" [(ngModel)]="newUser.email"
                         placeholder="contacto@ferralla.com" autocomplete="off">
                 </div>
 
@@ -61,7 +76,7 @@
                     <label for="direccion">Dirección</label>
                     <input type="text" id="direccion" name="direccion" class="form-control"
                         [(ngModel)]="newUser.direccion" placeholder="Ej: Calle Industrial 45, Polígono Norte"
-                        autocomplete="off">
+                        autocomplete="new-password">
                 </div>
 
                 <div class="form-actions mt-3">
@@ -98,6 +113,11 @@
                                     {{ user.first_name || user.username }}
                                 </td>
                                 <td class="text-right pr-3">
+                                    <button class="btn btn-link btn-sm text-warning p-1"
+                                        (click)="openCredentialsModal(user); $event.stopPropagation()"
+                                        title="Credenciales">
+                                        <i class="fa fa-key"></i>
+                                    </button>
                                     <button class="btn btn-link btn-sm text-info p-1"
                                         (click)="editUser(user); $event.stopPropagation()" title="Editar">
                                         <i class="fa fa-pencil"></i>
@@ -121,20 +141,21 @@
         <!-- Ficha de Detalles -->
         <div class="ferralla-detail-col">
             <div class="card shadow-sm" *ngIf="selectedUser">
-                <div class="card-header bg-white border-bottom py-3 px-3">
+                <div class="card-header border-bottom py-3 px-3">
                     <h5 class="mb-2">{{ selectedUser.first_name || selectedUser.username }}</h5>
                     <div class="text-muted small">
                         <div class="mb-1">
-                            <span><strong>Usuario:</strong> {{ selectedUser.username }}</span>
-                            <span class="ml-3" *ngIf="selectedUser.coordinador"><strong>Coordinador:</strong> {{
-                                selectedUser.coordinador }}</span>
+                            <div class="row">
+                                <div class="col-sm-6" *ngIf="selectedUser.coordinador"><strong>Coordinador:</strong> {{
+                                    selectedUser.coordinador }}</div>
+                                <div class="col-sm-6" *ngIf="selectedUser.telefono"><strong>Tel:</strong> {{
+                                    selectedUser.telefono }}</div>
+                            </div>
                         </div>
-                        <div class="mb-1" *ngIf="selectedUser.telefono || selectedUser.email">
-                            <span *ngIf="selectedUser.telefono"><strong>Tel:</strong> {{ selectedUser.telefono }}</span>
-                            <span class="ml-3" *ngIf="selectedUser.email"><strong>Email:</strong> {{ selectedUser.email
-                                }}</span>
+                        <div class="mb-1" *ngIf="selectedUser.email">
+                            <strong>Email:</strong> {{ selectedUser.email }}
                         </div>
-                        <div *ngIf="selectedUser.direccion">
+                        <div class="mb-1" *ngIf="selectedUser.direccion">
                             <strong>Dirección:</strong> {{ selectedUser.direccion }}
                         </div>
                     </div>
@@ -142,17 +163,32 @@
                 <div class="card-body p-3">
                     <!-- Gestión de Mesas -->
                     <div class="mesas-section">
-                        <h6 class="mb-2 font-weight-bold">Mesas Asignadas</h6>
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h6 class="mb-0 font-weight-bold">Mesas Asignadas</h6>
+                            <button class="btn btn-primary btn-sm" (click)="toggleAddMesaForm()"
+                                *ngIf="!showAddMesaForm">
+                                <i class="fa fa-plus"></i> Añadir Mesa
+                            </button>
+                        </div>
 
-                        <!-- Formulario Añadir Mesa (Inline) -->
-                        <div class="input-group input-group-sm mb-2">
-                            <input type="text" class="form-control" placeholder="Nombre de la nueva mesa..."
-                                #mesaNameInput (keyup.enter)="addMesa(mesaNameInput)">
-                            <div class="input-group-append">
-                                <button class="btn btn-primary" type="button" (click)="addMesa(mesaNameInput)"
-                                    [disabled]="loadingMesas">
-                                    <i class="fa fa-plus"></i> Añadir
-                                </button>
+                        <!-- Formulario Añadir Mesa (Visible/Hidden) -->
+                        <div class="card bg-light mb-3" *ngIf="showAddMesaForm">
+                            <div class="card-body p-2">
+                                <div class="d-flex align-items-center">
+                                    <strong class="mr-2 text-nowrap">Añadir mesa:</strong>
+                                    <div class="d-flex flex-nowrap w-100">
+                                        <input type="text" class="form-control mr-3" placeholder="Nombre..."
+                                            #mesaNameInput (keyup.enter)="addMesa(mesaNameInput)"
+                                            autocomplete="new-password">
+                                        <button class="btn btn-success" type="button" (click)="addMesa(mesaNameInput)"
+                                            [disabled]="loadingMesas">
+                                            Añadir
+                                        </button>
+                                    </div>
+                                    <button class="btn btn-link btn-sm text-muted ml-2" (click)="toggleAddMesaForm()">
+                                        <i class="fa fa-times"></i>
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
@@ -172,15 +208,31 @@
                                 <div class="list-group-item d-flex justify-content-between align-items-center px-2 py-2"
                                     *ngFor="let mesa of mesas">
                                     <div>
-                                        <strong class="small">{{ mesa.nombre }}</strong>
+                                        <div class="d-flex align-items-center">
+                                            <strong class="small mr-2">{{ mesa.nombre }}</strong>
+                                            <span *ngIf="mesa.is_linked" class="badge badge-success badge-pill"
+                                                style="font-size: 0.6rem;">Linked</span>
+                                        </div>
                                         <small class="text-muted d-block" *ngIf="mesa.last_seen">{{ mesa.last_seen |
                                             date:'short' }}</small>
                                         <small class="text-muted d-block" *ngIf="!mesa.last_seen">Sin conexión</small>
                                     </div>
-                                    <button class="btn btn-outline-danger btn-sm py-0 px-1"
-                                        (click)="confirmDeleteMesa(mesa)" title="Eliminar Mesa">
-                                        <i class="fa fa-trash-o"></i>
-                                    </button>
+                                    <div class="btn-group">
+                                        <!-- Pairing Actions -->
+                                        <button class="btn btn-sm btn-outline-info" *ngIf="!mesa.is_linked"
+                                            (click)="openPairingModal(mesa)" title="Vincular Dispositivo">
+                                            <i class="fa fa-link"></i>
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-warning" *ngIf="mesa.is_linked"
+                                            (click)="openUnbindModal(mesa)" title="Desvincular Dispositivo">
+                                            <i class="fa fa-chain-broken"></i>
+                                        </button>
+
+                                        <button class="btn btn-outline-danger btn-sm" (click)="confirmDeleteMesa(mesa)"
+                                            title="Eliminar Mesa">
+                                            <i class="fa fa-trash-o"></i>
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -191,6 +243,94 @@
             <div class="alert alert-info shadow-sm" *ngIf="!selectedUser" style="margin-top: 0;">
                 <i class="fa fa-info-circle mr-2"></i> Selecciona una ferralla para ver sus detalles.
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- Pairing Modal -->
+<div class="modal-backdrop" *ngIf="showPairingModal || showUnbindModal"></div>
+
+<div class="custom-modal" *ngIf="showPairingModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h5>Vincular Dispositivo a {{ pairingMesa?.nombre }}</h5>
+            <button type="button" class="close" (click)="closePairingModal()">
+                <span>&times;</span>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div *ngIf="pairingSuccess" class="text-center text-success">
+                <i class="fa fa-check-circle fa-3x mb-3"></i>
+                <p>¡Dispositivo vinculado correctamente!</p>
+            </div>
+            <div *ngIf="!pairingSuccess">
+                <div class="form-group">
+                    <label>Código de emparejamiento (6 caracteres)</label>
+                    <input type="text" class="form-control form-control-lg text-center text-uppercase" maxlength="6"
+                        [value]="pairingCode" (input)="onPairingCodeInput($event)" placeholder="ABC123"
+                        [disabled]="pairingLoading">
+                </div>
+                <div *ngIf="pairingError" class="alert alert-danger">{{ pairingError }}</div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" (click)="closePairingModal()"
+                [disabled]="pairingLoading">Cerrar</button>
+            <button type="button" class="btn btn-primary" (click)="submitPairing()" *ngIf="!pairingSuccess"
+                [disabled]="pairingLoading || pairingCode.length < 6">
+                {{ pairingLoading ? 'Vinculando...' : 'Vincular' }}
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Credentials Modal -->
+<div class="modal-backdrop" *ngIf="showCredentialsModal"></div>
+<div class="custom-modal" *ngIf="showCredentialsModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h5>Credenciales de Acceso</h5>
+            <button type="button" class="close" (click)="closeCredentialsModal()">
+                <span>&times;</span>
+            </button>
+        </div>
+        <div class="modal-body" *ngIf="credentialUser">
+            <div class="mb-3">
+                <strong>Usuario:</strong> <span class="ml-2">{{ credentialUser.username }}</span>
+            </div>
+            <div class="mb-2">
+                <strong>Contraseña:</strong>
+                <span class="ml-2" *ngIf="credentialUser.password_texto_plano">{{ credentialUser.password_texto_plano
+                    }}</span>
+                <span class="ml-2 text-muted" *ngIf="!credentialUser.password_texto_plano"><em>(no
+                        disponible)</em></span>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" (click)="closeCredentialsModal()">Cerrar</button>
+        </div>
+    </div>
+</div>
+
+<!-- Unbind Modal -->
+<div class="custom-modal" *ngIf="showUnbindModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h5>Desvincular Dispositivo</h5>
+            <button type="button" class="close" (click)="closeUnbindModal()">
+                <span>&times;</span>
+            </button>
+        </div>
+        <div class="modal-body">
+            <p>¿Estás seguro de desvincular el dispositivo de la mesa <strong>{{ unbindMesa?.nombre }}</strong>?</p>
+            <p class="text-muted small">El dispositivo dejará de recibir actualizaciones.</p>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" (click)="closeUnbindModal()"
+                [disabled]="unbindLoading">Cancelar</button>
+            <button type="button" class="btn btn-danger" (click)="confirmUnbind()" [disabled]="unbindLoading">
+                {{ unbindLoading ? 'Desvinculando...' : 'Desvincular' }}
+            </button>
         </div>
     </div>
 </div>
