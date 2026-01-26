@@ -176,6 +176,7 @@
                             @for (item of getMesaQueueItems(mesa.id); track trackByItem($index, item)) {
                             <div class="queue-item" [class]="getItemStatusClass(item.status)"
                                 [cdkDragDisabled]="item.status === 'MOSTRANDO'" cdkDrag>
+                                <div class="drag-handle" cdkDragHandle title="Arrastrar para reordenar">⋮⋮</div>
                                 <div class="queue-item-info">
                                     <span class="queue-index">{{ $index + 1 }}.</span>
                                     <span class="queue-item-fase" [class.inferior]="item.fase === 'INFERIOR'"
@@ -191,7 +192,6 @@
                                     <span class="queue-item-status">{{ item.status }}</span>
                                 </div>
                                 <div class="queue-item-actions">
-                                    <div class="drag-handle" cdkDragHandle title="Arrastrar para reordenar">⋮⋮</div>
                                     <!-- Play button removed (auto-project) -->
                                     @if (item.status === 'MOSTRANDO') {
                                     <button class="btn-action btn-hecho" (click)="marcarHecho(item)"

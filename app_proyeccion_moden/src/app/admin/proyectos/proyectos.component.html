@@ -18,13 +18,7 @@
                     <input type="text" id="nombre" name="nombre" class="form-control" [(ngModel)]="newProject.nombre"
                         required placeholder="Ej: Edificio Residencial Norte" autocomplete="off">
                 </div>
-                <div class="form-group">
-                    <label for="numPlantas">Número de Plantas (Auto-crear)</label>
-                    <input type="number" id="numPlantas" name="numPlantas" class="form-control"
-                        [(ngModel)]="newProject.numPlantas" min="0" placeholder="0 = Ninguna" autocomplete="off">
-                    <small class="text-muted">Se crearán plantas vacías automáticamente (Planta 1, Planta 2,
-                        etc.)</small>
-                </div>
+
                 <div class="form-group">
                     <label for="usuario">Ferralla</label>
                     <select id="usuario" name="usuario" class="form-control" [(ngModel)]="newProject.usuario"

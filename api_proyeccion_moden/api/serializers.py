@@ -79,7 +79,7 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
 # =============================================================================
 class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
     num_plantas = serializers.IntegerField(write_only=True, required=False, min_value=0, default=0)
-    usuario_nombre = serializers.SerializerMethodField()
+    usuario_nombre = serializers.ReadOnlyField(source='usuario.username')
     
     class Meta:
         model = Proyecto
@@ -87,9 +87,7 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
         extra_kwargs = {
             'usuario': {'required': False, 'allow_null': True}
         }
-    
-    def get_usuario_nombre(self, obj):
-        return obj.usuario.username if obj.usuario else None
+
 
     def create(self, validated_data):
         num_plantas = validated_data.pop('num_plantas', 0)

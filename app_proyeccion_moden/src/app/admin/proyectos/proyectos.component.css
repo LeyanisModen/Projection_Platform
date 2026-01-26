@@ -259,21 +259,20 @@
 /* Folder Import Styles */
 .folder-input-group {
     display: flex;
-    gap: 0;
+    gap: 0.5rem;
+    /* Add gap between input and button */
 }
 
 .folder-input-group .folder-display {
     flex: 1;
-    border-top-right-radius: 0;
-    border-bottom-right-radius: 0;
     background: #f8f9fa;
     cursor: pointer;
+    /* Removed border-radius override so it looks like a standalone input */
 }
 
 .folder-input-group .folder-btn {
-    border-top-left-radius: 0;
-    border-bottom-left-radius: 0;
     white-space: nowrap;
+    /* Removed border-radius override so it looks like a standalone button */
 }
 
 .btn-outline-primary:hover {
