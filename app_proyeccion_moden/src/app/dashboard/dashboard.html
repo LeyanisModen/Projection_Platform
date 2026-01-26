@@ -157,19 +157,10 @@
                                 @if (mesa.blackout) { <span class="mesa-badge blackout">⬛</span> }
 
                                 <!-- Link Status (Moved to Header) -->
+                                <!-- Link Status (Moved to Header) -->
                                 <div class="header-link-status">
-                                    @if (mesa.is_linked) {
-                                    <span class="link-indicator-sm" title="Vinculado">✓</span>
                                     <button class="btn-view-projection-sm" (click)="openProjectionView(mesa)"
                                         title="Ver Proyección">👁️</button>
-                                    <button class="btn-unbind-sm" (click)="openUnbindModal(mesa)"
-                                        title="Desvincular">✕</button>
-                                    } @else {
-                                    <button class="btn-vincular-sm" (click)="openPairingModal(mesa)"
-                                        title="Vincular Mesa">
-                                        🔗
-                                    </button>
-                                    }
                                 </div>
                             </div>
                         </div>
@@ -229,61 +220,6 @@
             <button class="btn-modal btn-cancel" (click)="cerrarConfirmModal()">Cancelar</button>
             <button class="btn-modal btn-confirm" (click)="confirmarAccion()">
                 {{ pendingActionType === 'DELETE' ? 'Eliminar' : 'Confirmar' }}
-            </button>
-        </div>
-    </div>
-</div>
-}
-
-<!-- Pairing Modal -->
-@if (showPairingModal) {
-<div class="modal-overlay" (click)="closePairingModal()">
-    <div class="modal-content pairing-modal" (click)="$event.stopPropagation()">
-        @if (pairingSuccess) {
-        <div class="pairing-success">
-            <div class="success-icon">✓</div>
-            <p>¡Dispositivo vinculado!</p>
-            <button class="btn-modal btn-accept" (click)="closePairingModal()">Aceptar</button>
-        </div>
-        } @else {
-        <div class="modal-header">
-            <h3>Vincular Dispositivo</h3>
-            <p class="modal-subtitle">{{ pairingMesa?.nombre }}</p>
-        </div>
-        <div class="modal-body">
-            <label for="pairingCode">Código de 6 caracteres:</label>
-            <input type="text" id="pairingCode" class="pairing-input" maxlength="6" [value]="pairingCode"
-                (input)="onPairingCodeInput($event)" placeholder="ABC123" [disabled]="pairingLoading" />
-            @if (pairingError) {
-            <p class="pairing-error">{{ pairingError }}</p>
-            }
-        </div>
-        <div class="modal-actions">
-            <button class="btn-modal btn-cancel" (click)="closePairingModal()"
-                [disabled]="pairingLoading">Cancelar</button>
-            <button class="btn-modal btn-confirm" (click)="submitPairing()"
-                [disabled]="pairingLoading || pairingCode.length < 6">
-                @if (pairingLoading) { Vinculando... } @else { Vincular }
-            </button>
-        </div>
-        }
-    </div>
-</div>
-}
-
-<!-- Unbind Confirmation Modal -->
-@if (showUnbindModal) {
-<div class="modal-overlay" (click)="closeUnbindModal()">
-    <div class="modal-content unbind-modal" (click)="$event.stopPropagation()">
-        <div class="modal-icon">⚠️</div>
-        <h3>¿Desvincular dispositivo?</h3>
-        <p class="modal-message">El dispositivo vinculado a <strong>{{ unbindMesa?.nombre }}</strong> dejará de recibir
-            proyecciones.</p>
-        <div class="modal-actions">
-            <button class="btn-modal btn-cancel" (click)="closeUnbindModal()"
-                [disabled]="unbindLoading">Cancelar</button>
-            <button class="btn-modal btn-confirm" (click)="confirmUnbind()" [disabled]="unbindLoading">
-                @if (unbindLoading) { Desvinculando... } @else { Desvincular }
             </button>
         </div>
     </div>
