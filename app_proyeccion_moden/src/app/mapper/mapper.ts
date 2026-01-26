@@ -23,16 +23,19 @@ interface TableData {
   templateUrl: './mapper.html',
   styleUrl: './mapper.css',
 })
+// Clase Mapper: Implementa OnChanges para detectar cambios en inputs.
 export class Mapper implements OnChanges {
+  // Configuración básica (Imágen, Estado, ID, Interacción)
   @Input() imageUrl: string | null = null;
   @Input() isCalibrationActive: boolean = false;
   @Input() mesaId: number | null = null;
   @Input() allowInteraction: boolean = true;
 
-  // Setter-based input for calibration to ensure updates are always applied
+  // Variables para gestionar la lógica del setter de calibración
   private _calibrationJson: any = null;
-  private _lastCalibrationHash: string = '';
+  private _lastCalibrationHash: string = ''; // Hash para comparar y evitar reaplicar calibraciones idénticas
 
+  // Setter personalizado para detectar cambios reales en el JSON de calibración
   @Input()
   set calibrationJson(value: any) {
     this._calibrationJson = value;
