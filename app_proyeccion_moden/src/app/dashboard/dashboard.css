@@ -1347,3 +1347,24 @@
 .queue-item .drag-handle:active {
   cursor: grabbing;
 }
+
+/* Projection Button */
+.btn-view-projection-sm {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: #a0aec0;
+  font-size: 1.1rem;
+  padding: 6px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-view-projection-sm:hover {
+  color: #3182ce;
+  background-color: #ebf8ff;
+  transform: scale(1.1);
+}
