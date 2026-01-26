@@ -407,10 +407,13 @@ class MesaQueueItem(models.Model):
         from django.utils import timezone
         
         self.status = MesaQueueStatus.HECHO
+        # Handle AnonymousUser (if coming from unrestrained API)
+        if user and not user.is_authenticated:
+            user = None
         self.done_by = user
         self.done_at = timezone.now()
-        self.save()
-        
+        self.save()  # Ensure HECHO status is persisted
+
         # Update module phase status
         if self.fase == Fase.INFERIOR:
             self.modulo.inferior_hecho = True

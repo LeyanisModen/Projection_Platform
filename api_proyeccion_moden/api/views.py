@@ -733,6 +733,31 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
             item.mesa.imagen_actual = item.imagen
             item.mesa.save(update_fields=['imagen_actual'])
 
+    def perform_destroy(self, instance):
+        from api.models import MesaQueueStatus
+        mesa = instance.mesa
+        was_mostrando = (instance.status == MesaQueueStatus.MOSTRANDO)
+        
+        # Perform deletion
+        instance.delete()
+        
+        # If we deleted the active item, promote the next one
+        if was_mostrando:
+            next_item = MesaQueueItem.objects.filter(
+                mesa=mesa,
+                status=MesaQueueStatus.EN_COLA
+            ).order_by('position').first()
+            
+            if next_item:
+                next_item.status = MesaQueueStatus.MOSTRANDO
+                next_item.save(update_fields=['status'])
+                mesa.imagen_actual = next_item.imagen
+                mesa.save(update_fields=['imagen_actual'])
+            else:
+                # No more items, clear projection
+                mesa.imagen_actual = None
+                mesa.save(update_fields=['imagen_actual'])
+
     @action(detail=True, methods=['post'])
     def marcar_hecho(self, request, pk=None):
         """Mark a work item as done."""
