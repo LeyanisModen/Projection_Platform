@@ -3,23 +3,118 @@ from rest_framework import serializers
 
 from api.models import (
     Proyecto, Planta, Modulo, Imagen, Mesa,
-    ModuloQueue, ModuloQueueItem, MesaQueueItem
+    ModuloQueue, ModuloQueueItem, MesaQueueItem, UserProfile
 )
 
 
 class UserSerializer(serializers.HyperlinkedModelSerializer):
+    password = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    first_name = serializers.CharField(required=False, allow_blank=True)
+    last_name = serializers.CharField(required=False, allow_blank=True)
+    telefono = serializers.CharField(source='profile.telefono', required=False, allow_blank=True)
+    direccion = serializers.CharField(source='profile.direccion', required=False, allow_blank=True)
+    coordinador = serializers.CharField(source='profile.coordinador', required=False, allow_blank=True)
+
     class Meta:
         model = User
-        fields = ["url", "username", "email", "groups"]
+        fields = ["id", "url", "username", "email", "password", "groups", "first_name", "last_name", "telefono", "direccion", "coordinador"]
+
+
+    def create(self, validated_data):
+        password = validated_data.pop('password', None)
+        profile_data = validated_data.pop('profile', {})
+        telefono = profile_data.get('telefono')
+        direccion = profile_data.get('direccion')
+        coordinador = profile_data.get('coordinador')
+
+        user = super().create(validated_data)
+        
+        if password:
+            user.set_password(password)
+            user.save()
+            
+        # Create profile with all fields
+        UserProfile.objects.create(
+            user=user, 
+            telefono=telefono or '',
+            direccion=direccion or '',
+            coordinador=coordinador or ''
+        )
+
+        return user
+
+    def update(self, instance, validated_data):
+        password = validated_data.pop('password', None)
+        profile_data = validated_data.pop('profile', {})
+        telefono = profile_data.get('telefono')
+        direccion = profile_data.get('direccion')
+        coordinador = profile_data.get('coordinador')
+
+        user = super().update(instance, validated_data)
+        
+        if password:
+            user.set_password(password)
+            user.save()
+            
+        # Update or create profile with all fields
+        profile_defaults = {}
+        if telefono is not None:
+            profile_defaults['telefono'] = telefono
+        if direccion is not None:
+            profile_defaults['direccion'] = direccion
+        if coordinador is not None:
+            profile_defaults['coordinador'] = coordinador
+            
+        if profile_defaults:
+            UserProfile.objects.update_or_create(
+                user=user,
+                defaults=profile_defaults
+            )
+
+        return user
 
 
 # =============================================================================
 # CORE SERIALIZERS
 # =============================================================================
 class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
+    num_plantas = serializers.IntegerField(write_only=True, required=False, min_value=0, default=0)
+    usuario_nombre = serializers.SerializerMethodField()
+    
     class Meta:
         model = Proyecto
-        fields = ["id", "url", "nombre", "usuario"]
+        fields = ["id", "url", "nombre", "usuario", "usuario_nombre", "num_plantas"]
+        extra_kwargs = {
+            'usuario': {'required': False, 'allow_null': True}
+        }
+    
+    def get_usuario_nombre(self, obj):
+        return obj.usuario.username if obj.usuario else None
+
+    def create(self, validated_data):
+        num_plantas = validated_data.pop('num_plantas', 0)
+        proyecto = super().create(validated_data)
+
+        if num_plantas > 0:
+            # Create plants
+            # Avoid circular import by importing inside method if needed, 
+            # though Planta is already imported at top level
+            
+            # Batch create for efficiency? Or simple loop. 
+            # Loop is fine for small numbers.
+            planta_objects = []
+            for i in range(1, num_plantas + 1):
+                planta_objects.append(
+                    Planta(
+                        nombre=f"Planta {i}",
+                        proyecto=proyecto,
+                        orden=i
+                    )
+                )
+            if planta_objects:
+                Planta.objects.bulk_create(planta_objects)
+                
+        return proyecto
 
 
 class PlantaSerializer(serializers.ModelSerializer):
@@ -33,7 +128,7 @@ class PlantaSerializer(serializers.ModelSerializer):
         return obj.modulos.count()
 
 
-class ModuloSerializer(serializers.HyperlinkedModelSerializer):
+class ModuloSerializer(serializers.ModelSerializer):
     class Meta:
         model = Modulo
         fields = [
@@ -135,7 +230,7 @@ class MesaQueueItemSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({
                 'imagen': f"Imagen es fase {imagen.fase}, no {fase}"
             })
-        
+            
         return data
 
 # =============================================================================

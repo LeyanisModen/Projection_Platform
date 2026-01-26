@@ -34,9 +34,8 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.AllowAny'
     ],
     # Use only BasicAuthentication to avoid CSRF token requirements
-    'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.BasicAuthentication',
-    ],
+    # Use only SessionAuthentication or nothing to avoid browser popups
+    'DEFAULT_AUTHENTICATION_CLASSES': [],
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 100,
     "DEFAULT_RENDERER_CLASSES": [
@@ -103,9 +102,11 @@ DATABASES = {
         'USER': os.environ.get('POSTGRES_USER', 'postgres'),
         'PASSWORD': os.environ.get('POSTGRES_PASSWORD', 'admin'),
         'HOST': os.environ.get('POSTGRES_HOST', 'db'),
-        'PORT': os.environ.get('POSTGRES_PORT', '5432')
+        'PORT': os.environ.get('POSTGRES_PORT', '5432'),
+        'CONN_MAX_AGE': 600,  # Reuse connections for 10 minutes
     }
 }
+
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
@@ -142,6 +143,14 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = 'static/'
+
+# Media files (uploads)
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
+# File upload settings for large imports
+DATA_UPLOAD_MAX_NUMBER_FILES = 10000  # Allow up to 10000 files per request
+DATA_UPLOAD_MAX_MEMORY_SIZE = 524288000  # 500MB in memory
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field

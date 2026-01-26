@@ -6,7 +6,17 @@ import {
   ApiService,
   Proyecto, Planta, Modulo, Mesa, ModuloQueueItem, MesaQueueItem, Imagen
 } from '../services/api.service';
-import { Subject, takeUntil } from 'rxjs';
+import { Subject, takeUntil, forkJoin } from 'rxjs';
+
+// Logical entity for display and drag-drop
+interface Subfase {
+  id: string; // "moduloId-FASE" (e.g. "101-INFERIOR")
+  modulo: Modulo;
+  fase: 'INFERIOR' | 'SUPERIOR';
+  imagenes: Imagen[];
+  hecho: boolean;
+  assigned: boolean;
+}
 
 @Component({
   selector: 'app-dashboard',
@@ -28,6 +38,9 @@ export class Dashboard implements OnInit, OnDestroy {
   imagenes: Imagen[] = []; // Images for expanded module
   mesas: Mesa[] = [];
 
+  // Subfases for the selected module
+  activeSubfases: Subfase[] = [];
+
   // Data Loading States
   loadingProyectos = false;
   loadingPlantas = false;
@@ -36,19 +49,16 @@ export class Dashboard implements OnInit, OnDestroy {
   loadingMesas = false;
 
   // Selection State
-  // Selection State
   selectedProyecto: Proyecto | null = null;
   selectedPlanta: Planta | null = null;
   selectedModulo: Modulo | null = null;
 
   // UI State
   expandedModulo: number | null = null; // ID of expanded module
-  droppedImage: Imagen | null = null; // Temp holder for drop logic
   dragOverMesa: number | null = null; // ID of mesa being dragged over
 
   // Drag State
-  draggedImagen: Imagen | null = null;
-  draggedModulo: Modulo | null = null;
+  draggedSubfase: Subfase | null = null;
 
   // Confirm Modal State
   showConfirmModal = false;
@@ -57,8 +67,11 @@ export class Dashboard implements OnInit, OnDestroy {
 
   // Maps for tracking
   moduloImagenes = new Map<number, Imagen[]>(); // moduloId -> images
-  // imagenId -> { mesaName, status: 'EN_COLA' | 'MOSTRANDO' | 'HECHO' }
-  imagenAssignedToMesa = new Map<number, { mesaName: string, status: string }>();
+
+  // Track assignments by subfase ID ("moduloId-FASE")
+  // value: { mesaName, status: 'EN_COLA' | 'MOSTRANDO' | 'HECHO' }
+  subfaseAssignedToMesa = new Map<string, { mesaName: string, status: string }>();
+
   activePhases = new Set<string>(); // "moduloId-FASE" (e.g. "101-INFERIOR")
 
   // Pairing Modal State
@@ -147,7 +160,7 @@ export class Dashboard implements OnInit, OnDestroy {
   loadMesas(): void {
     this.loadingMesas = true;
     // Clear assignment tracking before reloading
-    this.imagenAssignedToMesa.clear();
+    this.subfaseAssignedToMesa.clear();
     this.api.getMesas()
       .pipe(takeUntil(this.destroy$))
       .subscribe({
@@ -169,29 +182,37 @@ export class Dashboard implements OnInit, OnDestroy {
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (items) => {
-          // First, remove old assignments for this mesa from tracking
+          // First, remove old assignments for this mesa
           const oldItems = this.mesaQueueItems.get(mesaId) || [];
           oldItems.forEach(oldItem => {
-            const oldImagenId = this.extractIdFromUrl(oldItem.imagen);
-            if (oldImagenId) this.imagenAssignedToMesa.delete(oldImagenId);
+            if (oldItem.status !== 'HECHO') {
+              const subfaseId = `${oldItem.modulo}-${oldItem.fase}`;
+              this.subfaseAssignedToMesa.delete(subfaseId);
+            }
           });
 
           // Update the map with new items (Filter out HECHO for display)
           const activeItems = items.filter(i => i.status !== 'HECHO');
           this.mesaQueueItems.set(mesaId, activeItems);
 
-          // Track assigned images for this mesa (including HECHO to prevent re-assignment)
+          // Track active subfases
           const mesa = this.mesas.find(m => m.id === mesaId);
           items.forEach(item => {
-            const imagenId = this.extractIdFromUrl(item.imagen);
-            if (imagenId) {
-              this.imagenAssignedToMesa.set(imagenId, {
+            if (item.status !== 'HECHO') {
+              // We track assignment by subfase key
+              const subfaseId = `${item.modulo}-${item.fase}`;
+              this.subfaseAssignedToMesa.set(subfaseId, {
                 mesaName: mesa?.nombre || `Mesa ${mesaId}`,
                 status: item.status
               });
             }
           });
-          this.updateActivePhases();
+
+          // Refresh active subfases view if needed
+          if (this.selectedModulo && this.expandedModulo === this.selectedModulo.id) {
+            this.buildActiveSubfases(this.selectedModulo);
+          }
+
           this.cdr.detectChanges();
         },
         error: (err) => console.error(`Error loading queue for mesa ${mesaId}`, err)
@@ -262,28 +283,32 @@ export class Dashboard implements OnInit, OnDestroy {
   // MODULE EXPANSION (to show images)
   // =========================================================================
   toggleModulo(modulo: Modulo): void {
-    // Toggle logic: If already selected, deselect (collapse)
     if (this.selectedModulo?.id === modulo.id) {
       this.selectedModulo = null;
       this.expandedModulo = null;
+      this.activeSubfases = [];
     } else {
-      // Select logic
       this.selectedModulo = modulo;
       this.expandedModulo = modulo.id;
-      this.loadImagenesForModulo(modulo.id);
+      this.loadImagenesForModulo(modulo);
     }
     this.cdr.detectChanges();
   }
 
-  loadImagenesForModulo(moduloId: number): void {
-    if (this.moduloImagenes.has(moduloId)) return;
+  loadImagenesForModulo(modulo: Modulo): void {
+    // If we already have images, just build subfases
+    if (this.moduloImagenes.has(modulo.id)) {
+      this.buildActiveSubfases(modulo);
+      return;
+    }
 
     this.loadingImagenes = true;
-    this.api.getModuloImagenes(moduloId)
+    this.api.getModuloImagenes(modulo.id)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (imagenes) => {
-          this.moduloImagenes.set(moduloId, imagenes);
+          this.moduloImagenes.set(modulo.id, imagenes);
+          this.buildActiveSubfases(modulo);
           this.loadingImagenes = false;
           this.cdr.detectChanges();
         },
@@ -294,31 +319,56 @@ export class Dashboard implements OnInit, OnDestroy {
       });
   }
 
-  getModuloImagenes(moduloId: number): Imagen[] {
-    return this.moduloImagenes.get(moduloId) || [];
+  buildActiveSubfases(modulo: Modulo): void {
+    const imagenes = this.moduloImagenes.get(modulo.id) || [];
+
+    // Create the two standard subfases
+    const subfaseInf: Subfase = {
+      id: `${modulo.id}-INFERIOR`,
+      modulo: modulo,
+      fase: 'INFERIOR',
+      imagenes: imagenes.filter(img => img.fase === 'INFERIOR'),
+      hecho: modulo.inferior_hecho,
+      assigned: this.subfaseAssignedToMesa.has(`${modulo.id}-INFERIOR`)
+    };
+
+    const subfaseSup: Subfase = {
+      id: `${modulo.id}-SUPERIOR`,
+      modulo: modulo,
+      fase: 'SUPERIOR',
+      imagenes: imagenes.filter(img => img.fase === 'SUPERIOR'),
+      hecho: modulo.superior_hecho,
+      assigned: this.subfaseAssignedToMesa.has(`${modulo.id}-SUPERIOR`)
+    };
+
+    this.activeSubfases = [subfaseInf, subfaseSup];
   }
 
   // =========================================================================
-  // IMAGE DRAG AND DROP
+  // SUBFASE DRAG AND DROP
   // =========================================================================
-  onImageDragStart(event: DragEvent, imagen: Imagen, modulo: Modulo): void {
-    console.log('[Dashboard] Drag Start:', imagen.nombre, modulo.nombre);
-    this.draggedImagen = imagen;
-    this.draggedModulo = modulo;
+  onSubfaseDragStart(event: DragEvent, subfase: Subfase): void {
+    if (subfase.assigned || subfase.hecho) {
+      event.preventDefault();
+      return;
+    }
+
+    console.log('[Dashboard] Drag Start Subfase:', subfase.id);
+    this.draggedSubfase = subfase;
+
     if (event.dataTransfer) {
       event.dataTransfer.effectAllowed = 'copy';
       event.dataTransfer.setData('text/plain', JSON.stringify({
-        imagenId: imagen.id,
-        moduloId: modulo.id,
-        fase: imagen.fase
+        subfaseId: subfase.id,
+        moduloId: subfase.modulo.id,
+        fase: subfase.fase,
+        imageCount: subfase.imagenes.length
       }));
     }
   }
 
   onDragEnd(event: DragEvent): void {
-    console.log('[Dashboard] Drag End');
-    this.draggedImagen = null;
-    this.draggedModulo = null;
+    this.draggedSubfase = null;
     this.dragOverMesa = null;
     this.cdr.detectChanges();
   }
@@ -337,65 +387,83 @@ export class Dashboard implements OnInit, OnDestroy {
     this.cdr.detectChanges();
   }
 
-  onImageDrop(event: DragEvent, mesa: Mesa): void {
+  async onSubfaseDrop(event: DragEvent, mesa: Mesa) {
     event.preventDefault();
     event.stopPropagation();
-    console.log('[Dashboard] Drop on Mesa:', mesa.nombre, 'Imagen:', this.draggedImagen?.nombre);
     this.dragOverMesa = null;
 
-    if (!this.draggedImagen || !this.draggedModulo) {
-      console.warn('[Dashboard] Drop failed: No dragged imagen/modulo');
+    if (!this.draggedSubfase) {
+      console.warn('[Dashboard] Drop failed: No dragged subfase');
       return;
     }
 
-    const imagen = this.draggedImagen;
-    const modulo = this.draggedModulo;
+    const subfase = this.draggedSubfase;
+    this.draggedSubfase = null;
 
-    this.draggedImagen = null;
-    this.draggedModulo = null;
-
-    // Check if image is already assigned
-    const assignment = this.imagenAssignedToMesa.get(imagen.id);
+    // Check if subfase is already assigned
+    const assignment = this.subfaseAssignedToMesa.get(subfase.id);
     if (assignment) {
-      alert(`⚠️ Esta imagen (${imagen.nombre}) ya está asignada a ${assignment.mesaName}`);
+      alert(`⚠️ Esta fase (${subfase.fase}) ya está asignada a ${assignment.mesaName}`);
       this.cdr.detectChanges();
       return;
     }
 
     // Get current queue length for position
     const currentItems = this.mesaQueueItems.get(mesa.id) || [];
-    const newPosition = currentItems.length + 1;
+    let nextPosition = currentItems.length + 1;
 
-    // Create the queue item
-    this.api.createMesaQueueItem(mesa.id, modulo.id, imagen.fase, imagen.id, newPosition)
-      .pipe(takeUntil(this.destroy$))
-      .subscribe({
-        next: (item) => {
-          // Track the new assignment
-          this.imagenAssignedToMesa.set(imagen.id, { mesaName: mesa.nombre, status: 'EN_COLA' });
-          this.loadMesaQueueItems(mesa.id);
-          this.cdr.detectChanges();
-        },
-        error: (err) => {
-          console.error('Error creating mesa queue item', err);
-          alert('Error al asignar trabajo a la mesa');
-        }
-      });
+    try {
+      // Show optimistic update
+      this.subfaseAssignedToMesa.set(subfase.id, { mesaName: mesa.nombre, status: 'EN_COLA' });
+      if (this.selectedModulo && this.expandedModulo === subfase.modulo.id) {
+        subfase.assigned = true;
+      }
+      this.cdr.detectChanges();
+
+      // Create SINGLE item for the subfase (no image linked)
+      await this.api.createMesaQueueItem(
+        mesa.id,
+        subfase.modulo.id,
+        subfase.fase,
+        null, // No specific image
+        nextPosition
+      ).toPromise();
+
+      // Reload queue to confirm
+      this.loadMesaQueueItems(mesa.id);
+
+    } catch (err) {
+      console.error('Error processing drop:', err);
+      alert('Error al asignar subfase a la mesa');
+      this.subfaseAssignedToMesa.delete(subfase.id);
+      subfase.assigned = false;
+    }
   }
 
-  // =========================================================================
-  // MESA QUEUE ACTIONS
-  // =========================================================================
   mostrarItem(item: MesaQueueItem): void {
     const mesaId = this.extractIdFromUrl(item.mesa);
+
+    // Optimistic update
+    item.status = 'MOSTRANDO';
+    const subfaseId = `${item.modulo}-${item.fase}`;
+    const mesa = this.mesas.find(m => m.id === mesaId);
+    this.subfaseAssignedToMesa.set(subfaseId, {
+      mesaName: mesa?.nombre || `Mesa ${mesaId}`,
+      status: 'MOSTRANDO'
+    });
+    this.cdr.detectChanges();
+
     this.api.mostrarMesaQueueItem(item.id)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: () => {
+          // Reload queue to ensure consistency
           if (mesaId) this.loadMesaQueueItems(mesaId);
-          this.cdr.detectChanges();
         },
-        error: (err) => console.error('Error mostrando item', err)
+        error: (err) => {
+          console.error('Error mostrando item', err);
+          // Revert optimistically if needed, but for now just log
+        }
       });
   }
 
@@ -406,11 +474,11 @@ export class Dashboard implements OnInit, OnDestroy {
       .subscribe({
         next: () => {
           // Update local tracking - mark as HECHO
-          const imagenId = this.extractIdFromUrl(item.imagen);
-          if (imagenId) {
-            const mesa = this.mesas.find(m => m.id === mesaId);
-            this.imagenAssignedToMesa.set(imagenId, { mesaName: mesa?.nombre || `Mesa ${mesaId}`, status: 'HECHO' });
-          }
+          // Track by subfase key
+          const subfaseId = `${item.modulo}-${item.fase}`;
+          const mesa = this.mesas.find(m => m.id === mesaId);
+          this.subfaseAssignedToMesa.set(subfaseId, { mesaName: mesa?.nombre || `Mesa ${mesaId}`, status: 'HECHO' });
+
           if (mesaId) this.loadMesaQueueItems(mesaId);
 
           // Reload modules to get updated inferior_hecho/superior_hecho
@@ -423,7 +491,6 @@ export class Dashboard implements OnInit, OnDestroy {
                   // Force new array reference
                   this.modulos = [...this.sortModulos(modulos)];
 
-                  // Update selectedModulo with fresh data
                   // Update selectedModulo with fresh data
                   if (this.selectedModulo) {
                     const updated = modulos.find(m => m.id === this.selectedModulo!.id);
@@ -461,14 +528,15 @@ export class Dashboard implements OnInit, OnDestroy {
     if (!this.pendingDeleteItem) return;
     const item = this.pendingDeleteItem;
     const mesaId = this.extractIdFromUrl(item.mesa);
-    const imagenId = this.extractIdFromUrl(item.imagen);
 
     this.api.deleteMesaQueueItem(item.id)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: () => {
           // Remove from assignment tracking
-          if (imagenId) this.imagenAssignedToMesa.delete(imagenId);
+          const subfaseId = `${item.modulo}-${item.fase}`;
+          this.subfaseAssignedToMesa.delete(subfaseId);
+
           // Reload only the affected mesa's queue
           if (mesaId) this.loadMesaQueueItems(mesaId);
           this.cerrarConfirmModal();
@@ -509,9 +577,9 @@ export class Dashboard implements OnInit, OnDestroy {
     return this.mesaQueueItems.get(mesaId) || [];
   }
 
-  // Returns formatted status label for an image (e.g., "En cola en Mesa-01...")
-  getImageAssignmentLabel(imagenId: number): string {
-    const assignment = this.imagenAssignedToMesa.get(imagenId);
+  // Returns formatted status label for a subfase
+  getSubfaseAssignmentLabel(subfase: Subfase): string {
+    const assignment = this.subfaseAssignedToMesa.get(subfase.id);
     if (!assignment) return '';
 
     switch (assignment.status) {
@@ -536,16 +604,12 @@ export class Dashboard implements OnInit, OnDestroy {
     return this.activePhases.has(key);
   }
 
-  getAssignmentText(imagen: Imagen): string {
-    if (this.imagenAssignedToMesa.has(imagen.id)) {
-      const info = this.imagenAssignedToMesa.get(imagen.id);
-      if (info && info.status === 'HECHO') {
-        return `Realizado en ${info.mesaName}`;
-      } else if (info && info.status === 'MOSTRANDO') {
-        return `Proyectando en ${info.mesaName}`;
-      } else if (info) {
-        return `Asignada en ${info.mesaName}`;
-      }
+  getSubfaseStatusText(subfase: Subfase): string {
+    const assignment = this.subfaseAssignedToMesa.get(subfase.id);
+    if (assignment) {
+      if (assignment.status === 'HECHO') return `Realizado en ${assignment.mesaName}`;
+      if (assignment.status === 'MOSTRANDO') return `Proyectando en ${assignment.mesaName}`;
+      return `Asignada en ${assignment.mesaName}`;
     }
     return '';
   }

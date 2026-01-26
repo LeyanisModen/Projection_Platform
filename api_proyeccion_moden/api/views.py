@@ -14,13 +14,13 @@ from api.models import (
 )
 
 
-class UserViewSet(viewsets.ReadOnlyModelViewSet):
+class UserViewSet(viewsets.ModelViewSet):
     """
     API endpoint that allows users to be viewed or edited.
     """
     queryset = User.objects.all().order_by("-date_joined")
     serializer_class = UserSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
 
 
 class ProyectoViewSet(viewsets.ModelViewSet):
@@ -29,7 +29,7 @@ class ProyectoViewSet(viewsets.ModelViewSet):
     """
     queryset = Proyecto.objects.all().order_by("nombre")
     serializer_class = ProyectoSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
 
     @action(detail=True, methods=['get'])
     def modulos(self, request, pk=None):
@@ -62,6 +62,107 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         except ModuloQueue.DoesNotExist:
             return Response([])
 
+    @action(detail=True, methods=['post'], url_path='import-structure')
+    def import_structure(self, request, pk=None):
+        """
+        Import project structure from uploaded folder data.
+        Expects multipart form with:
+        - 'plantas': JSON string with structure
+        - image files referenced by filename in plantas JSON
+        """
+        import os
+        import json
+        from django.conf import settings as django_settings
+        
+        proyecto = self.get_object()
+        
+        # Get uploaded files
+        files = request.FILES
+        
+        # Parse plantas JSON from string (comes as string in multipart form)
+        plantas_raw = request.data.get('plantas', '[]')
+        if isinstance(plantas_raw, str):
+            try:
+                plantas_data = json.loads(plantas_raw)
+            except json.JSONDecodeError as e:
+                return Response({
+                    'status': 'error',
+                    'message': f'Invalid JSON in plantas: {str(e)}'
+                }, status=400)
+        else:
+            plantas_data = plantas_raw
+        
+        print(f"[IMPORT] Proyecto {proyecto.id}: {len(plantas_data)} plantas, {len(files)} files")
+        
+        stats = {'plantas': 0, 'modulos': 0, 'imagenes': 0, 'errors': []}
+        
+        for planta_data in plantas_data:
+            try:
+                # Create Planta
+                planta = Planta.objects.create(
+                    nombre=planta_data.get('nombre', 'Sin nombre'),
+                    proyecto=proyecto,
+                    orden=planta_data.get('orden', 0)
+                )
+                stats['plantas'] += 1
+                
+                modulos_data = planta_data.get('modulos', [])
+                for modulo_data in modulos_data:
+                    try:
+                        # Create Modulo
+                        modulo = Modulo.objects.create(
+                            nombre=modulo_data.get('nombre', 'Sin nombre'),
+                            planta=planta,
+                            proyecto=proyecto,
+                            estado='PENDIENTE'
+                        )
+                        stats['modulos'] += 1
+                        
+                        imagenes_data = modulo_data.get('imagenes', [])
+                        for imagen_data in imagenes_data:
+                            try:
+                                filename = imagen_data.get('filename')
+                                fase = imagen_data.get('fase', 'INFERIOR')
+                                orden = imagen_data.get('orden', 1)
+                                
+                                # Check if file was uploaded
+                                uploaded_file = files.get(filename)
+                                if uploaded_file:
+                                    # Save file to media folder
+                                    media_path = os.path.join('imagenes', str(proyecto.id), str(planta.id), str(modulo.id))
+                                    full_path = os.path.join(django_settings.MEDIA_ROOT, media_path)
+                                    os.makedirs(full_path, exist_ok=True)
+                                    
+                                    file_path = os.path.join(full_path, uploaded_file.name)
+                                    with open(file_path, 'wb+') as destination:
+                                        for chunk in uploaded_file.chunks():
+                                            destination.write(chunk)
+                                    
+                                    # Create Imagen record
+                                    url = f'/media/{media_path}/{uploaded_file.name}'
+                                    Imagen.objects.create(
+                                        url=url,
+                                        modulo=modulo,
+                                        fase=fase,
+                                        orden=orden,
+                                        activo=True
+                                    )
+                                    stats['imagenes'] += 1
+                                else:
+                                    stats['errors'].append(f"File not found: {filename}")
+                            except Exception as e:
+                                stats['errors'].append(f"Error creating imagen: {str(e)}")
+                    except Exception as e:
+                        stats['errors'].append(f"Error creating modulo: {str(e)}")
+            except Exception as e:
+                stats['errors'].append(f"Error creating planta: {str(e)}")
+        
+        return Response({
+            'status': 'ok',
+            'proyecto_id': proyecto.id,
+            'stats': stats
+        })
+
 
 class PlantaViewSet(viewsets.ModelViewSet):
     """
@@ -86,7 +187,7 @@ class ModuloViewSet(viewsets.ModelViewSet):
     """
     queryset = Modulo.objects.all().order_by("id")
     serializer_class = ModuloSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
 
     def get_queryset(self):
         queryset = Modulo.objects.all().order_by("id")
@@ -130,7 +231,7 @@ class ImagenViewSet(viewsets.ModelViewSet):
     """
     queryset = Imagen.objects.all().order_by("id")
     serializer_class = ImagenSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
 
     def get_queryset(self):
         queryset = Imagen.objects.filter(activo=True).order_by("modulo", "fase", "orden")
@@ -149,7 +250,14 @@ class MesaViewSet(viewsets.ModelViewSet):
     """
     queryset = Mesa.objects.all().order_by("nombre")
     serializer_class = MesaSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
+
+    def get_queryset(self):
+        queryset = Mesa.objects.all().order_by("nombre")
+        usuario_id = self.request.query_params.get('usuario', None)
+        if usuario_id is not None:
+            queryset = queryset.filter(usuario_id=usuario_id)
+        return queryset
 
     @action(detail=True, methods=['get'])
     def queue_items(self, request, pk=None):

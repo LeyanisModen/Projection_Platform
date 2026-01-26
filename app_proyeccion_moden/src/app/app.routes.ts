@@ -25,6 +25,11 @@ export const routes: Routes = [{
   title: 'Dashboard',
 },
 {
+  path: 'admin-dashboard',
+  loadChildren: () => import('./admin/admin.routes').then(m => m.ADMIN_ROUTES),
+  title: 'Admin Dashboard',
+},
+{
   path: 'mapper',
   component: Mapper,
   title: 'Mapper',

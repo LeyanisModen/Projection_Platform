@@ -29,13 +29,14 @@ class ModuloEstado(models.TextChoices):
 class Proyecto(models.Model):
     id = models.AutoField(primary_key=True)
     nombre = models.CharField(max_length=200)
-    usuario = models.ForeignKey(User, on_delete=models.CASCADE, related_name='proyectos')
+    usuario = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='proyectos')
 
     def __str__(self):
         return self.nombre
 
     class Meta:
         db_table = 'api_proyecto'
+
 
 
 class Planta(models.Model):
@@ -229,6 +230,21 @@ class PairingSession(models.Model):
         return f"Pairing {self.pairing_code} -> {self.mesa.nombre if self.mesa else 'unlinked'}"
 
 
+
+
+class UserProfile(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
+    telefono = models.CharField(max_length=20, blank=True, null=True)
+    direccion = models.CharField(max_length=300, blank=True, null=True)
+    coordinador = models.CharField(max_length=100, blank=True, null=True)
+
+    def __str__(self):
+        return f"Perfil de {self.user.username}"
+
+    class Meta:
+        db_table = 'api_userprofile'
+
+
 # =============================================================================
 # QUEUE MODELS
 # =============================================================================
@@ -325,7 +341,9 @@ class MesaQueueItem(models.Model):
     )
     imagen = models.ForeignKey(
         Imagen,
-        on_delete=models.PROTECT,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name='mesa_queue_items'
     )
     position = models.PositiveIntegerField(default=0)
@@ -360,14 +378,16 @@ class MesaQueueItem(models.Model):
 
     def save(self, *args, **kwargs):
         # Validate that imagen belongs to the same modulo and fase
-        if self.imagen.modulo_id != self.modulo_id:
-            raise ValueError(
-                f"Imagen {self.imagen_id} no pertenece al módulo {self.modulo_id}"
-            )
-        if self.imagen.fase != self.fase:
-            raise ValueError(
-                f"Imagen {self.imagen_id} es fase {self.imagen.fase}, no {self.fase}"
-            )
+        # Validate that imagen belongs to the same modulo and fase if imagen is present
+        if self.imagen:
+            if self.imagen.modulo_id != self.modulo_id:
+                raise ValueError(
+                    f"Imagen {self.imagen_id} no pertenece al módulo {self.modulo_id}"
+                )
+            if self.imagen.fase != self.fase:
+                raise ValueError(
+                    f"Imagen {self.imagen_id} es fase {self.imagen.fase}, no {self.fase}"
+                )
         super().save(*args, **kwargs)
 
     def marcar_hecho(self, user=None):

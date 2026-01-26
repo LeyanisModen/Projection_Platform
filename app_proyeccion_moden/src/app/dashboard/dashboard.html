@@ -79,39 +79,38 @@
                         </div>
                     </li>
 
-                    <!-- NESTED IMAGES LIST (visible when selected) -->
+                    <!-- NESTED SUBFASES LIST (visible when selected) -->
                     @if (selectedModulo?.id === modulo.id) {
                     <div class="sidebar-module-images">
                         @if (loadingImagenes) {
                         <div class="sidebar-loading">Cargando...</div>
-                        } @else if (getModuloImagenes(selectedModulo!.id).length === 0) {
-                        <div class="sidebar-empty">Sin imágenes</div>
+                        } @else if (activeSubfases.length === 0) {
+                        <div class="sidebar-empty">Sin fases disponibles</div>
                         } @else {
-                        @for (imagen of getModuloImagenes(selectedModulo!.id); track imagen.id) {
-                        <div class="sidebar-image-item" [attr.draggable]="!isModuloComplete(selectedModulo!)"
-                            (dragstart)="onImageDragStart($event, imagen, selectedModulo!)"
-                            (dragend)="onDragEnd($event)"
-                            [class.assigned]="imagenAssignedToMesa.has(imagen.id) || isModuloComplete(selectedModulo!)"
-                            [style.opacity]="(imagenAssignedToMesa.has(imagen.id) || isModuloComplete(selectedModulo!)) ? '0.5' : '1'">
+                        @for (subfase of activeSubfases; track subfase.id) {
+                        <div class="sidebar-image-item" [attr.draggable]="!subfase.hecho && !subfase.assigned"
+                            (dragstart)="onSubfaseDragStart($event, subfase)" (dragend)="onDragEnd($event)"
+                            [class.assigned]="subfase.assigned" [class.hecho]="subfase.hecho"
+                            [style.opacity]="(subfase.assigned || subfase.hecho) ? '0.6' : '1'">
 
-                            <span class="sidebar-img-icon" [class.inferior]="imagen.fase === 'INFERIOR'"
-                                [class.superior]="imagen.fase === 'SUPERIOR'">{{ imagen.fase === 'INFERIOR' ? '▼' : '▲'
+                            <span class="sidebar-img-icon" [class.inferior]="subfase.fase === 'INFERIOR'"
+                                [class.superior]="subfase.fase === 'SUPERIOR'">{{ subfase.fase === 'INFERIOR' ? '▼' :
+                                '▲'
                                 }}</span>
                             <div class="sidebar-img-info">
-                                <span class="sidebar-img-name">{{ imagen.nombre }}</span>
-                                <span class="sidebar-img-type">{{ imagen.fase }}</span>
-                                @if (getAssignmentText(imagen)) {
-                                <span class="sidebar-img-assigment">{{ getAssignmentText(imagen) }}</span>
+                                <span class="sidebar-img-name">{{ subfase.modulo.nombre }}</span>
+                                <span class="sidebar-img-type">{{ subfase.fase }} ({{ subfase.imagenes.length }}
+                                    imgs)</span>
+                                @if (getSubfaseStatusText(subfase)) {
+                                <span class="sidebar-img-assigment">{{ getSubfaseStatusText(subfase) }}</span>
                                 }
                             </div>
-                            <span class="drag-handle"
-                                *ngIf="!imagenAssignedToMesa.has(imagen.id) && !isModuloComplete(selectedModulo!)">⋮⋮</span>
+                            <span class="drag-handle" *ngIf="!subfase.assigned && !subfase.hecho">⋮⋮</span>
 
                             <!-- Status Badge -->
-                            @if (imagenAssignedToMesa.has(imagen.id)) {
-                            <span class="sidebar-status-badge"
-                                [class.hecho]="imagenAssignedToMesa.get(imagen.id)?.status === 'HECHO'">
-                                {{ imagenAssignedToMesa.get(imagen.id)?.status === 'HECHO' ? '✓' : '⟳' }}
+                            @if (subfase.assigned || subfase.hecho) {
+                            <span class="sidebar-status-badge" [class.hecho]="subfase.hecho">
+                                {{ subfase.hecho ? '✓' : '⟳' }}
                             </span>
                             }
                         </div>
@@ -146,7 +145,7 @@
                     @for (mesa of mesas; track trackByMesa($index, mesa)) {
                     <div class="mesa-card" [class.locked]="mesa.locked" [class.blackout]="mesa.blackout"
                         (dragover)="onDragOver($event, mesa)" (dragleave)="onDragLeave($event)"
-                        (drop)="onImageDrop($event, mesa)" [class.drag-over]="dragOverMesa === mesa.id">
+                        (drop)="onSubfaseDrop($event, mesa)" [class.drag-over]="dragOverMesa === mesa.id">
                         <div class="mesa-header">
                             <h3>{{ mesa.nombre }}</h3>
                             <div class="mesa-header-actions">

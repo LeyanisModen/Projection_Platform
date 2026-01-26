@@ -18,10 +18,8 @@ export class ProyectoService {
     constructor(private http: HttpClient) { }
 
     private getHeaders(): HttpHeaders {
-        // Hardcoded admin:admin for prototyping phase
-        return new HttpHeaders({
-            'Authorization': 'Basic YWRtaW46YWRtaW4='
-        });
+        // No auth required
+        return new HttpHeaders({});
     }
 
     getProyectos(): Observable<Proyecto[]> {

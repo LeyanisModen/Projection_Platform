@@ -14,6 +14,20 @@ interface PagedResponse<T> {
     results: T[];
 }
 
+export interface User {
+    id: number;
+    url: string;
+    username: string;
+    first_name: string;
+    last_name: string;
+    email: string;
+    groups: any[];
+    telefono?: string;
+    direccion?: string;
+    coordinador?: string;
+}
+
+
 export interface Proyecto {
     id: number;
     url: string;
@@ -95,8 +109,8 @@ export interface MesaQueueItem {
     modulo: string;
     modulo_nombre: string;
     fase: 'INFERIOR' | 'SUPERIOR';
-    imagen: string;
-    imagen_url: string;
+    imagen?: string;
+    imagen_url?: string;
     position: number;
     status: 'EN_COLA' | 'MOSTRANDO' | 'HECHO';
     assigned_by: string | null;
@@ -118,9 +132,8 @@ export class ApiService {
     constructor(private http: HttpClient) { }
 
     private getHeaders(): HttpHeaders {
-        // Hardcoded admin:admin for prototyping phase
+        // No auth required for now
         return new HttpHeaders({
-            'Authorization': 'Basic YWRtaW46YWRtaW4=',
             'Content-Type': 'application/json'
         });
     }
@@ -145,12 +158,58 @@ export class ApiService {
         return this.http.get<ModuloQueueItem[]>(`${this.baseUrl}/proyectos/${id}/queue_items/`, { headers: this.getHeaders() });
     }
 
+    createProyecto(data: any): Observable<Proyecto> {
+        return this.http.post<Proyecto>(`${this.baseUrl}/proyectos/`, data, { headers: this.getHeaders() });
+    }
+
+    deleteProyecto(id: number): Observable<void> {
+        return this.http.delete<void>(`${this.baseUrl}/proyectos/${id}/`, { headers: this.getHeaders() });
+    }
+
+    /**
+     * Import project structure with images from folder.
+     * @param proyectoId - The project ID to import into
+     * @param formData - FormData containing 'plantas' JSON and image files
+     */
+    importProjectStructure(proyectoId: number, formData: FormData): Observable<{
+        status: string;
+        proyecto_id: number;
+        stats: { plantas: number; modulos: number; imagenes: number; errors: string[] };
+    }> {
+        // Don't use Content-Type header - let browser set it with boundary for multipart
+        return this.http.post<any>(`${this.baseUrl}/proyectos/${proyectoId}/import-structure/`, formData);
+    }
+
+    // =========================================================================
+    // USERS (Ferrallas)
+    // =========================================================================
+    getUsers(): Observable<User[]> {
+        return this.http.get<PagedResponse<User>>(`${this.baseUrl}/users/`, { headers: this.getHeaders() })
+            .pipe(map(response => response.results));
+    }
+
+    createUser(data: any): Observable<User> {
+        return this.http.post<User>(`${this.baseUrl}/users/`, data, { headers: this.getHeaders() });
+    }
+
+    updateUser(id: number, data: any): Observable<User> {
+        return this.http.patch<User>(`${this.baseUrl}/users/${id}/`, data, { headers: this.getHeaders() });
+    }
+
+    deleteUser(id: number): Observable<void> {
+        return this.http.delete<void>(`${this.baseUrl}/users/${id}/`, { headers: this.getHeaders() });
+    }
+
     // =========================================================================
     // PLANTAS
     // =========================================================================
     getPlantas(proyectoId: number): Observable<Planta[]> {
         return this.http.get<PagedResponse<Planta>>(`${this.baseUrl}/plantas/?proyecto=${proyectoId}`, { headers: this.getHeaders() })
             .pipe(map(response => response.results));
+    }
+
+    createPlanta(data: any): Observable<Planta> {
+        return this.http.post<Planta>(`${this.baseUrl}/plantas/`, data, { headers: this.getHeaders() });
     }
 
     // =========================================================================
@@ -167,6 +226,10 @@ export class ApiService {
             .pipe(map(response => response.results));
     }
 
+    createModulo(data: any): Observable<Modulo> {
+        return this.http.post<Modulo>(`${this.baseUrl}/modulos/`, data, { headers: this.getHeaders() });
+    }
+
     getModuloImagenes(id: number): Observable<Imagen[]> {
         return this.http.get<Imagen[]>(`${this.baseUrl}/modulos/${id}/imagenes/`, { headers: this.getHeaders() });
     }
@@ -178,9 +241,21 @@ export class ApiService {
     // =========================================================================
     // MESAS (paginated)
     // =========================================================================
-    getMesas(): Observable<Mesa[]> {
-        return this.http.get<PagedResponse<Mesa>>(`${this.baseUrl}/mesas/`, { headers: this.getHeaders() })
+    getMesas(usuarioId?: number): Observable<Mesa[]> {
+        let url = `${this.baseUrl}/mesas/`;
+        if (usuarioId) {
+            url += `?usuario=${usuarioId}`;
+        }
+        return this.http.get<PagedResponse<Mesa>>(url, { headers: this.getHeaders() })
             .pipe(map(response => response.results));
+    }
+
+    createMesa(data: any): Observable<Mesa> {
+        return this.http.post<Mesa>(`${this.baseUrl}/mesas/`, data, { headers: this.getHeaders() });
+    }
+
+    deleteMesa(id: number): Observable<void> {
+        return this.http.delete<void>(`${this.baseUrl}/mesas/${id}/`, { headers: this.getHeaders() });
     }
 
     getMesa(id: number): Observable<Mesa> {
@@ -229,7 +304,7 @@ export class ApiService {
     // =========================================================================
     // MESA QUEUE ITEMS
     // =========================================================================
-    createMesaQueueItem(mesaId: number, moduloId: number, fase: string, imagenId: number, position: number): Observable<MesaQueueItem> {
+    createMesaQueueItem(mesaId: number, moduloId: number, fase: string, imagenId: number | null, position: number): Observable<MesaQueueItem> {
         return this.http.post<MesaQueueItem>(`${this.baseUrl}/mesa-queue-items/`, {
             mesa: mesaId,
             modulo: moduloId,

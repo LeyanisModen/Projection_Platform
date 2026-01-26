@@ -1,0 +1,136 @@
+<div class="container">
+    <div class="page-header">
+        <h1>Gestión de Proyectos</h1>
+        <button class="btn btn-primary" (click)="toggleForm()">
+            {{ showForm ? 'Cancelar' : 'Nuevo Proyecto' }}
+        </button>
+    </div>
+
+    <!-- Formulario de Creación -->
+    <div class="card mb-4" *ngIf="showForm">
+        <div class="card-header">
+            <h2>Nuevo Proyecto</h2>
+        </div>
+        <div class="card-body">
+            <form (ngSubmit)="createProyecto()" #projectForm="ngForm" autocomplete="off">
+                <div class="form-group">
+                    <label for="nombre">Nombre del Proyecto</label>
+                    <input type="text" id="nombre" name="nombre" class="form-control" [(ngModel)]="newProject.nombre"
+                        required placeholder="Ej: Edificio Residencial Norte" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label for="numPlantas">Número de Plantas (Auto-crear)</label>
+                    <input type="number" id="numPlantas" name="numPlantas" class="form-control"
+                        [(ngModel)]="newProject.numPlantas" min="0" placeholder="0 = Ninguna" autocomplete="off">
+                    <small class="text-muted">Se crearán plantas vacías automáticamente (Planta 1, Planta 2,
+                        etc.)</small>
+                </div>
+                <div class="form-group">
+                    <label for="usuario">Ferralla</label>
+                    <select id="usuario" name="usuario" class="form-control" [(ngModel)]="newProject.usuario"
+                        autocomplete="off">
+                        <option [ngValue]="null">Sin asignar</option>
+                        <option *ngFor="let user of users" [ngValue]="user.url">{{ user.first_name || user.username
+                            }}</option>
+                    </select>
+                </div>
+
+                <!-- Folder Selection -->
+                <div class="form-group">
+                    <label for="carpeta">Carpeta del Proyecto</label>
+                    <div class="folder-input-group">
+                        <input type="text" id="carpeta" class="form-control folder-display" [value]="folderName || ''"
+                            placeholder="Selecciona una carpeta..." readonly>
+                        <button type="button" class="btn btn-primary folder-btn" (click)="selectFolder()"
+                            [disabled]="importing">
+                            Examinar...
+                        </button>
+                    </div>
+                    <small class="text-muted">Estructura: Plantas > Módulos > INF/SUP > imágenes</small>
+                </div>
+
+                <!-- Import Progress -->
+                <div *ngIf="importing" class="import-progress mb-3">
+                    <div class="progress-indicator">
+                        <div class="spinner"></div>
+                        <span>{{ importProgress }}</span>
+                    </div>
+                </div>
+
+                <!-- Import Stats -->
+                <div *ngIf="importStats" class="import-stats alert alert-success mb-3">
+                    <strong>✓ Importación completada:</strong>
+                    <ul class="mb-0 mt-1">
+                        <li>{{ importStats.plantas }} plantas creadas</li>
+                        <li>{{ importStats.modulos }} módulos creados</li>
+                        <li>{{ importStats.imagenes }} imágenes importadas</li>
+                    </ul>
+                    <div *ngIf="importStats.errors.length > 0" class="text-danger mt-2">
+                        <strong>Errores ({{ importStats.errors.length }}):</strong>
+                        <ul>
+                            <li *ngFor="let err of importStats.errors.slice(0, 5)">{{ err }}</li>
+                            <li *ngIf="importStats.errors.length > 5">... y {{ importStats.errors.length - 5 }} más</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-success"
+                        [disabled]="!projectForm.form.valid || loading || importing">
+                        {{ selectedFolder ? 'Crear e Importar' : 'Crear Proyecto' }}
+                    </button>
+                    <button type="button" class="btn btn-secondary ml-2" (click)="toggleForm()">Cancelar</button>
+                </div>
+            </form>
+            <div *ngIf="error" class="alert alert-danger mt-2">{{ error }}</div>
+        </div>
+
+    </div>
+
+
+    <!-- Lista de Proyectos Agrupados -->
+    <div class="projects-list">
+        <div *ngIf="loading && !projects.length" class="text-center">Cargando proyectos...</div>
+
+        <div *ngFor="let group of groupedProjects" class="user-group card mb-3">
+            <div class="card-header user-header" [class.bg-warning-light]="!group.userUrl">
+                <h3>
+                    <span *ngIf="group.userUrl">👷</span>
+                    <span *ngIf="!group.userUrl">📋</span>
+                    {{ group.username }}
+                </h3>
+                <span class="badge" [class.badge-warning]="!group.userUrl" [class.badge-info]="group.userUrl">
+                    {{ group.projects.length }} Proyecto(s)
+                </span>
+            </div>
+            <div class="card-body p-0">
+                <table class="table mb-0" *ngIf="group.projects.length > 0">
+                    <thead>
+                        <tr>
+                            <th>Nombre</th>
+                            <th class="text-right">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr *ngFor="let project of group.projects">
+                            <td>{{ project.nombre }}</td>
+                            <td class="text-right">
+                                <button class="btn btn-sm btn-outline-info mr-2"
+                                    (click)="manageProject(project)">Gestionar</button>
+                                <button class="btn btn-sm btn-outline-danger"
+                                    (click)="confirmDelete(project)">Eliminar</button>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div *ngIf="group.projects.length === 0" class="p-3 text-muted text-center">
+                    Sin proyectos asignados.
+                </div>
+            </div>
+        </div>
+
+        <div *ngIf="!loading && groupedProjects.length === 0" class="text-center mt-5">
+            No hay proyectos ni usuarios cargados.
+        </div>
+    </div>
+</div>

@@ -1,0 +1,114 @@
+<div class="container" *ngIf="proyecto">
+    <div class="page-header">
+        <div class="header-content">
+            <a routerLink="/admin-dashboard/proyectos" class="btn btn-secondary btn-sm mb-2">← Volver</a>
+            <h1>{{ proyecto.nombre }}</h1>
+            <span class="badge user-badge">👤 {{ proyecto.usuario }}</span>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- PLANTAS (Columna Izquierda / Layout) -->
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h3>Plantas (Niveles)</h3>
+                    <button class="btn btn-sm btn-primary" (click)="togglePlantaForm()">+ Añadir</button>
+                </div>
+
+                <!-- Formulario Nueva Planta -->
+                <div class="p-3 bg-light border-bottom" *ngIf="showPlantaForm">
+                    <form (ngSubmit)="createPlanta()" #plantaForm="ngForm">
+                        <div class="form-group">
+                            <label>Nombre (ej. Planta 1)</label>
+                            <input type="text" class="form-control" [(ngModel)]="newPlanta.nombre" name="nombre"
+                                required>
+                        </div>
+                        <div class="form-group">
+                            <label>Orden</label>
+                            <input type="number" class="form-control" [(ngModel)]="newPlanta.orden" name="orden"
+                                required>
+                        </div>
+                        <button type="submit" class="btn btn-sm btn-success btn-block"
+                            [disabled]="!plantaForm.valid">Guardar</button>
+                    </form>
+                </div>
+
+                <div class="list-group">
+                    <button *ngFor="let planta of plantas" class="list-group-item list-group-item-action"
+                        [class.active]="selectedPlanta?.id === planta.id" (click)="selectPlanta(planta)">
+                        <div class="d-flex justify-content-between align-items-center w-100">
+                            <span>{{ planta.nombre }}</span>
+                            <span class="badge badge-light badge-pill">{{ planta.modulos_count }} Módulos</span>
+                        </div>
+                    </button>
+                    <div *ngIf="plantas.length === 0" class="p-3 text-center text-muted">No hay plantas.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- MODULOS (Columna Derecha) -->
+        <div class="col-md-8">
+            <div class="card h-100" *ngIf="selectedPlanta; else noPlantaSelected">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h3>Módulos de {{ selectedPlanta.nombre }}</h3>
+                    <button class="btn btn-sm btn-primary" (click)="toggleModuloForm()">+ Crear Módulos</button>
+                </div>
+
+                <!-- Formulario Nuevos Módulos (Bulk) -->
+                <div class="p-3 bg-light border-bottom" *ngIf="showModuloForm">
+                    <h5>Creación Masiva</h5>
+                    <p class="text-muted small">Crea múltiples módulos automáticamente (ej. MOD-01 a MOD-10)</p>
+                    <form (ngSubmit)="createModulosBulk()" #moduloForm="ngForm">
+                        <div class="form-row">
+                            <div class="col">
+                                <label>Prefijo</label>
+                                <input type="text" class="form-control" [(ngModel)]="bulkModulo.prefix" name="prefix"
+                                    placeholder="MOD-" required>
+                            </div>
+                            <div class="col">
+                                <label>Inicio #</label>
+                                <input type="number" class="form-control" [(ngModel)]="bulkModulo.start" name="start"
+                                    required>
+                            </div>
+                            <div class="col">
+                                <label>Cantidad</label>
+                                <input type="number" class="form-control" [(ngModel)]="bulkModulo.count" name="count"
+                                    required>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-sm btn-success mt-2" [disabled]="loadingBulk">Generar
+                            Módulos</button>
+                    </form>
+                </div>
+
+                <div class="card-body">
+                    <div class="modules-grid">
+                        <div *ngFor="let modulo of modulos" class="module-card">
+                            <div class="module-icon">📦</div>
+                            <div class="module-name">{{ modulo.nombre }}</div>
+                            <div class="module-status badge" [class.badge-success]="modulo.estado === 'COMPLETADO'"
+                                [class.badge-warning]="modulo.estado !== 'COMPLETADO'">
+                                {{ modulo.estado }}
+                            </div>
+                        </div>
+                    </div>
+                    <div *ngIf="modulos.length === 0" class="text-center p-5 text-muted">
+                        Esta planta no tiene módulos.
+                    </div>
+                </div>
+            </div>
+
+            <ng-template #noPlantaSelected>
+                <div
+                    class="card h-100 d-flex align-items-center justify-content-center p-5 text-muted bg-light border-dashed">
+                    <h3>👈 Selecciona una Planta</h3>
+                    <p>O crea una nueva para empezar a añadir módulos.</p>
+                </div>
+            </ng-template>
+        </div>
+    </div>
+</div>
+<div class="loading-overlay" *ngIf="loading">
+    <div class="spinner"></div>
+</div>
