@@ -240,6 +240,7 @@ class ImagenViewSet(viewsets.ModelViewSet):
     queryset = Imagen.objects.all().order_by("id")
     serializer_class = ImagenSerializer
     permission_classes = [permissions.AllowAny]
+    pagination_class = None
 
     def get_queryset(self):
         queryset = Imagen.objects.filter(activo=True).order_by("modulo", "fase", "orden")

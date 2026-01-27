@@ -78,8 +78,10 @@ export class VisorComponent implements OnInit, OnDestroy {
       this.mesaIdForPairing = parseInt(idParam, 10);
     }
 
-    // SUPERVISOR MODE: /visor/:id - Load mesa directly by ID (no token needed)
+    // SUPERVISOR MODE: /visor/:id - Load mesa directly by ID
+    // Check if we have a token for this mesa first!
     if (this.mesaIdForPairing) {
+      this.deviceToken = localStorage.getItem(this.getTokenKey()); // Try load token
       this.loadMesaDirectly(this.mesaIdForPairing);
       return;
     }
@@ -100,8 +102,11 @@ export class VisorComponent implements OnInit, OnDestroy {
     this.http.get<MesaState>(`/api/mesas/${mesaId}/`).subscribe({
       next: (mesa) => {
         this.mesaState = mesa;
+        console.log('[Visor Debug] Mesa loaded:', mesa);
         this.mode = 'PROJECTION';
         this.cdr.detectChanges();
+        this.startStatePolling();
+        this.startStatePolling(); // Ensure polling starts!
       },
       error: (err) => {
         console.error('[Visor] Error loading mesa:', err);
@@ -202,6 +207,10 @@ export class VisorComponent implements OnInit, OnDestroy {
       this.eventSource.close();
     }
 
+    if (!this.deviceToken) {
+      console.warn('[Visor] Skipping SSE connection (No Token)');
+      return;
+    }
     const url = `${this.apiUrl}stream/?token=${this.deviceToken}`;
     console.log('[Visor] Connecting to SSE:', url);
 
@@ -340,6 +349,7 @@ export class VisorComponent implements OnInit, OnDestroy {
         );
       })
     ).subscribe(item => {
+      console.log('[Visor Debug] Poll Item found:', item);
       this.handleActiveItemUpdate(item);
     });
   }
@@ -381,8 +391,14 @@ export class VisorComponent implements OnInit, OnDestroy {
 
     this.http.get<any[]>(url).subscribe({
       next: (imgs) => {
-        console.log(`[Visor] Loaded ${imgs.length} images`);
-        this.images = imgs;
+        console.log(`[Visor Debug] Images API Response:`, imgs);
+        if (!Array.isArray(imgs)) {
+          console.error('[Visor Debug] Expected array of images, got:', typeof imgs);
+          this.images = [];
+        } else {
+          console.log(`[Visor Debug] Loaded ${imgs.length} images for item`, this.activeItem);
+          this.images = imgs;
+        }
         this.currentIndex = 0;
         this.loadingImages = false;
         this.cdr.detectChanges();
@@ -398,7 +414,8 @@ export class VisorComponent implements OnInit, OnDestroy {
   fetchMesaState(): void {
     this.http.get<MesaState>(`${this.apiUrl}state/`, { headers: this.getAuthHeaders() })
       .pipe(catchError(err => {
-        if (err.status === 401) this.handleUnauthorized();
+        console.error('[Visor Debug] State Fetch Error:', err.status, err);
+        if (err.status === 401) this.handleUnauthorized('StatePolling');
         return of(null);
       }))
       .subscribe(state => {
@@ -418,17 +435,24 @@ export class VisorComponent implements OnInit, OnDestroy {
     ).subscribe();
   }
 
-  handleUnauthorized(): void {
-    // Clear token and return to pairing
-    if (this.eventSource) {
-      this.eventSource.close();
-      this.eventSource = null;
+  private authRetries = 0;
+
+  handleUnauthorized(source: string = 'Unknown'): void {
+    this.authRetries++;
+    console.warn(`[Visor] Unauthorized (401) from ${source}. Retry count: ${this.authRetries}`);
+
+    if (this.authRetries > 3) {
+      console.error('[Visor] Max auth retries exceeded. Resetting session.');
+      if (this.eventSource) {
+        this.eventSource.close();
+        this.eventSource = null;
+      }
+      localStorage.removeItem(this.getTokenKey());
+      this.deviceToken = null;
+      this.mesaState = null;
+      this.statePollSub?.unsubscribe();
+      this.heartbeatSub?.unsubscribe();
+      this.requestPairingCode();
     }
-    localStorage.removeItem(this.getTokenKey());
-    this.deviceToken = null;
-    this.mesaState = null;
-    this.statePollSub?.unsubscribe();
-    this.heartbeatSub?.unsubscribe();
-    this.requestPairingCode();
   }
 }
