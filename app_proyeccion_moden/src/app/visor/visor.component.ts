@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, Inject, PLATFORM_ID, ChangeDetectorRef, NgZone } from '@angular/core';
+import { Component, OnInit, OnDestroy, Inject, PLATFORM_ID, ChangeDetectorRef, NgZone, HostListener } from '@angular/core';
 import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
@@ -78,8 +78,10 @@ export class VisorComponent implements OnInit, OnDestroy {
       this.mesaIdForPairing = parseInt(idParam, 10);
     }
 
-    // SUPERVISOR MODE: /visor/:id - Load mesa directly by ID (no token needed)
+    // SUPERVISOR MODE: /visor/:id - Load mesa directly by ID
+    // Check if we have a token for this mesa first!
     if (this.mesaIdForPairing) {
+      this.deviceToken = localStorage.getItem(this.getTokenKey()); // Try load token
       this.loadMesaDirectly(this.mesaIdForPairing);
       return;
     }
@@ -100,8 +102,11 @@ export class VisorComponent implements OnInit, OnDestroy {
     this.http.get<MesaState>(`/api/mesas/${mesaId}/`).subscribe({
       next: (mesa) => {
         this.mesaState = mesa;
+        console.log('[Visor Debug] Mesa loaded:', mesa);
         this.mode = 'PROJECTION';
         this.cdr.detectChanges();
+        this.startStatePolling();
+        this.startStatePolling(); // Ensure polling starts!
       },
       error: (err) => {
         console.error('[Visor] Error loading mesa:', err);
@@ -115,6 +120,7 @@ export class VisorComponent implements OnInit, OnDestroy {
     this.pairingPollSub?.unsubscribe();
     this.statePollSub?.unsubscribe();
     this.heartbeatSub?.unsubscribe();
+    this.itemPollSub?.unsubscribe();
   }
 
   // =========================================================================
@@ -201,6 +207,10 @@ export class VisorComponent implements OnInit, OnDestroy {
       this.eventSource.close();
     }
 
+    if (!this.deviceToken) {
+      console.warn('[Visor] Skipping SSE connection (No Token)');
+      return;
+    }
     const url = `${this.apiUrl}stream/?token=${this.deviceToken}`;
     console.log('[Visor] Connecting to SSE:', url);
 
@@ -240,17 +250,172 @@ export class VisorComponent implements OnInit, OnDestroy {
     };
   }
 
-  startStatePolling(): void {
-    // Legacy polling replaced by SSE
-    // But we still fetch initial state once to get full data (name, etc)
-    this.fetchMesaState();
-    this.connectToSSE();
+  // Player Logic State
+  activeItem: any | null = null;
+  images: any[] = [];
+  currentIndex: number = 0;
+  loadingImages = false;
+  private itemPollSub: Subscription | null = null;
+
+  get projectedImage(): string | null {
+    if (this.images && this.images.length > 0 && this.images[this.currentIndex]) {
+      return this.images[this.currentIndex].url;
+    }
+    return this.mesaState?.image_url ?? null;
   }
+
+  get showOverlay(): boolean {
+    // Show overlay if we have an item (even if loading or empty, so we can debug)
+    return !!this.activeItem;
+  }
+
+  get isCalibrationActive(): boolean {
+    // Enable calibration if supervisor AND (no image projected OR mapper explicitly enabled)
+    return this.isSupervisor && (!this.projectedImage || !!this.mesaState?.mapper_enabled);
+  }
+
+  @HostListener('window:keydown', ['$event'])
+  handleKeyboardEvent(event: KeyboardEvent) {
+    if (this.mode !== 'PROJECTION' || !this.images.length) return;
+
+    if (event.key === 'ArrowRight') {
+      this.nextImage();
+    } else if (event.key === 'ArrowLeft') {
+      this.prevImage();
+    }
+  }
+
+  nextImage(): void {
+    if (this.currentIndex < this.images.length - 1) {
+      this.currentIndex++;
+      this.updateProjectedImage();
+    } else {
+      // End of list -> Complete Item
+      this.finishActiveItem();
+    }
+  }
+
+  prevImage(): void {
+    if (this.currentIndex > 0) {
+      this.currentIndex--;
+      this.updateProjectedImage();
+    }
+  }
+
+  // Optional: Update local mesa state visually if needed (though we just show the image)
+  updateProjectedImage(): void {
+    // We could locally allow "previewing" next image, 
+    // but the requirement implies we just navigate LOCALLY in the player 
+    // and only update backend when finished?
+    // "dado una lista permitía cambiar de imagen utilizando las teclas"
+    // So yes, local navigation. 
+    this.cdr.detectChanges();
+  }
+
+  finishActiveItem(): void {
+    if (!this.activeItem) return;
+
+    console.log('[Visor] Finishing item:', this.activeItem.id);
+    this.http.post(`/api/mesa-queue-items/${this.activeItem.id}/marcar_hecho/`, {})
+      .subscribe({
+        next: () => {
+          console.log('[Visor] Item finished');
+          // Clear current state and wait for next poll to pick up new item
+          this.activeItem = null;
+          this.images = [];
+          this.currentIndex = 0;
+          this.cdr.detectChanges();
+          // Force immediate poll
+          this.checkActiveItem();
+        },
+        error: (err) => console.error('[Visor] Error finishing item:', err)
+      });
+  }
+
+  startStatePolling(): void {
+    // 1. Fetch initial Mesa State (Name, ID)
+    this.fetchMesaState();
+
+    // 2. Connect to SSE for Calibration
+    this.connectToSSE();
+
+    // 3. Start Polling for Active Work Item (Content)
+    this.itemPollSub = interval(2000).pipe(
+      startWith(0),
+      switchMap(() => {
+        if (!this.mesaState?.id) return of(null);
+        return this.http.get<any>(`/api/mesas/${this.mesaState.id}/current_item/`).pipe(
+          catchError(err => of(null)) // 404 if no item showing
+        );
+      })
+    ).subscribe(item => {
+      console.log('[Visor Debug] Poll Item found:', item);
+      this.handleActiveItemUpdate(item);
+    });
+  }
+
+  checkActiveItem(): void {
+    if (!this.mesaState?.id) return;
+    this.http.get<any>(`/api/mesas/${this.mesaState.id}/current_item/`)
+      .pipe(catchError(() => of(null)))
+      .subscribe(item => this.handleActiveItemUpdate(item));
+  }
+
+  handleActiveItemUpdate(item: any): void {
+    // If no item showing
+    if (!item) {
+      if (this.activeItem) {
+        // We had an item, now gone
+        this.activeItem = null;
+        this.images = [];
+        this.cdr.detectChanges();
+      }
+      return;
+    }
+
+    // If new item detected
+    if (!this.activeItem || this.activeItem.id !== item.id) {
+      console.log('[Visor] New active item:', item);
+      this.activeItem = item;
+      this.loadImagesForActiveItem();
+    }
+  }
+
+  loadImagesForActiveItem(): void {
+    if (!this.activeItem) return;
+
+    this.loadingImages = true;
+    // Fetch images for Module + Fase
+    // Query: /api/imagenes/?modulo=X&fase=Y
+    const url = `/api/imagenes/?modulo=${this.activeItem.modulo}&fase=${this.activeItem.fase}`;
+
+    this.http.get<any[]>(url).subscribe({
+      next: (imgs) => {
+        console.log(`[Visor Debug] Images API Response:`, imgs);
+        if (!Array.isArray(imgs)) {
+          console.error('[Visor Debug] Expected array of images, got:', typeof imgs);
+          this.images = [];
+        } else {
+          console.log(`[Visor Debug] Loaded ${imgs.length} images for item`, this.activeItem);
+          this.images = imgs;
+        }
+        this.currentIndex = 0;
+        this.loadingImages = false;
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        console.error('[Visor] Error loading images:', err);
+        this.loadingImages = false;
+      }
+    });
+  }
+
 
   fetchMesaState(): void {
     this.http.get<MesaState>(`${this.apiUrl}state/`, { headers: this.getAuthHeaders() })
       .pipe(catchError(err => {
-        if (err.status === 401) this.handleUnauthorized();
+        console.error('[Visor Debug] State Fetch Error:', err.status, err);
+        if (err.status === 401) this.handleUnauthorized('StatePolling');
         return of(null);
       }))
       .subscribe(state => {
@@ -270,17 +435,24 @@ export class VisorComponent implements OnInit, OnDestroy {
     ).subscribe();
   }
 
-  handleUnauthorized(): void {
-    // Clear token and return to pairing
-    if (this.eventSource) {
-      this.eventSource.close();
-      this.eventSource = null;
+  private authRetries = 0;
+
+  handleUnauthorized(source: string = 'Unknown'): void {
+    this.authRetries++;
+    console.warn(`[Visor] Unauthorized (401) from ${source}. Retry count: ${this.authRetries}`);
+
+    if (this.authRetries > 3) {
+      console.error('[Visor] Max auth retries exceeded. Resetting session.');
+      if (this.eventSource) {
+        this.eventSource.close();
+        this.eventSource = null;
+      }
+      localStorage.removeItem(this.getTokenKey());
+      this.deviceToken = null;
+      this.mesaState = null;
+      this.statePollSub?.unsubscribe();
+      this.heartbeatSub?.unsubscribe();
+      this.requestPairingCode();
     }
-    localStorage.removeItem(this.getTokenKey());
-    this.deviceToken = null;
-    this.mesaState = null;
-    this.statePollSub?.unsubscribe();
-    this.heartbeatSub?.unsubscribe();
-    this.requestPairingCode();
   }
 }

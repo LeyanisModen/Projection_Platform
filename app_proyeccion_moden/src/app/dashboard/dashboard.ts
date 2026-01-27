@@ -76,17 +76,7 @@ export class Dashboard implements OnInit, OnDestroy {
   activePhases = new Set<string>(); // "moduloId-FASE" (e.g. "101-INFERIOR")
 
   // Pairing Modal State
-  showPairingModal = false;
-  pairingMesa: Mesa | null = null;
-  pairingCode = '';
-  pairingError = '';
-  pairingLoading = false;
-  pairingSuccess = false;
 
-  // Unbind Modal State
-  showUnbindModal = false;
-  unbindMesa: Mesa | null = null;
-  unbindLoading = false;
 
   // Breadcrumb Navigation
   navigateTo(level: 'projects' | 'plants'): void {
@@ -829,90 +819,7 @@ export class Dashboard implements OnInit, OnDestroy {
     // TODO: Optionally persist the new order to backend
   }
 
-  // =========================================================================
-  // DEVICE PAIRING MODAL
-  // =========================================================================
-  openPairingModal(mesa: Mesa): void {
-    this.pairingMesa = mesa;
-    this.pairingCode = '';
-    this.pairingError = '';
-    this.pairingLoading = false;
-    this.pairingSuccess = false;
-    this.showPairingModal = true;
-  }
 
-  closePairingModal(): void {
-    this.showPairingModal = false;
-    this.pairingMesa = null;
-    this.pairingCode = '';
-    this.pairingError = '';
-    this.pairingLoading = false;
-    this.pairingSuccess = false;
-  }
-
-  submitPairing(): void {
-    if (!this.pairingMesa || !this.pairingCode.trim()) {
-      this.pairingError = 'Introduce un código válido';
-      return;
-    }
-
-    this.pairingLoading = true;
-    this.pairingError = '';
-
-    this.api.pairDevice(this.pairingMesa.id, this.pairingCode.trim().toUpperCase())
-      .pipe(takeUntil(this.destroy$))
-      .subscribe({
-        next: (res) => {
-          this.pairingLoading = false;
-          if (res.status === 'ok') {
-            this.pairingSuccess = true;
-            // Reload mesas to update is_linked status
-            this.loadMesas();
-          } else {
-            this.pairingError = 'Error desconocido';
-          }
-        },
-        error: (err) => {
-          this.pairingLoading = false;
-          this.pairingError = err.error?.detail || 'Error al vincular dispositivo';
-        }
-      });
-  }
-
-  onPairingCodeInput(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    this.pairingCode = input.value.toUpperCase();
-  }
-
-  // Unbind Modal Methods
-  openUnbindModal(mesa: Mesa): void {
-    this.unbindMesa = mesa;
-    this.unbindLoading = false;
-    this.showUnbindModal = true;
-  }
-
-  closeUnbindModal(): void {
-    this.showUnbindModal = false;
-    this.unbindMesa = null;
-    this.unbindLoading = false;
-  }
-
-  confirmUnbind(): void {
-    if (!this.unbindMesa) return;
-
-    this.unbindLoading = true;
-    this.api.unbindDevice(this.unbindMesa.id)
-      .pipe(takeUntil(this.destroy$))
-      .subscribe({
-        next: () => {
-          this.loadMesas();
-          this.closeUnbindModal();
-        },
-        error: () => {
-          this.unbindLoading = false;
-        }
-      });
-  }
 
   // =========================================================================
   // PROJECTION VIEW

@@ -29,11 +29,28 @@
     <!-- PROJECTION MODE -->
     @if (mode === 'PROJECTION') {
     <div class="projection-screen">
-        <app-mapper [imageUrl]="mesaState?.image_url ?? null"
-            [isCalibrationActive]="isSupervisor && ((!mesaState?.image_url || mesaState?.mapper_enabled) ?? false)"
+        <!-- Simplified Mapper for Debug -->
+        <app-mapper [imageUrl]="projectedImage" [isCalibrationActive]="isCalibrationActive"
             [mesaId]="mesaState?.id ?? null" [calibrationJson]="mesaState?.calibration_json ?? null"
             [allowInteraction]="isSupervisor">
         </app-mapper>
+
+        <!-- Active Item Info Overlay -->
+        @if (showOverlay) {
+        <div class="active-item-info">
+            <span class="info-title">{{ activeItem?.modulo_nombre }} - {{ activeItem?.fase }}</span>
+
+            @if (loadingImages) {
+            <span class="info-progress">Cargando imágenes...</span>
+            } @else if (images.length > 0) {
+            <span class="info-progress">{{ currentIndex + 1 }} / {{ images.length }}</span>
+            } @else {
+            <span class="info-progress" style="color: red;">⚠ No hay imágenes</span>
+            <span style="font-size: 0.8rem;">Modulo: {{ activeItem?.modulo }} ({{ activeItem?.modulo?.id ||
+                activeItem?.modulo }})</span>
+            }
+        </div>
+        }
 
         <!-- Mesa Watermark for debugging -->
         <div class="mesa-watermark">
