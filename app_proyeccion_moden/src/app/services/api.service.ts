@@ -42,6 +42,8 @@ export interface Planta {
     proyecto: number;
     orden: number;
     modulos_count: number;
+    plano_imagen?: string;
+    fichero_corte?: string;
 }
 
 export interface Modulo {

@@ -1,0 +1,6 @@
+docker-compose.yml merge=ours
+nginx.conf merge=ours
+Dockerfile merge=ours
+**/Dockerfile merge=ours
+api_proyeccion_moden/Dockerfile merge=ours
+app_proyeccion_moden/Dockerfile merge=ours

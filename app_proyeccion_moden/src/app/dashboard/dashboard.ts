@@ -77,6 +77,24 @@ export class Dashboard implements OnInit, OnDestroy {
 
   // Pairing Modal State
 
+  // Blueprint Modal State
+  showBlueprintModal = false;
+  blueprintUrl: string | null = null;
+
+  verPlano(planta: Planta): void {
+    if (planta.plano_imagen) {
+      this.blueprintUrl = planta.plano_imagen;
+      this.showBlueprintModal = true;
+      this.cdr.detectChanges();
+    }
+  }
+
+  cerrarBlueprintModal(): void {
+    this.showBlueprintModal = false;
+    this.blueprintUrl = null;
+    this.cdr.detectChanges();
+  }
+
 
   // Breadcrumb Navigation
   navigateTo(level: 'projects' | 'plants'): void {
@@ -751,9 +769,9 @@ export class Dashboard implements OnInit, OnDestroy {
     return modulo.inferior_hecho && modulo.superior_hecho;
   }
 
-  isPhaseInProgress(modulo: Modulo, fase: string): boolean {
+  isPhaseAssigned(modulo: Modulo, fase: string): boolean {
     const key = `${modulo.id}-${fase}`;
-    return this.activePhases.has(key);
+    return this.subfaseAssignedToMesa.has(key);
   }
 
   getSubfaseStatusText(subfase: Subfase): string {

@@ -127,7 +127,7 @@ class PlantaSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Planta
-        fields = ["id", "nombre", "proyecto", "orden", "modulos_count"]
+        fields = ["id", "nombre", "proyecto", "orden", "modulos_count", "plano_imagen", "fichero_corte"]
 
     def get_modulos_count(self, obj):
         return obj.modulos.count()

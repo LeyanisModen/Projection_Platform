@@ -48,6 +48,10 @@ class Planta(models.Model):
     nombre = models.CharField(max_length=200)
     proyecto = models.ForeignKey(Proyecto, on_delete=models.CASCADE, related_name='plantas')
     orden = models.PositiveIntegerField(default=0)
+    
+    # New fields for Dashboard
+    plano_imagen = models.ImageField(upload_to='planos/', blank=True, null=True)
+    fichero_corte = models.FileField(upload_to='cortes/', blank=True, null=True)
 
     def __str__(self):
         return f"{self.proyecto.nombre} - {self.nombre}"
