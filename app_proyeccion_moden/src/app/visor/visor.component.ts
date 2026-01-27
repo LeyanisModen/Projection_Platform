@@ -256,7 +256,8 @@ export class VisorComponent implements OnInit, OnDestroy {
   }
 
   get showOverlay(): boolean {
-    return !!(this.activeItem && this.images && this.images.length > 0);
+    // Show overlay if we have an item (even if loading or empty, so we can debug)
+    return !!this.activeItem;
   }
 
   get isCalibrationActive(): boolean {

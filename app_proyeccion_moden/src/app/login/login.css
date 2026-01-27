@@ -5,7 +5,7 @@
 
 /* Fuentes cargadas desde index.html */
 
-:root {
+:host {
     --steel-dark: #1a1a2e;
     --steel-medium: #2d2d44;
     --steel-light: #4a4a6a;

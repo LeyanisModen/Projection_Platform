@@ -39,7 +39,16 @@
         @if (showOverlay) {
         <div class="active-item-info">
             <span class="info-title">{{ activeItem?.modulo_nombre }} - {{ activeItem?.fase }}</span>
+
+            @if (loadingImages) {
+            <span class="info-progress">Cargando imágenes...</span>
+            } @else if (images.length > 0) {
             <span class="info-progress">{{ currentIndex + 1 }} / {{ images.length }}</span>
+            } @else {
+            <span class="info-progress" style="color: red;">⚠ No hay imágenes</span>
+            <span style="font-size: 0.8rem;">Modulo: {{ activeItem?.modulo }} ({{ activeItem?.modulo?.id ||
+                activeItem?.modulo }})</span>
+            }
         </div>
         }
 
