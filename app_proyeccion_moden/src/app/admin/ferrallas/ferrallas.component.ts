@@ -328,11 +328,11 @@ export class FerrallasComponent implements OnInit {
     this.loading = true;
     this.api.createUser(this.newUser).subscribe({
       next: (user: User) => {
-        this.users.unshift(user);
+        console.log('[Ferrallas] User created successfully:', user);
         this.resetForm();
         this.showForm = false;
-        this.loading = false;
-        this.cdr.detectChanges();
+        // Reload all users to ensure list is perfectly synced and sorted
+        this.loadUsers();
       },
       error: (err: any) => {
         console.error('Error creating user', err);

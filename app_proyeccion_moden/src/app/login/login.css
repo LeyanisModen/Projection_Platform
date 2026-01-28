@@ -28,41 +28,15 @@ main {
     padding: 1rem;
     box-sizing: border-box;
     position: relative;
-    background: linear-gradient(135deg, var(--steel-dark) 0%, var(--steel-medium) 50%, var(--steel-dark) 100%);
+    background: var(--white);
     overflow: hidden;
 }
 
-/* Patrón de fondo industrial */
-main::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-image:
-        repeating-linear-gradient(45deg,
-            transparent,
-            transparent 35px,
-            rgba(255, 255, 255, 0.02) 35px,
-            rgba(255, 255, 255, 0.02) 70px);
-    pointer-events: none;
-}
+/* Patrón de fondo eliminado por solicitud */
+/* main::before { ... } */
 
-/* Decoración de barras de hierro */
-main::after {
-    content: '';
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 6px;
-    background: repeating-linear-gradient(90deg,
-            var(--safety-orange) 0px,
-            var(--safety-orange) 20px,
-            var(--steel-dark) 20px,
-            var(--steel-dark) 40px);
-}
+/* Decoración de barras de hierro eliminada */
+/* main::after { ... } */
 
 .card {
     position: relative;
