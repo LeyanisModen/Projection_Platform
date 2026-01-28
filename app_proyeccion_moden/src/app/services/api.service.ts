@@ -271,6 +271,10 @@ export class ApiService {
         return this.http.delete<void>(`${this.baseUrl}/mesas/${id}/`, { headers: this.getHeaders() });
     }
 
+    updateMesa(id: number, data: any): Observable<Mesa> {
+        return this.http.patch<Mesa>(`${this.baseUrl}/mesas/${id}/`, data, { headers: this.getHeaders() });
+    }
+
     getMesa(id: number): Observable<Mesa> {
         return this.http.get<Mesa>(`${this.baseUrl}/mesas/${id}/`, { headers: this.getHeaders() });
     }

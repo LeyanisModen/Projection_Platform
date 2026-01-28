@@ -586,6 +586,46 @@
   margin: 0;
   font-size: 0.95rem;
   font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mesa-title-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  margin-right: 12px;
+}
+
+.mesa-name-input {
+  width: 100%;
+  font-size: 0.95rem;
+  font-weight: 600;
+  padding: 4px 8px;
+  border: 1px solid var(--accent-orange);
+  border-radius: 4px;
+  outline: none;
+  font-family: inherit;
+  background: white;
+  color: var(--text-primary);
+}
+
+.edit-icon {
+  opacity: 0.5;
+  font-size: 0.9rem;
+  color: #999;
+  transition: opacity 0.2s, color 0.2s;
+}
+
+.mesa-card:hover .edit-icon {
+  opacity: 1;
+}
+
+.edit-icon:hover {
+  color: var(--accent-orange);
 }
 
 .drop-zone {

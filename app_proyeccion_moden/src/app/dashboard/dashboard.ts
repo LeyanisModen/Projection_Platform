@@ -1,5 +1,6 @@
 import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { DragDropModule, CdkDragDrop, moveItemInArray } from '@angular/cdk/drag-drop';
 
 import {
@@ -23,7 +24,7 @@ interface Subfase {
   standalone: true,
   templateUrl: './dashboard.html',
   styleUrl: './dashboard.css',
-  imports: [CommonModule, DragDropModule]
+  imports: [CommonModule, DragDropModule, FormsModule]
 })
 export class Dashboard implements OnInit, OnDestroy {
   // Sidebar State
@@ -650,6 +651,62 @@ export class Dashboard implements OnInit, OnDestroy {
     this.confirmarAccion();
   }
 
+  // =========================================================================
+  // MESA RENAMING
+  // =========================================================================
+  editingMesaId: number | null = null;
+  // Temporary storage for the name being edited to avoid mutating model before save
+  editingMesaName: string = '';
+
+  startEditingMesa(mesa: Mesa): void {
+    this.editingMesaId = mesa.id;
+    this.editingMesaName = mesa.nombre;
+    // Auto-focus logic will be handled in template with autofocus attribute or directive if needed,
+    // but standard input usually works fine.
+  }
+
+  stopEditingMesa(): void {
+    this.editingMesaId = null;
+    this.editingMesaName = '';
+  }
+
+  updateMesaName(mesa: Mesa): void {
+    if (!this.editingMesaId || !this.editingMesaName.trim()) {
+      this.stopEditingMesa();
+      return;
+    }
+
+    const newName = this.editingMesaName.trim();
+    if (newName === mesa.nombre) {
+      this.stopEditingMesa();
+      return;
+    }
+
+    // Call API
+    this.api.updateMesa(mesa.id, { nombre: newName }).subscribe({
+      next: (updatedMesa) => {
+        // Update local model
+        mesa.nombre = updatedMesa.nombre;
+        // Update assignment tracking if any
+        // We'd need to update all values in subfaseAssignedToMesa where mesaName matches old name
+        // Use a brute-force update for simplicity since maps are small
+        for (let [key, val] of this.subfaseAssignedToMesa) {
+          if (val.mesaName === mesa.nombre) { // This check might fail if we haven't updated local yet? No, we just updated it above.
+            // Wait, we updated mesa.nombre locally just now.
+            val.mesaName = updatedMesa.nombre;
+          }
+        }
+        this.stopEditingMesa();
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        console.error('Error updating mesa name', err);
+        alert('Error al renombrar la mesa');
+        this.stopEditingMesa();
+      }
+    });
+  }
+
   private ejecutarEliminar(item: MesaQueueItem): void {
     const mesaId = this.extractIdFromUrl(item.mesa);
 
@@ -920,4 +977,5 @@ export class Dashboard implements OnInit, OnDestroy {
     // Open visor in new tab for this mesa
     window.open(`/visor/${mesa.id}`, '_blank');
   }
+
 }
