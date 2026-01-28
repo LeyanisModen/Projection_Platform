@@ -132,7 +132,7 @@ export class Mapper implements OnChanges {
   };
 
 
-  public showGrid = false;
+
 
   // const document = window.document;
   private corners: number[] = [];
@@ -172,7 +172,6 @@ export class Mapper implements OnChanges {
         // We might need to call toggleCalibration, but toggleCalibration toggles.
         // Better to set it explicitly.
         this.calibrating = active;
-        this.showGrid = active;
         if (this.markers) { // markers populated in ngAfterViewInit
           this.markers.forEach(marker => {
             marker.nativeElement.style.visibility = active ? "visible" : "hidden";
@@ -310,7 +309,6 @@ export class Mapper implements OnChanges {
 
   toggleCalibration() {
     this.calibrating = !this.calibrating;
-    this.showGrid = this.calibrating;
 
     this.markers.forEach(marker => {
       if (this.calibrating) {
