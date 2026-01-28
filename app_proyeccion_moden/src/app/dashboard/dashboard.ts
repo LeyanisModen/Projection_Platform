@@ -133,6 +133,7 @@ export class Dashboard implements OnInit, OnDestroy {
       .pipe(takeUntil(this.destroy$))
       .subscribe(() => {
         this.pollMesasQueue();
+        this.refreshActivePlantaModules();
       });
   }
 
@@ -152,13 +153,35 @@ export class Dashboard implements OnInit, OnDestroy {
             // We should automatically promote this new first item to 'MOSTRANDO'.
 
             // 1. Filter active items (API might return HECHO depending on implementation, but typically filtered)
-            const activeItems = items.filter(i => i.status !== 'HECHO');
+            // FORCE SORT: MOSTRANDO always first
+            const activeItems = items
+              .filter(i => i.status !== 'HECHO')
+              .sort((a, b) => {
+                if (a.status === 'MOSTRANDO') return -1;
+                if (b.status === 'MOSTRANDO') return 1;
+                return a.position - b.position;
+              });
 
             // 2. Check overlap with local state to avoid UI jitter, but crucial for logic
             // Update the map
             this.mesaQueueItems.set(mesa.id, activeItems);
 
-            // 3. Check for AUTO-ADVANCE condition
+            // 3. Clear STALE assignments for this mesa
+            // We need to remove any assignment in `subfaseAssignedToMesa` that points to this mesa
+            // BUT is not in the new `items` list (meaning it finished or was deleted).
+            // This fixes the "Proyectando..." stuck status.
+            for (let [key, val] of this.subfaseAssignedToMesa) {
+              if (val.mesaName === mesa.nombre) {
+                // Check if this subfase (key) is still in the current items list
+                // Key format: "moduloId-FASE"
+                const stillExists = items.some(i => `${i.modulo}-${i.fase}` === key && i.status !== 'HECHO');
+                if (!stillExists) {
+                  this.subfaseAssignedToMesa.delete(key);
+                }
+              }
+            }
+
+            // 4. Check for AUTO-ADVANCE condition
             if (activeItems.length > 0) {
               const firstItem = activeItems[0];
               if (firstItem.status === 'EN_COLA') {
@@ -167,7 +190,7 @@ export class Dashboard implements OnInit, OnDestroy {
               }
             }
 
-            // 4. Update assignment tracking (for dots)
+            // 5. Update assignment tracking (for dots) with NEW items
             this.updateAssignmentTracking(mesa, items);
 
             this.cdr.detectChanges();
@@ -292,7 +315,15 @@ export class Dashboard implements OnInit, OnDestroy {
           });
 
           // Update the map with new items (Filter out HECHO for display)
-          const activeItems = items.filter(i => i.status !== 'HECHO');
+          // FORCE SORT: MOSTRANDO always first, then by position/id
+          const activeItems = items
+            .filter(i => i.status !== 'HECHO')
+            .sort((a, b) => {
+              if (a.status === 'MOSTRANDO') return -1;
+              if (b.status === 'MOSTRANDO') return 1;
+              return a.position - b.position;
+            });
+
           this.mesaQueueItems.set(mesaId, activeItems);
 
           // Track active subfases
@@ -376,6 +407,34 @@ export class Dashboard implements OnInit, OnDestroy {
           console.error('Error loading modulos', err);
           this.loadingModulos = false;
         }
+      });
+  }
+
+  // Silent refresh for module status updates (polled)
+  refreshActivePlantaModules(): void {
+    if (!this.selectedPlanta || this.loadingModulos) return;
+
+    this.api.getModulos(this.selectedPlanta.id)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (data) => {
+          // Update list with standard sort
+          this.modulos = [...this.sortModulos(data)];
+
+          // Update selectedModulo reference if it matches
+          if (this.selectedModulo) {
+            const updated = this.modulos.find(m => m.id === this.selectedModulo!.id);
+            if (updated) {
+              this.selectedModulo = updated;
+              // CRITICAL: Rebuild active subfases so the sidebar reflects the new state (e.g. checkmark) immediately
+              if (this.expandedModulo === updated.id) {
+                this.buildActiveSubfases(updated);
+              }
+            }
+          }
+          this.cdr.detectChanges();
+        },
+        error: (err) => console.error('[Dashboard] Error refreshing modules', err)
       });
   }
 
@@ -735,9 +794,14 @@ export class Dashboard implements OnInit, OnDestroy {
   onMesaQueueDrop(event: CdkDragDrop<MesaQueueItem[]>, mesaId: number): void {
     if (event.previousContainer === event.container) {
       // 1. Check if first item is locked (MOSTRANDO)
+      // Since we force sort MOSTRANDO to top, we just check if index 0 is MOSTRANDO
       const currentItems = event.container.data;
-      if (currentItems.length > 0 && currentItems[0].status === 'MOSTRANDO') {
-        // If user tries to drop at index 0, force to index 1
+      const hasMostrando = currentItems.some(i => i.status === 'MOSTRANDO');
+
+      if (hasMostrando) {
+        // If there is ANY 'MOSTRANDO' item, it is guaranteed to be at index 0 due to our sort logic.
+        // Effectively, index 0 is immutable for Drag-Drop of OTHER items.
+        // If user tries to drop ANY item at index 0, reject it (push to 1).
         if (event.currentIndex === 0) {
           event.currentIndex = 1;
         }
