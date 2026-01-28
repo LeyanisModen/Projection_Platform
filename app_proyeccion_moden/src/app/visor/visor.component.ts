@@ -14,6 +14,7 @@ interface MesaState {
   calibration_json: any;
   blackout: boolean;
   locked: boolean;
+  is_linked?: boolean; // Added field
 }
 
 interface PairingResponse {
@@ -24,6 +25,7 @@ interface PairingResponse {
 interface StatusResponse {
   status: 'WAITING' | 'PAIRED' | 'EXPIRED';
   device_token?: string;
+  mesa_id?: number;
 }
 
 @Component({
@@ -103,10 +105,15 @@ export class VisorComponent implements OnInit, OnDestroy {
       next: (mesa) => {
         this.mesaState = mesa;
         console.log('[Visor Debug] Mesa loaded:', mesa);
-        this.mode = 'PROJECTION';
+
+        if (mesa.is_linked) {
+          this.mode = 'PROJECTION';
+          this.startStatePolling();
+        } else {
+          console.log('[Visor] Mesa not linked. Initiating pairing mode.');
+          this.requestPairingCode();
+        }
         this.cdr.detectChanges();
-        this.startStatePolling();
-        this.startStatePolling(); // Ensure polling starts!
       },
       error: (err) => {
         console.error('[Visor] Error loading mesa:', err);

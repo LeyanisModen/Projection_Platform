@@ -974,6 +974,11 @@ export class Dashboard implements OnInit, OnDestroy {
   // PROJECTION VIEW
   // =========================================================================
   openProjectionView(mesa: any): void {
+    console.log('[Dashboard] Opening projection for:', mesa.nombre, 'Linked:', mesa.is_linked, 'Mesa Object:', mesa);
+    if (!mesa.is_linked) {
+      alert('Mesa no vinculada. Póngase en contacto con administración.');
+      return;
+    }
     // Open visor in new tab for this mesa
     window.open(`/visor/${mesa.id}`, '_blank');
   }

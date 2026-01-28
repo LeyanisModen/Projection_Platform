@@ -34,4 +34,4 @@ Thumbs.db
 # --- Documentation ---
 docs/E04*
 app_proyeccion_moden/public/
-.docker-compose.yml
+docker-compose.yml
