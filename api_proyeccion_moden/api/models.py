@@ -208,6 +208,7 @@ class Mesa(models.Model):
     pairing_code = models.CharField(max_length=10, null=True, blank=True)
     pairing_code_expires_at = models.DateTimeField(null=True, blank=True)
     mapper_enabled = models.BooleanField(default=False)
+    current_image_index = models.IntegerField(default=0)
     calibration_json = models.JSONField(null=True, blank=True)
     last_error = models.TextField(null=True, blank=True)
 

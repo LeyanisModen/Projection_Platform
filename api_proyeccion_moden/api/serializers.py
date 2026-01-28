@@ -269,6 +269,6 @@ class MesaStateSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'nombre', 
             'imagen_actual', 'image_url',
-            'mapper_enabled', 'calibration_json',
+            'mapper_enabled', 'current_image_index', 'calibration_json',
             'blackout', 'locked', 'last_seen'
         ]

@@ -598,6 +598,37 @@ class DeviceViewSet(viewsets.ViewSet):
         return Response({'status': 'ok'})
 
 
+    @action(detail=False, methods=['post'])
+    def toggle_mapper(self, request):
+        """
+        Toggles the mapper_enabled state for the mesa.
+        """
+        mesa = self._authenticate_device(request)
+        if not mesa:
+            return Response({'detail': 'Unauthorized'}, status=401)
+            
+        mesa.mapper_enabled = not mesa.mapper_enabled
+        mesa.save(update_fields=['mapper_enabled'])
+        return Response({'status': 'ok', 'mapper_enabled': mesa.mapper_enabled})
+
+    @action(detail=False, methods=['post'])
+    def set_index(self, request):
+        """
+        Updates the current_image_index for the mesa.
+        -1 = Calibration Grid
+        0+ = Image Index
+        """
+        mesa = self._authenticate_device(request)
+        if not mesa:
+            return Response({'detail': 'Unauthorized'}, status=401)
+            
+        index = request.data.get('index')
+        if index is not None:
+            mesa.current_image_index = int(index)
+            mesa.save(update_fields=['current_image_index', 'ultima_actualizacion'])
+            return Response({'status': 'ok', 'index': mesa.current_image_index})
+        return Response({'detail': 'Index required'}, status=400)
+
     @action(detail=False, methods=['get'], renderer_classes=[ServerSentEventRenderer])
     def stream(self, request):
         """
@@ -617,7 +648,11 @@ class DeviceViewSet(viewsets.ViewSet):
             # Send initial state immediately
             initial_data = {
                 'type': 'calibration',
-                'data': {'corners': mesa.calibration_json.get('corners')} if mesa.calibration_json else {}
+                'data': {
+                    'corners': mesa.calibration_json.get('corners') if mesa.calibration_json else None,
+                    'mapper_enabled': mesa.mapper_enabled,
+                    'current_image_index': mesa.current_image_index
+                }
             }
             yield f"data: {json.dumps(initial_data)}\n\n"
             
@@ -629,7 +664,11 @@ class DeviceViewSet(viewsets.ViewSet):
                     last_check = mesa.ultima_actualizacion
                     payload = {
                         'type': 'calibration',
-                        'data': {'corners': mesa.calibration_json.get('corners')} if mesa.calibration_json else {}
+                        'data': {
+                            'corners': mesa.calibration_json.get('corners') if mesa.calibration_json else None,
+                            'mapper_enabled': mesa.mapper_enabled,
+                            'current_image_index': mesa.current_image_index
+                        }
                     }
                     yield f"data: {json.dumps(payload)}\n\n"
                 
@@ -690,8 +729,13 @@ class DeviceViewSet(viewsets.ViewSet):
         elif request.query_params.get('token'):
             token = request.query_params.get('token')
             
-        if not token:
+        if not token or token.lower() in ['undefined', 'null', '']:
+            # FALLBACK: If no token, check for mesa_id (Relaxed security for Visor/Supervisor)
+            mesa_id = request.data.get('mesa_id') or request.query_params.get('mesa_id')
+            if mesa_id:
+                return Mesa.objects.filter(id=mesa_id).first()
             return None
+            
         token_hash = hashlib.sha256(token.encode()).hexdigest()
         
         return Mesa.objects.filter(device_token_hash=token_hash).first()
