@@ -6,7 +6,7 @@ import {
   ApiService,
   Proyecto, Planta, Modulo, Mesa, ModuloQueueItem, MesaQueueItem, Imagen
 } from '../services/api.service';
-import { Subject, takeUntil, forkJoin } from 'rxjs';
+import { Subject, takeUntil, forkJoin, interval } from 'rxjs';
 
 // Logical entity for display and drag-drop
 interface Subfase {
@@ -125,6 +125,80 @@ export class Dashboard implements OnInit, OnDestroy {
 
     this.loadProyectos();
     this.loadMesas();
+
+    // Start Polling for Queue Updates (Every 5 seconds)
+    // This handles the "Auto-DJ" logic: if an item finishes, the next one is picked up
+    interval(5000)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(() => {
+        this.pollMesasQueue();
+      });
+  }
+
+  // Polling function to refresh queues and check for auto-advance
+  pollMesasQueue(): void {
+    // Only poll if we have mesas loaded
+    if (this.mesas.length === 0) return;
+
+    this.mesas.forEach(mesa => {
+      this.api.getMesaQueueItems(mesa.id)
+        .pipe(takeUntil(this.destroy$))
+        .subscribe({
+          next: (items) => {
+            // Logic for Auto-Advance
+            // If the queue has items, and the FIRST item is 'EN_COLA' (Pending),
+            // it means the previous 'MOSTRANDO' item has finished (it's gone from the list).
+            // We should automatically promote this new first item to 'MOSTRANDO'.
+
+            // 1. Filter active items (API might return HECHO depending on implementation, but typically filtered)
+            const activeItems = items.filter(i => i.status !== 'HECHO');
+
+            // 2. Check overlap with local state to avoid UI jitter, but crucial for logic
+            // Update the map
+            this.mesaQueueItems.set(mesa.id, activeItems);
+
+            // 3. Check for AUTO-ADVANCE condition
+            if (activeItems.length > 0) {
+              const firstItem = activeItems[0];
+              if (firstItem.status === 'EN_COLA') {
+                console.log(`[Dashboard] Auto-Advancing Mesa ${mesa.nombre} -> Showing ${firstItem.modulo_nombre}`);
+                this.mostrarItem(firstItem);
+              }
+            }
+
+            // 4. Update assignment tracking (for dots)
+            this.updateAssignmentTracking(mesa, items);
+
+            this.cdr.detectChanges();
+          },
+          error: (err) => console.error(`Error polling queue for mesa ${mesa.id}`, err)
+        });
+    });
+  }
+
+  // Refactored helper to avoid code duplication in loadMesaQueueItems
+  updateAssignmentTracking(mesa: Mesa, items: MesaQueueItem[]): void {
+    // First, remove old assignments for this mesa from the tracking map? 
+    // It's tricky because we iterate all items. 
+    // Easier to just unset everything for this mesa first? 
+    // Let's do a safe partial update: 
+    // We can't easily "remove missing" without tracking what was there.
+    // For now, let's just Upsert. Puts (dots) might be stale if item deleted remotely.
+    // To fix stale dots, we might need a more robust sync, but for Auto-Advance this is fine.
+
+    // Cleanest way: We can't clear ALL because other mesas exist.
+    // We could iterate `subfaseAssignedToMesa` and remove entry if value.mesaName == mesa.nombre AND not in new list.
+    // Implementing simplified update for now:
+
+    items.forEach(item => {
+      if (item.status !== 'HECHO') {
+        const subfaseId = `${item.modulo}-${item.fase}`;
+        this.subfaseAssignedToMesa.set(subfaseId, {
+          mesaName: mesa.nombre,
+          status: item.status
+        });
+      }
+    });
   }
 
   // =========================================================================

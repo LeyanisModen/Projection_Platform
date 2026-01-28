@@ -232,10 +232,7 @@
                                 </div>
                                 <div class="queue-item-actions">
                                     <!-- Play button removed (auto-project) -->
-                                    @if (item.status === 'MOSTRANDO') {
-                                    <button class="btn-action btn-hecho" (click)="marcarHecho(item)"
-                                        title="Marcar hecho">✓</button>
-                                    }
+                                    <!-- Play/Finish button removed (auto-project via polling) -->
                                     @if (item.status !== 'HECHO') {
                                     <button class="btn-action btn-eliminar" (click)="eliminarItem(item)"
                                         title="Eliminar">✕</button>
