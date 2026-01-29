@@ -1,6 +1,7 @@
 import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 import { DragDropModule, CdkDragDrop, moveItemInArray } from '@angular/cdk/drag-drop';
 
 import {
@@ -115,9 +116,21 @@ export class Dashboard implements OnInit, OnDestroy {
 
   private destroy$ = new Subject<void>();
 
-  constructor(private api: ApiService, private cdr: ChangeDetectorRef) { }
+  constructor(private api: ApiService, private cdr: ChangeDetectorRef, private router: Router) { }
+
+  username: string = '';
 
   ngOnInit(): void {
+    // Check auth
+    if (!this.api.isLoggedIn()) {
+      this.router.navigate(['/']);
+      return;
+    }
+
+    this.username = this.api.getUsername() || 'Usuario';
+
+    this.username = this.api.getUsername() || 'Usuario';
+
     // Prevent back navigation
     history.pushState(null, '', location.href);
     window.onpopstate = function () {
@@ -135,6 +148,11 @@ export class Dashboard implements OnInit, OnDestroy {
         this.pollMesasQueue();
         this.refreshActivePlantaModules();
       });
+  }
+
+  logout(): void {
+    this.api.logout();
+    this.router.navigate(['/']);
   }
 
   // Polling function to refresh queues and check for auto-advance

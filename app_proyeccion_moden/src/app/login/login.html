@@ -6,14 +6,23 @@
         </div>
         <div class="input-group">
             <p>Usuario</p>
-            <input type="text" placeholder="Introduce tu usuario">
+            <input #user_input type="text" placeholder="Introduce tu usuario" [(ngModel)]="username"
+                (keyup.enter)="submit()">
             <i #user_icon class="fa fa-user"></i>
         </div>
         <div class="input-group">
             <p>Contraseña</p>
-            <input #password type="password" placeholder="Introduce tu contraseña">
+            <input #passwordInput type="password" placeholder="Introduce tu contraseña" [(ngModel)]="password"
+                (keyup.enter)="submit()">
             <i #password_icon class="fa fa-eye" (click)="toggle_pass()"></i>
         </div>
-        <button (click)="submit()">Iniciar Sesión</button>
+
+        <div class="error-message" *ngIf="error" style="color: red; margin-bottom: 10px; text-align: center;">
+            {{ error }}
+        </div>
+
+        <button (click)="submit()" [disabled]="loading">
+            {{ loading ? 'Iniciando...' : 'Iniciar Sesión' }}
+        </button>
     </div>
 </main>

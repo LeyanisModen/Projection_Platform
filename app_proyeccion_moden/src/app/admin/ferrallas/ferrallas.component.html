@@ -17,8 +17,8 @@
                 <div class="form-group">
                     <label for="first_name">Nombre de la Ferralla</label>
                     <input type="text" id="first_name" name="first_name" class="form-control"
-                        [(ngModel)]="newUser.first_name" required placeholder="Ej: Ferrallas del Norte S.L."
-                        autocomplete="off">
+                        [(ngModel)]="newUser.first_name" (input)="generateUsername($any($event.target).value)" required
+                        placeholder="Ej: Ferrallas del Norte S.L." autocomplete="off">
                 </div>
 
                 <!-- Usuario y Contraseña en la misma fila -->
@@ -246,7 +246,8 @@
 </div>
 
 <!-- Pairing Modal -->
-<div class="modal-backdrop" *ngIf="showPairingModal || showUnbindModal"></div>
+<div class="modal-backdrop" *ngIf="showPairingModal || showUnbindModal"
+    (click)="closePairingModal(); closeUnbindModal()"></div>
 
 <div class="custom-modal" *ngIf="showPairingModal">
     <div class="modal-content">
@@ -283,7 +284,7 @@
 </div>
 
 <!-- Credentials Modal -->
-<div class="modal-backdrop" *ngIf="showCredentialsModal"></div>
+<div class="modal-backdrop" *ngIf="showCredentialsModal" (click)="closeCredentialsModal()"></div>
 <div class="custom-modal" *ngIf="showCredentialsModal">
     <div class="modal-content">
         <div class="modal-header">

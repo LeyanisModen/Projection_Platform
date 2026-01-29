@@ -37,7 +37,28 @@ class ProyectoViewSet(viewsets.ModelViewSet):
     """
     queryset = Proyecto.objects.all().order_by("nombre")
     serializer_class = ProyectoSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.AllowAny] # We might want to restrict this later, but for now we filter in queryset
+
+    def get_queryset(self):
+        """
+        Filter projects by user.
+        - Admin: All projects
+        - User: Assigned projects
+        - Anonymous: None (or All during migration phase if needed)
+        """
+        user = self.request.user
+        if user.is_staff or user.is_superuser:
+            return Proyecto.objects.all().order_by("nombre")
+        elif user.is_authenticated:
+            return Proyecto.objects.filter(usuario=user).order_by("nombre")
+        else:
+            # During migration/dev, we might want to return all or none. 
+            # For strict security, return none. 
+            # BUT: Check if frontend sends token yet. If not, this might break current view.
+            # Strategy: If not authenticated, return ALL for now to maintain backward compatibility until Frontend is ready.
+            # WARNING: This means unauthenticated users see everything. This is a temporary migration step.
+            # Once frontend sends token, we can change this to `return Proyecto.objects.none()`
+            return Proyecto.objects.all().order_by("nombre")
 
     @action(detail=True, methods=['get'])
     def modulos(self, request, pk=None):

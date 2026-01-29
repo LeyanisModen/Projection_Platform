@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
-import { Observable, map } from 'rxjs';
+import { Observable, map, tap } from 'rxjs';
 
 // =============================================================================
 // INTERFACES
@@ -136,11 +136,39 @@ export class ApiService {
 
     constructor(private http: HttpClient) { }
 
+
+    // =========================================================================
+    // AUTHENTICATION
+    // =========================================================================
+    login(credentials: { username: string, password: string }): Observable<{ token: string }> {
+        console.log('Attempting Login with:', credentials);
+        return this.http.post<{ token: string }>('/api/token-auth/', credentials).pipe(
+            tap(() => localStorage.setItem('auth_username', credentials.username))
+        );
+    }
+
+    logout(): void {
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('auth_username');
+    }
+
+    getUsername(): string | null {
+        return localStorage.getItem('auth_username');
+    }
+
+    isLoggedIn(): boolean {
+        return !!localStorage.getItem('auth_token');
+    }
+
     private getHeaders(): HttpHeaders {
-        // No auth required for now
-        return new HttpHeaders({
+        const token = localStorage.getItem('auth_token');
+        let headers = new HttpHeaders({
             'Content-Type': 'application/json'
         });
+        if (token) {
+            headers = headers.set('Authorization', `Token ${token}`);
+        }
+        return headers;
     }
 
     // =========================================================================

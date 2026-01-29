@@ -58,7 +58,37 @@
   font-size: 0.9rem;
   color: var(--text-secondary);
   font-weight: 500;
+  /* margin-left: auto; Removed to keep it next to logo */
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 15px;
   margin-left: auto;
+  /* Pushed to rights */
+}
+
+.user-display {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.btn-logout {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: var(--text-secondary);
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  transition: color 0.2s;
+}
+
+.btn-logout:hover {
+  color: var(--accent-orange);
 }
 
 /* MAIN LAYOUT (Sidebar + Workspace) */

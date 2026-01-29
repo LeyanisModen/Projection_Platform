@@ -3,6 +3,10 @@
     <header class="dashboard-header">
         <img src="assets/logo-moden.jpg" alt="MOD:EN Logo" class="header-logo">
         <span class="subtitle">Sistema de Gestión de Proyección</span>
+        <div class="header-right">
+            <span class="user-display">👤 {{ username }}</span>
+            <button class="btn-logout" (click)="logout()" title="Cerrar Sesión">⏻</button>
+        </div>
     </header>
 
     <main class="dashboard-main">

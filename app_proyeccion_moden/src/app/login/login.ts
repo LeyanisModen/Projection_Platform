@@ -1,20 +1,60 @@
 import { Component, ElementRef, inject, Renderer2, ViewChild } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
+import { FormsModule } from '@angular/forms';
+import { CommonModule } from '@angular/common';
+import { ApiService } from '../services/api.service';
 
 @Component({
   selector: 'app-login',
-  // imports: [RouterLink],
-  imports: [],
+  imports: [FormsModule, CommonModule],
   templateUrl: './login.html',
   styleUrl: './login.css',
 })
 export class Login {
   private router = inject(Router);
-  @ViewChild('password') input!: ElementRef<HTMLInputElement>;
+  private api = inject(ApiService);
+
+  username = '';
+  password = '';
+  loading = false;
+  error = '';
+
+  @ViewChild('passwordInput') input!: ElementRef<HTMLInputElement>;
   @ViewChild('password_icon') icon!: ElementRef<HTMLInputElement>;
+
   constructor(private renderer: Renderer2) { }
+
+  @ViewChild('user_input') userInput!: ElementRef<HTMLInputElement>;
+
   submit() {
-    this.router.navigate(['/dashboard'], { replaceUrl: true });
+    // Fallback: Check native values if ngModel failed (common with autofill)
+    if (!this.username && this.userInput) {
+      this.username = this.userInput.nativeElement.value;
+    }
+    if (!this.password && this.input) {
+      this.password = this.input.nativeElement.value;
+    }
+
+    if (!this.username || !this.password) {
+      this.error = 'Por favor, introduce usuario y contraseña';
+      return;
+    }
+
+    this.loading = true;
+    this.error = '';
+
+    this.api.login({ username: this.username, password: this.password }).subscribe({
+      next: (response) => {
+        localStorage.setItem('auth_token', response.token);
+        this.router.navigate(['/dashboard'], { replaceUrl: true });
+        this.loading = false;
+      },
+      error: (err) => {
+        console.error('Login error', err);
+        this.error = 'Usuario o contraseña incorrectos';
+        this.loading = false;
+      }
+    });
   }
   toggle_pass() {
     var input_el = this.input.nativeElement
