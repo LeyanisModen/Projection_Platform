@@ -1,6 +1,7 @@
 import { Component, OnInit, OnDestroy, Inject, PLATFORM_ID, ChangeDetectorRef, NgZone, HostListener } from '@angular/core';
 import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
+import { Title } from '@angular/platform-browser';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { interval, Subscription, switchMap, of, catchError, exhaustMap, startWith } from 'rxjs';
 import { Mapper } from '../mapper/mapper';
@@ -74,6 +75,7 @@ export class VisorComponent implements OnInit, OnDestroy {
     private http: HttpClient,
     private cdr: ChangeDetectorRef,
     private ngZone: NgZone,
+    private titleService: Title,
     @Inject(PLATFORM_ID) platformId: Object
   ) {
     this.isBrowser = isPlatformBrowser(platformId);
@@ -103,6 +105,9 @@ export class VisorComponent implements OnInit, OnDestroy {
     this.http.get<MesaState>(`/api/mesas/${mesaId}/`).subscribe({
       next: (mesa) => {
         this.mesaState = mesa;
+        if (mesa.nombre) {
+          this.titleService.setTitle(`Visor - ${mesa.nombre}`);
+        }
         if (mesa.is_linked) {
           this.mode = 'PROJECTION';
           this.startStatePolling();
@@ -262,9 +267,14 @@ export class VisorComponent implements OnInit, OnDestroy {
     if (key === 'c') {
       this.toggleCalibration();
     } else if (key === 'arrowright') {
-      this.nextImage();
+      // Don't navigate if in calibration mode (index -1)
+      if (this.currentIndex !== -1) {
+        this.nextImage();
+      }
     } else if (key === 'arrowleft') {
-      this.prevImage();
+      if (this.currentIndex !== -1) {
+        this.prevImage();
+      }
     }
   }
 
@@ -397,6 +407,9 @@ export class VisorComponent implements OnInit, OnDestroy {
       .subscribe((state: MesaState | null) => {
         if (state) {
           this.mesaState = state;
+          if (state.nombre) {
+            this.titleService.setTitle(`Visor - ${state.nombre}`);
+          }
           if (state.current_image_index !== undefined && this.currentIndex !== -1) {
             this.currentIndex = state.current_image_index;
           }

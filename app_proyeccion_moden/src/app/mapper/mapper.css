@@ -161,8 +161,17 @@ main.correctingSource #sourceCorrectButton>*:not(.sourceCorrect):not(.shortcuts)
 }
 
 .corner.selected {
-    background-color: thistle;
-    opacity: 0.5;
+    background-color: #ff4500 !important;
+    /* OrangeRed */
+    opacity: 0.9 !important;
+    /* 90% opacity */
+    filter: none !important;
+    /* Remove the blue filter */
+    transform: scale(1.1);
+    /* Slightly larger */
+    z-index: 600;
+    /* Ensure it's on top */
+    color: white;
 }
 
 iframe {
