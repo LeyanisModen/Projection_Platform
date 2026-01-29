@@ -1,7 +1,7 @@
 .container {
     padding: 20px;
-    max-width: 1400px;
-    /* Wider for split view */
+    max-width: 98%;
+    /* Utilize almost full width */
     margin: 0 auto;
 }
 
@@ -27,14 +27,16 @@
 }
 
 .col-md-4 {
-    flex: 0 0 33.333333%;
-    max-width: 33.333333%;
+    flex: 0 0 20%;
+    /* Reduce sidebar width */
+    max-width: 20%;
     padding: 0 15px;
 }
 
 .col-md-8 {
-    flex: 0 0 66.666667%;
-    max-width: 66.666667%;
+    flex: 0 0 80%;
+    /* Expand content width */
+    max-width: 80%;
     padding: 0 15px;
 }
 
@@ -257,22 +259,7 @@
     }
 }
 
-/* Ferralla Selector */
-.ferralla-selector {
-    margin-top: 0.5rem;
-    display: flex;
-    align-items: center;
-}
-
-.ferralla-selector label {
-    font-weight: 500;
-    color: #666;
-    margin: 0;
-}
-
-.ferralla-selector select {
-    min-width: 200px;
-}
+/* Ferralla Selector styles removed - now using inline styles and utility classes */
 
 /* Module Status Dropdown */
 .module-status-select {
@@ -284,28 +271,17 @@
     font-weight: 600;
 }
 
+/* Simplified Status Colors */
 .status-pendiente {
     background-color: #fff3cd;
     border-color: #ffc107;
     color: #856404;
 }
 
-.status-en-progreso {
-    background-color: #cce5ff;
-    border-color: #007bff;
-    color: #004085;
-}
-
 .status-completado {
     background-color: #d4edda;
     border-color: #28a745;
     color: #155724;
-}
-
-.status-cerrado {
-    background-color: #d6d8db;
-    border-color: #6c757d;
-    color: #383d41;
 }
 
 .ml-2 {
@@ -339,7 +315,8 @@
 /* Compact Grid */
 .modules-grid-compact {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    /* Restore slightly wider col */
     gap: 0.5rem;
     padding: 0.5rem;
 }
@@ -348,86 +325,90 @@
     border: 1px solid #ddd;
     border-radius: 6px;
     padding: 0.5rem;
+    /* Standard padding */
     background: #fff;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    justify-content: space-between;
+    /* Push actions to bottom */
+    gap: 0.25rem;
+    /* Keep gap tight */
     border-left: 4px solid transparent;
+    height: 100%;
+    /* Fill grid cell */
 }
 
 .module-compact.status-pendiente {
     border-left-color: #fd7e14;
 }
 
-.module-compact.status-en-progreso {
-    border-left-color: #007bff;
-}
-
 .module-compact.status-completado {
     border-left-color: #28a745;
-}
-
-.module-compact.status-cerrado {
-    border-left-color: #6c757d;
 }
 
 .module-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    margin-bottom: 0;
+    /* No margin */
 }
 
 .module-name {
-    font-weight: 600;
-    font-size: 0.9rem;
+    font-weight: 700;
+    font-size: 0.95rem;
+    /* Normal readable size */
+    margin-bottom: 0 !important;
+    /* Force no bottom margin */
 }
 
 .current-status {
     font-size: 0.7rem;
     color: #666;
     text-transform: uppercase;
+    font-weight: 600;
+}
+
+/* Submodule Indicators */
+.submodule-indicators {
+    padding: 2px 8px;
+    /* Slightly reduced top/bottom padding */
+    background: rgba(0, 0, 0, 0.03);
+    border-radius: 4px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 0;
+    /* No external margin */
+}
+
+.submodule-indicators .badge {
+    font-size: 0.75rem;
+    /* Normal badge size */
+    padding: 0.25em 0.5em;
+    font-weight: 600;
+}
+
+.badge-secondary {
+    background-color: #e9ecef;
+    color: #adb5bd;
+    border: 1px solid #dee2e6;
 }
 
 .status-actions {
+    margin-top: 0;
+    /* No margin top */
     display: flex;
     justify-content: space-between;
     gap: 4px;
 }
 
-.btn-status {
-    flex: 1;
-    height: 24px;
-    border: none;
-    border-radius: 3px;
-    cursor: pointer;
-    opacity: 0.3;
-    transition: all 0.2s;
-}
-
-.btn-status:hover {
-    opacity: 0.6;
-}
-
-.btn-status.active {
-    opacity: 1;
-    transform: scale(1.05);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-}
-
-.btn-pendiente {
-    background-color: #fd7e14;
-}
-
-.btn-progreso {
-    background-color: #007bff;
-}
-
-.btn-completado {
-    background-color: #28a745;
-}
-
-.btn-cerrado {
-    background-color: #6c757d;
+.status-actions button {
+    font-size: 0.8rem;
+    /* readable button text */
+    padding: 0.25rem 0.5rem;
+    /* clickable padding */
+    line-height: 1.2;
 }
 
 /* Legend Badges */
@@ -435,18 +416,14 @@
     background-color: #fd7e14;
     color: #fff;
     border: 1px solid #e8710d;
-}
-
-.badge-progreso {
-    background-color: #007bff;
-    color: #fff;
-    border: 1px solid #0069d9;
+    font-size: 0.7rem;
 }
 
 .badge-completado {
     background-color: #28a745;
     color: #fff;
     border: 1px solid #218838;
+    font-size: 0.7rem;
 }
 
 .font-weight-bold {

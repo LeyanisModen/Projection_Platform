@@ -114,6 +114,19 @@ class ProyectoViewSet(viewsets.ModelViewSet):
                 )
                 stats['plantas'] += 1
                 
+                # Check for Plant Files (Plano and Corte)
+                plano_filename = planta_data.get('plano_filename')
+                if plano_filename:
+                    uploaded_file = files.get(plano_filename)
+                    if uploaded_file:
+                        planta.plano_imagen.save(uploaded_file.name, uploaded_file)
+                        
+                corte_filename = planta_data.get('corte_filename')
+                if corte_filename:
+                    uploaded_file = files.get(corte_filename)
+                    if uploaded_file:
+                        planta.fichero_corte.save(uploaded_file.name, uploaded_file)
+                
                 modulos_data = planta_data.get('modulos', [])
                 for modulo_data in modulos_data:
                     try:
