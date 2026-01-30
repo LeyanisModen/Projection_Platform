@@ -1,4 +1,5 @@
 # Usamos una imagen de Node ligera
+# Force Rebuild 2
 FROM node:22-alpine
 
 WORKDIR /app
