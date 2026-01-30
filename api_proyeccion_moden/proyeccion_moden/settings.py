@@ -83,6 +83,10 @@ MIDDLEWARE = [
 CORS_ALLOW_ALL_ORIGINS = True  # PoC: Allow all origins
 CORS_ALLOW_CREDENTIALS = True
 
+# CSRF Settings for Railway
+CSRF_TRUSTED_ORIGINS = ['https://*.railway.app', 'https://*.up.railway.app']
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
 ROOT_URLCONF = 'proyeccion_moden.urls'
 
 TEMPLATES = [
