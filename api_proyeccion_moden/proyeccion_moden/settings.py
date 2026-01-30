@@ -83,6 +83,10 @@ MIDDLEWARE = [
 CORS_ALLOW_ALL_ORIGINS = True  # PoC: Allow all origins
 CORS_ALLOW_CREDENTIALS = True
 
+# CSRF Settings for Railway
+CSRF_TRUSTED_ORIGINS = ['https://*.railway.app', 'https://*.up.railway.app']
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
 ROOT_URLCONF = 'proyeccion_moden.urls'
 
 TEMPLATES = [
@@ -119,7 +123,7 @@ DATABASES = {
     }
 }
 if dj_database_url and 'DATABASE_URL' in os.environ:
-    DATABASES['default'] = dj_database_url.config(conn_max_age=600, ssl_require=True)
+    DATABASES['default'] = dj_database_url.config(conn_max_age=600, ssl_require=False)
 
 
 # Password validation
