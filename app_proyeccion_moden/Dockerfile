@@ -18,4 +18,4 @@ RUN npm run build -- --configuration=production
 EXPOSE 8080
 
 # Comando de inicio: Usamos sh -c para que se expanda la variable $PORT
-CMD ["sh", "-c", "npx http-server dist/app-proyeccion-moden -p $PORT --proxy http://localhost:$PORT?"]
+CMD ["sh", "-c", "npx http-server dist/app-proyeccion-moden/browser -p $PORT --proxy http://localhost:$PORT?"]
