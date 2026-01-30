@@ -1,4 +1,4 @@
 export const environment = {
     production: true,
-    apiUrl: 'https://backend-production.up.railway.app' // PLACEHOLDER: Update this with your Railway Backend URL
+    apiUrl: 'https://projectionplatform-production.up.railway.app/api' // PLACEHOLDER: Update this with your Railway Backend URL
 };
