@@ -5,6 +5,7 @@ import { Title } from '@angular/platform-browser';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { interval, Subscription, switchMap, of, catchError, exhaustMap, startWith } from 'rxjs';
 import { Mapper } from '../mapper/mapper';
+import { environment } from '../../environments/environment';
 
 interface MesaState {
   id: number;
@@ -62,7 +63,7 @@ export class VisorComponent implements OnInit, OnDestroy {
   private heartbeatSub: Subscription | null = null;
   private itemPollSub: Subscription | null = null;
 
-  private apiUrl = '/api/device/';
+  private apiUrl = `${environment.apiUrl}/device/`;
   private isBrowser: boolean;
 
   // Helper to get token storage key

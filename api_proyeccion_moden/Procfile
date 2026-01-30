@@ -1,0 +1,1 @@
+web: gunicorn proyeccion_moden.wsgi --log-file -

@@ -125,6 +125,8 @@ export interface MesaQueueItem {
 }
 
 
+import { environment } from '../../environments/environment';
+
 // =============================================================================
 // API SERVICE
 // =============================================================================
@@ -132,7 +134,7 @@ export interface MesaQueueItem {
     providedIn: 'root'
 })
 export class ApiService {
-    private baseUrl = '/api';
+    private baseUrl = environment.apiUrl;
 
     constructor(private http: HttpClient) { }
 
