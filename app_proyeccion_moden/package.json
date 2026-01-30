@@ -38,7 +38,8 @@
     "@angular/ssr": "^21.0.5",
     "express": "^5.1.0",
     "rxjs": "~7.8.0",
-    "tslib": "^2.3.0"
+    "tslib": "^2.3.0",
+    "http-server": "^14.1.1"
   },
   "devDependencies": {
     "@angular/build": "^21.0.5",
@@ -46,7 +47,6 @@
     "@angular/compiler-cli": "^21.0.5",
     "@types/express": "^5.0.1",
     "@types/node": "^20.17.19",
-    "http-server": "^14.1.1",
     "jsdom": "^27.1.0",
     "typescript": "~5.9.2",
     "vitest": "^4.0.8"
