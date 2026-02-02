@@ -46,7 +46,14 @@ export class Login {
     this.api.login({ username: this.username, password: this.password }).subscribe({
       next: (response) => {
         localStorage.setItem('auth_token', response.token);
-        this.router.navigate(['/dashboard'], { replaceUrl: true });
+
+        // Redirect based on role
+        if (response.is_staff || response.is_superuser) {
+          this.router.navigate(['/admin-dashboard/ferrallas'], { replaceUrl: true });
+        } else {
+          this.router.navigate(['/dashboard'], { replaceUrl: true });
+        }
+
         this.loading = false;
       },
       error: (err) => {
