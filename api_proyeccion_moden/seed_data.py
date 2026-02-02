@@ -8,7 +8,7 @@ from api.models import Proyecto, Modulo, Imagen, Mesa
 
 def seed():
     # Crear usuario admin si no existe
-    admin, created = User.objects.get_or_create(username='admin')
+    admin, created = User.objects.get_or_create(username='Moden')
     if created:
         admin.set_password('admin')
         admin.is_superuser = True

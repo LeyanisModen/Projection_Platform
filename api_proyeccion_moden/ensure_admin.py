@@ -10,7 +10,7 @@ django.setup()
 from django.contrib.auth.models import User
 
 def ensure_admin():
-    username = os.environ.get('DJANGO_SUPERUSER_USERNAME', 'admin')
+    username = os.environ.get('DJANGO_SUPERUSER_USERNAME', 'Moden')
     password = os.environ.get('DJANGO_SUPERUSER_PASSWORD', 'admin')
     email = os.environ.get('DJANGO_SUPERUSER_EMAIL', 'admin@example.com')
 
