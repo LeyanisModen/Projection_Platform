@@ -1,4 +1,4 @@
-import { Component, ElementRef, inject, Renderer2, ViewChild } from '@angular/core';
+import { Component, ElementRef, inject, Renderer2, ViewChild, ChangeDetectorRef } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
@@ -22,7 +22,7 @@ export class Login {
   @ViewChild('passwordInput') input!: ElementRef<HTMLInputElement>;
   @ViewChild('password_icon') icon!: ElementRef<HTMLInputElement>;
 
-  constructor(private renderer: Renderer2) { }
+  constructor(private renderer: Renderer2, private cdr: ChangeDetectorRef) { }
 
   @ViewChild('user_input') userInput!: ElementRef<HTMLInputElement>;
 
@@ -37,11 +37,13 @@ export class Login {
 
     if (!this.username || !this.password) {
       this.error = 'Por favor, introduce usuario y contraseña';
+      this.cdr.detectChanges();
       return;
     }
 
     this.loading = true;
     this.error = '';
+    this.cdr.detectChanges(); // Trigger update for loading state
 
     this.api.login({ username: this.username, password: this.password }).subscribe({
       next: (response) => {
@@ -55,11 +57,13 @@ export class Login {
         }
 
         this.loading = false;
+        this.cdr.detectChanges();
       },
       error: (err) => {
         console.error('Login error', err);
         this.error = 'Usuario o contraseña incorrectos';
         this.loading = false;
+        this.cdr.detectChanges(); // Force UI update to show error
       }
     });
   }
