@@ -79,12 +79,22 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-# CORS Settings (for development)
-CORS_ALLOW_ALL_ORIGINS = True  # PoC: Allow all origins
+# CORS Settings
+CORS_ALLOW_ALL_ORIGINS = True  # Fallback
+CORS_ALLOWED_ORIGINS = [
+    "https://moden.up.railway.app",
+    "http://localhost:4200",
+    "http://localhost:80",
+]
 CORS_ALLOW_CREDENTIALS = True
 
 # CSRF Settings for Railway
-CSRF_TRUSTED_ORIGINS = ['https://*.railway.app', 'https://*.up.railway.app']
+CSRF_TRUSTED_ORIGINS = [
+    "https://moden.up.railway.app",
+    "https://projectionplatform-production.up.railway.app",
+    "https://*.railway.app", 
+    "https://*.up.railway.app"
+]
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 ROOT_URLCONF = 'proyeccion_moden.urls'
