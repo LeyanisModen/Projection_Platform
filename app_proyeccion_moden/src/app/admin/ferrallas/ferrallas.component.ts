@@ -1,4 +1,4 @@
-import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, ChangeDetectorRef, HostListener } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService, User } from '../../services/api.service';
@@ -47,11 +47,11 @@ export class FerrallasComponent implements OnInit {
   }
 
   toggleForm() {
-    this.showForm = !this.showForm;
-    this.error = '';
     if (!this.showForm) {
       this.resetForm();
     }
+    this.showForm = !this.showForm;
+    this.error = '';
   }
 
   resetForm() {
@@ -328,11 +328,11 @@ export class FerrallasComponent implements OnInit {
     this.loading = true;
     this.api.createUser(this.newUser).subscribe({
       next: (user: User) => {
-        this.users.unshift(user);
+        console.log('[Ferrallas] User created successfully:', user);
         this.resetForm();
         this.showForm = false;
-        this.loading = false;
-        this.cdr.detectChanges();
+        // Reload all users to ensure list is perfectly synced and sorted
+        this.loadUsers();
       },
       error: (err: any) => {
         console.error('Error creating user', err);
@@ -414,5 +414,30 @@ export class FerrallasComponent implements OnInit {
         this.cdr.detectChanges();
       }
     });
+  }
+
+  generateUsername(name: string) {
+    if (!name) return;
+
+    if (!this.isEditing) {
+      const username = name.toLowerCase()
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9\s]/g, '')
+        .replace(/\s+/g, '_');
+
+      this.newUser.username = username;
+    }
+  }
+
+  @HostListener('document:keydown.escape', ['$event'])
+  onKeydownHandler(event: any) {
+    if (this.showCredentialsModal) this.closeCredentialsModal();
+    if (this.showPairingModal) this.closePairingModal();
+    if (this.showUnbindModal) this.closeUnbindModal();
+  }
+
+  @HostListener('document:keydown.enter', ['$event'])
+  onEnterHandler(event: any) {
+    if (this.showCredentialsModal) this.closeCredentialsModal();
   }
 }

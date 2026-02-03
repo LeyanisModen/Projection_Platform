@@ -132,7 +132,7 @@ export class Mapper implements OnChanges {
   };
 
 
-  public showGrid = false;
+
 
   // const document = window.document;
   private corners: number[] = [];
@@ -172,7 +172,6 @@ export class Mapper implements OnChanges {
         // We might need to call toggleCalibration, but toggleCalibration toggles.
         // Better to set it explicitly.
         this.calibrating = active;
-        this.showGrid = active;
         if (this.markers) { // markers populated in ngAfterViewInit
           this.markers.forEach(marker => {
             marker.nativeElement.style.visibility = active ? "visible" : "hidden";
@@ -191,16 +190,41 @@ export class Mapper implements OnChanges {
   // Apply calibration received from server
   private applyCalibrationFromServer(calibration: any): void {
     console.log('[Mapper] applyCalibrationFromServer called with:', calibration);
-    console.log('[Mapper] markers length:', this.markers?.length);
-    console.log('[Mapper] calibrating:', this.calibrating);
 
     if (!calibration?.corners || !this.markers?.length) {
       console.log('[Mapper] BAILING: no corners or no markers');
       return;
     }
 
-    // Apply the corner positions
-    this.corners = calibration.corners;
+    let finalCorners = [...calibration.corners];
+    const savedWidth = calibration.screenWidth;
+    const savedHeight = calibration.screenHeight;
+    const currentWidth = this.document.documentElement.clientWidth;
+    const currentHeight = this.document.documentElement.clientHeight;
+
+    // Auto-scale if resolution differs significantly (>5px difference)
+    if (savedWidth && savedHeight && (Math.abs(savedWidth - currentWidth) > 5 || Math.abs(savedHeight - currentHeight) > 5)) {
+      console.log(`[Mapper] Resolution mismatch. Saved: ${savedWidth}x${savedHeight}, Current: ${currentWidth}x${currentHeight}. Scaling...`);
+      const scaleX = currentWidth / savedWidth;
+      const scaleY = currentHeight / savedHeight;
+
+      finalCorners = finalCorners.map((val, index) => {
+        // Even indices are X, Odd indices are Y
+        return index % 2 === 0 ? val * scaleX : val * scaleY;
+      });
+    }
+
+    // SAFETY CLAMP: Ensure no corner is ever outside the visible viewport
+    // Handle is ~60px, so we ensure the center is at least 30px from edges
+    const padding = 40;
+    finalCorners = finalCorners.map((val, index) => {
+      const isX = index % 2 === 0;
+      const max = isX ? currentWidth : currentHeight;
+      // Clamp between padding and max-padding
+      return Math.max(padding, Math.min(max - padding, val));
+    });
+
+    this.corners = finalCorners;
     console.log('[Mapper] corners set to:', this.corners);
 
     // Update marker positions on screen
@@ -310,7 +334,6 @@ export class Mapper implements OnChanges {
 
   toggleCalibration() {
     this.calibrating = !this.calibrating;
-    this.showGrid = this.calibrating;
 
     this.markers.forEach(marker => {
       if (this.calibrating) {

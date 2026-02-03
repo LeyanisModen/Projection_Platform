@@ -3,6 +3,10 @@
     <header class="dashboard-header">
         <img src="assets/logo-moden.jpg" alt="MOD:EN Logo" class="header-logo">
         <span class="subtitle">Sistema de Gestión de Proyección</span>
+        <div class="header-right">
+            <span class="user-display">👤 {{ username }}</span>
+            <button class="btn-logout" (click)="logout()" title="Cerrar Sesión">⏻</button>
+        </div>
     </header>
 
     <main class="dashboard-main">
@@ -23,8 +27,34 @@
                         <h2>{{ selectedProyecto?.nombre }}</h2>
                         <small class="text-muted">Plantas</small>
                         } @else if (navLevel === 'modules') {
-                        <h2>{{ selectedProyecto?.nombre }}</h2>
-                        <small class="text-muted">{{ selectedPlanta?.nombre }}</small>
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <div>
+                                <h2>{{ selectedProyecto?.nombre }}</h2>
+                                <small class="text-muted">{{ selectedPlanta?.nombre }}</small>
+                            </div>
+                            <div class="planta-actions" *ngIf="selectedPlanta && selectedPlanta.plano_imagen">
+                                <button class="btn-icon-header" (click)="verPlano(selectedPlanta)"
+                                    title="Ver Plano de Planta">
+                                    <!-- Custom 'Flat Floorplan' Icon -->
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none"
+                                        xmlns="http://www.w3.org/2000/svg">
+                                        <!-- Outer Frame -->
+                                        <rect x="4" y="4" width="16" height="16" rx="2" stroke="currentColor"
+                                            stroke-width="2" />
+                                        <!-- Internal Walls/Divisions -->
+                                        <path d="M10 4V12H16" stroke="currentColor" stroke-width="2"
+                                            stroke-linecap="round" />
+                                        <path d="M4 14H10" stroke="currentColor" stroke-width="2"
+                                            stroke-linecap="round" />
+                                        <path d="M14 12V20" stroke="currentColor" stroke-width="2"
+                                            stroke-linecap="round" />
+                                        <!-- Door indicator (optional detail) -->
+                                        <path d="M18 12V10" stroke="currentColor" stroke-width="2"
+                                            stroke-linecap="round" />
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
                         }
                     </div>
                 </div>
@@ -55,6 +85,15 @@
                         (click)="selectPlanta(planta)">
                         <span class="nav-icon">🏭</span>
                         <span class="nav-text">{{ planta.nombre }}</span>
+
+                        <!-- Actions for Plant -->
+                        <div class="nav-item-actions">
+                            <a *ngIf="planta.fichero_corte" [href]="planta.fichero_corte" target="_blank"
+                                class="btn-icon-action pdf" title="Descargar Corte" (click)="$event.stopPropagation()">
+                                📄
+                            </a>
+                        </div>
+
                         <span class="nav-arrow">›</span>
                     </li>
                     }
@@ -74,10 +113,10 @@
                             <span class="nav-text">{{ modulo.nombre }}</span>
                             <div class="nav-phases">
                                 <span class="phase-dot" [class.done]="modulo.inferior_hecho"
-                                    [class.in-progress]="!modulo.inferior_hecho && isPhaseInProgress(modulo, 'INFERIOR')"
+                                    [class.assigned]="!modulo.inferior_hecho && isPhaseAssigned(modulo, 'INFERIOR')"
                                     title="Inferior"></span>
                                 <span class="phase-dot" [class.done]="modulo.superior_hecho"
-                                    [class.in-progress]="!modulo.superior_hecho && isPhaseInProgress(modulo, 'SUPERIOR')"
+                                    [class.assigned]="!modulo.superior_hecho && isPhaseAssigned(modulo, 'SUPERIOR')"
                                     title="Superior"></span>
                             </div>
                         </div>
@@ -151,18 +190,35 @@
                         (dragover)="onDragOver($event, mesa)" (dragleave)="onDragLeave($event)"
                         (drop)="onSubfaseDrop($event, mesa)" [class.drag-over]="dragOverMesa === mesa.id">
                         <div class="mesa-header">
-                            <h3>{{ mesa.nombre }}</h3>
+                            <div class="mesa-title-container">
+                                @if (editingMesaId === mesa.id) {
+                                <input type="text" [(ngModel)]="editingMesaName" (blur)="updateMesaName(mesa)"
+                                    (keyup.enter)="updateMesaName(mesa)" (keyup.escape)="stopEditingMesa()"
+                                    class="mesa-name-input" autofocus onclick="this.select()">
+                                } @else {
+                                <h3 (click)="startEditingMesa(mesa)" title="Click para renombrar">{{ mesa.nombre }}
+                                    <span class="edit-icon">✎</span>
+                                </h3>
+                                }
+                            </div>
                             <div class="mesa-header-actions">
                                 @if (mesa.locked) { <span class="mesa-badge locked">🔒</span> }
                                 @if (mesa.blackout) { <span class="mesa-badge blackout">⬛</span> }
 
                                 <!-- Link Status (Moved to Header) -->
-                                <!-- Link Status (Moved to Header) -->
+                                <!-- Link Status -->
                                 <div class="header-link-status">
-                                    <button class="btn-view-projection-sm" (click)="openProjectionView(mesa)"
-                                        title="Ver Proyección">
-                                        <i class="fa fa-video-camera"></i>
+                                    @if (mesa.is_linked) {
+                                    <button class="btn-view-projection-sm linked" (click)="openProjectionView(mesa)"
+                                        title="Proyección Conectada (Ver Visor)">
+                                        🖥️
                                     </button>
+                                    } @else {
+                                    <button class="btn-view-projection-sm unlinked" (click)="openProjectionView(mesa)"
+                                        title="Sin vincular (Abrir para vincular)">
+                                        🔌
+                                    </button>
+                                    }
                                 </div>
                             </div>
                         </div>
@@ -190,10 +246,7 @@
                                 </div>
                                 <div class="queue-item-actions">
                                     <!-- Play button removed (auto-project) -->
-                                    @if (item.status === 'MOSTRANDO') {
-                                    <button class="btn-action btn-hecho" (click)="marcarHecho(item)"
-                                        title="Marcar hecho">✓</button>
-                                    }
+                                    <!-- Play/Finish button removed (auto-project via polling) -->
                                     @if (item.status !== 'HECHO') {
                                     <button class="btn-action btn-eliminar" (click)="eliminarItem(item)"
                                         title="Eliminar">✕</button>
@@ -223,6 +276,21 @@
             <button class="btn-modal btn-confirm" (click)="confirmarAccion()">
                 {{ pendingActionType === 'DELETE' ? 'Eliminar' : 'Confirmar' }}
             </button>
+        </div>
+    </div>
+</div>
+}
+
+<!-- Blueprint Modal -->
+@if (showBlueprintModal) {
+<div class="modal-overlay blueprint-overlay" (click)="cerrarBlueprintModal()">
+    <div class="blueprint-modal-content" (click)="$event.stopPropagation()">
+        <div class="blueprint-header">
+            <h3>Plano - {{ selectedPlanta?.nombre }}</h3>
+            <button class="btn-close" (click)="cerrarBlueprintModal()">×</button>
+        </div>
+        <div class="blueprint-body">
+            <img [src]="blueprintUrl" alt="Plano de Planta">
         </div>
     </div>
 </div>

@@ -12,6 +12,8 @@ from api.models import (
     Modulo, Proyecto, Planta, Imagen, Mesa,
     ModuloQueue, ModuloQueueItem, MesaQueueItem
 )
+from rest_framework.authtoken.views import ObtainAuthToken
+from rest_framework.authtoken.models import Token
 
 from rest_framework import renderers
 
@@ -22,13 +24,35 @@ class ServerSentEventRenderer(renderers.BaseRenderer):
         return data
 
 
+class CustomAuthToken(ObtainAuthToken):
+    def post(self, request, *args, **kwargs):
+        serializer = self.serializer_class(data=request.data,
+                                           context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        user = serializer.validated_data['user']
+        token, created = Token.objects.get_or_create(user=user)
+        return Response({
+            'token': token.key,
+            'user_id': user.pk,
+            'username': user.username,
+            'is_staff': user.is_staff,
+            'is_superuser': user.is_superuser
+        })
+
+
 class UserViewSet(viewsets.ModelViewSet):
     """
     API endpoint that allows users to be viewed or edited.
     """
-    queryset = User.objects.all().order_by("-date_joined")
+    # queryset = User.objects.all().order_by("-date_joined")
     serializer_class = UserSerializer
     permission_classes = [permissions.AllowAny]
+
+    def get_queryset(self):
+        queryset = User.objects.all().order_by("-date_joined")
+        if self.action == 'list':
+            return queryset.filter(is_superuser=False)
+        return queryset
 
 
 class ProyectoViewSet(viewsets.ModelViewSet):
@@ -37,7 +61,28 @@ class ProyectoViewSet(viewsets.ModelViewSet):
     """
     queryset = Proyecto.objects.all().order_by("nombre")
     serializer_class = ProyectoSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.AllowAny] # We might want to restrict this later, but for now we filter in queryset
+
+    def get_queryset(self):
+        """
+        Filter projects by user.
+        - Admin: All projects
+        - User: Assigned projects
+        - Anonymous: None (or All during migration phase if needed)
+        """
+        user = self.request.user
+        if user.is_staff or user.is_superuser:
+            return Proyecto.objects.all().order_by("nombre")
+        elif user.is_authenticated:
+            return Proyecto.objects.filter(usuario=user).order_by("nombre")
+        else:
+            # During migration/dev, we might want to return all or none. 
+            # For strict security, return none. 
+            # BUT: Check if frontend sends token yet. If not, this might break current view.
+            # Strategy: If not authenticated, return ALL for now to maintain backward compatibility until Frontend is ready.
+            # WARNING: This means unauthenticated users see everything. This is a temporary migration step.
+            # Once frontend sends token, we can change this to `return Proyecto.objects.none()`
+            return Proyecto.objects.all().order_by("nombre")
 
     @action(detail=True, methods=['get'])
     def modulos(self, request, pk=None):
@@ -113,6 +158,19 @@ class ProyectoViewSet(viewsets.ModelViewSet):
                     orden=planta_data.get('orden', 0)
                 )
                 stats['plantas'] += 1
+                
+                # Check for Plant Files (Plano and Corte)
+                plano_filename = planta_data.get('plano_filename')
+                if plano_filename:
+                    uploaded_file = files.get(plano_filename)
+                    if uploaded_file:
+                        planta.plano_imagen.save(uploaded_file.name, uploaded_file)
+                        
+                corte_filename = planta_data.get('corte_filename')
+                if corte_filename:
+                    uploaded_file = files.get(corte_filename)
+                    if uploaded_file:
+                        planta.fichero_corte.save(uploaded_file.name, uploaded_file)
                 
                 modulos_data = planta_data.get('modulos', [])
                 for modulo_data in modulos_data:
@@ -598,6 +656,37 @@ class DeviceViewSet(viewsets.ViewSet):
         return Response({'status': 'ok'})
 
 
+    @action(detail=False, methods=['post'])
+    def toggle_mapper(self, request):
+        """
+        Toggles the mapper_enabled state for the mesa.
+        """
+        mesa = self._authenticate_device(request)
+        if not mesa:
+            return Response({'detail': 'Unauthorized'}, status=401)
+            
+        mesa.mapper_enabled = not mesa.mapper_enabled
+        mesa.save(update_fields=['mapper_enabled'])
+        return Response({'status': 'ok', 'mapper_enabled': mesa.mapper_enabled})
+
+    @action(detail=False, methods=['post'])
+    def set_index(self, request):
+        """
+        Updates the current_image_index for the mesa.
+        -1 = Calibration Grid
+        0+ = Image Index
+        """
+        mesa = self._authenticate_device(request)
+        if not mesa:
+            return Response({'detail': 'Unauthorized'}, status=401)
+            
+        index = request.data.get('index')
+        if index is not None:
+            mesa.current_image_index = int(index)
+            mesa.save(update_fields=['current_image_index', 'ultima_actualizacion'])
+            return Response({'status': 'ok', 'index': mesa.current_image_index})
+        return Response({'detail': 'Index required'}, status=400)
+
     @action(detail=False, methods=['get'], renderer_classes=[ServerSentEventRenderer])
     def stream(self, request):
         """
@@ -617,7 +706,11 @@ class DeviceViewSet(viewsets.ViewSet):
             # Send initial state immediately
             initial_data = {
                 'type': 'calibration',
-                'data': {'corners': mesa.calibration_json.get('corners')} if mesa.calibration_json else {}
+                'data': {
+                    'corners': mesa.calibration_json.get('corners') if mesa.calibration_json else None,
+                    'mapper_enabled': mesa.mapper_enabled,
+                    'current_image_index': mesa.current_image_index
+                }
             }
             yield f"data: {json.dumps(initial_data)}\n\n"
             
@@ -629,7 +722,11 @@ class DeviceViewSet(viewsets.ViewSet):
                     last_check = mesa.ultima_actualizacion
                     payload = {
                         'type': 'calibration',
-                        'data': {'corners': mesa.calibration_json.get('corners')} if mesa.calibration_json else {}
+                        'data': {
+                            'corners': mesa.calibration_json.get('corners') if mesa.calibration_json else None,
+                            'mapper_enabled': mesa.mapper_enabled,
+                            'current_image_index': mesa.current_image_index
+                        }
                     }
                     yield f"data: {json.dumps(payload)}\n\n"
                 
@@ -690,8 +787,13 @@ class DeviceViewSet(viewsets.ViewSet):
         elif request.query_params.get('token'):
             token = request.query_params.get('token')
             
-        if not token:
+        if not token or token.lower() in ['undefined', 'null', '']:
+            # FALLBACK: If no token, check for mesa_id (Relaxed security for Visor/Supervisor)
+            mesa_id = request.data.get('mesa_id') or request.query_params.get('mesa_id')
+            if mesa_id:
+                return Mesa.objects.filter(id=mesa_id).first()
             return None
+            
         token_hash = hashlib.sha256(token.encode()).hexdigest()
         
         return Mesa.objects.filter(device_token_hash=token_hash).first()

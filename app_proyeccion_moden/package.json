@@ -5,7 +5,8 @@
     "ng": "ng",
     "start": "ng serve --port 80 --proxy-config proxy.conf.json",
     "start:lan": "ng serve --host 0.0.0.0",
-    "build": "ng build",
+    "start:prod": "http-server dist/app-proyeccion-moden -p 8080 --proxy http://localhost:8080?",
+    "build": "ng build --configuration production",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
     "serve:ssr:app_proyeccion_moden": "node dist/app_proyeccion_moden/server/server.mjs"
@@ -37,7 +38,8 @@
     "@angular/ssr": "^21.0.5",
     "express": "^5.1.0",
     "rxjs": "~7.8.0",
-    "tslib": "^2.3.0"
+    "tslib": "^2.3.0",
+    "http-server": "^14.1.1"
   },
   "devDependencies": {
     "@angular/build": "^21.0.5",

@@ -3,9 +3,16 @@
         <div class="header-content">
             <a routerLink="/admin-dashboard/proyectos" class="btn btn-secondary btn-sm mb-2">← Volver</a>
             <h1>{{ proyecto.nombre }}</h1>
-            <div class="ferralla-selector">
-                <label>Ferralla asignada:</label>
-                <select class="form-control form-control-sm d-inline-block w-auto ml-2" [ngModel]="proyecto.usuario"
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- PLANTAS (Columna Izquierda / Layout) -->
+        <div class="col-md-4">
+            <div class="ferralla-selector mb-3 p-3 bg-white rounded border"
+                style="box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                <label class="d-block mb-1">Ferralla asignada:</label>
+                <select class="form-control form-control-sm w-100" [ngModel]="proyecto.usuario"
                     (ngModelChange)="changeFerralla($event)">
                     <option [ngValue]="null">Sin asignar</option>
                     <option *ngFor="let user of users" [ngValue]="user.url">
@@ -13,12 +20,7 @@
                     </option>
                 </select>
             </div>
-        </div>
-    </div>
 
-    <div class="row">
-        <!-- PLANTAS (Columna Izquierda / Layout) -->
-        <div class="col-md-4">
             <div class="card">
                 <div class="card-header">
                     <h3>Plantas (Niveles)</h3>
@@ -55,40 +57,49 @@
             <div class="card h-100" *ngIf="selectedPlanta; else noPlantaSelected">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h3>Módulos de {{ selectedPlanta.nombre }}</h3>
+                    <div class="legend d-flex align-items-center">
+                        <small class="mr-2 font-weight-bold text-uppercase" style="font-size: 0.7rem;">Estados:</small>
+                        <span class="badge badge-pendiente mr-2">Pendiente</span>
+                        <span class="badge badge-completado">Completado</span>
+                    </div>
                 </div>
 
                 <div class="card-body">
-                    <!-- Leyenda -->
-                    <div class="legend mb-3 d-flex align-items-center flex-wrap">
-                        <small class="mr-2 font-weight-bold">Estados:</small>
-                        <span class="badge badge-pendiente mr-2">Pendiente</span>
-                        <span class="badge badge-progreso mr-2">En Progreso</span>
-                        <span class="badge badge-completado">Completado</span>
-                    </div>
 
                     <div class="modules-grid-compact">
                         <div *ngFor="let modulo of modulos" class="module-compact"
-                            [class.status-pendiente]="modulo.estado === 'PENDIENTE'"
-                            [class.status-en-progreso]="modulo.estado === 'EN_PROGRESO'"
+                            [class.status-pendiente]="modulo.estado !== 'COMPLETADO'"
                             [class.status-completado]="modulo.estado === 'COMPLETADO'">
 
                             <div class="module-header">
                                 <span class="module-name">{{ modulo.nombre }}</span>
-                                <span class="current-status">{{ modulo.estado }}</span>
+                                <span class="current-status">{{ modulo.estado === 'COMPLETADO' ? 'Terminado' :
+                                    'Pendiente' }}</span>
                             </div>
 
-                            <div class="status-actions">
-                                <button type="button" class="btn-status btn-pendiente" title="Pendiente"
-                                    (click)="updateModuloStatus(modulo, 'PENDIENTE'); $event.stopPropagation()"
-                                    [class.active]="modulo.estado === 'PENDIENTE'"></button>
+                            <div class="submodule-indicators d-flex justify-content-between">
+                                <span class="badge badge-pill" [class.badge-success]="modulo.inferior_hecho"
+                                    [class.badge-secondary]="!modulo.inferior_hecho" title="Fase Inferior">
+                                    INF
+                                </span>
+                                <span class="badge badge-pill" [class.badge-success]="modulo.superior_hecho"
+                                    [class.badge-secondary]="!modulo.superior_hecho" title="Fase Superior">
+                                    SUP
+                                </span>
+                            </div>
 
-                                <button type="button" class="btn-status btn-progreso" title="En Progreso"
-                                    (click)="updateModuloStatus(modulo, 'EN_PROGRESO'); $event.stopPropagation()"
-                                    [class.active]="modulo.estado === 'EN_PROGRESO'"></button>
-
-                                <button type="button" class="btn-status btn-completado" title="Completado"
-                                    (click)="updateModuloStatus(modulo, 'COMPLETADO'); $event.stopPropagation()"
-                                    [class.active]="modulo.estado === 'COMPLETADO'"></button>
+                            <!-- Simplified Actions: Only toggle Completed/Pending -->
+                            <div class="status-actions text-center">
+                                <button *ngIf="modulo.estado !== 'COMPLETADO'"
+                                    class="btn btn-sm btn-outline-success btn-block"
+                                    (click)="updateModuloStatus(modulo, 'COMPLETADO'); $event.stopPropagation()">
+                                    Marcar Completado
+                                </button>
+                                <button *ngIf="modulo.estado === 'COMPLETADO'"
+                                    class="btn btn-sm btn-outline-warning btn-block"
+                                    (click)="updateModuloStatus(modulo, 'PENDIENTE'); $event.stopPropagation()">
+                                    Reabrir
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -102,7 +113,7 @@
                 <div
                     class="card h-100 d-flex align-items-center justify-content-center p-5 text-muted bg-light border-dashed">
                     <h3>👈 Selecciona una Planta</h3>
-                    <p>O crea una nueva para empezar a añadir módulos.</p>
+                    <p>Selecciona una planta en el menú de la izquierda para visualizar sus módulos y estado.</p>
                 </div>
             </ng-template>
         </div>

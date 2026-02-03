@@ -1,26 +1,21 @@
-# Stage 1: Build
-FROM node:22 AS build
+# Usamos una imagen de Node ligera
+# Force Rebuild 2
+FROM node:22-alpine
 
 WORKDIR /app
 
 # Instalar dependencias
 COPY package*.json ./
-RUN npm install --legacy-peer-deps
+RUN npm install
 
-# Copiar código y construir aplicación
+# Copiar el resto del código
 COPY . .
-RUN npm run build --configuration=production
 
-# Stage 2: Serve
-FROM nginx:stable-alpine
+# Construir la aplicación para producción
+RUN npm run build -- --configuration=production
 
-# Copiar configuración personalizada de Nginx
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Exponer el puerto (opcional, Railway lo ignora pero es buena práctica)
+EXPOSE 8080
 
-# Copiar los archivos construidos desde la etapa anterior
-COPY --from=build /app/dist/app_proyeccion_moden/browser /usr/share/nginx/html
-
-# Exponer el puerto 80 para Nginx
-EXPOSE 80
-
-CMD ["nginx", "-g", "daemon off;"]
+# Comando de inicio: Usamos sh -c para que se expanda la variable $PORT
+CMD ["sh", "-c", "npx http-server dist/app_proyeccion_moden/browser -p $PORT --proxy http://localhost:$PORT?"]

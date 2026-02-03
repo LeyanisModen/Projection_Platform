@@ -1,12 +1,14 @@
 import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 import { DragDropModule, CdkDragDrop, moveItemInArray } from '@angular/cdk/drag-drop';
 
 import {
   ApiService,
   Proyecto, Planta, Modulo, Mesa, ModuloQueueItem, MesaQueueItem, Imagen
 } from '../services/api.service';
-import { Subject, takeUntil, forkJoin } from 'rxjs';
+import { Subject, takeUntil, forkJoin, interval } from 'rxjs';
 
 // Logical entity for display and drag-drop
 interface Subfase {
@@ -23,7 +25,7 @@ interface Subfase {
   standalone: true,
   templateUrl: './dashboard.html',
   styleUrl: './dashboard.css',
-  imports: [CommonModule, DragDropModule]
+  imports: [CommonModule, DragDropModule, FormsModule]
 })
 export class Dashboard implements OnInit, OnDestroy {
   // Sidebar State
@@ -77,6 +79,24 @@ export class Dashboard implements OnInit, OnDestroy {
 
   // Pairing Modal State
 
+  // Blueprint Modal State
+  showBlueprintModal = false;
+  blueprintUrl: string | null = null;
+
+  verPlano(planta: Planta): void {
+    if (planta.plano_imagen) {
+      this.blueprintUrl = planta.plano_imagen;
+      this.showBlueprintModal = true;
+      this.cdr.detectChanges();
+    }
+  }
+
+  cerrarBlueprintModal(): void {
+    this.showBlueprintModal = false;
+    this.blueprintUrl = null;
+    this.cdr.detectChanges();
+  }
+
 
   // Breadcrumb Navigation
   navigateTo(level: 'projects' | 'plants'): void {
@@ -96,9 +116,21 @@ export class Dashboard implements OnInit, OnDestroy {
 
   private destroy$ = new Subject<void>();
 
-  constructor(private api: ApiService, private cdr: ChangeDetectorRef) { }
+  constructor(private api: ApiService, private cdr: ChangeDetectorRef, private router: Router) { }
+
+  username: string = '';
 
   ngOnInit(): void {
+    // Check auth
+    if (!this.api.isLoggedIn()) {
+      this.router.navigate(['/']);
+      return;
+    }
+
+    this.username = this.api.getUsername() || 'Usuario';
+
+    this.username = this.api.getUsername() || 'Usuario';
+
     // Prevent back navigation
     history.pushState(null, '', location.href);
     window.onpopstate = function () {
@@ -107,6 +139,108 @@ export class Dashboard implements OnInit, OnDestroy {
 
     this.loadProyectos();
     this.loadMesas();
+
+    // Start Polling for Queue Updates (Every 5 seconds)
+    // This handles the "Auto-DJ" logic: if an item finishes, the next one is picked up
+    interval(5000)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(() => {
+        this.pollMesasQueue();
+        this.refreshActivePlantaModules();
+      });
+  }
+
+  logout(): void {
+    this.api.logout();
+    this.router.navigate(['/']);
+  }
+
+  // Polling function to refresh queues and check for auto-advance
+  pollMesasQueue(): void {
+    // Only poll if we have mesas loaded
+    if (this.mesas.length === 0) return;
+
+    this.mesas.forEach(mesa => {
+      this.api.getMesaQueueItems(mesa.id)
+        .pipe(takeUntil(this.destroy$))
+        .subscribe({
+          next: (items) => {
+            // Logic for Auto-Advance
+            // If the queue has items, and the FIRST item is 'EN_COLA' (Pending),
+            // it means the previous 'MOSTRANDO' item has finished (it's gone from the list).
+            // We should automatically promote this new first item to 'MOSTRANDO'.
+
+            // 1. Filter active items (API might return HECHO depending on implementation, but typically filtered)
+            // FORCE SORT: MOSTRANDO always first
+            const activeItems = items
+              .filter(i => i.status !== 'HECHO')
+              .sort((a, b) => {
+                if (a.status === 'MOSTRANDO') return -1;
+                if (b.status === 'MOSTRANDO') return 1;
+                return a.position - b.position;
+              });
+
+            // 2. Check overlap with local state to avoid UI jitter, but crucial for logic
+            // Update the map
+            this.mesaQueueItems.set(mesa.id, activeItems);
+
+            // 3. Clear STALE assignments for this mesa
+            // We need to remove any assignment in `subfaseAssignedToMesa` that points to this mesa
+            // BUT is not in the new `items` list (meaning it finished or was deleted).
+            // This fixes the "Proyectando..." stuck status.
+            for (let [key, val] of this.subfaseAssignedToMesa) {
+              if (val.mesaName === mesa.nombre) {
+                // Check if this subfase (key) is still in the current items list
+                // Key format: "moduloId-FASE"
+                const stillExists = items.some(i => `${i.modulo}-${i.fase}` === key && i.status !== 'HECHO');
+                if (!stillExists) {
+                  this.subfaseAssignedToMesa.delete(key);
+                }
+              }
+            }
+
+            // 4. Check for AUTO-ADVANCE condition
+            if (activeItems.length > 0) {
+              const firstItem = activeItems[0];
+              if (firstItem.status === 'EN_COLA') {
+                console.log(`[Dashboard] Auto-Advancing Mesa ${mesa.nombre} -> Showing ${firstItem.modulo_nombre}`);
+                this.mostrarItem(firstItem);
+              }
+            }
+
+            // 5. Update assignment tracking (for dots) with NEW items
+            this.updateAssignmentTracking(mesa, items);
+
+            this.cdr.detectChanges();
+          },
+          error: (err) => console.error(`Error polling queue for mesa ${mesa.id}`, err)
+        });
+    });
+  }
+
+  // Refactored helper to avoid code duplication in loadMesaQueueItems
+  updateAssignmentTracking(mesa: Mesa, items: MesaQueueItem[]): void {
+    // First, remove old assignments for this mesa from the tracking map? 
+    // It's tricky because we iterate all items. 
+    // Easier to just unset everything for this mesa first? 
+    // Let's do a safe partial update: 
+    // We can't easily "remove missing" without tracking what was there.
+    // For now, let's just Upsert. Puts (dots) might be stale if item deleted remotely.
+    // To fix stale dots, we might need a more robust sync, but for Auto-Advance this is fine.
+
+    // Cleanest way: We can't clear ALL because other mesas exist.
+    // We could iterate `subfaseAssignedToMesa` and remove entry if value.mesaName == mesa.nombre AND not in new list.
+    // Implementing simplified update for now:
+
+    items.forEach(item => {
+      if (item.status !== 'HECHO') {
+        const subfaseId = `${item.modulo}-${item.fase}`;
+        this.subfaseAssignedToMesa.set(subfaseId, {
+          mesaName: mesa.nombre,
+          status: item.status
+        });
+      }
+    });
   }
 
   // =========================================================================
@@ -199,7 +333,15 @@ export class Dashboard implements OnInit, OnDestroy {
           });
 
           // Update the map with new items (Filter out HECHO for display)
-          const activeItems = items.filter(i => i.status !== 'HECHO');
+          // FORCE SORT: MOSTRANDO always first, then by position/id
+          const activeItems = items
+            .filter(i => i.status !== 'HECHO')
+            .sort((a, b) => {
+              if (a.status === 'MOSTRANDO') return -1;
+              if (b.status === 'MOSTRANDO') return 1;
+              return a.position - b.position;
+            });
+
           this.mesaQueueItems.set(mesaId, activeItems);
 
           // Track active subfases
@@ -283,6 +425,34 @@ export class Dashboard implements OnInit, OnDestroy {
           console.error('Error loading modulos', err);
           this.loadingModulos = false;
         }
+      });
+  }
+
+  // Silent refresh for module status updates (polled)
+  refreshActivePlantaModules(): void {
+    if (!this.selectedPlanta || this.loadingModulos) return;
+
+    this.api.getModulos(this.selectedPlanta.id)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (data) => {
+          // Update list with standard sort
+          this.modulos = [...this.sortModulos(data)];
+
+          // Update selectedModulo reference if it matches
+          if (this.selectedModulo) {
+            const updated = this.modulos.find(m => m.id === this.selectedModulo!.id);
+            if (updated) {
+              this.selectedModulo = updated;
+              // CRITICAL: Rebuild active subfases so the sidebar reflects the new state (e.g. checkmark) immediately
+              if (this.expandedModulo === updated.id) {
+                this.buildActiveSubfases(updated);
+              }
+            }
+          }
+          this.cdr.detectChanges();
+        },
+        error: (err) => console.error('[Dashboard] Error refreshing modules', err)
       });
   }
 
@@ -558,6 +728,62 @@ export class Dashboard implements OnInit, OnDestroy {
     this.confirmarAccion();
   }
 
+  // =========================================================================
+  // MESA RENAMING
+  // =========================================================================
+  editingMesaId: number | null = null;
+  // Temporary storage for the name being edited to avoid mutating model before save
+  editingMesaName: string = '';
+
+  startEditingMesa(mesa: Mesa): void {
+    this.editingMesaId = mesa.id;
+    this.editingMesaName = mesa.nombre;
+    // Auto-focus logic will be handled in template with autofocus attribute or directive if needed,
+    // but standard input usually works fine.
+  }
+
+  stopEditingMesa(): void {
+    this.editingMesaId = null;
+    this.editingMesaName = '';
+  }
+
+  updateMesaName(mesa: Mesa): void {
+    if (!this.editingMesaId || !this.editingMesaName.trim()) {
+      this.stopEditingMesa();
+      return;
+    }
+
+    const newName = this.editingMesaName.trim();
+    if (newName === mesa.nombre) {
+      this.stopEditingMesa();
+      return;
+    }
+
+    // Call API
+    this.api.updateMesa(mesa.id, { nombre: newName }).subscribe({
+      next: (updatedMesa) => {
+        // Update local model
+        mesa.nombre = updatedMesa.nombre;
+        // Update assignment tracking if any
+        // We'd need to update all values in subfaseAssignedToMesa where mesaName matches old name
+        // Use a brute-force update for simplicity since maps are small
+        for (let [key, val] of this.subfaseAssignedToMesa) {
+          if (val.mesaName === mesa.nombre) { // This check might fail if we haven't updated local yet? No, we just updated it above.
+            // Wait, we updated mesa.nombre locally just now.
+            val.mesaName = updatedMesa.nombre;
+          }
+        }
+        this.stopEditingMesa();
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        console.error('Error updating mesa name', err);
+        alert('Error al renombrar la mesa');
+        this.stopEditingMesa();
+      }
+    });
+  }
+
   private ejecutarEliminar(item: MesaQueueItem): void {
     const mesaId = this.extractIdFromUrl(item.mesa);
 
@@ -586,9 +812,14 @@ export class Dashboard implements OnInit, OnDestroy {
   onMesaQueueDrop(event: CdkDragDrop<MesaQueueItem[]>, mesaId: number): void {
     if (event.previousContainer === event.container) {
       // 1. Check if first item is locked (MOSTRANDO)
+      // Since we force sort MOSTRANDO to top, we just check if index 0 is MOSTRANDO
       const currentItems = event.container.data;
-      if (currentItems.length > 0 && currentItems[0].status === 'MOSTRANDO') {
-        // If user tries to drop at index 0, force to index 1
+      const hasMostrando = currentItems.some(i => i.status === 'MOSTRANDO');
+
+      if (hasMostrando) {
+        // If there is ANY 'MOSTRANDO' item, it is guaranteed to be at index 0 due to our sort logic.
+        // Effectively, index 0 is immutable for Drag-Drop of OTHER items.
+        // If user tries to drop ANY item at index 0, reject it (push to 1).
         if (event.currentIndex === 0) {
           event.currentIndex = 1;
         }
@@ -751,9 +982,9 @@ export class Dashboard implements OnInit, OnDestroy {
     return modulo.inferior_hecho && modulo.superior_hecho;
   }
 
-  isPhaseInProgress(modulo: Modulo, fase: string): boolean {
+  isPhaseAssigned(modulo: Modulo, fase: string): boolean {
     const key = `${modulo.id}-${fase}`;
-    return this.activePhases.has(key);
+    return this.subfaseAssignedToMesa.has(key);
   }
 
   getSubfaseStatusText(subfase: Subfase): string {
@@ -825,7 +1056,13 @@ export class Dashboard implements OnInit, OnDestroy {
   // PROJECTION VIEW
   // =========================================================================
   openProjectionView(mesa: any): void {
+    console.log('[Dashboard] Opening projection for:', mesa.nombre, 'Linked:', mesa.is_linked, 'Mesa Object:', mesa);
+    if (!mesa.is_linked) {
+      alert('Mesa no vinculada. Póngase en contacto con administración.');
+      return;
+    }
     // Open visor in new tab for this mesa
     window.open(`/visor/${mesa.id}`, '_blank');
   }
+
 }

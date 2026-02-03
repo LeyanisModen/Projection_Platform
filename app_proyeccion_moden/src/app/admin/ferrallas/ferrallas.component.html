@@ -17,8 +17,8 @@
                 <div class="form-group">
                     <label for="first_name">Nombre de la Ferralla</label>
                     <input type="text" id="first_name" name="first_name" class="form-control"
-                        [(ngModel)]="newUser.first_name" required placeholder="Ej: Ferrallas del Norte S.L."
-                        autocomplete="new-password">
+                        [(ngModel)]="newUser.first_name" (input)="generateUsername($any($event.target).value)" required
+                        placeholder="Ej: Ferrallas del Norte S.L." autocomplete="off">
                 </div>
 
                 <!-- Usuario y Contraseña en la misma fila -->
@@ -26,14 +26,13 @@
                     <div class="col-md-6 form-group">
                         <label for="username">Usuario (Login)</label>
                         <input type="text" id="username" name="username" class="form-control"
-                            [(ngModel)]="newUser.username" required placeholder="Ej: ferrallasnorte"
-                            autocomplete="new-password">
+                            [(ngModel)]="newUser.username" required placeholder="Ej: ferrallasnorte" autocomplete="off">
                     </div>
                     <div class="col-md-6 form-group">
                         <label for="password">Contraseña</label>
                         <div class="input-group d-flex flex-nowrap">
                             <input type="text" id="password" name="password" class="form-control"
-                                [(ngModel)]="newUser.password" placeholder="Contraseña" autocomplete="new-password"
+                                [(ngModel)]="newUser.password" placeholder="Contraseña" autocomplete="off"
                                 [required]="!isEditing">
                             <div class="input-group-append">
                                 <button type="button" class="btn btn-outline-secondary text-nowrap"
@@ -50,7 +49,7 @@
                     <div class="col-md-6 form-group">
                         <label for="coordinador">Coordinador</label>
                         <input type="text" id="coordinador" name="coordinador" class="form-control"
-                            [(ngModel)]="newUser.coordinador" placeholder="Ej: Juan García" autocomplete="new-password">
+                            [(ngModel)]="newUser.coordinador" placeholder="Ej: Juan García" autocomplete="off">
                     </div>
                     <div class="col-md-6 form-group">
                         <label for="telefono">Teléfono</label>
@@ -68,7 +67,7 @@
                     <input style="display:none" type="password" name="fakepasswordremembered" />
 
                     <input type="text" id="email" name="email" class="form-control" [(ngModel)]="newUser.email"
-                        placeholder="contacto@ferralla.com" autocomplete="off">
+                        placeholder="contacto@ferralla.com" autocomplete="new-password">
                 </div>
 
                 <!-- Dirección -->
@@ -178,8 +177,7 @@
                                     <strong class="mr-2 text-nowrap">Añadir mesa:</strong>
                                     <div class="d-flex flex-nowrap w-100">
                                         <input type="text" class="form-control mr-3" placeholder="Nombre..."
-                                            #mesaNameInput (keyup.enter)="addMesa(mesaNameInput)"
-                                            autocomplete="new-password">
+                                            #mesaNameInput (keyup.enter)="addMesa(mesaNameInput)" autocomplete="off">
                                         <button class="btn btn-success" type="button" (click)="addMesa(mesaNameInput)"
                                             [disabled]="loadingMesas">
                                             Añadir
@@ -248,7 +246,8 @@
 </div>
 
 <!-- Pairing Modal -->
-<div class="modal-backdrop" *ngIf="showPairingModal || showUnbindModal"></div>
+<div class="modal-backdrop" *ngIf="showPairingModal || showUnbindModal"
+    (click)="closePairingModal(); closeUnbindModal()"></div>
 
 <div class="custom-modal" *ngIf="showPairingModal">
     <div class="modal-content">
@@ -285,7 +284,7 @@
 </div>
 
 <!-- Credentials Modal -->
-<div class="modal-backdrop" *ngIf="showCredentialsModal"></div>
+<div class="modal-backdrop" *ngIf="showCredentialsModal" (click)="closeCredentialsModal()"></div>
 <div class="custom-modal" *ngIf="showCredentialsModal">
     <div class="modal-content">
         <div class="modal-header">

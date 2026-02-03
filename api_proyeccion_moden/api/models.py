@@ -48,6 +48,10 @@ class Planta(models.Model):
     nombre = models.CharField(max_length=200)
     proyecto = models.ForeignKey(Proyecto, on_delete=models.CASCADE, related_name='plantas')
     orden = models.PositiveIntegerField(default=0)
+    
+    # New fields for Dashboard
+    plano_imagen = models.ImageField(upload_to='planos/', blank=True, null=True)
+    fichero_corte = models.FileField(upload_to='cortes/', blank=True, null=True)
 
     def __str__(self):
         return f"{self.proyecto.nombre} - {self.nombre}"
@@ -204,6 +208,7 @@ class Mesa(models.Model):
     pairing_code = models.CharField(max_length=10, null=True, blank=True)
     pairing_code_expires_at = models.DateTimeField(null=True, blank=True)
     mapper_enabled = models.BooleanField(default=False)
+    current_image_index = models.IntegerField(default=0)
     calibration_json = models.JSONField(null=True, blank=True)
     last_error = models.TextField(null=True, blank=True)
 
@@ -417,12 +422,24 @@ class MesaQueueItem(models.Model):
         # Update module phase status
         if self.fase == Fase.INFERIOR:
             self.modulo.inferior_hecho = True
-            self.modulo.save(update_fields=['inferior_hecho'])
         elif self.fase == Fase.SUPERIOR:
             self.modulo.superior_hecho = True
-            self.modulo.save(update_fields=['superior_hecho'])
         
-        self.modulo.actualizar_estado()
+        # IMPORTANT: Calculate new state BEFORE saving to prevent Modulo.save() 
+        # from reverting the flags (since it syncs flags -> state if state is PENDIENTE)
+        if self.modulo.cerrado:
+            self.modulo.estado = ModuloEstado.CERRADO
+        elif self.modulo.inferior_hecho and self.modulo.superior_hecho:
+            self.modulo.estado = ModuloEstado.COMPLETADO
+        elif self.modulo.inferior_hecho or self.modulo.superior_hecho:
+            self.modulo.estado = ModuloEstado.EN_PROGRESO
+        else:
+            self.modulo.estado = ModuloEstado.PENDIENTE
+            
+        # Save all fields atomically
+        self.modulo.save(update_fields=['inferior_hecho', 'superior_hecho', 'estado'])
+        
+        # Auto-promote next 'EN_COLA' item
 
         # Auto-promote next 'EN_COLA' item
         # If there is another item in queue, set it to MOSTRANDO immediately

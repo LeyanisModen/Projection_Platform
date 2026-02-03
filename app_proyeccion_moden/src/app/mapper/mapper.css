@@ -116,10 +116,10 @@ main.correctingSource #sourceCorrectButton>*:not(.sourceCorrect):not(.shortcuts)
     filter: invert(100%) sepia(1%) saturate(994%) hue-rotate(224deg) brightness(116%) contrast(100%);
     background-color: rgba(0, 0, 255, 0.5);
     border-radius: 100%;
-    transform: translate(-50%, -50%);
+    transform: none;
     text-align: center;
     font-size: 50px;
-    line-height: 60px;
+    line-height: 1;
     /* Ensure vertical centering */
     display: flex;
     justify-content: center;
@@ -129,6 +129,11 @@ main.correctingSource #sourceCorrectButton>*:not(.sourceCorrect):not(.shortcuts)
     background-size: 25%;
     background-position: center;
     background-repeat: no-repeat;
+    margin-top: -30px;
+    margin-left: -30px;
+    padding-bottom: 5px;
+    /* Visually center the X glyph */
+    box-sizing: border-box;
 }
 
 .corner:hover {
@@ -140,15 +145,15 @@ main.correctingSource #sourceCorrectButton>*:not(.sourceCorrect):not(.shortcuts)
 }
 
 .corner.tr {
-    transform: translate(-50%, -50%) rotate(90deg);
+    transform: rotate(90deg);
 }
 
 .corner.br {
-    transform: translate(-50%, -50%) rotate(180deg);
+    transform: rotate(180deg);
 }
 
 .corner.bl {
-    transform: translate(-50%, -50%) rotate(-90deg);
+    transform: rotate(-90deg);
 }
 
 .corner.grabbing {
@@ -156,8 +161,17 @@ main.correctingSource #sourceCorrectButton>*:not(.sourceCorrect):not(.shortcuts)
 }
 
 .corner.selected {
-    background-color: thistle;
-    opacity: 0.5;
+    background-color: #ff4500 !important;
+    /* OrangeRed */
+    opacity: 0.9 !important;
+    /* 90% opacity */
+    filter: none !important;
+    /* Remove the blue filter */
+    transform: scale(1.1);
+    /* Slightly larger */
+    z-index: 600;
+    /* Ensure it's on top */
+    color: white;
 }
 
 iframe {
@@ -254,6 +268,7 @@ iframe {
     border-radius: 0;
     -webkit-appearance: none;
     -moz-appearance: none;
+    appearance: none;
 }
 
 
@@ -369,21 +384,7 @@ p {
     margin: 5px;
 }
 
-/* Calibration Grid */
-.calibration-grid {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
-    background-image:
-        linear-gradient(to right, rgba(0, 255, 0, 0.5) 1px, transparent 1px),
-        linear-gradient(to bottom, rgba(0, 255, 0, 0.5) 1px, transparent 1px);
-    background-size: 50px 50px;
-    z-index: 10;
-    border: 2px solid green;
-}
+
 
 .blackout-overlay {
     position: fixed;

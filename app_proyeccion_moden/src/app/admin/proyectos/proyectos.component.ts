@@ -209,62 +209,86 @@ export class ProyectosComponent implements OnInit {
           modulos: []
         };
 
-        // Iterate through modulos (second level folders)
-        for await (const [moduloName, moduloHandle] of plantaHandle.entries()) {
-          console.log('[IMPORT] Found modulo:', plantaName + '/' + moduloName, moduloHandle.kind);
-          if (moduloHandle.kind !== 'directory') continue;
+        // Iterate through children of Planta folder (Modules OR Files)
+        for await (const [childName, childHandle] of plantaHandle.entries()) {
+          console.log('[IMPORT] Found entry in planta:', plantaName + '/' + childName, childHandle.kind);
 
-          this.importProgress = `Procesando módulo: ${plantaName}/${moduloName}...`;
-          this.cdr.detectChanges();
+          // CASE 1: It's a Modulo (Directory)
+          if (childHandle.kind === 'directory') {
+            const moduloName = childName;
+            const moduloHandle = childHandle;
 
-          const moduloData: any = {
-            nombre: moduloName,
-            imagenes: []
-          };
+            this.importProgress = `Procesando módulo: ${plantaName}/${moduloName}...`;
+            this.cdr.detectChanges();
 
-          // Check for INF and SUP subfolders
-          for await (const [faseName, faseHandle] of moduloHandle.entries()) {
-            console.log('[IMPORT] Found fase entry:', moduloName + '/' + faseName, faseHandle.kind);
-            if (faseHandle.kind !== 'directory') continue;
+            const moduloData: any = {
+              nombre: moduloName,
+              imagenes: []
+            };
 
-            const faseNormalizada = faseName.toUpperCase();
-            if (faseNormalizada !== 'INF' && faseNormalizada !== 'SUP') continue;
+            // Check for INF and SUP subfolders
+            for await (const [faseName, faseHandle] of moduloHandle.entries()) {
+              // console.log('[IMPORT] Found fase entry:', moduloName + '/' + faseName, faseHandle.kind);
+              if (faseHandle.kind !== 'directory') continue;
 
-            const fase = faseNormalizada === 'INF' ? 'INFERIOR' : 'SUPERIOR';
-            let orden = 1;
+              const faseNormalizada = faseName.toUpperCase();
+              if (faseNormalizada !== 'INF' && faseNormalizada !== 'SUP') continue;
 
-            // Read images in fase folder
-            for await (const [fileName, fileHandle] of faseHandle.entries()) {
-              console.log('[IMPORT] Found file:', fileName, fileHandle.kind);
-              if (fileHandle.kind !== 'file') continue;
+              const fase = faseNormalizada === 'INF' ? 'INFERIOR' : 'SUPERIOR';
+              let orden = 1;
 
-              const ext = fileName.toLowerCase().substring(fileName.lastIndexOf('.'));
-              console.log('[IMPORT] File extension:', ext);
+              // Read images in fase folder
+              for await (const [fileName, fileHandle] of faseHandle.entries()) {
+                // console.log('[IMPORT] Found file:', fileName, fileHandle.kind);
+                if (fileHandle.kind !== 'file') continue;
 
-              // Be more flexible with extensions
-              if (!validExtensions.includes(ext) && ext !== '.png' && ext !== '.jpg' && ext !== '.jpeg') {
-                console.log('[IMPORT] Skipping file with invalid extension:', fileName);
-                continue;
+                const ext = fileName.toLowerCase().substring(fileName.lastIndexOf('.'));
+
+                // Be more flexible with extensions
+                if (!validExtensions.includes(ext) && ext !== '.png' && ext !== '.jpg' && ext !== '.jpeg') {
+                  continue;
+                }
+
+                this.importProgress = `Cargando imagen: ${fileName}...`;
+                this.cdr.detectChanges();
+
+                // Get the file and add to FormData
+                const file = await fileHandle.getFile();
+                const uniqueFilename = `${plantaName}_${moduloName}_${faseName}_${fileName}`;
+                formData.append(uniqueFilename, file, uniqueFilename);
+
+                moduloData.imagenes.push({
+                  fase: fase,
+                  orden: orden++,
+                  filename: uniqueFilename
+                });
               }
+            }
 
-              this.importProgress = `Cargando imagen: ${fileName}...`;
-              this.cdr.detectChanges();
-
-              // Get the file and add to FormData
-              const file = await fileHandle.getFile();
-              const uniqueFilename = `${plantaName}_${moduloName}_${faseName}_${fileName}`;
-              formData.append(uniqueFilename, file, uniqueFilename);
-
-              moduloData.imagenes.push({
-                fase: fase,
-                orden: orden++,
-                filename: uniqueFilename
-              });
+            if (moduloData.imagenes.length > 0) {
+              plantaData.modulos.push(moduloData);
             }
           }
+          // CASE 2: It's a Plant File (Plano or Corte)
+          else if (childHandle.kind === 'file') {
+            const fileName = childName;
+            const ext = fileName.toLowerCase().substring(fileName.lastIndexOf('.'));
+            const uniqueFilename = `${plantaName}_FILE_${fileName}`;
 
-          if (moduloData.imagenes.length > 0) {
-            plantaData.modulos.push(moduloData);
+            // Check if it's an IMAGE (Plano)
+            if (['.jpg', '.jpeg', '.png'].includes(ext)) {
+              console.log(`[IMPORT] Found PLANO for ${plantaName}: ${fileName}`);
+              const file = await (childHandle as any).getFile();
+              formData.append(uniqueFilename, file, uniqueFilename);
+              plantaData.plano_filename = uniqueFilename;
+            }
+            // Check if it's a DOCUMENT (Corte/Planilla)
+            else if (['.pdf', '.xls', '.xlsx', '.csv'].includes(ext)) {
+              console.log(`[IMPORT] Found CORTE for ${plantaName}: ${fileName}`);
+              const file = await (childHandle as any).getFile();
+              formData.append(uniqueFilename, file, uniqueFilename);
+              plantaData.corte_filename = uniqueFilename;
+            }
           }
         }
 

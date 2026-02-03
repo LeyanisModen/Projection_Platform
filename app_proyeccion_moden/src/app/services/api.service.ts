@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
-import { Observable, map } from 'rxjs';
+import { Observable, map, tap } from 'rxjs';
 
 // =============================================================================
 // INTERFACES
@@ -42,6 +42,8 @@ export interface Planta {
     proyecto: number;
     orden: number;
     modulos_count: number;
+    plano_imagen?: string;
+    fichero_corte?: string;
 }
 
 export interface Modulo {
@@ -123,6 +125,8 @@ export interface MesaQueueItem {
 }
 
 
+import { environment } from '../../environments/environment';
+
 // =============================================================================
 // API SERVICE
 // =============================================================================
@@ -130,15 +134,47 @@ export interface MesaQueueItem {
     providedIn: 'root'
 })
 export class ApiService {
-    private baseUrl = '/api';
+    private baseUrl = environment.apiUrl;
 
     constructor(private http: HttpClient) { }
 
+
+    // =========================================================================
+    // AUTHENTICATION
+    // =========================================================================
+    login(credentials: { username: string, password: string }): Observable<{ token: string, is_staff: boolean, is_superuser: boolean }> {
+        console.log('Attempting Login with:', credentials);
+        return this.http.post<{ token: string, is_staff: boolean, is_superuser: boolean }>(`${this.baseUrl}/token-auth/`, credentials).pipe(
+            tap(response => {
+                localStorage.setItem('auth_username', credentials.username);
+                localStorage.setItem('is_staff', String(response.is_staff));
+                localStorage.setItem('is_superuser', String(response.is_superuser));
+            })
+        );
+    }
+
+    logout(): void {
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('auth_username');
+    }
+
+    getUsername(): string | null {
+        return localStorage.getItem('auth_username');
+    }
+
+    isLoggedIn(): boolean {
+        return !!localStorage.getItem('auth_token');
+    }
+
     private getHeaders(): HttpHeaders {
-        // No auth required for now
-        return new HttpHeaders({
+        const token = localStorage.getItem('auth_token');
+        let headers = new HttpHeaders({
             'Content-Type': 'application/json'
         });
+        if (token) {
+            headers = headers.set('Authorization', `Token ${token}`);
+        }
+        return headers;
     }
 
     // =========================================================================
@@ -267,6 +303,10 @@ export class ApiService {
 
     deleteMesa(id: number): Observable<void> {
         return this.http.delete<void>(`${this.baseUrl}/mesas/${id}/`, { headers: this.getHeaders() });
+    }
+
+    updateMesa(id: number, data: any): Observable<Mesa> {
+        return this.http.patch<Mesa>(`${this.baseUrl}/mesas/${id}/`, data, { headers: this.getHeaders() });
     }
 
     getMesa(id: number): Observable<Mesa> {
