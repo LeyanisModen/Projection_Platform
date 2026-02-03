@@ -1,1 +1,1 @@
-web: gunicorn proyeccion_moden.wsgi --log-file -
+web: python manage.py migrate && gunicorn proyeccion_moden.wsgi --log-file -
