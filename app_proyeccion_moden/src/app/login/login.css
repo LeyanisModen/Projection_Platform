@@ -144,8 +144,10 @@ button {
     margin-top: 25px;
     border: none;
     border-radius: 8px;
-    background: linear-gradient(135deg, var(--safety-orange) 0%, var(--safety-orange-dark) 100%);
-    color: var(--white);
+    background-color: #ff6b35;
+    /* Fallback */
+    background: linear-gradient(135deg, var(--safety-orange, #ff6b35) 0%, var(--safety-orange-dark, #e55a2b) 100%);
+    color: #ffffff;
     font-family: 'Oswald', sans-serif;
     font-size: 1.1rem;
     font-weight: 500;
@@ -157,7 +159,10 @@ button {
 }
 
 button:hover {
-    background: linear-gradient(135deg, var(--safety-orange-dark) 0%, var(--safety-orange) 100%);
+    background-color: #e55a2b;
+    /* Fallback */
+    background: linear-gradient(135deg, var(--safety-orange-dark, #e55a2b) 0%, var(--safety-orange, #ff6b35) 100%);
+    color: #ffffff;
     transform: translateY(-2px);
     box-shadow: 0 6px 20px rgba(255, 107, 53, 0.4);
 }

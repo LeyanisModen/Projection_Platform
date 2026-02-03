@@ -8,7 +8,7 @@ from api import views
 from django.contrib import admin
 
 router = routers.DefaultRouter()
-router.register(r"users", views.UserViewSet)
+router.register(r"users", views.UserViewSet, basename="user")
 router.register(r"proyectos", views.ProyectoViewSet)
 router.register(r"plantas", views.PlantaViewSet)
 router.register(r"modulos", views.ModuloViewSet)
