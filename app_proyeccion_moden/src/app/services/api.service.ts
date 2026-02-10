@@ -114,7 +114,7 @@ export interface MesaQueueItem {
     modulo_planta_id?: number;
     modulo_proyecto_id?: number;
     fase: 'INFERIOR' | 'SUPERIOR';
-    imagen?: string;
+    imagen?: number;
     imagen_url?: string;
     position: number;
     status: 'EN_COLA' | 'MOSTRANDO' | 'HECHO';

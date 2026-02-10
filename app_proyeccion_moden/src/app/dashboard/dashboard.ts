@@ -872,24 +872,36 @@ export class Dashboard implements OnInit, OnDestroy {
       // Lock polling during backend sync
       this.transferInProgress = true;
 
-      // Backend: delete from old mesa, create in new mesa
-      this.api.deleteMesaQueueItem(item.id).subscribe({
-        next: () => {
-          this.api.createMesaQueueItem(mesaId, item.modulo, item.fase, null, event.currentIndex).subscribe({
+      // Backend strategy: Create in new mesa FIRST, then delete from old mesa.
+      // If create fails, we reload causing a "revert".
+      // If delete fails, we might have a duplicate, reload fixes it too.
+
+      this.api.createMesaQueueItem(mesaId, item.modulo, item.fase, item.imagen || null, event.currentIndex).subscribe({
+        next: (newItem) => {
+          // Create success. Now delete the old one.
+          this.api.deleteMesaQueueItem(item.id).subscribe({
             next: () => {
-              if (sourceMesaId) this.loadMesaQueueItems(sourceMesaId);
-              this.loadMesaQueueItems(mesaId);
-              this.transferInProgress = false;
+              // Both success.
+              // We do NOT reload queues here to avoid 'clientRect' errors in CDK.
+              // The local state is already up to date via transferArrayItem.
+              // Use a small timeout to clear the flag to let CDK animation finish.
+              setTimeout(() => {
+                this.transferInProgress = false;
+              }, 500);
             },
-            error: (err: any) => {
-              console.error('Transfer create failed', err);
+            error: (err) => {
+              console.error('Transfer delete failed', err);
+              // If delete fails, we have a duplicate (one in old, one in new).
+              // Reloading both mesas will show the true state.
               this.mesas.forEach(m => this.loadMesaQueueItems(m.id));
               this.transferInProgress = false;
             }
           });
         },
-        error: (err: any) => {
-          console.error('Transfer delete failed', err);
+        error: (err) => {
+          console.error('Transfer create failed', err);
+          // If create fails, the item is locally in the new list but not in backend.
+          // Reloading will revert the UI to match backend (item back in old list).
           this.mesas.forEach(m => this.loadMesaQueueItems(m.id));
           this.transferInProgress = false;
         }
