@@ -268,6 +268,7 @@
 .folder-input-group {
     display: flex;
     gap: 0.5rem;
+    align-items: center;
     /* Add gap between input and button */
 }
 
@@ -275,11 +276,13 @@
     flex: 1;
     background: #f8f9fa;
     cursor: pointer;
+    width: auto; /* Prevent forcing 100% width from form-control */
     /* Removed border-radius override so it looks like a standalone input */
 }
 
 .folder-input-group .folder-btn {
     white-space: nowrap;
+    height: fit-content;
     /* Removed border-radius override so it looks like a standalone button */
 }
 
