@@ -138,6 +138,16 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
+  flex: 1;
+  min-width: 0;
+  /* Crucial for flex child truncation */
+}
+
+.header-text-group h2,
+.header-text-group small {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .header-text-group h2 {
