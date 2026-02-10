@@ -61,6 +61,7 @@ export class Dashboard implements OnInit, OnDestroy {
 
   // Drag State
   draggedSubfase: Subfase | null = null;
+  transferInProgress = false;
 
   // Confirm Modal State
   showConfirmModal = false;
@@ -157,8 +158,8 @@ export class Dashboard implements OnInit, OnDestroy {
 
   // Polling function to refresh queues and check for auto-advance
   pollMesasQueue(): void {
-    // Only poll if we have mesas loaded
-    if (this.mesas.length === 0) return;
+    // Skip polling during cross-mesa transfers to avoid DOM conflicts
+    if (this.mesas.length === 0 || this.transferInProgress) return;
 
     this.mesas.forEach(mesa => {
       this.api.getMesaQueueItems(mesa.id)
@@ -868,6 +869,9 @@ export class Dashboard implements OnInit, OnDestroy {
       this.mesaQueueItems.set(mesaId, event.container.data);
       this.cdr.detectChanges();
 
+      // Lock polling during backend sync
+      this.transferInProgress = true;
+
       // Backend: delete from old mesa, create in new mesa
       this.api.deleteMesaQueueItem(item.id).subscribe({
         next: () => {
@@ -875,16 +879,19 @@ export class Dashboard implements OnInit, OnDestroy {
             next: () => {
               if (sourceMesaId) this.loadMesaQueueItems(sourceMesaId);
               this.loadMesaQueueItems(mesaId);
+              this.transferInProgress = false;
             },
             error: (err: any) => {
               console.error('Transfer create failed', err);
               this.mesas.forEach(m => this.loadMesaQueueItems(m.id));
+              this.transferInProgress = false;
             }
           });
         },
         error: (err: any) => {
           console.error('Transfer delete failed', err);
           this.mesas.forEach(m => this.loadMesaQueueItems(m.id));
+          this.transferInProgress = false;
         }
       });
     }
