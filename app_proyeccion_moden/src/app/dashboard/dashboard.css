@@ -147,6 +147,28 @@
   /* Crucial for flex child truncation */
 }
 
+.header-sub-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.header-info-col {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  /* Forces text truncation */
+}
+
+/* Ensure actions don't shrink */
+.planta-actions {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
 .header-text-group h2,
 .header-text-group small {
   white-space: nowrap;
