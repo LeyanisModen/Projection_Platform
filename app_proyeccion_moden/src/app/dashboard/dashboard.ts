@@ -2,7 +2,7 @@ import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { DragDropModule, CdkDragDrop, moveItemInArray } from '@angular/cdk/drag-drop';
+import { DragDropModule, CdkDragDrop, moveItemInArray, transferArrayItem } from '@angular/cdk/drag-drop';
 
 import {
   ApiService,
@@ -839,6 +839,53 @@ export class Dashboard implements OnInit, OnDestroy {
       this.api.reorderMesaQueue(payload).subscribe({
         next: () => console.log('Reorder saved'),
         error: (err) => console.error('Reorder failed', err)
+      });
+    } else {
+      // Cross-mesa transfer
+      const item = event.previousContainer.data[event.previousIndex];
+      const sourceMesaId = this.extractIdFromUrl(item.mesa);
+
+      // Don't transfer MOSTRANDO items
+      if (item.status === 'MOSTRANDO') return;
+
+      // Prevent dropping at index 0 if target has a MOSTRANDO item
+      const targetItems = event.container.data;
+      const targetHasMostrando = targetItems.some((i: MesaQueueItem) => i.status === 'MOSTRANDO');
+      if (targetHasMostrando && event.currentIndex === 0) {
+        event.currentIndex = 1;
+      }
+
+      // Move locally for instant UI feedback
+      transferArrayItem(
+        event.previousContainer.data,
+        event.container.data,
+        event.previousIndex,
+        event.currentIndex
+      );
+
+      // Update local maps
+      if (sourceMesaId) this.mesaQueueItems.set(sourceMesaId, event.previousContainer.data);
+      this.mesaQueueItems.set(mesaId, event.container.data);
+      this.cdr.detectChanges();
+
+      // Backend: delete from old mesa, create in new mesa
+      this.api.deleteMesaQueueItem(item.id).subscribe({
+        next: () => {
+          this.api.createMesaQueueItem(mesaId, item.modulo, item.fase, null, event.currentIndex).subscribe({
+            next: () => {
+              if (sourceMesaId) this.loadMesaQueueItems(sourceMesaId);
+              this.loadMesaQueueItems(mesaId);
+            },
+            error: (err: any) => {
+              console.error('Transfer create failed', err);
+              this.mesas.forEach(m => this.loadMesaQueueItems(m.id));
+            }
+          });
+        },
+        error: (err: any) => {
+          console.error('Transfer delete failed', err);
+          this.mesas.forEach(m => this.loadMesaQueueItems(m.id));
+        }
       });
     }
   }

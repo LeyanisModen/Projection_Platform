@@ -181,7 +181,7 @@
                 <div class="section-header">
                     <h2>Mesas de Trabajo</h2>
                 </div>
-                <div class="mesas-grid">
+                <div class="mesas-grid" cdkDropListGroup>
                     @if (loadingMesas) {
                     <div class="loading">Cargando mesas...</div>
                     } @else {
@@ -229,7 +229,9 @@
                             @for (item of getMesaQueueItems(mesa.id); track trackByItem($index, item)) {
                             <div class="queue-item" [class]="getItemStatusClass(item.status)"
                                 [cdkDragDisabled]="item.status === 'MOSTRANDO'" cdkDrag>
+                                @if (item.status !== 'MOSTRANDO') {
                                 <div class="drag-handle" cdkDragHandle title="Arrastrar para reordenar">⋮⋮</div>
+                                }
                                 <div class="queue-item-info">
                                     <span class="queue-index">{{ $index + 1 }}.</span>
                                     <span class="queue-item-fase" [class.inferior]="item.fase === 'INFERIOR'"
