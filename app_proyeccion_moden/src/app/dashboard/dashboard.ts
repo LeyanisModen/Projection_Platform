@@ -890,11 +890,19 @@ export class Dashboard implements OnInit, OnDestroy {
               }, 500);
             },
             error: (err) => {
-              console.error('Transfer delete failed', err);
-              // If delete fails, we have a duplicate (one in old, one in new).
-              // Reloading both mesas will show the true state.
-              this.mesas.forEach(m => this.loadMesaQueueItems(m.id));
-              this.transferInProgress = false;
+              if (err.status === 404) {
+                // 404 means item already gone. Treat as success.
+                console.warn('Transfer delete 404 (already gone), treating as success');
+                setTimeout(() => {
+                  this.transferInProgress = false;
+                }, 500);
+              } else {
+                console.error('Transfer delete failed', err);
+                // If delete fails (non-404), we have a duplicate (one in old, one in new).
+                // Reloading both mesas will show the true state.
+                this.mesas.forEach(m => this.loadMesaQueueItems(m.id));
+                this.transferInProgress = false;
+              }
             }
           });
         },
