@@ -418,45 +418,20 @@ class MesaQueueItem(models.Model):
         self.done_by = user
         self.done_at = timezone.now()
         self.save()  # Ensure HECHO status is persisted
-
-        # Update module phase status
+        
+        # Also update the module phase status
         if self.fase == Fase.INFERIOR:
             self.modulo.inferior_hecho = True
-        elif self.fase == Fase.SUPERIOR:
-            self.modulo.superior_hecho = True
-        
-        # IMPORTANT: Calculate new state BEFORE saving to prevent Modulo.save() 
-        # from reverting the flags (since it syncs flags -> state if state is PENDIENTE)
-        if self.modulo.cerrado:
-            self.modulo.estado = ModuloEstado.CERRADO
-        elif self.modulo.inferior_hecho and self.modulo.superior_hecho:
-            self.modulo.estado = ModuloEstado.COMPLETADO
-        elif self.modulo.inferior_hecho or self.modulo.superior_hecho:
-            self.modulo.estado = ModuloEstado.EN_PROGRESO
         else:
-            self.modulo.estado = ModuloEstado.PENDIENTE
-            
-        # Save all fields atomically
-        self.modulo.save(update_fields=['inferior_hecho', 'superior_hecho', 'estado'])
-        
-        # Auto-promote next 'EN_COLA' item
-
-        # Auto-promote next 'EN_COLA' item
-        # If there is another item in queue, set it to MOSTRANDO immediately
-        next_item = MesaQueueItem.objects.filter(
-            mesa=self.mesa,
-            status=MesaQueueStatus.EN_COLA
-        ).order_by('position').first()
-
-        if next_item:
-            next_item.status = MesaQueueStatus.MOSTRANDO
-            next_item.save(update_fields=['status'])
-            self.mesa.imagen_actual = next_item.imagen
-            self.mesa.save(update_fields=['imagen_actual'])
+            self.modulo.superior_hecho = True
+        self.modulo.actualizar_estado()
 
     class Meta:
         db_table = 'api_mesa_queue_item'
         ordering = ['position']
+        # Ensure a module phase can only be in one queue at a time
+        unique_together = ['modulo', 'fase']
+        
         constraints = [
             models.CheckConstraint(
                 check=models.Q(fase__in=[Fase.INFERIOR, Fase.SUPERIOR]),
