@@ -89,7 +89,8 @@
                         <!-- Actions for Plant -->
                         <div class="nav-item-actions">
                             <a *ngIf="planta.fichero_corte" [href]="planta.fichero_corte" target="_blank"
-                                class="btn-icon-action pdf" title="Descargar Corte" (click)="$event.stopPropagation()">
+                                class="btn-icon-action pdf" title="Descargar Planilla"
+                                (click)="$event.stopPropagation()">
                                 📄
                             </a>
                         </div>
@@ -229,11 +230,9 @@
                             @for (item of getMesaQueueItems(mesa.id); track trackByItem($index, item)) {
                             <div class="queue-item" [class]="getItemStatusClass(item.status)"
                                 [cdkDragDisabled]="item.status === 'MOSTRANDO'" cdkDrag>
-                                @if (item.status !== 'MOSTRANDO') {
-                                <div class="drag-handle" cdkDragHandle title="Arrastrar para reordenar">⋮⋮</div>
-                                }
+                                <div class="drag-handle" [class.invisible]="item.status === 'MOSTRANDO'" cdkDragHandle
+                                    title="Arrastrar para reordenar">⋮⋮</div>
                                 <div class="queue-item-info">
-                                    <span class="queue-index">{{ $index + 1 }}.</span>
                                     <span class="queue-item-fase" [class.inferior]="item.fase === 'INFERIOR'"
                                         [class.superior]="item.fase === 'SUPERIOR'">
                                         {{ item.fase === 'INFERIOR' ? '▼' : '▲' }}

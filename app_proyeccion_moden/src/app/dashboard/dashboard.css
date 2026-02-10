@@ -1176,6 +1176,11 @@
   cursor: grab;
 }
 
+.drag-handle.invisible {
+  visibility: hidden;
+  cursor: default;
+}
+
 .sidebar-status-badge {
   font-size: 0.75rem;
   font-weight: bold;
