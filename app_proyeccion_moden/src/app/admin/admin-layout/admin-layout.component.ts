@@ -161,21 +161,12 @@ import { ApiService } from '../../services/api.service';
         color: #d32f2f;
         padding: 4px;
         border-radius: 4px;
-    .btn-logout {
-        background: none;
-        border: none;
-        cursor: pointer;
-        font-size: 1.2rem;
-        color: #d32f2f;
-        padding: 4px;
-        border-radius: 4px;
         transition: background 0.2s;
-        /* Removed display: none as *ngIf handles it */
+        flex-shrink: 0;
     }
     .btn-logout:hover {
         background-color: #ffebee;
     }
-    /* Removed sidebar.expanded .btn-logout rule */
     .content {
       flex: 1;
       padding: 1.5rem;
