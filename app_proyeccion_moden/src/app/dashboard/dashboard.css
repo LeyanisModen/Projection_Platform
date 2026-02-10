@@ -556,12 +556,25 @@
   overflow: hidden;
 }
 
+.section-header {
+  height: 60px;
+  display: flex;
+  align-items: center;
+  padding: 16px;
+  background-color: transparent;
+  /* border-bottom: 1px solid var(--border-light); Optional, but consistent */
+  margin-bottom: 0;
+}
+
 .section-header h2 {
   font-size: 1rem;
   color: var(--text-secondary);
-  margin-bottom: 16px;
+  margin: 0;
   text-transform: uppercase;
   letter-spacing: 1px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .mesas-grid {
