@@ -35,7 +35,7 @@ import { ApiService } from '../../services/api.service';
             <span class="user-icon">👤</span>
             <span class="user-text">Logueado como Admin</span>
           </div>
-          <button class="btn-logout" (click)="logout()" title="Cerrar Sesión">
+          <button *ngIf="sidebarExpanded" class="btn-logout" (click)="logout()" title="Cerrar Sesión">
             ⏻
           </button>
         </div>
@@ -161,15 +161,21 @@ import { ApiService } from '../../services/api.service';
         color: #d32f2f;
         padding: 4px;
         border-radius: 4px;
-        display: none; /* Hidden when collapsed */
+    .btn-logout {
+        background: none;
+        border: none;
+        cursor: pointer;
+        font-size: 1.2rem;
+        color: #d32f2f;
+        padding: 4px;
+        border-radius: 4px;
         transition: background 0.2s;
+        /* Removed display: none as *ngIf handles it */
     }
     .btn-logout:hover {
         background-color: #ffebee;
     }
-    .sidebar.expanded .btn-logout {
-        display: block;
-    }
+    /* Removed sidebar.expanded .btn-logout rule */
     .content {
       flex: 1;
       padding: 1.5rem;
