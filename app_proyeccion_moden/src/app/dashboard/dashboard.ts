@@ -9,6 +9,7 @@ import {
   Proyecto, Planta, Modulo, Mesa, ModuloQueueItem, MesaQueueItem, Imagen
 } from '../services/api.service';
 import { Subject, takeUntil, forkJoin, interval } from 'rxjs';
+import { environment } from '../../environments/environment';
 
 // Logical entity for display and drag-drop
 interface Subfase {
@@ -86,10 +87,24 @@ export class Dashboard implements OnInit, OnDestroy {
 
   verPlano(planta: Planta): void {
     if (planta.plano_imagen) {
-      this.blueprintUrl = planta.plano_imagen;
+      this.blueprintUrl = this.resolveUrl(planta.plano_imagen);
       this.showBlueprintModal = true;
       this.cdr.detectChanges();
     }
+  }
+
+  private resolveUrl(url: string): string {
+    if (!url) return '';
+    if (url.startsWith('http')) return url;
+
+    // Strip '/api' from base URL to get root domain
+    let base = environment.apiUrl;
+    if (base.endsWith('/')) base = base.slice(0, -1);
+    if (base.endsWith('/api')) base = base.substring(0, base.length - 4);
+
+    // Ensure path starts with /
+    const path = url.startsWith('/') ? url : `/${url}`;
+    return `${base}${path}`;
   }
 
   cerrarBlueprintModal(): void {
