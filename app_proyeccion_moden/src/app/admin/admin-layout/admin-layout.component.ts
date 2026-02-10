@@ -32,9 +32,9 @@ import { ApiService } from '../../services/api.service';
         </ul>
         <div class="user-info">
           <button *ngIf="sidebarExpanded" class="btn-logout" (click)="logout()" title="Cerrar Sesión">
-            👤 <span class="logout-text">Cerrar Sesión</span>
+            ⏻ <span class="logout-text">Cerrar Sesión</span>
           </button>
-          <span *ngIf="!sidebarExpanded" class="user-icon">👤</span>
+          <span *ngIf="!sidebarExpanded" class="user-icon">⏻</span>
         </div>
       </nav>
       <main class="content">
