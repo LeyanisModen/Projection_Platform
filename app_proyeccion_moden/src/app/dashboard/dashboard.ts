@@ -891,44 +891,29 @@ export class Dashboard implements OnInit, OnDestroy {
       // If create fails, we reload causing a "revert".
       // If delete fails, we might have a duplicate, reload fixes it too.
 
-      this.api.createMesaQueueItem(mesaId, item.modulo, item.fase, item.imagen || null, event.currentIndex).subscribe({
-        next: (newItem) => {
-          // Create success. Now delete the old one.
-          this.api.deleteMesaQueueItem(item.id).subscribe({
-            next: () => {
-              // Both success.
-              // We do NOT reload queues here to avoid 'clientRect' errors in CDK.
-              // The local state is already up to date via transferArrayItem.
-              // Use a small timeout to clear the flag to let CDK animation finish.
-              setTimeout(() => {
-                this.transferInProgress = false;
-              }, 500);
-            },
-            error: (err) => {
-              if (err.status === 404) {
-                // 404 means item already gone. Treat as success.
-                console.warn('Transfer delete 404 (already gone), treating as success');
-                setTimeout(() => {
-                  this.transferInProgress = false;
-                }, 500);
-              } else {
-                console.error('Transfer delete failed', err);
-                // If delete fails (non-404), we have a duplicate (one in old, one in new).
-                // Reloading both mesas will show the true state.
-                this.mesas.forEach(m => this.loadMesaQueueItems(m.id));
-                this.transferInProgress = false;
-              }
-            }
-          });
+      this.api.updateMesaQueueItem(item.id, {
+        mesa: mesaId,
+        position: event.currentIndex
+      }).subscribe({
+        next: () => {
+          console.log('[Dashboard] Transfer success (Atomic Move)');
+          // Reload both queues to ensure positions are correct (close gaps in source, open gap in target)
+          if (sourceMesaId) this.loadMesaQueueItems(sourceMesaId);
+          this.loadMesaQueueItems(mesaId);
+
+          setTimeout(() => {
+            this.transferInProgress = false;
+          }, 300);
         },
         error: (err) => {
-          console.error('Transfer create failed', err);
-          // If create fails, the item is locally in the new list but not in backend.
-          // Reloading will revert the UI to match backend (item back in old list).
+          console.error('Transfer failed (Atomic Move)', err);
+          // Revert UI by reloading from backend
           this.mesas.forEach(m => this.loadMesaQueueItems(m.id));
           this.transferInProgress = false;
+          alert('Error al mover el item. Se recargarán las colas.');
         }
       });
+
     }
   }
 

@@ -365,6 +365,10 @@ export class ApiService {
         }, { headers: this.getHeaders() });
     }
 
+    updateMesaQueueItem(id: number, data: any): Observable<MesaQueueItem> {
+        return this.http.patch<MesaQueueItem>(`${this.baseUrl}/mesa-queue-items/${id}/`, data, { headers: this.getHeaders() });
+    }
+
     marcarMesaQueueItemHecho(id: number): Observable<MesaQueueItem> {
         return this.http.post<MesaQueueItem>(`${this.baseUrl}/mesa-queue-items/${id}/marcar_hecho/`, {}, { headers: this.getHeaders() });
     }
