@@ -27,17 +27,47 @@
 }
 
 .col-md-4 {
-    flex: 0 0 20%;
-    /* Reduce sidebar width */
-    max-width: 20%;
+    flex: 0 0 25%;
+    /* Increase sidebar width from 20% to 25% */
+    max-width: 25%;
     padding: 0 15px;
 }
 
 .col-md-8 {
-    flex: 0 0 80%;
-    /* Expand content width */
-    max-width: 80%;
+    flex: 0 0 75%;
+    /* Decrease content width to 75% */
+    max-width: 75%;
     padding: 0 15px;
+}
+
+/* Custom styles for bigger cards */
+.ferralla-selector {
+    padding: 25px !important;
+    min-height: 140px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.ferralla-selector label {
+    font-size: 1.1rem;
+    margin-bottom: 10px;
+    font-weight: 500;
+}
+
+.ferralla-selector select {
+    height: 45px;
+    font-size: 1rem;
+}
+
+.list-group-item {
+    padding: 20px 25px;
+    /* Bigger click area */
+    font-size: 1.05rem;
+}
+
+.card-header {
+    padding: 15px 25px;
 }
 
 .card {
