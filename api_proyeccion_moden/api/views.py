@@ -84,6 +84,10 @@ class ProyectoViewSet(viewsets.ModelViewSet):
             # Once frontend sends token, we can change this to `return Proyecto.objects.none()`
             return Proyecto.objects.all().order_by("nombre")
 
+    def perform_create(self, serializer):
+        """Assign current user as project owner."""
+        serializer.save(usuario=self.request.user)
+
     @action(detail=True, methods=['get'])
     def modulos(self, request, pk=None):
         """Get all modules for a project."""
