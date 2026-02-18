@@ -718,6 +718,8 @@ class DeviceViewSet(viewsets.ViewSet):
             }
             yield f"data: {json.dumps(initial_data)}\n\n"
             
+            last_ping = time.time()
+            
             while True:
                 # Refresh from DB to check for updates
                 mesa.refresh_from_db()
@@ -734,6 +736,12 @@ class DeviceViewSet(viewsets.ViewSet):
                     }
                     yield f"data: {json.dumps(payload)}\n\n"
                 
+                # Keep-Alive
+                now = time.time()
+                if now - last_ping > 15:
+                    yield ": keep-alive\n\n"
+                    last_ping = now
+
                 # Check every 100ms
                 time.sleep(0.1)
 
