@@ -86,8 +86,11 @@ class ProyectoViewSet(viewsets.ModelViewSet):
             return Proyecto.objects.all().order_by("nombre")
 
     def perform_create(self, serializer):
-        """Assign current user as project owner."""
-        serializer.save(usuario=self.request.user)
+        """Assign current user as project owner if not provided."""
+        if 'usuario' not in serializer.validated_data:
+            serializer.save(usuario=self.request.user)
+        else:
+            serializer.save()
 
     @action(detail=True, methods=['get'])
     def modulos(self, request, pk=None):
