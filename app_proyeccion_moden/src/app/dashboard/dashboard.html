@@ -21,38 +21,27 @@
                     }
                     <div class="header-text-group">
                         @if (navLevel === 'projects') {
-                        <div class="header-sub-row"
-                            style="flex-direction: column; align-items: flex-start; width: 100%; padding-left: 12px;">
-                            <h2
-                                style="width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px;">
-                                Proyectos</h2>
-                            <small class="text-muted">Lista de Proyectos</small>
-                        </div>
+                        <h2
+                            style="margin: 0; font-size: 1.25rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                            Proyectos</h2>
+                        <small class="text-muted">Lista de Proyectos</small>
                         } @else if (navLevel === 'plants') {
-                        <div class="header-sub-row"
-                            style="flex-direction: column; align-items: flex-start; width: 100%; padding-left: 12px;">
-                            <h2
-                                style="width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px;">
-                                {{ selectedProyecto?.nombre }}</h2>
-                            <small class="text-muted">Plantas</small>
-                        </div>
+                        <h2
+                            style="margin: 0; font-size: 1.25rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                            {{ selectedProyecto?.nombre }}</h2>
+                        <small class="text-muted">Plantas</small>
                         } @else if (navLevel === 'modules') {
-                        <div class="header-sub-row"
-                            style="flex-direction: column; align-items: flex-start; width: 100%; padding-left: 12px;">
-                            <h2
-                                style="width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px;">
-                                {{
-                                selectedProyecto?.nombre }}</h2>
-                            <div class="subheader-line"
-                                style="display: flex; align-items: baseline; gap: 8px; width: 100%;">
-                                <small class="text-muted">{{ selectedPlanta?.nombre }}</small>
-                                <small *ngIf="selectedPlanta && selectedPlanta.plano_imagen"
-                                    class="text-accent clickable"
-                                    style="cursor: pointer; color: var(--accent-orange); font-weight: 500;"
-                                    (click)="verPlano(selectedPlanta)">
-                                    (Abrir planos)
-                                </small>
-                            </div>
+                        <h2
+                            style="margin: 0; font-size: 1.25rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                            {{ selectedProyecto?.nombre }}</h2>
+                        <div class="subheader-line"
+                            style="display: flex; align-items: baseline; gap: 8px; width: 100%;">
+                            <small class="text-muted">{{ selectedPlanta?.nombre }}</small>
+                            <small *ngIf="selectedPlanta && selectedPlanta.plano_imagen" class="text-accent clickable"
+                                style="cursor: pointer; color: var(--accent-orange); font-weight: 500;"
+                                (click)="verPlano(selectedPlanta)">
+                                (Abrir planos)
+                            </small>
                         </div>
                         }
                     </div>
