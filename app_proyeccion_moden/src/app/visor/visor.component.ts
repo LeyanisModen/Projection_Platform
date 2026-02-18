@@ -426,14 +426,19 @@ export class VisorComponent implements OnInit, OnDestroy {
         const payload = mesaId ? { mesa_id: mesaId } : {};
         return this.http.post(`${this.apiUrl}heartbeat/`, payload, { headers: this.getAuthHeaders() });
       }),
-      catchError(() => of(null))
+      catchError((err) => {
+        if (err.status === 401) this.handleUnauthorized('Heartbeat');
+        return of(null);
+      })
     ).subscribe();
   }
 
   private authRetries = 0;
   handleUnauthorized(source: string = 'Unknown'): void {
+    console.warn(`[Visor] Unauthorized access detected from ${source}. Retries: ${this.authRetries}`);
     this.authRetries++;
-    if (this.authRetries > 3) {
+    // If token is invalid, it's usually permanent (unlinked). Fail fast.
+    if (this.authRetries >= 1) {
       if (this.eventSource) {
         this.eventSource.close();
         this.eventSource = null;
@@ -444,6 +449,7 @@ export class VisorComponent implements OnInit, OnDestroy {
       this.statePollSub?.unsubscribe();
       this.heartbeatSub?.unsubscribe();
       this.requestPairingCode();
+      this.authRetries = 0; // Reset counter
     }
   }
 }
