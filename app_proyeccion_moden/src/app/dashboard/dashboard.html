@@ -27,28 +27,31 @@
                         <h2>{{ selectedProyecto?.nombre }}</h2>
                         <small class="text-muted">Plantas</small>
                         } @else if (navLevel === 'modules') {
-                        <div class="header-sub-row">
-                            <div class="header-info-col">
-                                <h2>{{ selectedProyecto?.nombre }}</h2>
+                        <div class="header-sub-row"
+                            style="flex-direction: column; align-items: flex-start; width: 100%;">
+                            <h2 style="width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{
+                                selectedProyecto?.nombre }}</h2>
+                            <div class="subheader-line"
+                                style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
                                 <small class="text-muted">{{ selectedPlanta?.nombre }}</small>
-                            </div>
-                            <div class="planta-actions" *ngIf="selectedPlanta && selectedPlanta.plano_imagen">
-                                <button class="btn-icon-header" (click)="verPlano(selectedPlanta)"
-                                    title="Ver Plano de Planta">
-                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none"
-                                        xmlns="http://www.w3.org/2000/svg">
-                                        <rect x="4" y="4" width="16" height="16" rx="2" stroke="currentColor"
-                                            stroke-width="2" />
-                                        <path d="M10 4V12H16" stroke="currentColor" stroke-width="2"
-                                            stroke-linecap="round" />
-                                        <path d="M4 14H10" stroke="currentColor" stroke-width="2"
-                                            stroke-linecap="round" />
-                                        <path d="M14 12V20" stroke="currentColor" stroke-width="2"
-                                            stroke-linecap="round" />
-                                        <path d="M18 12V10" stroke="currentColor" stroke-width="2"
-                                            stroke-linecap="round" />
-                                    </svg>
-                                </button>
+                                <div class="planta-actions" *ngIf="selectedPlanta && selectedPlanta.plano_imagen">
+                                    <button class="btn-icon-header" (click)="verPlano(selectedPlanta)"
+                                        title="Ver Plano de Planta">
+                                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none"
+                                            xmlns="http://www.w3.org/2000/svg">
+                                            <rect x="4" y="4" width="16" height="16" rx="2" stroke="currentColor"
+                                                stroke-width="2" />
+                                            <path d="M10 4V12H16" stroke="currentColor" stroke-width="2"
+                                                stroke-linecap="round" />
+                                            <path d="M4 14H10" stroke="currentColor" stroke-width="2"
+                                                stroke-linecap="round" />
+                                            <path d="M14 12V20" stroke="currentColor" stroke-width="2"
+                                                stroke-linecap="round" />
+                                            <path d="M18 12V10" stroke="currentColor" stroke-width="2"
+                                                stroke-linecap="round" />
+                                        </svg>
+                                    </button>
+                                </div>
                             </div>
                         </div>
                         }
