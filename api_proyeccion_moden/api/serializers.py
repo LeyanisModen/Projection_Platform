@@ -130,6 +130,8 @@ class PlantaSerializer(serializers.ModelSerializer):
         fields = ["id", "nombre", "proyecto", "orden", "modulos_count", "plano_imagen", "fichero_corte"]
 
     def get_modulos_count(self, obj):
+        if hasattr(obj, 'modulos_count'):
+            return obj.modulos_count
         return obj.modulos.count()
 
 
