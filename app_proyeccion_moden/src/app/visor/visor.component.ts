@@ -106,6 +106,9 @@ export class VisorComponent implements OnInit, OnDestroy {
     this.http.get<MesaState>(`/api/mesas/${mesaId}/`, { headers: this.getUserAuthHeaders() }).subscribe({
       next: (mesa) => {
         this.mesaState = mesa;
+        if (typeof mesa.current_image_index === 'number') {
+          this.currentIndex = mesa.current_image_index;
+        }
         if (mesa.nombre) {
           this.titleService.setTitle(`Visor - ${mesa.nombre}`);
         }
@@ -252,8 +255,8 @@ export class VisorComponent implements OnInit, OnDestroy {
   }
 
   get projectedImage(): string | null {
-    if (this.currentIndex === -1) return '/assets/calibration_grid.jpg';
-    if (this.currentIndex === -2) return '/assets/calibration_grid_with_x.jpg';
+    if (this.currentIndex === -1) return 'assets/calibration_grid.jpg';
+    if (this.currentIndex === -2) return 'assets/calibration_grid_with_x.jpg';
     if (this.images.length > 0 && this.currentIndex >= 0 && this.currentIndex < this.images.length) {
       return this.images[this.currentIndex].url || this.images[this.currentIndex].src || this.images[this.currentIndex];
     }
@@ -325,7 +328,13 @@ export class VisorComponent implements OnInit, OnDestroy {
 
   updateProjectedImage(): void {
     if (this.isSupervisor) {
-      this.cdr.detectChanges();
+      const mesaId = this.mesaIdForPairing || this.mesaState?.id;
+      if (!mesaId) return;
+      this.http.post(`/api/mesas/${mesaId}/set_index/`, { index: this.currentIndex }, { headers: this.getUserAuthHeaders() })
+        .subscribe({
+          next: () => this.cdr.detectChanges(),
+          error: (err) => console.error('[Visor] Error syncing index (supervisor):', err)
+        });
       return;
     }
 
@@ -478,6 +487,9 @@ export class VisorComponent implements OnInit, OnDestroy {
       .subscribe((state: MesaState | null) => {
         if (state) {
           this.mesaState = state;
+          if (typeof state.current_image_index === 'number') {
+            this.currentIndex = state.current_image_index;
+          }
           if (state.nombre) {
             this.titleService.setTitle(`Visor - ${state.nombre}`);
           }

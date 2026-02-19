@@ -398,6 +398,24 @@ class MesaViewSet(viewsets.ModelViewSet):
             'message': 'Calibration saved successfully'
         })
 
+    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
+    def set_index(self, request, pk=None):
+        """
+        Set current_image_index for a mesa from supervisor/visor context.
+        Triggers mesa update timestamp so device SSE picks up the change.
+        """
+        mesa = self.get_object()
+        index = request.data.get('index')
+        if index is None:
+            return Response({'detail': 'Index required'}, status=400)
+        try:
+            mesa.current_image_index = int(index)
+        except (TypeError, ValueError):
+            return Response({'detail': 'Index must be an integer'}, status=400)
+
+        mesa.save(update_fields=['current_image_index', 'ultima_actualizacion'])
+        return Response({'status': 'ok', 'index': mesa.current_image_index})
+
 
 class ModuloQueueViewSet(viewsets.ModelViewSet):
     """
