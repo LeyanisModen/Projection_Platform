@@ -1,7 +1,7 @@
 import { Component, ElementRef, inject, PLATFORM_ID, Renderer2, ViewChild, HostListener, Input, Output, EventEmitter, OnChanges, SimpleChanges, AfterViewInit } from '@angular/core';
 import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
 import fixPerspective from './css3-perspective';
 
 interface Submodule {
@@ -189,10 +189,7 @@ export class Mapper implements OnChanges {
 
   // Apply calibration received from server
   private applyCalibrationFromServer(calibration: any): void {
-    console.log('[Mapper] applyCalibrationFromServer called with:', calibration);
-
     if (!calibration?.corners || !this.markers?.length) {
-      console.log('[Mapper] BAILING: no corners or no markers');
       return;
     }
 
@@ -204,7 +201,6 @@ export class Mapper implements OnChanges {
 
     // Auto-scale if resolution differs significantly (>5px difference)
     if (savedWidth && savedHeight && (Math.abs(savedWidth - currentWidth) > 5 || Math.abs(savedHeight - currentHeight) > 5)) {
-      console.log(`[Mapper] Resolution mismatch. Saved: ${savedWidth}x${savedHeight}, Current: ${currentWidth}x${currentHeight}. Scaling...`);
       const scaleX = currentWidth / savedWidth;
       const scaleY = currentHeight / savedHeight;
 
@@ -225,7 +221,6 @@ export class Mapper implements OnChanges {
     });
 
     this.corners = finalCorners;
-    console.log('[Mapper] corners set to:', this.corners);
 
     // Update marker positions on screen
     if (isPlatformBrowser(this.platformId) && this.markers.length === 4) {
@@ -241,12 +236,7 @@ export class Mapper implements OnChanges {
         marker.nativeElement.style.top = cornerPositions[idx].y + 'px';
       });
 
-      // Recalculate perspective transform
-      console.log('[Mapper] calling update()');
       this.update();
-      console.log('[Mapper] update() completed');
-    } else {
-      console.log('[Mapper] SKIPPED update: not browser or markers != 4');
     }
   }
 
@@ -267,9 +257,15 @@ export class Mapper implements OnChanges {
       timestamp: new Date().toISOString()
     };
 
+    const token = isPlatformBrowser(this.platformId) ? localStorage.getItem('auth_token') : null;
+    let headers = new HttpHeaders();
+    if (token) {
+      headers = headers.set('Authorization', `Token ${token}`);
+    }
+
     this.http.post(`/api/mesas/${this.mesaId}/calibration/`, {
       calibration_json: calibrationData
-    }).subscribe({
+    }, { headers }).subscribe({
       next: (response: any) => {
         this.isSaving = false;
         this.saveMessage = '✓ Guardado';
@@ -532,17 +528,14 @@ export class Mapper implements OnChanges {
 
     // Check if dimensions are valid
     if (w === 0 || h === 0) {
-      console.log('[Mapper] update() - INVALID dimensions w=', w, 'h=', h);
       // Try using screen dimensions as fallback
       w = this.screenWidth || window.innerWidth;
       h = this.screenHeight || window.innerHeight;
-      console.log('[Mapper] update() - using fallback dimensions w=', w, 'h=', h);
     }
 
     const from = [0, 0, w, 0, 0, h, w, h];
     const to = this.corners;
 
-    console.log('[Mapper] update() - transform2d from:', from, 'to:', to);
     this.transform2d(from, to);
 
     for (var i = 0; i != 8; i += 2) {
@@ -863,25 +856,11 @@ export class Mapper implements OnChanges {
       e.preventDefault();
       if (this.currentCornerArrow) {
         this.moveArrows('l');
-      } else {
-        if (this.imgIndex > 0) {
-          this.imgIndex--;
-        }
-        this.nextImage = this.images[this.imgIndex];
-        this.changeImage(this.nextImage);
-        console.log("Showing image: " + this.nextImage);
       }
     } else if (e.key === "ArrowRight") {
       e.preventDefault();
       if (this.currentCornerArrow) {
         this.moveArrows('r');
-      } else {
-        if (this.images.length - 1 > this.imgIndex) {
-          this.imgIndex++;
-        }
-        this.nextImage = this.images[this.imgIndex];
-        this.changeImage(this.nextImage);
-        console.log("Showing image: " + this.nextImage);
       }
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
@@ -897,7 +876,6 @@ export class Mapper implements OnChanges {
       this.route.queryParams.subscribe((params: any) => {
         const tableId = params['tableId'];
         if (tableId && this.mockTableData[tableId]) {
-          console.log("Loading data for table: " + tableId);
           const tableData = this.mockTableData[tableId];
           if (tableData.submodules.length > 0) {
             const firstSubmodule = tableData.submodules[0];
@@ -922,10 +900,8 @@ export class Mapper implements OnChanges {
     if (!isPlatformBrowser(this.platformId)) {
       return;
     }
-    console.log("ngAfterViewInit START")
     var stream = ""
     var initialState = { targetCorners: [0, 0, this.currentScreenWidth, 0, 0, this.currentScreenHeight, this.currentScreenWidth, this.currentScreenHeight], sourceCorners: [] }
-    console.log(initialState)
     this.markers.push(this.markertl, this.markertr, this.markerbl, this.markerbr)
     if (this.nextImage == "") {
       this.currentStream = stream;
@@ -937,7 +913,6 @@ export class Mapper implements OnChanges {
     // Priority 1: Use server calibration if available
     if (this.calibrationJson?.corners) {
       initialTargetCorners = this.calibrationJson.corners;
-      console.log("Using server calibration", initialTargetCorners);
     }
     // Priority 2: Fallback to localStorage
     else if (isPlatformBrowser(this.platformId)) {
@@ -945,7 +920,6 @@ export class Mapper implements OnChanges {
       if (savedCorners) {
         try {
           initialTargetCorners = JSON.parse(savedCorners);
-          console.log("Loaded calibration from LocalStorage", initialTargetCorners);
         } catch (e) {
           console.error("Error parsing saved calibration", e);
         }
@@ -966,8 +940,6 @@ export class Mapper implements OnChanges {
         initialSourceCorners = initialState.sourceCorners;
       }
     }
-
-    console.log(initialTargetCorners)
 
     // Only set src if we have an actual image to display
     // This prevents the browser from rendering a black/empty image box
@@ -999,7 +971,6 @@ export class Mapper implements OnChanges {
     // Handle background tab throttling: force update when tab becomes visible
     this.document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible' && this.corners.length === 8) {
-        console.log('[Mapper] Tab became visible, forcing update');
         this.update();
       }
     });
