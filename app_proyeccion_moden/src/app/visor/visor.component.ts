@@ -247,6 +247,7 @@ export class VisorComponent implements OnInit, OnDestroy {
 
   get projectedImage(): string | null {
     if (this.currentIndex === -1) return '/assets/calibration_grid.jpg';
+    if (this.currentIndex === -2) return '/assets/calibration_grid_with_x.jpg';
     if (this.images.length > 0 && this.currentIndex >= 0 && this.currentIndex < this.images.length) {
       return this.images[this.currentIndex].url || this.images[this.currentIndex].src || this.images[this.currentIndex];
     }
@@ -254,11 +255,11 @@ export class VisorComponent implements OnInit, OnDestroy {
   }
 
   get showOverlay(): boolean {
-    return !!this.activeItem;
+    return !!this.activeItem && this.currentIndex >= 0;
   }
 
   get isCalibrationActive(): boolean {
-    return this.isSupervisor && this.currentIndex === -1;
+    return this.isSupervisor && this.currentIndex < 0;
   }
 
   @HostListener('window:keydown', ['$event'])
@@ -266,30 +267,39 @@ export class VisorComponent implements OnInit, OnDestroy {
     if (this.mode !== 'PROJECTION') return;
     const key = event.key.toLowerCase();
     if (key === 'c') {
-      this.toggleCalibration();
+      this.toggleCalibration(-1);
+    } else if (key === 'g') {
+      this.toggleCalibration(-2);
     } else if (key === 'arrowright') {
-      // Don't navigate if in calibration mode (index -1)
-      if (this.currentIndex !== -1) {
+      // Don't navigate if in calibration mode (index < 0)
+      if (this.currentIndex >= 0) {
         this.nextImage();
       }
     } else if (key === 'arrowleft') {
-      if (this.currentIndex !== -1) {
+      if (this.currentIndex >= 0) {
         this.prevImage();
       }
     }
   }
 
-  toggleCalibration(): void {
-    if (this.currentIndex !== -1) {
+  toggleCalibration(targetIndex: number): void {
+    if (this.currentIndex >= 0) {
+      // Enter calibration from normal mode
       this.previousIndex = this.currentIndex;
-      this.currentIndex = -1;
-    } else {
+      this.currentIndex = targetIndex;
+    } else if (this.currentIndex === targetIndex) {
+      // Toggle off if already in this specific calibration mode
       this.currentIndex = this.previousIndex;
+    } else {
+      // Switch between calibration modes (e.g. -1 to -2)
+      this.currentIndex = targetIndex;
     }
     this.updateProjectedImage();
   }
 
   nextImage(): void {
+    if (this.currentIndex < 0) return;
+
     if (this.currentIndex < this.images.length - 1) {
       this.currentIndex++;
       this.updateProjectedImage();
@@ -299,6 +309,8 @@ export class VisorComponent implements OnInit, OnDestroy {
   }
 
   prevImage(): void {
+    if (this.currentIndex < 0) return;
+
     if (this.currentIndex > 0) {
       this.currentIndex--;
       this.updateProjectedImage();
