@@ -630,11 +630,12 @@ export class Mapper implements OnChanges {
     }, 150); // 150ms debounce
   }
 
-  // Throttle for real-time sync during drag (sends every 100ms)
+  // Throttle for real-time sync during drag.
+  // 250ms keeps calibration smooth while reducing backend pressure.
   private lastThrottleSave: number = 0;
   private throttledSaveToServer() {
     const now = Date.now();
-    if (now - this.lastThrottleSave >= 100) {
+    if (now - this.lastThrottleSave >= 250) {
       this.lastThrottleSave = now;
       this.saveCalibrationToServer();
     }

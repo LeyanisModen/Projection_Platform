@@ -385,7 +385,7 @@ export class VisorComponent implements OnInit, OnDestroy {
   startStatePolling(): void {
     this.statePollSub?.unsubscribe();
     this.itemPollSub?.unsubscribe();
-    this.statePollSub = interval(this.isSupervisor ? 1000 : 2000).pipe(
+    this.statePollSub = interval(1000).pipe(
       startWith(0),
       exhaustMap(() => {
         if (this.isSupervisor) {
@@ -427,11 +427,11 @@ export class VisorComponent implements OnInit, OnDestroy {
       this.cdr.detectChanges();
     });
 
-    if (!this.isSupervisor) {
+    if (!this.isSupervisor && environment.enableDeviceSSE) {
       this.connectToSSE();
     }
 
-    const itemPollMs = this.isSupervisor ? 2000 : 5000;
+    const itemPollMs = 2000;
     this.itemPollSub = interval(itemPollMs).pipe(
       startWith(0),
       exhaustMap(() => {

@@ -1,1 +1,1 @@
-web: python manage.py collectstatic --noinput && python manage.py migrate && gunicorn proyeccion_moden.wsgi --log-file -
+web: python manage.py collectstatic --noinput && python manage.py migrate && gunicorn proyeccion_moden.wsgi --workers=3 --threads=4 --timeout=120 --keep-alive=5 --log-file -
