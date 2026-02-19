@@ -449,7 +449,6 @@ export class Dashboard implements OnInit, OnDestroy {
           // Sort: Incomplete first, Complete last
           // Force new array reference
           this.modulos = [...this.sortModulos(data)];
-          console.log('[Dashboard] Loaded modules:', this.modulos.map(m => `${m.nombre}:${this.isModuloComplete(m)}`));
           this.loadingModulos = false;
           this.cdr.detectChanges();
         },
