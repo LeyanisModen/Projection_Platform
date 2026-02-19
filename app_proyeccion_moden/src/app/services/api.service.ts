@@ -177,6 +177,15 @@ export class ApiService {
         return headers;
     }
 
+    private getAuthHeaders(): HttpHeaders {
+        const token = localStorage.getItem('auth_token');
+        let headers = new HttpHeaders();
+        if (token) {
+            headers = headers.set('Authorization', `Token ${token}`);
+        }
+        return headers;
+    }
+
     // =========================================================================
     // PROYECTOS (paginated)
     // =========================================================================
@@ -220,7 +229,9 @@ export class ApiService {
         stats: { plantas: number; modulos: number; imagenes: number; errors: string[] };
     }> {
         // Don't use Content-Type header - let browser set it with boundary for multipart
-        return this.http.post<any>(`${this.baseUrl}/proyectos/${proyectoId}/import-structure/`, formData);
+        return this.http.post<any>(`${this.baseUrl}/proyectos/${proyectoId}/import-structure/`, formData, {
+            headers: this.getAuthHeaders()
+        });
     }
 
     // =========================================================================
@@ -325,7 +336,7 @@ export class ApiService {
         return this.http.post<{ status: string }>(`${this.baseUrl}/device/pair/`, {
             mesa_id: mesaId,
             pairing_code: pairingCode
-        });
+        }, { headers: this.getHeaders() });
     }
 
     /**
@@ -334,7 +345,7 @@ export class ApiService {
     unbindDevice(mesaId: number): Observable<{ status: string }> {
         return this.http.post<{ status: string }>(`${this.baseUrl}/device/unbind/`, {
             mesa_id: mesaId
-        });
+        }, { headers: this.getHeaders() });
     }
 
     // =========================================================================
