@@ -168,7 +168,8 @@ class MesaSerializer(serializers.HyperlinkedModelSerializer):
         fields = [
             "id", "url", "nombre", "usuario",
             "imagen_actual", "ultima_actualizacion", "imagen",
-            "locked", "blackout", "last_seen", "is_linked"
+            "locked", "blackout", "last_seen", "is_linked",
+            "mapper_enabled", "current_image_index", "calibration_json"
         ]
 
     def get_is_linked(self, obj):
