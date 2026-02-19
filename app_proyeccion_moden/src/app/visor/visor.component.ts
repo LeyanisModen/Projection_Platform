@@ -65,6 +65,7 @@ export class VisorComponent implements OnInit, OnDestroy {
 
   private apiUrl = `${environment.apiUrl}/device/`;
   private isBrowser: boolean;
+  private assetBase = '/';
 
   // Helper to get token storage key
   private getTokenKey(): string {
@@ -84,6 +85,9 @@ export class VisorComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     if (!this.isBrowser) return;
+
+    const baseHref = (document.querySelector('base')?.getAttribute('href') || '/').trim();
+    this.assetBase = baseHref.endsWith('/') ? baseHref : `${baseHref}/`;
 
     const idParam = this.route.snapshot.paramMap.get('id');
     if (idParam) {
@@ -255,8 +259,8 @@ export class VisorComponent implements OnInit, OnDestroy {
   }
 
   get projectedImage(): string | null {
-    if (this.currentIndex === -1) return 'assets/calibration_grid.jpg';
-    if (this.currentIndex === -2) return 'assets/calibration_grid_with_x.jpg';
+    if (this.currentIndex === -1) return `${this.assetBase}assets/calibration_grid.jpg`;
+    if (this.currentIndex === -2) return `${this.assetBase}assets/calibration_grid_with_x.jpg`;
     if (this.images.length > 0 && this.currentIndex >= 0 && this.currentIndex < this.images.length) {
       return this.images[this.currentIndex].url || this.images[this.currentIndex].src || this.images[this.currentIndex];
     }
@@ -379,10 +383,51 @@ export class VisorComponent implements OnInit, OnDestroy {
   }
 
   startStatePolling(): void {
-    if (this.isSupervisor) {
-      this.fetchMesaStateFromApi();
-    } else {
-      this.fetchMesaState();
+    this.statePollSub?.unsubscribe();
+    this.itemPollSub?.unsubscribe();
+    this.statePollSub = interval(this.isSupervisor ? 1000 : 2000).pipe(
+      startWith(0),
+      exhaustMap(() => {
+        if (this.isSupervisor) {
+          const id = this.mesaIdForPairing || this.mesaState?.id;
+          if (!id) return of(null);
+          return this.http.get<MesaState>(`/api/mesas/${id}/`, { headers: this.getUserAuthHeaders() }).pipe(
+            catchError(err => {
+              if (err.status === 401) {
+                this.errorMessage = 'Sesion expirada. Vuelve a iniciar sesion en el dashboard.';
+                this.mode = 'ERROR';
+                this.cdr.detectChanges();
+              }
+              return of(null);
+            })
+          );
+        }
+
+        const mesaId = this.mesaIdForPairing || this.mesaState?.id;
+        const params: Record<string, string> = {};
+        if (mesaId) {
+          params['mesa_id'] = mesaId.toString();
+        }
+        return this.http.get<MesaState>(`${this.apiUrl}state/`, { headers: this.getAuthHeaders(), params }).pipe(
+          catchError(err => {
+            if (err.status === 401) this.handleUnauthorized('StatePolling');
+            return of(null);
+          })
+        );
+      })
+    ).subscribe((state: MesaState | null) => {
+      if (!state) return;
+      this.mesaState = state;
+      if (state.nombre) {
+        this.titleService.setTitle(`Visor - ${state.nombre}`);
+      }
+      if (typeof state.current_image_index === 'number') {
+        this.currentIndex = state.current_image_index;
+      }
+      this.cdr.detectChanges();
+    });
+
+    if (!this.isSupervisor) {
       this.connectToSSE();
     }
 
@@ -439,7 +484,7 @@ export class VisorComponent implements OnInit, OnDestroy {
       this.activeItem = item;
       if (Array.isArray(item.images)) {
         this.images = item.images;
-        if (this.currentIndex >= this.images.length || this.currentIndex < 0) {
+        if (this.currentIndex >= 0 && this.currentIndex >= this.images.length) {
           this.currentIndex = 0;
         }
         this.loadingImages = false;
@@ -457,8 +502,8 @@ export class VisorComponent implements OnInit, OnDestroy {
     this.http.get<any[]>(url, { headers: this.getUserAuthHeaders() }).subscribe({
       next: (imgs) => {
         this.images = Array.isArray(imgs) ? imgs : [];
-        // Only reset index if we are NOT in calibration mode
-        if (this.currentIndex !== -1) {
+        // Keep calibration mode (-1/-2) while images are refreshed.
+        if (this.currentIndex >= 0) {
           this.currentIndex = 0;
         }
         this.loadingImages = false;
@@ -469,60 +514,6 @@ export class VisorComponent implements OnInit, OnDestroy {
         this.loadingImages = false;
       }
     });
-  }
-
-  fetchMesaStateFromApi(): void {
-    const mesaId = this.mesaIdForPairing || this.mesaState?.id;
-    if (!mesaId) return;
-
-    this.http.get<MesaState>(`/api/mesas/${mesaId}/`, { headers: this.getUserAuthHeaders() })
-      .pipe(catchError(err => {
-        if (err.status === 401) {
-          this.errorMessage = 'Sesion expirada. Vuelve a iniciar sesion en el dashboard.';
-          this.mode = 'ERROR';
-          this.cdr.detectChanges();
-        }
-        return of(null);
-      }))
-      .subscribe((state: MesaState | null) => {
-        if (state) {
-          this.mesaState = state;
-          if (typeof state.current_image_index === 'number') {
-            this.currentIndex = state.current_image_index;
-          }
-          if (state.nombre) {
-            this.titleService.setTitle(`Visor - ${state.nombre}`);
-          }
-          this.cdr.detectChanges();
-        }
-      });
-  }
-
-  fetchMesaState(): void {
-    const mesaId = this.mesaIdForPairing || this.mesaState?.id;
-    const params: Record<string, string> = {};
-    if (mesaId) {
-      params['mesa_id'] = mesaId.toString();
-    }
-    const options = { headers: this.getAuthHeaders(), params };
-
-    this.http.get<MesaState>(`${this.apiUrl}state/`, options)
-      .pipe(catchError(err => {
-        if (err.status === 401) this.handleUnauthorized('StatePolling');
-        return of(null);
-      }))
-      .subscribe((state: MesaState | null) => {
-        if (state) {
-          this.mesaState = state;
-          if (state.nombre) {
-            this.titleService.setTitle(`Visor - ${state.nombre}`);
-          }
-          if (state.current_image_index !== undefined && this.currentIndex !== -1) {
-            this.currentIndex = state.current_image_index;
-          }
-          if (!this.eventSource) this.connectToSSE();
-        }
-      });
   }
 
   startHeartbeat(): void {
