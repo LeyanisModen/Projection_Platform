@@ -14,11 +14,10 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
     telefono = serializers.CharField(source='profile.telefono', required=False, allow_blank=True, allow_null=True)
     direccion = serializers.CharField(source='profile.direccion', required=False, allow_blank=True, allow_null=True)
     coordinador = serializers.CharField(source='profile.coordinador', required=False, allow_blank=True, allow_null=True)
-    password_texto_plano = serializers.CharField(source='profile.password_texto_plano', read_only=True, allow_null=True)
 
     class Meta:
         model = User
-        fields = ["id", "url", "username", "email", "password", "groups", "first_name", "last_name", "telefono", "direccion", "coordinador", "password_texto_plano"]
+        fields = ["id", "url", "username", "email", "password", "groups", "first_name", "last_name", "telefono", "direccion", "coordinador"]
 
 
     def create(self, validated_data):
@@ -30,9 +29,6 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
 
         user = super().create(validated_data)
         
-        # Save password in plain text if provided
-        plain_password_to_save = password if password else ''
-
         if password:
             user.set_password(password)
             user.save()
@@ -42,8 +38,7 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
             user=user, 
             telefono=telefono or '',
             direccion=direccion or '',
-            coordinador=coordinador or '',
-            password_texto_plano=plain_password_to_save
+            coordinador=coordinador or ''
         )
 
         return user
@@ -70,7 +65,6 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
         if password:
             user.set_password(password)
             user.save()
-            profile_defaults['password_texto_plano'] = password
             
         if profile_defaults:
             UserProfile.objects.update_or_create(
@@ -139,7 +133,7 @@ class ModuloSerializer(serializers.ModelSerializer):
     class Meta:
         model = Modulo
         fields = [
-            "id", "url", "nombre", "planta", "proyecto",
+            "id", "nombre", "planta", "proyecto",
             "inferior_hecho", "superior_hecho", "estado",
             "cerrado", "cerrado_at", "cerrado_by"
         ]

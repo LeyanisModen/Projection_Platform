@@ -18,6 +18,11 @@ from rest_framework.authtoken.models import Token
 
 from rest_framework import renderers
 
+
+def _is_admin(user):
+    return bool(user and (user.is_staff or user.is_superuser))
+
+
 class ServerSentEventRenderer(renderers.BaseRenderer):
     media_type = 'text/event-stream'
     format = 'txt'
@@ -47,10 +52,12 @@ class UserViewSet(viewsets.ModelViewSet):
     """
     # queryset = User.objects.all().order_by("-date_joined")
     serializer_class = UserSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
         queryset = User.objects.all().order_by("-date_joined")
+        if not _is_admin(self.request.user):
+            return queryset.filter(id=self.request.user.id)
         if self.action == 'list':
             return queryset.filter(is_superuser=False)
         return queryset
@@ -62,7 +69,7 @@ class ProyectoViewSet(viewsets.ModelViewSet):
     """
     queryset = Proyecto.objects.select_related('usuario').all().order_by("nombre")
     serializer_class = ProyectoSerializer
-    permission_classes = [permissions.AllowAny] # We might want to restrict this later, but for now we filter in queryset
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
         """
@@ -74,19 +81,15 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         user = self.request.user
         if user.is_staff or user.is_superuser:
             return Proyecto.objects.all().order_by("nombre")
-        elif user.is_authenticated:
+        if user.is_authenticated:
             return Proyecto.objects.filter(usuario=user).order_by("nombre")
-        else:
-            # During migration/dev, we might want to return all or none. 
-            # For strict security, return none. 
-            # BUT: Check if frontend sends token yet. If not, this might break current view.
-            # Strategy: If not authenticated, return ALL for now to maintain backward compatibility until Frontend is ready.
-            # WARNING: This means unauthenticated users see everything. This is a temporary migration step.
-            # Once frontend sends token, we can change this to `return Proyecto.objects.none()`
-            return Proyecto.objects.all().order_by("nombre")
+        return Proyecto.objects.none()
 
     def perform_create(self, serializer):
         """Assign current user as project owner if not provided."""
+        if not _is_admin(self.request.user):
+            serializer.save(usuario=self.request.user)
+            return
         if 'usuario' not in serializer.validated_data:
             serializer.save(usuario=self.request.user)
         else:
@@ -245,10 +248,12 @@ class PlantaViewSet(viewsets.ModelViewSet):
     """
     queryset = Planta.objects.annotate(modulos_count=Count('modulos')).order_by('orden', 'nombre')
     serializer_class = PlantaSerializer
-    permission_classes = [permissions.AllowAny]  # For demo, adjust later
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
         queryset = Planta.objects.annotate(modulos_count=Count('modulos')).order_by('orden', 'nombre')
+        if not _is_admin(self.request.user):
+            queryset = queryset.filter(proyecto__usuario=self.request.user)
         proyecto_id = self.request.query_params.get('proyecto', None)
         if proyecto_id is not None:
             queryset = queryset.filter(proyecto_id=proyecto_id)
@@ -261,10 +266,12 @@ class ModuloViewSet(viewsets.ModelViewSet):
     """
     queryset = Modulo.objects.all().order_by("id")
     serializer_class = ModuloSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
         queryset = Modulo.objects.all().order_by("id")
+        if not _is_admin(self.request.user):
+            queryset = queryset.filter(proyecto__usuario=self.request.user)
         proyecto_id = self.request.query_params.get('proyecto', None)
         planta_id = self.request.query_params.get('planta', None)
         if planta_id is not None:
@@ -305,11 +312,13 @@ class ImagenViewSet(viewsets.ModelViewSet):
     """
     queryset = Imagen.objects.select_related('modulo').all().order_by("id")
     serializer_class = ImagenSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
     pagination_class = None
 
     def get_queryset(self):
         queryset = Imagen.objects.select_related('modulo').filter(activo=True).order_by("modulo", "fase", "orden")
+        if not _is_admin(self.request.user):
+            queryset = queryset.filter(modulo__proyecto__usuario=self.request.user)
         modulo_id = self.request.query_params.get('modulo', None)
         fase = self.request.query_params.get('fase', None)
         if modulo_id is not None:
@@ -325,10 +334,12 @@ class MesaViewSet(viewsets.ModelViewSet):
     """
     queryset = Mesa.objects.select_related('imagen_actual', 'imagen_actual__modulo').all().order_by("nombre")
     serializer_class = MesaSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
         queryset = Mesa.objects.select_related('imagen_actual', 'imagen_actual__modulo').all().order_by("nombre")
+        if not _is_admin(self.request.user):
+            queryset = queryset.filter(usuario=self.request.user)
         usuario_id = self.request.query_params.get('usuario', None)
         if usuario_id is not None:
             queryset = queryset.filter(usuario_id=usuario_id)
@@ -353,7 +364,7 @@ class MesaViewSet(viewsets.ModelViewSet):
             return Response(serializer.data)
         return Response({'detail': 'No item currently showing'}, status=404)
 
-    @action(detail=True, methods=['post', 'get'], permission_classes=[permissions.AllowAny])
+    @action(detail=True, methods=['post', 'get'], permission_classes=[permissions.IsAuthenticated])
     def calibration(self, request, pk=None):
         """
         GET: Retrieve current calibration JSON for a mesa.
@@ -394,10 +405,12 @@ class ModuloQueueViewSet(viewsets.ModelViewSet):
     """
     queryset = ModuloQueue.objects.all()
     serializer_class = ModuloQueueSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
         queryset = ModuloQueue.objects.all()
+        if not _is_admin(self.request.user):
+            queryset = queryset.filter(proyecto__usuario=self.request.user)
         proyecto_id = self.request.query_params.get('proyecto', None)
         if proyecto_id is not None:
             queryset = queryset.filter(proyecto_id=proyecto_id)
@@ -410,10 +423,12 @@ class ModuloQueueItemViewSet(viewsets.ModelViewSet):
     """
     queryset = ModuloQueueItem.objects.select_related('modulo', 'modulo__planta').all().order_by('queue', 'position')
     serializer_class = ModuloQueueItemSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
         queryset = ModuloQueueItem.objects.select_related('modulo', 'modulo__planta').all().order_by('position')
+        if not _is_admin(self.request.user):
+            queryset = queryset.filter(queue__proyecto__usuario=self.request.user)
         queue_id = self.request.query_params.get('queue', None)
         proyecto_id = self.request.query_params.get('proyecto', None)
         if queue_id is not None:
@@ -422,6 +437,13 @@ class ModuloQueueItemViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(queue__proyecto_id=proyecto_id)
         return queryset
 
+    def perform_create(self, serializer):
+        queue = serializer.validated_data.get('queue')
+        if queue and (not _is_admin(self.request.user)) and queue.proyecto.usuario_id != self.request.user.id:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('No puedes crear items en colas de otro usuario')
+        serializer.save()
+
     @action(detail=False, methods=['post'])
     def reorder(self, request):
         """Reorder items in the queue. Expects: {items: [{id: X, position: Y}, ...]}"""
@@ -429,6 +451,8 @@ class ModuloQueueItemViewSet(viewsets.ModelViewSet):
         for item_data in items_data:
             try:
                 item = ModuloQueueItem.objects.get(id=item_data['id'])
+                if not _is_admin(request.user) and item.queue.proyecto.usuario_id != request.user.id:
+                    continue
                 item.position = item_data['position']
                 item.save(update_fields=['position'])
             except ModuloQueueItem.DoesNotExist:
@@ -535,7 +559,8 @@ class DeviceViewSet(viewsets.ViewSet):
                 token = mesa.last_error.split(":", 1)[1]
                 mesa.last_error = None
                 mesa.pairing_code = None
-                mesa.save(update_fields=['last_error', 'pairing_code'])
+                mesa.pairing_code_expires_at = None
+                mesa.save(update_fields=['last_error', 'pairing_code', 'pairing_code_expires_at'])
                 return Response({'status': 'PAIRED', 'device_token': token, 'mesa_id': mesa.id})
                 
             return Response({'status': 'WAITING', 'mode': 'mesa'})
@@ -566,7 +591,7 @@ class DeviceViewSet(viewsets.ViewSet):
         
         return Response({'status': 'WAITING', 'mode': 'session'})
 
-    @action(detail=False, methods=['post'])
+    @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated])
     def pair(self, request):
         """
         Dashboard confirms pairing for a mesa and code.
@@ -589,14 +614,22 @@ class DeviceViewSet(viewsets.ViewSet):
         except Mesa.DoesNotExist:
             return Response({'detail': 'Mesa not found'}, status=404)
         
+        # Ensure user can pair this mesa.
+        if not _is_admin(request.user) and mesa.usuario_id != request.user.id:
+            return Response({'detail': 'Forbidden'}, status=403)
+
         # Check if code matches Mesa (Option A)
         if mesa.pairing_code == code:
-            # Proceed with direct pairing
-            pass
+            from django.utils import timezone
+            if not mesa.pairing_code_expires_at or mesa.pairing_code_expires_at < timezone.now():
+                return Response({'detail': 'Pairing code expired'}, status=400)
         else:
             # Check if code matches a Session (Option B)
             try:
                 session = PairingSession.objects.get(pairing_code=code)
+                from django.utils import timezone
+                if session.expires_at < timezone.now():
+                    return Response({'detail': 'Pairing code expired'}, status=400)
                 # Link session to this mesa
                 session.mesa = mesa
             except PairingSession.DoesNotExist:
@@ -610,7 +643,9 @@ class DeviceViewSet(viewsets.ViewSet):
         mesa.device_token_hash = token_hash
         # Store raw token temporarily for retrieval by device (via status endpoint)
         mesa.last_error = f"PENDING_TOKEN:{raw_token}"
-        mesa.save(update_fields=['device_token_hash', 'last_error'])
+        mesa.pairing_code = None
+        mesa.pairing_code_expires_at = None
+        mesa.save(update_fields=['device_token_hash', 'last_error', 'pairing_code', 'pairing_code_expires_at'])
         
         # If using session, save token hash there too so status check knows it's done
         if 'session' in locals() and session:
@@ -619,7 +654,7 @@ class DeviceViewSet(viewsets.ViewSet):
         
         return Response({'status': 'ok'})
 
-    @action(detail=False, methods=['post'])
+    @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated])
     def unbind(self, request):
         """
         Unbind a device from a Mesa. Called from Dashboard.
@@ -633,6 +668,9 @@ class DeviceViewSet(viewsets.ViewSet):
             mesa = Mesa.objects.get(id=mesa_id)
         except Mesa.DoesNotExist:
             return Response({'detail': 'Mesa not found'}, status=404)
+
+        if not _is_admin(request.user) and mesa.usuario_id != request.user.id:
+            return Response({'detail': 'Forbidden'}, status=403)
         
         if not mesa.device_token_hash:
             return Response({'detail': 'Mesa has no linked device'}, status=400)
@@ -690,7 +728,10 @@ class DeviceViewSet(viewsets.ViewSet):
             
         index = request.data.get('index')
         if index is not None:
-            mesa.current_image_index = int(index)
+            try:
+                mesa.current_image_index = int(index)
+            except (TypeError, ValueError):
+                return Response({'detail': 'Index must be an integer'}, status=400)
             mesa.save(update_fields=['current_image_index', 'ultima_actualizacion'])
             return Response({'status': 'ok', 'index': mesa.current_image_index})
         return Response({'detail': 'Index required'}, status=400)
@@ -746,8 +787,8 @@ class DeviceViewSet(viewsets.ViewSet):
                     yield ": keep-alive\n\n"
                     last_ping = now
 
-                # Check every 100ms
-                time.sleep(0.1)
+                # Check updates at a lower rate to reduce DB pressure
+                time.sleep(1.0)
 
         response = StreamingHttpResponse(event_stream(), content_type='text/event-stream')
         response['Cache-Control'] = 'no-cache'
@@ -764,7 +805,7 @@ class DeviceViewSet(viewsets.ViewSet):
         serializer = MesaStateSerializer(mesa)
         return Response(serializer.data)
         
-    @action(detail=False, methods=['post'])
+    @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated])
     def revoke(self, request):
         # Admin action (normally authenticated, for PoC maybe just open or requires Secret)
         # Let's assume simple Mesa ID + Secret Header
@@ -772,11 +813,13 @@ class DeviceViewSet(viewsets.ViewSet):
         # If called from Device? A device shouldn't revoke itself easily?
         # User request: "POST /api/device/revoke ... Protect with X-Setup-Key"
         
+        import os
+
         setup_key = request.headers.get('X-Setup-Key')
-        if setup_key != 'INAK_ROCKS': # Hardcoded PoC key
-             # Also allow if user is Admin
-             if not (request.user and request.user.is_staff):
-                 return Response({'detail': 'Forbidden'}, status=403)
+        expected_setup_key = os.environ.get('DEVICE_SETUP_KEY')
+        has_valid_setup_key = bool(expected_setup_key and setup_key == expected_setup_key)
+        if not has_valid_setup_key and not _is_admin(request.user):
+            return Response({'detail': 'Forbidden'}, status=403)
 
         mesa_id = request.data.get('mesa_id')
         if not mesa_id:
@@ -804,10 +847,6 @@ class DeviceViewSet(viewsets.ViewSet):
             token = request.query_params.get('token')
             
         if not token or token.lower() in ['undefined', 'null', '']:
-            # FALLBACK: If no token, check for mesa_id (Relaxed security for Visor/Supervisor)
-            mesa_id = request.data.get('mesa_id') or request.query_params.get('mesa_id')
-            if mesa_id:
-                return Mesa.objects.filter(id=mesa_id).first()
             return None
             
         token_hash = hashlib.sha256(token.encode()).hexdigest()
@@ -821,21 +860,26 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
     """
     queryset = MesaQueueItem.objects.select_related('mesa', 'modulo', 'imagen', 'modulo__planta', 'modulo__planta__proyecto').all().order_by('mesa', 'position')
     serializer_class = MesaQueueItemSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
         queryset = MesaQueueItem.objects.select_related('mesa', 'modulo', 'imagen', 'modulo__planta', 'modulo__planta__proyecto').all().order_by('position')
+        if not _is_admin(self.request.user):
+            queryset = queryset.filter(mesa__usuario=self.request.user)
         mesa_id = self.request.query_params.get('mesa', None)
         status_filter = self.request.query_params.get('status', None)
         if mesa_id is not None:
             queryset = queryset.filter(mesa_id=mesa_id)
         if status_filter is not None:
             queryset = queryset.filter(status=status_filter)
-        if status_filter is not None:
-            queryset = queryset.filter(status=status_filter)
         return queryset
 
     def perform_create(self, serializer):
+        mesa = serializer.validated_data.get('mesa')
+        if mesa and (not _is_admin(self.request.user)) and mesa.usuario_id != self.request.user.id:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('No puedes crear items en mesas de otro usuario')
+
         item = serializer.save()
         from api.models import MesaQueueStatus
         
@@ -911,6 +955,8 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
         for item_data in items_data:
             try:
                 item = MesaQueueItem.objects.get(id=item_data['id'])
+                if not _is_admin(request.user) and item.mesa.usuario_id != request.user.id:
+                    continue
                 item.position = item_data['position']
                 item.save(update_fields=['position'])
             except MesaQueueItem.DoesNotExist:
