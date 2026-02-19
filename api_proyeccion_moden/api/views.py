@@ -117,7 +117,7 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         proyecto = self.get_object()
         try:
             queue = proyecto.modulo_queue
-            items = queue.items.all().order_by('position')
+            items = queue.items.select_related('modulo', 'modulo__planta').all().order_by('position')
             serializer = ModuloQueueItemSerializer(items, many=True, context={'request': request})
             return Response(serializer.data)
         except ModuloQueue.DoesNotExist:
@@ -323,12 +323,12 @@ class MesaViewSet(viewsets.ModelViewSet):
     """
     API endpoint para gestionar mesas y asignación de imágenes.
     """
-    queryset = Mesa.objects.all().order_by("nombre")
+    queryset = Mesa.objects.select_related('imagen_actual', 'imagen_actual__modulo').all().order_by("nombre")
     serializer_class = MesaSerializer
     permission_classes = [permissions.AllowAny]
 
     def get_queryset(self):
-        queryset = Mesa.objects.all().order_by("nombre")
+        queryset = Mesa.objects.select_related('imagen_actual', 'imagen_actual__modulo').all().order_by("nombre")
         usuario_id = self.request.query_params.get('usuario', None)
         if usuario_id is not None:
             queryset = queryset.filter(usuario_id=usuario_id)
@@ -347,7 +347,7 @@ class MesaViewSet(viewsets.ModelViewSet):
         """Get the current item being shown on a desk."""
         mesa = self.get_object()
         from api.models import MesaQueueStatus
-        item = mesa.queue_items.filter(status=MesaQueueStatus.MOSTRANDO).first()
+        item = mesa.queue_items.select_related('modulo', 'imagen', 'mesa', 'modulo__planta', 'modulo__planta__proyecto').filter(status=MesaQueueStatus.MOSTRANDO).first()
         if item:
             serializer = MesaQueueItemSerializer(item, context={'request': request})
             return Response(serializer.data)
