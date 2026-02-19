@@ -796,6 +796,63 @@ class DeviceViewSet(viewsets.ViewSet):
         return response
 
     @action(detail=False, methods=['get'])
+    def current_item(self, request):
+        """
+        Device-friendly current item endpoint.
+        Returns current MOSTRANDO item plus preloaded image list for that modulo/fase.
+        """
+        mesa = self._authenticate_device(request)
+        if not mesa:
+            return Response({'detail': 'Unauthorized'}, status=401)
+
+        from api.models import MesaQueueStatus
+
+        item = mesa.queue_items.select_related(
+            'modulo', 'imagen', 'mesa', 'modulo__planta', 'modulo__planta__proyecto'
+        ).filter(status=MesaQueueStatus.MOSTRANDO).first()
+
+        if not item:
+            return Response(None)
+
+        item_data = MesaQueueItemSerializer(item, context={'request': request}).data
+        images = Imagen.objects.filter(
+            modulo_id=item.modulo_id,
+            fase=item.fase,
+            activo=True
+        ).order_by('orden')
+        item_data['images'] = ImagenSerializer(images, many=True, context={'request': request}).data
+        return Response(item_data)
+
+    @action(detail=False, methods=['post'])
+    def mark_done(self, request):
+        """
+        Mark current MOSTRANDO item as HECHO from player/device token
+        and auto-promote next EN_COLA item.
+        """
+        mesa = self._authenticate_device(request)
+        if not mesa:
+            return Response({'detail': 'Unauthorized'}, status=401)
+
+        from api.models import MesaQueueStatus
+
+        current_item = mesa.queue_items.filter(status=MesaQueueStatus.MOSTRANDO).first()
+        if not current_item:
+            return Response({'detail': 'No item currently showing'}, status=404)
+
+        current_item.marcar_hecho(user=None)
+
+        next_item = mesa.queue_items.filter(status=MesaQueueStatus.EN_COLA).order_by('position').first()
+        if next_item:
+            next_item.status = MesaQueueStatus.MOSTRANDO
+            next_item.save(update_fields=['status'])
+            mesa.imagen_actual = next_item.imagen
+        else:
+            mesa.imagen_actual = None
+        mesa.save(update_fields=['imagen_actual'])
+
+        return Response({'status': 'ok'})
+
+    @action(detail=False, methods=['get'])
     def state(self, request):
         mesa = self._authenticate_device(request)
         if not mesa:
@@ -925,7 +982,27 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
     def marcar_hecho(self, request, pk=None):
         """Mark a work item as done."""
         item = self.get_object()
+        from api.models import MesaQueueStatus
+
+        previous_status = item.status
+        mesa = item.mesa
         item.marcar_hecho(user=request.user)
+
+        # Auto-advance only if the item was currently showing.
+        if previous_status == MesaQueueStatus.MOSTRANDO:
+            next_item = MesaQueueItem.objects.filter(
+                mesa=mesa,
+                status=MesaQueueStatus.EN_COLA
+            ).order_by('position').first()
+
+            if next_item:
+                next_item.status = MesaQueueStatus.MOSTRANDO
+                next_item.save(update_fields=['status'])
+                mesa.imagen_actual = next_item.imagen
+            else:
+                mesa.imagen_actual = None
+            mesa.save(update_fields=['imagen_actual'])
+
         serializer = self.get_serializer(item)
         return Response(serializer.data)
 

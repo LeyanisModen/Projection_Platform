@@ -194,7 +194,7 @@ export class VisorComponent implements OnInit, OnDestroy {
   }
 
   private eventSource: EventSource | null = null;
-  private reconnectTimer: any = null;
+  private lastSseErrorLogAt = 0;
 
   connectToSSE(): void {
     if (this.isSupervisor) {
@@ -214,14 +214,12 @@ export class VisorComponent implements OnInit, OnDestroy {
       return;
     }
 
-    console.log('[Visor] Connecting to SSE:', url);
     this.eventSource = new EventSource(url);
 
     this.eventSource.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data);
         if (payload.type === 'calibration') {
-          console.log('[Visor] SSE Update received:', payload.data);
           if (this.mesaState) {
             this.mesaState = {
               ...this.mesaState,
@@ -243,15 +241,12 @@ export class VisorComponent implements OnInit, OnDestroy {
       }
     };
 
-    this.eventSource.onerror = (err) => {
-      console.error('[Visor] SSE Error:', err);
-      this.eventSource?.close();
-      this.eventSource = null;
-      if (!this.reconnectTimer) {
-        this.reconnectTimer = setTimeout(() => {
-          this.reconnectTimer = null;
-          this.connectToSSE();
-        }, 3000);
+    this.eventSource.onerror = () => {
+      const now = Date.now();
+      // EventSource reconnects automatically; keep logs throttled.
+      if (now - this.lastSseErrorLogAt > 30000) {
+        console.warn('[Visor] SSE disconnected/reconnecting...');
+        this.lastSseErrorLogAt = now;
       }
     };
   }
@@ -346,7 +341,22 @@ export class VisorComponent implements OnInit, OnDestroy {
 
   finishActiveItem(): void {
     if (!this.activeItem) return;
-    this.http.post(`/api/mesa-queue-items/${this.activeItem.id}/marcar_hecho/`, {}, { headers: this.getUserAuthHeaders() })
+    if (this.isSupervisor) {
+      this.http.post(`/api/mesa-queue-items/${this.activeItem.id}/marcar_hecho/`, {}, { headers: this.getUserAuthHeaders() })
+        .subscribe({
+          next: () => {
+            this.activeItem = null;
+            this.images = [];
+            this.currentIndex = 0;
+            this.cdr.detectChanges();
+            this.checkActiveItem();
+          },
+          error: (err) => console.error('[Visor] Error finishing item:', err)
+        });
+      return;
+    }
+
+    this.http.post(`${this.apiUrl}mark_done/`, {}, { headers: this.getAuthHeaders() })
       .subscribe({
         next: () => {
           this.activeItem = null;
@@ -355,7 +365,7 @@ export class VisorComponent implements OnInit, OnDestroy {
           this.cdr.detectChanges();
           this.checkActiveItem();
         },
-        error: (err) => console.error('[Visor] Error finishing item:', err)
+        error: (err) => console.error('[Visor] Error finishing item (device):', err)
       });
   }
 
@@ -367,23 +377,42 @@ export class VisorComponent implements OnInit, OnDestroy {
       this.connectToSSE();
     }
 
-    this.itemPollSub = interval(2000).pipe(
+    const itemPollMs = this.isSupervisor ? 2000 : 5000;
+    this.itemPollSub = interval(itemPollMs).pipe(
       startWith(0),
-      switchMap(() => {
-        const id = this.mesaIdForPairing || this.mesaState?.id;
-        if (!id) return of(null);
-        return this.http.get<any>(`/api/mesas/${id}/current_item/`, { headers: this.getUserAuthHeaders() }).pipe(
-          catchError(() => of(null))
+      exhaustMap(() => {
+        if (this.isSupervisor) {
+          const id = this.mesaIdForPairing || this.mesaState?.id;
+          if (!id) return of(null);
+          return this.http.get<any>(`/api/mesas/${id}/current_item/`, { headers: this.getUserAuthHeaders() }).pipe(
+            catchError(() => of(null))
+          );
+        }
+        return this.http.get<any>(`${this.apiUrl}current_item/`, { headers: this.getAuthHeaders() }).pipe(
+          catchError((err) => {
+            if (err.status === 401) this.handleUnauthorized('CurrentItemPolling');
+            return of(null);
+          })
         );
       })
     ).subscribe(item => this.handleActiveItemUpdate(item));
   }
 
   checkActiveItem(): void {
-    const id = this.mesaIdForPairing || this.mesaState?.id;
-    if (!id) return;
-    this.http.get<any>(`/api/mesas/${id}/current_item/`, { headers: this.getUserAuthHeaders() })
-      .pipe(catchError(() => of(null)))
+    if (this.isSupervisor) {
+      const id = this.mesaIdForPairing || this.mesaState?.id;
+      if (!id) return;
+      this.http.get<any>(`/api/mesas/${id}/current_item/`, { headers: this.getUserAuthHeaders() })
+        .pipe(catchError(() => of(null)))
+        .subscribe(item => this.handleActiveItemUpdate(item));
+      return;
+    }
+
+    this.http.get<any>(`${this.apiUrl}current_item/`, { headers: this.getAuthHeaders() })
+      .pipe(catchError((err) => {
+        if (err.status === 401) this.handleUnauthorized('CurrentItemCheck');
+        return of(null);
+      }))
       .subscribe(item => this.handleActiveItemUpdate(item));
   }
 
@@ -399,7 +428,16 @@ export class VisorComponent implements OnInit, OnDestroy {
 
     if (!this.activeItem || this.activeItem.id !== item.id) {
       this.activeItem = item;
-      this.loadImagesForActiveItem();
+      if (Array.isArray(item.images)) {
+        this.images = item.images;
+        if (this.currentIndex >= this.images.length || this.currentIndex < 0) {
+          this.currentIndex = 0;
+        }
+        this.loadingImages = false;
+        this.cdr.detectChanges();
+      } else {
+        this.loadImagesForActiveItem();
+      }
     }
   }
 
