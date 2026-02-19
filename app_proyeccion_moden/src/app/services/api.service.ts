@@ -143,7 +143,6 @@ export class ApiService {
     // AUTHENTICATION
     // =========================================================================
     login(credentials: { username: string, password: string }): Observable<{ token: string, is_staff: boolean, is_superuser: boolean }> {
-        console.log('Attempting Login with:', credentials);
         return this.http.post<{ token: string, is_staff: boolean, is_superuser: boolean }>(`${this.baseUrl}/token-auth/`, credentials).pipe(
             tap(response => {
                 localStorage.setItem('auth_username', credentials.username);

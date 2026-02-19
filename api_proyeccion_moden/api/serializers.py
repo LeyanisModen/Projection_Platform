@@ -203,8 +203,8 @@ class MesaQueueItemSerializer(serializers.ModelSerializer):
     modulo_nombre = serializers.CharField(source='modulo.nombre', read_only=True)
     imagen_url = serializers.CharField(source='imagen.url', read_only=True)
     mesa_nombre = serializers.CharField(source='mesa.nombre', read_only=True)
-    modulo_planta_id = serializers.IntegerField(source='modulo.planta.id', read_only=True)
-    modulo_proyecto_id = serializers.IntegerField(source='modulo.planta.proyecto.id', read_only=True)
+    modulo_planta_id = serializers.SerializerMethodField()
+    modulo_proyecto_id = serializers.SerializerMethodField()
     
     class Meta:
         model = MesaQueueItem
@@ -237,6 +237,16 @@ class MesaQueueItemSerializer(serializers.ModelSerializer):
             })
             
         return data
+
+    def get_modulo_planta_id(self, obj):
+        if obj.modulo_id and obj.modulo.planta_id:
+            return obj.modulo.planta_id
+        return None
+
+    def get_modulo_proyecto_id(self, obj):
+        if obj.modulo_id and obj.modulo.planta_id and obj.modulo.planta and obj.modulo.planta.proyecto_id:
+            return obj.modulo.planta.proyecto_id
+        return None
 
 # =============================================================================
 # DEVICE PAIRING SERIALIZERS

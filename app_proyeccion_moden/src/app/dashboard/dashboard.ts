@@ -78,6 +78,8 @@ export class Dashboard implements OnInit, OnDestroy {
   subfaseAssignedToMesa = new Map<string, { mesaName: string, status: string }>();
 
   activePhases = new Set<string>(); // "moduloId-FASE" (e.g. "101-INFERIOR")
+  private queueErrorLogByMesa = new Map<number, number>();
+  private readonly queueErrorLogCooldownMs = 30000;
 
   // Pairing Modal State
 
@@ -229,9 +231,23 @@ export class Dashboard implements OnInit, OnDestroy {
 
             this.cdr.detectChanges();
           },
-          error: (err) => console.error(`Error polling queue for mesa ${mesa.id}`, err)
+          error: (err) => this.logQueueError(mesa.id, 'polling', err)
         });
     });
+  }
+
+  private logQueueError(mesaId: number, context: 'polling' | 'loading', err: any): void {
+    const now = Date.now();
+    const last = this.queueErrorLogByMesa.get(mesaId) ?? 0;
+    const status = err?.status;
+    const isServerOrGatewayError = status >= 500 && status < 600;
+
+    if (isServerOrGatewayError && now - last < this.queueErrorLogCooldownMs) {
+      return;
+    }
+
+    this.queueErrorLogByMesa.set(mesaId, now);
+    console.warn(`[Dashboard] Queue ${context} error mesa ${mesaId} (status: ${status ?? 'unknown'})`);
   }
 
   // Refactored helper to avoid code duplication in loadMesaQueueItems
@@ -380,7 +396,7 @@ export class Dashboard implements OnInit, OnDestroy {
 
           this.cdr.detectChanges();
         },
-        error: (err) => console.error(`Error loading queue for mesa ${mesaId}`, err)
+        error: (err) => this.logQueueError(mesaId, 'loading', err)
       });
   }
 
