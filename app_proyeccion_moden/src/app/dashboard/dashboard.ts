@@ -2,13 +2,14 @@ import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { DragDropModule, CdkDragDrop, moveItemInArray } from '@angular/cdk/drag-drop';
+import { DragDropModule, CdkDragDrop, moveItemInArray, transferArrayItem } from '@angular/cdk/drag-drop';
 
 import {
   ApiService,
   Proyecto, Planta, Modulo, Mesa, ModuloQueueItem, MesaQueueItem, Imagen
 } from '../services/api.service';
 import { Subject, takeUntil, forkJoin, interval } from 'rxjs';
+import { environment } from '../../environments/environment';
 
 // Logical entity for display and drag-drop
 interface Subfase {
@@ -61,6 +62,7 @@ export class Dashboard implements OnInit, OnDestroy {
 
   // Drag State
   draggedSubfase: Subfase | null = null;
+  transferInProgress = false;
 
   // Confirm Modal State
   showConfirmModal = false;
@@ -76,6 +78,8 @@ export class Dashboard implements OnInit, OnDestroy {
   subfaseAssignedToMesa = new Map<string, { mesaName: string, status: string }>();
 
   activePhases = new Set<string>(); // "moduloId-FASE" (e.g. "101-INFERIOR")
+  private queueErrorLogByMesa = new Map<number, number>();
+  private readonly queueErrorLogCooldownMs = 30000;
 
   // Pairing Modal State
 
@@ -85,10 +89,24 @@ export class Dashboard implements OnInit, OnDestroy {
 
   verPlano(planta: Planta): void {
     if (planta.plano_imagen) {
-      this.blueprintUrl = planta.plano_imagen;
+      this.blueprintUrl = this.resolveUrl(planta.plano_imagen);
       this.showBlueprintModal = true;
       this.cdr.detectChanges();
     }
+  }
+
+  private resolveUrl(url: string): string {
+    if (!url) return '';
+    if (url.startsWith('http')) return url;
+
+    // Strip '/api' from base URL to get root domain
+    let base = environment.apiUrl;
+    if (base.endsWith('/')) base = base.slice(0, -1);
+    if (base.endsWith('/api')) base = base.substring(0, base.length - 4);
+
+    // Ensure path starts with /
+    const path = url.startsWith('/') ? url : `/${url}`;
+    return `${base}${path}`;
   }
 
   cerrarBlueprintModal(): void {
@@ -157,8 +175,8 @@ export class Dashboard implements OnInit, OnDestroy {
 
   // Polling function to refresh queues and check for auto-advance
   pollMesasQueue(): void {
-    // Only poll if we have mesas loaded
-    if (this.mesas.length === 0) return;
+    // Skip polling during cross-mesa transfers to avoid DOM conflicts
+    if (this.mesas.length === 0 || this.transferInProgress) return;
 
     this.mesas.forEach(mesa => {
       this.api.getMesaQueueItems(mesa.id)
@@ -213,9 +231,23 @@ export class Dashboard implements OnInit, OnDestroy {
 
             this.cdr.detectChanges();
           },
-          error: (err) => console.error(`Error polling queue for mesa ${mesa.id}`, err)
+          error: (err) => this.logQueueError(mesa.id, 'polling', err)
         });
     });
+  }
+
+  private logQueueError(mesaId: number, context: 'polling' | 'loading', err: any): void {
+    const now = Date.now();
+    const last = this.queueErrorLogByMesa.get(mesaId) ?? 0;
+    const status = err?.status;
+    const isServerOrGatewayError = status >= 500 && status < 600;
+
+    if (isServerOrGatewayError && now - last < this.queueErrorLogCooldownMs) {
+      return;
+    }
+
+    this.queueErrorLogByMesa.set(mesaId, now);
+    console.warn(`[Dashboard] Queue ${context} error mesa ${mesaId} (status: ${status ?? 'unknown'})`);
   }
 
   // Refactored helper to avoid code duplication in loadMesaQueueItems
@@ -364,7 +396,7 @@ export class Dashboard implements OnInit, OnDestroy {
 
           this.cdr.detectChanges();
         },
-        error: (err) => console.error(`Error loading queue for mesa ${mesaId}`, err)
+        error: (err) => this.logQueueError(mesaId, 'loading', err)
       });
   }
 
@@ -417,7 +449,6 @@ export class Dashboard implements OnInit, OnDestroy {
           // Sort: Incomplete first, Complete last
           // Force new array reference
           this.modulos = [...this.sortModulos(data)];
-          console.log('[Dashboard] Loaded modules:', this.modulos.map(m => `${m.nombre}:${this.isModuloComplete(m)}`));
           this.loadingModulos = false;
           this.cdr.detectChanges();
         },
@@ -840,6 +871,64 @@ export class Dashboard implements OnInit, OnDestroy {
         next: () => console.log('Reorder saved'),
         error: (err) => console.error('Reorder failed', err)
       });
+    } else {
+      // Cross-mesa transfer
+      const item = event.previousContainer.data[event.previousIndex];
+      const sourceMesaId = this.extractIdFromUrl(item.mesa);
+
+      // Don't transfer MOSTRANDO items
+      if (item.status === 'MOSTRANDO') return;
+
+      // Prevent dropping at index 0 if target has a MOSTRANDO item
+      const targetItems = event.container.data;
+      const targetHasMostrando = targetItems.some((i: MesaQueueItem) => i.status === 'MOSTRANDO');
+      if (targetHasMostrando && event.currentIndex === 0) {
+        event.currentIndex = 1;
+      }
+
+      // Move locally for instant UI feedback
+      transferArrayItem(
+        event.previousContainer.data,
+        event.container.data,
+        event.previousIndex,
+        event.currentIndex
+      );
+
+      // Update local maps
+      if (sourceMesaId) this.mesaQueueItems.set(sourceMesaId, event.previousContainer.data);
+      this.mesaQueueItems.set(mesaId, event.container.data);
+      this.cdr.detectChanges();
+
+      // Lock polling during backend sync
+      this.transferInProgress = true;
+
+      // Backend strategy: Create in new mesa FIRST, then delete from old mesa.
+      // If create fails, we reload causing a "revert".
+      // If delete fails, we might have a duplicate, reload fixes it too.
+
+      this.api.updateMesaQueueItem(item.id, {
+        mesa: mesaId,
+        position: event.currentIndex
+      }).subscribe({
+        next: () => {
+          console.log('[Dashboard] Transfer success (Atomic Move)');
+          // Reload both queues to ensure positions are correct (close gaps in source, open gap in target)
+          if (sourceMesaId) this.loadMesaQueueItems(sourceMesaId);
+          this.loadMesaQueueItems(mesaId);
+
+          setTimeout(() => {
+            this.transferInProgress = false;
+          }, 300);
+        },
+        error: (err) => {
+          console.error('Transfer failed (Atomic Move)', err);
+          // Revert UI by reloading from backend
+          this.mesas.forEach(m => this.loadMesaQueueItems(m.id));
+          this.transferInProgress = false;
+          alert('Error al mover el item. Se recargarán las colas.');
+        }
+      });
+
     }
   }
 

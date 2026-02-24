@@ -31,6 +31,17 @@ urlpatterns = [
 ]
 
 # Serve media files in development
+from django.urls import re_path
+from django.views.static import serve
+
+# Serve media files in development AND production (since we don't have separate media server)
+urlpatterns += [
+    re_path(r'^media/(?P<path>.*)$', serve, {
+        'document_root': settings.MEDIA_ROOT,
+    }),
+]
+
 if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+    # Static is handled by WhiteNoise in prod, but media needs manual serving here
+    pass
 

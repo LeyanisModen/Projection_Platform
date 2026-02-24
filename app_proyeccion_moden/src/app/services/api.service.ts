@@ -114,7 +114,7 @@ export interface MesaQueueItem {
     modulo_planta_id?: number;
     modulo_proyecto_id?: number;
     fase: 'INFERIOR' | 'SUPERIOR';
-    imagen?: string;
+    imagen?: number;
     imagen_url?: string;
     position: number;
     status: 'EN_COLA' | 'MOSTRANDO' | 'HECHO';
@@ -143,7 +143,6 @@ export class ApiService {
     // AUTHENTICATION
     // =========================================================================
     login(credentials: { username: string, password: string }): Observable<{ token: string, is_staff: boolean, is_superuser: boolean }> {
-        console.log('Attempting Login with:', credentials);
         return this.http.post<{ token: string, is_staff: boolean, is_superuser: boolean }>(`${this.baseUrl}/token-auth/`, credentials).pipe(
             tap(response => {
                 localStorage.setItem('auth_username', credentials.username);
@@ -346,7 +345,7 @@ export class ApiService {
         return this.http.post<{ status: string }>(`${this.baseUrl}/device/pair/`, {
             mesa_id: mesaId,
             pairing_code: pairingCode
-        });
+        }, { headers: this.getHeaders() });
     }
 
     /**
@@ -355,7 +354,7 @@ export class ApiService {
     unbindDevice(mesaId: number): Observable<{ status: string }> {
         return this.http.post<{ status: string }>(`${this.baseUrl}/device/unbind/`, {
             mesa_id: mesaId
-        });
+        }, { headers: this.getHeaders() });
     }
 
     // =========================================================================
@@ -384,6 +383,10 @@ export class ApiService {
             imagen: imagenId,
             position: position
         }, { headers: this.getHeaders() });
+    }
+
+    updateMesaQueueItem(id: number, data: any): Observable<MesaQueueItem> {
+        return this.http.patch<MesaQueueItem>(`${this.baseUrl}/mesa-queue-items/${id}/`, data, { headers: this.getHeaders() });
     }
 
     marcarMesaQueueItemHecho(id: number): Observable<MesaQueueItem> {

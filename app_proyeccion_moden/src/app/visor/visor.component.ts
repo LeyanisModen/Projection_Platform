@@ -65,6 +65,7 @@ export class VisorComponent implements OnInit, OnDestroy {
 
   private apiUrl = `${environment.apiUrl}/device/`;
   private isBrowser: boolean;
+  private assetBase = '/';
 
   // Helper to get token storage key
   private getTokenKey(): string {
@@ -85,6 +86,9 @@ export class VisorComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     if (!this.isBrowser) return;
 
+    const baseHref = (document.querySelector('base')?.getAttribute('href') || '/').trim();
+    this.assetBase = baseHref.endsWith('/') ? baseHref : `${baseHref}/`;
+
     const idParam = this.route.snapshot.paramMap.get('id');
     if (idParam) {
       this.mesaIdForPairing = parseInt(idParam, 10);
@@ -103,18 +107,17 @@ export class VisorComponent implements OnInit, OnDestroy {
 
   private loadMesaDirectly(mesaId: number): void {
     this.mode = 'LOADING';
-    this.http.get<MesaState>(`/api/mesas/${mesaId}/`).subscribe({
+    this.http.get<MesaState>(`/api/mesas/${mesaId}/`, { headers: this.getUserAuthHeaders() }).subscribe({
       next: (mesa) => {
         this.mesaState = mesa;
+        if (typeof mesa.current_image_index === 'number') {
+          this.currentIndex = mesa.current_image_index;
+        }
         if (mesa.nombre) {
           this.titleService.setTitle(`Visor - ${mesa.nombre}`);
         }
-        if (mesa.is_linked) {
-          this.mode = 'PROJECTION';
-          this.startStatePolling();
-        } else {
-          this.requestPairingCode();
-        }
+        this.mode = 'PROJECTION';
+        this.startStatePolling();
         this.cdr.detectChanges();
       },
       error: (err) => {
@@ -174,7 +177,9 @@ export class VisorComponent implements OnInit, OnDestroy {
       this.mode = 'PROJECTION';
       this.cdr.detectChanges();
       this.startStatePolling();
-      this.startHeartbeat();
+      if (!this.isSupervisor) {
+        this.startHeartbeat();
+      }
     });
   }
 
@@ -186,10 +191,23 @@ export class VisorComponent implements OnInit, OnDestroy {
     return headers;
   }
 
+  private getUserAuthHeaders(): HttpHeaders {
+    const token = localStorage.getItem('auth_token');
+    let headers = new HttpHeaders();
+    if (token) {
+      headers = headers.set('Authorization', `Token ${token}`);
+    }
+    return headers;
+  }
+
   private eventSource: EventSource | null = null;
-  private reconnectTimer: any = null;
+  private lastSseErrorLogAt = 0;
 
   connectToSSE(): void {
+    if (this.isSupervisor) {
+      return;
+    }
+
     if (this.eventSource) this.eventSource.close();
 
     // Fallback for supervisor: pass mesa_id if no token
@@ -203,14 +221,12 @@ export class VisorComponent implements OnInit, OnDestroy {
       return;
     }
 
-    console.log('[Visor] Connecting to SSE:', url);
     this.eventSource = new EventSource(url);
 
     this.eventSource.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data);
         if (payload.type === 'calibration') {
-          console.log('[Visor] SSE Update received:', payload.data);
           if (this.mesaState) {
             this.mesaState = {
               ...this.mesaState,
@@ -232,21 +248,19 @@ export class VisorComponent implements OnInit, OnDestroy {
       }
     };
 
-    this.eventSource.onerror = (err) => {
-      console.error('[Visor] SSE Error:', err);
-      this.eventSource?.close();
-      this.eventSource = null;
-      if (!this.reconnectTimer) {
-        this.reconnectTimer = setTimeout(() => {
-          this.reconnectTimer = null;
-          this.connectToSSE();
-        }, 3000);
+    this.eventSource.onerror = () => {
+      const now = Date.now();
+      // EventSource reconnects automatically; keep logs throttled.
+      if (now - this.lastSseErrorLogAt > 30000) {
+        console.warn('[Visor] SSE disconnected/reconnecting...');
+        this.lastSseErrorLogAt = now;
       }
     };
   }
 
   get projectedImage(): string | null {
-    if (this.currentIndex === -1) return '/assets/calibration_grid.jpg';
+    if (this.currentIndex === -1) return `${this.assetBase}assets/calibration_grid.jpg`;
+    if (this.currentIndex === -2) return `${this.assetBase}assets/calibration_grid_with_x.jpg`;
     if (this.images.length > 0 && this.currentIndex >= 0 && this.currentIndex < this.images.length) {
       return this.images[this.currentIndex].url || this.images[this.currentIndex].src || this.images[this.currentIndex];
     }
@@ -254,11 +268,11 @@ export class VisorComponent implements OnInit, OnDestroy {
   }
 
   get showOverlay(): boolean {
-    return !!this.activeItem;
+    return !!this.activeItem && this.currentIndex >= 0;
   }
 
   get isCalibrationActive(): boolean {
-    return this.isSupervisor && this.currentIndex === -1;
+    return this.isSupervisor && this.currentIndex < 0;
   }
 
   @HostListener('window:keydown', ['$event'])
@@ -266,30 +280,39 @@ export class VisorComponent implements OnInit, OnDestroy {
     if (this.mode !== 'PROJECTION') return;
     const key = event.key.toLowerCase();
     if (key === 'c') {
-      this.toggleCalibration();
+      this.toggleCalibration(-1);
+    } else if (key === 'g') {
+      this.toggleCalibration(-2);
     } else if (key === 'arrowright') {
-      // Don't navigate if in calibration mode (index -1)
-      if (this.currentIndex !== -1) {
+      // Don't navigate if in calibration mode (index < 0)
+      if (this.currentIndex >= 0) {
         this.nextImage();
       }
     } else if (key === 'arrowleft') {
-      if (this.currentIndex !== -1) {
+      if (this.currentIndex >= 0) {
         this.prevImage();
       }
     }
   }
 
-  toggleCalibration(): void {
-    if (this.currentIndex !== -1) {
+  toggleCalibration(targetIndex: number): void {
+    if (this.currentIndex >= 0) {
+      // Enter calibration from normal mode
       this.previousIndex = this.currentIndex;
-      this.currentIndex = -1;
-    } else {
+      this.currentIndex = targetIndex;
+    } else if (this.currentIndex === targetIndex) {
+      // Toggle off if already in this specific calibration mode
       this.currentIndex = this.previousIndex;
+    } else {
+      // Switch between calibration modes (e.g. -1 to -2)
+      this.currentIndex = targetIndex;
     }
     this.updateProjectedImage();
   }
 
   nextImage(): void {
+    if (this.currentIndex < 0) return;
+
     if (this.currentIndex < this.images.length - 1) {
       this.currentIndex++;
       this.updateProjectedImage();
@@ -299,6 +322,8 @@ export class VisorComponent implements OnInit, OnDestroy {
   }
 
   prevImage(): void {
+    if (this.currentIndex < 0) return;
+
     if (this.currentIndex > 0) {
       this.currentIndex--;
       this.updateProjectedImage();
@@ -306,6 +331,17 @@ export class VisorComponent implements OnInit, OnDestroy {
   }
 
   updateProjectedImage(): void {
+    if (this.isSupervisor) {
+      const mesaId = this.mesaIdForPairing || this.mesaState?.id;
+      if (!mesaId) return;
+      this.http.post(`/api/mesas/${mesaId}/set_index/`, { index: this.currentIndex }, { headers: this.getUserAuthHeaders() })
+        .subscribe({
+          next: () => this.cdr.detectChanges(),
+          error: (err) => console.error('[Visor] Error syncing index (supervisor):', err)
+        });
+      return;
+    }
+
     const mesaId = this.mesaIdForPairing || this.mesaState?.id;
     if (!mesaId) return;
 
@@ -318,7 +354,22 @@ export class VisorComponent implements OnInit, OnDestroy {
 
   finishActiveItem(): void {
     if (!this.activeItem) return;
-    this.http.post(`/api/mesa-queue-items/${this.activeItem.id}/marcar_hecho/`, {})
+    if (this.isSupervisor) {
+      this.http.post(`/api/mesa-queue-items/${this.activeItem.id}/marcar_hecho/`, {}, { headers: this.getUserAuthHeaders() })
+        .subscribe({
+          next: () => {
+            this.activeItem = null;
+            this.images = [];
+            this.currentIndex = 0;
+            this.cdr.detectChanges();
+            this.checkActiveItem();
+          },
+          error: (err) => console.error('[Visor] Error finishing item:', err)
+        });
+      return;
+    }
+
+    this.http.post(`${this.apiUrl}mark_done/`, {}, { headers: this.getAuthHeaders() })
       .subscribe({
         next: () => {
           this.activeItem = null;
@@ -327,31 +378,95 @@ export class VisorComponent implements OnInit, OnDestroy {
           this.cdr.detectChanges();
           this.checkActiveItem();
         },
-        error: (err) => console.error('[Visor] Error finishing item:', err)
+        error: (err) => console.error('[Visor] Error finishing item (device):', err)
       });
   }
 
   startStatePolling(): void {
-    this.fetchMesaState();
-    this.connectToSSE();
-
-    this.itemPollSub = interval(2000).pipe(
+    this.statePollSub?.unsubscribe();
+    this.itemPollSub?.unsubscribe();
+    this.statePollSub = interval(1000).pipe(
       startWith(0),
-      switchMap(() => {
-        const id = this.mesaIdForPairing || this.mesaState?.id;
-        if (!id) return of(null);
-        return this.http.get<any>(`/api/mesas/${id}/current_item/`).pipe(
-          catchError(() => of(null))
+      exhaustMap(() => {
+        if (this.isSupervisor) {
+          const id = this.mesaIdForPairing || this.mesaState?.id;
+          if (!id) return of(null);
+          return this.http.get<MesaState>(`/api/mesas/${id}/`, { headers: this.getUserAuthHeaders() }).pipe(
+            catchError(err => {
+              if (err.status === 401) {
+                this.errorMessage = 'Sesion expirada. Vuelve a iniciar sesion en el dashboard.';
+                this.mode = 'ERROR';
+                this.cdr.detectChanges();
+              }
+              return of(null);
+            })
+          );
+        }
+
+        const mesaId = this.mesaIdForPairing || this.mesaState?.id;
+        const params: Record<string, string> = {};
+        if (mesaId) {
+          params['mesa_id'] = mesaId.toString();
+        }
+        return this.http.get<MesaState>(`${this.apiUrl}state/`, { headers: this.getAuthHeaders(), params }).pipe(
+          catchError(err => {
+            if (err.status === 401) this.handleUnauthorized('StatePolling');
+            return of(null);
+          })
+        );
+      })
+    ).subscribe((state: MesaState | null) => {
+      if (!state) return;
+      this.mesaState = state;
+      if (state.nombre) {
+        this.titleService.setTitle(`Visor - ${state.nombre}`);
+      }
+      if (typeof state.current_image_index === 'number') {
+        this.currentIndex = state.current_image_index;
+      }
+      this.cdr.detectChanges();
+    });
+
+    if (!this.isSupervisor && environment.enableDeviceSSE) {
+      this.connectToSSE();
+    }
+
+    const itemPollMs = 2000;
+    this.itemPollSub = interval(itemPollMs).pipe(
+      startWith(0),
+      exhaustMap(() => {
+        if (this.isSupervisor) {
+          const id = this.mesaIdForPairing || this.mesaState?.id;
+          if (!id) return of(null);
+          return this.http.get<any>(`/api/mesas/${id}/current_item/`, { headers: this.getUserAuthHeaders() }).pipe(
+            catchError(() => of(null))
+          );
+        }
+        return this.http.get<any>(`${this.apiUrl}current_item/`, { headers: this.getAuthHeaders() }).pipe(
+          catchError((err) => {
+            if (err.status === 401) this.handleUnauthorized('CurrentItemPolling');
+            return of(null);
+          })
         );
       })
     ).subscribe(item => this.handleActiveItemUpdate(item));
   }
 
   checkActiveItem(): void {
-    const id = this.mesaIdForPairing || this.mesaState?.id;
-    if (!id) return;
-    this.http.get<any>(`/api/mesas/${id}/current_item/`)
-      .pipe(catchError(() => of(null)))
+    if (this.isSupervisor) {
+      const id = this.mesaIdForPairing || this.mesaState?.id;
+      if (!id) return;
+      this.http.get<any>(`/api/mesas/${id}/current_item/`, { headers: this.getUserAuthHeaders() })
+        .pipe(catchError(() => of(null)))
+        .subscribe(item => this.handleActiveItemUpdate(item));
+      return;
+    }
+
+    this.http.get<any>(`${this.apiUrl}current_item/`, { headers: this.getAuthHeaders() })
+      .pipe(catchError((err) => {
+        if (err.status === 401) this.handleUnauthorized('CurrentItemCheck');
+        return of(null);
+      }))
       .subscribe(item => this.handleActiveItemUpdate(item));
   }
 
@@ -367,7 +482,16 @@ export class VisorComponent implements OnInit, OnDestroy {
 
     if (!this.activeItem || this.activeItem.id !== item.id) {
       this.activeItem = item;
-      this.loadImagesForActiveItem();
+      if (Array.isArray(item.images)) {
+        this.images = item.images;
+        if (this.currentIndex >= 0 && this.currentIndex >= this.images.length) {
+          this.currentIndex = 0;
+        }
+        this.loadingImages = false;
+        this.cdr.detectChanges();
+      } else {
+        this.loadImagesForActiveItem();
+      }
     }
   }
 
@@ -375,11 +499,11 @@ export class VisorComponent implements OnInit, OnDestroy {
     if (!this.activeItem) return;
     this.loadingImages = true;
     const url = `/api/imagenes/?modulo=${this.activeItem.modulo}&fase=${this.activeItem.fase}`;
-    this.http.get<any[]>(url).subscribe({
+    this.http.get<any[]>(url, { headers: this.getUserAuthHeaders() }).subscribe({
       next: (imgs) => {
         this.images = Array.isArray(imgs) ? imgs : [];
-        // Only reset index if we are NOT in calibration mode
-        if (this.currentIndex !== -1) {
+        // Keep calibration mode (-1/-2) while images are refreshed.
+        if (this.currentIndex >= 0) {
           this.currentIndex = 0;
         }
         this.loadingImages = false;
@@ -392,33 +516,6 @@ export class VisorComponent implements OnInit, OnDestroy {
     });
   }
 
-  fetchMesaState(): void {
-    const mesaId = this.mesaIdForPairing || this.mesaState?.id;
-    const params: Record<string, string> = {};
-    if (mesaId) {
-      params['mesa_id'] = mesaId.toString();
-    }
-    const options = { headers: this.getAuthHeaders(), params };
-
-    this.http.get<MesaState>(`${this.apiUrl}state/`, options)
-      .pipe(catchError(err => {
-        if (err.status === 401) this.handleUnauthorized('StatePolling');
-        return of(null);
-      }))
-      .subscribe((state: MesaState | null) => {
-        if (state) {
-          this.mesaState = state;
-          if (state.nombre) {
-            this.titleService.setTitle(`Visor - ${state.nombre}`);
-          }
-          if (state.current_image_index !== undefined && this.currentIndex !== -1) {
-            this.currentIndex = state.current_image_index;
-          }
-          if (!this.eventSource) this.connectToSSE();
-        }
-      });
-  }
-
   startHeartbeat(): void {
     this.heartbeatSub = interval(30000).pipe(
       switchMap(() => {
@@ -426,14 +523,26 @@ export class VisorComponent implements OnInit, OnDestroy {
         const payload = mesaId ? { mesa_id: mesaId } : {};
         return this.http.post(`${this.apiUrl}heartbeat/`, payload, { headers: this.getAuthHeaders() });
       }),
-      catchError(() => of(null))
+      catchError((err) => {
+        if (err.status === 401) this.handleUnauthorized('Heartbeat');
+        return of(null);
+      })
     ).subscribe();
   }
 
   private authRetries = 0;
   handleUnauthorized(source: string = 'Unknown'): void {
+    if (this.isSupervisor) {
+      this.errorMessage = 'Sesion expirada. Vuelve a iniciar sesion en el dashboard.';
+      this.mode = 'ERROR';
+      this.cdr.detectChanges();
+      return;
+    }
+
+    console.warn(`[Visor] Unauthorized access detected from ${source}. Retries: ${this.authRetries}`);
     this.authRetries++;
-    if (this.authRetries > 3) {
+    // If token is invalid, it's usually permanent (unlinked). Fail fast.
+    if (this.authRetries >= 1) {
       if (this.eventSource) {
         this.eventSource.close();
         this.eventSource = null;
@@ -444,6 +553,7 @@ export class VisorComponent implements OnInit, OnDestroy {
       this.statePollSub?.unsubscribe();
       this.heartbeatSub?.unsubscribe();
       this.requestPairingCode();
+      this.authRetries = 0; // Reset counter
     }
   }
 }

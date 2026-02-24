@@ -1,6 +1,7 @@
 import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterModule } from '@angular/router';
+import { RouterModule, Router } from '@angular/router';
+import { ApiService } from '../../services/api.service';
 
 @Component({
   selector: 'app-admin-layout',
@@ -30,8 +31,10 @@ import { RouterModule } from '@angular/router';
           </li>
         </ul>
         <div class="user-info">
-          <span class="user-icon">👤</span>
-          <span class="user-text">Logueado como Admin</span>
+          <button *ngIf="sidebarExpanded" class="btn-logout" (click)="logout()" title="Cerrar Sesión">
+            ⏻ <span class="logout-text">Cerrar Sesión</span>
+          </button>
+          <span *ngIf="!sidebarExpanded" class="user-icon">⏻</span>
         </div>
       </nav>
       <main class="content">
@@ -122,24 +125,36 @@ import { RouterModule } from '@angular/router';
     .user-info {
       display: flex;
       align-items: center;
+      justify-content: center;
       padding: 0.5rem;
       border-top: 1px solid #eee;
       margin-top: auto;
       white-space: nowrap;
     }
     .user-icon {
-      font-size: 1rem;
-      flex-shrink: 0;
+      font-size: 1.2rem;
     }
-    .user-text {
-      margin-left: 0.5rem;
-      font-size: 0.75rem;
-      color: #777;
-      opacity: 0;
-      transition: opacity 0.2s ease;
+    .btn-logout {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        width: 100%;
+        background: none;
+        border: 1px solid #eee;
+        cursor: pointer;
+        font-size: 1rem;
+        color: #555;
+        padding: 0.5rem 0.75rem;
+        border-radius: 6px;
+        transition: all 0.2s;
     }
-    .sidebar.expanded .user-text {
-      opacity: 1;
+    .btn-logout:hover {
+        background-color: #ffebee;
+        color: #d32f2f;
+        border-color: #ffcdd2;
+    }
+    .logout-text {
+        font-size: 0.8rem;
     }
     .content {
       flex: 1;
@@ -150,4 +165,11 @@ import { RouterModule } from '@angular/router';
 })
 export class AdminLayoutComponent {
   sidebarExpanded = false;
+
+  constructor(private api: ApiService, private router: Router) { }
+
+  logout() {
+    this.api.logout();
+    this.router.navigate(['/']); // Redirect to login (root)
+  }
 }

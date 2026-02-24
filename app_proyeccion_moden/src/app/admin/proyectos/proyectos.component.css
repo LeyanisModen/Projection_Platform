@@ -127,18 +127,18 @@
 }
 
 .form-group {
-    margin-bottom: 1rem;
+    margin-bottom: 1.5rem;
 }
 
 .form-group label {
     display: block;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.75rem;
     font-weight: 500;
 }
 
 .form-control {
     width: 100%;
-    padding: 0.5rem;
+    padding: 0.65rem 0.5rem;
     border: 1px solid #ddd;
     border-radius: 4px;
     font-size: 1rem;
@@ -264,10 +264,29 @@
     padding-right: 0.5rem;
 }
 
+.pl-md-4 {
+    padding-left: 1.5rem !important;
+}
+
+.col-md-7 {
+    flex: 0 0 58.333%;
+    max-width: 58.333%;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+}
+
+.col-md-5 {
+    flex: 0 0 41.666%;
+    max-width: 41.666%;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+}
+
 /* Folder Import Styles */
 .folder-input-group {
     display: flex;
     gap: 0.5rem;
+    align-items: center;
     /* Add gap between input and button */
 }
 
@@ -275,11 +294,14 @@
     flex: 1;
     background: #f8f9fa;
     cursor: pointer;
+    width: auto;
+    /* Prevent forcing 100% width from form-control */
     /* Removed border-radius override so it looks like a standalone input */
 }
 
 .folder-input-group .folder-btn {
     white-space: nowrap;
+    height: fit-content;
     /* Removed border-radius override so it looks like a standalone button */
 }
 
@@ -348,4 +370,169 @@
 
 .text-danger {
     color: #dc3545;
+}
+
+/* Form Tweaks */
+.dropdown-ferralla {
+    font-size: 1.05rem;
+    color: #495057;
+    height: auto;
+    /* Let the browser calculate the auto height so the input doesn't clip */
+    padding-top: 0.65rem;
+    padding-bottom: 0.65rem;
+}
+
+.folder-guidance {
+    display: block;
+    margin-top: 0.75rem;
+    line-height: 1.4;
+}
+
+.form-actions {
+    margin-top: auto;
+    padding-top: 1.5rem;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.col-md-7>form {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.row>.col-md-7 {
+    display: flex;
+    flex-direction: column;
+}
+
+/* Folder Structure Graphic Styles */
+.folder-structure-graphic {
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 6px;
+    padding: 1.5rem;
+    height: 100%;
+}
+
+.folder-structure-graphic h4 {
+    margin-top: 0;
+    margin-bottom: 1rem;
+    font-size: 1.1rem;
+    color: #495057;
+    border-bottom: 2px solid #e9ecef;
+    padding-bottom: 0.5rem;
+}
+
+.tree {
+    font-family: monospace;
+    font-size: 0.95rem;
+    overflow-x: auto;
+}
+
+.tree ul {
+    list-style-type: none;
+    padding-left: 1.5rem;
+    position: relative;
+    margin: 0;
+}
+
+.tree>ul {
+    padding-left: 0;
+}
+
+.tree ul::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0.5rem;
+    border-left: 1px dashed #adb5bd;
+}
+
+.tree>ul::before {
+    display: none;
+}
+
+.tree li {
+    margin: 0;
+    padding: 0.15rem 0 0.15rem 0.5rem;
+    position: relative;
+    line-height: 1.2;
+}
+
+.tree li::before {
+    content: '';
+    position: absolute;
+    top: 0.7rem;
+    left: -1rem;
+    width: 1rem;
+    border-top: 1px dashed #adb5bd;
+}
+
+.tree>ul>li::before {
+    display: none;
+}
+
+.tree span.folder {
+    font-weight: bold;
+    color: #495057;
+    display: inline-flex;
+    align-items: center;
+}
+
+.tree span.file {
+    color: #6c757d;
+    display: inline-flex;
+    align-items: center;
+}
+
+.tree .dots {
+    color: #adb5bd;
+    font-weight: bold;
+    padding-left: 0.5rem;
+}
+
+.tree span.folder-required {
+    color: #c62828;
+}
+
+.tree span.file-optional {
+    color: #1565c0;
+    font-style: italic;
+}
+
+.tree-legend {
+    margin-top: 0.75rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid #e9ecef;
+    font-size: 0.8rem;
+    color: #6c757d;
+    line-height: 1.6;
+}
+
+.legend-required {
+    color: #c62828;
+    font-size: 0.7rem;
+}
+
+.legend-optional {
+    color: #1565c0;
+    font-size: 0.7rem;
+}
+
+.tag-required {
+    color: #c62828;
+    font-size: 0.75em;
+    font-weight: normal;
+    font-style: italic;
+    margin-left: 0.4em;
+}
+
+.tag-optional {
+    color: #1565c0;
+    font-size: 0.75em;
+    font-weight: normal;
+    font-style: italic;
+    margin-left: 0.4em;
 }

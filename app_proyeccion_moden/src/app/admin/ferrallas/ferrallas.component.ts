@@ -438,6 +438,25 @@ export class FerrallasComponent implements OnInit {
 
   @HostListener('document:keydown.enter', ['$event'])
   onEnterHandler(event: any) {
-    if (this.showCredentialsModal) this.closeCredentialsModal();
+    if (this.showCredentialsModal) {
+      this.closeCredentialsModal();
+      return;
+    }
+
+    if (this.showPairingModal) {
+      if (this.pairingSuccess) {
+        this.closePairingModal();
+        return;
+      }
+      if (!this.pairingLoading && this.pairingCode.trim().length >= 6) {
+        this.submitPairing();
+      }
+    }
+
+    if (this.showUnbindModal) {
+      if (!this.unbindLoading) {
+        this.confirmUnbind();
+      }
+    }
   }
 }

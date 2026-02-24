@@ -14,11 +14,10 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
     telefono = serializers.CharField(source='profile.telefono', required=False, allow_blank=True, allow_null=True)
     direccion = serializers.CharField(source='profile.direccion', required=False, allow_blank=True, allow_null=True)
     coordinador = serializers.CharField(source='profile.coordinador', required=False, allow_blank=True, allow_null=True)
-    password_texto_plano = serializers.CharField(source='profile.password_texto_plano', read_only=True, allow_null=True)
 
     class Meta:
         model = User
-        fields = ["id", "url", "username", "email", "password", "groups", "first_name", "last_name", "telefono", "direccion", "coordinador", "password_texto_plano"]
+        fields = ["id", "url", "username", "email", "password", "groups", "first_name", "last_name", "telefono", "direccion", "coordinador"]
 
 
     def create(self, validated_data):
@@ -30,9 +29,6 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
 
         user = super().create(validated_data)
         
-        # Save password in plain text if provided
-        plain_password_to_save = password if password else ''
-
         if password:
             user.set_password(password)
             user.save()
@@ -42,8 +38,7 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
             user=user, 
             telefono=telefono or '',
             direccion=direccion or '',
-            coordinador=coordinador or '',
-            password_texto_plano=plain_password_to_save
+            coordinador=coordinador or ''
         )
 
         return user
@@ -70,7 +65,6 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
         if password:
             user.set_password(password)
             user.save()
-            profile_defaults['password_texto_plano'] = password
             
         if profile_defaults:
             UserProfile.objects.update_or_create(
@@ -130,6 +124,8 @@ class PlantaSerializer(serializers.ModelSerializer):
         fields = ["id", "nombre", "proyecto", "orden", "modulos_count", "plano_imagen", "fichero_corte"]
 
     def get_modulos_count(self, obj):
+        if hasattr(obj, 'modulos_count'):
+            return obj.modulos_count
         return obj.modulos.count()
 
 
@@ -137,7 +133,7 @@ class ModuloSerializer(serializers.ModelSerializer):
     class Meta:
         model = Modulo
         fields = [
-            "id", "url", "nombre", "planta", "proyecto",
+            "id", "nombre", "planta", "proyecto",
             "inferior_hecho", "superior_hecho", "estado",
             "cerrado", "cerrado_at", "cerrado_by"
         ]
@@ -172,7 +168,8 @@ class MesaSerializer(serializers.HyperlinkedModelSerializer):
         fields = [
             "id", "url", "nombre", "usuario",
             "imagen_actual", "ultima_actualizacion", "imagen",
-            "locked", "blackout", "last_seen", "is_linked"
+            "locked", "blackout", "last_seen", "is_linked",
+            "mapper_enabled", "current_image_index", "calibration_json"
         ]
 
     def get_is_linked(self, obj):
@@ -207,8 +204,8 @@ class MesaQueueItemSerializer(serializers.ModelSerializer):
     modulo_nombre = serializers.CharField(source='modulo.nombre', read_only=True)
     imagen_url = serializers.CharField(source='imagen.url', read_only=True)
     mesa_nombre = serializers.CharField(source='mesa.nombre', read_only=True)
-    modulo_planta_id = serializers.IntegerField(source='modulo.planta.id', read_only=True)
-    modulo_proyecto_id = serializers.IntegerField(source='modulo.planta.proyecto.id', read_only=True)
+    modulo_planta_id = serializers.SerializerMethodField()
+    modulo_proyecto_id = serializers.SerializerMethodField()
     
     class Meta:
         model = MesaQueueItem
@@ -241,6 +238,16 @@ class MesaQueueItemSerializer(serializers.ModelSerializer):
             })
             
         return data
+
+    def get_modulo_planta_id(self, obj):
+        if obj.modulo_id and obj.modulo.planta_id:
+            return obj.modulo.planta_id
+        return None
+
+    def get_modulo_proyecto_id(self, obj):
+        if obj.modulo_id and obj.modulo.planta_id and obj.modulo.planta and obj.modulo.planta.proyecto_id:
+            return obj.modulo.planta.proyecto_id
+        return None
 
 # =============================================================================
 # DEVICE PAIRING SERIALIZERS
