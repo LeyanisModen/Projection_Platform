@@ -265,6 +265,16 @@ export class ApiService {
         return this.http.post<Planta>(`${this.baseUrl}/plantas/`, data, { headers: this.getHeaders() });
     }
 
+    updatePlanta(id: number, data: any): Observable<Planta> {
+        return this.http.patch<Planta>(`${this.baseUrl}/plantas/${id}/`, data, { headers: this.getHeaders() });
+    }
+
+    updatePlantaFiles(id: number, formData: FormData): Observable<Planta> {
+        return this.http.patch<Planta>(`${this.baseUrl}/plantas/${id}/`, formData, {
+            headers: this.getAuthHeaders()
+        });
+    }
+
     // =========================================================================
     // MODULOS (paginated)
     // =========================================================================

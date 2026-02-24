@@ -66,6 +66,12 @@
     font-size: 1.05rem;
 }
 
+.planta-files-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+
 .card-header {
     padding: 15px 25px;
 }

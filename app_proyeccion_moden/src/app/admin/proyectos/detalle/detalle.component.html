@@ -42,9 +42,35 @@
                 <div class="list-group">
                     <button *ngFor="let planta of plantas" class="list-group-item list-group-item-action"
                         [class.active]="selectedPlanta?.id === planta.id" (click)="selectPlanta(planta)">
-                        <div class="d-flex justify-content-between align-items-center w-100">
+                        <div class="d-flex justify-content-between align-items-center w-100 mb-2">
                             <span>{{ planta.nombre }}</span>
                             <span class="badge badge-light badge-pill">{{ planta.modulos_count }} Módulos</span>
+                        </div>
+
+                        <div class="planta-files-actions">
+                            <a *ngIf="planta.plano_imagen" class="btn btn-sm btn-outline-primary" [href]="planta.plano_imagen"
+                                target="_blank" (click)="$event.stopPropagation()">
+                                Ver plano
+                            </a>
+                            <button class="btn btn-sm btn-outline-primary"
+                                (click)="triggerPlantaFileUpload(planoInput); $event.stopPropagation()"
+                                [disabled]="uploadingPlantaId === planta.id">
+                                {{ planta.plano_imagen ? 'Cambiar plano' : 'Subir plano' }}
+                            </button>
+                            <input #planoInput type="file" accept=".jpg,.jpeg,image/jpeg"
+                                (change)="onPlantaFileSelected($event, planta, 'plano')" hidden>
+
+                            <a *ngIf="planta.fichero_corte" class="btn btn-sm btn-outline-secondary"
+                                [href]="planta.fichero_corte" target="_blank" (click)="$event.stopPropagation()">
+                                Ver planilla
+                            </a>
+                            <button class="btn btn-sm btn-outline-secondary"
+                                (click)="triggerPlantaFileUpload(corteInput); $event.stopPropagation()"
+                                [disabled]="uploadingPlantaId === planta.id">
+                                {{ planta.fichero_corte ? 'Cambiar planilla' : 'Subir planilla' }}
+                            </button>
+                            <input #corteInput type="file" accept=".pdf,application/pdf"
+                                (change)="onPlantaFileSelected($event, planta, 'corte')" hidden>
                         </div>
                     </button>
                     <div *ngIf="plantas.length === 0" class="p-3 text-center text-muted">No hay plantas.</div>

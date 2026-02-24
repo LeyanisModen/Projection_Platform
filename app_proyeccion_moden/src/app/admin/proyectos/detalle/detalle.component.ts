@@ -40,6 +40,7 @@ export class ProyectoDetailComponent implements OnInit {
     // Import State
     importing = false;
     importProgress = '';
+    uploadingPlantaId: number | null = null;
 
     constructor(
         private route: ActivatedRoute,
@@ -346,5 +347,58 @@ export class ProyectoDetailComponent implements OnInit {
                 this.importProgress = '';
             }
         }
+    }
+
+    triggerPlantaFileUpload(fileInput: HTMLInputElement): void {
+        fileInput.value = '';
+        fileInput.click();
+    }
+
+    onPlantaFileSelected(event: Event, planta: Planta, fileType: 'plano' | 'corte'): void {
+        const input = event.target as HTMLInputElement;
+        const file = input.files?.[0];
+        if (!file) return;
+
+        const isPlano = fileType === 'plano';
+        const validMimeTypes = isPlano
+            ? ['image/jpeg', 'image/jpg']
+            : ['application/pdf'];
+        const validExtensions = isPlano ? ['.jpg', '.jpeg'] : ['.pdf'];
+        const fileName = file.name.toLowerCase();
+        const extensionOk = validExtensions.some(ext => fileName.endsWith(ext));
+        const mimeOk = validMimeTypes.includes(file.type);
+
+        if (!extensionOk && !mimeOk) {
+            alert(isPlano ? 'El plano debe ser un archivo JPG/JPEG.' : 'La planilla debe ser un archivo PDF.');
+            return;
+        }
+
+        const formData = new FormData();
+        if (isPlano) {
+            formData.append('plano_imagen', file);
+        } else {
+            formData.append('fichero_corte', file);
+        }
+
+        this.uploadingPlantaId = planta.id;
+        this.api.updatePlantaFiles(planta.id, formData).subscribe({
+            next: (updatedPlanta) => {
+                const index = this.plantas.findIndex(p => p.id === planta.id);
+                if (index !== -1) {
+                    this.plantas[index] = updatedPlanta;
+                }
+                if (this.selectedPlanta?.id === planta.id) {
+                    this.selectedPlanta = updatedPlanta;
+                }
+                this.uploadingPlantaId = null;
+                this.cdr.detectChanges();
+            },
+            error: (err) => {
+                console.error('Error updating plant files', err);
+                this.uploadingPlantaId = null;
+                alert('No se pudo actualizar el archivo de la planta.');
+                this.cdr.detectChanges();
+            }
+        });
     }
 }
