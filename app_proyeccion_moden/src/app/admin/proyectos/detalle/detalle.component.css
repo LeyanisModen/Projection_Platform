@@ -475,10 +475,10 @@
 
 .module-header {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 0.2rem;
-    margin-bottom: 0;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.08rem;
+    margin-bottom: 0.04rem;
 }
 
 .module-name {
@@ -489,13 +489,14 @@
 }
 
 .current-status {
-    font-size: 0.58rem;
+    font-size: 0.6rem;
     color: #64748b;
     text-transform: uppercase;
     font-weight: 700;
     letter-spacing: 0.03em;
     white-space: nowrap;
-    margin-left: auto;
+    margin-left: 0;
+    line-height: 1;
 }
 
 .module-substates {
@@ -504,7 +505,7 @@
     gap: 0.12rem;
     border-top: 1px solid #eef2f7;
     padding-top: 0.16rem;
-    align-items: flex-end;
+    align-items: flex-start;
 }
 
 .submodule-row {
@@ -512,7 +513,8 @@
     grid-template-columns: 24px 34px;
     align-items: center;
     column-gap: 0.12rem;
-    margin-left: auto;
+    margin-left: 0;
+    justify-items: start;
 }
 
 .submodule-tag {
@@ -523,6 +525,7 @@
     line-height: 1;
     white-space: nowrap;
     display: block;
+    text-align: right;
 }
 
 .phase-switch {
