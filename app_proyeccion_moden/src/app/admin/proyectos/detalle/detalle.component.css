@@ -475,10 +475,10 @@
 
 .module-header {
     display: flex;
-    justify-content: space-between;
+    justify-content: flex-start;
     align-items: baseline;
-    gap: 0.35rem;
-    margin-bottom: 0.1rem;
+    gap: 0.45rem;
+    margin-bottom: 0.05rem;
 }
 
 .module-name {
@@ -499,40 +499,32 @@
 
 .module-substates {
     display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    border-top: 1px solid #eef2f7;
-    padding-top: 0.3rem;
-}
-
-.submodule-labels {
-    display: flex;
     flex-direction: column;
-    justify-content: center;
-    gap: 0.25rem;
-    min-width: 30px;
-    padding-right: 0.4rem;
-    border-right: 2px solid #e2e8f0;
+    gap: 0.18rem;
+    border-top: 1px solid #eef2f7;
+    padding-top: 0.25rem;
 }
 
-.submodule-labels span {
+.submodule-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.35rem;
+}
+
+.submodule-tag {
     font-size: 0.72rem;
     font-weight: 700;
     color: #64748b;
     letter-spacing: 0.04em;
-}
-
-.submodule-switches {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
+    line-height: 1;
 }
 
 .phase-switch {
     position: relative;
     display: inline-block;
-    width: 42px;
-    height: 20px;
+    width: 34px;
+    height: 16px;
 }
 
 .phase-switch input {
@@ -545,7 +537,7 @@
     position: absolute;
     inset: 0;
     border-radius: 999px;
-    border: 2px solid #fb923c;
+    border: 1.5px solid #fb923c;
     background: #fff7ed;
     transition: all 0.2s ease;
 }
@@ -553,10 +545,10 @@
 .phase-slider::before {
     content: "";
     position: absolute;
-    width: 10px;
-    height: 10px;
-    left: 4px;
-    top: 3px;
+    width: 8px;
+    height: 8px;
+    left: 3px;
+    top: 2px;
     border-radius: 999px;
     background: #f97316;
     transition: all 0.2s ease;
@@ -569,7 +561,7 @@
 
 .phase-switch.on .phase-slider::before {
     background: #22c55e;
-    transform: translateX(20px);
+    transform: translateX(16px);
 }
 
 .phase-switch input:focus-visible + .phase-slider {

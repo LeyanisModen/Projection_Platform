@@ -93,12 +93,8 @@
                             </div>
 
                             <div class="module-substates">
-                                <div class="submodule-labels">
-                                    <span>SUP</span>
-                                    <span>INF</span>
-                                </div>
-
-                                <div class="submodule-switches">
+                                <div class="submodule-row">
+                                    <span class="submodule-tag">SUP</span>
                                     <label class="phase-switch"
                                         [class.on]="modulo.superior_hecho"
                                         [class.disabled]="updatingSubmoduleId === modulo.id || modulo.estado === 'CERRADO'">
@@ -108,7 +104,10 @@
                                             (change)="updateSubmoduleStatus(modulo, 'superior_hecho', $event)">
                                         <span class="phase-slider"></span>
                                     </label>
+                                </div>
 
+                                <div class="submodule-row">
+                                    <span class="submodule-tag">INF</span>
                                     <label class="phase-switch"
                                         [class.on]="modulo.inferior_hecho"
                                         [class.disabled]="updatingSubmoduleId === modulo.id || modulo.estado === 'CERRADO'">
