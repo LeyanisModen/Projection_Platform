@@ -12,71 +12,132 @@
             <h2>Nuevo Proyecto</h2>
         </div>
         <div class="card-body">
-            <form (ngSubmit)="createProyecto()" #projectForm="ngForm" autocomplete="off">
-                <div class="form-group">
-                    <label for="nombre">Nombre del Proyecto</label>
-                    <input type="text" id="nombre" name="nombre" class="form-control" [(ngModel)]="newProject.nombre"
-                        required placeholder="Ej: Edificio Residencial Norte" autocomplete="off">
+            <div class="row">
+                <div class="col-md-7">
+                    <form (ngSubmit)="createProyecto()" #projectForm="ngForm" autocomplete="off">
+                        <div class="form-group">
+                            <label for="nombre">Nombre del Proyecto</label>
+                            <input type="text" id="nombre" name="nombre" class="form-control"
+                                [(ngModel)]="newProject.nombre" required placeholder="Ej: Edificio Residencial Norte"
+                                autocomplete="off">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="usuario">Ferralla</label>
+                            <select id="usuario" name="usuario" class="form-control" [(ngModel)]="newProject.usuario"
+                                autocomplete="off">
+                                <option [ngValue]="null">Sin asignar</option>
+                                <option *ngFor="let user of users" [ngValue]="user.url">{{ user.first_name ||
+                                    user.username
+                                    }}</option>
+                            </select>
+                        </div>
+
+                        <!-- Folder Selection -->
+                        <div class="form-group">
+                            <label for="carpeta">Carpeta del Proyecto</label>
+                            <div class="folder-input-group">
+                                <input type="text" id="carpeta" class="form-control folder-display"
+                                    [value]="folderName || ''" placeholder="Selecciona una carpeta..." readonly>
+                                <button type="button" class="btn btn-primary folder-btn" (click)="selectFolder()"
+                                    [disabled]="importing">
+                                    Examinar...
+                                </button>
+                            </div>
+                            <small class="text-muted">Estructura: Plantas > Módulos > INF/SUP > imágenes</small>
+                        </div>
+
+                        <!-- Import Progress -->
+                        <div *ngIf="importing" class="import-progress mb-3">
+                            <div class="progress-indicator">
+                                <div class="spinner"></div>
+                                <span>{{ importProgress }}</span>
+                            </div>
+                        </div>
+
+                        <!-- Import Stats -->
+                        <div *ngIf="importStats" class="import-stats alert alert-success mb-3">
+                            <strong>✓ Importación completada:</strong>
+                            <ul class="mb-0 mt-1">
+                                <li>{{ importStats.plantas }} plantas creadas</li>
+                                <li>{{ importStats.modulos }} módulos creados</li>
+                                <li>{{ importStats.imagenes }} imágenes importadas</li>
+                            </ul>
+                            <div *ngIf="importStats.errors.length > 0" class="text-danger mt-2">
+                                <strong>Errores ({{ importStats.errors.length }}):</strong>
+                                <ul>
+                                    <li *ngFor="let err of importStats.errors.slice(0, 5)">{{ err }}</li>
+                                    <li *ngIf="importStats.errors.length > 5">... y {{ importStats.errors.length - 5 }}
+                                        más</li>
+                                </ul>
+                            </div>
+                        </div>
+
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-success"
+                                [disabled]="!projectForm.form.valid || loading || importing">
+                                {{ selectedFolder ? 'Crear e Importar' : 'Crear Proyecto' }}
+                            </button>
+                            <button type="button" class="btn btn-secondary ml-2"
+                                (click)="toggleForm()">Cancelar</button>
+                        </div>
+                    </form>
+                    <div *ngIf="error" class="alert alert-danger mt-2">{{ error }}</div>
                 </div>
 
-                <div class="form-group">
-                    <label for="usuario">Ferralla</label>
-                    <select id="usuario" name="usuario" class="form-control" [(ngModel)]="newProject.usuario"
-                        autocomplete="off">
-                        <option [ngValue]="null">Sin asignar</option>
-                        <option *ngFor="let user of users" [ngValue]="user.url">{{ user.first_name || user.username
-                            }}</option>
-                    </select>
-                </div>
-
-                <!-- Folder Selection -->
-                <div class="form-group">
-                    <label for="carpeta">Carpeta del Proyecto</label>
-                    <div class="folder-input-group">
-                        <input type="text" id="carpeta" class="form-control folder-display" [value]="folderName || ''"
-                            placeholder="Selecciona una carpeta..." readonly>
-                        <button type="button" class="btn btn-primary folder-btn" (click)="selectFolder()"
-                            [disabled]="importing">
-                            Examinar...
-                        </button>
+                <div class="col-md-5">
+                    <div class="folder-structure-graphic">
+                        <h4>Estructura de Carpetas Esperada</h4>
+                        <div class="tree">
+                            <ul>
+                                <li>
+                                    <span class="folder">📁 MiProyecto/</span>
+                                    <ul>
+                                        <li>
+                                            <span class="folder">📁 Planta_1/</span>
+                                            <ul>
+                                                <li>
+                                                    <span class="folder">📁 MOD-01/</span>
+                                                    <ul>
+                                                        <li>
+                                                            <span class="folder">📁 INF/</span>
+                                                            <ul>
+                                                                <li><span class="file">🖼️ imagen1.png</span></li>
+                                                                <li><span class="file">🖼️ imagen2.jpg</span></li>
+                                                            </ul>
+                                                        </li>
+                                                        <li>
+                                                            <span class="folder">📁 SUP/</span>
+                                                            <ul>
+                                                                <li><span class="file">🖼️ imagen1.png</span></li>
+                                                            </ul>
+                                                        </li>
+                                                    </ul>
+                                                </li>
+                                                <li>
+                                                    <span class="folder">📁 MOD-02/</span>
+                                                    <ul>
+                                                        <li><span class="folder">📁 INF/</span></li>
+                                                        <li><span class="folder">📁 SUP/</span></li>
+                                                    </ul>
+                                                </li>
+                                            </ul>
+                                        </li>
+                                        <li>
+                                            <span class="folder">📁 Planta_2/</span>
+                                            <ul>
+                                                <li><span class="dots">...</span></li>
+                                            </ul>
+                                        </li>
+                                    </ul>
+                                </li>
+                            </ul>
+                        </div>
+                        <p class="text-muted mt-2 mb-0"><small>Organice sus archivos de esta manera antes de seleccionar
+                                la carpeta.</small></p>
                     </div>
-                    <small class="text-muted">Estructura: Plantas > Módulos > INF/SUP > imágenes</small>
                 </div>
-
-                <!-- Import Progress -->
-                <div *ngIf="importing" class="import-progress mb-3">
-                    <div class="progress-indicator">
-                        <div class="spinner"></div>
-                        <span>{{ importProgress }}</span>
-                    </div>
-                </div>
-
-                <!-- Import Stats -->
-                <div *ngIf="importStats" class="import-stats alert alert-success mb-3">
-                    <strong>✓ Importación completada:</strong>
-                    <ul class="mb-0 mt-1">
-                        <li>{{ importStats.plantas }} plantas creadas</li>
-                        <li>{{ importStats.modulos }} módulos creados</li>
-                        <li>{{ importStats.imagenes }} imágenes importadas</li>
-                    </ul>
-                    <div *ngIf="importStats.errors.length > 0" class="text-danger mt-2">
-                        <strong>Errores ({{ importStats.errors.length }}):</strong>
-                        <ul>
-                            <li *ngFor="let err of importStats.errors.slice(0, 5)">{{ err }}</li>
-                            <li *ngIf="importStats.errors.length > 5">... y {{ importStats.errors.length - 5 }} más</li>
-                        </ul>
-                    </div>
-                </div>
-
-                <div class="form-actions">
-                    <button type="submit" class="btn btn-success"
-                        [disabled]="!projectForm.form.valid || loading || importing">
-                        {{ selectedFolder ? 'Crear e Importar' : 'Crear Proyecto' }}
-                    </button>
-                    <button type="button" class="btn btn-secondary ml-2" (click)="toggleForm()">Cancelar</button>
-                </div>
-            </form>
-            <div *ngIf="error" class="alert alert-danger mt-2">{{ error }}</div>
+            </div>
         </div>
 
     </div>
