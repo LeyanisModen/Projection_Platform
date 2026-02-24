@@ -441,18 +441,18 @@
 .modules-grid-compact {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
-    gap: 0.5rem;
-    padding: 0.35rem;
+    gap: 0.4rem;
+    padding: 0.25rem;
 }
 
 .module-compact {
     border: 1px solid #d8dde3;
     border-radius: 8px;
-    padding: 0.5rem 0.55rem;
+    padding: 0.4rem 0.5rem;
     background: #fff;
     display: flex;
     flex-direction: column;
-    gap: 0.45rem;
+    gap: 0.3rem;
     border-left: 4px solid transparent;
     height: 100%;
 }
@@ -477,7 +477,8 @@
     display: flex;
     justify-content: space-between;
     align-items: baseline;
-    gap: 0.5rem;
+    gap: 0.35rem;
+    margin-bottom: 0.1rem;
 }
 
 .module-name {
@@ -488,33 +489,34 @@
 }
 
 .current-status {
-    font-size: 0.7rem;
+    font-size: 0.66rem;
     color: #64748b;
     text-transform: uppercase;
     font-weight: 700;
     letter-spacing: 0.03em;
+    white-space: nowrap;
 }
 
 .module-substates {
     display: flex;
     align-items: center;
-    gap: 0.65rem;
+    gap: 0.5rem;
     border-top: 1px solid #eef2f7;
-    padding-top: 0.45rem;
+    padding-top: 0.3rem;
 }
 
 .submodule-labels {
     display: flex;
     flex-direction: column;
     justify-content: center;
-    gap: 0.35rem;
-    min-width: 34px;
-    padding-right: 0.55rem;
+    gap: 0.25rem;
+    min-width: 30px;
+    padding-right: 0.4rem;
     border-right: 2px solid #e2e8f0;
 }
 
 .submodule-labels span {
-    font-size: 0.75rem;
+    font-size: 0.72rem;
     font-weight: 700;
     color: #64748b;
     letter-spacing: 0.04em;
@@ -523,14 +525,14 @@
 .submodule-switches {
     display: flex;
     flex-direction: column;
-    gap: 0.35rem;
+    gap: 0.25rem;
 }
 
 .phase-switch {
     position: relative;
     display: inline-block;
-    width: 48px;
-    height: 24px;
+    width: 42px;
+    height: 20px;
 }
 
 .phase-switch input {
@@ -551,8 +553,8 @@
 .phase-slider::before {
     content: "";
     position: absolute;
-    width: 14px;
-    height: 14px;
+    width: 10px;
+    height: 10px;
     left: 4px;
     top: 3px;
     border-radius: 999px;
@@ -567,7 +569,7 @@
 
 .phase-switch.on .phase-slider::before {
     background: #22c55e;
-    transform: translateX(22px);
+    transform: translateX(20px);
 }
 
 .phase-switch input:focus-visible + .phase-slider {
