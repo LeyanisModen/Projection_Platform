@@ -41,6 +41,8 @@ export class ProyectoDetailComponent implements OnInit {
     importing = false;
     importProgress = '';
     uploadingPlantaId: number | null = null;
+    showPlantaFilesModal = false;
+    plantaFilesTarget: Planta | null = null;
 
     constructor(
         private route: ActivatedRoute,
@@ -354,10 +356,25 @@ export class ProyectoDetailComponent implements OnInit {
         fileInput.click();
     }
 
-    onPlantaFileSelected(event: Event, planta: Planta, fileType: 'plano' | 'corte'): void {
+    openPlantaFilesModal(planta: Planta, event?: Event): void {
+        if (event) {
+            event.stopPropagation();
+        }
+        this.plantaFilesTarget = planta;
+        this.showPlantaFilesModal = true;
+    }
+
+    closePlantaFilesModal(): void {
+        this.showPlantaFilesModal = false;
+        this.plantaFilesTarget = null;
+    }
+
+    onPlantaFileSelected(event: Event, fileType: 'plano' | 'corte', planta?: Planta): void {
         const input = event.target as HTMLInputElement;
         const file = input.files?.[0];
         if (!file) return;
+        const targetPlanta = planta || this.plantaFilesTarget;
+        if (!targetPlanta) return;
 
         const isPlano = fileType === 'plano';
         const validMimeTypes = isPlano
@@ -380,15 +397,18 @@ export class ProyectoDetailComponent implements OnInit {
             formData.append('fichero_corte', file);
         }
 
-        this.uploadingPlantaId = planta.id;
-        this.api.updatePlantaFiles(planta.id, formData).subscribe({
+        this.uploadingPlantaId = targetPlanta.id;
+        this.api.updatePlantaFiles(targetPlanta.id, formData).subscribe({
             next: (updatedPlanta) => {
-                const index = this.plantas.findIndex(p => p.id === planta.id);
+                const index = this.plantas.findIndex(p => p.id === targetPlanta.id);
                 if (index !== -1) {
                     this.plantas[index] = updatedPlanta;
                 }
-                if (this.selectedPlanta?.id === planta.id) {
+                if (this.selectedPlanta?.id === targetPlanta.id) {
                     this.selectedPlanta = updatedPlanta;
+                }
+                if (this.plantaFilesTarget?.id === targetPlanta.id) {
+                    this.plantaFilesTarget = updatedPlanta;
                 }
                 this.uploadingPlantaId = null;
                 this.cdr.detectChanges();
