@@ -376,8 +376,10 @@
 .dropdown-ferralla {
     font-size: 1.05rem;
     color: #495057;
-    height: calc(2.45rem + 2px);
-    /* ensure proper height */
+    height: auto;
+    /* Let the browser calculate the auto height so the input doesn't clip */
+    padding-top: 0.65rem;
+    padding-bottom: 0.65rem;
 }
 
 .folder-guidance {

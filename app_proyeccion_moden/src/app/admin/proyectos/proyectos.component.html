@@ -13,7 +13,7 @@
         </div>
         <div class="card-body">
             <div class="row">
-                <div class="col-md-6">
+                <div class="col-md-7">
                     <form (ngSubmit)="createProyecto()" #projectForm="ngForm" autocomplete="off">
                         <div class="form-group">
                             <label for="nombre">Nombre del Proyecto</label>
@@ -86,7 +86,7 @@
                     <div *ngIf="error" class="alert alert-danger mt-2">{{ error }}</div>
                 </div>
 
-                <div class="col-md-6 pl-md-4">
+                <div class="col-md-5 pl-md-4">
                     <div class="folder-structure-graphic">
                         <h4>Estructura de Carpetas Esperada</h4>
                         <div class="tree">
