@@ -520,3 +520,17 @@
     color: #1565c0;
     font-size: 0.7rem;
 }
+
+.tag-required {
+    color: #c62828;
+    font-size: 0.75em;
+    font-weight: normal;
+    font-style: italic;
+}
+
+.tag-optional {
+    color: #1565c0;
+    font-size: 0.75em;
+    font-weight: normal;
+    font-style: italic;
+}
