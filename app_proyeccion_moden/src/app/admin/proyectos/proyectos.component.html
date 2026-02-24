@@ -13,7 +13,7 @@
         </div>
         <div class="card-body">
             <div class="row">
-                <div class="col-md-7">
+                <div class="col-md-6">
                     <form (ngSubmit)="createProyecto()" #projectForm="ngForm" autocomplete="off">
                         <div class="form-group">
                             <label for="nombre">Nombre del Proyecto</label>
@@ -24,8 +24,8 @@
 
                         <div class="form-group">
                             <label for="usuario">Ferralla</label>
-                            <select id="usuario" name="usuario" class="form-control" [(ngModel)]="newProject.usuario"
-                                autocomplete="off">
+                            <select id="usuario" name="usuario" class="form-control dropdown-ferralla"
+                                [(ngModel)]="newProject.usuario" autocomplete="off">
                                 <option [ngValue]="null">Sin asignar</option>
                                 <option *ngFor="let user of users" [ngValue]="user.url">{{ user.first_name ||
                                     user.username
@@ -44,7 +44,8 @@
                                     Examinar...
                                 </button>
                             </div>
-                            <small class="text-muted">Estructura: Plantas > Módulos > INF/SUP > imágenes</small>
+                            <small class="text-muted folder-guidance">Organice sus archivos según la estructura esperada
+                                de la derecha antes de seleccionar la carpeta.</small>
                         </div>
 
                         <!-- Import Progress -->
@@ -85,7 +86,7 @@
                     <div *ngIf="error" class="alert alert-danger mt-2">{{ error }}</div>
                 </div>
 
-                <div class="col-md-5">
+                <div class="col-md-6 pl-md-4">
                     <div class="folder-structure-graphic">
                         <h4>Estructura de Carpetas Esperada</h4>
                         <div class="tree">
@@ -133,8 +134,6 @@
                                 </li>
                             </ul>
                         </div>
-                        <p class="text-muted mt-2 mb-0"><small>Organice sus archivos de esta manera antes de seleccionar
-                                la carpeta.</small></p>
                     </div>
                 </div>
             </div>
