@@ -409,19 +409,6 @@
     font-weight: 600;
 }
 
-/* Simplified Status Colors */
-.status-pendiente {
-    background-color: #fff3cd;
-    border-color: #ffc107;
-    color: #856404;
-}
-
-.status-completado {
-    background-color: #d4edda;
-    border-color: #28a745;
-    color: #155724;
-}
-
 .ml-2 {
     margin-left: 0.5rem;
 }
@@ -453,114 +440,143 @@
 /* Compact Grid */
 .modules-grid-compact {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    /* Restore slightly wider col */
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
     gap: 0.5rem;
-    padding: 0.5rem;
+    padding: 0.35rem;
 }
 
 .module-compact {
-    border: 1px solid #ddd;
-    border-radius: 6px;
-    padding: 0.5rem;
-    /* Standard padding */
+    border: 1px solid #d8dde3;
+    border-radius: 8px;
+    padding: 0.5rem 0.55rem;
     background: #fff;
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
-    /* Push actions to bottom */
-    gap: 0.25rem;
-    /* Keep gap tight */
+    gap: 0.45rem;
     border-left: 4px solid transparent;
     height: 100%;
-    /* Fill grid cell */
 }
 
 .module-compact.status-pendiente {
     border-left-color: #fd7e14;
 }
 
+.module-compact.status-progreso {
+    border-left-color: #fb923c;
+}
+
 .module-compact.status-completado {
     border-left-color: #28a745;
+}
+
+.module-compact.status-cerrado {
+    border-left-color: #64748b;
 }
 
 .module-header {
     display: flex;
     justify-content: space-between;
-    align-items: center;
-    margin-bottom: 0;
-    /* No margin */
+    align-items: baseline;
+    gap: 0.5rem;
 }
 
 .module-name {
     font-weight: 700;
     font-size: 0.95rem;
-    /* Normal readable size */
     margin-bottom: 0 !important;
-    /* Force no bottom margin */
+    color: #0f172a;
 }
 
 .current-status {
     font-size: 0.7rem;
-    color: #666;
+    color: #64748b;
     text-transform: uppercase;
-    font-weight: 600;
+    font-weight: 700;
+    letter-spacing: 0.03em;
 }
 
-/* Submodule Indicators */
-.submodule-indicators {
-    padding: 2px 8px;
-    /* Slightly reduced top/bottom padding */
-    background: rgba(0, 0, 0, 0.03);
-    border-radius: 4px;
+.module-substates {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    margin: 0;
-    /* No external margin */
+    gap: 0.65rem;
+    border-top: 1px solid #eef2f7;
+    padding-top: 0.45rem;
 }
 
-.submodule-indicators .badge {
-    font-size: 0.75rem;
-    /* Normal badge size */
-    padding: 0.25em 0.5em;
-    font-weight: 600;
-}
-
-.badge-secondary {
-    background-color: #e9ecef;
-    color: #adb5bd;
-    border: 1px solid #dee2e6;
-}
-
-.status-actions {
-    margin-top: 0;
-    /* No margin top */
+.submodule-labels {
     display: flex;
-    justify-content: space-between;
-    gap: 4px;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.35rem;
+    min-width: 34px;
+    padding-right: 0.55rem;
+    border-right: 2px solid #e2e8f0;
 }
 
-.status-actions button {
-    font-size: 0.8rem;
-    /* readable button text */
-    padding: 0.25rem 0.5rem;
-    /* clickable padding */
-    line-height: 1.2;
+.submodule-labels span {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #64748b;
+    letter-spacing: 0.04em;
 }
 
-.status-action-btn {
-    border: 1px solid #cbd5e1;
-    background: #ffffff;
-    color: #334155;
-    font-weight: 600;
+.submodule-switches {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
 }
 
-.status-action-btn:hover,
-.status-action-btn:focus {
-    background: #f8fafc;
-    border-color: #94a3b8;
-    color: #1f2937;
+.phase-switch {
+    position: relative;
+    display: inline-block;
+    width: 48px;
+    height: 24px;
+}
+
+.phase-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.phase-slider {
+    position: absolute;
+    inset: 0;
+    border-radius: 999px;
+    border: 2px solid #fb923c;
+    background: #fff7ed;
+    transition: all 0.2s ease;
+}
+
+.phase-slider::before {
+    content: "";
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    left: 4px;
+    top: 3px;
+    border-radius: 999px;
+    background: #f97316;
+    transition: all 0.2s ease;
+}
+
+.phase-switch.on .phase-slider {
+    border-color: #22c55e;
+    background: #f0fdf4;
+}
+
+.phase-switch.on .phase-slider::before {
+    background: #22c55e;
+    transform: translateX(22px);
+}
+
+.phase-switch input:focus-visible + .phase-slider {
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+}
+
+.phase-switch.disabled {
+    opacity: 0.6;
+    pointer-events: none;
 }
 
 /* Legend Badges */

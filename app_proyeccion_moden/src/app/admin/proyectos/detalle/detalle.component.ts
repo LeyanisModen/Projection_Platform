@@ -42,6 +42,7 @@ export class ProyectoDetailComponent implements OnInit {
     importing = false;
     importProgress = '';
     uploadingPlantaId: number | null = null;
+    updatingSubmoduleId: number | null = null;
     showPlantaFilesModal = false;
     plantaFilesTarget: Planta | null = null;
     checkingPlantaFiles = false;
@@ -263,25 +264,61 @@ export class ProyectoDetailComponent implements OnInit {
         });
     }
 
-    // Update module status
-    updateModuloStatus(modulo: Modulo, newStatus: string): void {
-        if (modulo.estado === newStatus) {
-            return;
+    getModuloStatusLabel(estado: Modulo['estado']): string {
+        switch (estado) {
+            case 'COMPLETADO':
+                return 'TERMINADO';
+            case 'EN_PROGRESO':
+                return 'EN PROCESO';
+            case 'CERRADO':
+                return 'CERRADO';
+            default:
+                return 'PENDIENTE';
         }
+    }
 
-        this.api.updateModulo(modulo.id, { estado: newStatus }).subscribe({
+    updateSubmoduleStatus(modulo: Modulo, phase: 'inferior_hecho' | 'superior_hecho', event: Event): void {
+        const input = event.target as HTMLInputElement;
+        const checked = input.checked;
+
+        const inferior = phase === 'inferior_hecho' ? checked : modulo.inferior_hecho;
+        const superior = phase === 'superior_hecho' ? checked : modulo.superior_hecho;
+        const estado = this.computeModuloEstado(inferior, superior, modulo.cerrado);
+
+        this.updatingSubmoduleId = modulo.id;
+        this.api.updateModulo(modulo.id, {
+            inferior_hecho: inferior,
+            superior_hecho: superior,
+            estado: estado
+        }).subscribe({
             next: (updated: Modulo) => {
                 const index = this.modulos.findIndex(m => m.id === modulo.id);
                 if (index !== -1) {
                     this.modulos[index] = updated;
                 }
+                this.updatingSubmoduleId = null;
                 this.cdr.detectChanges();
             },
             error: (err: any) => {
-                console.error('Error updating module status', err);
-                alert('Error al cambiar el estado del módulo');
+                console.error('Error updating submodule status', err);
+                this.updatingSubmoduleId = null;
+                alert('Error al cambiar el estado del submódulo');
+                this.cdr.detectChanges();
             }
         });
+    }
+
+    private computeModuloEstado(inferior: boolean, superior: boolean, cerrado: boolean): Modulo['estado'] {
+        if (cerrado) {
+            return 'CERRADO';
+        }
+        if (inferior && superior) {
+            return 'COMPLETADO';
+        }
+        if (inferior || superior) {
+            return 'EN_PROGRESO';
+        }
+        return 'PENDIENTE';
     }
 
     // Get user display name from URL

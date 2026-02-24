@@ -82,38 +82,43 @@
 
                     <div class="modules-grid-compact">
                         <div *ngFor="let modulo of modulos" class="module-compact"
-                            [class.status-pendiente]="modulo.estado !== 'COMPLETADO'"
-                            [class.status-completado]="modulo.estado === 'COMPLETADO'">
+                            [class.status-pendiente]="modulo.estado === 'PENDIENTE'"
+                            [class.status-progreso]="modulo.estado === 'EN_PROGRESO'"
+                            [class.status-completado]="modulo.estado === 'COMPLETADO'"
+                            [class.status-cerrado]="modulo.estado === 'CERRADO'">
 
                             <div class="module-header">
                                 <span class="module-name">{{ modulo.nombre }}</span>
-                                <span class="current-status">{{ modulo.estado === 'COMPLETADO' ? 'Terminado' :
-                                    'Pendiente' }}</span>
+                                <span class="current-status">{{ getModuloStatusLabel(modulo.estado) }}</span>
                             </div>
 
-                            <div class="submodule-indicators d-flex justify-content-between">
-                                <span class="badge badge-pill" [class.badge-success]="modulo.inferior_hecho"
-                                    [class.badge-secondary]="!modulo.inferior_hecho" title="Fase Inferior">
-                                    INF
-                                </span>
-                                <span class="badge badge-pill" [class.badge-success]="modulo.superior_hecho"
-                                    [class.badge-secondary]="!modulo.superior_hecho" title="Fase Superior">
-                                    SUP
-                                </span>
-                            </div>
+                            <div class="module-substates">
+                                <div class="submodule-labels">
+                                    <span>SUP</span>
+                                    <span>INF</span>
+                                </div>
 
-                            <!-- Simplified Actions: Only toggle Completed/Pending -->
-                            <div class="status-actions text-center">
-                                <button *ngIf="modulo.estado !== 'COMPLETADO'"
-                                    class="btn btn-sm btn-block status-action-btn"
-                                    (click)="updateModuloStatus(modulo, 'COMPLETADO'); $event.stopPropagation()">
-                                    Marcar terminado
-                                </button>
-                                <button *ngIf="modulo.estado === 'COMPLETADO'"
-                                    class="btn btn-sm btn-block status-action-btn"
-                                    (click)="updateModuloStatus(modulo, 'PENDIENTE'); $event.stopPropagation()">
-                                    Marcar pendiente
-                                </button>
+                                <div class="submodule-switches">
+                                    <label class="phase-switch"
+                                        [class.on]="modulo.superior_hecho"
+                                        [class.disabled]="updatingSubmoduleId === modulo.id || modulo.estado === 'CERRADO'">
+                                        <input type="checkbox"
+                                            [checked]="modulo.superior_hecho"
+                                            [disabled]="updatingSubmoduleId === modulo.id || modulo.estado === 'CERRADO'"
+                                            (change)="updateSubmoduleStatus(modulo, 'superior_hecho', $event)">
+                                        <span class="phase-slider"></span>
+                                    </label>
+
+                                    <label class="phase-switch"
+                                        [class.on]="modulo.inferior_hecho"
+                                        [class.disabled]="updatingSubmoduleId === modulo.id || modulo.estado === 'CERRADO'">
+                                        <input type="checkbox"
+                                            [checked]="modulo.inferior_hecho"
+                                            [disabled]="updatingSubmoduleId === modulo.id || modulo.estado === 'CERRADO'"
+                                            (change)="updateSubmoduleStatus(modulo, 'inferior_hecho', $event)">
+                                        <span class="phase-slider"></span>
+                                    </label>
+                                </div>
                             </div>
                         </div>
                     </div>
