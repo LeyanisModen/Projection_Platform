@@ -97,6 +97,31 @@
     cursor: not-allowed;
 }
 
+.planta-delete-icon-btn {
+    width: 26px;
+    height: 26px;
+    border: 1px solid #fecaca;
+    border-radius: 6px;
+    background: #fff1f2;
+    color: #b91c1c;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.planta-delete-icon-btn:hover:not(:disabled) {
+    background: #ffe4e6;
+    border-color: #fda4af;
+}
+
+.planta-delete-icon-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
 .planta-files-modal-backdrop {
     position: fixed;
     inset: 0;
@@ -522,6 +547,20 @@
     padding: 0.25rem 0.5rem;
     /* clickable padding */
     line-height: 1.2;
+}
+
+.status-action-btn {
+    border: 1px solid #cbd5e1;
+    background: #ffffff;
+    color: #334155;
+    font-weight: 600;
+}
+
+.status-action-btn:hover,
+.status-action-btn:focus {
+    background: #f8fafc;
+    border-color: #94a3b8;
+    color: #1f2937;
 }
 
 /* Legend Badges */

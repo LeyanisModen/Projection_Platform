@@ -269,6 +269,10 @@ export class ApiService {
         return this.http.patch<Planta>(`${this.baseUrl}/plantas/${id}/`, data, { headers: this.getHeaders() });
     }
 
+    deletePlanta(id: number): Observable<void> {
+        return this.http.delete<void>(`${this.baseUrl}/plantas/${id}/`, { headers: this.getHeaders() });
+    }
+
     updatePlantaFiles(id: number, formData: FormData): Observable<Planta> {
         return this.http.patch<Planta>(`${this.baseUrl}/plantas/${id}/`, formData, {
             headers: this.getAuthHeaders()

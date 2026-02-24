@@ -51,6 +51,12 @@
                                     title="Gestionar archivos">
                                     <i class="fa fa-paperclip" aria-hidden="true"></i>
                                 </button>
+                                <button type="button" class="planta-delete-icon-btn"
+                                    (click)="deletePlanta(planta, $event)"
+                                    [disabled]="uploadingPlantaId === planta.id"
+                                    title="Eliminar planta">
+                                    <i class="fa fa-trash" aria-hidden="true"></i>
+                                </button>
                             </div>
                             <span class="badge badge-light badge-pill">{{ planta.modulos_count }} Módulos</span>
                         </div>
@@ -99,14 +105,14 @@
                             <!-- Simplified Actions: Only toggle Completed/Pending -->
                             <div class="status-actions text-center">
                                 <button *ngIf="modulo.estado !== 'COMPLETADO'"
-                                    class="btn btn-sm btn-outline-success btn-block"
+                                    class="btn btn-sm btn-block status-action-btn"
                                     (click)="updateModuloStatus(modulo, 'COMPLETADO'); $event.stopPropagation()">
-                                    Marcar Completado
+                                    Marcar terminado
                                 </button>
                                 <button *ngIf="modulo.estado === 'COMPLETADO'"
-                                    class="btn btn-sm btn-outline-warning btn-block"
+                                    class="btn btn-sm btn-block status-action-btn"
                                     (click)="updateModuloStatus(modulo, 'PENDIENTE'); $event.stopPropagation()">
-                                    Reabrir
+                                    Marcar pendiente
                                 </button>
                             </div>
                         </div>

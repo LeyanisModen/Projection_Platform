@@ -128,6 +128,52 @@ export class ProyectoDetailComponent implements OnInit {
         });
     }
 
+    deletePlanta(planta: Planta, event?: Event): void {
+        if (event) {
+            event.stopPropagation();
+        }
+
+        const confirmed = confirm(`¿Eliminar la planta "${planta.nombre}"? Esta acción no se puede deshacer.`);
+        if (!confirmed) {
+            return;
+        }
+
+        this.loading = true;
+        this.api.deletePlanta(planta.id).subscribe({
+            next: () => {
+                this.plantas = this.plantas.filter(p => p.id !== planta.id);
+
+                if (this.plantaFilesTarget?.id === planta.id) {
+                    this.closePlantaFilesModal();
+                }
+
+                if (this.selectedPlanta?.id === planta.id) {
+                    const nextPlanta = this.plantas[0] ?? null;
+                    this.selectedPlanta = nextPlanta;
+
+                    if (nextPlanta) {
+                        this.loadModulos(nextPlanta.id);
+                    } else {
+                        this.modulos = [];
+                        this.loading = false;
+                        this.cdr.detectChanges();
+                    }
+                    return;
+                }
+
+                this.loading = false;
+                this.cdr.detectChanges();
+            },
+            error: (err: any) => {
+                console.error('Error deleting planta', err);
+                const detail = err?.error?.detail || 'No se pudo eliminar la planta.';
+                alert(detail);
+                this.loading = false;
+                this.cdr.detectChanges();
+            }
+        });
+    }
+
     selectPlanta(planta: Planta) {
         this.selectedPlanta = planta;
         this.loadModulos(planta.id);
@@ -219,16 +265,12 @@ export class ProyectoDetailComponent implements OnInit {
 
     // Update module status
     updateModuloStatus(modulo: Modulo, newStatus: string): void {
-        console.log('CLICKED updateModuloStatus', modulo.id, newStatus);
-
         if (modulo.estado === newStatus) {
-            console.log('Status is already', newStatus, 'skipping');
             return;
         }
 
         this.api.updateModulo(modulo.id, { estado: newStatus }).subscribe({
             next: (updated: Modulo) => {
-                console.log('Update success', updated);
                 const index = this.modulos.findIndex(m => m.id === modulo.id);
                 if (index !== -1) {
                     this.modulos[index] = updated;
