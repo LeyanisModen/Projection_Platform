@@ -456,7 +456,7 @@
 
 .tree li {
     margin: 0;
-    padding: 0.05rem 0 0.05rem 0.5rem;
+    padding: 0.15rem 0 0.15rem 0.5rem;
     position: relative;
     line-height: 1.2;
 }
@@ -526,6 +526,7 @@
     font-size: 0.75em;
     font-weight: normal;
     font-style: italic;
+    margin-left: 0.4em;
 }
 
 .tag-optional {
@@ -533,4 +534,5 @@
     font-size: 0.75em;
     font-weight: normal;
     font-style: italic;
+    margin-left: 0.4em;
 }
