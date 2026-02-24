@@ -74,13 +74,13 @@
                             </div>
                         </div>
 
-                        <div class="form-actions">
+                        <div class="form-actions text-right">
+                            <button type="button" class="btn btn-secondary mr-2"
+                                (click)="toggleForm()">Cancelar</button>
                             <button type="submit" class="btn btn-success"
                                 [disabled]="!projectForm.form.valid || loading || importing">
                                 {{ selectedFolder ? 'Crear e Importar' : 'Crear Proyecto' }}
                             </button>
-                            <button type="button" class="btn btn-secondary ml-2"
-                                (click)="toggleForm()">Cancelar</button>
                         </div>
                     </form>
                     <div *ngIf="error" class="alert alert-danger mt-2">{{ error }}</div>
