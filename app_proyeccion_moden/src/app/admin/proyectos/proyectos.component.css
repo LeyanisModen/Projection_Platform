@@ -493,6 +493,34 @@
     padding-left: 0.5rem;
 }
 
+.tree span.folder-required {
+    color: #c62828;
+}
+
+.tree span.file-optional {
+    color: #1565c0;
+    font-style: italic;
+}
+
+.tree-legend {
+    margin-top: 0.75rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid #e9ecef;
+    font-size: 0.8rem;
+    color: #6c757d;
+    line-height: 1.6;
+}
+
+.legend-required {
+    color: #c62828;
+    font-size: 0.7rem;
+}
+
+.legend-optional {
+    color: #1565c0;
+    font-size: 0.7rem;
+}
+
 /* Folder Structure Graphic Styles */
 .folder-structure-graphic {
     background: #f8f9fa;
