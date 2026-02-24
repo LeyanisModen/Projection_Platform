@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterModule } from '@angular/router';
 import { ApiService, Proyecto, Planta, Modulo, User } from '../../../services/api.service';
 import { switchMap, forkJoin, of } from 'rxjs';
+import { environment } from '../../../../environments/environment';
 
 @Component({
     selector: 'app-proyecto-detalle',
@@ -43,6 +44,8 @@ export class ProyectoDetailComponent implements OnInit {
     uploadingPlantaId: number | null = null;
     showPlantaFilesModal = false;
     plantaFilesTarget: Planta | null = null;
+    checkingPlantaFiles = false;
+    plantaFileExists = { plano: false, corte: false };
 
     constructor(
         private route: ActivatedRoute,
@@ -362,11 +365,14 @@ export class ProyectoDetailComponent implements OnInit {
         }
         this.plantaFilesTarget = planta;
         this.showPlantaFilesModal = true;
+        this.refreshPlantaFileAvailability();
     }
 
     closePlantaFilesModal(): void {
         this.showPlantaFilesModal = false;
         this.plantaFilesTarget = null;
+        this.plantaFileExists = { plano: false, corte: false };
+        this.checkingPlantaFiles = false;
     }
 
     onPlantaFileSelected(event: Event, fileType: 'plano' | 'corte', planta?: Planta): void {
@@ -400,16 +406,8 @@ export class ProyectoDetailComponent implements OnInit {
         this.uploadingPlantaId = targetPlanta.id;
         this.api.updatePlantaFiles(targetPlanta.id, formData).subscribe({
             next: (updatedPlanta) => {
-                const index = this.plantas.findIndex(p => p.id === targetPlanta.id);
-                if (index !== -1) {
-                    this.plantas[index] = updatedPlanta;
-                }
-                if (this.selectedPlanta?.id === targetPlanta.id) {
-                    this.selectedPlanta = updatedPlanta;
-                }
-                if (this.plantaFilesTarget?.id === targetPlanta.id) {
-                    this.plantaFilesTarget = updatedPlanta;
-                }
+                this.applyUpdatedPlanta(updatedPlanta);
+                this.refreshPlantaAfterUpload(targetPlanta.id);
                 this.uploadingPlantaId = null;
                 this.cdr.detectChanges();
             },
@@ -420,5 +418,87 @@ export class ProyectoDetailComponent implements OnInit {
                 this.cdr.detectChanges();
             }
         });
+    }
+
+    getPlantaFileUrl(fileType: 'plano' | 'corte'): string | null {
+        const rawUrl = fileType === 'plano'
+            ? this.plantaFilesTarget?.plano_imagen
+            : this.plantaFilesTarget?.fichero_corte;
+        return this.toAbsoluteFileUrl(rawUrl ?? null);
+    }
+
+    openPlantaFile(fileType: 'plano' | 'corte'): void {
+        const canOpen = fileType === 'plano' ? this.plantaFileExists.plano : this.plantaFileExists.corte;
+        if (!canOpen) return;
+        const url = this.getPlantaFileUrl(fileType);
+        if (!url) return;
+        window.open(url, '_blank', 'noopener');
+    }
+
+    private applyUpdatedPlanta(updatedPlanta: Planta): void {
+        const index = this.plantas.findIndex(p => p.id === updatedPlanta.id);
+        if (index !== -1) {
+            this.plantas[index] = updatedPlanta;
+        }
+        if (this.selectedPlanta?.id === updatedPlanta.id) {
+            this.selectedPlanta = updatedPlanta;
+        }
+        if (this.plantaFilesTarget?.id === updatedPlanta.id) {
+            this.plantaFilesTarget = updatedPlanta;
+        }
+    }
+
+    private refreshPlantaAfterUpload(plantaId: number): void {
+        if (!this.proyectoId) return;
+        this.api.getPlantas(this.proyectoId).subscribe({
+            next: (plantas) => {
+                this.plantas = plantas.sort((a: Planta, b: Planta) => a.orden - b.orden);
+                const refreshed = this.plantas.find(p => p.id === plantaId);
+                if (refreshed) {
+                    this.applyUpdatedPlanta(refreshed);
+                }
+                this.refreshPlantaFileAvailability();
+                this.cdr.detectChanges();
+            },
+            error: (err) => {
+                console.error('Error refreshing plantas after upload', err);
+            }
+        });
+    }
+
+    private async refreshPlantaFileAvailability(): Promise<void> {
+        this.checkingPlantaFiles = true;
+        const planoUrl = this.getPlantaFileUrl('plano');
+        const corteUrl = this.getPlantaFileUrl('corte');
+        this.plantaFileExists.plano = await this.checkFileReachable(planoUrl);
+        this.plantaFileExists.corte = await this.checkFileReachable(corteUrl);
+        this.checkingPlantaFiles = false;
+        this.cdr.detectChanges();
+    }
+
+    private async checkFileReachable(url: string | null): Promise<boolean> {
+        if (!url) return false;
+        try {
+            const res = await fetch(url, { method: 'HEAD' });
+            return res.ok;
+        } catch {
+            return false;
+        }
+    }
+
+    private toAbsoluteFileUrl(url: string | null): string | null {
+        if (!url) return null;
+        if (/^https?:\/\//i.test(url)) return url;
+
+        const apiBase = environment.apiUrl;
+        let apiOrigin = '';
+        if (/^https?:\/\//i.test(apiBase)) {
+            apiOrigin = new URL(apiBase).origin;
+        }
+
+        if (url.startsWith('/')) {
+            return apiOrigin ? `${apiOrigin}${url}` : url;
+        }
+        return apiOrigin ? `${apiOrigin}/${url}` : `/${url}`;
     }
 }

@@ -43,16 +43,16 @@
                     <button *ngFor="let planta of plantas" class="list-group-item list-group-item-action"
                         [class.active]="selectedPlanta?.id === planta.id" (click)="selectPlanta(planta)">
                         <div class="d-flex justify-content-between align-items-center w-100 mb-2">
-                            <span>{{ planta.nombre }}</span>
+                            <div class="planta-title-wrap">
+                                <span>{{ planta.nombre }}</span>
+                                <button type="button" class="planta-files-icon-btn"
+                                    (click)="openPlantaFilesModal(planta, $event)"
+                                    [disabled]="uploadingPlantaId === planta.id"
+                                    title="Gestionar archivos">
+                                    <i class="fa fa-paperclip" aria-hidden="true"></i>
+                                </button>
+                            </div>
                             <span class="badge badge-light badge-pill">{{ planta.modulos_count }} Módulos</span>
-                        </div>
-
-                        <div class="planta-files-actions">
-                            <button class="btn btn-sm btn-outline-primary"
-                                (click)="openPlantaFilesModal(planta, $event)"
-                                [disabled]="uploadingPlantaId === planta.id">
-                                Archivos
-                            </button>
                         </div>
                     </button>
                     <div *ngIf="plantas.length === 0" class="p-3 text-center text-muted">No hay plantas.</div>
@@ -131,21 +131,30 @@
 <div class="planta-files-modal-backdrop" *ngIf="showPlantaFilesModal" (click)="closePlantaFilesModal()">
     <div class="planta-files-modal" (click)="$event.stopPropagation()">
         <div class="planta-files-modal-header">
-            <h4>Archivos de {{ plantaFilesTarget?.nombre }}</h4>
-            <button class="btn btn-sm btn-secondary" (click)="closePlantaFilesModal()">Cerrar</button>
+            <div>
+                <h4>Archivos de {{ plantaFilesTarget?.nombre }}</h4>
+                <small class="text-muted">Plano e información de planilla por planta.</small>
+            </div>
+            <button class="btn btn-sm btn-outline-secondary" (click)="closePlantaFilesModal()">Cerrar</button>
         </div>
 
         <div class="planta-file-row">
             <div class="planta-file-info">
                 <strong>Plano (.jpg)</strong>
-                <a *ngIf="plantaFilesTarget?.plano_imagen" [href]="plantaFilesTarget?.plano_imagen" target="_blank">Ver actual</a>
-                <span *ngIf="!plantaFilesTarget?.plano_imagen" class="text-muted">No hay archivo</span>
+                <span class="text-muted">
+                    {{ getPlantaFileUrl('plano') ? 'Archivo cargado' : 'No hay archivo' }}
+                </span>
             </div>
             <div class="planta-file-actions">
+                <button class="btn btn-sm btn-outline-dark"
+                    (click)="openPlantaFile('plano')"
+                    [disabled]="!plantaFileExists.plano || checkingPlantaFiles || uploadingPlantaId === plantaFilesTarget?.id">
+                    Ver actual
+                </button>
                 <button class="btn btn-sm btn-outline-primary"
                     (click)="triggerPlantaFileUpload(modalPlanoInput)"
                     [disabled]="uploadingPlantaId === plantaFilesTarget?.id">
-                    {{ plantaFilesTarget?.plano_imagen ? 'Cambiar' : 'Subir' }}
+                    {{ getPlantaFileUrl('plano') ? 'Cambiar' : 'Subir' }}
                 </button>
                 <input #modalPlanoInput type="file" accept=".jpg,.jpeg,image/jpeg"
                     (change)="onPlantaFileSelected($event, 'plano')" hidden>
@@ -155,14 +164,20 @@
         <div class="planta-file-row">
             <div class="planta-file-info">
                 <strong>Planilla (.pdf)</strong>
-                <a *ngIf="plantaFilesTarget?.fichero_corte" [href]="plantaFilesTarget?.fichero_corte" target="_blank">Ver actual</a>
-                <span *ngIf="!plantaFilesTarget?.fichero_corte" class="text-muted">No hay archivo</span>
+                <span class="text-muted">
+                    {{ getPlantaFileUrl('corte') ? 'Archivo cargado' : 'No hay archivo' }}
+                </span>
             </div>
             <div class="planta-file-actions">
+                <button class="btn btn-sm btn-outline-dark"
+                    (click)="openPlantaFile('corte')"
+                    [disabled]="!plantaFileExists.corte || checkingPlantaFiles || uploadingPlantaId === plantaFilesTarget?.id">
+                    Ver actual
+                </button>
                 <button class="btn btn-sm btn-outline-secondary"
                     (click)="triggerPlantaFileUpload(modalCorteInput)"
                     [disabled]="uploadingPlantaId === plantaFilesTarget?.id">
-                    {{ plantaFilesTarget?.fichero_corte ? 'Cambiar' : 'Subir' }}
+                    {{ getPlantaFileUrl('corte') ? 'Cambiar' : 'Subir' }}
                 </button>
                 <input #modalCorteInput type="file" accept=".pdf,application/pdf"
                     (change)="onPlantaFileSelected($event, 'corte')" hidden>

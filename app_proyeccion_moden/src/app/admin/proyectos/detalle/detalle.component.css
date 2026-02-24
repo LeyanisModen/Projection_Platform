@@ -66,10 +66,35 @@
     font-size: 1.05rem;
 }
 
-.planta-files-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.35rem;
+.planta-title-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.planta-files-icon-btn {
+    width: 26px;
+    height: 26px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: #f8fafc;
+    color: #334155;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.planta-files-icon-btn:hover:not(:disabled) {
+    background: #eef2ff;
+    border-color: #a5b4fc;
+}
+
+.planta-files-icon-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
 }
 
 .planta-files-modal-backdrop {
@@ -83,22 +108,24 @@
 }
 
 .planta-files-modal {
-    width: min(640px, 92vw);
+    width: min(620px, 92vw);
     background: #fff;
-    border-radius: 10px;
-    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
-    padding: 1rem;
+    border-radius: 12px;
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.24);
+    padding: 1rem 1rem 0.6rem;
 }
 
 .planta-files-modal-header {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
-    margin-bottom: 1rem;
+    margin-bottom: 0.7rem;
+    gap: 1rem;
 }
 
 .planta-files-modal-header h4 {
     margin: 0;
+    font-size: 1.05rem;
 }
 
 .planta-file-row {
@@ -106,8 +133,8 @@
     align-items: center;
     justify-content: space-between;
     gap: 0.75rem;
-    padding: 0.75rem 0;
-    border-top: 1px solid #eee;
+    padding: 0.85rem 0;
+    border-top: 1px solid #e5e7eb;
 }
 
 .planta-file-row:first-of-type {
@@ -118,6 +145,13 @@
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
+}
+
+.planta-file-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
 }
 .card {
     background: white;
