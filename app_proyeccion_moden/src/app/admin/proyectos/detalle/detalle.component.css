@@ -440,7 +440,7 @@
 /* Compact Grid */
 .modules-grid-compact {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(136px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(144px, 1fr));
     gap: 0.32rem;
     padding: 0.18rem;
 }
@@ -509,9 +509,9 @@
 
 .submodule-row {
     display: grid;
-    grid-template-columns: 20px 34px;
+    grid-template-columns: 24px 34px;
     align-items: center;
-    column-gap: 0.14rem;
+    column-gap: 0.12rem;
     margin-left: auto;
 }
 
@@ -521,6 +521,8 @@
     color: #64748b;
     letter-spacing: 0.04em;
     line-height: 1;
+    white-space: nowrap;
+    display: block;
 }
 
 .phase-switch {
