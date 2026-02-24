@@ -440,20 +440,20 @@
 /* Compact Grid */
 .modules-grid-compact {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: 0.3rem;
-    padding: 0.18rem;
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    gap: 0.25rem;
+    padding: 0.12rem;
 }
 
 .module-compact {
     border: 1px solid #d8dde3;
-    border-radius: 8px;
-    padding: 0.22rem 0.32rem;
+    border-radius: 6px;
+    padding: 0.18rem 0.28rem;
     background: #fff;
     display: flex;
     flex-direction: column;
-    gap: 0.1rem;
-    border-left: 4px solid transparent;
+    gap: 0.08rem;
+    border-left: 3px solid transparent;
 }
 
 .module-compact.status-pendiente {
@@ -472,59 +472,38 @@
     border-left-color: #64748b;
 }
 
-.module-header {
-    display: flex;
-    flex-direction: row;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 0.3rem;
-}
-
 .module-name {
     font-weight: 700;
-    font-size: 0.82rem;
+    font-size: 0.78rem;
     color: #0f172a;
     line-height: 1.1;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    min-width: 0;
-}
-
-.current-status {
-    font-size: 0.58rem;
-    color: #64748b;
-    text-transform: uppercase;
-    font-weight: 700;
-    letter-spacing: 0.03em;
-    white-space: nowrap;
-    line-height: 1;
-    flex-shrink: 0;
 }
 
 .module-substates {
     display: flex;
-    flex-direction: row;
-    gap: 0.5rem;
-    border-top: 1px solid #eef2f7;
-    padding-top: 0.12rem;
-    align-items: center;
+    flex-direction: column;
+    gap: 0.06rem;
+    align-items: flex-start;
 }
 
 .submodule-row {
     display: flex;
     flex-direction: row;
     align-items: center;
-    gap: 0.2rem;
+    gap: 0.18rem;
 }
 
 .submodule-tag {
-    font-size: 0.62rem;
+    font-size: 0.6rem;
     font-weight: 700;
     color: #64748b;
-    letter-spacing: 0.04em;
-    line-height: 16px;
-    white-space: nowrap;
+    letter-spacing: 0.03em;
+    line-height: 1;
+    width: 22px;
+    text-align: right;
 }
 
 .phase-switch {

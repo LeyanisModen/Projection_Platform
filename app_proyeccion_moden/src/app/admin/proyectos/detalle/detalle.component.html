@@ -87,10 +87,7 @@
                             [class.status-completado]="modulo.estado === 'COMPLETADO'"
                             [class.status-cerrado]="modulo.estado === 'CERRADO'">
 
-                            <div class="module-header">
-                                <span class="module-name">{{ modulo.nombre }}</span>
-                                <span class="current-status">{{ getModuloStatusLabel(modulo.estado) }}</span>
-                            </div>
+                            <span class="module-name">{{ modulo.nombre }}</span>
 
                             <div class="module-substates">
                                 <div class="submodule-row">
