@@ -72,6 +72,23 @@
     gap: 0.4rem;
 }
 
+.btn-import-planta {
+    background-color: #334155;
+    color: #fff;
+    border: none;
+    font-weight: 600;
+    transition: background-color 0.15s ease;
+}
+
+.btn-import-planta:hover:not(:disabled) {
+    background-color: #1e293b;
+}
+
+.btn-import-planta:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
 .planta-files-icon-btn {
     background: transparent;
     border: none;
@@ -231,9 +248,9 @@
 
 .list-group-item.active {
     z-index: 2;
-    color: #004085;
-    background-color: #cce5ff;
-    border-color: #b8daff;
+    color: #1e293b;
+    background-color: #f1f5f9;
+    border-color: #e2e8f0;
 }
 
 /* Modules Grid */
