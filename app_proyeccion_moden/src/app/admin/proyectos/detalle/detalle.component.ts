@@ -1,4 +1,4 @@
-import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, ChangeDetectorRef, HostListener } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterModule } from '@angular/router';
@@ -47,12 +47,21 @@ export class ProyectoDetailComponent implements OnInit {
     plantaFilesTarget: Planta | null = null;
     checkingPlantaFiles = false;
     plantaFileExists = { plano: false, corte: false };
+    dropdownOpen = false;
 
     constructor(
         private route: ActivatedRoute,
         private api: ApiService,
         private cdr: ChangeDetectorRef
     ) { }
+
+    @HostListener('document:click', ['$event'])
+    onDocumentClick(event: MouseEvent) {
+        const target = event.target as HTMLElement;
+        if (!target.closest('.custom-dropdown')) {
+            this.dropdownOpen = false;
+        }
+    }
 
     ngOnInit(): void {
         this.route.params.subscribe(params => {
@@ -262,6 +271,12 @@ export class ProyectoDetailComponent implements OnInit {
                 this.cdr.detectChanges();
             }
         });
+    }
+
+    getSelectedFerrallaLabel(): string {
+        if (!this.proyecto?.usuario) return 'Sin asignar';
+        const user = this.users.find(u => u.url === this.proyecto!.usuario);
+        return user ? (user.first_name || user.username) : 'Sin asignar';
     }
 
     getModuloStatusLabel(estado: Modulo['estado']): string {

@@ -12,13 +12,23 @@
             <div class="ferralla-selector mb-3 p-3 bg-white rounded border"
                 style="box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
                 <label class="d-block mb-1">Ferralla asignada:</label>
-                <select class="form-control form-control-sm w-100" [ngModel]="proyecto.usuario"
-                    (ngModelChange)="changeFerralla($event)">
-                    <option [ngValue]="null">Sin asignar</option>
-                    <option *ngFor="let user of users" [ngValue]="user.url">
-                        {{ user.first_name || user.username }}
-                    </option>
-                </select>
+                <div class="custom-dropdown" (click)="dropdownOpen = !dropdownOpen">
+                    <span class="custom-dropdown-value">{{ getSelectedFerrallaLabel() }}</span>
+                    <span class="custom-dropdown-arrow">&#9662;</span>
+                    <div class="custom-dropdown-menu" *ngIf="dropdownOpen" (click)="$event.stopPropagation()">
+                        <div class="custom-dropdown-option"
+                            [class.selected]="proyecto.usuario === null"
+                            (click)="changeFerralla(null); dropdownOpen = false">
+                            Sin asignar
+                        </div>
+                        <div class="custom-dropdown-option"
+                            *ngFor="let user of users"
+                            [class.selected]="proyecto.usuario === user.url"
+                            (click)="changeFerralla(user.url); dropdownOpen = false">
+                            {{ user.first_name || user.username }}
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div class="card">
