@@ -85,6 +85,9 @@ export class ProyectoDetailComponent implements OnInit {
                     this.proyecto = data.proyecto;
                     this.plantas = data.plantas.sort((a: Planta, b: Planta) => a.orden - b.orden);
                     this.users = data.users || [];
+                    if (this.plantas.length > 0 && !this.selectedPlanta) {
+                        this.selectPlanta(this.plantas[0]);
+                    }
                     this.loading = false;
                     this.cdr.detectChanges();
                 } else {
