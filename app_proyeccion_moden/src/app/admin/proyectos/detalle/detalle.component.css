@@ -545,7 +545,7 @@
 .module-compact {
     border: 1px solid #d8dde3;
     border-radius: 6px;
-    padding: 0.35rem 0.45rem 0.15rem 0.45rem;
+    padding: 0.25rem 0.45rem;
     background: #fff;
     display: flex;
     flex-direction: column;
