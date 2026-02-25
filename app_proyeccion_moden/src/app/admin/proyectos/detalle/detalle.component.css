@@ -535,7 +535,7 @@
 /* Compact Grid */
 .modules-grid-compact {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
     gap: 8px;
     padding: 0.25rem;
 }
@@ -543,11 +543,11 @@
 .module-compact {
     border: 1px solid #d8dde3;
     border-radius: 6px;
-    padding: 0.4rem 0.5rem;
+    padding: 0.35rem 0.45rem;
     background: #fff;
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 0.2rem;
     border-left: 3px solid transparent;
 }
 
@@ -569,7 +569,7 @@
 
 .module-name {
     font-weight: 700;
-    font-size: 0.88rem;
+    font-size: 0.92rem;
     color: #0f172a;
     line-height: 1.2;
 }
@@ -577,23 +577,23 @@
 .module-substates {
     display: flex;
     flex-direction: column;
-    gap: 0.2rem;
+    gap: 0.15rem;
 }
 
 .submodule-row {
     display: flex;
     flex-direction: row;
     align-items: center;
-    gap: 0.3rem;
+    gap: 0.25rem;
 }
 
 .submodule-tag {
-    font-size: 0.72rem;
+    font-size: 0.78rem;
     font-weight: 700;
     color: #64748b;
     letter-spacing: 0.03em;
-    line-height: 1;
-    width: 24px;
+    line-height: 14px;
+    width: 26px;
     text-align: right;
     flex-shrink: 0;
 }
@@ -601,8 +601,8 @@
 .phase-switch {
     position: relative;
     display: block;
-    width: 36px;
-    height: 20px;
+    width: 28px;
+    height: 14px;
     flex-shrink: 0;
 }
 
@@ -610,6 +610,7 @@
     opacity: 0;
     width: 0;
     height: 0;
+    position: absolute;
 }
 
 .phase-slider {
@@ -624,10 +625,10 @@
 .phase-slider::before {
     content: "";
     position: absolute;
-    width: 12px;
-    height: 12px;
-    left: 3px;
-    top: 2.5px;
+    width: 8px;
+    height: 8px;
+    left: 2px;
+    top: 1.5px;
     border-radius: 999px;
     background: #f97316;
     transition: all 0.2s ease;
@@ -640,7 +641,7 @@
 
 .phase-switch.on .phase-slider::before {
     background: #22c55e;
-    transform: translateX(16px);
+    transform: translateX(13px);
 }
 
 .phase-switch input:focus-visible + .phase-slider {
