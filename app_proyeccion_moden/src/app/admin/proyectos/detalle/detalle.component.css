@@ -534,20 +534,20 @@
 
 /* Compact Grid */
 .modules-grid-compact {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.25rem;
-    padding: 0.12rem;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 8px;
+    padding: 0.25rem;
 }
 
 .module-compact {
     border: 1px solid #d8dde3;
     border-radius: 6px;
-    padding: 0.15rem 0.24rem;
+    padding: 0.4rem 0.5rem;
     background: #fff;
-    display: inline-flex;
+    display: flex;
     flex-direction: column;
-    gap: 0.04rem;
+    gap: 0.25rem;
     border-left: 3px solid transparent;
 }
 
@@ -569,32 +569,31 @@
 
 .module-name {
     font-weight: 700;
-    font-size: 0.75rem;
+    font-size: 0.88rem;
     color: #0f172a;
-    line-height: 1;
+    line-height: 1.2;
 }
 
 .module-substates {
     display: flex;
     flex-direction: column;
-    gap: 0.02rem;
+    gap: 0.2rem;
 }
 
 .submodule-row {
     display: flex;
     flex-direction: row;
     align-items: center;
-    gap: 0.15rem;
-    height: 16px;
+    gap: 0.3rem;
 }
 
 .submodule-tag {
-    font-size: 0.6rem;
+    font-size: 0.72rem;
     font-weight: 700;
     color: #64748b;
     letter-spacing: 0.03em;
-    line-height: 16px;
-    width: 22px;
+    line-height: 1;
+    width: 24px;
     text-align: right;
     flex-shrink: 0;
 }
@@ -602,8 +601,8 @@
 .phase-switch {
     position: relative;
     display: block;
-    width: 32px;
-    height: 16px;
+    width: 36px;
+    height: 20px;
     flex-shrink: 0;
 }
 
@@ -625,10 +624,10 @@
 .phase-slider::before {
     content: "";
     position: absolute;
-    width: 8px;
-    height: 8px;
+    width: 12px;
+    height: 12px;
     left: 3px;
-    top: 2px;
+    top: 2.5px;
     border-radius: 999px;
     background: #f97316;
     transition: all 0.2s ease;
@@ -641,7 +640,7 @@
 
 .phase-switch.on .phase-slider::before {
     background: #22c55e;
-    transform: translateX(14px);
+    transform: translateX(16px);
 }
 
 .phase-switch input:focus-visible + .phase-slider {
