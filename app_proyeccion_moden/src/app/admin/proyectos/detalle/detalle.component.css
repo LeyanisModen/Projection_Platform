@@ -536,8 +536,9 @@
 /* Compact Grid */
 .modules-grid-compact {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-    gap: 8px;
+    grid-template-columns: repeat(auto-fill, 145px);
+    justify-content: space-between;
+    gap: 12px;
     padding: 0.25rem;
 }
 
@@ -612,7 +613,7 @@
 }
 
 .submodule-row:first-child::after {
-    top: -6px;
+    top: -8px;
 }
 
 .submodule-row:not(:first-child)::after {
@@ -620,12 +621,12 @@
 }
 
 .submodule-tag {
-    font-size: 0.78rem;
+    font-size: 0.85rem;
     font-weight: 700;
     color: #64748b;
     letter-spacing: 0.03em;
-    line-height: 14px;
-    width: 26px;
+    line-height: 18px;
+    width: 32px;
     text-align: left;
     flex-shrink: 0;
 }
@@ -633,8 +634,8 @@
 .phase-switch {
     position: relative;
     display: block;
-    width: 28px;
-    height: 14px;
+    width: 35px;
+    height: 18px;
     flex-shrink: 0;
     margin: 0;
 }
@@ -658,8 +659,8 @@
 .phase-slider::before {
     content: "";
     position: absolute;
-    width: 8px;
-    height: 8px;
+    width: 12px;
+    height: 12px;
     left: 2px;
     top: 1.5px;
     border-radius: 999px;
@@ -674,7 +675,7 @@
 
 .phase-switch.on .phase-slider::before {
     background: #22c55e;
-    transform: translateX(13px);
+    transform: translateX(17px);
 }
 
 .phase-switch input:focus-visible+.phase-slider {
