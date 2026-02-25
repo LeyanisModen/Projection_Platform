@@ -591,6 +591,7 @@
     align-items: center;
     gap: 0.4rem;
     position: relative;
+    margin-bottom: 0;
 }
 
 .submodule-row::before {
@@ -611,7 +612,7 @@
 }
 
 .submodule-row:first-child::after {
-    top: -14px;
+    top: -6px;
 }
 
 .submodule-row:not(:first-child)::after {
@@ -635,6 +636,7 @@
     width: 28px;
     height: 14px;
     flex-shrink: 0;
+    margin: 0;
 }
 
 .phase-switch input {
