@@ -438,42 +438,8 @@ export class VisorComponent implements OnInit, OnDestroy {
           this.captureStatus = 'uploading';
           this.cdr.detectChanges();
 
-          // Step 3: Upload to Django backend
-          const formData = new FormData();
-          formData.append('foto', blob, 'capture.jpg');
-          formData.append('modulo_id', String(this.activeItem.modulo));
-          formData.append('fase', this.activeItem.fase);
-          formData.append('paso', String(this.currentIndex));
-
-          const currentImage = this.images[this.currentIndex];
-          if (currentImage?.id) {
-            formData.append('imagen_id', String(currentImage.id));
-          }
-
-          this.http.post(
-            `${this.apiUrl}upload_foto/`, formData,
-            { headers: this.getAuthHeaders() }
-          ).subscribe({
-            next: () => {
-              this.captureStatus = 'done';
-              this.capturingPhoto = false;
-              this.cdr.detectChanges();
-              setTimeout(() => {
-                this.captureStatus = 'idle';
-                this.cdr.detectChanges();
-              }, 2000);
-            },
-            error: (err) => {
-              console.error('[Visor] Photo upload failed:', err);
-              this.captureStatus = 'error';
-              this.capturingPhoto = false;
-              this.cdr.detectChanges();
-              setTimeout(() => {
-                this.captureStatus = 'idle';
-                this.cdr.detectChanges();
-              }, 3000);
-            }
-          });
+          // Step 3: Compress if needed and upload
+          this.compressAndUpload(blob);
         },
         error: (err) => {
           console.error('[Visor] Camera capture failed:', err);
@@ -488,6 +454,103 @@ export class VisorComponent implements OnInit, OnDestroy {
         }
       });
     }, 500);
+  }
+
+  private compressAndUpload(blob: Blob): void {
+    const MAX_SIZE = 700 * 1024; // 700KB - safe margin under Railway's ~850KB limit
+
+    if (blob.size <= MAX_SIZE) {
+      this.uploadPhoto(blob);
+      return;
+    }
+
+    console.log(`[Visor] Compressing photo: ${(blob.size / 1024).toFixed(0)}KB → target <700KB`);
+    const img = new Image();
+    const url = URL.createObjectURL(blob);
+
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const canvas = document.createElement('canvas');
+
+      // Scale down if very large (keep max 2048px on longest side)
+      let { width, height } = img;
+      const MAX_DIM = 2048;
+      if (width > MAX_DIM || height > MAX_DIM) {
+        const scale = MAX_DIM / Math.max(width, height);
+        width = Math.round(width * scale);
+        height = Math.round(height * scale);
+      }
+      canvas.width = width;
+      canvas.height = height;
+
+      const ctx = canvas.getContext('2d')!;
+      ctx.drawImage(img, 0, 0, width, height);
+
+      // Try decreasing quality until under limit
+      let quality = 0.7;
+      const tryCompress = () => {
+        canvas.toBlob((result) => {
+          if (!result) {
+            console.warn('[Visor] Compression failed, uploading original');
+            this.uploadPhoto(blob);
+            return;
+          }
+          if (result.size > MAX_SIZE && quality > 0.2) {
+            quality -= 0.1;
+            tryCompress();
+          } else {
+            console.log(`[Visor] Compressed: ${(blob.size / 1024).toFixed(0)}KB → ${(result.size / 1024).toFixed(0)}KB (q=${quality.toFixed(1)})`);
+            this.uploadPhoto(result);
+          }
+        }, 'image/jpeg', quality);
+      };
+      tryCompress();
+    };
+
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      console.warn('[Visor] Could not load image for compression, uploading original');
+      this.uploadPhoto(blob);
+    };
+    img.src = url;
+  }
+
+  private uploadPhoto(blob: Blob): void {
+    const formData = new FormData();
+    formData.append('foto', blob, 'capture.jpg');
+    formData.append('modulo_id', String(this.activeItem.modulo));
+    formData.append('fase', this.activeItem.fase);
+    formData.append('paso', String(this.currentIndex));
+
+    const currentImage = this.images[this.currentIndex];
+    if (currentImage?.id) {
+      formData.append('imagen_id', String(currentImage.id));
+    }
+
+    this.http.post(
+      `${this.apiUrl}upload_foto/`, formData,
+      { headers: this.getAuthHeaders() }
+    ).subscribe({
+      next: () => {
+        this.captureStatus = 'done';
+        this.capturingPhoto = false;
+        this.cdr.detectChanges();
+        setTimeout(() => {
+          this.captureStatus = 'idle';
+          this.cdr.detectChanges();
+        }, 2000);
+      },
+      error: (err) => {
+        console.error('[Visor] Photo upload failed:', err);
+        this.captureStatus = 'error';
+        this.capturingPhoto = false;
+        this.cdr.detectChanges();
+        setTimeout(() => {
+          this.captureStatus = 'idle';
+          this.cdr.detectChanges();
+        }, 3000);
+      }
+    });
   }
 
   startStatePolling(): void {
