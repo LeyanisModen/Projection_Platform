@@ -482,6 +482,10 @@ export class VisorComponent implements OnInit, OnDestroy {
 
     if (!this.activeItem || this.activeItem.id !== item.id) {
       this.activeItem = item;
+      // New module/phase started: restart local counter (UI shows currentIndex + 1 => starts at 1).
+      if (this.currentIndex >= 0) {
+        this.currentIndex = 0;
+      }
       if (Array.isArray(item.images)) {
         this.images = item.images;
         if (this.currentIndex >= 0 && this.currentIndex >= this.images.length) {

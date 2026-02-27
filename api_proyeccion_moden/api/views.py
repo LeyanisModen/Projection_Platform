@@ -866,9 +866,11 @@ class DeviceViewSet(viewsets.ViewSet):
             next_item.status = MesaQueueStatus.MOSTRANDO
             next_item.save(update_fields=['status'])
             mesa.imagen_actual = next_item.imagen
+            mesa.current_image_index = 0
         else:
             mesa.imagen_actual = None
-        mesa.save(update_fields=['imagen_actual'])
+            mesa.current_image_index = 0
+        mesa.save(update_fields=['imagen_actual', 'current_image_index'])
 
         return Response({'status': 'ok'})
 
@@ -975,7 +977,8 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
             item.status = MesaQueueStatus.MOSTRANDO
             item.save(update_fields=['status'])
             item.mesa.imagen_actual = item.imagen
-            item.mesa.save(update_fields=['imagen_actual'])
+            item.mesa.current_image_index = 0
+            item.mesa.save(update_fields=['imagen_actual', 'current_image_index'])
 
     def perform_update(self, serializer):
         mesa = serializer.validated_data.get('mesa')
@@ -1008,11 +1011,13 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
                 next_item.status = MesaQueueStatus.MOSTRANDO
                 next_item.save(update_fields=['status'])
                 mesa.imagen_actual = next_item.imagen
-                mesa.save(update_fields=['imagen_actual'])
+                mesa.current_image_index = 0
+                mesa.save(update_fields=['imagen_actual', 'current_image_index'])
             else:
                 # No more items, clear projection
                 mesa.imagen_actual = None
-                mesa.save(update_fields=['imagen_actual'])
+                mesa.current_image_index = 0
+                mesa.save(update_fields=['imagen_actual', 'current_image_index'])
 
     @action(detail=True, methods=['post'])
     def marcar_hecho(self, request, pk=None):
@@ -1035,9 +1040,11 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
                 next_item.status = MesaQueueStatus.MOSTRANDO
                 next_item.save(update_fields=['status'])
                 mesa.imagen_actual = next_item.imagen
+                mesa.current_image_index = 0
             else:
                 mesa.imagen_actual = None
-            mesa.save(update_fields=['imagen_actual'])
+                mesa.current_image_index = 0
+            mesa.save(update_fields=['imagen_actual', 'current_image_index'])
 
         serializer = self.get_serializer(item)
         return Response(serializer.data)
@@ -1057,7 +1064,8 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
         item.save(update_fields=['status'])
         # Update mesa cache
         item.mesa.imagen_actual = item.imagen
-        item.mesa.save(update_fields=['imagen_actual'])
+        item.mesa.current_image_index = 0
+        item.mesa.save(update_fields=['imagen_actual', 'current_image_index'])
         serializer = self.get_serializer(item)
         return Response(serializer.data)
 

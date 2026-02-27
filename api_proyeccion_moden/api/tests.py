@@ -221,3 +221,42 @@ class MesaQueueItemBehaviorTests(APITestCase):
         )
         self.assertEqual(move_response.status_code, 200)
         self.assertEqual(move_response.data["mesa"], self.mesa_b.id)
+
+    def test_marcar_hecho_resets_current_image_index_when_next_item_promoted(self):
+        first_response = self._create_item(self.mesa_a.id, self.modulo_a.id, position=0)
+        second_response = self._create_item(self.mesa_a.id, self.modulo_b.id, position=1)
+        self.assertEqual(first_response.status_code, 201)
+        self.assertEqual(second_response.status_code, 201)
+
+        self.mesa_a.current_image_index = 4
+        self.mesa_a.save(update_fields=["current_image_index"])
+
+        response = self.client.post(
+            f"/api/mesa-queue-items/{first_response.data['id']}/marcar_hecho/",
+            {},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+
+        self.mesa_a.refresh_from_db()
+        self.assertEqual(self.mesa_a.current_image_index, 0)
+        self.assertEqual(MesaQueueItem.objects.get(id=second_response.data["id"]).status, "MOSTRANDO")
+
+    def test_mostrar_resets_current_image_index(self):
+        first_response = self._create_item(self.mesa_a.id, self.modulo_a.id, position=0)
+        second_response = self._create_item(self.mesa_a.id, self.modulo_b.id, position=1)
+        self.assertEqual(first_response.status_code, 201)
+        self.assertEqual(second_response.status_code, 201)
+
+        self.mesa_a.current_image_index = 3
+        self.mesa_a.save(update_fields=["current_image_index"])
+
+        response = self.client.post(
+            f"/api/mesa-queue-items/{second_response.data['id']}/mostrar/",
+            {},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+
+        self.mesa_a.refresh_from_db()
+        self.assertEqual(self.mesa_a.current_image_index, 0)
