@@ -1,7 +1,9 @@
 from django.contrib.auth.models import User
+from django.db import IntegrityError
 from django.db.models import Count
 from rest_framework import permissions, viewsets, status
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from api.serializers import (
@@ -954,8 +956,12 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
         if mesa and (not _is_admin(self.request.user)) and mesa.usuario_id != self.request.user.id:
             from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied('No puedes crear items en mesas de otro usuario')
-
-        item = serializer.save()
+        try:
+            item = serializer.save()
+        except IntegrityError:
+            raise ValidationError('Esta fase ya tiene una asignacion activa en otra mesa')
+        except ValueError as exc:
+            raise ValidationError(str(exc))
         from api.models import MesaQueueStatus
         
         # Check if there are any active items (MOSTRANDO)
@@ -976,7 +982,12 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
         if mesa and (not _is_admin(self.request.user)) and mesa.usuario_id != self.request.user.id:
             from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied('No puedes mover items a mesas de otro usuario')
-        serializer.save()
+        try:
+            serializer.save()
+        except IntegrityError:
+            raise ValidationError('No se pudo mover: esta fase ya tiene una asignacion activa')
+        except ValueError as exc:
+            raise ValidationError(str(exc))
 
     def perform_destroy(self, instance):
         from api.models import MesaQueueStatus

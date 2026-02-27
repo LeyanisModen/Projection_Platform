@@ -7,7 +7,7 @@ from django.utils import timezone
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
-from api.models import Mesa, MesaQueueItem, Modulo, Planta, Proyecto
+from api.models import Imagen, Mesa, MesaQueueItem, Modulo, Planta, Proyecto
 
 
 @override_settings(
@@ -187,3 +187,24 @@ class MesaQueueItemBehaviorTests(APITestCase):
 
         create_response = self._create_item(self.mesa_b.id, self.modulo_a.id, fase="INFERIOR", position=0)
         self.assertEqual(create_response.status_code, 201)
+
+    def test_move_still_works_with_legacy_inconsistent_imagen_data(self):
+        self._create_item(self.mesa_a.id, self.modulo_a.id, position=0)
+        second_response = self._create_item(self.mesa_a.id, self.modulo_b.id, position=1)
+        self.assertEqual(second_response.status_code, 201)
+
+        legacy_image = Imagen.objects.create(
+            modulo=self.modulo_c,
+            fase="INFERIOR",
+            orden=1,
+            version=1,
+            url="legacy://img",
+        )
+        MesaQueueItem.objects.filter(id=second_response.data["id"]).update(imagen_id=legacy_image.id)
+
+        move_response = self.client.patch(
+            f"/api/mesa-queue-items/{second_response.data['id']}/",
+            {"mesa": self.mesa_b.id, "position": 0},
+            format="json",
+        )
+        self.assertEqual(move_response.status_code, 200)

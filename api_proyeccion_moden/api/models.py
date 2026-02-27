@@ -394,9 +394,15 @@ class MesaQueueItem(models.Model):
         return f"Mesa {self.mesa.nombre} - {self.modulo.nombre} ({self.fase}) - {self.status}"
 
     def save(self, *args, **kwargs):
-        # Validate that imagen belongs to the same modulo and fase
-        # Validate that imagen belongs to the same modulo and fase if imagen is present
-        if self.imagen:
+        # When only moving/reordering (mesa/position), skip image-module consistency checks.
+        update_fields = kwargs.get('update_fields')
+        should_validate_image_link = (
+            update_fields is None
+            or any(field in update_fields for field in ['imagen', 'imagen_id', 'modulo', 'modulo_id', 'fase'])
+        )
+
+        # Validate that imagen belongs to the same modulo and fase if imagen is present.
+        if should_validate_image_link and self.imagen:
             if self.imagen.modulo_id != self.modulo_id:
                 raise ValueError(
                     f"Imagen {self.imagen_id} no pertenece al módulo {self.modulo_id}"
@@ -456,3 +462,4 @@ class MesaQueueItem(models.Model):
             models.Index(fields=['mesa', 'status']),
             models.Index(fields=['modulo', 'fase']),
         ]
+

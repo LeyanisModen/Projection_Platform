@@ -276,6 +276,17 @@ class MesaQueueItemSerializer(serializers.ModelSerializer):
             
         return data
 
+    def update(self, instance, validated_data):
+        """Persist partial updates using update_fields to avoid unrelated full-save side effects."""
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+
+        if validated_data:
+            instance.save(update_fields=list(validated_data.keys()))
+        else:
+            instance.save()
+        return instance
+
     def get_modulo_planta_id(self, obj):
         if obj.modulo_id and obj.modulo.planta_id:
             return obj.modulo.planta_id
