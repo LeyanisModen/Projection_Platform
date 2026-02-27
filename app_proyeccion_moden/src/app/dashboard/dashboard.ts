@@ -906,10 +906,7 @@ export class Dashboard implements OnInit, OnDestroy {
       // If create fails, we reload causing a "revert".
       // If delete fails, we might have a duplicate, reload fixes it too.
 
-      this.api.updateMesaQueueItem(item.id, {
-        mesa: mesaId,
-        position: event.currentIndex
-      }).subscribe({
+      this.api.moveMesaQueueItem(item.id, mesaId, event.currentIndex).subscribe({
         next: () => {
           console.log('[Dashboard] Transfer success (Atomic Move)');
           // Reload both queues to ensure positions are correct (close gaps in source, open gap in target)

@@ -1061,6 +1061,60 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(item)
         return Response(serializer.data)
 
+    @action(detail=True, methods=['post'])
+    def move(self, request, pk=None):
+        """Move an item to another mesa with explicit business rules."""
+        from api.models import Mesa, MesaQueueStatus
+
+        item = self.get_object()
+        target_mesa_id = request.data.get('mesa')
+        target_position = request.data.get('position', item.position)
+
+        if target_mesa_id in [None, '']:
+            raise ValidationError({'mesa': 'Campo requerido'})
+
+        try:
+            target_mesa_id = int(target_mesa_id)
+        except (TypeError, ValueError):
+            raise ValidationError({'mesa': 'Mesa invalida'})
+
+        try:
+            target_position = int(target_position)
+        except (TypeError, ValueError):
+            raise ValidationError({'position': 'Position must be an integer'})
+
+        try:
+            target_mesa = Mesa.objects.get(id=target_mesa_id)
+        except Mesa.DoesNotExist:
+            raise ValidationError({'mesa': 'Mesa destino no existe'})
+
+        if (not _is_admin(request.user)) and target_mesa.usuario_id != request.user.id:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('No puedes mover items a mesas de otro usuario')
+
+        if item.status == MesaQueueStatus.MOSTRANDO and target_mesa.id != item.mesa_id:
+            raise ValidationError('No se puede mover entre mesas un item con estado MOSTRANDO')
+
+        conflict = MesaQueueItem.objects.select_related('mesa').filter(
+            modulo=item.modulo,
+            fase=item.fase,
+            status__in=[MesaQueueStatus.EN_COLA, MesaQueueStatus.MOSTRANDO],
+        ).exclude(id=item.id).first()
+        if conflict:
+            raise ValidationError(f'Esta fase ya esta asignada a {conflict.mesa.nombre}')
+
+        item.mesa = target_mesa
+        item.position = max(0, target_position)
+        try:
+            item.save(update_fields=['mesa', 'position'])
+        except IntegrityError:
+            raise ValidationError('No se pudo mover: esta fase ya tiene una asignacion activa')
+        except ValueError as exc:
+            raise ValidationError(str(exc))
+
+        serializer = self.get_serializer(item)
+        return Response(serializer.data)
+
     @action(detail=False, methods=['post'])
     def reorder(self, request):
         """Reorder items in the mesa queue. Expects: {items: [{id: X, position: Y}, ...]}"""

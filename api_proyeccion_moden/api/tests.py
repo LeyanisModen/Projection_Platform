@@ -208,3 +208,16 @@ class MesaQueueItemBehaviorTests(APITestCase):
             format="json",
         )
         self.assertEqual(move_response.status_code, 200)
+
+    def test_move_action_moves_item_between_mesas(self):
+        self._create_item(self.mesa_a.id, self.modulo_a.id, position=0)
+        second_response = self._create_item(self.mesa_a.id, self.modulo_b.id, position=1)
+        self.assertEqual(second_response.status_code, 201)
+
+        move_response = self.client.post(
+            f"/api/mesa-queue-items/{second_response.data['id']}/move/",
+            {"mesa": self.mesa_b.id, "position": 0},
+            format="json",
+        )
+        self.assertEqual(move_response.status_code, 200)
+        self.assertEqual(move_response.data["mesa"], self.mesa_b.id)
