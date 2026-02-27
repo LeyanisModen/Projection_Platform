@@ -2,7 +2,7 @@ import { Component, OnInit, ChangeDetectorRef, HostListener } from '@angular/cor
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterModule } from '@angular/router';
-import { ApiService, Proyecto, Planta, Modulo, User } from '../../../services/api.service';
+import { ApiService, Proyecto, Planta, Modulo, User, FotoFabricacion } from '../../../services/api.service';
 import { switchMap, forkJoin, of } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 
@@ -48,6 +48,13 @@ export class ProyectoDetailComponent implements OnInit {
     checkingPlantaFiles = false;
     plantaFileExists = { plano: false, corte: false };
     dropdownOpen = false;
+
+    // Photo Gallery State
+    showFotosModal = false;
+    fotosTarget: Modulo | null = null;
+    fotos: FotoFabricacion[] = [];
+    loadingFotos = false;
+    downloadingZip = false;
 
     constructor(
         private route: ActivatedRoute,
@@ -597,5 +604,85 @@ export class ProyectoDetailComponent implements OnInit {
             return apiOrigin ? `${apiOrigin}${url}` : url;
         }
         return apiOrigin ? `${apiOrigin}/${url}` : `/${url}`;
+    }
+
+    // =========================================================================
+    // PHOTO GALLERY
+    // =========================================================================
+    openFotosModal(modulo: Modulo, event?: Event): void {
+        if (event) event.stopPropagation();
+        this.fotosTarget = modulo;
+        this.showFotosModal = true;
+        this.loadFotos(modulo.id);
+    }
+
+    closeFotosModal(): void {
+        this.showFotosModal = false;
+        this.fotosTarget = null;
+        this.fotos = [];
+    }
+
+    loadFotos(moduloId: number): void {
+        this.loadingFotos = true;
+        this.api.getFotos({ modulo: moduloId }).subscribe({
+            next: (fotos) => {
+                this.fotos = fotos;
+                this.loadingFotos = false;
+                this.cdr.detectChanges();
+            },
+            error: (err) => {
+                console.error('Error loading fotos', err);
+                this.loadingFotos = false;
+                this.cdr.detectChanges();
+            }
+        });
+    }
+
+    getFotoUrl(foto: FotoFabricacion): string {
+        return this.toAbsoluteFileUrl(foto.url) || '';
+    }
+
+    downloadFotosZip(scope: 'modulo' | 'planta' | 'proyecto'): void {
+        this.downloadingZip = true;
+        let params: { modulo?: number; planta?: number; proyecto?: number } = {};
+
+        if (scope === 'modulo' && this.fotosTarget) {
+            params.modulo = this.fotosTarget.id;
+        } else if (scope === 'planta' && this.selectedPlanta) {
+            params.planta = this.selectedPlanta.id;
+        } else if (scope === 'proyecto' && this.proyectoId) {
+            params.proyecto = this.proyectoId;
+        }
+
+        this.api.downloadFotosZip(params).subscribe({
+            next: (blob) => {
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `fotos_${scope}.zip`;
+                a.click();
+                window.URL.revokeObjectURL(url);
+                this.downloadingZip = false;
+                this.cdr.detectChanges();
+            },
+            error: (err) => {
+                console.error('Error downloading ZIP', err);
+                this.downloadingZip = false;
+                alert('Error descargando fotos');
+                this.cdr.detectChanges();
+            }
+        });
+    }
+
+    getColorHex(color: string): string {
+        const map: Record<string, string> = {
+            pink: '#ec4899',
+            green: '#22c55e',
+            blue: '#3b82f6',
+            yellow: '#eab308',
+            orange: '#f97316',
+            purple: '#a855f7'
+        };
+        return map[color] || '#9ca3af';
     }
 }

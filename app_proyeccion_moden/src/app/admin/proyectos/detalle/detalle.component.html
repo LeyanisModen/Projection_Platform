@@ -81,10 +81,24 @@
             <div class="card h-100" *ngIf="selectedPlanta; else noPlantaSelected">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h3>Módulos de {{ selectedPlanta.nombre }}</h3>
-                    <div class="legend d-flex align-items-center">
-                        <small class="mr-2 font-weight-bold text-uppercase" style="font-size: 0.7rem;">Estados:</small>
-                        <span class="badge badge-pendiente mr-2">Pendiente</span>
-                        <span class="badge badge-completado">Completado</span>
+                    <div class="d-flex align-items-center" style="gap: 0.5rem;">
+                        <button class="btn btn-sm btn-download-fotos"
+                            (click)="downloadFotosZip('planta')"
+                            [disabled]="downloadingZip"
+                            title="Descargar fotos de esta planta">
+                            <i class="fa fa-download" aria-hidden="true"></i> Fotos Planta
+                        </button>
+                        <button class="btn btn-sm btn-download-fotos"
+                            (click)="downloadFotosZip('proyecto')"
+                            [disabled]="downloadingZip"
+                            title="Descargar todas las fotos del proyecto">
+                            <i class="fa fa-download" aria-hidden="true"></i> Fotos Proyecto
+                        </button>
+                        <div class="legend d-flex align-items-center" style="margin-left: 0.5rem;">
+                            <small class="mr-2 font-weight-bold text-uppercase" style="font-size: 0.7rem;">Estados:</small>
+                            <span class="badge badge-pendiente mr-2">Pendiente</span>
+                            <span class="badge badge-completado">Completado</span>
+                        </div>
                     </div>
                 </div>
 
@@ -97,7 +111,24 @@
                             [class.status-completado]="modulo.estado === 'COMPLETADO'"
                             [class.status-cerrado]="modulo.estado === 'CERRADO'">
 
-                            <span class="module-name">{{ modulo.nombre }}</span>
+                            <div class="module-header-row">
+                                <span class="module-name">{{ modulo.nombre }}</span>
+                                <button type="button" class="module-foto-btn"
+                                    *ngIf="modulo.fotos_count > 0"
+                                    (click)="openFotosModal(modulo, $event)"
+                                    title="Ver fotos de fabricación ({{ modulo.fotos_count }})">
+                                    <i class="fa fa-camera" aria-hidden="true"></i>
+                                    <span class="foto-count-badge">{{ modulo.fotos_count }}</span>
+                                </button>
+                            </div>
+
+                            <div class="color-codes" *ngIf="modulo.codigos_color && modulo.codigos_color.length > 0">
+                                <span *ngFor="let color of modulo.codigos_color"
+                                    class="color-dot"
+                                    [style.background-color]="getColorHex(color)"
+                                    [title]="color">
+                                </span>
+                            </div>
 
                             <div class="module-substates">
                                 <div class="submodule-row">
@@ -197,6 +228,44 @@
                 </button>
                 <input #modalCorteInput type="file" accept=".pdf,application/pdf"
                     (change)="onPlantaFileSelected($event, 'corte')" hidden>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Photo Gallery Modal -->
+<div class="foto-modal-backdrop" *ngIf="showFotosModal" (click)="closeFotosModal()">
+    <div class="foto-modal" (click)="$event.stopPropagation()">
+        <div class="foto-modal-header">
+            <div>
+                <h4>Fotos de {{ fotosTarget?.nombre }}</h4>
+                <small class="text-muted">Evidencias de fabricación capturadas.</small>
+            </div>
+            <div class="d-flex align-items-center" style="gap: 0.5rem;">
+                <button class="btn btn-sm btn-download-fotos"
+                    (click)="downloadFotosZip('modulo')"
+                    [disabled]="downloadingZip || fotos.length === 0">
+                    <i class="fa fa-download" aria-hidden="true"></i> Descargar ZIP
+                </button>
+                <button class="btn btn-sm btn-outline-secondary" (click)="closeFotosModal()">Cerrar</button>
+            </div>
+        </div>
+
+        <div *ngIf="loadingFotos" class="text-center p-3">
+            <div class="spinner spinner-sm"></div>
+        </div>
+
+        <div *ngIf="!loadingFotos && fotos.length === 0" class="text-center p-3 text-muted">
+            No hay fotos para este módulo.
+        </div>
+
+        <div class="foto-grid" *ngIf="!loadingFotos && fotos.length > 0">
+            <div *ngFor="let foto of fotos" class="foto-card">
+                <img [src]="getFotoUrl(foto)" alt="Foto fabricación" loading="lazy">
+                <div class="foto-info">
+                    <span class="foto-label">{{ foto.fase_label }} - Paso {{ foto.paso + 1 }}</span>
+                    <span class="foto-date">{{ foto.capturada_at | date:'dd/MM/yy HH:mm' }}</span>
+                </div>
             </div>
         </div>
     </div>

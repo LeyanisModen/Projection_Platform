@@ -53,6 +53,14 @@ export class VisorComponent implements OnInit, OnDestroy {
   images: any[] = [];
   loadingImages = false;
 
+  // Photo capture
+  private captureServiceUrl = 'http://127.0.0.1:5555';
+  private capturingPhoto = false;
+  captureStatus: 'idle' | 'capturing' | 'uploading' | 'done' | 'error' = 'idle';
+
+  // White screen (blank projection for photo capture or manual pause)
+  whiteScreen = false;
+
   get isSupervisor(): boolean {
     return !!this.mesaIdForPairing;
   }
@@ -292,6 +300,13 @@ export class VisorComponent implements OnInit, OnDestroy {
       if (this.currentIndex >= 0) {
         this.prevImage();
       }
+    } else if (key === 'p') {
+      // Manual photo capture trigger (for testing)
+      this.triggerPhotoCapture();
+    } else if (key === 'w') {
+      // Toggle white screen (manual pause)
+      this.whiteScreen = !this.whiteScreen;
+      this.cdr.detectChanges();
     }
   }
 
@@ -316,6 +331,7 @@ export class VisorComponent implements OnInit, OnDestroy {
     if (this.currentIndex < this.images.length - 1) {
       this.currentIndex++;
       this.updateProjectedImage();
+      this.checkPhotoTrigger();
     } else if (this.images.length > 0) {
       this.finishActiveItem();
     }
@@ -327,6 +343,7 @@ export class VisorComponent implements OnInit, OnDestroy {
     if (this.currentIndex > 0) {
       this.currentIndex--;
       this.updateProjectedImage();
+      this.checkPhotoTrigger();
     }
   }
 
@@ -380,6 +397,97 @@ export class VisorComponent implements OnInit, OnDestroy {
         },
         error: (err) => console.error('[Visor] Error finishing item (device):', err)
       });
+  }
+
+  // =========================================================================
+  // PHOTO CAPTURE
+  // =========================================================================
+  private checkPhotoTrigger(): void {
+    if (this.isSupervisor || this.capturingPhoto) return;
+    if (this.currentIndex < 0 || !this.images.length) return;
+
+    const currentImage = this.images[this.currentIndex];
+    if (!currentImage) return;
+
+    const imageUrl: string = currentImage.url || currentImage.src || '';
+    const filename = imageUrl.split('/').pop() || '';
+
+    if (filename.includes('_photo')) {
+      this.triggerPhotoCapture();
+    }
+  }
+
+  triggerPhotoCapture(): void {
+    if (this.capturingPhoto || !this.activeItem) return;
+    this.capturingPhoto = true;
+    this.captureStatus = 'capturing';
+
+    // Step 1: Show white screen so the projector doesn't overlay the blueprint on the module
+    this.whiteScreen = true;
+    this.cdr.detectChanges();
+
+    // Step 2: Wait for projector to refresh (~500ms), then capture
+    setTimeout(() => {
+      this.http.post(
+        `${this.captureServiceUrl}/capture`, {},
+        { responseType: 'blob' }
+      ).subscribe({
+        next: (blob: Blob) => {
+          // Restore projection immediately after capture
+          this.whiteScreen = false;
+          this.captureStatus = 'uploading';
+          this.cdr.detectChanges();
+
+          // Step 3: Upload to Django backend
+          const formData = new FormData();
+          formData.append('foto', blob, 'capture.jpg');
+          formData.append('modulo_id', String(this.activeItem.modulo));
+          formData.append('fase', this.activeItem.fase);
+          formData.append('paso', String(this.currentIndex));
+
+          const currentImage = this.images[this.currentIndex];
+          if (currentImage?.id) {
+            formData.append('imagen_id', String(currentImage.id));
+          }
+
+          this.http.post(
+            `${this.apiUrl}upload_foto/`, formData,
+            { headers: this.getAuthHeaders() }
+          ).subscribe({
+            next: () => {
+              this.captureStatus = 'done';
+              this.capturingPhoto = false;
+              this.cdr.detectChanges();
+              setTimeout(() => {
+                this.captureStatus = 'idle';
+                this.cdr.detectChanges();
+              }, 2000);
+            },
+            error: (err) => {
+              console.error('[Visor] Photo upload failed:', err);
+              this.captureStatus = 'error';
+              this.capturingPhoto = false;
+              this.cdr.detectChanges();
+              setTimeout(() => {
+                this.captureStatus = 'idle';
+                this.cdr.detectChanges();
+              }, 3000);
+            }
+          });
+        },
+        error: (err) => {
+          console.error('[Visor] Camera capture failed:', err);
+          this.whiteScreen = false;
+          this.captureStatus = 'error';
+          this.capturingPhoto = false;
+          this.cdr.detectChanges();
+          setTimeout(() => {
+            this.captureStatus = 'idle';
+            this.cdr.detectChanges();
+          }, 3000);
+        }
+      });
+    }, 500);
   }
 
   startStatePolling(): void {
@@ -493,6 +601,7 @@ export class VisorComponent implements OnInit, OnDestroy {
         }
         this.loadingImages = false;
         this.cdr.detectChanges();
+        this.checkPhotoTrigger();
       } else {
         this.loadImagesForActiveItem();
       }

@@ -1,4 +1,4 @@
-<div class="visor-container" [class.blackout]="mesaState?.blackout">
+<div class="visor-container" [class.blackout]="mesaState?.blackout" [class.white-screen]="whiteScreen">
 
     <!-- LOADING STATE -->
     @if (mode === 'LOADING') {
@@ -49,6 +49,20 @@
             <span style="font-size: 0.8rem;">Modulo: {{ activeItem?.modulo }} ({{ activeItem?.modulo?.id ||
                 activeItem?.modulo }})</span>
             }
+        </div>
+        }
+
+        <!-- Photo Capture Status Indicator -->
+        @if (captureStatus !== 'idle') {
+        <div class="capture-status"
+            [class.capturing]="captureStatus === 'capturing'"
+            [class.uploading]="captureStatus === 'uploading'"
+            [class.done]="captureStatus === 'done'"
+            [class.error]="captureStatus === 'error'">
+            @if (captureStatus === 'capturing') { Capturando foto... }
+            @else if (captureStatus === 'uploading') { Subiendo foto... }
+            @else if (captureStatus === 'done') { Foto guardada }
+            @else if (captureStatus === 'error') { Error en captura }
         </div>
         }
 

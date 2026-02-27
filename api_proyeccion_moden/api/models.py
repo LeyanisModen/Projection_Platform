@@ -99,6 +99,13 @@ class Modulo(models.Model):
         related_name='modulos_cerrados'
     )
 
+    # Codigos de color para identificacion del modulo (1-4 colores)
+    codigos_color = models.JSONField(
+        default=list,
+        blank=True,
+        help_text='Array de codigos de color, ej: ["pink", "green", "blue", "yellow"]'
+    )
+
     def __str__(self):
         planta_nombre = self.planta.nombre if self.planta else "Sin planta"
         return f"{self.nombre} ({planta_nombre})"
@@ -179,6 +186,62 @@ class Imagen(models.Model):
             models.Index(fields=['modulo']),
             models.Index(fields=['modulo', 'fase']),
             models.Index(fields=['modulo', 'fase', 'orden']),
+        ]
+
+
+class FotoFabricacion(models.Model):
+    """
+    Foto de evidencia capturada durante la fabricacion.
+    Separada de Imagen (planos) -- estas son capturas de camara
+    tomadas en cada paso de proyeccion como evidencia de calidad.
+    """
+    id = models.AutoField(primary_key=True)
+    modulo = models.ForeignKey(
+        Modulo,
+        on_delete=models.CASCADE,
+        related_name='fotos_fabricacion'
+    )
+    mesa = models.ForeignKey(
+        'Mesa',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='fotos_capturadas'
+    )
+    fase = models.CharField(
+        max_length=20,
+        choices=Fase.choices
+    )
+    paso = models.PositiveIntegerField(
+        help_text="Indice de imagen (0-based) en el que se capturo la foto"
+    )
+    imagen_referencia = models.ForeignKey(
+        Imagen,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='fotos_evidencia',
+        help_text="Imagen de plano que se estaba proyectando al capturar esta foto"
+    )
+    url = models.CharField(
+        max_length=500,
+        help_text="Ruta URL relativa al archivo de foto almacenado"
+    )
+    capturada_at = models.DateTimeField(auto_now_add=True)
+    filename_original = models.CharField(max_length=255, blank=True, null=True)
+    file_size = models.PositiveIntegerField(null=True, blank=True, help_text="Tamano del archivo en bytes")
+
+    def __str__(self):
+        fase_pref = "INF" if self.fase == "INFERIOR" else "SUP"
+        return f"Foto {self.modulo.nombre} {fase_pref}-paso{self.paso} ({self.capturada_at})"
+
+    class Meta:
+        db_table = 'api_foto_fabricacion'
+        ordering = ['-capturada_at']
+        indexes = [
+            models.Index(fields=['modulo', 'fase']),
+            models.Index(fields=['modulo', 'fase', 'paso']),
+            models.Index(fields=['mesa']),
         ]
 
 

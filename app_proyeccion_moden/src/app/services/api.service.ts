@@ -58,6 +58,26 @@ export interface Modulo {
     cerrado: boolean;
     cerrado_at: string | null;
     cerrado_by: string | null;
+    codigos_color: string[];
+    fotos_count: number;
+}
+
+export interface FotoFabricacion {
+    id: number;
+    modulo: number;
+    modulo_nombre: string;
+    planta_nombre: string | null;
+    proyecto_id: number | null;
+    mesa: number | null;
+    mesa_nombre: string | null;
+    fase: 'INFERIOR' | 'SUPERIOR';
+    fase_label: string;
+    paso: number;
+    imagen_referencia: number | null;
+    url: string;
+    capturada_at: string;
+    filename_original: string | null;
+    file_size: number | null;
 }
 
 export interface Imagen {
@@ -414,5 +434,31 @@ export class ApiService {
 
     deleteMesaQueueItem(id: number): Observable<void> {
         return this.http.delete<void>(`${this.baseUrl}/mesa-queue-items/${id}/`, { headers: this.getHeaders() });
+    }
+
+    // =========================================================================
+    // FOTOS FABRICACION
+    // =========================================================================
+    getFotos(params: { modulo?: number; planta?: number; proyecto?: number }): Observable<FotoFabricacion[]> {
+        let url = `${this.baseUrl}/fotos/`;
+        const queryParts: string[] = [];
+        if (params.modulo) queryParts.push(`modulo=${params.modulo}`);
+        if (params.planta) queryParts.push(`planta=${params.planta}`);
+        if (params.proyecto) queryParts.push(`proyecto=${params.proyecto}`);
+        if (queryParts.length) url += '?' + queryParts.join('&');
+        return this.http.get<FotoFabricacion[]>(url, { headers: this.getHeaders() });
+    }
+
+    downloadFotosZip(params: { modulo?: number; planta?: number; proyecto?: number }): Observable<Blob> {
+        let url = `${this.baseUrl}/fotos/download_zip/`;
+        const queryParts: string[] = [];
+        if (params.modulo) queryParts.push(`modulo=${params.modulo}`);
+        if (params.planta) queryParts.push(`planta=${params.planta}`);
+        if (params.proyecto) queryParts.push(`proyecto=${params.proyecto}`);
+        if (queryParts.length) url += '?' + queryParts.join('&');
+        return this.http.get(url, {
+            headers: this.getAuthHeaders(),
+            responseType: 'blob'
+        });
     }
 }

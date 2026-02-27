@@ -709,3 +709,158 @@
 .flex-wrap {
     flex-wrap: wrap;
 }
+
+/* Module header row with camera button */
+.module-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.3rem;
+}
+
+.module-foto-btn {
+    background: transparent;
+    border: none;
+    outline: none;
+    width: 26px;
+    height: 26px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    cursor: pointer;
+    border-radius: 50%;
+    color: #94a3b8;
+    position: relative;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+}
+
+.module-foto-btn:hover {
+    color: #3b82f6;
+    background-color: #eff6ff;
+}
+
+.foto-count-badge {
+    position: absolute;
+    top: -2px;
+    right: -4px;
+    background: #3b82f6;
+    color: #fff;
+    font-size: 0.55rem;
+    font-weight: 700;
+    border-radius: 999px;
+    min-width: 14px;
+    height: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 3px;
+}
+
+/* Color code dots */
+.color-codes {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 2px;
+}
+
+.color-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 1px solid rgba(0, 0, 0, 0.15);
+    flex-shrink: 0;
+}
+
+/* Download fotos button */
+.btn-download-fotos {
+    background: #f1f5f9;
+    color: #334155;
+    border: 1px solid #e2e8f0;
+    font-size: 0.75rem;
+    font-weight: 600;
+    transition: all 0.15s ease;
+}
+
+.btn-download-fotos:hover:not(:disabled) {
+    background: #e2e8f0;
+    border-color: #cbd5e1;
+}
+
+.btn-download-fotos:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Photo Gallery Modal */
+.foto-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.foto-modal {
+    width: min(900px, 95vw);
+    max-height: 85vh;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.24);
+    padding: 1.25rem;
+    overflow-y: auto;
+}
+
+.foto-modal-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+    gap: 1rem;
+}
+
+.foto-modal-header h4 {
+    margin: 0;
+    font-size: 1.1rem;
+}
+
+.foto-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 0.75rem;
+}
+
+.foto-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #f9fafb;
+}
+
+.foto-card img {
+    width: 100%;
+    height: 140px;
+    object-fit: cover;
+    display: block;
+}
+
+.foto-info {
+    padding: 0.4rem 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+}
+
+.foto-label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #334155;
+}
+
+.foto-date {
+    font-size: 0.7rem;
+    color: #94a3b8;
+}

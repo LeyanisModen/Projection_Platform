@@ -9,11 +9,13 @@ from rest_framework.response import Response
 from api.serializers import (
     ProyectoSerializer, PlantaSerializer, UserSerializer, ModuloSerializer,
     ImagenSerializer, MesaSerializer,
-    ModuloQueueSerializer, ModuloQueueItemSerializer, MesaQueueItemSerializer
+    ModuloQueueSerializer, ModuloQueueItemSerializer, MesaQueueItemSerializer,
+    FotoFabricacionSerializer
 )
 from api.models import (
     Modulo, Proyecto, Planta, Imagen, Mesa,
-    ModuloQueue, ModuloQueueItem, MesaQueueItem
+    ModuloQueue, ModuloQueueItem, MesaQueueItem,
+    FotoFabricacion
 )
 from rest_framework.authtoken.views import ObtainAuthToken
 from rest_framework.authtoken.models import Token
@@ -874,12 +876,93 @@ class DeviceViewSet(viewsets.ViewSet):
 
         return Response({'status': 'ok'})
 
+    @action(detail=False, methods=['post'])
+    def upload_foto(self, request):
+        """
+        Upload a fabrication photo from the mini-PC camera service.
+        Expects multipart form with:
+        - 'foto': the image file
+        - 'modulo_id': int
+        - 'fase': 'INFERIOR' or 'SUPERIOR'
+        - 'paso': int (0-based image index)
+        - 'imagen_id': int (optional, the blueprint image being projected)
+        """
+        import os
+        from django.conf import settings as django_settings
+        from django.utils import timezone
+        from api.models import Fase
+
+        mesa = self._authenticate_device(request)
+        if not mesa:
+            return Response({'detail': 'Unauthorized'}, status=401)
+
+        foto_file = request.FILES.get('foto')
+        if not foto_file:
+            return Response({'detail': 'foto file required'}, status=400)
+
+        modulo_id = request.data.get('modulo_id')
+        fase = request.data.get('fase')
+        paso = request.data.get('paso')
+        imagen_id = request.data.get('imagen_id')
+
+        if not all([modulo_id, fase, paso is not None]):
+            return Response({'detail': 'modulo_id, fase, and paso are required'}, status=400)
+
+        try:
+            modulo = Modulo.objects.select_related('planta', 'planta__proyecto').get(id=modulo_id)
+        except Modulo.DoesNotExist:
+            return Response({'detail': 'Modulo not found'}, status=404)
+
+        if fase not in [Fase.INFERIOR, Fase.SUPERIOR]:
+            return Response({'detail': 'fase must be INFERIOR or SUPERIOR'}, status=400)
+
+        imagen_ref = None
+        if imagen_id:
+            try:
+                imagen_ref = Imagen.objects.get(id=imagen_id)
+            except Imagen.DoesNotExist:
+                pass
+
+        # Build file path: fotos/{proyecto_id}/{planta_id}/{modulo_id}/
+        proyecto_id = modulo.proyecto_id
+        planta_id = modulo.planta_id or 0
+        media_path = os.path.join('fotos', str(proyecto_id), str(planta_id), str(modulo.id))
+        full_dir = os.path.join(django_settings.MEDIA_ROOT, media_path)
+        os.makedirs(full_dir, exist_ok=True)
+
+        # Generate unique filename
+        ts = timezone.now().strftime('%Y%m%d_%H%M%S')
+        fase_pref = 'INF' if fase == Fase.INFERIOR else 'SUP'
+        ext = os.path.splitext(foto_file.name)[1] or '.jpg'
+        filename = f"{modulo.nombre}_{fase_pref}_paso{paso}_{ts}{ext}"
+
+        file_path = os.path.join(full_dir, filename)
+        with open(file_path, 'wb+') as destination:
+            for chunk in foto_file.chunks():
+                destination.write(chunk)
+
+        url = f'/media/{media_path}/{filename}'
+
+        foto = FotoFabricacion.objects.create(
+            modulo=modulo,
+            mesa=mesa,
+            fase=fase,
+            paso=int(paso),
+            imagen_referencia=imagen_ref,
+            url=url,
+            filename_original=foto_file.name,
+            file_size=foto_file.size
+        )
+
+        serializer = FotoFabricacionSerializer(foto)
+        return Response(serializer.data, status=201)
+
     @action(detail=False, methods=['get'])
     def state(self, request):
         mesa = self._authenticate_device(request)
         if not mesa:
             return Response({'detail': 'Unauthorized'}, status=401)
-            
+
         from api.serializers import MesaStateSerializer
         serializer = MesaStateSerializer(mesa)
         return Response(serializer.data)
@@ -1137,3 +1220,94 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
             except MesaQueueItem.DoesNotExist:
                 pass
         return Response({'status': 'ok'})
+
+
+class FotoFabricacionViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    API endpoint to list/retrieve fabrication photos.
+    Filterable by modulo, planta, proyecto, fase.
+    """
+    queryset = FotoFabricacion.objects.select_related(
+        'modulo', 'modulo__planta', 'modulo__planta__proyecto', 'mesa', 'imagen_referencia'
+    ).all()
+    serializer_class = FotoFabricacionSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = None
+
+    def get_queryset(self):
+        queryset = FotoFabricacion.objects.select_related(
+            'modulo', 'modulo__planta', 'modulo__planta__proyecto', 'mesa'
+        ).all().order_by('-capturada_at')
+
+        if not _is_admin(self.request.user):
+            queryset = queryset.filter(modulo__proyecto__usuario=self.request.user)
+
+        modulo_id = self.request.query_params.get('modulo')
+        planta_id = self.request.query_params.get('planta')
+        proyecto_id = self.request.query_params.get('proyecto')
+        fase = self.request.query_params.get('fase')
+
+        if modulo_id:
+            queryset = queryset.filter(modulo_id=modulo_id)
+        if planta_id:
+            queryset = queryset.filter(modulo__planta_id=planta_id)
+        if proyecto_id:
+            queryset = queryset.filter(modulo__proyecto_id=proyecto_id)
+        if fase:
+            queryset = queryset.filter(fase=fase)
+
+        return queryset
+
+    @action(detail=False, methods=['get'])
+    def download_zip(self, request):
+        """
+        Download photos as ZIP file.
+        Query params: ?proyecto=ID or ?planta=ID or ?modulo=ID
+        Organizes as: proyecto_nombre/planta_nombre/modulo_nombre/filename
+        """
+        import os
+        import zipfile
+        import io
+        from django.conf import settings as django_settings
+        from django.http import HttpResponse
+
+        fotos = self.get_queryset()
+
+        if not fotos.exists():
+            return Response({'detail': 'No photos found'}, status=404)
+
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for foto in fotos:
+                proyecto_nombre = foto.modulo.proyecto.nombre if foto.modulo.proyecto else 'sin_proyecto'
+                planta_nombre = foto.modulo.planta.nombre if foto.modulo.planta else 'sin_planta'
+                modulo_nombre = foto.modulo.nombre
+                filename = os.path.basename(foto.url)
+                archive_path = f"{proyecto_nombre}/{planta_nombre}/{modulo_nombre}/{filename}"
+
+                # Resolve actual file on disk
+                relative_path = foto.url.lstrip('/')
+                if relative_path.startswith('media/'):
+                    relative_path = relative_path[len('media/'):]
+                file_path = os.path.join(django_settings.MEDIA_ROOT, relative_path)
+                if os.path.exists(file_path):
+                    zf.write(file_path, archive_path)
+
+        buffer.seek(0)
+        response = HttpResponse(buffer.read(), content_type='application/zip')
+
+        # Determine download filename
+        proyecto_id = request.query_params.get('proyecto')
+        planta_id = request.query_params.get('planta')
+        modulo_id = request.query_params.get('modulo')
+        if modulo_id:
+            dl_name = f'fotos_modulo_{modulo_id}.zip'
+        elif planta_id:
+            dl_name = f'fotos_planta_{planta_id}.zip'
+        elif proyecto_id:
+            dl_name = f'fotos_proyecto_{proyecto_id}.zip'
+        else:
+            dl_name = 'fotos.zip'
+
+        response['Content-Disposition'] = f'attachment; filename="{dl_name}"'
+        return response

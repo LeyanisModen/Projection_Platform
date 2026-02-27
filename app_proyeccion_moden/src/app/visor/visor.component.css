@@ -22,6 +22,18 @@
     visibility: hidden;
 }
 
+/* White screen - blank projection for photo capture or manual pause */
+.visor-container.white-screen {
+    background: #fff !important;
+}
+
+.visor-container.white-screen .projection-screen,
+.visor-container.white-screen .active-item-info,
+.visor-container.white-screen .mesa-watermark,
+.visor-container.white-screen app-mapper {
+    visibility: hidden;
+}
+
 /* Loading Screen */
 .loading-screen {
     text-align: center;
@@ -187,4 +199,43 @@
 .info-progress {
     font-size: 0.9rem;
     color: #ccc;
+}
+
+/* Photo Capture Status Indicator */
+.capture-status {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: bold;
+    z-index: 10000;
+    pointer-events: none;
+    animation: fadeIn 0.2s ease;
+}
+
+.capture-status.capturing {
+    background: rgba(255, 152, 0, 0.85);
+    color: #000;
+}
+
+.capture-status.uploading {
+    background: rgba(33, 150, 243, 0.85);
+    color: #fff;
+}
+
+.capture-status.done {
+    background: rgba(76, 175, 80, 0.85);
+    color: #fff;
+}
+
+.capture-status.error {
+    background: rgba(244, 67, 54, 0.85);
+    color: #fff;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
 }

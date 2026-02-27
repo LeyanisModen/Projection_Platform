@@ -3,7 +3,8 @@ from rest_framework import serializers
 
 from api.models import (
     Proyecto, Planta, Modulo, Imagen, Mesa,
-    ModuloQueue, ModuloQueueItem, MesaQueueItem, UserProfile, MesaQueueStatus
+    ModuloQueue, ModuloQueueItem, MesaQueueItem, UserProfile, MesaQueueStatus,
+    FotoFabricacion
 )
 
 
@@ -130,14 +131,22 @@ class PlantaSerializer(serializers.ModelSerializer):
 
 
 class ModuloSerializer(serializers.ModelSerializer):
+    fotos_count = serializers.SerializerMethodField()
+
     class Meta:
         model = Modulo
         fields = [
             "id", "nombre", "planta", "proyecto",
             "inferior_hecho", "superior_hecho", "estado",
-            "cerrado", "cerrado_at", "cerrado_by"
+            "cerrado", "cerrado_at", "cerrado_by",
+            "codigos_color", "fotos_count"
         ]
         read_only_fields = ["cerrado_at"]
+
+    def get_fotos_count(self, obj):
+        if hasattr(obj, '_fotos_count'):
+            return obj._fotos_count
+        return obj.fotos_fabricacion.count()
 
 
 class ImagenSerializer(serializers.HyperlinkedModelSerializer):
@@ -156,6 +165,38 @@ class ImagenSerializer(serializers.HyperlinkedModelSerializer):
         fase_pref = "INF" if obj.fase == "INFERIOR" else "SUP"
         modulo_nombre = obj.modulo.nombre if obj.modulo else "UNKNOWN"
         return f"{fase_pref}-{obj.orden:03d}-{modulo_nombre}"
+
+
+class FotoFabricacionSerializer(serializers.ModelSerializer):
+    modulo_nombre = serializers.CharField(source='modulo.nombre', read_only=True)
+    planta_nombre = serializers.SerializerMethodField()
+    proyecto_id = serializers.SerializerMethodField()
+    mesa_nombre = serializers.CharField(source='mesa.nombre', read_only=True, allow_null=True)
+    fase_label = serializers.SerializerMethodField()
+
+    class Meta:
+        model = FotoFabricacion
+        fields = [
+            "id", "modulo", "modulo_nombre", "planta_nombre", "proyecto_id",
+            "mesa", "mesa_nombre",
+            "fase", "fase_label", "paso", "imagen_referencia",
+            "url", "capturada_at",
+            "filename_original", "file_size"
+        ]
+        read_only_fields = ["capturada_at", "url", "file_size"]
+
+    def get_fase_label(self, obj):
+        return "INF" if obj.fase == "INFERIOR" else "SUP"
+
+    def get_planta_nombre(self, obj):
+        if obj.modulo and obj.modulo.planta:
+            return obj.modulo.planta.nombre
+        return None
+
+    def get_proyecto_id(self, obj):
+        if obj.modulo:
+            return obj.modulo.proyecto_id
+        return None
 
 
 class MesaSerializer(serializers.HyperlinkedModelSerializer):
