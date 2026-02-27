@@ -429,10 +429,15 @@ class MesaQueueItem(models.Model):
     class Meta:
         db_table = 'api_mesa_queue_item'
         ordering = ['position']
-        # Ensure a module phase can only be in one queue at a time
-        unique_together = ['modulo', 'fase']
-        
         constraints = [
+            # Allow historical HECHO rows, but keep at most one active assignment.
+            models.UniqueConstraint(
+                fields=['modulo', 'fase'],
+                condition=models.Q(
+                    status__in=[MesaQueueStatus.EN_COLA, MesaQueueStatus.MOSTRANDO]
+                ),
+                name='unique_active_modulo_fase_assignment'
+            ),
             models.CheckConstraint(
                 check=models.Q(fase__in=[Fase.INFERIOR, Fase.SUPERIOR]),
                 name='check_mesa_queue_item_fase_valid'

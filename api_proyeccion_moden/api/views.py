@@ -971,6 +971,13 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
             item.mesa.imagen_actual = item.imagen
             item.mesa.save(update_fields=['imagen_actual'])
 
+    def perform_update(self, serializer):
+        mesa = serializer.validated_data.get('mesa')
+        if mesa and (not _is_admin(self.request.user)) and mesa.usuario_id != self.request.user.id:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('No puedes mover items a mesas de otro usuario')
+        serializer.save()
+
     def perform_destroy(self, instance):
         from api.models import MesaQueueStatus
         mesa = instance.mesa

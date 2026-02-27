@@ -3,7 +3,7 @@ from rest_framework import serializers
 
 from api.models import (
     Proyecto, Planta, Modulo, Imagen, Mesa,
-    ModuloQueue, ModuloQueueItem, MesaQueueItem, UserProfile
+    ModuloQueue, ModuloQueueItem, MesaQueueItem, UserProfile, MesaQueueStatus
 )
 
 
@@ -236,6 +236,43 @@ class MesaQueueItemSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({
                 'imagen': f"Imagen es fase {imagen.fase}, no {fase}"
             })
+
+        # Resolve effective values for create and partial update.
+        instance = getattr(self, 'instance', None)
+        effective_modulo = modulo or (instance.modulo if instance else None)
+        effective_fase = fase or (instance.fase if instance else None)
+        effective_status = data.get('status') or (instance.status if instance else MesaQueueStatus.EN_COLA)
+        new_mesa = data.get('mesa')
+
+        # Business rule: the item currently showing cannot be moved to another mesa.
+        if (
+            instance
+            and instance.status == MesaQueueStatus.MOSTRANDO
+            and new_mesa
+            and new_mesa.id != instance.mesa_id
+        ):
+            raise serializers.ValidationError(
+                "No se puede mover entre mesas un item con estado MOSTRANDO"
+            )
+
+        # Keep only one active assignment for the same module phase.
+        if (
+            effective_modulo
+            and effective_fase
+            and effective_status in [MesaQueueStatus.EN_COLA, MesaQueueStatus.MOSTRANDO]
+        ):
+            conflict_qs = MesaQueueItem.objects.select_related('mesa').filter(
+                modulo=effective_modulo,
+                fase=effective_fase,
+                status__in=[MesaQueueStatus.EN_COLA, MesaQueueStatus.MOSTRANDO],
+            )
+            if instance:
+                conflict_qs = conflict_qs.exclude(pk=instance.pk)
+            conflict = conflict_qs.first()
+            if conflict:
+                raise serializers.ValidationError(
+                    f"Esta fase ya esta asignada a {conflict.mesa.nombre}"
+                )
             
         return data
 
