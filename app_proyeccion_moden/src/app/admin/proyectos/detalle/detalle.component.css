@@ -778,30 +778,29 @@
     flex-shrink: 0;
 }
 
-/* Icon action button (project/planta level download) */
-.icon-action-btn {
+/* Icon action button - borderless (project level download) */
+.icon-action-btn-borderless {
     background: transparent;
-    border: 1px solid #e2e8f0;
+    border: none;
     outline: none;
-    width: 34px;
-    height: 34px;
+    width: 40px;
+    height: 40px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.9rem;
+    font-size: 1.2rem;
     cursor: pointer;
     border-radius: 6px;
-    color: #64748b;
+    color: #94a3b8;
     transition: all 0.15s ease;
 }
 
-.icon-action-btn:hover:not(:disabled) {
+.icon-action-btn-borderless:hover:not(:disabled) {
     color: #334155;
     background-color: #f1f5f9;
-    border-color: #cbd5e1;
 }
 
-.icon-action-btn:disabled {
+.icon-action-btn-borderless:disabled {
     opacity: 0.3;
     cursor: not-allowed;
 }
