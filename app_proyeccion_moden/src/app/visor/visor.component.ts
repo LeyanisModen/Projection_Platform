@@ -527,14 +527,21 @@ export class VisorComponent implements OnInit, OnDestroy {
       formData.append('imagen_id', String(currentImage.id));
     }
 
-    // Use correct auth: device Bearer token when available, user Token auth as fallback
+    // Supervisor mode (/visor/:id) always uses user Token auth.
+    // Device mode uses Bearer device token.
     let headers: HttpHeaders;
-    if (this.deviceToken) {
+    if (this.isSupervisor) {
+      headers = this.getUserAuthHeaders();
+      const mesaId = this.mesaIdForPairing || this.mesaState?.id;
+      if (mesaId) {
+        formData.append('mesa_id', String(mesaId));
+      }
+    } else if (this.deviceToken) {
       headers = this.getAuthHeaders();
     } else {
+      // Fallback: try user Token auth if no device token
       headers = this.getUserAuthHeaders();
-      // Supervisor mode needs mesa_id since there's no device-to-mesa mapping
-      const mesaId = this.mesaIdForPairing || this.mesaState?.id;
+      const mesaId = this.mesaState?.id;
       if (mesaId) {
         formData.append('mesa_id', String(mesaId));
       }
