@@ -1285,6 +1285,10 @@ class FotoFabricacionViewSet(viewsets.ReadOnlyModelViewSet):
         from django.conf import settings as django_settings
         from django.http import HttpResponse
 
+        proyecto_id = request.query_params.get('proyecto')
+        planta_id = request.query_params.get('planta')
+        modulo_id = request.query_params.get('modulo')
+
         fotos = self.get_queryset()
 
         if not fotos.exists():
@@ -1297,7 +1301,14 @@ class FotoFabricacionViewSet(viewsets.ReadOnlyModelViewSet):
                 planta_nombre = foto.modulo.planta.nombre if foto.modulo.planta else 'sin_planta'
                 modulo_nombre = foto.modulo.nombre
                 filename = os.path.basename(foto.url)
-                archive_path = f"{proyecto_nombre}/{planta_nombre}/{modulo_nombre}/{filename}"
+
+                # Adapt folder structure to download scope
+                if modulo_id:
+                    archive_path = f"{modulo_nombre}/{filename}"
+                elif planta_id:
+                    archive_path = f"{planta_nombre}/{modulo_nombre}/{filename}"
+                else:
+                    archive_path = f"{proyecto_nombre}/{planta_nombre}/{modulo_nombre}/{filename}"
 
                 # Resolve actual file on disk
                 relative_path = foto.url.lstrip('/')
@@ -1309,11 +1320,6 @@ class FotoFabricacionViewSet(viewsets.ReadOnlyModelViewSet):
 
         buffer.seek(0)
         response = HttpResponse(buffer.read(), content_type='application/zip')
-
-        # Determine download filename
-        proyecto_id = request.query_params.get('proyecto')
-        planta_id = request.query_params.get('planta')
-        modulo_id = request.query_params.get('modulo')
         if modulo_id:
             dl_name = f'fotos_modulo_{modulo_id}.zip'
         elif planta_id:
