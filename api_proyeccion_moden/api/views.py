@@ -273,7 +273,10 @@ class ModuloViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        queryset = Modulo.objects.all().order_by("id")
+        from django.db.models import Count
+        queryset = Modulo.objects.all().annotate(
+            _fotos_count=Count('fotos_fabricacion')
+        ).order_by("id")
         if not _is_admin(self.request.user):
             queryset = queryset.filter(proyecto__usuario=self.request.user)
         proyecto_id = self.request.query_params.get('proyecto', None)

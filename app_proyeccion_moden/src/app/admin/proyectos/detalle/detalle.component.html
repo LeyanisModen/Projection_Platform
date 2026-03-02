@@ -4,11 +4,11 @@
             <a routerLink="/admin-dashboard/proyectos" class="btn btn-secondary btn-sm mb-2">← Volver</a>
             <div class="d-flex align-items-center" style="gap: 0.75rem;">
                 <h1>{{ proyecto.nombre }}</h1>
-                <button class="btn btn-sm btn-download-fotos"
+                <button type="button" class="icon-action-btn"
                     (click)="downloadFotosZip('proyecto')"
                     [disabled]="downloadingZip"
                     title="Descargar todas las fotos del proyecto">
-                    <i class="fa fa-download" aria-hidden="true"></i> Fotos Proyecto
+                    <i class="fa fa-download" aria-hidden="true"></i>
                 </button>
             </div>
         </div>
@@ -73,7 +73,7 @@
                                     (click)="downloadFotosPlanta(planta, $event)"
                                     [disabled]="downloadingZip"
                                     title="Descargar fotos de esta planta">
-                                    <i class="fa fa-camera" aria-hidden="true"></i>
+                                    <i class="fa fa-download" aria-hidden="true"></i>
                                 </button>
                                 <button type="button" class="planta-delete-icon-btn"
                                     (click)="deletePlanta(planta, $event)"
@@ -114,11 +114,11 @@
                             <div class="module-header-row">
                                 <span class="module-name">{{ modulo.nombre }}</span>
                                 <button type="button" class="module-foto-btn"
-                                    *ngIf="modulo.fotos_count > 0"
                                     (click)="openFotosModal(modulo, $event)"
-                                    title="Ver fotos de fabricación ({{ modulo.fotos_count }})">
+                                    [disabled]="!modulo.fotos_count"
+                                    [title]="modulo.fotos_count ? 'Ver fotos (' + modulo.fotos_count + ')' : 'Sin fotos'">
                                     <i class="fa fa-camera" aria-hidden="true"></i>
-                                    <span class="foto-count-badge">{{ modulo.fotos_count }}</span>
+                                    <span class="foto-count-badge" *ngIf="modulo.fotos_count > 0">{{ modulo.fotos_count }}</span>
                                 </button>
                             </div>
 

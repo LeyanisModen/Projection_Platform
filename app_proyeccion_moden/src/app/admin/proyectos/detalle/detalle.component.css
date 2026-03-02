@@ -736,9 +736,14 @@
     flex-shrink: 0;
 }
 
-.module-foto-btn:hover {
+.module-foto-btn:hover:not(:disabled) {
     color: #3b82f6;
     background-color: #eff6ff;
+}
+
+.module-foto-btn:disabled {
+    opacity: 0.3;
+    cursor: default;
 }
 
 .foto-count-badge {
@@ -771,6 +776,34 @@
     border-radius: 50%;
     border: 1px solid rgba(0, 0, 0, 0.15);
     flex-shrink: 0;
+}
+
+/* Icon action button (project/planta level download) */
+.icon-action-btn {
+    background: transparent;
+    border: 1px solid #e2e8f0;
+    outline: none;
+    width: 34px;
+    height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.9rem;
+    cursor: pointer;
+    border-radius: 6px;
+    color: #64748b;
+    transition: all 0.15s ease;
+}
+
+.icon-action-btn:hover:not(:disabled) {
+    color: #334155;
+    background-color: #f1f5f9;
+    border-color: #cbd5e1;
+}
+
+.icon-action-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
 }
 
 /* Download fotos button */
