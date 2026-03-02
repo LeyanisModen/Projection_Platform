@@ -1277,7 +1277,8 @@ class FotoFabricacionViewSet(viewsets.ReadOnlyModelViewSet):
         """
         Download photos as ZIP file.
         Query params: ?proyecto=ID or ?planta=ID or ?modulo=ID
-        Organizes as: proyecto_nombre/planta_nombre/modulo_nombre/filename
+        ZIP name uses the entity name; internal structure excludes the
+        top-level folder (Windows "Extract All" creates it from the ZIP name).
         """
         import os
         import zipfile
@@ -1295,6 +1296,7 @@ class FotoFabricacionViewSet(viewsets.ReadOnlyModelViewSet):
             return Response({'detail': 'No photos found'}, status=404)
 
         buffer = io.BytesIO()
+        zip_entity_name = None
         with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
             for foto in fotos:
                 proyecto_nombre = foto.modulo.proyecto.nombre if foto.modulo.proyecto else 'sin_proyecto'
@@ -1302,13 +1304,21 @@ class FotoFabricacionViewSet(viewsets.ReadOnlyModelViewSet):
                 modulo_nombre = foto.modulo.nombre
                 filename = os.path.basename(foto.url)
 
-                # Adapt folder structure to download scope
+                # Adapt folder structure to download scope.
+                # The top-level entity name becomes the ZIP filename
+                # (Windows "Extract All" creates a folder from the ZIP name).
                 if modulo_id:
-                    archive_path = f"{modulo_nombre}/{filename}"
+                    archive_path = filename
+                    if not zip_entity_name:
+                        zip_entity_name = modulo_nombre
                 elif planta_id:
-                    archive_path = f"{planta_nombre}/{modulo_nombre}/{filename}"
+                    archive_path = f"{modulo_nombre}/{filename}"
+                    if not zip_entity_name:
+                        zip_entity_name = planta_nombre
                 else:
-                    archive_path = f"{proyecto_nombre}/{planta_nombre}/{modulo_nombre}/{filename}"
+                    archive_path = f"{planta_nombre}/{modulo_nombre}/{filename}"
+                    if not zip_entity_name:
+                        zip_entity_name = proyecto_nombre
 
                 # Resolve actual file on disk
                 relative_path = foto.url.lstrip('/')
@@ -1320,14 +1330,7 @@ class FotoFabricacionViewSet(viewsets.ReadOnlyModelViewSet):
 
         buffer.seek(0)
         response = HttpResponse(buffer.read(), content_type='application/zip')
-        if modulo_id:
-            dl_name = f'fotos_modulo_{modulo_id}.zip'
-        elif planta_id:
-            dl_name = f'fotos_planta_{planta_id}.zip'
-        elif proyecto_id:
-            dl_name = f'fotos_proyecto_{proyecto_id}.zip'
-        else:
-            dl_name = 'fotos.zip'
+        dl_name = f'{zip_entity_name}.zip' if zip_entity_name else 'fotos.zip'
 
         response['Content-Disposition'] = f'attachment; filename="{dl_name}"'
         return response
