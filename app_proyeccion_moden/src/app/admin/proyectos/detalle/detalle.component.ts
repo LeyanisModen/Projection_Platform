@@ -55,6 +55,7 @@ export class ProyectoDetailComponent implements OnInit {
     fotos: FotoFabricacion[] = [];
     loadingFotos = false;
     downloadingZip = false;
+    selectedFotoIndex = 0;
 
     constructor(
         private route: ActivatedRoute,
@@ -613,6 +614,7 @@ export class ProyectoDetailComponent implements OnInit {
         if (event) event.stopPropagation();
         this.fotosTarget = modulo;
         this.showFotosModal = true;
+        this.selectedFotoIndex = 0;
         this.loadFotos(modulo.id);
     }
 
@@ -620,6 +622,38 @@ export class ProyectoDetailComponent implements OnInit {
         this.showFotosModal = false;
         this.fotosTarget = null;
         this.fotos = [];
+        this.selectedFotoIndex = 0;
+    }
+
+    prevFoto(): void {
+        if (this.selectedFotoIndex > 0) this.selectedFotoIndex--;
+    }
+
+    nextFoto(): void {
+        if (this.selectedFotoIndex < this.fotos.length - 1) this.selectedFotoIndex++;
+    }
+
+    downloadFotosPlanta(planta: Planta, event?: Event): void {
+        if (event) event.stopPropagation();
+        this.downloadingZip = true;
+        this.api.downloadFotosZip({ planta: planta.id }).subscribe({
+            next: (blob) => {
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `fotos_${planta.nombre}.zip`;
+                a.click();
+                window.URL.revokeObjectURL(url);
+                this.downloadingZip = false;
+                this.cdr.detectChanges();
+            },
+            error: (err) => {
+                console.error('Error downloading ZIP', err);
+                this.downloadingZip = false;
+                alert('Error descargando fotos');
+                this.cdr.detectChanges();
+            }
+        });
     }
 
     loadFotos(moduloId: number): void {
