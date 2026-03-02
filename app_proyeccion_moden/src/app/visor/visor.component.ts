@@ -527,9 +527,22 @@ export class VisorComponent implements OnInit, OnDestroy {
       formData.append('imagen_id', String(currentImage.id));
     }
 
+    // Use correct auth: device Bearer token when available, user Token auth as fallback
+    let headers: HttpHeaders;
+    if (this.deviceToken) {
+      headers = this.getAuthHeaders();
+    } else {
+      headers = this.getUserAuthHeaders();
+      // Supervisor mode needs mesa_id since there's no device-to-mesa mapping
+      const mesaId = this.mesaIdForPairing || this.mesaState?.id;
+      if (mesaId) {
+        formData.append('mesa_id', String(mesaId));
+      }
+    }
+
     this.http.post(
       `${this.apiUrl}upload_foto/`, formData,
-      { headers: this.getAuthHeaders() }
+      { headers }
     ).subscribe({
       next: () => {
         this.captureStatus = 'done';

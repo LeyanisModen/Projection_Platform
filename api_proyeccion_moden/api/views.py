@@ -880,21 +880,32 @@ class DeviceViewSet(viewsets.ViewSet):
     def upload_foto(self, request):
         """
         Upload a fabrication photo from the mini-PC camera service.
+        Accepts device Bearer auth OR user Token auth (supervisor mode).
         Expects multipart form with:
         - 'foto': the image file
         - 'modulo_id': int
         - 'fase': 'INFERIOR' or 'SUPERIOR'
         - 'paso': int (0-based image index)
         - 'imagen_id': int (optional, the blueprint image being projected)
+        - 'mesa_id': int (required when using user Token auth)
         """
         import os
         from django.conf import settings as django_settings
         from django.utils import timezone
         from api.models import Fase
 
+        # Try device auth first, then fall back to user Token auth
         mesa = self._authenticate_device(request)
         if not mesa:
-            return Response({'detail': 'Unauthorized'}, status=401)
+            # Check if user is authenticated via DRF Token auth
+            if hasattr(request, 'user') and request.user and request.user.is_authenticated:
+                mesa_id = request.data.get('mesa_id')
+                if mesa_id:
+                    mesa = Mesa.objects.filter(id=mesa_id).first()
+                if not mesa:
+                    return Response({'detail': 'mesa_id required for user auth'}, status=400)
+            else:
+                return Response({'detail': 'Unauthorized'}, status=401)
 
         foto_file = request.FILES.get('foto')
         if not foto_file:
