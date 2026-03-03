@@ -195,7 +195,8 @@ class ProyectoViewSet(viewsets.ModelViewSet):
                             nombre=modulo_data.get('nombre', 'Sin nombre'),
                             planta=planta,
                             proyecto=proyecto,
-                            estado='PENDIENTE'
+                            estado='PENDIENTE',
+                            codigos_color=modulo_data.get('codigos_color', 'xxxx')
                         )
                         stats['modulos'] += 1
                         

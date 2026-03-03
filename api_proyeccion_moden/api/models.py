@@ -99,11 +99,12 @@ class Modulo(models.Model):
         related_name='modulos_cerrados'
     )
 
-    # Codigos de color para identificacion del modulo (1-4 colores)
-    codigos_color = models.JSONField(
-        default=list,
+    # Codigo de color de 4 posiciones para validacion de fotos
+    codigos_color = models.CharField(
+        max_length=4,
+        default='xxxx',
         blank=True,
-        help_text='Array de codigos de color, ej: ["pink", "green", "blue", "yellow"]'
+        help_text='4 chars: y=yellow, g=green, c=cyan, v=violet, m=magenta, o=orange, x=skip'
     )
 
     def __str__(self):

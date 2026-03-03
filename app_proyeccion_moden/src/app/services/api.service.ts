@@ -58,7 +58,7 @@ export interface Modulo {
     cerrado: boolean;
     cerrado_at: string | null;
     cerrado_by: string | null;
-    codigos_color: string[];
+    codigos_color: string;
     fotos_count: number;
 }
 

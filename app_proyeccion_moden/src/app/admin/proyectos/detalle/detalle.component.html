@@ -120,12 +120,14 @@
                                 </button>
                             </div>
 
-                            <div class="color-codes" *ngIf="modulo.codigos_color && modulo.codigos_color.length > 0">
-                                <span *ngFor="let color of modulo.codigos_color"
-                                    class="color-dot"
-                                    [style.background-color]="getColorHex(color)"
-                                    [title]="color">
-                                </span>
+                            <div class="color-codes" *ngIf="modulo.codigos_color && modulo.codigos_color !== 'xxxx'">
+                                <ng-container *ngFor="let char of modulo.codigos_color.split('')">
+                                    <span *ngIf="char !== 'x'"
+                                        class="color-dot"
+                                        [style.background-color]="getColorHex(char)"
+                                        [title]="getColorLabel(char)">
+                                    </span>
+                                </ng-container>
                             </div>
 
                             <div class="module-substates">

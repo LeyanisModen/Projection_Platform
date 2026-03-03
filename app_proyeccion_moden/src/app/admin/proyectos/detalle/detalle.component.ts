@@ -387,8 +387,21 @@ export class ProyectoDetailComponent implements OnInit {
                 this.importProgress = `Procesando módulo: ${moduloName}...`;
                 this.cdr.detectChanges();
 
+                // Parse color code from folder name (e.g. "A01_ymgc" → name="A01", code="ymgc")
+                const parts = moduloName.split('_');
+                let colorCode = 'xxxx';
+                let cleanName = moduloName;
+                if (parts.length > 1) {
+                    const lastPart = parts[parts.length - 1].toLowerCase();
+                    if (lastPart.length === 4 && /^[ygcvmox]+$/.test(lastPart)) {
+                        colorCode = lastPart;
+                        cleanName = parts.slice(0, -1).join('_');
+                    }
+                }
+
                 const moduloData: any = {
-                    nombre: moduloName,
+                    nombre: cleanName,
+                    codigos_color: colorCode,
                     imagenes: []
                 };
 
@@ -708,15 +721,23 @@ export class ProyectoDetailComponent implements OnInit {
         });
     }
 
-    getColorHex(color: string): string {
+    getColorHex(code: string): string {
         const map: Record<string, string> = {
-            pink: '#ec4899',
-            green: '#22c55e',
-            blue: '#3b82f6',
-            yellow: '#eab308',
-            orange: '#f97316',
-            purple: '#a855f7'
+            y: '#eab308',  // yellow
+            g: '#22c55e',  // green
+            c: '#06b6d4',  // cyan
+            v: '#8b5cf6',  // violet
+            m: '#ec4899',  // magenta
+            o: '#f97316',  // orange
         };
-        return map[color] || '#9ca3af';
+        return map[code] || '#9ca3af';
+    }
+
+    getColorLabel(code: string): string {
+        const map: Record<string, string> = {
+            y: 'Yellow', g: 'Green', c: 'Cyan',
+            v: 'Violet', m: 'Magenta', o: 'Orange'
+        };
+        return map[code] || code;
     }
 }
