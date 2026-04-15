@@ -2130,3 +2130,14 @@
   border: 1px solid #e2e8f0 !important;
 }
 
+
+
+/* ADJUSTING SPACING UNDER HEADERS */
+.planner-section, .stats-section, .projects-section {
+  gap: 8px !important;
+}
+
+.section-header h2 {
+  margin-top: 16px;
+  margin-bottom: 0px; 
+}
