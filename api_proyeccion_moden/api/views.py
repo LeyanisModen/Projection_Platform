@@ -1152,35 +1152,24 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
             raise ValidationError(f'Faltan mesas requeridas en el grupo: {", ".join(missing_roles)}')
 
         preserved_until, preserved_by_role, preserved_phase_keys = self._get_preserved_active_prefix(grupo)
-        plan_data = self._build_plan_sequences(
-            proyecto,
-            excluded_phase_keys=preserved_phase_keys,
-            group_index_offset=preserved_until or 0,
-        )
-        planned_phase_keys = plan_data['planned_phase_keys']
-
         external_conflicts = MesaQueueItem.objects.select_related('mesa', 'modulo').filter(
             status__in=ACTIVE_QUEUE_STATUSES,
             modulo__proyecto=proyecto,
         ).exclude(mesa__grupo=grupo)
 
-        conflicting_keys = {
+        external_phase_keys = {
             (item.modulo_id, item.fase)
             for item in external_conflicts
         }
-        overlapping_conflicts = [
-            item for item in external_conflicts
-            if (item.modulo_id, item.fase) in planned_phase_keys
-        ]
-        if overlapping_conflicts:
-            conflict_messages = [
+        plan_data = self._build_plan_sequences(
+            proyecto,
+            excluded_phase_keys=preserved_phase_keys | external_phase_keys,
+            group_index_offset=preserved_until or 0,
+        )
+        skipped_external_conflicts = [
                 f'{item.modulo.nombre} {item.fase} ya está en {item.mesa.nombre}'
-                for item in overlapping_conflicts[:5]
-            ]
-            raise ValidationError({
-                'detail': 'Hay fases activas de este proyecto en otras mesas',
-                'conflicts': conflict_messages,
-            })
+            for item in external_conflicts[:5]
+        ]
 
         with transaction.atomic():
             active_group_items = MesaQueueItem.objects.filter(

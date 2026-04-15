@@ -690,3 +690,65 @@ class PlanningFoundationTests(APITestCase):
 
         self.assertEqual(inf_1_queue, ["M-02", "M-01"])
         self.assertEqual(inf_2_queue, ["N-02", "N-01"])
+
+    def test_planificar_grupo_ignora_fases_activas_en_otro_grupo(self):
+        self.project.bastidor_longitud_cm = 20
+        self.project.save(update_fields=["bastidor_longitud_cm"])
+
+        modules = [self.modulo]
+        for index in range(2, 5):
+            modules.append(
+                Modulo.objects.create(
+                    nombre=f"M-0{index}",
+                    proyecto=self.project,
+                    planta=self.planta,
+                    ancho_cm="10.00",
+                )
+            )
+
+        self.modulo.ancho_cm = "10.00"
+        self.modulo.save(update_fields=["ancho_cm"])
+
+        for modulo in modules:
+            DetalleModuloFase.objects.create(
+                modulo=modulo,
+                fase="INFERIOR",
+                espesor_cm="10.00",
+            )
+
+        grupo_1 = self.client.post(
+            "/api/grupos-mesas/",
+            {"nombre": "Grupo Uno", "usuario": self.user.id},
+            format="json",
+        )
+        grupo_2 = self.client.post(
+            "/api/grupos-mesas/",
+            {"nombre": "Grupo Dos", "usuario": self.user.id},
+            format="json",
+        )
+
+        self.assertEqual(grupo_1.status_code, 201)
+        self.assertEqual(grupo_2.status_code, 201)
+
+        first_plan = self.client.post(
+            f"/api/grupos-mesas/{grupo_1.data['id']}/planificar/",
+            {"proyecto_id": self.project.id},
+            format="json",
+        )
+        second_plan = self.client.post(
+            f"/api/grupos-mesas/{grupo_2.data['id']}/planificar/",
+            {"proyecto_id": self.project.id},
+            format="json",
+        )
+
+        self.assertEqual(first_plan.status_code, 200)
+        self.assertEqual(second_plan.status_code, 200)
+
+        grupo = GrupoMesas.objects.get(id=grupo_2.data["id"])
+        mesa_inf_1 = grupo.mesas.get(rol="INFERIOR_1")
+        mesa_inf_2 = grupo.mesas.get(rol="INFERIOR_2")
+        mesa_sup = grupo.mesas.get(rol="SUPERIORES")
+
+        self.assertEqual(MesaQueueItem.objects.filter(mesa=mesa_inf_1, status__in=["EN_COLA", "MOSTRANDO"]).count(), 0)
+        self.assertEqual(MesaQueueItem.objects.filter(mesa=mesa_inf_2, status__in=["EN_COLA", "MOSTRANDO"]).count(), 0)
+        self.assertEqual(MesaQueueItem.objects.filter(mesa=mesa_sup, status__in=["EN_COLA", "MOSTRANDO"]).count(), 0)
