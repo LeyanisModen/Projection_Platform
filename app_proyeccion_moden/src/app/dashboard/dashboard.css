@@ -617,8 +617,8 @@
 }
 
 .planner-card {
-  background: linear-gradient(145deg, #fffaf5 0%, #ffffff 100%);
-  border: 1px solid rgba(255, 107, 53, 0.14);
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
   border-radius: 18px;
   box-shadow: var(--shadow-soft);
   padding: 18px;
@@ -769,8 +769,8 @@
 }
 
 .grupo-operativo {
-  background: linear-gradient(145deg, #fffaf5 0%, #ffffff 100%);
-  border: 1px solid rgba(255, 107, 53, 0.14);
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
   border-radius: 18px;
   box-shadow: var(--shadow-soft);
   padding: 18px;
@@ -2012,3 +2012,121 @@
 /* =============================================================================
    PLANTA ACTIONS & BLUEPRINT MODAL
    ============================================================================= */
+
+
+/* NEW STYLES: Header Nav, Projects grid */
+.header-nav {
+  display: flex;
+  gap: 20px;
+  margin: 0 auto;
+}
+.header-nav .nav-link {
+  text-decoration: none;
+  color: var(--text-secondary);
+  font-weight: 500;
+  font-size: 0.95rem;
+  transition: color 0.2s;
+}
+.header-nav .nav-link:hover {
+  color: var(--accent-orange);
+}
+
+.user-display {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-icon {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  padding: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s;
+}
+.btn-icon:hover {
+  color: var(--text-primary);
+}
+.btn-icon.connected {
+  color: #4caf50;
+}
+.btn-icon.disconnected {
+  color: var(--text-secondary);
+}
+.btn-icon.connected:hover {
+  color: #388e3c;
+}
+.btn-icon.disconnected:hover {
+  color: var(--accent-orange);
+}
+
+.header-title-with-icon {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.projects-section {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.projects-inline-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.project-inline-card {
+  background: #ffffff;
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.project-inline-card:hover {
+  box-shadow: var(--shadow-hover);
+  border-color: var(--accent-orange);
+  transform: translateY(-2px);
+}
+.project-inline-card.selected {
+  border-color: var(--accent-orange);
+  background: rgba(255, 107, 53, 0.05);
+}
+
+.project-inline-card .project-icon {
+  color: var(--accent-orange);
+  display: flex;
+}
+
+.project-inline-card .project-info h3 {
+  margin: 0 0 4px 0;
+  font-size: 1rem;
+}
+.project-inline-card .project-info .project-status {
+  font-size: 0.8rem;
+  color: #4caf50;
+  font-weight: 500;
+}
+
+.dashboard-main.infinite-scroll {
+  overflow-y: auto;
+  scroll-behavior: smooth;
+}
+
+/* Ensure planner cards have cleaner backgrounds */
+.planner-card, .grupo-operativo {
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+}
+

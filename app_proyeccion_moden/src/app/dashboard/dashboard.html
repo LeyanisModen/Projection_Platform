@@ -2,48 +2,30 @@
     <header class="dashboard-header">
         <img src="assets/logo-moden.jpg" alt="MOD:EN Logo" class="header-logo">
         <span class="subtitle">Sistema de Gestion de Proyeccion</span>
+        <nav class="header-nav">
+            <a href="#grupos-section" class="nav-link">Grupos</a>
+            <a href="#estadisticas-section" class="nav-link">Estadísticas</a>
+            <a href="#proyectos-section" class="nav-link">Proyectos</a>
+        </nav>
         <div class="header-right">
-            <span class="user-display">Usuario {{ username }}</span>
-            <button class="btn-logout" (click)="logout()" title="Cerrar sesion">Salir</button>
+            <span class="user-display">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="user-icon"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                Usuario {{ username }}
+            </span>
+            <button class="btn-icon" (click)="logout()" title="Cerrar sesion">
+               <svg width="24" height="24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
+            </button>
         </div>
     </header>
 
-    <main class="dashboard-main">
-        <aside class="projects-panel" [class.collapsed]="panelState === 'collapsed'">
-            <div class="panel-header">
-                <button class="btn-menu" (click)="togglePanel()">Menu</button>
-                <div class="header-title" *ngIf="panelState === 'expanded'">
-                    <div class="header-text-group">
-                        <h2
-                            style="margin: 0; font-size: 1.25rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                            Proyectos</h2>
-                        <small class="text-muted">Referencia de proyectos disponibles para planificar por grupo</small>
-                    </div>
-                </div>
-            </div>
-
-            <div class="panel-content" *ngIf="panelState === 'expanded'">
-                <ul class="nav-list">
-                    @if (loadingProyectos) { <div class="loading">Cargando...</div> }
-                    @for (proyecto of proyectos; track proyecto.id) {
-                    <li class="nav-item" [class.selected]="selectedProyecto?.id === proyecto.id"
-                        (click)="selectProyecto(proyecto)">
-                        <span class="nav-icon">PR</span>
-                        <span class="nav-text">{{ proyecto.nombre }}</span>
-                        <span class="nav-arrow">></span>
-                    </li>
-                    }
-                </ul>
-            </div>
-        </aside>
-
+    <main class="dashboard-main infinite-scroll">
         <section class="dashboard-workspace">
             @if (loadingGruposMesas || loadingMesas) {
             <div class="loading planner-loading">Cargando operativa...</div>
             } @else {
-            <section class="planner-section">
+            <section class="planner-section" id="grupos-section">
                 <div class="section-header planner-header">
-                    <h2>Operativa por Grupos</h2>
+                    <h2>Producción</h2>
                     <span class="section-hint">Cada grupo controla su proyecto y sus mesas INF1 / INF2 / SUP desde el mismo bloque</span>
                 </div>
 
@@ -68,7 +50,6 @@
 
                             <div class="planner-controls group-controls">
                                 <label>
-                                    <span>Proyecto</span>
                                     <select [(ngModel)]="selectedProyectoPorGrupo[grupo.id]"
                                         (ngModelChange)="onProyectoGrupoSeleccionado(grupo, $event)">
                                         <option [ngValue]="null">Selecciona un proyecto</option>
@@ -116,14 +97,14 @@
                                         @if (mesa.blackout) { <span class="mesa-badge blackout">OFF</span> }
                                         <div class="header-link-status">
                                             @if (mesa.is_linked) {
-                                            <button class="btn-view-projection-sm linked" (click)="openProjectionView(mesa)"
+                                            <button class="btn-icon connected" (click)="openProjectionView(mesa)"
                                                 title="Proyeccion conectada">
-                                                VIS
+                                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line><path d="M9 10l2 2 4-4"></path></svg>
                                             </button>
                                             } @else {
-                                            <button class="btn-view-projection-sm unlinked" (click)="openProjectionView(mesa)"
+                                            <button class="btn-icon disconnected" (click)="openProjectionView(mesa)"
                                                 title="Sin vincular">
-                                                LINK
+                                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line><line x1="2" y1="2" x2="22" y2="22"></line></svg>
                                             </button>
                                             }
                                         </div>
@@ -153,7 +134,7 @@
                 }
             </section>
 
-            <section class="stats-section">
+            <section class="stats-section" id="estadisticas-section">
                 <div class="section-header legacy-header">
                     <h2>Boards de Estadisticas</h2>
                     <span class="section-hint">Pendiente de definir el formato final, pero ya quedan visibles</span>
@@ -174,6 +155,27 @@
                         <p>Acumulados y comparativa de produccion por ferralla.</p>
                         <span class="stats-placeholder">Proximamente</span>
                     </article>
+                </div>
+            </section>
+
+            <section class="projects-section" id="proyectos-section">
+                <div class="section-header legacy-header">
+                    <h2>Proyectos</h2>
+                    <span class="section-hint">Referencia de proyectos disponibles para planificar por grupo</span>
+                </div>
+                <div class="projects-inline-grid">
+                    @if (loadingProyectos) { <div class="loading">Cargando...</div> }
+                    @for (proyecto of proyectos; track proyecto.id) {
+                    <article class="project-inline-card" [class.selected]="selectedProyecto?.id === proyecto.id" (click)="selectProyecto(proyecto)">
+                        <div class="project-icon">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                        </div>
+                        <div class="project-info">
+                            <h3>{{ proyecto.nombre }}</h3>
+                            <span class="project-status">Activo</span>
+                        </div>
+                    </article>
+                    }
                 </div>
             </section>
             }
