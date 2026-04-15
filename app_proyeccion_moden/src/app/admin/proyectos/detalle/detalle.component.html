@@ -1,38 +1,70 @@
 <div class="container" *ngIf="proyecto">
+
     <div class="page-header d-flex justify-content-between align-items-start">
+
         <div class="header-content">
-            <a routerLink="/admin-dashboard/proyectos" class="btn btn-secondary btn-sm mb-2">← Volver</a>
+
+            <a routerLink="/admin-dashboard/proyectos" class="btn btn-secondary btn-sm mb-2">â Volver</a>
+
             <h1>{{ proyecto.nombre }}</h1>
+
         </div>
+
         <button type="button" class="icon-action-btn-borderless"
+
             (click)="downloadFotosZip('proyecto')"
+
             [disabled]="downloadingZip"
+
             title="Descargar todas las fotos del proyecto">
+
             <i class="fa fa-download" aria-hidden="true"></i>
+
         </button>
+
     </div>
 
+
+
     <div class="row">
+
         <!-- PLANTAS (Columna Izquierda / Layout) -->
+
         <div class="col-md-4">
+
             <div class="ferralla-selector mb-3 p-3 bg-white rounded border"
                 style="box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
                 <label class="d-block mb-1">Ferralla asignada:</label>
                 <div class="custom-dropdown" (click)="dropdownOpen = !dropdownOpen">
+
                     <span class="custom-dropdown-value">{{ getSelectedFerrallaLabel() }}</span>
+
                     <span class="custom-dropdown-arrow">&#9662;</span>
+
                     <div class="custom-dropdown-menu" *ngIf="dropdownOpen" (click)="$event.stopPropagation()">
+
                         <div class="custom-dropdown-option"
+
                             [class.selected]="proyecto.usuario === null"
+
                             (click)="changeFerralla(null); dropdownOpen = false">
+
                             Sin asignar
+
                         </div>
+
                         <div class="custom-dropdown-option"
+
                             *ngFor="let user of users"
+
                             [class.selected]="proyecto.usuario === user.url"
+
                             (click)="changeFerralla(user.url); dropdownOpen = false">
+
                             {{ user.first_name || user.username }}
+
                         </div>
+
                     </div>
                 </div>
             </div>
@@ -41,7 +73,7 @@
                 <div class="project-config-header">
                     <div>
                         <label class="d-block mb-1">Bastidor de referencia</label>
-                        <small class="text-muted">La capacidad por módulo se calculará como `bastidor / ancho del módulo`.</small>
+                        <small class="text-muted">La capacidad por mÃ³dulo se calcularÃ¡ como `bastidor / ancho del mÃ³dulo`.</small>
                     </div>
                 </div>
                 <div class="project-config-controls">
@@ -61,15 +93,15 @@
                     </button>
                 </div>
                 <small class="project-config-hint">
-                    Valor actual para bastidores de prueba. Si cambia el sistema físico, aquí ajustaremos la longitud util del bastidor.
+                    Valor actual para bastidores de prueba. Si cambia el sistema fÃ­sico, aquÃ­ ajustaremos la longitud util del bastidor.
                 </small>
             </div>
 
             <div class="project-config-card mb-3 p-3 bg-white rounded border">
                 <div class="project-config-header">
                     <div>
-                        <label class="d-block mb-1">Datos técnicos del proyecto</label>
-                        <small class="text-muted">Importa un JSON, CSV o SQLite (.db) con ancho de módulo, espesores, pesos y dificultad.</small>
+                        <label class="d-block mb-1">Datos tÃ©cnicos del proyecto</label>
+                        <small class="text-muted">Importa un JSON, CSV o SQLite (.db) con ancho de mÃ³dulo, espesores, pesos y dificultad.</small>
                     </div>
                 </div>
                 <div class="project-config-controls">
@@ -79,7 +111,7 @@
                         class="btn btn-sm btn-import-planta"
                         (click)="triggerTechnicalDataUpload(technicalDataInput)"
                         [disabled]="technicalImporting">
-                        {{ technicalImporting ? 'Importando...' : 'Importar datos técnicos' }}
+                        {{ technicalImporting ? 'Importando...' : 'Importar datos tÃ©cnicos' }}
                     </button>
                 </div>
                 <div class="technical-import-summary" *ngIf="technicalImportStats">
@@ -96,95 +128,127 @@
                 </div>
             </div>
 
-            <div class="card">
-                <div class="card-header">
-                    <h3>Plantas (Niveles)</h3>
+            <!-- Archivos del proyecto -->
+            <div class="project-config-card mb-3 p-3 bg-white rounded border" *ngIf="selectedPlanta">
+                <div class="project-config-header">
                     <div>
-                        <button class="btn btn-sm btn-import-planta" (click)="importPlantaFromFolder()"
-                            [disabled]="importing">Importar Planta</button>
+                        <label class="d-block mb-1">Archivos del proyecto</label>
+                        <small class="text-muted">Plano de referencia y planilla del proyecto.</small>
                     </div>
                 </div>
+                <div class="project-config-controls mt-2">
+                    <button type="button" class="btn btn-sm btn-outline-secondary mr-2"
+                        (click)="openPlantaFilesModal(selectedPlanta)"
+                        title="Gestionar archivos del proyecto">
+                        <i class="fa fa-paperclip" aria-hidden="true"></i> Gestionar PDF/Plano
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary"
+                        (click)="downloadFotosPlanta(selectedPlanta)"
+                        [disabled]="downloadingZip"
+                        title="Descargar fotos completas">
+                        <i class="fa fa-download" aria-hidden="true"></i> Fotos ZIP
+                    </button>
+                </div>
+            </div>
 
-                <div class="p-3 bg-warning-light border-bottom" *ngIf="importing">
+            <!-- Importar modulos desde carpeta local -->
+            <div class="project-config-card mb-3 p-3 bg-white rounded border">
+                <div class="project-config-header">
+                    <div>
+                        <label class="d-block mb-1">Importar módulos</label>
+                        <small class="text-muted">Selecciona el directorio con las carpetas MOD-xx para cargar módulos.</small>
+                    </div>
+                </div>
+                <div class="project-config-controls mt-2">
+                    <button class="btn btn-sm btn-primary w-100" (click)="importPlantaFromFolder()"
+                        [disabled]="importing">
+                        {{ importing ? 'Importando...' : 'Importar nuevos Módulos' }}
+                    </button>
+                </div>
+                <div class="mt-2 text-primary small" *ngIf="importing">
                     <div class="d-flex align-items-center">
                         <div class="spinner spinner-sm mr-2"></div>
                         <small>{{ importProgress }}</small>
                     </div>
                 </div>
-
-
-
-                <div class="list-group">
-                    <button *ngFor="let planta of plantas" class="list-group-item list-group-item-action"
-                        [class.active]="selectedPlanta?.id === planta.id" (click)="selectPlanta(planta)">
-                        <div class="d-flex justify-content-between align-items-center w-100 mb-2">
-                            <div class="planta-title-wrap">
-                                <span>{{ planta.nombre }}</span>
-                                <button type="button" class="planta-files-icon-btn"
-                                    (click)="openPlantaFilesModal(planta, $event)"
-                                    [disabled]="uploadingPlantaId === planta.id"
-                                    title="Gestionar archivos">
-                                    <i class="fa fa-paperclip" aria-hidden="true"></i>
-                                </button>
-                                <button type="button" class="planta-files-icon-btn"
-                                    (click)="downloadFotosPlanta(planta, $event)"
-                                    [disabled]="downloadingZip"
-                                    title="Descargar fotos de esta planta">
-                                    <i class="fa fa-download" aria-hidden="true"></i>
-                                </button>
-                                <button type="button" class="planta-delete-icon-btn"
-                                    (click)="deletePlanta(planta, $event)"
-                                    [disabled]="uploadingPlantaId === planta.id"
-                                    title="Eliminar planta">
-                                    <i class="fa fa-trash" aria-hidden="true"></i>
-                                </button>
-                            </div>
-                            <span class="badge badge-light badge-pill">{{ planta.modulos_count }} Módulos</span>
-                        </div>
-                    </button>
-                    <div *ngIf="plantas.length === 0" class="p-3 text-center text-muted">No hay plantas.</div>
-                </div>
             </div>
+
         </div>
 
+
+
         <!-- MODULOS (Columna Derecha) -->
+
         <div class="col-md-8">
+
             <div class="card h-100" *ngIf="selectedPlanta; else noProjectModules">
+
                 <div class="card-header d-flex justify-content-between align-items-center">
-                    <h3>Módulos de {{ selectedPlanta.nombre }}</h3>
+
+                    <h3>Módulos del Proyecto</h3>
+
                     <div class="legend d-flex align-items-center">
+
                         <small class="mr-2 font-weight-bold text-uppercase" style="font-size: 0.7rem;">Estados:</small>
+
                         <span class="badge badge-pendiente mr-2">Pendiente</span>
+
                         <span class="badge badge-completado">Completado</span>
+
                     </div>
+
                 </div>
+
+
 
                 <div class="card-body">
 
+
+
                     <div class="modules-grid-compact">
+
                         <div *ngFor="let modulo of modulos" class="module-compact"
+
                             [class.status-pendiente]="modulo.estado === 'PENDIENTE'"
+
                             [class.status-progreso]="modulo.estado === 'EN_PROGRESO'"
+
                             [class.status-completado]="modulo.estado === 'COMPLETADO'"
+
                             [class.status-cerrado]="modulo.estado === 'CERRADO'">
 
+
+
                             <div class="module-header-row">
+
                                 <span class="module-name">{{ modulo.nombre }}</span>
+
                                 <button type="button" class="module-foto-btn"
+
                                     (click)="openFotosModal(modulo, $event)"
+
                                     [disabled]="!modulo.fotos_count"
+
                                     [title]="modulo.fotos_count ? 'Ver fotos (' + modulo.fotos_count + ')' : 'Sin fotos'">
+
                                     <i class="fa fa-camera" aria-hidden="true"></i>
+
                                     <span class="foto-count-badge" *ngIf="modulo.fotos_count > 0">{{ modulo.fotos_count }}</span>
+
                                 </button>
+
                             </div>
+
+
 
                             <div class="color-codes" *ngIf="modulo.codigos_color && modulo.codigos_color !== 'xxxx'">
                                 <ng-container *ngFor="let char of modulo.codigos_color.split('')">
                                     <span *ngIf="char !== 'x'"
                                         class="color-dot"
                                         [style.background-color]="getColorHex(char)"
+
                                         [title]="getColorLabel(char)">
+
                                     </span>
                                 </ng-container>
                             </div>
@@ -211,156 +275,310 @@
                             <div class="module-substates">
                                 <div class="submodule-row">
                                     <span class="submodule-tag">SUP</span>
+
                                     <label class="phase-switch"
+
                                         [class.on]="modulo.superior_hecho"
+
                                         [class.disabled]="updatingSubmoduleId === modulo.id || modulo.estado === 'CERRADO'">
+
                                         <input type="checkbox"
+
                                             [checked]="modulo.superior_hecho"
+
                                             [disabled]="updatingSubmoduleId === modulo.id || modulo.estado === 'CERRADO'"
+
                                             (change)="updateSubmoduleStatus(modulo, 'superior_hecho', $event)">
+
                                         <span class="phase-slider"></span>
+
                                     </label>
+
                                 </div>
+
                                 <div class="submodule-row">
+
                                     <span class="submodule-tag">INF</span>
+
                                     <label class="phase-switch"
+
                                         [class.on]="modulo.inferior_hecho"
+
                                         [class.disabled]="updatingSubmoduleId === modulo.id || modulo.estado === 'CERRADO'">
+
                                         <input type="checkbox"
+
                                             [checked]="modulo.inferior_hecho"
+
                                             [disabled]="updatingSubmoduleId === modulo.id || modulo.estado === 'CERRADO'"
+
                                             (change)="updateSubmoduleStatus(modulo, 'inferior_hecho', $event)">
+
                                         <span class="phase-slider"></span>
+
                                     </label>
+
                                 </div>
+
                             </div>
+
                         </div>
+
                     </div>
+
                     <div *ngIf="modulos.length === 0" class="text-center p-5 text-muted">
-                        Esta planta no tiene módulos.
+
+                        Esta planta no tiene mÃ³dulos.
+
                     </div>
+
                 </div>
+
             </div>
+
+
 
             <ng-template #noProjectModules>
+
                 <div
+
                     class="card h-100 d-flex align-items-center justify-content-center p-5 text-muted bg-light border-dashed">
-                    <h3>A�n no hay m�dulos creados</h3>
-                    <p>Importa una planta desde el panel de la izquierda para visualizar sus módulos y estado.</p>
+
+                    <h3>Aún no hay módulos</h3>
+
+                    <p>Importa una planta desde el panel de la izquierda para visualizar sus mÃ³dulos y estado.</p>
+
                 </div>
+
             </ng-template>
+
         </div>
+
     </div>
+
 </div>
+
+
 
 <div class="planta-files-modal-backdrop" *ngIf="showPlantaFilesModal" (click)="closePlantaFilesModal()">
+
     <div class="planta-files-modal" (click)="$event.stopPropagation()">
+
         <div class="planta-files-modal-header">
+
             <div>
+
                 <h4>Archivos del Proyecto</h4>
-                <small class="text-muted">Plano e información de planilla por planta.</small>
+
+                <small class="text-muted">Plano e informaciÃ³n de planilla por planta.</small>
+
             </div>
+
             <button class="btn btn-sm btn-outline-secondary" (click)="closePlantaFilesModal()">Cerrar</button>
+
         </div>
 
+
+
         <div class="planta-file-row">
+
             <div class="planta-file-info">
+
                 <strong>Plano (.jpg)</strong>
+
                 <span class="text-muted">
+
                     {{ getPlantaFileUrl('plano') ? 'Archivo cargado' : 'No hay archivo' }}
+
                 </span>
+
             </div>
+
             <div class="planta-file-actions">
+
                 <button class="btn btn-sm btn-outline-dark"
+
                     (click)="openPlantaFile('plano')"
+
                     [disabled]="!plantaFileExists.plano || checkingPlantaFiles || uploadingPlantaId === plantaFilesTarget?.id">
+
                     Ver actual
+
                 </button>
+
                 <button class="btn btn-sm btn-outline-primary"
+
                     (click)="triggerPlantaFileUpload(modalPlanoInput)"
+
                     [disabled]="uploadingPlantaId === plantaFilesTarget?.id">
+
                     {{ getPlantaFileUrl('plano') ? 'Cambiar' : 'Subir' }}
+
                 </button>
+
                 <input #modalPlanoInput type="file" accept=".jpg,.jpeg,image/jpeg"
+
                     (change)="onPlantaFileSelected($event, 'plano')" hidden>
+
             </div>
+
         </div>
 
+
+
         <div class="planta-file-row">
+
             <div class="planta-file-info">
+
                 <strong>Planilla (.pdf)</strong>
+
                 <span class="text-muted">
+
                     {{ getPlantaFileUrl('corte') ? 'Archivo cargado' : 'No hay archivo' }}
+
                 </span>
+
             </div>
+
             <div class="planta-file-actions">
+
                 <button class="btn btn-sm btn-outline-dark"
+
                     (click)="openPlantaFile('corte')"
+
                     [disabled]="!plantaFileExists.corte || checkingPlantaFiles || uploadingPlantaId === plantaFilesTarget?.id">
+
                     Ver actual
+
                 </button>
+
                 <button class="btn btn-sm btn-outline-secondary"
+
                     (click)="triggerPlantaFileUpload(modalCorteInput)"
+
                     [disabled]="uploadingPlantaId === plantaFilesTarget?.id">
+
                     {{ getPlantaFileUrl('corte') ? 'Cambiar' : 'Subir' }}
+
                 </button>
+
                 <input #modalCorteInput type="file" accept=".pdf,application/pdf"
+
                     (change)="onPlantaFileSelected($event, 'corte')" hidden>
+
             </div>
+
         </div>
+
     </div>
+
 </div>
+
+
 
 <!-- Photo Gallery Modal (Slideshow) -->
+
 <div class="foto-modal-backdrop" *ngIf="showFotosModal" (click)="closeFotosModal()">
+
     <div class="foto-modal" (click)="$event.stopPropagation()">
+
         <div class="foto-modal-header">
+
             <div>
+
                 <h4>Fotos de {{ fotosTarget?.nombre }}</h4>
+
                 <small class="text-muted" *ngIf="fotos.length > 0">
+
                     {{ selectedFotoIndex + 1 }} / {{ fotos.length }}
+
                 </small>
+
             </div>
+
             <div class="d-flex align-items-center" style="gap: 0.5rem;">
+
                 <button class="btn btn-sm btn-download-fotos"
+
                     (click)="downloadFotosZip('modulo')"
+
                     [disabled]="downloadingZip || fotos.length === 0">
+
                     <i class="fa fa-download" aria-hidden="true"></i> ZIP
+
                 </button>
+
                 <button class="btn btn-sm btn-outline-secondary" (click)="closeFotosModal()">Cerrar</button>
+
             </div>
+
         </div>
+
+
 
         <div *ngIf="loadingFotos" class="text-center p-3">
+
             <div class="spinner spinner-sm"></div>
+
         </div>
+
+
 
         <div *ngIf="!loadingFotos && fotos.length === 0" class="text-center p-3 text-muted">
-            No hay fotos para este módulo.
+
+            No hay fotos para este mÃ³dulo.
+
         </div>
+
+
 
         <div class="foto-slideshow" *ngIf="!loadingFotos && fotos.length > 0">
+
             <div class="slideshow-container">
+
                 <button class="slideshow-btn prev" (click)="prevFoto()" [disabled]="selectedFotoIndex === 0">
-                    ‹
+
+                    â¹
+
                 </button>
+
                 <div class="slideshow-image-wrap">
-                    <img [src]="getFotoUrl(fotos[selectedFotoIndex])" alt="Foto fabricación">
+
+                    <img [src]="getFotoUrl(fotos[selectedFotoIndex])" alt="Foto fabricaciÃ³n">
+
                 </div>
+
                 <button class="slideshow-btn next" (click)="nextFoto()" [disabled]="selectedFotoIndex >= fotos.length - 1">
-                    ›
+
+                    âº
+
                 </button>
+
             </div>
+
             <div class="slideshow-info">
+
                 <span class="foto-label">{{ fotos[selectedFotoIndex].fase_label }} - Paso {{ fotos[selectedFotoIndex].paso + 1 }}</span>
+
                 <span class="foto-date">{{ fotos[selectedFotoIndex].capturada_at | date:'dd/MM/yy HH:mm' }}</span>
+
             </div>
+
         </div>
+
     </div>
+
 </div>
 
+
+
 <div class="loading-overlay" *ngIf="loading">
+
     <div class="spinner"></div>
+
 </div>
+
+
+
 
 
