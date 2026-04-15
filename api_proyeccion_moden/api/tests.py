@@ -328,6 +328,26 @@ class PlanningFoundationTests(APITestCase):
         self.assertEqual(grupo.mesas.count(), 3)
         self.assertSetEqual(roles, {"INFERIOR_1", "INFERIOR_2", "SUPERIORES"})
 
+    def test_eliminar_grupo_mesas_elimina_sus_mesas_hijas(self):
+        create_response = self.client.post(
+            "/api/grupos-mesas/",
+            {
+                "nombre": "Grupo B",
+                "usuario": self.user.id,
+            },
+            format="json",
+        )
+
+        self.assertEqual(create_response.status_code, 201)
+        grupo_id = create_response.data["id"]
+        self.assertEqual(Mesa.objects.filter(grupo_id=grupo_id).count(), 3)
+
+        delete_response = self.client.delete(f"/api/grupos-mesas/{grupo_id}/")
+
+        self.assertEqual(delete_response.status_code, 204)
+        self.assertFalse(GrupoMesas.objects.filter(id=grupo_id).exists())
+        self.assertEqual(Mesa.objects.filter(grupo_id=grupo_id).count(), 0)
+
     def test_import_technical_data_from_json_creates_phase_details(self):
         technical_file = SimpleUploadedFile(
             "detalles.json",

@@ -259,3 +259,42 @@
     color: #212529;
     background-color: #ffc107;
 }
+
+.group-list {
+    display: grid;
+    gap: 0.75rem;
+}
+
+.group-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #fff;
+}
+
+.group-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.9rem 1rem;
+    background: #f8f9fa;
+    border-bottom: 1px solid #eee;
+}
+
+.mesa-row-title {
+    gap: 0.5rem;
+}
+
+.mesa-role-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2.75rem;
+    padding: 0.15rem 0.45rem;
+    border-radius: 999px;
+    background: #e8f1fb;
+    color: #0f4c81;
+    font-size: 0.7rem;
+    font-weight: 700;
+}

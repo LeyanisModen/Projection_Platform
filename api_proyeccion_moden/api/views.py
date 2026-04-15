@@ -995,6 +995,12 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
             raise PermissionDenied('No puedes mover grupos a otra ferralla')
         serializer.save()
 
+    def perform_destroy(self, instance):
+        # Evita dejar mesas huerfanas cuando se elimina un grupo operativo.
+        with transaction.atomic():
+            instance.mesas.all().delete()
+            instance.delete()
+
     def _create_queue_for_mesa(self, mesa, modules, fase, user, module_group_map, group_offset=0, start_position=0, has_active_items=False):
         created_items = []
         for index, modulo in enumerate(modules):

@@ -1,7 +1,7 @@
 import { Component, OnInit, ChangeDetectorRef, HostListener } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ApiService, User } from '../../services/api.service';
+import { ApiService, GrupoMesas, GrupoMesaResumen, User } from '../../services/api.service';
 
 @Component({
   selector: 'app-ferrallas',
@@ -19,6 +19,28 @@ export class FerrallasComponent implements OnInit {
   isEditing = false;
   editingId: number | null = null;
   selectedUser: User | null = null;
+
+  gruposMesas: GrupoMesas[] = [];
+  loadingMesas = false;
+  showAddMesaForm = false;
+
+  showPairingModal = false;
+  pairingMesa: GrupoMesaResumen | null = null;
+  pairingCode = '';
+  pairingError = '';
+  pairingLoading = false;
+  pairingSuccess = false;
+
+  showUnbindModal = false;
+  unbindMesa: GrupoMesaResumen | null = null;
+  unbindLoading = false;
+
+  showCredentialsModal = false;
+  credentialUser: User | null = null;
+  newCredentialPassword = '';
+  credentialError = '';
+  credentialSuccess = '';
+  credentialLoading = false;
 
   constructor(
     private api: ApiService,
@@ -58,65 +80,35 @@ export class FerrallasComponent implements OnInit {
     this.newUser = { username: '', first_name: '', email: '', password: '', telefono: '', direccion: '', coordinador: '' };
     this.isEditing = false;
     this.editingId = null;
-    // Don't clear selectedUser here unless necessary, but maybe useful if we edit the selected user
   }
-
-  // Mesas Logic
-  mesas: any[] = [];
-  loadingMesas = false;
 
   selectUser(user: User) {
     this.selectedUser = this.selectedUser?.id === user.id ? null : user;
     this.showForm = false;
+    this.showAddMesaForm = false;
 
     if (this.selectedUser) {
-      this.loadMesas(this.selectedUser.id);
+      this.loadGruposMesas(this.selectedUser.id);
     } else {
-      this.mesas = [];
+      this.gruposMesas = [];
     }
   }
 
-  loadMesas(userId: number) {
+  loadGruposMesas(userId: number) {
     this.loadingMesas = true;
-    this.api.getMesas(userId).subscribe({
+    this.api.getGruposMesas(userId).subscribe({
       next: (data) => {
-        this.mesas = data;
+        this.gruposMesas = data;
         this.loadingMesas = false;
         this.cdr.detectChanges();
       },
       error: (err) => {
-        console.error('Error loading mesas', err);
+        console.error('Error loading grupos de mesas', err);
         this.loadingMesas = false;
         this.cdr.detectChanges();
       }
     });
   }
-
-  confirmDeleteMesa(mesa: any) {
-    if (confirm(`¿Eliminar mesa "${mesa.nombre}"?`)) {
-      this.deleteMesa(mesa);
-    }
-  }
-
-  deleteMesa(mesa: any) {
-    this.loadingMesas = true;
-    this.api.deleteMesa(mesa.id).subscribe({
-      next: () => {
-        this.mesas = this.mesas.filter(m => m.id !== mesa.id);
-        this.loadingMesas = false;
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        console.error('Error deleting mesa', err);
-        this.loadingMesas = false;
-        alert('Error eliminando mesa');
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  // Add Mesa Logic
-  showAddMesaForm = false;
 
   toggleAddMesaForm() {
     this.showAddMesaForm = !this.showAddMesaForm;
@@ -131,38 +123,48 @@ export class FerrallasComponent implements OnInit {
       usuario: this.selectedUser.id
     };
 
-    this.api.createMesa(payload).subscribe({
-      next: (mesa) => {
-        this.mesas.push(mesa);
-        nombreInput.value = ''; // Reset input
+    this.api.createGrupoMesas(payload).subscribe({
+      next: (grupo) => {
+        this.gruposMesas.push(grupo);
+        this.gruposMesas.sort((a, b) => a.nombre.localeCompare(b.nombre));
+        nombreInput.value = '';
         this.loadingMesas = false;
-        this.showAddMesaForm = false; // Hide form after adding
+        this.showAddMesaForm = false;
         this.cdr.detectChanges();
       },
       error: (err) => {
-        console.error('Error creating mesa', err);
+        console.error('Error creating grupo de mesas', err);
         this.loadingMesas = false;
-        alert('Error creando mesa');
+        alert(err?.error?.detail || 'Error creando grupo de mesas');
         this.cdr.detectChanges();
       }
     });
   }
 
-  // Pairing Modal State
-  showPairingModal = false;
-  pairingMesa: any = null;
-  pairingCode = '';
-  pairingError = '';
-  pairingLoading = false;
-  pairingSuccess = false;
+  confirmDeleteGrupo(grupo: GrupoMesas) {
+    if (confirm(`Eliminar grupo "${grupo.nombre}" y sus 3 mesas?`)) {
+      this.deleteGrupo(grupo);
+    }
+  }
 
-  // Unbind Modal State
-  showUnbindModal = false;
-  unbindMesa: any = null;
-  unbindLoading = false;
+  deleteGrupo(grupo: GrupoMesas) {
+    this.loadingMesas = true;
+    this.api.deleteGrupoMesas(grupo.id).subscribe({
+      next: () => {
+        this.gruposMesas = this.gruposMesas.filter(item => item.id !== grupo.id);
+        this.loadingMesas = false;
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        console.error('Error deleting grupo de mesas', err);
+        this.loadingMesas = false;
+        alert('Error eliminando grupo de mesas');
+        this.cdr.detectChanges();
+      }
+    });
+  }
 
-  // Pairing Methods
-  openPairingModal(mesa: any): void {
+  openPairingModal(mesa: GrupoMesaResumen): void {
     this.pairingMesa = mesa;
     this.pairingCode = '';
     this.pairingError = '';
@@ -184,7 +186,7 @@ export class FerrallasComponent implements OnInit {
 
   submitPairing(): void {
     if (!this.pairingMesa || !this.pairingCode.trim()) {
-      this.pairingError = 'Introduce un código válido';
+      this.pairingError = 'Introduce un codigo valido';
       return;
     }
 
@@ -197,8 +199,7 @@ export class FerrallasComponent implements OnInit {
           this.pairingLoading = false;
           if (res.status === 'ok') {
             this.pairingSuccess = true;
-            // Reload mesas to update is_linked status
-            if (this.selectedUser) this.loadMesas(this.selectedUser.id);
+            if (this.selectedUser) this.loadGruposMesas(this.selectedUser.id);
           } else {
             this.pairingError = 'Error desconocido';
           }
@@ -217,8 +218,7 @@ export class FerrallasComponent implements OnInit {
     this.pairingCode = input.value.toUpperCase();
   }
 
-  // Unbind Methods
-  openUnbindModal(mesa: any): void {
+  openUnbindModal(mesa: GrupoMesaResumen): void {
     this.unbindMesa = mesa;
     this.unbindLoading = false;
     this.showUnbindModal = true;
@@ -239,7 +239,7 @@ export class FerrallasComponent implements OnInit {
     this.api.unbindDevice(this.unbindMesa.id)
       .subscribe({
         next: () => {
-          if (this.selectedUser) this.loadMesas(this.selectedUser.id);
+          if (this.selectedUser) this.loadGruposMesas(this.selectedUser.id);
           this.closeUnbindModal();
         },
         error: () => {
@@ -248,14 +248,6 @@ export class FerrallasComponent implements OnInit {
         }
       });
   }
-
-  // Credentials Modal Logic
-  showCredentialsModal = false;
-  credentialUser: User | null = null;
-  newCredentialPassword = '';
-  credentialError = '';
-  credentialSuccess = '';
-  credentialLoading = false;
 
   openCredentialsModal(user: User): void {
     this.credentialUser = user;
@@ -289,26 +281,23 @@ export class FerrallasComponent implements OnInit {
 
     this.credentialLoading = true;
     this.credentialError = '';
-
-    // We only update the password.
     const payload = { password: this.newCredentialPassword };
 
     this.api.updateUser(this.credentialUser.id, payload).subscribe({
       next: () => {
         this.credentialLoading = false;
-        this.credentialSuccess = 'Contraseña actualizada correctamente';
-        this.newCredentialPassword = ''; // Clear for security
+        this.credentialSuccess = 'Contrasena actualizada correctamente';
+        this.newCredentialPassword = '';
         this.cdr.detectChanges();
       },
-      error: (err: any) => {
+      error: () => {
         this.credentialLoading = false;
-        this.credentialError = 'Error actualizando contraseña';
+        this.credentialError = 'Error actualizando contrasena';
         this.cdr.detectChanges();
       }
     });
   }
 
-  // User Actions (Existing)
   saveUser() {
     if (this.isEditing && this.editingId) {
       this.updateUser(this.editingId);
@@ -318,7 +307,7 @@ export class FerrallasComponent implements OnInit {
   }
 
   editUser(user: User) {
-    this.newUser = { ...user, password: '' }; // Don't show hash, allow new password
+    this.newUser = { ...user, password: '' };
     this.isEditing = true;
     this.editingId = user.id;
     this.showForm = true;
@@ -331,7 +320,6 @@ export class FerrallasComponent implements OnInit {
         console.log('[Ferrallas] User created successfully:', user);
         this.resetForm();
         this.showForm = false;
-        // Reload all users to ensure list is perfectly synced and sorted
         this.loadUsers();
       },
       error: (err: any) => {
@@ -347,7 +335,7 @@ export class FerrallasComponent implements OnInit {
     this.loading = true;
     const payload = { ...this.newUser };
     if (!payload.password) {
-      delete payload.password; // Don't send empty password
+      delete payload.password;
     }
 
     this.api.updateUser(id, payload).subscribe({
@@ -391,7 +379,7 @@ export class FerrallasComponent implements OnInit {
   }
 
   confirmDelete(user: User) {
-    if (confirm(`¿Estás seguro de eliminar a ${user.username}?`)) {
+    if (confirm(`Estas seguro de eliminar a ${user.username}?`)) {
       this.deleteUser(user.id);
     }
   }
@@ -421,11 +409,24 @@ export class FerrallasComponent implements OnInit {
 
     if (!this.isEditing) {
       const username = name.toLowerCase()
-        .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
         .replace(/[^a-z0-9\s]/g, '')
         .replace(/\s+/g, '_');
 
       this.newUser.username = username;
+    }
+  }
+
+  getMesaRoleLabel(mesa: GrupoMesaResumen): string {
+    switch (mesa.rol) {
+      case 'INFERIOR_1':
+        return 'INF1';
+      case 'INFERIOR_2':
+        return 'INF2';
+      case 'SUPERIORES':
+        return 'SUP';
+      default:
+        return 'LEG';
     }
   }
 

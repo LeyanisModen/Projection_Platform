@@ -438,6 +438,14 @@ export class ApiService {
             .pipe(map(response => response.results));
     }
 
+    createGrupoMesas(data: Partial<GrupoMesas>): Observable<GrupoMesas> {
+        return this.http.post<GrupoMesas>(`${this.baseUrl}/grupos-mesas/`, data, { headers: this.getHeaders() });
+    }
+
+    deleteGrupoMesas(id: number): Observable<void> {
+        return this.http.delete<void>(`${this.baseUrl}/grupos-mesas/${id}/`, { headers: this.getHeaders() });
+    }
+
     planificarGrupoMesas(grupoId: number, proyectoId: number): Observable<PlanificarGrupoResponse> {
         return this.http.post<PlanificarGrupoResponse>(
             `${this.baseUrl}/grupos-mesas/${grupoId}/planificar/`,
