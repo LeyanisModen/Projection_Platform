@@ -26,7 +26,6 @@
             <section class="planner-section" id="grupos-section">
                 <div class="section-header planner-header">
                     <h2>Producción</h2>
-                    <span class="section-hint">Cada grupo controla su proyecto y sus mesas INF1 / INF2 / SUP desde el mismo bloque</span>
                 </div>
 
                 @if (gruposMesas.length === 0) {
@@ -38,35 +37,26 @@
                     @for (grupo of gruposMesas; track trackByGrupo($index, grupo)) {
                     <section class="grupo-operativo">
                         <div class="grupo-operativo-header">
-                            <div class="grupo-operativo-title">
+                            <div class="grupo-operativo-title" style="display: flex; align-items: center; justify-content: space-between;">
                                 <div>
                                     <h3>{{ grupo.nombre }}</h3>
-                                    <p>{{ getProyectoNombre(grupo.proyecto_actual) }}</p>
+                                    <p *ngIf="!grupo.proyecto_actual" style="font-size:0.85rem; color:#888; margin:4px 0 0 0">Sin proyecto asignado</p>
                                 </div>
-                                <span class="planner-status" [class.active]="grupo.activa">
-                                    {{ grupo.activa ? 'Activa' : 'Pausada' }}
-                                </span>
-                            </div>
 
-                            <div class="planner-controls group-controls">
-                                <label>
+                                <div style="display:flex; align-items:center; gap: 16px;">
                                     <select [(ngModel)]="selectedProyectoPorGrupo[grupo.id]"
-                                        (ngModelChange)="onProyectoGrupoSeleccionado(grupo, $event)">
+                                        (ngModelChange)="onProyectoGrupoSeleccionado(grupo, $event)"
+                                        style="min-width: 300px; border: 1px solid var(--border-light); border-radius: 6px; padding: 8px 12px; font-size: 0.9rem; background:#fff">
                                         <option [ngValue]="null">Selecciona un proyecto</option>
                                         @for (proyecto of proyectos; track proyecto.id) {
                                         <option [ngValue]="proyecto.id">{{ proyecto.nombre }}</option>
                                         }
                                     </select>
-                                </label>
-                            </div>
 
-                            <div class="planner-roles">
-                                @for (mesaResumen of grupo.mesas; track mesaResumen.id) {
-                                <div class="planner-role-chip">
-                                    <span class="planner-role">{{ getGrupoRoleLabel(mesaResumen.rol) }}</span>
-                                    <span class="planner-role-name">{{ mesaResumen.nombre }}</span>
+                                    <span class="planner-status" [class.active]="grupo.activa">
+                                        {{ grupo.activa ? 'Activa' : 'Pausada' }}
+                                    </span>
                                 </div>
-                                }
                             </div>
 
                             @if (groupPlanSummaries[grupo.id]; as plan) {
@@ -136,8 +126,7 @@
 
             <section class="stats-section" id="estadisticas-section">
                 <div class="section-header legacy-header">
-                    <h2>Boards de Estadisticas</h2>
-                    <span class="section-hint">Pendiente de definir el formato final, pero ya quedan visibles</span>
+                    <h2>Boards de Estadísticas</h2>
                 </div>
                 <div class="stats-grid">
                     <article class="stats-card">
@@ -161,7 +150,6 @@
             <section class="projects-section" id="proyectos-section">
                 <div class="section-header legacy-header">
                     <h2>Proyectos</h2>
-                    <span class="section-hint">Referencia de proyectos disponibles para planificar por grupo</span>
                 </div>
                 <div class="projects-inline-grid">
                     @if (loadingProyectos) { <div class="loading">Cargando...</div> }
