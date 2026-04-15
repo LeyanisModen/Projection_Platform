@@ -149,7 +149,7 @@
 
         <!-- MODULOS (Columna Derecha) -->
         <div class="col-md-8">
-            <div class="card h-100" *ngIf="selectedPlanta; else noPlantaSelected">
+            <div class="card h-100" *ngIf="selectedPlanta; else noProjectModules">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h3>MÃ³dulos de {{ selectedPlanta.nombre }}</h3>
                     <div class="legend d-flex align-items-center">
@@ -242,10 +242,10 @@
                 </div>
             </div>
 
-            <ng-template #noPlantaSelected>
+            <ng-template #noProjectModules>
                 <div
                     class="card h-100 d-flex align-items-center justify-content-center p-5 text-muted bg-light border-dashed">
-                    <h3>Crea una planta para empezar</h3>
+                    <h3>Aún no hay módulos creados</h3>
                     <p>Importa una planta desde el panel de la izquierda para visualizar sus mÃ³dulos y estado.</p>
                 </div>
             </ng-template>
@@ -257,7 +257,7 @@
     <div class="planta-files-modal" (click)="$event.stopPropagation()">
         <div class="planta-files-modal-header">
             <div>
-                <h4>Archivos de {{ plantaFilesTarget?.nombre }}</h4>
+                <h4>Archivos del Proyecto</h4>
                 <small class="text-muted">Plano e informaciÃ³n de planilla por planta.</small>
             </div>
             <button class="btn btn-sm btn-outline-secondary" (click)="closePlantaFilesModal()">Cerrar</button>
@@ -362,3 +362,5 @@
 <div class="loading-overlay" *ngIf="loading">
     <div class="spinner"></div>
 </div>
+
+
