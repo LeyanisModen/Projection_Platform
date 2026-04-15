@@ -15,7 +15,47 @@
             <div class="row">
                 <div class="col-md-7">
                     <form (ngSubmit)="createProyecto()" #projectForm="ngForm" autocomplete="off">
-                                                <!-- Import Progress -->
+                        
+                        <!-- Folder Selection -->
+                        <div class="form-group">
+                            <label for="carpeta">Carpeta del Proyecto</label>
+                            <div class="folder-input-group">
+                                <input type="text" id="carpeta" class="form-control folder-display"
+                                    [value]="folderName || ''" placeholder="Selecciona una carpeta..." readonly>
+                                <button type="button" class="btn btn-primary folder-btn" (click)="selectFolder()"
+                                    [disabled]="importing">
+                                    Examinar...
+                                </button>
+                            </div>
+                            <small class="text-muted folder-guidance">Organice sus archivos según la estructura esperada
+                                de la derecha antes de seleccionar la carpeta.</small>
+                            <div class="tree-legend">
+                                <span class="legend-required">■</span> Nombres obligatorios (deben coincidir
+                                exactamente)
+                                <br>
+                                <span class="legend-optional">■</span> Archivos opcionales
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="nombre">Nombre del Proyecto</label>
+                            <input type="text" id="nombre" name="nombre" class="form-control"
+                                [(ngModel)]="newProject.nombre" required placeholder="Ej: Edificio Residencial Norte"
+                                autocomplete="off">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="usuario">Ferralla</label>
+                            <select id="usuario" name="usuario" class="form-control dropdown-ferralla"
+                                [(ngModel)]="newProject.usuario" autocomplete="off">
+                                <option [ngValue]="null">Sin asignar</option>
+                                <option *ngFor="let user of users" [ngValue]="user.url">{{ user.first_name ||
+                                    user.username
+                                    }}</option>
+                            </select>
+                        </div>
+
+                        <!-- Import Progress -->
                         <div *ngIf="importing" class="import-progress mb-3">
                             <div class="progress-indicator">
                                 <div class="spinner"></div>
@@ -54,35 +94,35 @@
                 </div>
 
                 <div class="col-md-5 pl-md-4">
-                                        <div class="folder-structure-graphic">
+                    <div class="folder-structure-graphic">
                         <h4>Estructura de Carpetas Esperada</h4>
                         <div class="tree">
                             <ul>
                                 <li>
-                                    <span class="folder">?? MiProyecto/</span>
+                                    <span class="folder">📁 MiProyecto/</span>
                                     <ul>
-                                        <li><span class="file file-optional">?? bdd.sqlite3</span> <span class="tag-optional">&lt;archivo bd&gt;</span></li>
-                                        <li><span class="file file-optional">?? plano.jpg</span> <span class="tag-optional">&lt;archivo opcional&gt;</span></li>
-                                        <li><span class="file file-optional">?? planillas.pdf</span> <span class="tag-optional">&lt;archivo opcional&gt;</span></li>
+                                        <li><span class="file file-optional">📄 bdd.sqlite3</span> <span class="tag-optional">&lt;archivo bd&gt;</span></li>
+                                        <li><span class="file file-optional">📄 plano.jpg</span> <span class="tag-optional">&lt;archivo opcional&gt;</span></li>
+                                        <li><span class="file file-optional">📄 planillas.pdf</span> <span class="tag-optional">&lt;archivo opcional&gt;</span></li>
                                         <li>
-                                            <span class="folder">?? MOD-01/</span>
+                                            <span class="folder">📁 MOD-01/</span>
                                             <ul>
                                                 <li>
-                                                    <span class="folder folder-required">?? INF/</span> <span class="tag-required">&lt;obligatorio&gt;</span>
+                                                    <span class="folder folder-required">📁 INF/</span> <span class="tag-required">&lt;obligatorio&gt;</span>
                                                     <ul>
-                                                        <li><span class="file">??? imagen1.png</span></li>
+                                                        <li><span class="file">🖼️ imagen1.png</span></li>
                                                     </ul>
                                                 </li>
                                                 <li>
-                                                    <span class="folder folder-required">?? SUP/</span> <span class="tag-required">&lt;obligatorio&gt;</span>
+                                                    <span class="folder folder-required">📁 SUP/</span> <span class="tag-required">&lt;obligatorio&gt;</span>
                                                 </li>
                                             </ul>
                                         </li>
                                         <li>
-                                            <span class="folder">?? MOD-02/</span>
+                                            <span class="folder">📁 MOD-02/</span>
                                             <ul>
-                                                <li><span class="folder folder-required">?? INF/</span></li>
-                                                <li><span class="folder folder-required">?? SUP/</span></li>
+                                                <li><span class="folder folder-required">📁 INF/</span></li>
+                                                <li><span class="folder folder-required">📁 SUP/</span></li>
                                             </ul>
                                         </li>
                                         <li><span class="dots">...</span></li>
