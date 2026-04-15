@@ -1,3 +1,5 @@
+from decimal import Decimal, InvalidOperation
+
 from django.db import models
 from django.contrib.auth.models import User
 
@@ -23,6 +25,13 @@ class ModuloEstado(models.TextChoices):
     CERRADO = 'CERRADO', 'Cerrado'
 
 
+class MesaRol(models.TextChoices):
+    LEGACY = 'LEGACY', 'Mesa Legacy'
+    INFERIOR_1 = 'INFERIOR_1', 'Inferior 1 + Montaje'
+    INFERIOR_2 = 'INFERIOR_2', 'Inferior 2 + Montaje'
+    SUPERIORES = 'SUPERIORES', 'Superiores'
+
+
 # =============================================================================
 # CORE MODELS
 # =============================================================================
@@ -30,6 +39,12 @@ class Proyecto(models.Model):
     id = models.AutoField(primary_key=True)
     nombre = models.CharField(max_length=200)
     usuario = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='proyectos')
+    bastidor_longitud_cm = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        default=114,
+        help_text='Longitud util del bastidor para calcular capacidad por espesor.'
+    )
 
     def __str__(self):
         return self.nombre
@@ -70,6 +85,13 @@ class Planta(models.Model):
 class Modulo(models.Model):
     id = models.AutoField(primary_key=True)
     nombre = models.CharField(max_length=200)
+    ancho_cm = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text='Ancho util del modulo para agrupacion en bastidor.'
+    )
     planta = models.ForeignKey(
         Planta,
         on_delete=models.CASCADE,
@@ -121,7 +143,7 @@ class Modulo(models.Model):
             self.estado = ModuloEstado.EN_PROGRESO
         else:
             self.estado = ModuloEstado.PENDIENTE
-        self.save(update_fields=['estado'])
+        self.save(update_fields=['estado', 'inferior_hecho', 'superior_hecho'])
 
     def save(self, *args, **kwargs):
         # Sync booleans if estado is changed manually (e.g. from Admin)
@@ -136,6 +158,89 @@ class Modulo(models.Model):
 
     class Meta:
         db_table = 'api_modulo'
+
+
+class DetalleModuloFase(models.Model):
+    """
+    Datos tecnicos y metricas importadas para cada modulo y fase.
+    La fase INFERIOR representa la fabricacion inferior + montaje.
+    """
+    id = models.AutoField(primary_key=True)
+    modulo = models.ForeignKey(
+        Modulo,
+        on_delete=models.CASCADE,
+        related_name='detalles_fase'
+    )
+    fase = models.CharField(
+        max_length=20,
+        choices=Fase.choices
+    )
+
+    espesor_cm = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    peso_malla_inicial_kg = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    peso_malla_final_kg = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    desperdicio_kg = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    cantidad_cortes = models.PositiveIntegerField(null=True, blank=True)
+    cantidad_refuerzos = models.PositiveIntegerField(null=True, blank=True)
+    peso_refuerzos_kg = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+
+    # Metricas especificas de la fase inferior + montaje.
+    cantidad_zunchos = models.PositiveIntegerField(null=True, blank=True)
+    peso_zunchos_kg = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    cantidad_separadores = models.PositiveIntegerField(null=True, blank=True)
+    peso_separadores_kg = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    cantidad_punzos = models.PositiveIntegerField(null=True, blank=True)
+    peso_punzos_kg = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+
+    dificultad_fabricacion = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    observaciones = models.TextField(blank=True, null=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.modulo.nombre} - {self.fase}"
+
+    @property
+    def capacidad_bastidor(self):
+        try:
+            longitud_bastidor = Decimal(self.modulo.proyecto.bastidor_longitud_cm)
+            ancho_modulo = Decimal(self.modulo.ancho_cm or self.espesor_cm)
+        except (TypeError, InvalidOperation):
+            return None
+        if ancho_modulo <= 0:
+            return None
+        return max(int(longitud_bastidor / ancho_modulo), 0)
+
+    @property
+    def peso_total_kg(self):
+        values = [
+            self.peso_malla_final_kg,
+            self.peso_refuerzos_kg,
+            self.peso_zunchos_kg,
+            self.peso_separadores_kg,
+            self.peso_punzos_kg,
+        ]
+        if not any(value is not None for value in values):
+            return None
+        return sum(value for value in values if value is not None)
+
+    class Meta:
+        db_table = 'api_detalle_modulo_fase'
+        ordering = ['modulo', 'fase']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['modulo', 'fase'],
+                name='unique_detalle_modulo_por_fase'
+            ),
+            models.CheckConstraint(
+                check=models.Q(fase__in=[Fase.INFERIOR, Fase.SUPERIOR]),
+                name='check_detalle_modulo_fase_valid'
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['modulo', 'fase']),
+            models.Index(fields=['fase']),
+        ]
 
 
 class ImagenStatus(models.TextChoices):
@@ -246,10 +351,76 @@ class FotoFabricacion(models.Model):
         ]
 
 
+class GrupoMesas(models.Model):
+    """
+    Grupo operativo de 3 mesas para una ferralla:
+    INFERIOR_1, INFERIOR_2 y SUPERIORES.
+    """
+    id = models.AutoField(primary_key=True)
+    nombre = models.CharField(max_length=200)
+    usuario = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='grupos_mesas'
+    )
+    proyecto_actual = models.ForeignKey(
+        Proyecto,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='grupos_mesas_activos'
+    )
+    activa = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.usuario.username} - {self.nombre}"
+
+    def ensure_default_mesas(self):
+        mesa_specs = [
+            (MesaRol.INFERIOR_1, 'INF1'),
+            (MesaRol.INFERIOR_2, 'INF2'),
+            (MesaRol.SUPERIORES, 'SUP'),
+        ]
+        existing_roles = set(self.mesas.values_list('rol', flat=True))
+
+        for rol, suffix in mesa_specs:
+            if rol in existing_roles:
+                continue
+            Mesa.objects.create(
+                nombre=f"{self.nombre} {suffix}",
+                usuario=self.usuario,
+                grupo=self,
+                rol=rol,
+            )
+
+    class Meta:
+        db_table = 'api_grupo_mesas'
+        ordering = ['usuario__username', 'nombre']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['usuario', 'nombre'],
+                name='unique_grupo_mesas_nombre_por_usuario'
+            ),
+        ]
+
+
 class Mesa(models.Model):
     id = models.AutoField(primary_key=True)
     nombre = models.CharField(max_length=200)
     usuario = models.ForeignKey(User, on_delete=models.CASCADE, related_name='mesas')
+    grupo = models.ForeignKey(
+        'GrupoMesas',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='mesas'
+    )
+    rol = models.CharField(
+        max_length=20,
+        choices=MesaRol.choices,
+        default=MesaRol.LEGACY
+    )
     
     # Cache visual (source of truth is MesaQueueItem with status MOSTRANDO)
     imagen_actual = models.ForeignKey(
@@ -281,6 +452,13 @@ class Mesa(models.Model):
 
     class Meta:
         db_table = 'api_mesa'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['grupo', 'rol'],
+                condition=models.Q(grupo__isnull=False) & ~models.Q(rol=MesaRol.LEGACY),
+                name='unique_rol_por_grupo_mesas'
+            ),
+        ]
 
 
 # =============================================================================
@@ -428,6 +606,11 @@ class MesaQueueItem(models.Model):
         related_name='mesa_queue_items'
     )
     position = models.PositiveIntegerField(default=0)
+    plan_group_index = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text='Indice de grupo de bastidor dentro de la planificacion automatica.'
+    )
     status = models.CharField(
         max_length=20,
         choices=MesaQueueStatus.choices,
@@ -525,5 +708,6 @@ class MesaQueueItem(models.Model):
             models.Index(fields=['mesa', 'position']),
             models.Index(fields=['mesa', 'status']),
             models.Index(fields=['modulo', 'fase']),
+            models.Index(fields=['mesa', 'plan_group_index']),
         ]
 

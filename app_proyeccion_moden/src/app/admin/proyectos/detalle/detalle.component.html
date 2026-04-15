@@ -37,6 +37,65 @@
                 </div>
             </div>
 
+            <div class="project-config-card mb-3 p-3 bg-white rounded border">
+                <div class="project-config-header">
+                    <div>
+                        <label class="d-block mb-1">Bastidor de referencia</label>
+                        <small class="text-muted">La capacidad por módulo se calculará como `bastidor / ancho del módulo`.</small>
+                    </div>
+                </div>
+                <div class="project-config-controls">
+                    <input
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        [(ngModel)]="proyecto.bastidor_longitud_cm"
+                        class="project-config-input">
+                    <span class="project-config-unit">cm</span>
+                    <button
+                        type="button"
+                        class="btn btn-secondary btn-sm"
+                        (click)="saveBastidorLongitud()"
+                        [disabled]="savingProjectConfig">
+                        {{ savingProjectConfig ? 'Guardando...' : 'Guardar' }}
+                    </button>
+                </div>
+                <small class="project-config-hint">
+                    Valor actual para bastidores de prueba. Si cambia el sistema físico, aquí ajustaremos la longitud util del bastidor.
+                </small>
+            </div>
+
+            <div class="project-config-card mb-3 p-3 bg-white rounded border">
+                <div class="project-config-header">
+                    <div>
+                        <label class="d-block mb-1">Datos técnicos del proyecto</label>
+                        <small class="text-muted">Importa un JSON, CSV o SQLite (.db) con ancho de módulo, espesores, pesos y dificultad.</small>
+                    </div>
+                </div>
+                <div class="project-config-controls">
+                    <input #technicalDataInput type="file" accept=".json,.csv,.db" hidden (change)="onTechnicalDataSelected($event)">
+                    <button
+                        type="button"
+                        class="btn btn-sm btn-import-planta"
+                        (click)="triggerTechnicalDataUpload(technicalDataInput)"
+                        [disabled]="technicalImporting">
+                        {{ technicalImporting ? 'Importando...' : 'Importar datos técnicos' }}
+                    </button>
+                </div>
+                <div class="technical-import-summary" *ngIf="technicalImportStats">
+                    <span class="technical-summary-pill">Procesados {{ technicalImportStats.processed }}</span>
+                    <span class="technical-summary-pill">Creados {{ technicalImportStats.created }}</span>
+                    <span class="technical-summary-pill">Actualizados {{ technicalImportStats.updated }}</span>
+                    <span class="technical-summary-pill" *ngIf="technicalImportStats.skipped">Omitidos {{ technicalImportStats.skipped }}</span>
+                    <small class="text-danger d-block mt-2" *ngIf="technicalImportStats.errors.length">
+                        {{ technicalImportStats.errors.length }} incidencias detectadas.
+                    </small>
+                    <div class="technical-import-errors" *ngIf="technicalImportStats.errors.length">
+                        <div *ngFor="let error of technicalImportStats.errors.slice(0, 3)">{{ error }}</div>
+                    </div>
+                </div>
+            </div>
+
             <div class="card">
                 <div class="card-header">
                     <h3>Plantas (Niveles)</h3>
@@ -128,6 +187,25 @@
                                         [title]="getColorLabel(char)">
                                     </span>
                                 </ng-container>
+                            </div>
+
+                            <div class="technical-phase-summary" *ngIf="hasDetallesTecnicos(modulo)">
+                                <div class="technical-phase-chip module-width-chip" *ngIf="modulo.ancho_cm">
+                                    <span class="technical-phase-tag width">AN</span>
+                                    <span>{{ formatDetailValue(modulo.ancho_cm, ' cm') }}</span>
+                                </div>
+                                <div class="technical-phase-chip" *ngIf="getDetalleFase(modulo, 'INFERIOR') as inferiorDetalle">
+                                    <span class="technical-phase-tag inf">INF</span>
+                                    <span *ngIf="inferiorDetalle.espesor_cm">e {{ formatDetailValue(inferiorDetalle.espesor_cm, ' cm') }}</span>
+                                    <span *ngIf="inferiorDetalle.capacidad_bastidor !== null">cap {{ inferiorDetalle.capacidad_bastidor }}</span>
+                                    <span *ngIf="inferiorDetalle.dificultad_fabricacion">dif {{ inferiorDetalle.dificultad_fabricacion }}</span>
+                                </div>
+                                <div class="technical-phase-chip" *ngIf="getDetalleFase(modulo, 'SUPERIOR') as superiorDetalle">
+                                    <span class="technical-phase-tag sup">SUP</span>
+                                    <span *ngIf="superiorDetalle.espesor_cm">e {{ formatDetailValue(superiorDetalle.espesor_cm, ' cm') }}</span>
+                                    <span *ngIf="superiorDetalle.capacidad_bastidor !== null">cap {{ superiorDetalle.capacidad_bastidor }}</span>
+                                    <span *ngIf="superiorDetalle.dificultad_fabricacion">dif {{ superiorDetalle.dificultad_fabricacion }}</span>
+                                </div>
                             </div>
 
                             <div class="module-substates">

@@ -6,7 +6,8 @@ import { DragDropModule, CdkDragDrop, moveItemInArray, transferArrayItem } from 
 
 import {
   ApiService,
-  Proyecto, Planta, Modulo, Mesa, ModuloQueueItem, MesaQueueItem, Imagen
+  Proyecto, Planta, Modulo, Mesa, ModuloQueueItem, MesaQueueItem, Imagen,
+  GrupoMesas, GrupoPlanSummary
 } from '../services/api.service';
 import { Subject, takeUntil, forkJoin, interval } from 'rxjs';
 import { environment } from '../../environments/environment';
@@ -40,6 +41,9 @@ export class Dashboard implements OnInit, OnDestroy {
   mesaQueueItems = new Map<number, MesaQueueItem[]>(); // mesaId -> items
   imagenes: Imagen[] = []; // Images for expanded module
   mesas: Mesa[] = [];
+  gruposMesas: GrupoMesas[] = [];
+  selectedProyectoPorGrupo: Record<number, number | null> = {};
+  groupPlanSummaries: Record<number, GrupoPlanSummary | undefined> = {};
 
   // Subfases for the selected module
   activeSubfases: Subfase[] = [];
@@ -50,6 +54,7 @@ export class Dashboard implements OnInit, OnDestroy {
   loadingModulos = false;
   loadingImagenes = false; // Loading images for expanded module
   loadingMesas = false;
+  loadingGruposMesas = false;
 
   // Selection State
   selectedProyecto: Proyecto | null = null;
@@ -63,6 +68,7 @@ export class Dashboard implements OnInit, OnDestroy {
   // Drag State
   draggedSubfase: Subfase | null = null;
   transferInProgress = false;
+  planningGroupId: number | null = null;
 
   // Confirm Modal State
   showConfirmModal = false;
@@ -147,8 +153,6 @@ export class Dashboard implements OnInit, OnDestroy {
 
     this.username = this.api.getUsername() || 'Usuario';
 
-    this.username = this.api.getUsername() || 'Usuario';
-
     // Prevent back navigation
     history.pushState(null, '', location.href);
     window.onpopstate = function () {
@@ -157,6 +161,7 @@ export class Dashboard implements OnInit, OnDestroy {
 
     this.loadProyectos();
     this.loadMesas();
+    this.loadGruposMesas();
 
     // Start Polling for Queue Updates (Every 5 seconds)
     // This handles the "Auto-DJ" logic: if an item finishes, the next one is picked up
@@ -350,6 +355,26 @@ export class Dashboard implements OnInit, OnDestroy {
       });
   }
 
+  loadGruposMesas(): void {
+    this.loadingGruposMesas = true;
+    this.api.getGruposMesas()
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (data) => {
+          this.gruposMesas = data;
+          this.gruposMesas.forEach((grupo) => {
+            this.selectedProyectoPorGrupo[grupo.id] = grupo.proyecto_actual;
+          });
+          this.loadingGruposMesas = false;
+          this.cdr.detectChanges();
+        },
+        error: (err) => {
+          console.error('Error loading grupos de mesas', err);
+          this.loadingGruposMesas = false;
+        }
+      });
+  }
+
   loadMesaQueueItems(mesaId: number): void {
     this.api.getMesaQueueItems(mesaId)
       .pipe(takeUntil(this.destroy$))
@@ -400,6 +425,47 @@ export class Dashboard implements OnInit, OnDestroy {
       });
   }
 
+  planificarGrupo(grupo: GrupoMesas): void {
+    const proyectoId = this.selectedProyectoPorGrupo[grupo.id];
+    if (!proyectoId) {
+      alert('Selecciona un proyecto para planificar este grupo.');
+      return;
+    }
+
+    this.planningGroupId = grupo.id;
+    this.api.planificarGrupoMesas(grupo.id, proyectoId)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (response) => {
+          this.selectedProyectoPorGrupo[grupo.id] = response.grupo.proyecto_actual;
+          this.groupPlanSummaries[grupo.id] = response.plan;
+          this.planningGroupId = null;
+          this.loadGruposMesas();
+          this.loadMesas();
+          this.cdr.detectChanges();
+        },
+        error: (err) => {
+          this.planningGroupId = null;
+          console.error('Error planificando grupo', err);
+          const detail = err?.error?.detail;
+          const conflicts = err?.error?.conflicts;
+          if (Array.isArray(conflicts) && conflicts.length) {
+            alert(`${detail || 'No se pudo planificar el grupo.'}\n\n${conflicts.join('\n')}`);
+            return;
+          }
+          alert(detail || 'No se pudo planificar el grupo.');
+        }
+      });
+  }
+
+  onProyectoGrupoSeleccionado(grupo: GrupoMesas, proyectoId: number | null): void {
+    this.selectedProyectoPorGrupo[grupo.id] = proyectoId;
+    if (!proyectoId) {
+      return;
+    }
+    this.planificarGrupo(grupo);
+  }
+
   // =========================================================================
   // PROJECT SELECTION
   // =========================================================================
@@ -407,8 +473,8 @@ export class Dashboard implements OnInit, OnDestroy {
     this.selectedProyecto = proyecto;
     this.selectedPlanta = null;
     this.selectedModulo = null;
-    this.navLevel = 'plants'; // Drill down
-    this.loadPlantasForProyecto(proyecto.id);
+    this.navLevel = 'projects';
+    this.cdr.detectChanges();
   }
 
   loadPlantasForProyecto(proyectoId: number): void {
@@ -1046,6 +1112,76 @@ export class Dashboard implements OnInit, OnDestroy {
     return this.mesaQueueItems.get(mesaId) || [];
   }
 
+  getMesaRoleLabel(mesa: Mesa): string {
+    switch (mesa.rol) {
+      case 'INFERIOR_1':
+        return 'INF1';
+      case 'INFERIOR_2':
+        return 'INF2';
+      case 'SUPERIORES':
+        return 'SUP';
+      default:
+        return 'Manual';
+    }
+  }
+
+  getGrupoRoleLabel(rol: string): string {
+    switch (rol) {
+      case 'INFERIOR_1':
+        return 'INF1';
+      case 'INFERIOR_2':
+        return 'INF2';
+      case 'SUPERIORES':
+        return 'SUP';
+      default:
+        return rol;
+    }
+  }
+
+  getProyectoNombre(projectId: number | null): string {
+    if (!projectId) return 'Sin proyecto asignado';
+    return this.proyectos.find((proyecto) => proyecto.id === projectId)?.nombre || `Proyecto ${projectId}`;
+  }
+
+  getMesasForGrupo(grupoId: number): Mesa[] {
+    const roleOrder: Record<Mesa['rol'], number> = {
+      LEGACY: 99,
+      INFERIOR_1: 1,
+      INFERIOR_2: 2,
+      SUPERIORES: 3,
+    };
+
+    return this.mesas
+      .filter((mesa) => mesa.grupo === grupoId)
+      .sort((a, b) => {
+        const roleDiff = (roleOrder[a.rol] ?? 99) - (roleOrder[b.rol] ?? 99);
+        if (roleDiff !== 0) return roleDiff;
+        return a.nombre.localeCompare(b.nombre);
+      });
+  }
+
+  getMesasSinGrupo(): Mesa[] {
+    return this.mesas
+      .filter((mesa) => mesa.grupo === null)
+      .sort((a, b) => a.nombre.localeCompare(b.nombre));
+  }
+
+  abrirProyectoGrupo(grupo: GrupoMesas): void {
+    const proyectoId = this.selectedProyectoPorGrupo[grupo.id] ?? grupo.proyecto_actual;
+    if (!proyectoId) {
+      alert('Este grupo todavía no tiene un proyecto seleccionado.');
+      return;
+    }
+
+    const proyecto = this.proyectos.find((item) => item.id === proyectoId);
+    if (!proyecto) {
+      alert('No se encontró el proyecto asociado a este grupo.');
+      return;
+    }
+
+    this.selectProyecto(proyecto);
+  }
+
   // Returns formatted status label for a subfase
   getSubfaseAssignmentLabel(subfase: Subfase): string {
     const assignment = this.subfaseAssignedToMesa.get(subfase.id);
@@ -1100,6 +1236,10 @@ export class Dashboard implements OnInit, OnDestroy {
 
   trackByProyecto(index: number, proyecto: Proyecto): number {
     return proyecto.id;
+  }
+
+  trackByGrupo(index: number, grupo: GrupoMesas): number {
+    return grupo.id;
   }
 
   trackByModulo(index: number, modulo: Modulo): number {

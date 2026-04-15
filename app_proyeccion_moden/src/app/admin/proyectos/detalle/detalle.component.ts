@@ -2,7 +2,10 @@ import { Component, OnInit, ChangeDetectorRef, HostListener } from '@angular/cor
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterModule } from '@angular/router';
-import { ApiService, Proyecto, Planta, Modulo, User, FotoFabricacion } from '../../../services/api.service';
+import {
+    ApiService, Proyecto, Planta, Modulo, User, FotoFabricacion,
+    DetalleModuloFase, TechnicalImportStats
+} from '../../../services/api.service';
 import { switchMap, forkJoin, of } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 
@@ -48,6 +51,9 @@ export class ProyectoDetailComponent implements OnInit {
     checkingPlantaFiles = false;
     plantaFileExists = { plano: false, corte: false };
     dropdownOpen = false;
+    savingProjectConfig = false;
+    technicalImporting = false;
+    technicalImportStats: TechnicalImportStats | null = null;
 
     // Photo Gallery State
     showFotosModal = false;
@@ -290,6 +296,34 @@ export class ProyectoDetailComponent implements OnInit {
         return user ? (user.first_name || user.username) : 'Sin asignar';
     }
 
+    saveBastidorLongitud(): void {
+        if (!this.proyectoId || !this.proyecto) return;
+
+        const bastidor = Number(this.proyecto.bastidor_longitud_cm);
+        if (!Number.isFinite(bastidor) || bastidor <= 0) {
+            alert('La longitud del bastidor debe ser mayor que 0.');
+            this.loadData();
+            return;
+        }
+
+        this.savingProjectConfig = true;
+        this.api.updateProyecto(this.proyectoId, {
+            bastidor_longitud_cm: Number(bastidor.toFixed(2))
+        }).subscribe({
+            next: (proyecto: Proyecto) => {
+                this.proyecto = proyecto;
+                this.savingProjectConfig = false;
+                this.cdr.detectChanges();
+            },
+            error: (err: any) => {
+                console.error('Error updating bastidor length', err);
+                this.savingProjectConfig = false;
+                alert('Error al guardar la longitud del bastidor');
+                this.cdr.detectChanges();
+            }
+        });
+    }
+
     getModuloStatusLabel(estado: Modulo['estado']): string {
         switch (estado) {
             case 'COMPLETADO':
@@ -470,6 +504,61 @@ export class ProyectoDetailComponent implements OnInit {
                 this.importProgress = '';
             }
         }
+    }
+
+    triggerTechnicalDataUpload(fileInput: HTMLInputElement): void {
+        fileInput.value = '';
+        fileInput.click();
+    }
+
+    onTechnicalDataSelected(event: Event): void {
+        if (!this.proyectoId) return;
+
+        const input = event.target as HTMLInputElement;
+        const file = input.files?.[0];
+        if (!file) return;
+
+        const lowerName = file.name.toLowerCase();
+        if (!lowerName.endsWith('.json') && !lowerName.endsWith('.csv') && !lowerName.endsWith('.db')) {
+            alert('El fichero técnico debe ser JSON o CSV.');
+            return;
+        }
+
+        this.technicalImporting = true;
+        this.technicalImportStats = null;
+
+        const formData = new FormData();
+        formData.append('technical_file', file);
+
+        this.api.importProjectTechnicalData(this.proyectoId, formData).subscribe({
+            next: (result) => {
+                this.technicalImporting = false;
+                this.technicalImportStats = result.stats;
+                this.loadData();
+                this.cdr.detectChanges();
+            },
+            error: (err: any) => {
+                console.error('Error importing technical data', err);
+                this.technicalImporting = false;
+                alert(err?.error?.detail || 'Error importando los datos técnicos');
+                this.cdr.detectChanges();
+            }
+        });
+    }
+
+    getDetalleFase(modulo: Modulo, fase: 'INFERIOR' | 'SUPERIOR'): DetalleModuloFase | null {
+        return modulo.detalles_fase?.find(detalle => detalle.fase === fase) || null;
+    }
+
+    hasDetallesTecnicos(modulo: Modulo): boolean {
+        return !!modulo.detalles_fase?.length || !!modulo.ancho_cm;
+    }
+
+    formatDetailValue(value: string | number | null | undefined, suffix = ''): string {
+        if (value === null || value === undefined || value === '') {
+            return '';
+        }
+        return `${value}${suffix}`;
     }
 
     triggerPlantaFileUpload(fileInput: HTMLInputElement): void {

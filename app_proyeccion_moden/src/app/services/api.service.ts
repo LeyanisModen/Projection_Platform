@@ -34,6 +34,7 @@ export interface Proyecto {
     url: string;
     nombre: string;
     usuario: string;
+    bastidor_longitud_cm: number;
 }
 
 export interface Planta {
@@ -50,6 +51,7 @@ export interface Modulo {
     id: number;
     url: string;
     nombre: string;
+    ancho_cm: string | null;
     planta: number | null;
     proyecto: string;
     inferior_hecho: boolean;
@@ -60,6 +62,32 @@ export interface Modulo {
     cerrado_by: string | null;
     codigos_color: string;
     fotos_count: number;
+    detalles_fase: DetalleModuloFase[];
+}
+
+export interface DetalleModuloFase {
+    id: number;
+    modulo: number;
+    fase: 'INFERIOR' | 'SUPERIOR';
+    espesor_cm: string | null;
+    peso_malla_inicial_kg: string | null;
+    peso_malla_final_kg: string | null;
+    desperdicio_kg: string | null;
+    cantidad_cortes: number | null;
+    cantidad_refuerzos: number | null;
+    peso_refuerzos_kg: string | null;
+    cantidad_zunchos: number | null;
+    peso_zunchos_kg: string | null;
+    cantidad_separadores: number | null;
+    peso_separadores_kg: string | null;
+    cantidad_punzos: number | null;
+    peso_punzos_kg: string | null;
+    dificultad_fabricacion: string | null;
+    observaciones: string | null;
+    capacidad_bastidor: number | null;
+    peso_total_kg: string | null;
+    created_at: string;
+    updated_at: string;
 }
 
 export interface FotoFabricacion {
@@ -80,6 +108,14 @@ export interface FotoFabricacion {
     file_size: number | null;
 }
 
+export interface TechnicalImportStats {
+    processed: number;
+    created: number;
+    updated: number;
+    skipped: number;
+    errors: string[];
+}
+
 export interface Imagen {
     id: number;
     url: string;
@@ -97,6 +133,8 @@ export interface Mesa {
     url: string;
     nombre: string;
     usuario: string;
+    grupo: number | null;
+    rol: 'LEGACY' | 'INFERIOR_1' | 'INFERIOR_2' | 'SUPERIORES';
     imagen_actual: string | null;
     imagen: Imagen | null;
     ultima_actualizacion: string;
@@ -142,6 +180,46 @@ export interface MesaQueueItem {
     assigned_at: string;
     done_by: string | null;
     done_at: string | null;
+}
+
+export interface GrupoMesaResumen {
+    id: number;
+    nombre: string;
+    rol: 'LEGACY' | 'INFERIOR_1' | 'INFERIOR_2' | 'SUPERIORES';
+    is_linked: boolean;
+}
+
+export interface GrupoMesas {
+    id: number;
+    nombre: string;
+    usuario: number;
+    proyecto_actual: number | null;
+    activa: boolean;
+    created_at: string;
+    mesas: GrupoMesaResumen[];
+}
+
+export interface GrupoPlanBastidor {
+    group_index: number;
+    target_role: 'INFERIOR_1' | 'INFERIOR_2';
+    modules: string[];
+}
+
+export interface GrupoPlanSummary {
+    project_id: number;
+    project_name: string;
+    bastidor_groups: GrupoPlanBastidor[];
+    queues: {
+        INFERIOR_1: string[];
+        INFERIOR_2: string[];
+        SUPERIORES: string[];
+    };
+}
+
+export interface PlanificarGrupoResponse {
+    status: string;
+    grupo: GrupoMesas;
+    plan: GrupoPlanSummary;
 }
 
 
@@ -245,10 +323,20 @@ export class ApiService {
     importProjectStructure(proyectoId: number, formData: FormData): Observable<{
         status: string;
         proyecto_id: number;
-        stats: { plantas: number; modulos: number; imagenes: number; errors: string[] };
+        stats: { plantas: number; modulos: number; imagenes: number; detalles_fase: number; errors: string[] };
     }> {
         // Don't use Content-Type header - let browser set it with boundary for multipart
         return this.http.post<any>(`${this.baseUrl}/proyectos/${proyectoId}/import-structure/`, formData, {
+            headers: this.getAuthHeaders()
+        });
+    }
+
+    importProjectTechnicalData(proyectoId: number, formData: FormData): Observable<{
+        status: string;
+        proyecto_id: number;
+        stats: TechnicalImportStats;
+    }> {
+        return this.http.post<any>(`${this.baseUrl}/proyectos/${proyectoId}/import-technical-data/`, formData, {
             headers: this.getAuthHeaders()
         });
     }
@@ -339,6 +427,23 @@ export class ApiService {
         }
         return this.http.get<PagedResponse<Mesa>>(url, { headers: this.getHeaders() })
             .pipe(map(response => response.results));
+    }
+
+    getGruposMesas(usuarioId?: number): Observable<GrupoMesas[]> {
+        let url = `${this.baseUrl}/grupos-mesas/`;
+        if (usuarioId) {
+            url += `?usuario=${usuarioId}`;
+        }
+        return this.http.get<PagedResponse<GrupoMesas>>(url, { headers: this.getHeaders() })
+            .pipe(map(response => response.results));
+    }
+
+    planificarGrupoMesas(grupoId: number, proyectoId: number): Observable<PlanificarGrupoResponse> {
+        return this.http.post<PlanificarGrupoResponse>(
+            `${this.baseUrl}/grupos-mesas/${grupoId}/planificar/`,
+            { proyecto_id: proyectoId },
+            { headers: this.getHeaders() }
+        );
     }
 
     createMesa(data: any): Observable<Mesa> {

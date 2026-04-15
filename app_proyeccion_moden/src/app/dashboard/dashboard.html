@@ -1,286 +1,182 @@
 <div class="dashboard-container">
-    <!-- HEADER -->
     <header class="dashboard-header">
         <img src="assets/logo-moden.jpg" alt="MOD:EN Logo" class="header-logo">
-        <span class="subtitle">Sistema de Gestión de Proyección</span>
+        <span class="subtitle">Sistema de Gestion de Proyeccion</span>
         <div class="header-right">
-            <span class="user-display">👤 {{ username }}</span>
-            <button class="btn-logout" (click)="logout()" title="Cerrar Sesión">⏻</button>
+            <span class="user-display">Usuario {{ username }}</span>
+            <button class="btn-logout" (click)="logout()" title="Cerrar sesion">Salir</button>
         </div>
     </header>
 
     <main class="dashboard-main">
-        <!-- SIDEBAR: PROJECTS PANEL (Collapsible) -->
         <aside class="projects-panel" [class.collapsed]="panelState === 'collapsed'">
-            <!-- Sidebar Header -->
             <div class="panel-header">
-                <button class="btn-menu" (click)="togglePanel()">☰</button>
+                <button class="btn-menu" (click)="togglePanel()">Menu</button>
                 <div class="header-title" *ngIf="panelState === 'expanded'">
-                    @if (navLevel !== 'projects') {
-                    <button class="btn-back" (click)="navigateBack()">←</button>
-                    }
                     <div class="header-text-group">
-                        @if (navLevel === 'projects') {
                         <h2
                             style="margin: 0; font-size: 1.25rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
                             Proyectos</h2>
-                        <small class="text-muted">Lista de Proyectos</small>
-                        } @else if (navLevel === 'plants') {
-                        <h2
-                            style="margin: 0; font-size: 1.25rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                            {{ selectedProyecto?.nombre }}</h2>
-                        <small class="text-muted">Plantas</small>
-                        } @else if (navLevel === 'modules') {
-                        <h2
-                            style="margin: 0; font-size: 1.25rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                            {{ selectedProyecto?.nombre }}</h2>
-                        <div class="subheader-line"
-                            style="display: flex; align-items: baseline; gap: 8px; width: 100%;">
-                            <small class="text-muted">{{ selectedPlanta?.nombre }}</small>
-                            <small *ngIf="selectedPlanta && selectedPlanta.plano_imagen" class="text-accent clickable"
-                                style="cursor: pointer; color: var(--accent-orange); font-weight: 500;"
-                                (click)="verPlano(selectedPlanta)">
-                                (Abrir planos)
-                            </small>
-                        </div>
-                        }
+                        <small class="text-muted">Referencia de proyectos disponibles para planificar por grupo</small>
                     </div>
                 </div>
             </div>
 
-
-            <!-- Sidebar Content -->
             <div class="panel-content" *ngIf="panelState === 'expanded'">
-                @if (navLevel === 'projects') {
                 <ul class="nav-list">
                     @if (loadingProyectos) { <div class="loading">Cargando...</div> }
                     @for (proyecto of proyectos; track proyecto.id) {
                     <li class="nav-item" [class.selected]="selectedProyecto?.id === proyecto.id"
                         (click)="selectProyecto(proyecto)">
-                        <span class="nav-icon">📁</span>
+                        <span class="nav-icon">PR</span>
                         <span class="nav-text">{{ proyecto.nombre }}</span>
-                        <span class="nav-arrow">›</span>
+                        <span class="nav-arrow">></span>
                     </li>
                     }
                 </ul>
-                }
-
-                @if (navLevel === 'plants') {
-                <ul class="nav-list">
-                    @if (loadingPlantas) { <div class="loading">Cargando...</div> }
-                    @for (planta of plantas; track planta.id) {
-                    <li class="nav-item" [class.selected]="selectedPlanta?.id === planta.id"
-                        (click)="selectPlanta(planta)">
-                        <span class="nav-icon">🏭</span>
-                        <span class="nav-text">{{ planta.nombre }}</span>
-
-                        <!-- Actions for Plant -->
-                        <div class="nav-item-actions">
-                            <a *ngIf="planta.fichero_corte" [href]="planta.fichero_corte" target="_blank"
-                                class="btn-icon-action pdf" title="Descargar Planilla"
-                                (click)="$event.stopPropagation()">
-                                📄
-                            </a>
-                        </div>
-
-                        <span class="nav-arrow">›</span>
-                    </li>
-                    }
-                </ul>
-                }
-
-                @if (navLevel === 'modules') {
-                <ul class="nav-list">
-                    @if (loadingModulos) { <div class="loading">Cargando...</div> }
-                    @for (modulo of modulos; track modulo.id) {
-                    <li class="nav-item" [class.selected]="selectedModulo?.id === modulo.id"
-                        [class.disabled]="isModuloComplete(modulo)"
-                        (click)="!isModuloComplete(modulo) && toggleModulo(modulo)">
-                        <span class="nav-icon">📦</span>
-
-                        <div class="nav-item-content">
-                            <span class="nav-text">{{ modulo.nombre }}</span>
-                            <div class="nav-phases">
-                                <span class="phase-dot" [class.done]="modulo.inferior_hecho"
-                                    [class.assigned]="!modulo.inferior_hecho && isPhaseAssigned(modulo, 'INFERIOR')"
-                                    title="Inferior"></span>
-                                <span class="phase-dot" [class.done]="modulo.superior_hecho"
-                                    [class.assigned]="!modulo.superior_hecho && isPhaseAssigned(modulo, 'SUPERIOR')"
-                                    title="Superior"></span>
-                            </div>
-                        </div>
-                    </li>
-
-                    <!-- NESTED SUBFASES LIST (visible when selected) -->
-                    @if (selectedModulo?.id === modulo.id) {
-                    <div class="sidebar-module-images">
-                        @if (loadingImagenes) {
-                        <div class="sidebar-loading">Cargando...</div>
-                        } @else if (activeSubfases.length === 0) {
-                        <div class="sidebar-empty">Sin fases disponibles</div>
-                        } @else {
-                        @for (subfase of activeSubfases; track subfase.id) {
-                        <div class="sidebar-image-item" [attr.draggable]="!subfase.hecho && !subfase.assigned"
-                            (dragstart)="onSubfaseDragStart($event, subfase)" (dragend)="onDragEnd($event)"
-                            [class.assigned]="subfase.assigned" [class.hecho]="subfase.hecho"
-                            [style.opacity]="(subfase.assigned || subfase.hecho) ? '0.6' : '1'">
-
-                            <span class="sidebar-img-icon" [class.inferior]="subfase.fase === 'INFERIOR'"
-                                [class.superior]="subfase.fase === 'SUPERIOR'">{{ subfase.fase === 'INFERIOR' ? '▼' :
-                                '▲'
-                                }}</span>
-                            <div class="sidebar-img-info">
-                                <span class="sidebar-img-name">{{ subfase.modulo.nombre }}</span>
-                                <span class="sidebar-img-type">{{ subfase.fase }} ({{ subfase.imagenes.length }}
-                                    imgs)</span>
-                                @if (getSubfaseStatusText(subfase)) {
-                                <span class="sidebar-img-assigment">{{ getSubfaseStatusText(subfase) }}</span>
-                                }
-                            </div>
-                            <span class="drag-handle" *ngIf="!subfase.assigned && !subfase.hecho">⋮⋮</span>
-
-                            <!-- Status Badge -->
-                            @if (subfase.assigned || subfase.hecho) {
-                            <span class="sidebar-status-badge" [class.hecho]="subfase.hecho">
-                                {{ subfase.hecho ? '✓' : '⟳' }}
-                            </span>
-                            }
-                        </div>
-                        }
-                        }
-                    </div>
-                    }
-                    }
-                </ul>
-                }
             </div>
         </aside>
 
-        <!-- WORKSPACE: IMAGES & MESAS -->
         <section class="dashboard-workspace">
-
-            <!-- SOURCE ZONE: IMAGES PANEL (Visible when a module is selected) -->
-            <!-- SOURCE ZONE: MOVED TO SIDEBAR -->
-            <!-- Dashboard Workspace now only shows Mesas -->
-
-
-
-            <!-- TARGET ZONE: MESAS GRID -->
-            <div class="mesas-section">
-                <div class="section-header">
-                    <h2>Mesas de Trabajo</h2>
+            @if (loadingGruposMesas || loadingMesas) {
+            <div class="loading planner-loading">Cargando operativa...</div>
+            } @else {
+            <section class="planner-section">
+                <div class="section-header planner-header">
+                    <h2>Operativa por Grupos</h2>
+                    <span class="section-hint">Cada grupo controla su proyecto y sus mesas INF1 / INF2 / SUP desde el mismo bloque</span>
                 </div>
-                <div class="mesas-grid" cdkDropListGroup>
-                    @if (loadingMesas) {
-                    <div class="loading">Cargando mesas...</div>
-                    } @else {
-                    @for (mesa of mesas; track trackByMesa($index, mesa)) {
-                    <div class="mesa-card" [class.locked]="mesa.locked" [class.blackout]="mesa.blackout"
-                        (dragover)="onDragOver($event, mesa)" (dragleave)="onDragLeave($event)"
-                        (drop)="onSubfaseDrop($event, mesa)" [class.drag-over]="dragOverMesa === mesa.id">
-                        <div class="mesa-header">
-                            <div class="mesa-title-container">
-                                @if (editingMesaId === mesa.id) {
-                                <input type="text" [(ngModel)]="editingMesaName" (blur)="updateMesaName(mesa)"
-                                    (keyup.enter)="updateMesaName(mesa)" (keyup.escape)="stopEditingMesa()"
-                                    class="mesa-name-input" autofocus onclick="this.select()">
-                                } @else {
-                                <h3 (click)="startEditingMesa(mesa)" title="Click para renombrar">{{ mesa.nombre }}
-                                    <span class="edit-icon">✎</span>
-                                </h3>
+
+                @if (gruposMesas.length === 0) {
+                <div class="planner-empty">
+                    No hay grupos de mesas creados todavia. Cuando existan, podras planificar y trabajar por proyecto desde aqui.
+                </div>
+                } @else {
+                <div class="grupo-workspace">
+                    @for (grupo of gruposMesas; track trackByGrupo($index, grupo)) {
+                    <section class="grupo-operativo">
+                        <div class="grupo-operativo-header">
+                            <div class="grupo-operativo-title">
+                                <div>
+                                    <h3>{{ grupo.nombre }}</h3>
+                                    <p>{{ getProyectoNombre(grupo.proyecto_actual) }}</p>
+                                </div>
+                                <span class="planner-status" [class.active]="grupo.activa">
+                                    {{ grupo.activa ? 'Activa' : 'Pausada' }}
+                                </span>
+                            </div>
+
+                            <div class="planner-controls group-controls">
+                                <label>
+                                    <span>Proyecto</span>
+                                    <select [(ngModel)]="selectedProyectoPorGrupo[grupo.id]"
+                                        (ngModelChange)="onProyectoGrupoSeleccionado(grupo, $event)">
+                                        <option [ngValue]="null">Selecciona un proyecto</option>
+                                        @for (proyecto of proyectos; track proyecto.id) {
+                                        <option [ngValue]="proyecto.id">{{ proyecto.nombre }}</option>
+                                        }
+                                    </select>
+                                </label>
+                            </div>
+
+                            <div class="planner-roles">
+                                @for (mesaResumen of grupo.mesas; track mesaResumen.id) {
+                                <div class="planner-role-chip">
+                                    <span class="planner-role">{{ getGrupoRoleLabel(mesaResumen.rol) }}</span>
+                                    <span class="planner-role-name">{{ mesaResumen.nombre }}</span>
+                                </div>
                                 }
                             </div>
-                            <div class="mesa-header-actions">
-                                @if (mesa.locked) { <span class="mesa-badge locked">🔒</span> }
-                                @if (mesa.blackout) { <span class="mesa-badge blackout">⬛</span> }
 
-                                <!-- Link Status (Moved to Header) -->
-                                <!-- Link Status -->
-                                <div class="header-link-status">
-                                    @if (mesa.is_linked) {
-                                    <button class="btn-view-projection-sm linked" (click)="openProjectionView(mesa)"
-                                        title="Proyección Conectada (Ver Visor)">
-                                        🖥️
-                                    </button>
-                                    } @else {
-                                    <button class="btn-view-projection-sm unlinked" (click)="openProjectionView(mesa)"
-                                        title="Sin vincular (Abrir para vincular)">
-                                        🔌
-                                    </button>
-                                    }
+                            @if (groupPlanSummaries[grupo.id]; as plan) {
+                            <div class="planner-summary">
+                                <div class="planner-summary-header">
+                                    <strong>{{ plan.project_name }}</strong>
+                                    <span>{{ plan.bastidor_groups.length }} bastidores</span>
+                                </div>
+                                <div class="planner-queue-summary">
+                                    <span>INF1: {{ plan.queues.INFERIOR_1.join(', ') || 'sin cola' }}</span>
+                                    <span>INF2: {{ plan.queues.INFERIOR_2.join(', ') || 'sin cola' }}</span>
+                                    <span>SUP: {{ plan.queues.SUPERIORES.join(', ') || 'sin cola' }}</span>
                                 </div>
                             </div>
+                            }
                         </div>
 
-                        <!-- Queue -->
-                        <div class="mesa-queue" cdkDropList [cdkDropListData]="getMesaQueueItems(mesa.id)"
-                            (cdkDropListDropped)="onMesaQueueDrop($event, mesa.id)">
-                            @for (item of getMesaQueueItems(mesa.id); track trackByItem($index, item)) {
-                            <div class="queue-item" [class]="getItemStatusClass(item.status)"
-                                [cdkDragDisabled]="item.status === 'MOSTRANDO'" cdkDrag>
-                                <div class="drag-handle" [class.invisible]="item.status === 'MOSTRANDO'" cdkDragHandle
-                                    title="Arrastrar para reordenar">⋮⋮</div>
-                                <div class="queue-item-info">
-                                    <span class="queue-item-fase" [class.inferior]="item.fase === 'INFERIOR'"
-                                        [class.superior]="item.fase === 'SUPERIOR'">
-                                        {{ item.fase === 'INFERIOR' ? '▼' : '▲' }}
-                                    </span>
-                                    <!-- Click to navigate -->
-                                    <span class="queue-item-nombre clickable" (click)="navigateToModule(item)"
-                                        title="Ver en Proyectos">
-                                        {{ item.modulo_nombre }}
-                                        <span class="link-icon">↗</span>
-                                    </span>
-                                    <span class="queue-item-status">{{ item.status }}</span>
+                        <div class="mesas-grid grupo-mesas-grid">
+                            @for (mesa of getMesasForGrupo(grupo.id); track trackByMesa($index, mesa)) {
+                            <div class="mesa-card" [class.locked]="mesa.locked" [class.blackout]="mesa.blackout">
+                                <div class="mesa-header">
+                                    <div class="mesa-title-container">
+                                        <h3>{{ mesa.nombre }}</h3>
+                                        <span class="mesa-role-badge">{{ getMesaRoleLabel(mesa) }}</span>
+                                    </div>
+                                    <div class="mesa-header-actions">
+                                        @if (mesa.locked) { <span class="mesa-badge locked">LOCK</span> }
+                                        @if (mesa.blackout) { <span class="mesa-badge blackout">OFF</span> }
+                                        <div class="header-link-status">
+                                            @if (mesa.is_linked) {
+                                            <button class="btn-view-projection-sm linked" (click)="openProjectionView(mesa)"
+                                                title="Proyeccion conectada">
+                                                VIS
+                                            </button>
+                                            } @else {
+                                            <button class="btn-view-projection-sm unlinked" (click)="openProjectionView(mesa)"
+                                                title="Sin vincular">
+                                                LINK
+                                            </button>
+                                            }
+                                        </div>
+                                    </div>
                                 </div>
-                                <div class="queue-item-actions">
-                                    <!-- Play button removed (auto-project) -->
-                                    <!-- Play/Finish button removed (auto-project via polling) -->
-                                    @if (item.status !== 'HECHO') {
-                                    <button class="btn-action btn-eliminar" (click)="eliminarItem(item)"
-                                        title="Eliminar">✕</button>
+
+                                <div class="mesa-queue">
+                                    @for (item of getMesaQueueItems(mesa.id); track trackByItem($index, item)) {
+                                    <div class="queue-item" [class]="getItemStatusClass(item.status)">
+                                        <div class="queue-item-info">
+                                            <span class="queue-item-fase" [class.inferior]="item.fase === 'INFERIOR'"
+                                                [class.superior]="item.fase === 'SUPERIOR'">
+                                                {{ item.fase === 'INFERIOR' ? 'v' : '^' }}
+                                            </span>
+                                            <span class="queue-item-nombre">{{ item.modulo_nombre }}</span>
+                                            <span class="queue-item-status">{{ item.status }}</span>
+                                        </div>
+                                    </div>
                                     }
                                 </div>
                             </div>
                             }
                         </div>
-                    </div>
-                    }
+                    </section>
                     }
                 </div>
-            </div>
+                }
+            </section>
 
+            <section class="stats-section">
+                <div class="section-header legacy-header">
+                    <h2>Boards de Estadisticas</h2>
+                    <span class="section-hint">Pendiente de definir el formato final, pero ya quedan visibles</span>
+                </div>
+                <div class="stats-grid">
+                    <article class="stats-card">
+                        <h3>Diario</h3>
+                        <p>Resumen diario de peso fabricado, desperdicio y cortes.</p>
+                        <span class="stats-placeholder">Proximamente</span>
+                    </article>
+                    <article class="stats-card">
+                        <h3>Semanal</h3>
+                        <p>Vista semanal por grupo de mesas y por proyecto activo.</p>
+                        <span class="stats-placeholder">Proximamente</span>
+                    </article>
+                    <article class="stats-card">
+                        <h3>Mensual</h3>
+                        <p>Acumulados y comparativa de produccion por ferralla.</p>
+                        <span class="stats-placeholder">Proximamente</span>
+                    </article>
+                </div>
+            </section>
+            }
         </section>
     </main>
 </div>
-
-<!-- Custom Confirm Modal -->
-@if (showConfirmModal) {
-<div class="modal-overlay" (click)="cerrarConfirmModal()">
-    <div class="modal-content" (click)="$event.stopPropagation()">
-        <div class="modal-icon">⚠️</div>
-        <p class="modal-message">{{ confirmModalMessage }}</p>
-        <div class="modal-actions">
-            <button class="btn-modal btn-cancel" (click)="cerrarConfirmModal()">Cancelar</button>
-            <button class="btn-modal btn-confirm" (click)="confirmarAccion()">
-                {{ pendingActionType === 'DELETE' ? 'Eliminar' : 'Confirmar' }}
-            </button>
-        </div>
-    </div>
-</div>
-}
-
-<!-- Blueprint Modal -->
-@if (showBlueprintModal) {
-<div class="modal-overlay blueprint-overlay" (click)="cerrarBlueprintModal()">
-    <div class="blueprint-modal-content" (click)="$event.stopPropagation()">
-        <div class="blueprint-header">
-            <h3>Plano - {{ selectedPlanta?.nombre }}</h3>
-            <button class="btn-close" (click)="cerrarBlueprintModal()">×</button>
-        </div>
-        <div class="blueprint-body">
-            <img [src]="blueprintUrl" alt="Plano de Planta">
-        </div>
-    </div>
-</div>
-}

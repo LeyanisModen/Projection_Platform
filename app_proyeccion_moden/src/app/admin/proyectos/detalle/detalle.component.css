@@ -60,10 +60,117 @@
     font-size: 1rem;
 }
 
+.project-config-card {
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.project-config-header label {
+    font-size: 1.05rem;
+    font-weight: 600;
+}
+
+.project-config-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    margin-top: 0.8rem;
+}
+
+.project-config-input {
+    width: 120px;
+    height: 40px;
+    padding: 0 0.75rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    font-size: 1rem;
+}
+
+.project-config-unit {
+    font-weight: 600;
+    color: #475569;
+}
+
+.project-config-hint {
+    display: block;
+    margin-top: 0.75rem;
+    color: #64748b;
+}
+
+.technical-import-summary {
+    margin-top: 0.9rem;
+}
+
+.technical-import-errors {
+    margin-top: 0.45rem;
+    font-size: 0.8rem;
+    color: #b91c1c;
+}
+
+.technical-summary-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.55rem;
+    margin: 0.2rem 0.35rem 0 0;
+    border-radius: 999px;
+    background: #eef2ff;
+    color: #334155;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
 .list-group-item {
     padding: 20px 25px;
     /* Bigger click area */
     font-size: 1.05rem;
+}
+
+.technical-phase-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin: 0.55rem 0 0.7rem;
+}
+
+.technical-phase-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.3rem 0.55rem;
+    border-radius: 999px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    color: #334155;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.technical-phase-tag {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 34px;
+    padding: 0.1rem 0.35rem;
+    border-radius: 999px;
+    color: #fff;
+    font-size: 0.7rem;
+    letter-spacing: 0.04em;
+}
+
+.technical-phase-tag.inf {
+    background: #0f766e;
+}
+
+.technical-phase-tag.sup {
+    background: #1d4ed8;
+}
+
+.technical-phase-tag.width {
+    background: #7c3aed;
+}
+
+.module-width-chip {
+    background: #f5f3ff;
+    border-color: #ddd6fe;
 }
 
 .planta-title-wrap {

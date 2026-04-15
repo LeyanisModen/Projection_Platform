@@ -4,7 +4,7 @@ from rest_framework import serializers
 from api.models import (
     Proyecto, Planta, Modulo, Imagen, Mesa,
     ModuloQueue, ModuloQueueItem, MesaQueueItem, UserProfile, MesaQueueStatus,
-    FotoFabricacion
+    FotoFabricacion, GrupoMesas, DetalleModuloFase
 )
 
 
@@ -85,7 +85,7 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
     
     class Meta:
         model = Proyecto
-        fields = ["id", "url", "nombre", "usuario", "usuario_nombre", "num_plantas"]
+        fields = ["id", "url", "nombre", "usuario", "usuario_nombre", "num_plantas", "bastidor_longitud_cm"]
         extra_kwargs = {
             'usuario': {'required': False, 'allow_null': True}
         }
@@ -132,14 +132,15 @@ class PlantaSerializer(serializers.ModelSerializer):
 
 class ModuloSerializer(serializers.ModelSerializer):
     fotos_count = serializers.SerializerMethodField()
+    detalles_fase = serializers.SerializerMethodField()
 
     class Meta:
         model = Modulo
         fields = [
-            "id", "nombre", "planta", "proyecto",
+            "id", "nombre", "ancho_cm", "planta", "proyecto",
             "inferior_hecho", "superior_hecho", "estado",
             "cerrado", "cerrado_at", "cerrado_by",
-            "codigos_color", "fotos_count"
+            "codigos_color", "fotos_count", "detalles_fase"
         ]
         read_only_fields = ["cerrado_at"]
 
@@ -147,6 +148,35 @@ class ModuloSerializer(serializers.ModelSerializer):
         if hasattr(obj, '_fotos_count'):
             return obj._fotos_count
         return obj.fotos_fabricacion.count()
+
+    def get_detalles_fase(self, obj):
+        detalles = getattr(obj, '_prefetched_objects_cache', {}).get('detalles_fase')
+        if detalles is None:
+            detalles = obj.detalles_fase.all()
+        return DetalleModuloFaseSerializer(detalles, many=True).data
+
+
+class DetalleModuloFaseSerializer(serializers.ModelSerializer):
+    capacidad_bastidor = serializers.IntegerField(read_only=True)
+    peso_total_kg = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+
+    class Meta:
+        model = DetalleModuloFase
+        fields = [
+            "id", "modulo", "fase",
+            "espesor_cm",
+            "peso_malla_inicial_kg", "peso_malla_final_kg", "desperdicio_kg",
+            "cantidad_cortes",
+            "cantidad_refuerzos", "peso_refuerzos_kg",
+            "cantidad_zunchos", "peso_zunchos_kg",
+            "cantidad_separadores", "peso_separadores_kg",
+            "cantidad_punzos", "peso_punzos_kg",
+            "dificultad_fabricacion",
+            "observaciones",
+            "capacidad_bastidor", "peso_total_kg",
+            "created_at", "updated_at"
+        ]
+        read_only_fields = ["created_at", "updated_at", "capacidad_bastidor", "peso_total_kg"]
 
 
 class ImagenSerializer(serializers.HyperlinkedModelSerializer):
@@ -201,6 +231,7 @@ class FotoFabricacionSerializer(serializers.ModelSerializer):
 
 class MesaSerializer(serializers.HyperlinkedModelSerializer):
     usuario = serializers.PrimaryKeyRelatedField(queryset=User.objects.all())
+    grupo = serializers.PrimaryKeyRelatedField(queryset=GrupoMesas.objects.all(), allow_null=True, required=False)
     imagen = ImagenSerializer(source='imagen_actual', read_only=True)
     is_linked = serializers.SerializerMethodField()
     
@@ -208,6 +239,7 @@ class MesaSerializer(serializers.HyperlinkedModelSerializer):
         model = Mesa
         fields = [
             "id", "url", "nombre", "usuario",
+            "grupo", "rol",
             "imagen_actual", "ultima_actualizacion", "imagen",
             "locked", "blackout", "last_seen", "is_linked",
             "mapper_enabled", "current_image_index", "calibration_json"
@@ -226,6 +258,30 @@ class ModuloQueueSerializer(serializers.ModelSerializer):
         model = ModuloQueue
         fields = ["id", "proyecto", "created_at", "created_by", "activa"]
         read_only_fields = ["created_at"]
+
+
+class MesaResumenGrupoSerializer(serializers.ModelSerializer):
+    is_linked = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Mesa
+        fields = ["id", "nombre", "rol", "is_linked"]
+
+    def get_is_linked(self, obj):
+        return bool(obj.device_token_hash)
+
+
+class GrupoMesasSerializer(serializers.ModelSerializer):
+    mesas = MesaResumenGrupoSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = GrupoMesas
+        fields = ["id", "nombre", "usuario", "proyecto_actual", "activa", "created_at", "mesas"]
+        read_only_fields = ["created_at", "mesas"]
+        extra_kwargs = {
+            "usuario": {"required": False},
+            "proyecto_actual": {"required": False, "allow_null": True},
+        }
 
 
 class ModuloQueueItemSerializer(serializers.ModelSerializer):
@@ -254,11 +310,12 @@ class MesaQueueItemSerializer(serializers.ModelSerializer):
             "id", "mesa", "mesa_nombre",
             "modulo", "modulo_nombre", "modulo_planta_id", "modulo_proyecto_id",
             "fase", "imagen", "imagen_url",
-            "position", "status",
+            "position", "plan_group_index", "status",
             "assigned_by", "assigned_at",
             "done_by", "done_at"
         ]
         read_only_fields = ["assigned_at", "done_at"]
+        validators = []
 
     def validate(self, data):
         """

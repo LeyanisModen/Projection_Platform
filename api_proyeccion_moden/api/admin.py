@@ -1,7 +1,9 @@
 from django.contrib import admin
-from .models import Proyecto, Modulo, Imagen, Mesa
+from .models import Proyecto, Modulo, Imagen, Mesa, GrupoMesas, DetalleModuloFase
 
 admin.site.register(Proyecto)
 admin.site.register(Modulo)
 admin.site.register(Imagen)
 admin.site.register(Mesa)
+admin.site.register(GrupoMesas)
+admin.site.register(DetalleModuloFase)

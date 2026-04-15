@@ -581,6 +581,316 @@
 }
 
 /* =============================================================================
+   GROUP PLANNER
+   ============================================================================= */
+.planner-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.planner-header {
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0;
+  min-height: auto;
+  height: auto;
+}
+
+.section-hint {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+.planner-loading,
+.planner-empty {
+  background: var(--card-bg);
+  border-radius: var(--border-radius);
+  box-shadow: var(--shadow-soft);
+  padding: 20px;
+}
+
+.planner-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.planner-card {
+  background: linear-gradient(145deg, #fffaf5 0%, #ffffff 100%);
+  border: 1px solid rgba(255, 107, 53, 0.14);
+  border-radius: 18px;
+  box-shadow: var(--shadow-soft);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.planner-card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.planner-card-header h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.planner-card-header p {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+.planner-status {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #f1f3f5;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.planner-status.active {
+  background: rgba(255, 107, 53, 0.12);
+  color: var(--accent-orange);
+}
+
+.planner-roles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.planner-role-chip {
+  background: rgba(26, 26, 46, 0.05);
+  border-radius: 12px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 90px;
+}
+
+.planner-role {
+  color: var(--accent-orange);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.planner-role-name {
+  font-size: 0.8rem;
+  color: var(--text-primary);
+}
+
+.planner-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.planner-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.planner-controls select {
+  min-width: 0;
+  width: 100%;
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  background: white;
+  padding: 10px 12px;
+  font: inherit;
+  color: var(--text-primary);
+}
+
+.btn-plan {
+  border: none;
+  border-radius: 10px;
+  padding: 11px 14px;
+  background: var(--accent-orange);
+  color: white;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.btn-plan:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.btn-plan:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.planner-summary {
+  border-top: 1px solid rgba(26, 26, 46, 0.08);
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.planner-summary-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.85rem;
+}
+
+.planner-summary-header span {
+  color: var(--text-secondary);
+}
+
+.planner-queue-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+
+.grupo-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.grupo-operativo {
+  background: linear-gradient(145deg, #fffaf5 0%, #ffffff 100%);
+  border: 1px solid rgba(255, 107, 53, 0.14);
+  border-radius: 18px;
+  box-shadow: var(--shadow-soft);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.grupo-operativo-header {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.grupo-operativo-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.grupo-operativo-title h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.grupo-operativo-title p {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+.group-controls {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.group-action-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.btn-open-project {
+  border: 1px solid rgba(26, 26, 46, 0.12);
+  border-radius: 10px;
+  padding: 11px 14px;
+  background: white;
+  color: var(--text-primary);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btn-open-project:hover {
+  border-color: var(--accent-orange);
+  color: var(--accent-orange);
+}
+
+.grupo-mesas-grid {
+  padding-bottom: 0;
+}
+
+.legacy-section {
+  margin-top: 8px;
+}
+
+.legacy-header {
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0;
+  min-height: auto;
+  height: auto;
+}
+
+.stats-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+.stats-card {
+  background: white;
+  border: 1px solid rgba(26, 26, 46, 0.08);
+  border-radius: 16px;
+  box-shadow: var(--shadow-soft);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.stats-card h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.stats-card p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.stats-placeholder {
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255, 107, 53, 0.12);
+  color: var(--accent-orange);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+/* =============================================================================
    TARGET ZONE: MESAS GRID
    ============================================================================= */
 .mesas-section {
@@ -635,6 +945,25 @@
   .mesas-grid {
     grid-template-columns: 1fr;
   }
+
+  .planner-header,
+  .legacy-header,
+  .grupo-operativo-title,
+  .group-controls {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .group-action-row {
+    width: 100%;
+    flex-direction: column;
+  }
+
+  .btn-open-project,
+  .btn-plan {
+    width: 100%;
+  }
 }
 
 /* Mesa Cards (Reused Logic) */
@@ -674,9 +1003,24 @@
 .mesa-title-container {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   flex: 1;
   margin-right: 12px;
+}
+
+.mesa-role-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 46px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(255, 107, 53, 0.12);
+  color: var(--accent-orange);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
 }
 
 .mesa-name-input {

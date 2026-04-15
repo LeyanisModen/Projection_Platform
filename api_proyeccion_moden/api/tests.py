@@ -1,13 +1,21 @@
 import hashlib
+import json
+import os
+import sqlite3
+import tempfile
 from datetime import timedelta
 
 from django.contrib.auth.models import User
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 from django.utils import timezone
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
-from api.models import Imagen, Mesa, MesaQueueItem, Modulo, Planta, Proyecto
+from api.models import (
+    Imagen, Mesa, MesaQueueItem, Modulo, Planta, Proyecto,
+    DetalleModuloFase, GrupoMesas
+)
 
 
 @override_settings(
@@ -42,14 +50,16 @@ class PermissionAndDeviceAuthTests(APITestCase):
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.user_a_token.key}")
         response = self.client.get("/api/proyectos/")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]["id"], self.project_a.id)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(len(response.data["results"]), 1)
+        self.assertEqual(response.data["results"][0]["id"], self.project_a.id)
 
     def test_admin_sees_all_projects(self):
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.admin_token.key}")
         response = self.client.get("/api/proyectos/")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data), 2)
+        self.assertEqual(response.data["count"], 2)
+        self.assertEqual(len(response.data["results"]), 2)
 
     def test_device_heartbeat_requires_valid_device_token(self):
         response = self.client.post("/api/device/heartbeat/", {}, format="json")
@@ -260,3 +270,403 @@ class MesaQueueItemBehaviorTests(APITestCase):
 
         self.mesa_a.refresh_from_db()
         self.assertEqual(self.mesa_a.current_image_index, 0)
+
+
+@override_settings(
+    REST_FRAMEWORK={
+        "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
+        "DEFAULT_AUTHENTICATION_CLASSES": ["rest_framework.authentication.TokenAuthentication"],
+        "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
+    }
+)
+class PlanningFoundationTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="planning_user", password="pass123")
+        self.token = Token.objects.create(user=self.user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
+
+        self.project = Proyecto.objects.create(nombre="Proyecto Plan", usuario=self.user)
+        self.planta = Planta.objects.create(nombre="P1", proyecto=self.project, orden=1)
+        self.modulo = Modulo.objects.create(nombre="M-01", proyecto=self.project, planta=self.planta)
+
+    def test_detalle_modulo_fase_calcula_capacidad_bastidor(self):
+        detalle = DetalleModuloFase.objects.create(
+            modulo=self.modulo,
+            fase="INFERIOR",
+            espesor_cm="12.00",
+        )
+
+        self.assertEqual(detalle.capacidad_bastidor, 9)
+
+    def test_detalle_modulo_fase_prioriza_ancho_del_modulo_para_capacidad(self):
+        self.modulo.ancho_cm = "19.00"
+        self.modulo.save(update_fields=["ancho_cm"])
+
+        detalle = DetalleModuloFase.objects.create(
+            modulo=self.modulo,
+            fase="INFERIOR",
+            espesor_cm="12.00",
+        )
+
+        self.assertEqual(detalle.capacidad_bastidor, 6)
+
+    def test_crear_grupo_mesas_genera_tres_mesas_base(self):
+        response = self.client.post(
+            "/api/grupos-mesas/",
+            {
+                "nombre": "Grupo A",
+                "usuario": self.user.id,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+
+        grupo = GrupoMesas.objects.get(id=response.data["id"])
+        roles = set(grupo.mesas.values_list("rol", flat=True))
+
+        self.assertEqual(grupo.mesas.count(), 3)
+        self.assertSetEqual(roles, {"INFERIOR_1", "INFERIOR_2", "SUPERIORES"})
+
+    def test_import_technical_data_from_json_creates_phase_details(self):
+        technical_file = SimpleUploadedFile(
+            "detalles.json",
+            json.dumps([
+                {
+                    "modulo": "M-01",
+                    "ancho_cm": 18,
+                    "fase": "INF",
+                    "espesor_cm": 12,
+                    "cantidad_cortes": 8,
+                    "dificultad": 3.5,
+                },
+                {
+                    "modulo": "M-01",
+                    "fase": "SUP",
+                    "espesor_cm": 10,
+                    "cantidad_refuerzos": 5,
+                }
+            ]).encode("utf-8"),
+            content_type="application/json",
+        )
+
+        response = self.client.post(
+            f"/api/proyectos/{self.project.id}/import-technical-data/",
+            {"technical_file": technical_file},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["stats"]["created"], 2)
+        self.modulo.refresh_from_db()
+        self.assertEqual(str(self.modulo.ancho_cm), "18.00")
+        self.assertEqual(DetalleModuloFase.objects.filter(modulo=self.modulo).count(), 2)
+
+    def test_import_technical_data_from_csv_prefixed_columns(self):
+        csv_content = (
+            "planta,modulo,inf_espesor_cm,inf_cantidad_cortes,sup_espesor_cm,sup_cantidad_refuerzos\n"
+            "P1,M-01,14,6,11,4\n"
+        )
+        technical_file = SimpleUploadedFile(
+            "detalles.csv",
+            csv_content.encode("utf-8"),
+            content_type="text/csv",
+        )
+
+        response = self.client.post(
+            f"/api/proyectos/{self.project.id}/import-technical-data/",
+            {"technical_file": technical_file},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["stats"]["created"], 2)
+        inferior = DetalleModuloFase.objects.get(modulo=self.modulo, fase="INFERIOR")
+        superior = DetalleModuloFase.objects.get(modulo=self.modulo, fase="SUPERIOR")
+        self.assertEqual(str(inferior.espesor_cm), "14.00")
+        self.assertEqual(superior.cantidad_refuerzos, 4)
+
+    def test_import_technical_data_from_sqlite_db_uses_default_width_when_missing(self):
+        temp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as temp_file:
+                temp_path = temp_file.name
+
+            connection = sqlite3.connect(temp_path)
+            cursor = connection.cursor()
+            cursor.execute(
+                """
+                CREATE TABLE resumen (
+                    id INTEGER PRIMARY KEY,
+                    nombre_modulo TEXT,
+                    peso_mallazo_pedido_inf REAL,
+                    peso_mallazo_pedido_sup REAL,
+                    peso_mallazo_desperdicio_inf REAL,
+                    peso_mallazo_desperdicio_sup REAL,
+                    peso_mallazo_recortado_inf REAL,
+                    peso_mallazo_recortado_sup REAL,
+                    numero_cortes_mallazo INTEGER,
+                    cantidad_refuerzos_sup INTEGER,
+                    peso_refuerzos_sup REAL,
+                    cantidad_refuerzos_inf INTEGER,
+                    peso_refuerzos_inf REAL,
+                    cantidad_zunchos INTEGER,
+                    peso_zunchos REAL,
+                    cantidad_punzonamientos INTEGER,
+                    peso_punzonamientos REAL,
+                    cantidad_separadores INTEGER,
+                    peso_separadores REAL
+                )
+                """
+            )
+            cursor.execute(
+                """
+                INSERT INTO resumen (
+                    id, nombre_modulo,
+                    peso_mallazo_pedido_inf, peso_mallazo_pedido_sup,
+                    peso_mallazo_desperdicio_inf, peso_mallazo_desperdicio_sup,
+                    peso_mallazo_recortado_inf, peso_mallazo_recortado_sup,
+                    numero_cortes_mallazo,
+                    cantidad_refuerzos_sup, peso_refuerzos_sup,
+                    cantidad_refuerzos_inf, peso_refuerzos_inf,
+                    cantidad_zunchos, peso_zunchos,
+                    cantidad_punzonamientos, peso_punzonamientos,
+                    cantidad_separadores, peso_separadores
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    1, "M-01",
+                    20.5, 18.25,
+                    1.1, 0.8,
+                    19.4, 17.45,
+                    9,
+                    4, 6.5,
+                    3, 5.75,
+                    2, 1.2,
+                    1, 0.7,
+                    5, 2.1,
+                ),
+            )
+            connection.commit()
+            connection.close()
+
+            with open(temp_path, "rb") as db_file:
+                technical_file = SimpleUploadedFile(
+                    "resumen_modulos.db",
+                    db_file.read(),
+                    content_type="application/octet-stream",
+                )
+
+            response = self.client.post(
+                f"/api/proyectos/{self.project.id}/import-technical-data/",
+                {"technical_file": technical_file},
+            )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.data["stats"]["created"], 2)
+
+            self.modulo.refresh_from_db()
+            self.assertEqual(str(self.modulo.ancho_cm), "17.00")
+
+            inferior = DetalleModuloFase.objects.get(modulo=self.modulo, fase="INFERIOR")
+            superior = DetalleModuloFase.objects.get(modulo=self.modulo, fase="SUPERIOR")
+            self.assertEqual(str(inferior.peso_malla_inicial_kg), "20.50")
+            self.assertEqual(str(superior.peso_malla_inicial_kg), "18.25")
+            self.assertEqual(inferior.cantidad_cortes, 9)
+            self.assertEqual(inferior.cantidad_refuerzos, 3)
+            self.assertEqual(superior.cantidad_refuerzos, 4)
+            self.assertEqual(inferior.cantidad_zunchos, 2)
+        finally:
+            if temp_path and os.path.exists(temp_path):
+                os.unlink(temp_path)
+
+    def test_planificar_grupo_crea_colas_automaticas(self):
+        self.project.bastidor_longitud_cm = 20
+        self.project.save(update_fields=["bastidor_longitud_cm"])
+
+        extra_modules = []
+        for index in range(2, 5):
+            modulo = Modulo.objects.create(
+                nombre=f"M-0{index}",
+                proyecto=self.project,
+                planta=self.planta,
+            )
+            extra_modules.append(modulo)
+
+        all_modules = [self.modulo, *extra_modules]
+        for difficulty, modulo in enumerate(all_modules, start=1):
+            DetalleModuloFase.objects.create(
+                modulo=modulo,
+                fase="INFERIOR",
+                espesor_cm="10.00",
+                dificultad_fabricacion=str(difficulty),
+            )
+
+        grupo_response = self.client.post(
+            "/api/grupos-mesas/",
+            {
+                "nombre": "Grupo Planificador",
+                "usuario": self.user.id,
+            },
+            format="json",
+        )
+        self.assertEqual(grupo_response.status_code, 201)
+
+        plan_response = self.client.post(
+            f"/api/grupos-mesas/{grupo_response.data['id']}/planificar/",
+            {"proyecto_id": self.project.id},
+            format="json",
+        )
+        self.assertEqual(plan_response.status_code, 200)
+
+        grupo = GrupoMesas.objects.get(id=grupo_response.data["id"])
+        mesa_inf_1 = grupo.mesas.get(rol="INFERIOR_1")
+        mesa_inf_2 = grupo.mesas.get(rol="INFERIOR_2")
+        mesa_sup = grupo.mesas.get(rol="SUPERIORES")
+
+        inf_1_queue = list(MesaQueueItem.objects.filter(mesa=mesa_inf_1).order_by("position").values_list("modulo__nombre", flat=True))
+        inf_2_queue = list(MesaQueueItem.objects.filter(mesa=mesa_inf_2).order_by("position").values_list("modulo__nombre", flat=True))
+        sup_queue = list(MesaQueueItem.objects.filter(mesa=mesa_sup).order_by("position").values_list("modulo__nombre", flat=True))
+
+        self.assertEqual(inf_1_queue, ["M-02", "M-01"])
+        self.assertEqual(inf_2_queue, ["M-04", "M-03"])
+        self.assertEqual(sup_queue, ["M-04", "M-02", "M-03", "M-01"])
+
+    def test_planificar_grupo_usa_ancho_del_modulo_para_agrupacion(self):
+        self.project.bastidor_longitud_cm = 20
+        self.project.save(update_fields=["bastidor_longitud_cm"])
+
+        self.modulo.ancho_cm = "12.00"
+        self.modulo.save(update_fields=["ancho_cm"])
+
+        modulo_b = Modulo.objects.create(
+            nombre="M-02",
+            proyecto=self.project,
+            planta=self.planta,
+            ancho_cm="12.00",
+        )
+        modulo_c = Modulo.objects.create(
+            nombre="M-03",
+            proyecto=self.project,
+            planta=self.planta,
+            ancho_cm="8.00",
+        )
+
+        for modulo in [self.modulo, modulo_b, modulo_c]:
+            DetalleModuloFase.objects.create(
+                modulo=modulo,
+                fase="INFERIOR",
+                espesor_cm="1.00",
+            )
+
+        grupo_response = self.client.post(
+            "/api/grupos-mesas/",
+            {
+                "nombre": "Grupo Anchura",
+                "usuario": self.user.id,
+            },
+            format="json",
+        )
+        self.assertEqual(grupo_response.status_code, 201)
+
+        plan_response = self.client.post(
+            f"/api/grupos-mesas/{grupo_response.data['id']}/planificar/",
+            {"proyecto_id": self.project.id},
+            format="json",
+        )
+        self.assertEqual(plan_response.status_code, 200)
+
+        grupo = GrupoMesas.objects.get(id=grupo_response.data["id"])
+        mesa_inf_1 = grupo.mesas.get(rol="INFERIOR_1")
+        mesa_inf_2 = grupo.mesas.get(rol="INFERIOR_2")
+
+        inf_1_queue = list(
+            MesaQueueItem.objects.filter(mesa=mesa_inf_1).order_by("position").values_list("modulo__nombre", flat=True)
+        )
+        inf_2_queue = list(
+            MesaQueueItem.objects.filter(mesa=mesa_inf_2).order_by("position").values_list("modulo__nombre", flat=True)
+        )
+
+        self.assertEqual(inf_1_queue, ["M-01"])
+        self.assertEqual(inf_2_queue, ["M-03", "M-02"])
+
+    def test_planificar_grupo_conserva_grupo_iniciado_y_reemplaza_lo_pendiente(self):
+        self.project.bastidor_longitud_cm = 20
+        self.project.save(update_fields=["bastidor_longitud_cm"])
+
+        modules_old = [self.modulo]
+        for index in range(2, 5):
+            modules_old.append(
+                Modulo.objects.create(
+                    nombre=f"M-0{index}",
+                    proyecto=self.project,
+                    planta=self.planta,
+                    ancho_cm="10.00",
+                )
+            )
+
+        self.modulo.ancho_cm = "10.00"
+        self.modulo.save(update_fields=["ancho_cm"])
+
+        for modulo in modules_old:
+            DetalleModuloFase.objects.create(
+                modulo=modulo,
+                fase="INFERIOR",
+                espesor_cm="10.00",
+            )
+
+        grupo_response = self.client.post(
+            "/api/grupos-mesas/",
+            {
+                "nombre": "Grupo Replan",
+                "usuario": self.user.id,
+            },
+            format="json",
+        )
+        self.assertEqual(grupo_response.status_code, 201)
+
+        first_plan = self.client.post(
+            f"/api/grupos-mesas/{grupo_response.data['id']}/planificar/",
+            {"proyecto_id": self.project.id},
+            format="json",
+        )
+        self.assertEqual(first_plan.status_code, 200)
+
+        completed_module = Modulo.objects.get(nombre="M-02", proyecto=self.project)
+        completed_module.inferior_hecho = True
+        completed_module.superior_hecho = True
+        completed_module.actualizar_estado()
+
+        proyecto_nuevo = Proyecto.objects.create(nombre="Proyecto Nuevo", usuario=self.user, bastidor_longitud_cm=20)
+        planta_nueva = Planta.objects.create(nombre="P2", proyecto=proyecto_nuevo, orden=1)
+        nuevo_1 = Modulo.objects.create(nombre="N-01", proyecto=proyecto_nuevo, planta=planta_nueva, ancho_cm="10.00")
+        nuevo_2 = Modulo.objects.create(nombre="N-02", proyecto=proyecto_nuevo, planta=planta_nueva, ancho_cm="10.00")
+        for modulo in [nuevo_1, nuevo_2]:
+            DetalleModuloFase.objects.create(
+                modulo=modulo,
+                fase="INFERIOR",
+                espesor_cm="10.00",
+            )
+
+        second_plan = self.client.post(
+            f"/api/grupos-mesas/{grupo_response.data['id']}/planificar/",
+            {"proyecto_id": proyecto_nuevo.id},
+            format="json",
+        )
+        self.assertEqual(second_plan.status_code, 200)
+
+        grupo = GrupoMesas.objects.get(id=grupo_response.data["id"])
+        mesa_inf_1 = grupo.mesas.get(rol="INFERIOR_1")
+        mesa_inf_2 = grupo.mesas.get(rol="INFERIOR_2")
+
+        inf_1_queue = list(
+            MesaQueueItem.objects.filter(mesa=mesa_inf_1, status__in=["EN_COLA", "MOSTRANDO"])
+            .order_by("position")
+            .values_list("modulo__nombre", flat=True)
+        )
+        inf_2_queue = list(
+            MesaQueueItem.objects.filter(mesa=mesa_inf_2, status__in=["EN_COLA", "MOSTRANDO"])
+            .order_by("position")
+            .values_list("modulo__nombre", flat=True)
+        )
+
+        self.assertEqual(inf_1_queue, ["M-02", "M-01"])
+        self.assertEqual(inf_2_queue, ["N-02", "N-01"])
