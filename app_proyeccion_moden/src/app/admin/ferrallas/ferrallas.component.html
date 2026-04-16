@@ -200,25 +200,27 @@
                                 <div class="group-card" *ngFor="let grupo of gruposMesas">
                                     <div class="group-header">
                                         <div class="grupo-title-wrap">
-                                            <ng-container *ngIf="editingGrupoId === grupo.id; else showGrupoName">
-                                                <input type="text"
-                                                    class="grupo-name-input"
-                                                    [(ngModel)]="editingGrupoName"
-                                                    (keydown.enter)="updateGrupoName(grupo)"
-                                                    (keydown.escape)="stopEditingGrupo()"
-                                                    (blur)="updateGrupoName(grupo)"
-                                                    autofocus>
-                                            </ng-container>
-                                            <ng-template #showGrupoName>
-                                                <strong>{{ grupo.nombre }}</strong>
-                                                <button type="button"
-                                                    class="btn btn-link btn-sm p-0 ml-1 grupo-edit-btn"
-                                                    (click)="startEditingGrupo(grupo, $event)"
-                                                    title="Renombrar grupo">
-                                                    <i class="fa fa-pencil"></i>
-                                                </button>
-                                            </ng-template>
-                                            <small class="text-muted d-block">3 mesas operativas: INF1 / INF2 / SUP</small>
+                                            <div class="grupo-title-row">
+                                                <ng-container *ngIf="editingGrupoId === grupo.id; else showGrupoName">
+                                                    <input type="text"
+                                                        class="grupo-name-input"
+                                                        [(ngModel)]="editingGrupoName"
+                                                        (keydown.enter)="updateGrupoName(grupo)"
+                                                        (keydown.escape)="stopEditingGrupo()"
+                                                        (blur)="updateGrupoName(grupo)"
+                                                        autofocus>
+                                                </ng-container>
+                                                <ng-template #showGrupoName>
+                                                    <strong>{{ grupo.nombre }}</strong>
+                                                    <button type="button"
+                                                        class="btn btn-link btn-sm p-0 grupo-edit-btn"
+                                                        (click)="startEditingGrupo(grupo, $event)"
+                                                        title="Renombrar grupo">
+                                                        <i class="fa fa-pencil"></i>
+                                                    </button>
+                                                </ng-template>
+                                            </div>
+                                            <small class="text-muted">3 mesas operativas: INF1 / INF2 / SUP</small>
                                         </div>
                                         <button class="btn btn-outline-danger btn-sm"
                                             (click)="confirmDeleteGrupo(grupo)"

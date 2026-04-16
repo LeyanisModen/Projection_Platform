@@ -289,6 +289,12 @@
     min-width: 0;
 }
 
+.grupo-title-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
 .grupo-edit-btn {
     color: #adb5bd;
     vertical-align: middle;
