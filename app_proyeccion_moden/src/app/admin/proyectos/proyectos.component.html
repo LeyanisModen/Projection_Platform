@@ -185,10 +185,16 @@
                                 </div>
                             </td>
                             <td class="text-right">
-                                <button class="btn btn-sm btn-outline-secondary mr-2"
-                                    (click)="manageProject(project)">Gestionar</button>
-                                <button class="btn btn-sm btn-outline-danger"
-                                    (click)="confirmDelete(project)">Eliminar</button>
+                                <button class="btn-icon-action btn-manage mr-2"
+                                    (click)="manageProject(project)"
+                                    title="Gestionar proyecto">
+                                    <i class="fa fa-folder-open" aria-hidden="true"></i>
+                                </button>
+                                <button class="btn-icon-action btn-delete"
+                                    (click)="confirmDelete(project)"
+                                    title="Eliminar proyecto">
+                                    <i class="fa fa-trash" aria-hidden="true"></i>
+                                </button>
                             </td>
                         </tr>
                     </tbody>

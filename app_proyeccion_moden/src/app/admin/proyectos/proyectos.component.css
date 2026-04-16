@@ -54,6 +54,35 @@
     font-style: italic;
 }
 
+.btn-icon-action {
+    background: none;
+    border: none;
+    padding: 0.35rem 0.5rem;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.15s, color 0.15s;
+    font-size: 0.95rem;
+    line-height: 1;
+}
+
+.btn-manage {
+    color: #495057;
+}
+
+.btn-manage:hover {
+    background-color: #e9ecef;
+    color: #212529;
+}
+
+.btn-delete {
+    color: #adb5bd;
+}
+
+.btn-delete:hover {
+    background-color: #f8d7da;
+    color: #c82333;
+}
+
 .toggle-icon {
     font-size: 0.6em;
     margin-right: 6px;
