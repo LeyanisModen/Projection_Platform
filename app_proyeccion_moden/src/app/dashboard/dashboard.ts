@@ -1125,6 +1125,25 @@ export class Dashboard implements OnInit, OnDestroy {
     }
   }
 
+  /**
+   * Muestra separador "Grupo N" antes de un item si el plan_group_index
+   * difiere del item anterior. Solo se aplica a mesas inferiores;
+   * en mesas SUPERIORES no tiene sentido agrupar visualmente.
+   */
+  shouldShowGroupDivider(item: MesaQueueItem, index: number, mesa: Mesa): boolean {
+    if (mesa.rol === 'SUPERIORES') return false;
+    const current = item.plan_group_index;
+    if (current == null) return false;
+    if (index === 0) return true;
+    const items = this.getMesaQueueItems(mesa.id);
+    const previous = items[index - 1]?.plan_group_index;
+    return current !== previous;
+  }
+
+  getItemGrupoIndice(item: MesaQueueItem): number | null {
+    return item.plan_group_index ?? null;
+  }
+
   getGrupoRoleLabel(rol: string): string {
     switch (rol) {
       case 'INFERIOR_1':

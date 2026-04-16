@@ -75,8 +75,23 @@
                             <div class="mesa-card" [class.locked]="mesa.locked" [class.blackout]="mesa.blackout">
                                 <div class="mesa-header">
                                     <div class="mesa-title-container">
-                                        <h3>{{ mesa.nombre }}</h3>
                                         <span class="mesa-role-badge">{{ getMesaRoleLabel(mesa) }}</span>
+                                        @if (editingMesaId === mesa.id) {
+                                            <input type="text"
+                                                class="mesa-name-input"
+                                                [(ngModel)]="editingMesaName"
+                                                (keydown.enter)="updateMesaName(mesa)"
+                                                (keydown.escape)="stopEditingMesa()"
+                                                (blur)="updateMesaName(mesa)"
+                                                autofocus>
+                                        } @else {
+                                            <h3>{{ mesa.nombre }}</h3>
+                                            <button class="mesa-name-edit-btn"
+                                                (click)="startEditingMesa(mesa)"
+                                                title="Renombrar mesa">
+                                                <i class="fa fa-pencil" aria-hidden="true"></i>
+                                            </button>
+                                        }
                                     </div>
                                     <div class="mesa-header-actions">
                                         @if (mesa.locked) { <span class="mesa-badge locked">LOCK</span> }
@@ -99,12 +114,13 @@
 
                                 <div class="mesa-queue">
                                     @for (item of getMesaQueueItems(mesa.id); track trackByItem($index, item)) {
+                                    @if (shouldShowGroupDivider(item, $index, mesa)) {
+                                        <div class="queue-group-divider">
+                                            — Grupo {{ getItemGrupoIndice(item) }} —
+                                        </div>
+                                    }
                                     <div class="queue-item" [class]="getItemStatusClass(item.status)">
                                         <div class="queue-item-info">
-                                            <span class="queue-item-fase" [class.inferior]="item.fase === 'INFERIOR'"
-                                                [class.superior]="item.fase === 'SUPERIOR'">
-                                                {{ item.fase === 'INFERIOR' ? 'v' : '^' }}
-                                            </span>
                                             <span class="queue-item-nombre">{{ item.modulo_nombre }}</span>
                                             <span class="queue-item-status">{{ item.status }}</span>
                                         </div>

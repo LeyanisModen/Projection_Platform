@@ -200,6 +200,7 @@ export interface MesaQueueItem {
     imagen?: number;
     imagen_url?: string;
     position: number;
+    plan_group_index?: number | null;
     status: 'EN_COLA' | 'MOSTRANDO' | 'HECHO';
     assigned_by: string | null;
     assigned_at: string;
