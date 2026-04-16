@@ -16,6 +16,7 @@ from rest_framework import permissions, viewsets, status
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from api.serializers import (
     ProyectoSerializer, PlantaSerializer, UserSerializer, ModuloSerializer,
@@ -1467,6 +1468,205 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
             'status': 'ok',
             'grupo': serializer.data,
             'plan': plan_summary,
+        })
+
+
+def _parse_iso_date(value, default):
+    from datetime import date
+    if not value:
+        return default
+    try:
+        parts = str(value).split('-')
+        if len(parts) != 3:
+            return default
+        return date(int(parts[0]), int(parts[1]), int(parts[2]))
+    except (TypeError, ValueError):
+        return default
+
+
+def _count_working_days(start_date, end_date):
+    """Count Mon-Fri days inclusive between start_date and end_date."""
+    from datetime import timedelta
+    if end_date < start_date:
+        return 0
+    total = 0
+    current = start_date
+    while current <= end_date:
+        if current.weekday() < 5:
+            total += 1
+        current += timedelta(days=1)
+    return total
+
+
+def _compute_dificultad(detalle):
+    """Mirror of DetalleModuloFase.dificultad_calculada but tolerant to None."""
+    refuerzos = detalle.cantidad_refuerzos or 0
+    zunchos = detalle.cantidad_zunchos or 0
+    separadores = detalle.cantidad_separadores or 0
+    cortes = detalle.cantidad_cortes or 0
+
+    solderings = refuerzos * 4 + (zunchos + separadores) * 8
+    time_units = solderings * 2 + cortes
+
+    peso = Decimal('0')
+    values = [
+        detalle.peso_malla_final_kg,
+        detalle.peso_refuerzos_kg,
+        detalle.peso_zunchos_kg,
+        detalle.peso_separadores_kg,
+        detalle.peso_punzos_kg,
+    ]
+    for v in values:
+        if v is not None:
+            try:
+                peso += Decimal(v)
+            except (TypeError, InvalidOperation):
+                pass
+    return float(Decimal(time_units) + peso / Decimal('10'))
+
+
+class ProductionStatsView(APIView):
+    """
+    Aggregated production stats for the statistics dashboard.
+
+    Query params:
+    - from: YYYY-MM-DD (default: today, local time)
+    - to:   YYYY-MM-DD (default: same as from)
+    - proyecto: project id to scope the stats (optional)
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from datetime import date, timedelta
+        from django.utils import timezone
+
+        today = timezone.localdate()
+        from_date = _parse_iso_date(request.query_params.get('from'), today)
+        to_date = _parse_iso_date(request.query_params.get('to'), from_date)
+        proyecto_id = request.query_params.get('proyecto')
+
+        # Build a tz-aware range for filtering done_at (local midnights)
+        current_tz = timezone.get_current_timezone()
+        from_dt = timezone.make_aware(
+            timezone.datetime.combine(from_date, timezone.datetime.min.time()),
+            current_tz,
+        )
+        to_dt_exclusive = timezone.make_aware(
+            timezone.datetime.combine(to_date + timedelta(days=1), timezone.datetime.min.time()),
+            current_tz,
+        )
+
+        # Query MesaQueueItems marked HECHO in the range
+        items_qs = (
+            MesaQueueItem.objects
+            .select_related('mesa', 'modulo', 'modulo__proyecto')
+            .filter(status=MesaQueueStatus.HECHO, done_at__isnull=False,
+                    done_at__gte=from_dt, done_at__lt=to_dt_exclusive)
+        )
+        if proyecto_id:
+            items_qs = items_qs.filter(modulo__proyecto_id=proyecto_id)
+        if not _is_admin(request.user):
+            items_qs = items_qs.filter(modulo__proyecto__usuario=request.user)
+
+        # Pre-fetch the DetalleModuloFase for each (modulo, fase) pair
+        items = list(items_qs)
+        detalle_lookup = {}
+        modulo_fase_pairs = {(it.modulo_id, it.fase) for it in items}
+        if modulo_fase_pairs:
+            modulo_ids = {m for m, _ in modulo_fase_pairs}
+            for d in DetalleModuloFase.objects.filter(modulo_id__in=modulo_ids):
+                detalle_lookup[(d.modulo_id, d.fase)] = d
+
+        def empty_totals():
+            return {
+                'fases_completadas': 0,
+                'peso_malla_inicial_kg': 0.0,
+                'peso_malla_final_kg': 0.0,
+                'desperdicio_kg': 0.0,
+                'cantidad_cortes': 0,
+                'cantidad_refuerzos': 0,
+                'cantidad_zunchos': 0,
+                'cantidad_separadores': 0,
+                'cantidad_punzos': 0,
+                'dificultad_total': 0.0,
+            }
+
+        def add_detalle(target, detalle):
+            target['fases_completadas'] += 1
+            if detalle is None:
+                return
+            if detalle.peso_malla_inicial_kg is not None:
+                target['peso_malla_inicial_kg'] += float(detalle.peso_malla_inicial_kg)
+            if detalle.peso_malla_final_kg is not None:
+                target['peso_malla_final_kg'] += float(detalle.peso_malla_final_kg)
+            if detalle.desperdicio_kg is not None:
+                target['desperdicio_kg'] += float(detalle.desperdicio_kg)
+            target['cantidad_cortes'] += detalle.cantidad_cortes or 0
+            target['cantidad_refuerzos'] += detalle.cantidad_refuerzos or 0
+            target['cantidad_zunchos'] += detalle.cantidad_zunchos or 0
+            target['cantidad_separadores'] += detalle.cantidad_separadores or 0
+            target['cantidad_punzos'] += detalle.cantidad_punzos or 0
+            target['dificultad_total'] += _compute_dificultad(detalle)
+
+        totals = empty_totals()
+        por_mesa = {}
+        por_dia = {}
+
+        for item in items:
+            detalle = detalle_lookup.get((item.modulo_id, item.fase))
+            add_detalle(totals, detalle)
+
+            mesa_key = item.mesa_id
+            if mesa_key not in por_mesa:
+                por_mesa[mesa_key] = {
+                    'mesa_id': mesa_key,
+                    'mesa_nombre': item.mesa.nombre,
+                    'rol': item.mesa.rol,
+                    **empty_totals(),
+                }
+            add_detalle(por_mesa[mesa_key], detalle)
+
+            dia_key = timezone.localtime(item.done_at, current_tz).date().isoformat()
+            if dia_key not in por_dia:
+                por_dia[dia_key] = {'fecha': dia_key, **empty_totals()}
+            add_detalle(por_dia[dia_key], detalle)
+
+        # Modules fully completed in the range (not just phases)
+        modulos_qs = Modulo.objects.filter(
+            completado_at__isnull=False,
+            completado_at__gte=from_dt,
+            completado_at__lt=to_dt_exclusive,
+        )
+        if proyecto_id:
+            modulos_qs = modulos_qs.filter(proyecto_id=proyecto_id)
+        if not _is_admin(request.user):
+            modulos_qs = modulos_qs.filter(proyecto__usuario=request.user)
+        modulos_completados = modulos_qs.count()
+
+        # Expected output for the range
+        capacidad_diaria = 6
+        if proyecto_id:
+            proyecto = Proyecto.objects.filter(id=proyecto_id).first()
+            if proyecto and proyecto.capacidad_diaria_modulos:
+                capacidad_diaria = proyecto.capacidad_diaria_modulos
+        working_days = _count_working_days(from_date, to_date)
+
+        return Response({
+            'range': {
+                'from': from_date.isoformat(),
+                'to': to_date.isoformat(),
+                'working_days': working_days,
+            },
+            'totals': {
+                'modulos_completados': modulos_completados,
+                **totals,
+            },
+            'por_mesa': sorted(por_mesa.values(), key=lambda x: (x['rol'], x['mesa_nombre'])),
+            'por_dia': sorted(por_dia.values(), key=lambda x: x['fecha']),
+            'esperado': {
+                'capacidad_diaria_modulos': capacidad_diaria,
+                'modulos_esperados': capacidad_diaria * working_days,
+            },
         })
 
 

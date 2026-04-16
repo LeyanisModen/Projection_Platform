@@ -31,6 +31,7 @@ urlpatterns = [
     path("api/", include(router.urls)),
     path("api-auth/", include("rest_framework.urls", namespace="rest_framework")),
     path("api/token-auth/", views.CustomAuthToken.as_view()),
+    path("api/stats/production/", views.ProductionStatsView.as_view(), name="production-stats"),
     path("admin/", admin.site.urls),
 ]
 

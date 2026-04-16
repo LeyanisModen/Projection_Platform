@@ -7,7 +7,7 @@ import { DragDropModule, CdkDragDrop, moveItemInArray, transferArrayItem } from 
 import {
   ApiService,
   Proyecto, Planta, Modulo, Mesa, ModuloQueueItem, MesaQueueItem, Imagen,
-  GrupoMesas, GrupoPlanSummary
+  GrupoMesas, GrupoPlanSummary, ProductionStatsResponse
 } from '../services/api.service';
 import { Subject, takeUntil, forkJoin, interval } from 'rxjs';
 import { environment } from '../../environments/environment';
@@ -60,6 +60,12 @@ export class Dashboard implements OnInit, OnDestroy {
   selectedProyecto: Proyecto | null = null;
   selectedPlanta: Planta | null = null;
   selectedModulo: Modulo | null = null;
+
+  // Stats State
+  dailyStats: ProductionStatsResponse | null = null;
+  weeklyStats: ProductionStatsResponse | null = null;
+  loadingDailyStats = false;
+  loadingWeeklyStats = false;
 
   // UI State
   expandedModulo: number | null = null; // ID of expanded module
@@ -474,7 +480,90 @@ export class Dashboard implements OnInit, OnDestroy {
     this.selectedPlanta = null;
     this.selectedModulo = null;
     this.navLevel = 'projects';
+    this.loadProductionStats();
     this.cdr.detectChanges();
+  }
+
+  /**
+   * Loads stats for today (Diario) and the current Mon-Fri window (Semanal)
+   * scoped to the selected project.
+   */
+  loadProductionStats(): void {
+    if (!this.selectedProyecto) {
+      this.dailyStats = null;
+      this.weeklyStats = null;
+      return;
+    }
+    const proyecto = this.selectedProyecto.id;
+    const today = this.toLocalIsoDate(new Date());
+    const monday = this.toLocalIsoDate(this.getMondayOfWeek(new Date()));
+
+    this.loadingDailyStats = true;
+    this.api.getProductionStats({ from: today, to: today, proyecto })
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (res) => {
+          this.dailyStats = res;
+          this.loadingDailyStats = false;
+          this.cdr.detectChanges();
+        },
+        error: () => {
+          this.loadingDailyStats = false;
+          this.cdr.detectChanges();
+        }
+      });
+
+    this.loadingWeeklyStats = true;
+    this.api.getProductionStats({ from: monday, to: today, proyecto })
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (res) => {
+          this.weeklyStats = res;
+          this.loadingWeeklyStats = false;
+          this.cdr.detectChanges();
+        },
+        error: () => {
+          this.loadingWeeklyStats = false;
+          this.cdr.detectChanges();
+        }
+      });
+  }
+
+  private toLocalIsoDate(d: Date): string {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+
+  private getMondayOfWeek(d: Date): Date {
+    const result = new Date(d);
+    const day = result.getDay(); // 0 (Sun) to 6 (Sat)
+    const diff = (day === 0 ? -6 : 1 - day);
+    result.setDate(result.getDate() + diff);
+    return result;
+  }
+
+  mesaRolShort(rol: string): string {
+    switch (rol) {
+      case 'INFERIOR_1': return 'INF1';
+      case 'INFERIOR_2': return 'INF2';
+      case 'SUPERIORES': return 'SUP';
+      default: return rol;
+    }
+  }
+
+  dayLabel(iso: string): string {
+    const parts = iso.split('-').map(Number);
+    const d = new Date(parts[0], parts[1] - 1, parts[2]);
+    const names = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+    return `${names[d.getDay()]} ${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  dailyBarPct(value: number): number {
+    if (!this.weeklyStats || !this.weeklyStats.por_dia.length) return 0;
+    const max = Math.max(...this.weeklyStats.por_dia.map(d => d.fases_completadas), 1);
+    return Math.round((value / max) * 100);
   }
 
   loadPlantasForProyecto(proyectoId: number): void {

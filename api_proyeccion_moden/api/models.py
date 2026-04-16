@@ -150,6 +150,9 @@ class Modulo(models.Model):
         default=ModuloEstado.PENDIENTE
     )
     
+    # Timestamp cuando ambas fases quedaron hechas
+    completado_at = models.DateTimeField(null=True, blank=True)
+
     # Cierre por supervisor
     cerrado = models.BooleanField(default=False)
     cerrado_at = models.DateTimeField(null=True, blank=True)
@@ -175,6 +178,7 @@ class Modulo(models.Model):
 
     def actualizar_estado(self):
         """Update estado based on phase completion."""
+        from django.utils import timezone
         if self.cerrado:
             self.estado = ModuloEstado.CERRADO
         elif self.inferior_hecho and self.superior_hecho:
@@ -183,17 +187,34 @@ class Modulo(models.Model):
             self.estado = ModuloEstado.EN_PROGRESO
         else:
             self.estado = ModuloEstado.PENDIENTE
-        self.save(update_fields=['estado', 'inferior_hecho', 'superior_hecho'])
+
+        # Stamp / clear completado_at based on final estado
+        if self.estado in (ModuloEstado.COMPLETADO, ModuloEstado.CERRADO):
+            if self.completado_at is None:
+                self.completado_at = timezone.now()
+        else:
+            self.completado_at = None
+
+        self.save(update_fields=[
+            'estado', 'inferior_hecho', 'superior_hecho', 'completado_at'
+        ])
 
     def save(self, *args, **kwargs):
+        from django.utils import timezone
         # Sync booleans if estado is changed manually (e.g. from Admin)
         if self.estado == ModuloEstado.COMPLETADO or self.estado == ModuloEstado.CERRADO:
             self.inferior_hecho = True
             self.superior_hecho = True
+            if self.completado_at is None:
+                self.completado_at = timezone.now()
         elif self.estado == ModuloEstado.PENDIENTE:
             self.inferior_hecho = False
             self.superior_hecho = False
-            
+            self.completado_at = None
+        # EN_PROGRESO: clear completado_at if it was set
+        elif self.estado == ModuloEstado.EN_PROGRESO and self.completado_at is not None:
+            self.completado_at = None
+
         super().save(*args, **kwargs)
 
     class Meta:
@@ -263,6 +284,32 @@ class DetalleModuloFase(models.Model):
         if not any(value is not None for value in values):
             return None
         return sum(value for value in values if value is not None)
+
+    @property
+    def dificultad_calculada(self):
+        """
+        Heuristic difficulty score:
+          solderings = refuerzos*4 + (zunchos + separadores)*8
+          time  ≈ solderings*2 + cortes      (welding ~2x cutting time)
+          score = time + weight_kg / 10      (1 extra point per 10kg material)
+        """
+        refuerzos = self.cantidad_refuerzos or 0
+        zunchos = self.cantidad_zunchos or 0
+        separadores = self.cantidad_separadores or 0
+        cortes = self.cantidad_cortes or 0
+
+        solderings = refuerzos * 4 + (zunchos + separadores) * 8
+        time_units = solderings * 2 + cortes
+
+        weight_component = Decimal('0')
+        total_weight = self.peso_total_kg
+        if total_weight is not None:
+            try:
+                weight_component = Decimal(total_weight) / Decimal('10')
+            except (TypeError, InvalidOperation):
+                weight_component = Decimal('0')
+
+        return float(Decimal(time_units) + weight_component)
 
     class Meta:
         db_table = 'api_detalle_modulo_fase'

@@ -183,23 +183,125 @@
             <section class="stats-section" id="estadisticas-section">
                 <div class="section-header legacy-header">
                     <h2>Boards de Estadísticas</h2>
+                    <div class="stats-scope-info" *ngIf="selectedProyecto">
+                        Proyecto: <strong>{{ selectedProyecto.nombre }}</strong>
+                    </div>
                 </div>
-                <div class="stats-grid">
-                    <article class="stats-card">
+
+                <div class="stats-board">
+                    <div class="stats-board-header">
                         <h3>Diario</h3>
-                        <p>Resumen diario de peso fabricado, desperdicio y cortes.</p>
-                        <span class="stats-placeholder">Proximamente</span>
-                    </article>
-                    <article class="stats-card">
+                        <small>{{ dailyStats?.range?.from }}</small>
+                    </div>
+
+                    @if (loadingDailyStats) {
+                        <div class="stats-loading">Cargando…</div>
+                    } @else if (!dailyStats || dailyStats.totals.fases_completadas === 0) {
+                        <div class="stats-empty">Aún no hay fases completadas hoy.</div>
+                    } @else {
+                        <div class="stats-kpi-row">
+                            <div class="stats-kpi">
+                                <span class="stats-kpi-label">Módulos completos</span>
+                                <span class="stats-kpi-value">
+                                    {{ dailyStats.totals.modulos_completados }}
+                                    <small class="stats-kpi-expected">/ {{ dailyStats.esperado.capacidad_diaria_modulos }}</small>
+                                </span>
+                            </div>
+                            <div class="stats-kpi">
+                                <span class="stats-kpi-label">Fases producidas</span>
+                                <span class="stats-kpi-value">{{ dailyStats.totals.fases_completadas }}</span>
+                            </div>
+                            <div class="stats-kpi">
+                                <span class="stats-kpi-label">Peso producido</span>
+                                <span class="stats-kpi-value">{{ dailyStats.totals.peso_malla_final_kg | number:'1.0-1' }} <small>kg</small></span>
+                            </div>
+                            <div class="stats-kpi">
+                                <span class="stats-kpi-label">Desperdicio</span>
+                                <span class="stats-kpi-value">{{ dailyStats.totals.desperdicio_kg | number:'1.0-1' }} <small>kg</small></span>
+                            </div>
+                            <div class="stats-kpi">
+                                <span class="stats-kpi-label">Cortes</span>
+                                <span class="stats-kpi-value">{{ dailyStats.totals.cantidad_cortes }}</span>
+                            </div>
+                            <div class="stats-kpi">
+                                <span class="stats-kpi-label">Dificultad</span>
+                                <span class="stats-kpi-value">{{ dailyStats.totals.dificultad_total | number:'1.0-0' }}</span>
+                            </div>
+                        </div>
+
+                        <table class="stats-table">
+                            <thead>
+                                <tr>
+                                    <th>Mesa</th>
+                                    <th class="num">Fases</th>
+                                    <th class="num">Peso (kg)</th>
+                                    <th class="num">Desperdicio (kg)</th>
+                                    <th class="num">Cortes</th>
+                                    <th class="num">Dificultad</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @for (mesa of dailyStats.por_mesa; track mesa.mesa_id) {
+                                    <tr>
+                                        <td><span class="stats-mesa-badge">{{ mesaRolShort(mesa.rol) }}</span> {{ mesa.mesa_nombre }}</td>
+                                        <td class="num">{{ mesa.fases_completadas }}</td>
+                                        <td class="num">{{ mesa.peso_malla_final_kg | number:'1.0-1' }}</td>
+                                        <td class="num">{{ mesa.desperdicio_kg | number:'1.0-1' }}</td>
+                                        <td class="num">{{ mesa.cantidad_cortes }}</td>
+                                        <td class="num">{{ mesa.dificultad_total | number:'1.0-0' }}</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                </div>
+
+                <div class="stats-board">
+                    <div class="stats-board-header">
                         <h3>Semanal</h3>
-                        <p>Vista semanal por grupo de mesas y por proyecto activo.</p>
-                        <span class="stats-placeholder">Proximamente</span>
-                    </article>
-                    <article class="stats-card">
-                        <h3>Mensual</h3>
-                        <p>Acumulados y comparativa de produccion por ferralla.</p>
-                        <span class="stats-placeholder">Proximamente</span>
-                    </article>
+                        <small *ngIf="weeklyStats">{{ weeklyStats.range.from }} — {{ weeklyStats.range.to }}</small>
+                    </div>
+
+                    @if (loadingWeeklyStats) {
+                        <div class="stats-loading">Cargando…</div>
+                    } @else if (!weeklyStats || weeklyStats.totals.fases_completadas === 0) {
+                        <div class="stats-empty">Aún no hay producción registrada esta semana.</div>
+                    } @else {
+                        <div class="stats-kpi-row">
+                            <div class="stats-kpi">
+                                <span class="stats-kpi-label">Módulos esta semana</span>
+                                <span class="stats-kpi-value">
+                                    {{ weeklyStats.totals.modulos_completados }}
+                                    <small class="stats-kpi-expected">/ {{ weeklyStats.esperado.modulos_esperados }}</small>
+                                </span>
+                            </div>
+                            <div class="stats-kpi">
+                                <span class="stats-kpi-label">Peso total</span>
+                                <span class="stats-kpi-value">{{ weeklyStats.totals.peso_malla_final_kg | number:'1.0-1' }} <small>kg</small></span>
+                            </div>
+                            <div class="stats-kpi">
+                                <span class="stats-kpi-label">Desperdicio</span>
+                                <span class="stats-kpi-value">{{ weeklyStats.totals.desperdicio_kg | number:'1.0-1' }} <small>kg</small></span>
+                            </div>
+                            <div class="stats-kpi">
+                                <span class="stats-kpi-label">Dificultad</span>
+                                <span class="stats-kpi-value">{{ weeklyStats.totals.dificultad_total | number:'1.0-0' }}</span>
+                            </div>
+                        </div>
+
+                        <div class="stats-daily-bars">
+                            @for (day of weeklyStats.por_dia; track day.fecha) {
+                                <div class="stats-daily-bar">
+                                    <span class="stats-daily-label">{{ dayLabel(day.fecha) }}</span>
+                                    <div class="stats-daily-track">
+                                        <div class="stats-daily-fill"
+                                            [style.width.%]="dailyBarPct(day.fases_completadas)"></div>
+                                    </div>
+                                    <span class="stats-daily-value">{{ day.fases_completadas }} fases</span>
+                                </div>
+                            }
+                        </div>
+                    }
                 </div>
             </section>
 

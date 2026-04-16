@@ -892,6 +892,169 @@
   font-weight: 700;
 }
 
+.stats-scope-info {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-left: 12px;
+}
+
+.stats-board {
+  background: white;
+  border: 1px solid rgba(26, 26, 46, 0.08);
+  border-radius: 16px;
+  box-shadow: var(--shadow-soft);
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.stats-board-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.stats-board-header h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.stats-board-header small {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.stats-loading,
+.stats-empty {
+  padding: 16px 0;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  font-style: italic;
+}
+
+.stats-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.stats-kpi {
+  background: #f8f9fa;
+  border-radius: 10px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stats-kpi-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #6c757d;
+  font-weight: 600;
+}
+
+.stats-kpi-value {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #212529;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.stats-kpi-value small {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: #6c757d;
+}
+
+.stats-kpi-expected {
+  color: #adb5bd !important;
+}
+
+.stats-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.stats-table thead th {
+  text-align: left;
+  padding: 6px 10px;
+  border-bottom: 1px solid #dee2e6;
+  color: #6c757d;
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.stats-table thead th.num,
+.stats-table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-table tbody td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #f1f3f5;
+}
+
+.stats-mesa-badge {
+  display: inline-block;
+  min-width: 40px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(240, 100, 15, 0.12);
+  color: var(--moden-primary, #f0640f);
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-align: center;
+  margin-right: 6px;
+}
+
+.stats-daily-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stats-daily-bar {
+  display: grid;
+  grid-template-columns: 60px 1fr 80px;
+  align-items: center;
+  gap: 12px;
+}
+
+.stats-daily-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #495057;
+}
+
+.stats-daily-track {
+  height: 10px;
+  background: #e9ecef;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.stats-daily-fill {
+  height: 100%;
+  background: var(--moden-primary, #f0640f);
+  transition: width 0.3s ease;
+}
+
+.stats-daily-value {
+  font-size: 0.8rem;
+  color: #6c757d;
+  text-align: right;
+}
+
 /* =============================================================================
    TARGET ZONE: MESAS GRID
    ============================================================================= */

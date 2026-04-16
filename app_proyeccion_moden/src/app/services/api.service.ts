@@ -249,6 +249,37 @@ export interface PlanificarGrupoResponse {
     plan: GrupoPlanSummary;
 }
 
+export interface ProductionStatsBucket {
+    fases_completadas: number;
+    peso_malla_inicial_kg: number;
+    peso_malla_final_kg: number;
+    desperdicio_kg: number;
+    cantidad_cortes: number;
+    cantidad_refuerzos: number;
+    cantidad_zunchos: number;
+    cantidad_separadores: number;
+    cantidad_punzos: number;
+    dificultad_total: number;
+}
+
+export interface ProductionStatsMesa extends ProductionStatsBucket {
+    mesa_id: number;
+    mesa_nombre: string;
+    rol: 'LEGACY' | 'INFERIOR_1' | 'INFERIOR_2' | 'SUPERIORES';
+}
+
+export interface ProductionStatsDay extends ProductionStatsBucket {
+    fecha: string;
+}
+
+export interface ProductionStatsResponse {
+    range: { from: string; to: string; working_days: number };
+    totals: ProductionStatsBucket & { modulos_completados: number };
+    por_mesa: ProductionStatsMesa[];
+    por_dia: ProductionStatsDay[];
+    esperado: { capacidad_diaria_modulos: number; modulos_esperados: number };
+}
+
 
 import { environment } from '../../environments/environment';
 
@@ -446,6 +477,16 @@ export class ApiService {
 
     cerrarModulo(id: number): Observable<Modulo> {
         return this.http.post<Modulo>(`${this.baseUrl}/modulos/${id}/cerrar/`, {}, { headers: this.getHeaders() });
+    }
+
+    getProductionStats(params: { from?: string; to?: string; proyecto?: number } = {}): Observable<ProductionStatsResponse> {
+        const query = new URLSearchParams();
+        if (params.from) query.set('from', params.from);
+        if (params.to) query.set('to', params.to);
+        if (params.proyecto != null) query.set('proyecto', String(params.proyecto));
+        const qs = query.toString();
+        const url = `${this.baseUrl}/stats/production/${qs ? '?' + qs : ''}`;
+        return this.http.get<ProductionStatsResponse>(url, { headers: this.getHeaders() });
     }
 
     reiniciarModulo(id: number): Observable<Modulo> {
