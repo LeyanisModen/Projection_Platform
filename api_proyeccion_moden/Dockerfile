@@ -1,8 +1,8 @@
 FROM python:3.11-slim
 
 # Evitar que Python genere archivos .pyc y que el buffer se llene
-ENV PYTHONDONTWRITEBYTECODE 1
-ENV PYTHONUNBUFFERED 1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
@@ -23,5 +23,13 @@ COPY . .
 # Exponer el puerto de Django
 EXPOSE 8000
 
-# Comando para iniciar el servidor
-CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+# Aplicar migraciones + collectstatic + arrancar gunicorn
+CMD python manage.py migrate --noinput && \
+    python manage.py collectstatic --noinput && \
+    gunicorn proyeccion_moden.wsgi \
+        --bind 0.0.0.0:${PORT:-8000} \
+        --workers=3 \
+        --threads=4 \
+        --timeout=120 \
+        --keep-alive=5 \
+        --log-file=-
