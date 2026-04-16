@@ -35,6 +35,25 @@ export interface Proyecto {
     nombre: string;
     usuario: string;
     bastidor_longitud_cm: number;
+    datos_tecnicos_importados: boolean;
+}
+
+export interface GrupoBastidorModulo {
+    id: number;
+    nombre: string;
+    ancho_cm: string | null;
+    estado: 'PENDIENTE' | 'EN_PROGRESO' | 'COMPLETADO' | 'CERRADO';
+    inferior_hecho: boolean;
+    superior_hecho: boolean;
+    cerrado: boolean;
+}
+
+export interface GrupoBastidor {
+    id: number;
+    proyecto: number;
+    indice: number;
+    created_at: string;
+    modulos: GrupoBastidorModulo[];
 }
 
 export interface Planta {
@@ -54,6 +73,7 @@ export interface Modulo {
     ancho_cm: string | null;
     planta: number | null;
     proyecto: string;
+    grupo_bastidor: number | null;
     inferior_hecho: boolean;
     superior_hecho: boolean;
     estado: 'PENDIENTE' | 'EN_PROGRESO' | 'COMPLETADO' | 'CERRADO';
@@ -411,6 +431,17 @@ export class ApiService {
 
     cerrarModulo(id: number): Observable<Modulo> {
         return this.http.post<Modulo>(`${this.baseUrl}/modulos/${id}/cerrar/`, {}, { headers: this.getHeaders() });
+    }
+
+    reiniciarModulo(id: number): Observable<Modulo> {
+        return this.http.post<Modulo>(`${this.baseUrl}/modulos/${id}/reiniciar/`, {}, { headers: this.getHeaders() });
+    }
+
+    getGruposBastidor(proyectoId: number): Observable<GrupoBastidor[]> {
+        return this.http.get<GrupoBastidor[]>(
+            `${this.baseUrl}/grupos-bastidor/?proyecto=${proyectoId}`,
+            { headers: this.getHeaders() }
+        );
     }
 
     updateModulo(id: number, data: any): Observable<Modulo> {

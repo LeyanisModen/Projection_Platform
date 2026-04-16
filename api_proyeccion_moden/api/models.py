@@ -45,12 +45,40 @@ class Proyecto(models.Model):
         default=114,
         help_text='Longitud util del bastidor para calcular capacidad por espesor.'
     )
+    datos_tecnicos_importados = models.BooleanField(
+        default=False,
+        help_text='Indica si ya se importo el fichero de datos tecnicos y se calcularon los grupos.'
+    )
 
     def __str__(self):
         return self.nombre
 
     class Meta:
         db_table = 'api_proyecto'
+
+
+class GrupoBastidor(models.Model):
+    """
+    Agrupacion fisica de modulos que comparten un bastidor de acopio.
+    Una vez calculados son inmutables: un modulo reiniciado permanece en su grupo.
+    """
+    id = models.AutoField(primary_key=True)
+    proyecto = models.ForeignKey(Proyecto, on_delete=models.CASCADE, related_name='grupos_bastidor')
+    indice = models.PositiveIntegerField(help_text='Numero de grupo dentro del proyecto (1, 2, 3...).')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.proyecto.nombre} - Grupo {self.indice}"
+
+    class Meta:
+        db_table = 'api_grupo_bastidor'
+        ordering = ['proyecto', 'indice']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['proyecto', 'indice'],
+                name='unique_grupo_indice_per_proyecto'
+            ),
+        ]
 
 
 
@@ -100,6 +128,14 @@ class Modulo(models.Model):
         blank=True
     )
     proyecto = models.ForeignKey(Proyecto, on_delete=models.CASCADE, related_name='modulos')
+    grupo_bastidor = models.ForeignKey(
+        'GrupoBastidor',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='modulos',
+        help_text='Grupo de bastidor al que pertenece el modulo. Se asigna al calcular los grupos.'
+    )
     
     # Estado por fase
     inferior_hecho = models.BooleanField(default=False)

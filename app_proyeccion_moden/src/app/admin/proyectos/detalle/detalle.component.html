@@ -73,10 +73,13 @@
                 <div class="project-config-header">
                     <div>
                         <label class="d-block mb-1">Datos técnicos del proyecto</label>
-                        <small class="text-muted">Importa un JSON, CSV o SQLite (.db) con ancho de módulo, espesores, pesos y dificultad.</small>
+                        <small class="text-muted" *ngIf="!proyecto.datos_tecnicos_importados">Importa un JSON, CSV o SQLite (.db) con ancho de módulo, espesores, pesos y dificultad. Al importar se calcularán los grupos de bastidor.</small>
+                        <small class="text-success d-block" *ngIf="proyecto.datos_tecnicos_importados">
+                            <i class="fa fa-check-circle"></i> Datos técnicos ya importados. Para cambiarlos, elimina el proyecto y créalo de nuevo.
+                        </small>
                     </div>
                 </div>
-                <div class="project-config-controls">
+                <div class="project-config-controls" *ngIf="!proyecto.datos_tecnicos_importados">
                     <input #technicalDataInput type="file" accept=".json,.csv,.db" hidden (change)="onTechnicalDataSelected($event)">
                     <button
                         type="button"
@@ -153,175 +156,64 @@
 
         <div class="col-md-8">
 
-            <div class="card h-100" *ngIf="selectedPlanta; else noProjectModules">
+            <div class="card h-100" *ngIf="modulos.length > 0; else noProjectModules">
 
                 <div class="card-header d-flex justify-content-between align-items-center">
-
                     <h3>Módulos del Proyecto</h3>
-
                     <div class="legend d-flex align-items-center">
-
                         <small class="mr-2 font-weight-bold text-uppercase" style="font-size: 0.7rem;">Estados:</small>
-
                         <span class="badge badge-pendiente mr-2">Pendiente</span>
-
                         <span class="badge badge-completado">Completado</span>
-
                     </div>
-
                 </div>
-
-
 
                 <div class="card-body">
 
-
-
-                    <div class="modules-grid-compact">
-
-                        <div *ngFor="let modulo of modulos" class="module-compact"
-
-                            [class.status-pendiente]="modulo.estado === 'PENDIENTE'"
-
-                            [class.status-progreso]="modulo.estado === 'EN_PROGRESO'"
-
-                            [class.status-completado]="modulo.estado === 'COMPLETADO'"
-
-                            [class.status-cerrado]="modulo.estado === 'CERRADO'">
-
-
-
-                            <div class="module-header-row">
-
-                                <span class="module-name">{{ modulo.nombre }}</span>
-
-                                <button type="button" class="module-foto-btn"
-
-                                    (click)="openFotosModal(modulo, $event)"
-
-                                    [disabled]="!modulo.fotos_count"
-
-                                    [title]="modulo.fotos_count ? 'Ver fotos (' + modulo.fotos_count + ')' : 'Sin fotos'">
-
-                                    <i class="fa fa-camera" aria-hidden="true"></i>
-
-                                    <span class="foto-count-badge" *ngIf="modulo.fotos_count > 0">{{ modulo.fotos_count }}</span>
-
-                                </button>
-
-                            </div>
-
-
-
-                            <div class="color-codes" *ngIf="modulo.codigos_color && modulo.codigos_color !== 'xxxx'">
-                                <ng-container *ngFor="let char of modulo.codigos_color.split('')">
-                                    <span *ngIf="char !== 'x'"
-                                        class="color-dot"
-                                        [style.background-color]="getColorHex(char)"
-
-                                        [title]="getColorLabel(char)">
-
-                                    </span>
-                                </ng-container>
-                            </div>
-
-                            <div class="technical-phase-summary" *ngIf="hasDetallesTecnicos(modulo)">
-                                <div class="technical-phase-chip module-width-chip" *ngIf="modulo.ancho_cm">
-                                    <span class="technical-phase-tag width">AN</span>
-                                    <span>{{ formatDetailValue(modulo.ancho_cm, ' cm') }}</span>
-                                </div>
-                                <div class="technical-phase-chip" *ngIf="getDetalleFase(modulo, 'INFERIOR') as inferiorDetalle">
-                                    <span class="technical-phase-tag inf">INF</span>
-                                    <span *ngIf="inferiorDetalle.espesor_cm">e {{ formatDetailValue(inferiorDetalle.espesor_cm, ' cm') }}</span>
-                                    <span *ngIf="inferiorDetalle.capacidad_bastidor !== null">cap {{ inferiorDetalle.capacidad_bastidor }}</span>
-                                    <span *ngIf="inferiorDetalle.dificultad_fabricacion">dif {{ inferiorDetalle.dificultad_fabricacion }}</span>
-                                </div>
-                                <div class="technical-phase-chip" *ngIf="getDetalleFase(modulo, 'SUPERIOR') as superiorDetalle">
-                                    <span class="technical-phase-tag sup">SUP</span>
-                                    <span *ngIf="superiorDetalle.espesor_cm">e {{ formatDetailValue(superiorDetalle.espesor_cm, ' cm') }}</span>
-                                    <span *ngIf="superiorDetalle.capacidad_bastidor !== null">cap {{ superiorDetalle.capacidad_bastidor }}</span>
-                                    <span *ngIf="superiorDetalle.dificultad_fabricacion">dif {{ superiorDetalle.dificultad_fabricacion }}</span>
-                                </div>
-                            </div>
-
-                            <div class="module-substates">
-                                <div class="submodule-row">
-                                    <span class="submodule-tag">SUP</span>
-
-                                    <label class="phase-switch"
-
-                                        [class.on]="modulo.superior_hecho"
-
-                                        [class.disabled]="updatingSubmoduleId === modulo.id || modulo.estado === 'CERRADO'">
-
-                                        <input type="checkbox"
-
-                                            [checked]="modulo.superior_hecho"
-
-                                            [disabled]="updatingSubmoduleId === modulo.id || modulo.estado === 'CERRADO'"
-
-                                            (change)="updateSubmoduleStatus(modulo, 'superior_hecho', $event)">
-
-                                        <span class="phase-slider"></span>
-
-                                    </label>
-
-                                </div>
-
-                                <div class="submodule-row">
-
-                                    <span class="submodule-tag">INF</span>
-
-                                    <label class="phase-switch"
-
-                                        [class.on]="modulo.inferior_hecho"
-
-                                        [class.disabled]="updatingSubmoduleId === modulo.id || modulo.estado === 'CERRADO'">
-
-                                        <input type="checkbox"
-
-                                            [checked]="modulo.inferior_hecho"
-
-                                            [disabled]="updatingSubmoduleId === modulo.id || modulo.estado === 'CERRADO'"
-
-                                            (change)="updateSubmoduleStatus(modulo, 'inferior_hecho', $event)">
-
-                                        <span class="phase-slider"></span>
-
-                                    </label>
-
-                                </div>
-
-                            </div>
-
-                        </div>
-
+                    <!-- Si no hay grupos calculados, pedir datos técnicos -->
+                    <div *ngIf="grupos.length === 0" class="alert alert-warning text-center">
+                        <strong>Los grupos aún no están calculados.</strong>
+                        <p class="mb-0 mt-2">Importa los datos técnicos (fichero .db, .csv o .json) desde el panel izquierdo para agrupar los módulos por bastidor.</p>
                     </div>
 
-                    <div *ngIf="modulos.length === 0" class="text-center p-5 text-muted">
+                    <!-- Vista por grupos -->
+                    <div *ngFor="let grupo of grupos" class="grupo-bastidor-card mb-4 p-3 rounded border">
+                        <div class="grupo-bastidor-header d-flex justify-content-between align-items-center mb-2">
+                            <h4 class="mb-0">Grupo {{ grupo.indice }}</h4>
+                            <span class="badge badge-info">{{ grupo.modulos.length }} módulos</span>
+                        </div>
+                        <div class="modules-grid-compact">
+                            <div *ngFor="let modulo of grupo.modulos" class="module-compact"
+                                [class.status-pendiente]="modulo.estado === 'PENDIENTE'"
+                                [class.status-progreso]="modulo.estado === 'EN_PROGRESO'"
+                                [class.status-completado]="modulo.estado === 'COMPLETADO'"
+                                [class.status-cerrado]="modulo.estado === 'CERRADO'">
 
-                        Este proyecto no tiene módulos.
+                                <div class="module-header-row">
+                                    <span class="module-name">{{ modulo.nombre }}</span>
+                                </div>
 
+                                <div class="module-actions mt-2">
+                                    <button type="button" class="btn btn-sm btn-outline-warning w-100"
+                                        (click)="reiniciarModulo(modulo.id, $event)"
+                                        [disabled]="modulo.estado === 'PENDIENTE'"
+                                        title="Reiniciar módulo (pone INF y SUP como pendientes)">
+                                        <i class="fa fa-undo" aria-hidden="true"></i> Reiniciar
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                 </div>
 
             </div>
 
-
-
             <ng-template #noProjectModules>
-
                 <div
-
                     class="card h-100 d-flex align-items-center justify-content-center p-5 text-muted bg-light border-dashed">
-
                     <h3>Aún no hay módulos</h3>
-
                     <p>Importa la carpeta del proyecto usando el botón "Importar nuevos Módulos" de la izquierda.</p>
-
                 </div>
-
             </ng-template>
 
         </div>

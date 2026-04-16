@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterModule } from '@angular/router';
 import {
     ApiService, Proyecto, Planta, Modulo, User, FotoFabricacion,
-    DetalleModuloFase, TechnicalImportStats
+    DetalleModuloFase, TechnicalImportStats, GrupoBastidor
 } from '../../../services/api.service';
 import { switchMap, forkJoin, of } from 'rxjs';
 import { environment } from '../../../../environments/environment';
@@ -22,6 +22,7 @@ export class ProyectoDetailComponent implements OnInit {
     plantas: Planta[] = [];
     selectedPlanta: Planta | null = null;
     modulos: Modulo[] = [];
+    grupos: GrupoBastidor[] = [];
     users: User[] = [];
 
     loading = false;
@@ -93,7 +94,8 @@ export class ProyectoDetailComponent implements OnInit {
             proyecto: this.api.getProyecto(this.proyectoId),
             plantas: this.api.getPlantas(this.proyectoId),
             users: this.api.getUsers(),
-            modulos: this.api.getModulos(undefined, this.proyectoId)
+            modulos: this.api.getModulos(undefined, this.proyectoId),
+            grupos: this.api.getGruposBastidor(this.proyectoId)
         }).subscribe({
             next: (data) => {
                 if (data && data.proyecto) {
@@ -101,6 +103,7 @@ export class ProyectoDetailComponent implements OnInit {
                     this.plantas = data.plantas?.sort((a: Planta, b: Planta) => a.orden - b.orden) || [];
                     this.users = data.users || [];
                     this.modulos = data.modulos || [];
+                    this.grupos = (data.grupos || []).sort((a, b) => a.indice - b.indice);
 
                     // Auto-create default planta if none exist (for backend compatibility)
                     if (this.plantas.length === 0) {
@@ -133,6 +136,23 @@ export class ProyectoDetailComponent implements OnInit {
             error: (err: any) => {
                 console.error('Error loading project', err);
                 this.loading = false;
+                this.cdr.detectChanges();
+            }
+        });
+    }
+
+    reiniciarModulo(moduloId: number, event?: Event): void {
+        if (event) event.stopPropagation();
+        const confirmed = confirm('Reiniciar este modulo volvera a poner las fases INF y SUP como pendientes. Continuar?');
+        if (!confirmed) return;
+
+        this.api.reiniciarModulo(moduloId).subscribe({
+            next: () => {
+                this.loadData();
+            },
+            error: (err: any) => {
+                console.error('Error reiniciando modulo', err);
+                alert('Error al reiniciar el modulo');
                 this.cdr.detectChanges();
             }
         });

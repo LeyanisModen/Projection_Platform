@@ -21,6 +21,7 @@ router.register(r"modulo-queue-items", views.ModuloQueueItemViewSet)
 router.register(r"mesa-queue-items", views.MesaQueueItemViewSet)
 router.register(r"device", views.DeviceViewSet, basename="device")
 router.register(r"fotos", views.FotoFabricacionViewSet)
+router.register(r"grupos-bastidor", views.GrupoBastidorViewSet)
 
 from rest_framework.authtoken import views as drf_views
 

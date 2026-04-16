@@ -21,12 +21,14 @@ from api.serializers import (
     ProyectoSerializer, PlantaSerializer, UserSerializer, ModuloSerializer,
     ImagenSerializer, MesaSerializer,
     ModuloQueueSerializer, ModuloQueueItemSerializer, MesaQueueItemSerializer,
-    FotoFabricacionSerializer, GrupoMesasSerializer, DetalleModuloFaseSerializer
+    FotoFabricacionSerializer, GrupoMesasSerializer, DetalleModuloFaseSerializer,
+    GrupoBastidorSerializer
 )
 from api.models import (
     Modulo, Proyecto, Planta, Imagen, Mesa,
     ModuloQueue, ModuloQueueItem, MesaQueueItem,
-    FotoFabricacion, GrupoMesas, DetalleModuloFase, MesaQueueStatus
+    FotoFabricacion, GrupoMesas, DetalleModuloFase, MesaQueueStatus,
+    GrupoBastidor
 )
 from rest_framework.authtoken.views import ObtainAuthToken
 from rest_framework.authtoken.models import Token
@@ -52,7 +54,11 @@ TECHNICAL_FIELD_ALIASES = {
     'observaciones': ['observaciones', 'observacion', 'notas', 'comentarios'],
 }
 MODULE_FIELD_ALIASES = {
-    'ancho_cm': ['ancho_cm', 'ancho', 'ancho_modulo_cm', 'ancho_modulo', 'module_width_cm', 'module_width', 'width_cm', 'width'],
+    'ancho_cm': [
+        'ancho_cm', 'ancho', 'ancho_modulo_cm', 'ancho_modulo',
+        'module_width_cm', 'module_width', 'width_cm', 'width',
+        'canto_armado_cm', 'canto_armado', 'canto',
+    ],
 }
 
 MODULE_NAME_ALIASES = ['modulo', 'modulo_nombre', 'nombre_modulo', 'module', 'module_name']
@@ -260,7 +266,12 @@ def _load_technical_records_from_sqlite(uploaded_file):
             if not module_name:
                 continue
 
-            ancho_cm = row_dict.get('ancho_cm')
+            ancho_cm = (
+                row_dict.get('ancho_cm')
+                or row_dict.get('canto_armado_cm')
+                or row_dict.get('canto_armado')
+                or row_dict.get('canto')
+            )
             if ancho_cm in [None, '']:
                 ancho_cm = 17
 
@@ -405,6 +416,75 @@ def _build_bastidor_groups(proyecto, modulos):
         groups.append(current_group)
 
     return groups
+
+
+def _persist_bastidor_groups(proyecto):
+    """
+    Calcula y persiste los GrupoBastidor del proyecto.
+    Solo se debe llamar cuando el proyecto aun no tiene grupos (primera vez tras importar datos tecnicos).
+    """
+    from api.models import GrupoBastidor
+
+    modulos = list(
+        proyecto.modulos.select_related('proyecto').prefetch_related('detalles_fase')
+    )
+    if not modulos:
+        return 0
+
+    grouped = _build_bastidor_groups(proyecto, modulos)
+
+    created_groups = 0
+    for indice, modulos_in_group in enumerate(grouped, start=1):
+        grupo = GrupoBastidor.objects.create(proyecto=proyecto, indice=indice)
+        created_groups += 1
+        modulo_ids = [m.id for m in modulos_in_group]
+        proyecto.modulos.filter(id__in=modulo_ids).update(grupo_bastidor=grupo)
+
+    return created_groups
+
+
+def _assign_modulo_to_group_on_create(modulo):
+    """
+    Al crear un modulo nuevo en un proyecto que ya tiene grupos calculados,
+    lo anade al ultimo grupo si cabe, o crea un grupo nuevo.
+    """
+    from api.models import GrupoBastidor
+
+    proyecto = modulo.proyecto
+    if not proyecto.datos_tecnicos_importados:
+        return
+
+    try:
+        bastidor_longitud = Decimal(proyecto.bastidor_longitud_cm)
+    except (TypeError, InvalidOperation):
+        bastidor_longitud = Decimal('114')
+
+    modulo_width = _get_module_planning_width(modulo, bastidor_longitud)
+
+    ultimo_grupo = (
+        proyecto.grupos_bastidor.order_by('-indice').first()
+    )
+    if ultimo_grupo is None:
+        nuevo = GrupoBastidor.objects.create(proyecto=proyecto, indice=1)
+        modulo.grupo_bastidor = nuevo
+        modulo.save(update_fields=['grupo_bastidor'])
+        return
+
+    modulos_en_grupo = list(ultimo_grupo.modulos.all())
+    suma_actual = sum(
+        (_get_module_planning_width(m, bastidor_longitud) for m in modulos_en_grupo),
+        Decimal('0'),
+    )
+
+    if suma_actual + modulo_width <= bastidor_longitud:
+        modulo.grupo_bastidor = ultimo_grupo
+    else:
+        nuevo = GrupoBastidor.objects.create(
+            proyecto=proyecto,
+            indice=ultimo_grupo.indice + 1,
+        )
+        modulo.grupo_bastidor = nuevo
+    modulo.save(update_fields=['grupo_bastidor'])
 
 
 def _merge_superior_sequences(primary_sequence, secondary_sequence):
@@ -710,6 +790,12 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         """
         proyecto = self.get_object()
 
+        if proyecto.datos_tecnicos_importados:
+            raise ValidationError(
+                'Este proyecto ya tiene datos tecnicos importados y grupos de bastidor calculados. '
+                'Para cambiarlos, elimina el proyecto y vuelve a crearlo.'
+            )
+
         technical_file = request.FILES.get('technical_file')
         raw_records = request.data.get('records')
 
@@ -769,11 +855,41 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         if not normalized_records:
             stats['errors'].append('No se encontraron registros validos para importar')
 
+        grupos_creados = 0
+        if stats['processed'] > 0 and not stats['errors']:
+            grupos_creados = _persist_bastidor_groups(proyecto)
+            if grupos_creados > 0:
+                proyecto.datos_tecnicos_importados = True
+                proyecto.save(update_fields=['datos_tecnicos_importados'])
+
+        stats['grupos_bastidor'] = grupos_creados
+
         return Response({
             'status': 'ok',
             'proyecto_id': proyecto.id,
             'stats': stats,
         })
+
+
+class GrupoBastidorViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    API endpoint para consultar los grupos de bastidor de un proyecto.
+    Filtrar con ?proyecto=ID
+    Los grupos se crean automaticamente al importar datos tecnicos y son inmutables.
+    """
+    queryset = GrupoBastidor.objects.prefetch_related('modulos').all().order_by('proyecto', 'indice')
+    serializer_class = GrupoBastidorSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = None
+
+    def get_queryset(self):
+        queryset = GrupoBastidor.objects.prefetch_related('modulos').all().order_by('proyecto', 'indice')
+        if not _is_admin(self.request.user):
+            queryset = queryset.filter(proyecto__usuario=self.request.user)
+        proyecto_id = self.request.query_params.get('proyecto', None)
+        if proyecto_id is not None:
+            queryset = queryset.filter(proyecto_id=proyecto_id)
+        return queryset
 
 
 class PlantaViewSet(viewsets.ModelViewSet):
@@ -842,6 +958,24 @@ class ModuloViewSet(viewsets.ModelViewSet):
         modulo.actualizar_estado()
         serializer = self.get_serializer(modulo)
         return Response(serializer.data)
+
+    @action(detail=True, methods=['post'])
+    def reiniciar(self, request, pk=None):
+        """Reset module to PENDIENTE, keeping its grupo_bastidor."""
+        modulo = self.get_object()
+        modulo.inferior_hecho = False
+        modulo.superior_hecho = False
+        modulo.cerrado = False
+        modulo.cerrado_at = None
+        modulo.cerrado_by = None
+        modulo.estado = 'PENDIENTE'
+        modulo.save()
+        serializer = self.get_serializer(modulo)
+        return Response(serializer.data)
+
+    def perform_create(self, serializer):
+        modulo = serializer.save()
+        _assign_modulo_to_group_on_create(modulo)
 
 
 class ImagenViewSet(viewsets.ModelViewSet):

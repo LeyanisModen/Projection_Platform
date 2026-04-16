@@ -4,7 +4,7 @@ from rest_framework import serializers
 from api.models import (
     Proyecto, Planta, Modulo, Imagen, Mesa,
     ModuloQueue, ModuloQueueItem, MesaQueueItem, UserProfile, MesaQueueStatus,
-    FotoFabricacion, GrupoMesas, DetalleModuloFase
+    FotoFabricacion, GrupoMesas, DetalleModuloFase, GrupoBastidor
 )
 
 
@@ -85,9 +85,13 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
     
     class Meta:
         model = Proyecto
-        fields = ["id", "url", "nombre", "usuario", "usuario_nombre", "num_plantas", "bastidor_longitud_cm"]
+        fields = [
+            "id", "url", "nombre", "usuario", "usuario_nombre", "num_plantas",
+            "bastidor_longitud_cm", "datos_tecnicos_importados"
+        ]
         extra_kwargs = {
-            'usuario': {'required': False, 'allow_null': True}
+            'usuario': {'required': False, 'allow_null': True},
+            'datos_tecnicos_importados': {'read_only': True},
         }
 
 
@@ -137,12 +141,12 @@ class ModuloSerializer(serializers.ModelSerializer):
     class Meta:
         model = Modulo
         fields = [
-            "id", "nombre", "ancho_cm", "planta", "proyecto",
+            "id", "nombre", "ancho_cm", "planta", "proyecto", "grupo_bastidor",
             "inferior_hecho", "superior_hecho", "estado",
             "cerrado", "cerrado_at", "cerrado_by",
             "codigos_color", "fotos_count", "detalles_fase"
         ]
-        read_only_fields = ["cerrado_at"]
+        read_only_fields = ["cerrado_at", "grupo_bastidor"]
 
     def get_fotos_count(self, obj):
         if hasattr(obj, '_fotos_count'):
@@ -154,6 +158,30 @@ class ModuloSerializer(serializers.ModelSerializer):
         if detalles is None:
             detalles = obj.detalles_fase.all()
         return DetalleModuloFaseSerializer(detalles, many=True).data
+
+
+class GrupoBastidorSerializer(serializers.ModelSerializer):
+    modulos = serializers.SerializerMethodField()
+
+    class Meta:
+        model = GrupoBastidor
+        fields = ["id", "proyecto", "indice", "created_at", "modulos"]
+        read_only_fields = ["created_at"]
+
+    def get_modulos(self, obj):
+        modulos = obj.modulos.all().order_by('nombre')
+        return [
+            {
+                "id": m.id,
+                "nombre": m.nombre,
+                "ancho_cm": m.ancho_cm,
+                "estado": m.estado,
+                "inferior_hecho": m.inferior_hecho,
+                "superior_hecho": m.superior_hecho,
+                "cerrado": m.cerrado,
+            }
+            for m in modulos
+        ]
 
 
 class DetalleModuloFaseSerializer(serializers.ModelSerializer):
