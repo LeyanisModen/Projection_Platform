@@ -116,7 +116,7 @@
                                 </div>
 
                                 @if (mesa.rol === 'SUPERIORES') {
-                                    <div class="mesa-queue-sup-wrap">
+                                    <div class="mesa-queue mesa-queue-sup">
                                         @if (getSupMostrandoItem(mesa.id); as mostrando) {
                                             <div class="queue-item sup-mostrando-banner" [class]="getItemStatusClass(mostrando.status)">
                                                 <div class="queue-item-info">
@@ -125,29 +125,27 @@
                                                 </div>
                                             </div>
                                         }
-                                        <div class="mesa-queue mesa-queue-sup">
-                                            <div class="sup-column">
-                                                <div class="queue-group-divider">— INF1 —</div>
-                                                @for (item of getSupQueueColumn(mesa.id, 0); track trackByItem($index, item)) {
-                                                    <div class="queue-item" [class]="getItemStatusClass(item.status)">
-                                                        <div class="queue-item-info">
-                                                            <span class="queue-item-nombre">{{ item.modulo_nombre }}</span>
-                                                            <span class="queue-item-status">{{ item.status }}</span>
-                                                        </div>
+                                        <div class="queue-group-divider sup-divider-inf1">— INF1 —</div>
+                                        <div class="queue-group-divider sup-divider-inf2">— INF2 —</div>
+                                        <div class="sup-column sup-column-inf1">
+                                            @for (item of getSupQueueColumn(mesa.id, 0); track trackByItem($index, item)) {
+                                                <div class="queue-item" [class]="getItemStatusClass(item.status)">
+                                                    <div class="queue-item-info">
+                                                        <span class="queue-item-nombre">{{ item.modulo_nombre }}</span>
+                                                        <span class="queue-item-status">{{ item.status }}</span>
                                                     </div>
-                                                }
-                                            </div>
-                                            <div class="sup-column">
-                                                <div class="queue-group-divider">— INF2 —</div>
-                                                @for (item of getSupQueueColumn(mesa.id, 1); track trackByItem($index, item)) {
-                                                    <div class="queue-item" [class]="getItemStatusClass(item.status)">
-                                                        <div class="queue-item-info">
-                                                            <span class="queue-item-nombre">{{ item.modulo_nombre }}</span>
-                                                            <span class="queue-item-status">{{ item.status }}</span>
-                                                        </div>
+                                                </div>
+                                            }
+                                        </div>
+                                        <div class="sup-column sup-column-inf2">
+                                            @for (item of getSupQueueColumn(mesa.id, 1); track trackByItem($index, item)) {
+                                                <div class="queue-item" [class]="getItemStatusClass(item.status)">
+                                                    <div class="queue-item-info">
+                                                        <span class="queue-item-nombre">{{ item.modulo_nombre }}</span>
+                                                        <span class="queue-item-status">{{ item.status }}</span>
                                                     </div>
-                                                }
-                                            </div>
+                                                </div>
+                                            }
                                         </div>
                                     </div>
                                 } @else {
