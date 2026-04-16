@@ -33,7 +33,7 @@ export class ProyectosComponent implements OnInit {
   loading = false;
   error = '';
   showForm = false;
-  newProject: any = { nombre: '', usuario: null, numPlantas: 0 };
+  newProject: any = { nombre: '', usuario: null };
 
   // Folder import state
   selectedFolder: FileSystemDirectoryHandle | null = null;
@@ -148,10 +148,6 @@ export class ProyectosComponent implements OnInit {
       usuario: this.newProject.usuario || null
     };
 
-    if (this.newProject.numPlantas > 0) {
-      projectData.num_plantas = this.newProject.numPlantas;
-    }
-
     this.api.createProyecto(projectData).subscribe({
       next: async (project) => {
         this.projects.push(project);
@@ -164,7 +160,7 @@ export class ProyectosComponent implements OnInit {
           await this.importFolderStructure(project.id);
         } else {
           // No folder - just close the form
-          this.newProject = { nombre: '', usuario: null, numPlantas: 0 };
+          this.newProject = { nombre: '', usuario: null };
           this.showForm = false;
           this.loading = false;
           this.selectedFolder = null;
@@ -184,121 +180,96 @@ export class ProyectosComponent implements OnInit {
     if (!this.selectedFolder) return;
 
     this.importing = true;
-    this.importProgress = 'Leyendo estructura de carpetas...';
+    this.importProgress = 'Leyendo estructura del proyecto...';
 
     try {
       const formData = new FormData();
-      const plantas: any[] = [];
       const validExtensions = ['.png', '.jpg', '.jpeg'];
 
-      let plantaOrden = 1;
+      // Single virtual "General" planta for backend compatibility
+      const plantaUnicaData: any = {
+        nombre: 'General',
+        orden: 1,
+        modulos: []
+      };
 
-      console.log('[IMPORT] Starting folder scan:', this.selectedFolder.name);
+      console.log('[IMPORT] Starting flat folder scan:', this.selectedFolder.name);
 
-      // Iterate through plantas (first level folders)
-      for await (const [plantaName, plantaHandle] of (this.selectedFolder as any).entries()) {
-        console.log('[IMPORT] Found entry:', plantaName, plantaHandle.kind);
-        if (plantaHandle.kind !== 'directory') continue;
+      // Iterate through modules (first level folders) OR files
+      for await (const [childName, childHandle] of (this.selectedFolder as any).entries()) {
+        console.log('[IMPORT] Found root entry:', childName, childHandle.kind);
 
-        this.importProgress = `Procesando planta: ${plantaName}...`;
-        this.cdr.detectChanges();
+        // CASE 1: Module (directory like MOD-01)
+        if (childHandle.kind === 'directory') {
+          const moduloName = childName;
 
-        const plantaData: any = {
-          nombre: plantaName,
-          orden: plantaOrden++,
-          modulos: []
-        };
+          this.importProgress = `Procesando modulo: ${moduloName}...`;
+          this.cdr.detectChanges();
 
-        // Iterate through children of Planta folder (Modules OR Files)
-        for await (const [childName, childHandle] of plantaHandle.entries()) {
-          console.log('[IMPORT] Found entry in planta:', plantaName + '/' + childName, childHandle.kind);
+          const moduloData: any = {
+            nombre: moduloName,
+            imagenes: []
+          };
 
-          // CASE 1: It's a Modulo (Directory)
-          if (childHandle.kind === 'directory') {
-            const moduloName = childName;
-            const moduloHandle = childHandle;
+          // Check for INF and SUP inside Module
+          for await (const [faseName, faseHandle] of childHandle.entries()) {
+            if (faseHandle.kind !== 'directory') continue;
 
-            this.importProgress = `Procesando módulo: ${plantaName}/${moduloName}...`;
-            this.cdr.detectChanges();
+            const faseNormalizada = faseName.toUpperCase();
+            if (faseNormalizada !== 'INF' && faseNormalizada !== 'SUP') continue;
 
-            const moduloData: any = {
-              nombre: moduloName,
-              imagenes: []
-            };
+            const fase = faseNormalizada === 'INF' ? 'INFERIOR' : 'SUPERIOR';
+            let orden = 1;
 
-            // Check for INF and SUP subfolders
-            for await (const [faseName, faseHandle] of moduloHandle.entries()) {
-              // console.log('[IMPORT] Found fase entry:', moduloName + '/' + faseName, faseHandle.kind);
-              if (faseHandle.kind !== 'directory') continue;
+            // Read images inside INF/SUP
+            for await (const [fileName, fileHandle] of faseHandle.entries()) {
+              if (fileHandle.kind !== 'file') continue;
 
-              const faseNormalizada = faseName.toUpperCase();
-              if (faseNormalizada !== 'INF' && faseNormalizada !== 'SUP') continue;
+              const ext = fileName.toLowerCase().substring(fileName.lastIndexOf('.'));
+              if (!validExtensions.includes(ext)) continue;
 
-              const fase = faseNormalizada === 'INF' ? 'INFERIOR' : 'SUPERIOR';
-              let orden = 1;
+              this.importProgress = `Cargando imagen: ${fileName}...`;
+              this.cdr.detectChanges();
 
-              // Read images in fase folder
-              for await (const [fileName, fileHandle] of faseHandle.entries()) {
-                // console.log('[IMPORT] Found file:', fileName, fileHandle.kind);
-                if (fileHandle.kind !== 'file') continue;
+              const file = await fileHandle.getFile();
+              const uniqueFilename = `PROY_${moduloName}_${faseName}_${fileName}`;
+              formData.append(uniqueFilename, file, uniqueFilename);
 
-                const ext = fileName.toLowerCase().substring(fileName.lastIndexOf('.'));
-
-                // Be more flexible with extensions
-                if (!validExtensions.includes(ext) && ext !== '.png' && ext !== '.jpg' && ext !== '.jpeg') {
-                  continue;
-                }
-
-                this.importProgress = `Cargando imagen: ${fileName}...`;
-                this.cdr.detectChanges();
-
-                // Get the file and add to FormData
-                const file = await fileHandle.getFile();
-                const uniqueFilename = `${plantaName}_${moduloName}_${faseName}_${fileName}`;
-                formData.append(uniqueFilename, file, uniqueFilename);
-
-                moduloData.imagenes.push({
-                  fase: fase,
-                  orden: orden++,
-                  filename: uniqueFilename
-                });
-              }
-            }
-
-            if (moduloData.imagenes.length > 0) {
-              plantaData.modulos.push(moduloData);
+              moduloData.imagenes.push({
+                fase: fase,
+                orden: orden++,
+                filename: uniqueFilename
+              });
             }
           }
-          // CASE 2: It's a Plant File (Plano or Corte)
-          else if (childHandle.kind === 'file') {
-            const fileName = childName;
-            const ext = fileName.toLowerCase().substring(fileName.lastIndexOf('.'));
-            const uniqueFilename = `${plantaName}_FILE_${fileName}`;
 
-            // Check if it's an IMAGE (Plano)
-            if (['.jpg', '.jpeg', '.png'].includes(ext)) {
-              console.log(`[IMPORT] Found PLANO for ${plantaName}: ${fileName}`);
-              const file = await (childHandle as any).getFile();
-              formData.append(uniqueFilename, file, uniqueFilename);
-              plantaData.plano_filename = uniqueFilename;
-            }
-            // Check if it's a DOCUMENT (Corte/Planilla)
-            else if (['.pdf', '.xls', '.xlsx', '.csv'].includes(ext)) {
-              console.log(`[IMPORT] Found CORTE for ${plantaName}: ${fileName}`);
-              const file = await (childHandle as any).getFile();
-              formData.append(uniqueFilename, file, uniqueFilename);
-              plantaData.corte_filename = uniqueFilename;
-            }
+          if (moduloData.imagenes.length > 0) {
+            plantaUnicaData.modulos.push(moduloData);
           }
         }
+        // CASE 2: Project files (plano, bdd, etc)
+        else if (childHandle.kind === 'file') {
+          const fileName = childName;
+          const ext = fileName.toLowerCase().substring(fileName.lastIndexOf('.'));
+          const uniqueFilename = `PROY_FILE_${fileName}`;
 
-        if (plantaData.modulos.length > 0) {
-          plantas.push(plantaData);
+          if (['.jpg', '.jpeg', '.png'].includes(ext)) {
+            console.log(`[IMPORT] Found PLANO for project: ${fileName}`);
+            const file = await (childHandle as any).getFile();
+            formData.append(uniqueFilename, file, uniqueFilename);
+            plantaUnicaData.plano_filename = uniqueFilename;
+          }
+          else if (['.pdf', '.xls', '.xlsx', '.csv'].includes(ext)) {
+            console.log(`[IMPORT] Found DOC for project: ${fileName}`);
+            const file = await (childHandle as any).getFile();
+            formData.append(uniqueFilename, file, uniqueFilename);
+            plantaUnicaData.corte_filename = uniqueFilename;
+          }
         }
       }
 
-      // Add plantas JSON to formData
-      formData.append('plantas', JSON.stringify(plantas));
+      // Add the single planta to formData
+      formData.append('plantas', JSON.stringify([plantaUnicaData]));
 
       this.importProgress = 'Subiendo archivos al servidor...';
 
@@ -311,7 +282,7 @@ export class ProyectosComponent implements OnInit {
           console.log('Import complete:', result);
 
           if (result.stats.errors.length > 0) {
-            this.error = `Importación completada con ${result.stats.errors.length} errores`;
+            this.error = `Importacion completada con ${result.stats.errors.length} errores`;
           } else {
             // Success - close form and reset
             this.showForm = false;
@@ -335,15 +306,6 @@ export class ProyectosComponent implements OnInit {
       this.error = 'Error leyendo carpeta: ' + err.message;
       this.importing = false;
       this.importProgress = '';
-    }
-  }
-
-  createPlantas(proyectoId: number, count: number) {
-    for (let i = 1; i <= count; i++) {
-      this.api.createPlanta({ nombre: `Planta ${i}`, proyecto: proyectoId, orden: i }).subscribe({
-        next: () => console.log(`Planta ${i} creada`),
-        error: (err) => console.error(`Error creando Planta ${i}`, err)
-      });
     }
   }
 

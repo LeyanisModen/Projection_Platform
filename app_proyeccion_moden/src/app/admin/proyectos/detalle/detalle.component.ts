@@ -92,15 +92,36 @@ export class ProyectoDetailComponent implements OnInit {
         forkJoin({
             proyecto: this.api.getProyecto(this.proyectoId),
             plantas: this.api.getPlantas(this.proyectoId),
-            users: this.api.getUsers()
+            users: this.api.getUsers(),
+            modulos: this.api.getModulos(undefined, this.proyectoId)
         }).subscribe({
             next: (data) => {
-                if (data && data.proyecto && data.plantas) {
+                if (data && data.proyecto) {
                     this.proyecto = data.proyecto;
-                    this.plantas = data.plantas.sort((a: Planta, b: Planta) => a.orden - b.orden);
+                    this.plantas = data.plantas?.sort((a: Planta, b: Planta) => a.orden - b.orden) || [];
                     this.users = data.users || [];
+                    this.modulos = data.modulos || [];
+
+                    // Auto-create default planta if none exist (for backend compatibility)
+                    if (this.plantas.length === 0) {
+                        this.api.createPlanta({ nombre: 'General', orden: 1, proyecto: this.proyectoId }).subscribe({
+                            next: (p) => {
+                                this.plantas = [p];
+                                this.selectedPlanta = p;
+                                this.loading = false;
+                                this.cdr.detectChanges();
+                            },
+                            error: () => {
+                                this.loading = false;
+                                this.cdr.detectChanges();
+                            }
+                        });
+                        return;
+                    }
+
+                    // Set selectedPlanta for file management compatibility
                     if (this.plantas.length > 0 && !this.selectedPlanta) {
-                        this.selectPlanta(this.plantas[0]);
+                        this.selectedPlanta = this.plantas[0];
                     }
                     this.loading = false;
                     this.cdr.detectChanges();
@@ -123,7 +144,6 @@ export class ProyectoDetailComponent implements OnInit {
         if (this.showPlantaForm && this.plantas.length > 0) {
             const maxOrder = Math.max(...this.plantas.map(p => p.orden));
             this.newPlanta.orden = maxOrder + 1;
-            this.newPlanta.nombre = `Planta ${this.plantas.length + 1}`;
         }
     }
 
@@ -393,102 +413,102 @@ export class ProyectoDetailComponent implements OnInit {
 
         try {
             // Use File System Access API
-            const plantaHandle = await (window as any).showDirectoryPicker();
-            if (!plantaHandle) return;
+            const projectHandle = await (window as any).showDirectoryPicker();
+            if (!projectHandle) return;
 
             this.importing = true;
-            this.importProgress = `Analizando carpeta: ${plantaHandle.name}...`;
+            this.importProgress = `Analizando carpeta: ${projectHandle.name}...`;
             this.cdr.detectChanges();
 
             const formData = new FormData();
             const validExtensions = ['.png', '.jpg', '.jpeg'];
 
-            // Calculate next order
-            const nextOrder = this.plantas.length > 0
-                ? Math.max(...this.plantas.map(p => p.orden)) + 1
-                : 1;
-
-            const plantaData: any = {
-                nombre: plantaHandle.name,
-                orden: nextOrder,
+            // Use single virtual "General" planta for backend compatibility
+            const plantaUnicaData: any = {
+                nombre: 'General',
+                orden: 1,
                 modulos: []
             };
 
-            // Iterate modules (children of plantaHandle)
-            for await (const [moduloName, moduloHandle] of (plantaHandle as any).entries()) {
-                if (moduloHandle.kind !== 'directory') continue;
+            // Iterate modules (direct children of project folder)
+            for await (const [childName, childHandle] of (projectHandle as any).entries()) {
+                if (childHandle.kind === 'directory') {
+                    const moduloName = childName;
+                    const moduloHandle = childHandle;
 
-                this.importProgress = `Procesando módulo: ${moduloName}...`;
-                this.cdr.detectChanges();
+                    this.importProgress = `Procesando modulo: ${moduloName}...`;
+                    this.cdr.detectChanges();
 
-                // Parse color code from folder name (e.g. "A01_ymgc" → name="A01", code="ymgc")
-                const parts = moduloName.split('_');
-                let colorCode = 'xxxx';
-                let cleanName = moduloName;
-                if (parts.length > 1) {
-                    const lastPart = parts[parts.length - 1].toLowerCase();
-                    if (lastPart.length === 4 && /^[ygcvmox]+$/.test(lastPart)) {
-                        colorCode = lastPart;
-                        cleanName = parts.slice(0, -1).join('_');
+                    // Parse color code from folder name (e.g. "A01_ymgc" -> name="A01", code="ymgc")
+                    const parts = moduloName.split('_');
+                    let colorCode = 'xxxx';
+                    let cleanName = moduloName;
+                    if (parts.length > 1) {
+                        const lastPart = parts[parts.length - 1].toLowerCase();
+                        if (lastPart.length === 4 && /^[ygcvmox]+$/.test(lastPart)) {
+                            colorCode = lastPart;
+                            cleanName = parts.slice(0, -1).join('_');
+                        }
                     }
-                }
 
-                const moduloData: any = {
-                    nombre: cleanName,
-                    codigos_color: colorCode,
-                    imagenes: []
-                };
+                    const moduloData: any = {
+                        nombre: cleanName,
+                        codigos_color: colorCode,
+                        imagenes: []
+                    };
 
-                // Check for INF and SUP subfolders
-                for await (const [faseName, faseHandle] of moduloHandle.entries()) {
-                    if (faseHandle.kind !== 'directory') continue;
+                    // Check for INF and SUP subfolders
+                    for await (const [faseName, faseHandle] of moduloHandle.entries()) {
+                        if (faseHandle.kind !== 'directory') continue;
 
-                    const faseNormalizada = faseName.toUpperCase();
-                    if (faseNormalizada !== 'INF' && faseNormalizada !== 'SUP') continue;
+                        const faseNormalizada = faseName.toUpperCase();
+                        if (faseNormalizada !== 'INF' && faseNormalizada !== 'SUP') continue;
 
-                    const fase = faseNormalizada === 'INF' ? 'INFERIOR' : 'SUPERIOR';
-                    let ordenImg = 1;
+                        const fase = faseNormalizada === 'INF' ? 'INFERIOR' : 'SUPERIOR';
+                        let ordenImg = 1;
 
-                    // Read images in fase folder
-                    for await (const [fileName, fileHandle] of faseHandle.entries()) {
-                        if (fileHandle.kind !== 'file') continue;
+                        // Read images in fase folder
+                        for await (const [fileName, fileHandle] of faseHandle.entries()) {
+                            if (fileHandle.kind !== 'file') continue;
 
-                        const ext = fileName.toLowerCase().substring(fileName.lastIndexOf('.'));
-                        if (!validExtensions.includes(ext) && ext !== '.png' && ext !== '.jpg' && ext !== '.jpeg') continue;
+                            const ext = fileName.toLowerCase().substring(fileName.lastIndexOf('.'));
+                            if (!validExtensions.includes(ext)) continue;
 
-                        const file = await fileHandle.getFile();
-                        // Append file to FormData with filename as key
-                        formData.append(fileName, file);
+                            const file = await fileHandle.getFile();
+                            // Unique filename to avoid collisions
+                            const formFileKey = `MOD_${moduloName}_${faseName}_${fileName}`;
+                            formData.append(formFileKey, file);
 
-                        moduloData.imagenes.push({
-                            filename: fileName,
-                            fase: fase,
-                            orden: ordenImg++
-                        });
+                            moduloData.imagenes.push({
+                                filename: formFileKey,
+                                fase: fase,
+                                orden: ordenImg++
+                            });
+                        }
                     }
+                    plantaUnicaData.modulos.push(moduloData);
                 }
-                plantaData.modulos.push(moduloData);
             }
 
             this.importProgress = 'Subiendo datos...';
             this.cdr.detectChanges();
 
             // Add structure to FormData
-            formData.append('plantas', JSON.stringify([plantaData]));
+            formData.append('plantas', JSON.stringify([plantaUnicaData]));
 
             // Upload
             this.api.importProjectStructure(this.proyectoId, formData).subscribe({
                 next: (res) => {
                     this.importing = false;
                     this.importProgress = '';
-                    alert(`Planta importada correctamente: ${res.stats.modulos} módulos creados.`);
+                    alert(`Modulos importados correctamente: ${res.stats.modulos} creados.`);
                     this.loadData();
                 },
                 error: (err) => {
-                    console.error('Error uploading plant', err);
+                    console.error('Error uploading modules', err);
                     this.importing = false;
                     this.importProgress = '';
-                    alert('Error importando la planta');
+                    alert('Error importando los modulos');
                     this.cdr.detectChanges();
                 }
             });

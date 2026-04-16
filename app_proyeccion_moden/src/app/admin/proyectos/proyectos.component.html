@@ -65,11 +65,10 @@
 
                         <!-- Import Stats -->
                         <div *ngIf="importStats" class="import-stats alert alert-success mb-3">
-                            <strong>✓ Importación completada:</strong>
+                            <strong>Importacion completada:</strong>
                             <ul class="mb-0 mt-1">
-                                <li>{{ importStats.plantas }} plantas creadas</li>
-                                <li>{{ importStats.modulos }} módulos creados</li>
-                                <li>{{ importStats.imagenes }} imágenes importadas</li>
+                                <li>{{ importStats.modulos }} modulos creados</li>
+                                <li>{{ importStats.imagenes }} imagenes importadas</li>
                             </ul>
                             <div *ngIf="importStats.errors.length > 0" class="text-danger mt-2">
                                 <strong>Errores ({{ importStats.errors.length }}):</strong>
