@@ -72,34 +72,6 @@
             <div class="project-config-card mb-3 p-3 bg-white rounded border">
                 <div class="project-config-header">
                     <div>
-                        <label class="d-block mb-1">Bastidor de referencia</label>
-                        <small class="text-muted">La capacidad por módulo se calculará como `bastidor / ancho del módulo`.</small>
-                    </div>
-                </div>
-                <div class="project-config-controls">
-                    <input
-                        type="number"
-                        min="0.01"
-                        step="0.01"
-                        [(ngModel)]="proyecto.bastidor_longitud_cm"
-                        class="project-config-input">
-                    <span class="project-config-unit">cm</span>
-                    <button
-                        type="button"
-                        class="btn btn-secondary btn-sm"
-                        (click)="saveBastidorLongitud()"
-                        [disabled]="savingProjectConfig">
-                        {{ savingProjectConfig ? 'Guardando...' : 'Guardar' }}
-                    </button>
-                </div>
-                <small class="project-config-hint">
-                    Valor actual para bastidores de prueba. Si cambia el sistema físico, aquí ajustaremos la longitud útil del bastidor.
-                </small>
-            </div>
-
-            <div class="project-config-card mb-3 p-3 bg-white rounded border">
-                <div class="project-config-header">
-                    <div>
                         <label class="d-block mb-1">Datos técnicos del proyecto</label>
                         <small class="text-muted">Importa un JSON, CSV o SQLite (.db) con ancho de módulo, espesores, pesos y dificultad.</small>
                     </div>
