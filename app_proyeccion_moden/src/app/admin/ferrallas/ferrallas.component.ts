@@ -15,7 +15,7 @@ export class FerrallasComponent implements OnInit {
   loading = false;
   error = '';
   showForm = false;
-  newUser: any = { username: '', first_name: '', email: '', password: '', telefono: '', direccion: '', coordinador: '' };
+  newUser: any = { username: '', first_name: '', email: '', password: '', telefono: '', direccion: '', coordinador: '', capacidad_diaria_modulos: 12 };
   isEditing = false;
   editingId: number | null = null;
   selectedUser: User | null = null;
@@ -77,7 +77,7 @@ export class FerrallasComponent implements OnInit {
   }
 
   resetForm() {
-    this.newUser = { username: '', first_name: '', email: '', password: '', telefono: '', direccion: '', coordinador: '' };
+    this.newUser = { username: '', first_name: '', email: '', password: '', telefono: '', direccion: '', coordinador: '', capacidad_diaria_modulos: 12 };
     this.isEditing = false;
     this.editingId = null;
   }

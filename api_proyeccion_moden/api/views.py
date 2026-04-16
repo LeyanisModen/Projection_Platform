@@ -1643,12 +1643,14 @@ class ProductionStatsView(APIView):
             modulos_qs = modulos_qs.filter(proyecto__usuario=request.user)
         modulos_completados = modulos_qs.count()
 
-        # Expected output for the range
-        capacidad_diaria = 6
+        # Expected output for the range (capacity lives on the ferralla/user profile)
+        capacidad_diaria = 12
         if proyecto_id:
-            proyecto = Proyecto.objects.filter(id=proyecto_id).first()
-            if proyecto and proyecto.capacidad_diaria_modulos:
-                capacidad_diaria = proyecto.capacidad_diaria_modulos
+            proyecto = Proyecto.objects.select_related('usuario__profile').filter(id=proyecto_id).first()
+            if proyecto and proyecto.usuario and hasattr(proyecto.usuario, 'profile'):
+                profile_cap = proyecto.usuario.profile.capacidad_diaria_modulos
+                if profile_cap:
+                    capacidad_diaria = profile_cap
         working_days = _count_working_days(from_date, to_date)
 
         return Response({
@@ -2335,6 +2337,32 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
         if status_filter is not None:
             queryset = queryset.filter(status=status_filter)
         return queryset
+
+    @action(detail=True, methods=['post'], url_path='mark_done')
+    def mark_done(self, request, pk=None):
+        """
+        Marks a MesaQueueItem as HECHO. Also flips the matching Modulo
+        phase boolean (inferior_hecho / superior_hecho) so the module
+        eventually transitions to COMPLETADO / CERRADO.
+        """
+        from django.utils import timezone
+        item = self.get_object()
+        item.status = MesaQueueStatus.HECHO
+        if item.done_at is None:
+            item.done_at = timezone.now()
+        item.done_by = request.user if request.user.is_authenticated else None
+        item.save(update_fields=['status', 'done_at', 'done_by'])
+
+        modulo = item.modulo
+        if modulo is not None:
+            if item.fase == 'INFERIOR':
+                modulo.inferior_hecho = True
+            elif item.fase == 'SUPERIOR':
+                modulo.superior_hecho = True
+            modulo.actualizar_estado()
+
+        serializer = self.get_serializer(item)
+        return Response(serializer.data)
 
     def perform_create(self, serializer):
         mesa = serializer.validated_data.get('mesa')

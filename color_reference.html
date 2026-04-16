@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>MOD:EN - Referencia de Colores para Detección</title>
+    <style>
+        @media print {
+            body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+            .no-print { display: none; }
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; background: #fff; color: #333; }
+        h1 { text-align: center; margin-bottom: 8px; font-size: 24px; }
+        .subtitle { text-align: center; color: #666; margin-bottom: 30px; font-size: 14px; }
+        .color-row {
+            display: flex; align-items: stretch; margin-bottom: 20px;
+            border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden;
+        }
+        .color-label {
+            width: 160px; min-width: 160px; padding: 16px;
+            display: flex; flex-direction: column; justify-content: center;
+            background: #f8f8f8; border-right: 1px solid #e0e0e0;
+        }
+        .color-label .name { font-size: 18px; font-weight: 700; }
+        .color-label .code {
+            font-size: 13px; color: #888; margin-top: 4px;
+            font-family: 'Consolas', monospace;
+        }
+        .swatches { display: flex; flex: 1; }
+        .swatch {
+            flex: 1; display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            padding: 20px 12px; min-height: 100px;
+            color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+            position: relative;
+        }
+        .swatch.light { color: #333; text-shadow: none; }
+        .swatch-label { font-size: 11px; font-weight: 600; text-transform: uppercase; margin-bottom: 6px; opacity: 0.85; }
+        .swatch-hex { font-size: 16px; font-weight: 700; font-family: 'Consolas', monospace; }
+        .swatch-rgb { font-size: 11px; margin-top: 4px; opacity: 0.85; font-family: 'Consolas', monospace; }
+        .swatch-hsv { font-size: 10px; margin-top: 2px; opacity: 0.7; font-family: 'Consolas', monospace; }
+
+        .legend {
+            margin-top: 30px; padding: 20px; background: #f8f8f8;
+            border: 1px solid #e0e0e0; border-radius: 8px;
+        }
+        .legend h3 { margin-bottom: 10px; font-size: 14px; }
+        .legend-grid { display: flex; flex-wrap: wrap; gap: 8px 24px; }
+        .legend-item { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+        .legend-dot {
+            width: 18px; height: 18px; border-radius: 50%;
+            border: 1px solid rgba(0,0,0,0.15);
+        }
+        .legend-code { font-family: 'Consolas', monospace; font-weight: 700; font-size: 15px; }
+
+        .footer { margin-top: 24px; text-align: center; font-size: 11px; color: #aaa; }
+
+        .example-section {
+            margin-top: 24px; padding: 16px 20px;
+            border: 1px solid #e0e0e0; border-radius: 8px;
+        }
+        .example-section h3 { margin-bottom: 10px; font-size: 14px; }
+        .example-row { display: flex; gap: 24px; flex-wrap: wrap; }
+        .example-item { display: flex; align-items: center; gap: 6px; font-size: 13px; font-family: 'Consolas', monospace; }
+        .example-dots { display: flex; gap: 3px; }
+        .example-dot { width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.15); }
+        .example-dot.skip { background: #ddd !important; }
+    </style>
+</head>
+<body>
+
+<h1>MOD:EN - Referencia de Colores para Detección</h1>
+<p class="subtitle">Rangos HSV utilizados en el detector de tarjetas de color (OpenCV) &mdash; Convertidos a RGB</p>
+
+<!-- ORANGE -->
+<div class="color-row">
+    <div class="color-label">
+        <span class="name">Orange</span>
+        <span class="code">Código: <strong>o</strong></span>
+    </div>
+    <div class="swatches">
+        <div class="swatch" style="background: #b44a34;">
+            <span class="swatch-label">Inferior</span>
+            <span class="swatch-hex">#B44A34</span>
+            <span class="swatch-rgb">RGB(180, 74, 52)</span>
+            <span class="swatch-hsv">HSV(5, 180, 180)</span>
+        </div>
+        <div class="swatch" style="background: #d96a20;">
+            <span class="swatch-label">Medio</span>
+            <span class="swatch-hex">#D96A20</span>
+            <span class="swatch-rgb">RGB(217, 106, 32)</span>
+            <span class="swatch-hsv">HSV(12, 217, 217)</span>
+        </div>
+        <div class="swatch" style="background: #ffaa00;">
+            <span class="swatch-label">Superior</span>
+            <span class="swatch-hex">#FFAA00</span>
+            <span class="swatch-rgb">RGB(255, 170, 0)</span>
+            <span class="swatch-hsv">HSV(20, 255, 255)</span>
+        </div>
+    </div>
+</div>
+
+<!-- YELLOW -->
+<div class="color-row">
+    <div class="color-label">
+        <span class="name">Yellow</span>
+        <span class="code">Código: <strong>y</strong></span>
+    </div>
+    <div class="swatches">
+        <div class="swatch" style="background: #b49234;">
+            <span class="swatch-label">Inferior</span>
+            <span class="swatch-hex">#B49234</span>
+            <span class="swatch-rgb">RGB(180, 146, 52)</span>
+            <span class="swatch-hsv">HSV(22, 180, 180)</span>
+        </div>
+        <div class="swatch" style="background: #d9c022;">
+            <span class="swatch-label">Medio</span>
+            <span class="swatch-hex">#D9C022</span>
+            <span class="swatch-rgb">RGB(217, 192, 34)</span>
+            <span class="swatch-hsv">HSV(26, 215, 217)</span>
+        </div>
+        <div class="swatch light" style="background: #ffff69;">
+            <span class="swatch-label">Superior</span>
+            <span class="swatch-hex">#FFFF69</span>
+            <span class="swatch-rgb">RGB(255, 255, 105)</span>
+            <span class="swatch-hsv">HSV(30, 150, 255)</span>
+        </div>
+    </div>
+</div>
+
+<!-- GREEN -->
+<div class="color-row">
+    <div class="color-label">
+        <span class="name">Green</span>
+        <span class="code">Código: <strong>g</strong></span>
+    </div>
+    <div class="swatches">
+        <div class="swatch" style="background: #6b823f;">
+            <span class="swatch-label">Inferior</span>
+            <span class="swatch-hex">#6B823F</span>
+            <span class="swatch-rgb">RGB(107, 130, 63)</span>
+            <span class="swatch-hsv">HSV(40, 130, 130)</span>
+        </div>
+        <div class="swatch" style="background: #2fc039;">
+            <span class="swatch-label">Medio</span>
+            <span class="swatch-hex">#2FC039</span>
+            <span class="swatch-rgb">RGB(47, 192, 57)</span>
+            <span class="swatch-hsv">HSV(62, 192, 192)</span>
+        </div>
+        <div class="swatch" style="background: #00ffd4;">
+            <span class="swatch-label">Superior</span>
+            <span class="swatch-hex">#00FFD4</span>
+            <span class="swatch-rgb">RGB(0, 255, 212)</span>
+            <span class="swatch-hsv">HSV(85, 255, 255)</span>
+        </div>
+    </div>
+</div>
+
+<!-- CYAN (Blue in detector) -->
+<div class="color-row">
+    <div class="color-label">
+        <span class="name">Cyan / Blue</span>
+        <span class="code">Código: <strong>c</strong></span>
+    </div>
+    <div class="swatches">
+        <div class="swatch" style="background: #448282;">
+            <span class="swatch-label">Inferior</span>
+            <span class="swatch-hex">#448282</span>
+            <span class="swatch-rgb">RGB(68, 130, 130)</span>
+            <span class="swatch-hsv">HSV(90, 120, 130)</span>
+        </div>
+        <div class="swatch" style="background: #3370c0;">
+            <span class="swatch-label">Medio</span>
+            <span class="swatch-hex">#3370C0</span>
+            <span class="swatch-rgb">RGB(51, 112, 192)</span>
+            <span class="swatch-hsv">HSV(107, 187, 192)</span>
+        </div>
+        <div class="swatch" style="background: #2a00ff;">
+            <span class="swatch-label">Superior</span>
+            <span class="swatch-hex">#2A00FF</span>
+            <span class="swatch-rgb">RGB(42, 0, 255)</span>
+            <span class="swatch-hsv">HSV(125, 255, 255)</span>
+        </div>
+    </div>
+</div>
+
+<!-- VIOLET (Purple in detector) -->
+<div class="color-row">
+    <div class="color-label">
+        <span class="name">Violet / Purple</span>
+        <span class="code">Código: <strong>v</strong></span>
+    </div>
+    <div class="swatches">
+        <div class="swatch" style="background: #433c64;">
+            <span class="swatch-label">Inferior</span>
+            <span class="swatch-hex">#433C64</span>
+            <span class="swatch-rgb">RGB(67, 60, 100)</span>
+            <span class="swatch-hsv">HSV(125, 100, 100)</span>
+        </div>
+        <div class="swatch" style="background: #7336b1;">
+            <span class="swatch-label">Medio</span>
+            <span class="swatch-hex">#7336B1</span>
+            <span class="swatch-rgb">RGB(115, 54, 177)</span>
+            <span class="swatch-hsv">HSV(135, 177, 177)</span>
+        </div>
+        <div class="swatch" style="background: #d400ff;">
+            <span class="swatch-label">Superior</span>
+            <span class="swatch-hex">#D400FF</span>
+            <span class="swatch-rgb">RGB(212, 0, 255)</span>
+            <span class="swatch-hsv">HSV(145, 255, 255)</span>
+        </div>
+    </div>
+</div>
+
+<!-- MAGENTA (Pink in detector) -->
+<div class="color-row">
+    <div class="color-label">
+        <span class="name">Magenta / Pink</span>
+        <span class="code">Código: <strong>m</strong></span>
+    </div>
+    <div class="swatches">
+        <div class="swatch" style="background: #8a7296;">
+            <span class="swatch-label">Inferior</span>
+            <span class="swatch-hex">#8A7296</span>
+            <span class="swatch-rgb">RGB(138, 114, 150)</span>
+            <span class="swatch-hsv">HSV(140, 60, 150)</span>
+        </div>
+        <div class="swatch" style="background: #ca82b4;">
+            <span class="swatch-label">Medio</span>
+            <span class="swatch-hex">#CA82B4</span>
+            <span class="swatch-rgb">RGB(202, 130, 180)</span>
+            <span class="swatch-hsv">HSV(159, 90, 202)</span>
+        </div>
+        <div class="swatch" style="background: #ff878b;">
+            <span class="swatch-label">Superior</span>
+            <span class="swatch-hex">#FF878B</span>
+            <span class="swatch-rgb">RGB(255, 135, 139)</span>
+            <span class="swatch-hsv">HSV(179, 120, 255)</span>
+        </div>
+    </div>
+</div>
+
+<!-- LEGEND -->
+<div class="legend">
+    <h3>Sistema de Códigos de Color (4 posiciones)</h3>
+    <div class="legend-grid">
+        <div class="legend-item">
+            <span class="legend-code">y</span>
+            <div class="legend-dot" style="background: #eab308;"></div>
+            <span>Yellow</span>
+        </div>
+        <div class="legend-item">
+            <span class="legend-code">g</span>
+            <div class="legend-dot" style="background: #22c55e;"></div>
+            <span>Green</span>
+        </div>
+        <div class="legend-item">
+            <span class="legend-code">c</span>
+            <div class="legend-dot" style="background: #06b6d4;"></div>
+            <span>Cyan</span>
+        </div>
+        <div class="legend-item">
+            <span class="legend-code">v</span>
+            <div class="legend-dot" style="background: #8b5cf6;"></div>
+            <span>Violet</span>
+        </div>
+        <div class="legend-item">
+            <span class="legend-code">m</span>
+            <div class="legend-dot" style="background: #ec4899;"></div>
+            <span>Magenta</span>
+        </div>
+        <div class="legend-item">
+            <span class="legend-code">o</span>
+            <div class="legend-dot" style="background: #f97316;"></div>
+            <span>Orange</span>
+        </div>
+        <div class="legend-item">
+            <span class="legend-code">x</span>
+            <div class="legend-dot" style="background: #ddd;"></div>
+            <span>Sin validar</span>
+        </div>
+    </div>
+</div>
+
+<!-- EXAMPLES -->
+<div class="example-section">
+    <h3>Ejemplos de Códigos</h3>
+    <div class="example-row">
+        <div class="example-item">
+            <strong>ymgc</strong> &rarr;
+            <div class="example-dots">
+                <div class="example-dot" style="background: #eab308;"></div>
+                <div class="example-dot" style="background: #ec4899;"></div>
+                <div class="example-dot" style="background: #22c55e;"></div>
+                <div class="example-dot" style="background: #06b6d4;"></div>
+            </div>
+            <span>(4 colores)</span>
+        </div>
+        <div class="example-item">
+            <strong>voxx</strong> &rarr;
+            <div class="example-dots">
+                <div class="example-dot" style="background: #8b5cf6;"></div>
+                <div class="example-dot" style="background: #f97316;"></div>
+                <div class="example-dot skip"></div>
+                <div class="example-dot skip"></div>
+            </div>
+            <span>(2 colores)</span>
+        </div>
+        <div class="example-item">
+            <strong>gxxo</strong> &rarr;
+            <div class="example-dots">
+                <div class="example-dot" style="background: #22c55e;"></div>
+                <div class="example-dot skip"></div>
+                <div class="example-dot skip"></div>
+                <div class="example-dot" style="background: #f97316;"></div>
+            </div>
+            <span>(2 colores, posiciones 1 y 4)</span>
+        </div>
+        <div class="example-item">
+            <strong>xxxx</strong> &rarr;
+            <div class="example-dots">
+                <div class="example-dot skip"></div>
+                <div class="example-dot skip"></div>
+                <div class="example-dot skip"></div>
+                <div class="example-dot skip"></div>
+            </div>
+            <span>(sin validación)</span>
+        </div>
+    </div>
+</div>
+
+<div class="example-section">
+    <h3>Nomenclatura de Carpetas</h3>
+    <p style="font-size: 13px; color: #555; line-height: 1.8;">
+        El código de color se incluye al final del nombre de la carpeta del módulo, separado por <code>_</code><br>
+        <code style="background:#f0f0f0; padding: 2px 6px; border-radius: 3px;">A01_ymgc</code> &rarr; Módulo <strong>A01</strong>, código <strong>ymgc</strong><br>
+        <code style="background:#f0f0f0; padding: 2px 6px; border-radius: 3px;">B02_voxx</code> &rarr; Módulo <strong>B02</strong>, código <strong>voxx</strong><br>
+        <code style="background:#f0f0f0; padding: 2px 6px; border-radius: 3px;">C03</code> &rarr; Módulo <strong>C03</strong>, código <strong>xxxx</strong> (sin código = sin validación)
+    </p>
+</div>
+
+<p class="footer">MOD:EN Projection Platform &mdash; Generado el 4 de marzo de 2026</p>
+
+</body>
+</html>

@@ -26,6 +26,7 @@ export interface User {
     direccion?: string;
     coordinador?: string;
     password_texto_plano?: string;
+    capacidad_diaria_modulos?: number;
 }
 
 
@@ -36,7 +37,7 @@ export interface Proyecto {
     usuario: string;
     bastidor_longitud_cm: number;
     datos_tecnicos_importados: boolean;
-    capacidad_diaria_modulos?: number;
+    capacidad_diaria_usuario?: number;
     grupos_count?: number;
     modulos_count?: number;
     modulos_completados?: number;
@@ -477,6 +478,14 @@ export class ApiService {
 
     cerrarModulo(id: number): Observable<Modulo> {
         return this.http.post<Modulo>(`${this.baseUrl}/modulos/${id}/cerrar/`, {}, { headers: this.getHeaders() });
+    }
+
+    markMesaQueueItemDone(itemId: number): Observable<MesaQueueItem> {
+        return this.http.post<MesaQueueItem>(
+            `${this.baseUrl}/mesa-queue-items/${itemId}/mark_done/`,
+            {},
+            { headers: this.getHeaders() }
+        );
     }
 
     getProductionStats(params: { from?: string; to?: string; proyecto?: number } = {}): Observable<ProductionStatsResponse> {

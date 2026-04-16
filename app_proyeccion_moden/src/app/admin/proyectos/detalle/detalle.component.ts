@@ -53,7 +53,6 @@ export class ProyectoDetailComponent implements OnInit {
     plantaFileExists = { plano: false, corte: false };
     dropdownOpen = false;
     savingProjectConfig = false;
-    savingCapacidad = false;
     technicalImporting = false;
     technicalImportStats: TechnicalImportStats | null = null;
 
@@ -365,34 +364,6 @@ export class ProyectoDetailComponent implements OnInit {
                 console.error('Error updating bastidor length', err);
                 this.savingProjectConfig = false;
                 alert('Error al guardar la longitud del bastidor');
-                this.cdr.detectChanges();
-            }
-        });
-    }
-
-    saveCapacidadDiaria(): void {
-        if (!this.proyectoId || !this.proyecto) return;
-
-        const capacidad = Number(this.proyecto.capacidad_diaria_modulos);
-        if (!Number.isFinite(capacidad) || capacidad < 1) {
-            alert('La capacidad debe ser al menos 1 módulo/día.');
-            this.loadData();
-            return;
-        }
-
-        this.savingCapacidad = true;
-        this.api.updateProyecto(this.proyectoId, {
-            capacidad_diaria_modulos: Math.max(1, Math.floor(capacidad))
-        }).subscribe({
-            next: (proyecto: Proyecto) => {
-                this.proyecto = proyecto;
-                this.savingCapacidad = false;
-                this.cdr.detectChanges();
-            },
-            error: (err: any) => {
-                console.error('Error updating capacidad diaria', err);
-                this.savingCapacidad = false;
-                alert('Error al guardar la capacidad diaria');
                 this.cdr.detectChanges();
             }
         });

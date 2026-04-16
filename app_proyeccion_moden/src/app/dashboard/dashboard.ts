@@ -1243,22 +1243,30 @@ export class Dashboard implements OnInit, OnDestroy {
 
   /**
    * Daily cap shown in each mesa queue.
-   * - INF1 / INF2: capacidad_diaria of the project (e.g. 6).
-   * - SUP: sum of the items actually visible in INF1 + INF2 of the same
-   *   group. If one of them already has fewer items left, SUP follows.
+   * The ferralla has a total daily capacity (e.g. 12) which is split
+   * evenly between INF1 and INF2 (6 each). SUP has to finish the
+   * superiores of both, so SUP = sum of INF items actually visible.
    */
-  private getMesaDailyCapForProject(mesa?: Mesa): number {
-    const base = this.selectedProyecto?.capacidad_diaria_modulos || 6;
-    if (!mesa || mesa.rol !== 'SUPERIORES') return base;
+  private getFerrallaDailyTotal(): number {
+    return this.selectedProyecto?.capacidad_diaria_usuario || 12;
+  }
 
-    const infMesas = this.mesas.filter(m =>
-      m.grupo === mesa.grupo && (m.rol === 'INFERIOR_1' || m.rol === 'INFERIOR_2')
-    );
-    let total = 0;
-    for (const inf of infMesas) {
-      total += Math.min(this.getMesaQueueItems(inf.id).length, base);
+  private getMesaDailyCapForProject(mesa?: Mesa): number {
+    const total = this.getFerrallaDailyTotal();
+    if (!mesa) return total;
+    if (mesa.rol === 'SUPERIORES') {
+      const infMesas = this.mesas.filter(m =>
+        m.grupo === mesa.grupo && (m.rol === 'INFERIOR_1' || m.rol === 'INFERIOR_2')
+      );
+      const infCap = Math.ceil(total / 2);
+      let sum = 0;
+      for (const inf of infMesas) {
+        sum += Math.min(this.getMesaQueueItems(inf.id).length, infCap);
+      }
+      return sum;
     }
-    return total;
+    // INF1 / INF2: half of the ferralla total each (rounded up to be generous)
+    return Math.ceil(total / 2);
   }
 
   /**
@@ -1296,6 +1304,37 @@ export class Dashboard implements OnInit, OnDestroy {
     return Math.max(0, rest.length - this.getMesaDailyCapForProject(mesa));
   }
 
+  /**
+   * Mark a queue item as HECHO. The backend also flips the matching
+   * modulo phase so the module eventually reaches COMPLETADO.
+   */
+  markItemDone(item: MesaQueueItem): void {
+    if (item.status === 'HECHO') return;
+    this.api.markMesaQueueItemDone(item.id)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: () => {
+          this.refreshMesaQueue(item.mesa);
+          this.loadProductionStats();
+        },
+        error: (err) => {
+          console.error('Error marking queue item done', err);
+          alert('No se pudo marcar como terminado');
+        }
+      });
+  }
+
+  private refreshMesaQueue(mesaId: number): void {
+    this.api.getMesaQueueItems(mesaId)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (items) => {
+          this.mesaQueueItems.set(mesaId, items);
+          this.cdr.detectChanges();
+        }
+      });
+  }
+
   getGrupoRoleLabel(rol: string): string {
     switch (rol) {
       case 'INFERIOR_1':
@@ -1321,7 +1360,7 @@ export class Dashboard implements OnInit, OnDestroy {
     const total = p.modulos_count || 0;
     const done = p.modulos_completados || 0;
     const pending = Math.max(total - done, 0);
-    const daily = p.capacidad_diaria_modulos || 6;
+    const daily = p.capacidad_diaria_usuario || 12;
     const hoy = Math.min(pending, daily);
     const semana = Math.min(Math.max(pending - hoy, 0), daily * 4);
     const resto = Math.max(pending - hoy - semana, 0);

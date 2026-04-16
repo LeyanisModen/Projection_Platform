@@ -15,10 +15,17 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
     telefono = serializers.CharField(source='profile.telefono', required=False, allow_blank=True, allow_null=True)
     direccion = serializers.CharField(source='profile.direccion', required=False, allow_blank=True, allow_null=True)
     coordinador = serializers.CharField(source='profile.coordinador', required=False, allow_blank=True, allow_null=True)
+    capacidad_diaria_modulos = serializers.IntegerField(
+        source='profile.capacidad_diaria_modulos', required=False, min_value=1
+    )
 
     class Meta:
         model = User
-        fields = ["id", "url", "username", "email", "password", "groups", "first_name", "last_name", "telefono", "direccion", "coordinador"]
+        fields = [
+            "id", "url", "username", "email", "password", "groups",
+            "first_name", "last_name", "telefono", "direccion", "coordinador",
+            "capacidad_diaria_modulos",
+        ]
 
 
     def create(self, validated_data):
@@ -27,20 +34,22 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
         telefono = profile_data.get('telefono')
         direccion = profile_data.get('direccion')
         coordinador = profile_data.get('coordinador')
+        capacidad = profile_data.get('capacidad_diaria_modulos')
 
         user = super().create(validated_data)
-        
+
         if password:
             user.set_password(password)
             user.save()
-            
-        # Create profile with all fields
-        UserProfile.objects.create(
-            user=user, 
-            telefono=telefono or '',
-            direccion=direccion or '',
-            coordinador=coordinador or ''
-        )
+
+        profile_kwargs = {
+            'telefono': telefono or '',
+            'direccion': direccion or '',
+            'coordinador': coordinador or '',
+        }
+        if capacidad is not None:
+            profile_kwargs['capacidad_diaria_modulos'] = capacidad
+        UserProfile.objects.create(user=user, **profile_kwargs)
 
         return user
 
@@ -50,6 +59,7 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
         telefono = profile_data.get('telefono')
         direccion = profile_data.get('direccion')
         coordinador = profile_data.get('coordinador')
+        capacidad = profile_data.get('capacidad_diaria_modulos')
 
         user = super().update(instance, validated_data)
         
@@ -61,6 +71,8 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
             profile_defaults['direccion'] = direccion
         if coordinador is not None:
             profile_defaults['coordinador'] = coordinador
+        if capacidad is not None:
+            profile_defaults['capacidad_diaria_modulos'] = capacidad
 
         # Password handling
         if password:
@@ -82,6 +94,7 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
 class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
     num_plantas = serializers.IntegerField(write_only=True, required=False, min_value=0, default=0)
     usuario_nombre = serializers.ReadOnlyField(source='usuario.username')
+    capacidad_diaria_usuario = serializers.SerializerMethodField()
     grupos_count = serializers.SerializerMethodField()
     modulos_count = serializers.SerializerMethodField()
     modulos_completados = serializers.SerializerMethodField()
@@ -91,9 +104,14 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
         fields = [
             "id", "url", "nombre", "usuario", "usuario_nombre", "num_plantas",
             "bastidor_longitud_cm", "datos_tecnicos_importados",
-            "capacidad_diaria_modulos",
+            "capacidad_diaria_usuario",
             "grupos_count", "modulos_count", "modulos_completados",
         ]
+
+    def get_capacidad_diaria_usuario(self, obj):
+        if obj.usuario and hasattr(obj.usuario, 'profile'):
+            return obj.usuario.profile.capacidad_diaria_modulos
+        return 12
         extra_kwargs = {
             'usuario': {'required': False, 'allow_null': True},
             'datos_tecnicos_importados': {'read_only': True},

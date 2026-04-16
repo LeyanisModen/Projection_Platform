@@ -1295,6 +1295,29 @@
   font-style: italic;
 }
 
+.queue-item {
+  position: relative;
+}
+
+.queue-item-done-btn {
+  background: none;
+  border: 1px solid #c8e6c9;
+  color: #388e3c;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  margin-left: 8px;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+  line-height: 1;
+}
+
+.queue-item-done-btn:hover {
+  background: #c8e6c9;
+  color: #1b5e20;
+  border-color: #1b5e20;
+}
+
 .mesa-queue-sup .queue-more-caption {
   grid-column: 1 / -1;
 }

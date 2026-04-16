@@ -92,27 +92,6 @@
                 </div>
             </div>
 
-            <!-- Capacidad diaria de la ferralla -->
-            <div class="project-config-card mb-3 p-3 bg-white rounded border">
-                <div class="project-config-header">
-                    <div>
-                        <label class="d-block mb-1">Producción esperada</label>
-                        <small class="text-muted">Módulos fabricados por día por esta ferralla.</small>
-                    </div>
-                </div>
-                <div class="project-config-controls mt-2">
-                    <input type="number" min="1" step="1"
-                        [(ngModel)]="proyecto.capacidad_diaria_modulos"
-                        class="project-config-input capacidad-input">
-                    <span class="project-config-unit">mód/día</span>
-                    <button type="button" class="btn btn-sm btn-secondary"
-                        (click)="saveCapacidadDiaria()"
-                        [disabled]="savingCapacidad">
-                        {{ savingCapacidad ? 'Guardando...' : 'Guardar' }}
-                    </button>
-                </div>
-            </div>
-
             <!-- Archivos del proyecto -->
             <div class="project-config-card mb-3 p-3 bg-white rounded border" *ngIf="selectedPlanta">
                 <div class="project-config-header d-flex justify-content-between align-items-start">

@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>MOD:EN - Colores (Impresión)</title>
+    <style>
+        @media print {
+            body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; padding: 20px 30px; background: #fff; color: #333; font-size: 11px; }
+        h1 { text-align: center; font-size: 16px; margin-bottom: 4px; }
+        .subtitle { text-align: center; color: #888; font-size: 9px; margin-bottom: 14px; }
+
+        table { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
+        th { background: #f0f0f0; font-size: 9px; text-transform: uppercase; letter-spacing: 0.5px; padding: 4px 6px; text-align: center; border: 1px solid #ccc; }
+        td { padding: 0; border: 1px solid #ccc; text-align: center; vertical-align: middle; }
+
+        .label-cell { width: 100px; padding: 6px 8px; text-align: left; background: #fafafa; }
+        .label-cell .name { font-weight: 700; font-size: 12px; }
+        .label-cell .code { color: #888; font-family: Consolas, monospace; font-size: 10px; }
+
+        .color-cell {
+            width: 25%; height: 44px; padding: 4px;
+            color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+            font-family: Consolas, monospace; font-size: 10px; line-height: 1.4;
+        }
+        .color-cell.light { color: #333; text-shadow: none; }
+        .color-cell .hex { font-weight: 700; font-size: 11px; }
+
+        .legend-section { margin-top: 10px; }
+        .legend-section h3 { font-size: 11px; margin-bottom: 6px; }
+        .legend-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 8px; }
+        .legend-item { display: flex; align-items: center; gap: 4px; font-size: 10px; }
+        .dot { width: 12px; height: 12px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.15); display: inline-block; }
+        .code-mono { font-family: Consolas, monospace; font-weight: 700; font-size: 11px; min-width: 10px; }
+
+        .examples { margin-top: 8px; font-size: 10px; line-height: 1.8; }
+        .examples code { background: #f0f0f0; padding: 1px 4px; border-radius: 2px; font-size: 10px; }
+        .ex-dots { display: inline-flex; gap: 2px; vertical-align: middle; margin: 0 3px; }
+        .ex-dot { width: 10px; height: 10px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.15); display: inline-block; }
+        .ex-dot.skip { background: #ddd; }
+
+        .footer { margin-top: 10px; text-align: center; font-size: 8px; color: #bbb; }
+    </style>
+</head>
+<body>
+
+<h1>MOD:EN - Referencia de Colores</h1>
+<p class="subtitle">Rangos HSV del detector (OpenCV) convertidos a RGB</p>
+
+<table>
+    <thead>
+        <tr><th>Color</th><th>Inferior</th><th>Medio</th><th>Superior</th></tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td class="label-cell"><div class="name">Orange</div><div class="code">o</div></td>
+            <td class="color-cell" style="background:#b44a34;"><div class="hex">#B44A34</div>RGB(180,74,52)</td>
+            <td class="color-cell" style="background:#d96a20;"><div class="hex">#D96A20</div>RGB(217,106,32)</td>
+            <td class="color-cell" style="background:#ffaa00;"><div class="hex">#FFAA00</div>RGB(255,170,0)</td>
+        </tr>
+        <tr>
+            <td class="label-cell"><div class="name">Yellow</div><div class="code">y</div></td>
+            <td class="color-cell" style="background:#b49234;"><div class="hex">#B49234</div>RGB(180,146,52)</td>
+            <td class="color-cell" style="background:#d9c022;"><div class="hex">#D9C022</div>RGB(217,192,34)</td>
+            <td class="color-cell light" style="background:#ffff69;"><div class="hex">#FFFF69</div>RGB(255,255,105)</td>
+        </tr>
+        <tr>
+            <td class="label-cell"><div class="name">Green</div><div class="code">g</div></td>
+            <td class="color-cell" style="background:#6b823f;"><div class="hex">#6B823F</div>RGB(107,130,63)</td>
+            <td class="color-cell" style="background:#2fc039;"><div class="hex">#2FC039</div>RGB(47,192,57)</td>
+            <td class="color-cell" style="background:#00ffd4;"><div class="hex">#00FFD4</div>RGB(0,255,212)</td>
+        </tr>
+        <tr>
+            <td class="label-cell"><div class="name">Cyan / Blue</div><div class="code">c</div></td>
+            <td class="color-cell" style="background:#448282;"><div class="hex">#448282</div>RGB(68,130,130)</td>
+            <td class="color-cell" style="background:#3370c0;"><div class="hex">#3370C0</div>RGB(51,112,192)</td>
+            <td class="color-cell" style="background:#2a00ff;"><div class="hex">#2A00FF</div>RGB(42,0,255)</td>
+        </tr>
+        <tr>
+            <td class="label-cell"><div class="name">Violet</div><div class="code">v</div></td>
+            <td class="color-cell" style="background:#433c64;"><div class="hex">#433C64</div>RGB(67,60,100)</td>
+            <td class="color-cell" style="background:#7336b1;"><div class="hex">#7336B1</div>RGB(115,54,177)</td>
+            <td class="color-cell" style="background:#d400ff;"><div class="hex">#D400FF</div>RGB(212,0,255)</td>
+        </tr>
+        <tr>
+            <td class="label-cell"><div class="name">Magenta</div><div class="code">m</div></td>
+            <td class="color-cell" style="background:#8a7296;"><div class="hex">#8A7296</div>RGB(138,114,150)</td>
+            <td class="color-cell" style="background:#ca82b4;"><div class="hex">#CA82B4</div>RGB(202,130,180)</td>
+            <td class="color-cell" style="background:#ff878b;"><div class="hex">#FF878B</div>RGB(255,135,139)</td>
+        </tr>
+    </tbody>
+</table>
+
+<div class="legend-section">
+    <h3>Códigos (4 posiciones)</h3>
+    <div class="legend-row">
+        <div class="legend-item"><span class="code-mono">y</span><span class="dot" style="background:#eab308;"></span> Yellow</div>
+        <div class="legend-item"><span class="code-mono">g</span><span class="dot" style="background:#22c55e;"></span> Green</div>
+        <div class="legend-item"><span class="code-mono">c</span><span class="dot" style="background:#06b6d4;"></span> Cyan</div>
+        <div class="legend-item"><span class="code-mono">v</span><span class="dot" style="background:#8b5cf6;"></span> Violet</div>
+        <div class="legend-item"><span class="code-mono">m</span><span class="dot" style="background:#ec4899;"></span> Magenta</div>
+        <div class="legend-item"><span class="code-mono">o</span><span class="dot" style="background:#f97316;"></span> Orange</div>
+        <div class="legend-item"><span class="code-mono">x</span><span class="dot" style="background:#ddd;"></span> Skip</div>
+    </div>
+
+    <div class="examples">
+        <strong>Ejemplos:</strong>
+        <code>ymgc</code> <span class="ex-dots"><span class="ex-dot" style="background:#eab308;"></span><span class="ex-dot" style="background:#ec4899;"></span><span class="ex-dot" style="background:#22c55e;"></span><span class="ex-dot" style="background:#06b6d4;"></span></span> 4 colores &nbsp;|&nbsp;
+        <code>voxx</code> <span class="ex-dots"><span class="ex-dot" style="background:#8b5cf6;"></span><span class="ex-dot" style="background:#f97316;"></span><span class="ex-dot skip"></span><span class="ex-dot skip"></span></span> 2 colores &nbsp;|&nbsp;
+        <code>xxxx</code> <span class="ex-dots"><span class="ex-dot skip"></span><span class="ex-dot skip"></span><span class="ex-dot skip"></span><span class="ex-dot skip"></span></span> sin validar
+        <br>
+        <strong>Carpetas:</strong>
+        <code>A01_ymgc</code> &rarr; Módulo A01, código ymgc &nbsp;|&nbsp;
+        <code>B02</code> &rarr; Módulo B02, código xxxx
+    </div>
+</div>
+
+<p class="footer">MOD:EN Projection Platform &mdash; 4 marzo 2026</p>
+
+</body>
+</html>

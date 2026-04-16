@@ -49,10 +49,6 @@ class Proyecto(models.Model):
         default=False,
         help_text='Indica si ya se importo el fichero de datos tecnicos y se calcularon los grupos.'
     )
-    capacidad_diaria_modulos = models.PositiveIntegerField(
-        default=6,
-        help_text='Numero estimado de modulos que la ferralla produce por dia.'
-    )
 
     def __str__(self):
         return self.nombre
@@ -583,6 +579,10 @@ class UserProfile(models.Model):
     direccion = models.CharField(max_length=300, blank=True, null=True)
     coordinador = models.CharField(max_length=100, blank=True, null=True)
     password_texto_plano = models.CharField(max_length=128, blank=True, null=True)
+    capacidad_diaria_modulos = models.PositiveIntegerField(
+        default=12,
+        help_text='Modulos que la ferralla produce por dia (se reparten entre sus mesas INF).'
+    )
 
     def __str__(self):
         return f"Perfil de {self.user.username}"
