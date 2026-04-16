@@ -122,12 +122,12 @@
 }
 
 .user-header {
-    background: #e3f2fd;
-    color: #1565c0;
+    background: var(--moden-primary-light, #fff3e0);
+    color: var(--moden-primary-dark, #b33f00);
 }
 
 .badge {
-    background: #1565c0;
+    background: var(--moden-primary, #e8590c);
     color: white;
     padding: 0.25rem 0.5rem;
     border-radius: 12px;
@@ -281,7 +281,7 @@
 }
 
 .badge-info {
-    background: #1565c0;
+    background: var(--moden-primary, #e8590c);
     color: white;
 }
 
