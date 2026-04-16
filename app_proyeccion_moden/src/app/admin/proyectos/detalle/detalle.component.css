@@ -769,16 +769,16 @@
 }
 
 .grupo-modulo-camera.has-fotos {
-    color: #0d6efd;
+    color: #495057;
 }
 
 .grupo-modulo-camera.has-fotos:hover {
-    background-color: #e7f1ff;
-    color: #0a58ca;
+    background-color: #e9ecef;
+    color: #212529;
 }
 
 .grupo-modulo-camera.no-fotos {
-    color: #adb5bd;
+    color: #d0d4d8;
     cursor: not-allowed;
     position: relative;
 }
@@ -790,7 +790,7 @@
     left: 15%;
     right: 15%;
     top: 50%;
-    border-top: 1.5px solid #adb5bd;
+    border-top: 1.5px solid #d0d4d8;
     transform: rotate(-20deg);
     transform-origin: center;
 }
