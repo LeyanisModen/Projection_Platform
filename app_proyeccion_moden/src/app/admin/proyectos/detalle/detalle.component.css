@@ -6,11 +6,11 @@
 }
 
 .page-header {
-    margin-bottom: 2rem;
+    margin-bottom: 1rem;
 }
 
 .header-content h1 {
-    margin: 0.5rem 0;
+    margin: 0;
 }
 
 .btn-secondary {
@@ -649,10 +649,16 @@
     padding: 0.25rem;
 }
 
+.project-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #212529;
+}
+
 .grupos-wrapper {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    gap: 1rem;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 0.6rem;
 }
 
 .grupo-bastidor-card {
@@ -660,11 +666,11 @@
     border: 1px solid #dee2e6;
     border-left: 4px solid #adb5bd;
     border-radius: 6px;
-    padding: 0.75rem 1rem;
+    padding: 0.5rem 0.6rem;
 }
 
 .grupo-bastidor-card.grupo-pendiente {
-    border-left-color: #ffc107;
+    border-left-color: #fd7e14;
 }
 
 .grupo-bastidor-card.grupo-completado {
@@ -675,24 +681,24 @@
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    margin-bottom: 0.5rem;
-    padding-bottom: 0.35rem;
+    margin-bottom: 0.35rem;
+    padding-bottom: 0.25rem;
     border-bottom: 1px solid #e9ecef;
 }
 
 .grupo-bastidor-header h4 {
     color: #495057;
-    font-size: 0.95rem;
+    font-size: 0.9rem;
     font-weight: 600;
     margin: 0;
 }
 
 .grupo-bastidor-card.grupo-pendiente .grupo-bastidor-header h4 {
-    color: #b38600;
+    color: #fd7e14;
 }
 
 .grupo-bastidor-card.grupo-completado .grupo-bastidor-header h4 {
-    color: #1e7e34;
+    color: #28a745;
 }
 
 .grupo-modulos-count {
