@@ -163,9 +163,29 @@
                 <table class="table mb-0" *ngIf="group.projects.length > 0">
                     <tbody>
                         <tr *ngFor="let project of group.projects">
-                            <td>{{ project.nombre }}</td>
+                            <td>
+                                <div class="project-name">{{ project.nombre }}</div>
+                                <div class="project-stats">
+                                    <span *ngIf="(project.grupos_count || 0) > 0" class="stat-pill stat-grupos">
+                                        <i class="fa fa-layer-group"></i>
+                                        {{ project.grupos_count }} grupos
+                                    </span>
+                                    <span *ngIf="!project.grupos_count && (project.modulos_count || 0) > 0" class="stat-pill stat-warning" title="Sin datos técnicos importados">
+                                        <i class="fa fa-exclamation-triangle"></i>
+                                        sin grupos
+                                    </span>
+                                    <span *ngIf="(project.modulos_count || 0) > 0" class="stat-pill"
+                                        [class.stat-completo]="(project.modulos_completados || 0) === project.modulos_count"
+                                        [class.stat-pendiente]="(project.modulos_completados || 0) < (project.modulos_count || 0)">
+                                        {{ project.modulos_completados || 0 }}/{{ project.modulos_count }} módulos
+                                    </span>
+                                    <span *ngIf="!project.modulos_count" class="stat-pill stat-empty">
+                                        sin módulos
+                                    </span>
+                                </div>
+                            </td>
                             <td class="text-right">
-                                <button class="btn btn-sm btn-outline-info mr-2"
+                                <button class="btn btn-sm btn-outline-secondary mr-2"
                                     (click)="manageProject(project)">Gestionar</button>
                                 <button class="btn btn-sm btn-outline-danger"
                                     (click)="confirmDelete(project)">Eliminar</button>

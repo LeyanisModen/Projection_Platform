@@ -4,6 +4,56 @@
     margin: 0 auto;
 }
 
+.project-name {
+    font-weight: 500;
+    color: #212529;
+}
+
+.project-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin-top: 0.25rem;
+}
+
+.stat-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.72rem;
+    padding: 0.1rem 0.45rem;
+    border-radius: 10px;
+    background-color: #e9ecef;
+    color: #495057;
+    font-weight: 500;
+}
+
+.stat-pill.stat-grupos {
+    background-color: #e9ecef;
+    color: #343a40;
+}
+
+.stat-pill.stat-pendiente {
+    background-color: #fff3e0;
+    color: #b35900;
+}
+
+.stat-pill.stat-completo {
+    background-color: #e2f5e7;
+    color: #1e7e34;
+}
+
+.stat-pill.stat-warning {
+    background-color: #fff3cd;
+    color: #856404;
+}
+
+.stat-pill.stat-empty {
+    background-color: #f8f9fa;
+    color: #adb5bd;
+    font-style: italic;
+}
+
 .toggle-icon {
     font-size: 0.6em;
     margin-right: 6px;

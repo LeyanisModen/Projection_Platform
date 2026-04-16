@@ -606,6 +606,18 @@ class ProyectoViewSet(viewsets.ModelViewSet):
     serializer_class = ProyectoSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+    def _annotate_counts(self, queryset):
+        from django.db.models import Count
+        return queryset.annotate(
+            _grupos_count=Count('grupos_bastidor', distinct=True),
+            _modulos_count=Count('modulos', distinct=True),
+            _modulos_completados=Count(
+                'modulos',
+                filter=Q(modulos__estado__in=['COMPLETADO', 'CERRADO']),
+                distinct=True,
+            ),
+        )
+
     def get_queryset(self):
         """
         Filter projects by user.
@@ -615,9 +627,9 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         """
         user = self.request.user
         if user.is_staff or user.is_superuser:
-            return Proyecto.objects.all().order_by("nombre")
+            return self._annotate_counts(Proyecto.objects.all()).order_by("nombre")
         if user.is_authenticated:
-            return Proyecto.objects.filter(usuario=user).order_by("nombre")
+            return self._annotate_counts(Proyecto.objects.filter(usuario=user)).order_by("nombre")
         return Proyecto.objects.none()
 
     def perform_create(self, serializer):

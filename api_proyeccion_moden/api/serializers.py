@@ -82,17 +82,33 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
 class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
     num_plantas = serializers.IntegerField(write_only=True, required=False, min_value=0, default=0)
     usuario_nombre = serializers.ReadOnlyField(source='usuario.username')
-    
+    grupos_count = serializers.SerializerMethodField()
+    modulos_count = serializers.SerializerMethodField()
+    modulos_completados = serializers.SerializerMethodField()
+
     class Meta:
         model = Proyecto
         fields = [
             "id", "url", "nombre", "usuario", "usuario_nombre", "num_plantas",
-            "bastidor_longitud_cm", "datos_tecnicos_importados"
+            "bastidor_longitud_cm", "datos_tecnicos_importados",
+            "grupos_count", "modulos_count", "modulos_completados",
         ]
         extra_kwargs = {
             'usuario': {'required': False, 'allow_null': True},
             'datos_tecnicos_importados': {'read_only': True},
         }
+
+    def get_grupos_count(self, obj):
+        return getattr(obj, '_grupos_count', None) or obj.grupos_bastidor.count()
+
+    def get_modulos_count(self, obj):
+        return getattr(obj, '_modulos_count', None) or obj.modulos.count()
+
+    def get_modulos_completados(self, obj):
+        cached = getattr(obj, '_modulos_completados', None)
+        if cached is not None:
+            return cached
+        return obj.modulos.filter(estado__in=['COMPLETADO', 'CERRADO']).count()
 
 
     def create(self, validated_data):
