@@ -721,8 +721,11 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         
         print(f"[IMPORT] Proyecto {proyecto.id}: {len(plantas_data)} plantas, {len(files)} files")
 
-        stats = {'plantas': 0, 'modulos': 0, 'imagenes': 0, 'detalles_fase': 0, 'errors': []}
-        
+        stats = {
+            'plantas': 0, 'modulos': 0, 'imagenes': 0, 'detalles_fase': 0,
+            'plano_cargado': False, 'planilla_cargada': False, 'errors': []
+        }
+
         for planta_data in plantas_data:
             try:
                 # Create Planta
@@ -732,19 +735,21 @@ class ProyectoViewSet(viewsets.ModelViewSet):
                     orden=planta_data.get('orden', 0)
                 )
                 stats['plantas'] += 1
-                
+
                 # Check for Plant Files (Plano and Corte)
                 plano_filename = planta_data.get('plano_filename')
                 if plano_filename:
                     uploaded_file = files.get(plano_filename)
                     if uploaded_file:
                         planta.plano_imagen.save(uploaded_file.name, uploaded_file)
-                        
+                        stats['plano_cargado'] = True
+
                 corte_filename = planta_data.get('corte_filename')
                 if corte_filename:
                     uploaded_file = files.get(corte_filename)
                     if uploaded_file:
                         planta.fichero_corte.save(uploaded_file.name, uploaded_file)
+                        stats['planilla_cargada'] = True
                 
                 modulos_data = planta_data.get('modulos', [])
                 for modulo_data in modulos_data:

@@ -275,6 +275,21 @@ export class ProyectosComponent implements OnInit {
         }
       }
 
+      console.log(`[IMPORT] Detectados ${plantaUnicaData.modulos.length} módulos en la carpeta`);
+      if (plantaUnicaData.modulos.length === 0) {
+        const proceed = confirm(
+          'No se detectó ningún módulo válido en la carpeta seleccionada.\n\n' +
+          'Se esperaba una estructura tipo: MiProyecto/MODULO_A01/INF/*.jpg\n\n' +
+          '¿Quieres crear el proyecto vacío igualmente?'
+        );
+        if (!proceed) {
+          this.importing = false;
+          this.importProgress = '';
+          this.cdr.detectChanges();
+          return;
+        }
+      }
+
       // Add the single planta to formData
       formData.append('plantas', JSON.stringify([plantaUnicaData]));
 
@@ -286,9 +301,35 @@ export class ProyectosComponent implements OnInit {
           this.importStats = result.stats;
           console.log('Import complete:', result);
 
-          const finishImport = () => {
+          const showSummary = (techResult?: any) => {
+            const s = result.stats;
+            const lines: string[] = [];
+            lines.push(`Proyecto "${this.newProject.nombre}" creado correctamente.`);
+            lines.push('');
+            lines.push(`• Módulos creados: ${s.modulos || 0}`);
+            lines.push(`• Imágenes cargadas: ${s.imagenes || 0}`);
+            lines.push(`• Plano de referencia: ${s.plano_cargado ? 'sí' : 'no'}`);
+            lines.push(`• Planilla (corte): ${s.planilla_cargada ? 'sí' : 'no'}`);
+            if (techResult?.stats) {
+              const t = techResult.stats;
+              lines.push(`• Base de datos técnica: importada (procesados ${t.processed || 0}, omitidos ${t.skipped || 0})`);
+              lines.push(`• Grupos de bastidor calculados: ${t.grupos_bastidor || 0}`);
+            } else if (technicalDbFile) {
+              lines.push(`• Base de datos técnica: no se pudo importar`);
+            } else {
+              lines.push(`• Base de datos técnica: no incluida en la carpeta`);
+            }
+            if (s.errors && s.errors.length) {
+              lines.push('');
+              lines.push(`⚠ ${s.errors.length} incidencias. Revisa la consola para más detalle.`);
+            }
+            alert(lines.join('\n'));
+          };
+
+          const finishImport = (techResult?: any) => {
             this.importing = false;
             this.importProgress = '';
+            showSummary(techResult);
             if (result.stats.errors.length > 0) {
               this.error = `Importacion completada con ${result.stats.errors.length} errores`;
             } else {
@@ -296,6 +337,7 @@ export class ProyectosComponent implements OnInit {
               this.selectedFolder = null;
               this.folderName = '';
               this.importStats = null;
+              this.newProject = { nombre: '', usuario: null };
             }
             this.cdr.detectChanges();
           };
@@ -307,7 +349,7 @@ export class ProyectosComponent implements OnInit {
             const techForm = new FormData();
             techForm.append('technical_file', technicalDbFile);
             this.api.importProjectTechnicalData(proyectoId, techForm).subscribe({
-              next: () => finishImport(),
+              next: (techResult) => finishImport(techResult),
               error: (err) => {
                 console.warn('Auto technical import failed:', err);
                 finishImport();

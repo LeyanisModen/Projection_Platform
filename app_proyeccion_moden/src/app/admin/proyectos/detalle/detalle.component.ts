@@ -535,10 +535,29 @@ export class ProyectoDetailComponent implements OnInit {
             // Upload
             this.api.importProjectStructure(this.proyectoId, formData).subscribe({
                 next: (res) => {
-                    const finish = () => {
+                    const finish = (techResult?: any) => {
                         this.importing = false;
                         this.importProgress = '';
-                        alert(`Modulos importados correctamente: ${res.stats.modulos} creados.`);
+                        const s = res.stats;
+                        const lines: string[] = [];
+                        lines.push('Módulos importados correctamente.');
+                        lines.push('');
+                        lines.push(`• Módulos creados: ${s.modulos || 0}`);
+                        lines.push(`• Imágenes cargadas: ${s.imagenes || 0}`);
+                        lines.push(`• Plano de referencia: ${s.plano_cargado ? 'sí' : 'no'}`);
+                        lines.push(`• Planilla (corte): ${s.planilla_cargada ? 'sí' : 'no'}`);
+                        if (techResult?.stats) {
+                            const t = techResult.stats;
+                            lines.push(`• Base de datos técnica: importada (procesados ${t.processed || 0}, omitidos ${t.skipped || 0})`);
+                            lines.push(`• Grupos de bastidor calculados: ${t.grupos_bastidor || 0}`);
+                        } else if (technicalDbFile) {
+                            lines.push(`• Base de datos técnica: no se pudo importar`);
+                        }
+                        if (s.errors && s.errors.length) {
+                            lines.push('');
+                            lines.push(`⚠ ${s.errors.length} incidencias.`);
+                        }
+                        alert(lines.join('\n'));
                         this.loadData();
                     };
 
@@ -549,7 +568,7 @@ export class ProyectoDetailComponent implements OnInit {
                         const techForm = new FormData();
                         techForm.append('technical_file', technicalDbFile);
                         this.api.importProjectTechnicalData(this.proyectoId, techForm).subscribe({
-                            next: () => finish(),
+                            next: (techResult) => finish(techResult),
                             error: (err) => {
                                 console.warn('Auto technical import failed:', err);
                                 finish();

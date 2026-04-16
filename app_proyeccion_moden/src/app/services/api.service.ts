@@ -134,6 +134,7 @@ export interface TechnicalImportStats {
     created: number;
     updated: number;
     skipped: number;
+    grupos_bastidor?: number;
     errors: string[];
 }
 
@@ -344,7 +345,15 @@ export class ApiService {
     importProjectStructure(proyectoId: number, formData: FormData): Observable<{
         status: string;
         proyecto_id: number;
-        stats: { plantas: number; modulos: number; imagenes: number; detalles_fase: number; errors: string[] };
+        stats: {
+            plantas: number;
+            modulos: number;
+            imagenes: number;
+            detalles_fase: number;
+            plano_cargado?: boolean;
+            planilla_cargada?: boolean;
+            errors: string[];
+        };
     }> {
         // Don't use Content-Type header - let browser set it with boundary for multipart
         return this.http.post<any>(`${this.baseUrl}/proyectos/${proyectoId}/import-structure/`, formData, {
