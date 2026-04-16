@@ -1154,12 +1154,22 @@ export class Dashboard implements OnInit, OnDestroy {
 
   /**
    * Daily cap shown in each mesa queue.
-   * INF1 and INF2 each produce `capacidad_diaria`, so the SUP mesa has to
-   * finish the superiores of both of them → SUP shows 2x the capacity.
+   * - INF1 / INF2: capacidad_diaria of the project (e.g. 6).
+   * - SUP: sum of the items actually visible in INF1 + INF2 of the same
+   *   group. If one of them already has fewer items left, SUP follows.
    */
   private getMesaDailyCapForProject(mesa?: Mesa): number {
     const base = this.selectedProyecto?.capacidad_diaria_modulos || 6;
-    return mesa?.rol === 'SUPERIORES' ? base * 2 : base;
+    if (!mesa || mesa.rol !== 'SUPERIORES') return base;
+
+    const infMesas = this.mesas.filter(m =>
+      m.grupo === mesa.grupo && (m.rol === 'INFERIOR_1' || m.rol === 'INFERIOR_2')
+    );
+    let total = 0;
+    for (const inf of infMesas) {
+      total += Math.min(this.getMesaQueueItems(inf.id).length, base);
+    }
+    return total;
   }
 
   /**
