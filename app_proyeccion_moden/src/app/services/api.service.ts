@@ -542,6 +542,10 @@ export class ApiService {
         return this.http.post<GrupoMesas>(`${this.baseUrl}/grupos-mesas/`, data, { headers: this.getHeaders() });
     }
 
+    updateGrupoMesas(id: number, data: Partial<GrupoMesas>): Observable<GrupoMesas> {
+        return this.http.patch<GrupoMesas>(`${this.baseUrl}/grupos-mesas/${id}/`, data, { headers: this.getHeaders() });
+    }
+
     deleteGrupoMesas(id: number): Observable<void> {
         return this.http.delete<void>(`${this.baseUrl}/grupos-mesas/${id}/`, { headers: this.getHeaders() });
     }

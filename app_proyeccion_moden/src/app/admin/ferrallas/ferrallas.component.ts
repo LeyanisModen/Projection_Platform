@@ -24,6 +24,9 @@ export class FerrallasComponent implements OnInit {
   loadingMesas = false;
   showAddMesaForm = false;
 
+  editingGrupoId: number | null = null;
+  editingGrupoName: string = '';
+
   showPairingModal = false;
   pairingMesa: GrupoMesaResumen | null = null;
   pairingCode = '';
@@ -137,6 +140,37 @@ export class FerrallasComponent implements OnInit {
         this.loadingMesas = false;
         alert(err?.error?.detail || 'Error creando grupo de mesas');
         this.cdr.detectChanges();
+      }
+    });
+  }
+
+  startEditingGrupo(grupo: GrupoMesas, event?: Event) {
+    if (event) event.stopPropagation();
+    this.editingGrupoId = grupo.id;
+    this.editingGrupoName = grupo.nombre;
+  }
+
+  stopEditingGrupo() {
+    this.editingGrupoId = null;
+    this.editingGrupoName = '';
+  }
+
+  updateGrupoName(grupo: GrupoMesas) {
+    if (this.editingGrupoId !== grupo.id) return;
+    const newName = (this.editingGrupoName || '').trim();
+    if (!newName || newName === grupo.nombre) {
+      this.stopEditingGrupo();
+      return;
+    }
+    this.api.updateGrupoMesas(grupo.id, { nombre: newName }).subscribe({
+      next: (updated) => {
+        grupo.nombre = updated.nombre;
+        this.stopEditingGrupo();
+      },
+      error: (err) => {
+        console.error('Error updating grupo name', err);
+        alert('No se pudo renombrar el grupo');
+        this.stopEditingGrupo();
       }
     });
   }

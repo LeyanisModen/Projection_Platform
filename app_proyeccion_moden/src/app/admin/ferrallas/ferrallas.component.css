@@ -282,6 +282,36 @@
     border-bottom: 1px solid #eee;
 }
 
+.grupo-title-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.grupo-edit-btn {
+    color: #adb5bd;
+    vertical-align: middle;
+}
+
+.group-header:hover .grupo-edit-btn {
+    color: #6c757d;
+}
+
+.grupo-edit-btn:hover {
+    color: var(--moden-primary, #f0640f);
+}
+
+.grupo-name-input {
+    font-size: 1rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border: 1px solid var(--moden-primary, #f0640f);
+    border-radius: 4px;
+    outline: none;
+    max-width: 240px;
+}
+
 .mesa-row-title {
     gap: 0.5rem;
 }
