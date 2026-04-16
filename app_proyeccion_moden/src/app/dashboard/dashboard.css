@@ -926,16 +926,11 @@
 
 .mesas-grid {
   display: grid;
-  /* 4-column base grid; SUP mesa spans 2 columns so the layout
-     becomes effectively INF1 | INF2 | SUP(2 cols). */
-  grid-template-columns: repeat(4, 1fr);
+  /* Layout: INF1 (30%) | INF2 (30%) | SUP (40%) */
+  grid-template-columns: 3fr 3fr 4fr;
   gap: 24px;
   overflow-y: auto;
   padding-bottom: 20px;
-}
-
-.mesa-card.mesa-sup {
-  grid-column: span 2;
 }
 
 @media (max-width: 1366px) {
@@ -943,7 +938,7 @@
     grid-template-columns: repeat(2, 1fr);
   }
   .mesa-card.mesa-sup {
-    grid-column: span 2;
+    grid-column: 1 / -1;
   }
 }
 
@@ -988,9 +983,11 @@
 }
 
 .mesa-header {
-  padding: 12px 16px;
-  background: #fcfcfc;
-  border-bottom: 1px solid var(--border-light);
+  padding: 10px 14px;
+  background: #eef1f5;
+  border-bottom: 1px solid #d8dde3;
+  border-top-left-radius: var(--border-radius);
+  border-top-right-radius: var(--border-radius);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -1092,11 +1089,22 @@
   text-transform: uppercase;
 }
 
+.mesa-queue-sup-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+}
+
+.sup-mostrando-banner {
+  margin: 0 4px;
+}
+
 .mesa-queue-sup {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
-  padding: 0 8px;
+  padding: 0 4px;
 }
 
 .sup-column {

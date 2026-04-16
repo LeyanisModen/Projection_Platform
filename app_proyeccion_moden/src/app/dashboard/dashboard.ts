@@ -1145,12 +1145,20 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   /**
-   * Split SUP queue into two columns based on item parity.
-   * The planner emits items alternating between INF1 and INF2 feeders,
-   * so even-position items go to the INF1 column and odd to INF2.
+   * The item currently MOSTRANDO on a SUP mesa is shown above both
+   * INF1/INF2 sub-columns (full width) so the operator can spot it fast.
+   */
+  getSupMostrandoItem(mesaId: number): MesaQueueItem | null {
+    return this.getMesaQueueItems(mesaId).find(i => i.status === 'MOSTRANDO') || null;
+  }
+
+  /**
+   * Split SUP queue into two columns based on item parity among non-showing items.
+   * The planner emits items alternating between INF1 and INF2 feeders.
    */
   getSupQueueColumn(mesaId: number, columnIndex: number): MesaQueueItem[] {
-    return this.getMesaQueueItems(mesaId).filter((_, i) => i % 2 === columnIndex);
+    const rest = this.getMesaQueueItems(mesaId).filter(i => i.status !== 'MOSTRANDO');
+    return rest.filter((_, i) => i % 2 === columnIndex);
   }
 
   getGrupoRoleLabel(rol: string): string {
