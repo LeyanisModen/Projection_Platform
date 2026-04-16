@@ -11,7 +11,7 @@ from django.contrib.auth.models import User
 from decimal import Decimal, InvalidOperation
 
 from django.db import IntegrityError, transaction
-from django.db.models import Count
+from django.db.models import Count, Q
 from rest_framework import permissions, viewsets, status
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
@@ -330,15 +330,37 @@ def _load_technical_records_from_upload(uploaded_file):
 
 
 def _resolve_modulo_for_record(proyecto, modulo_nombre, planta_nombre=None):
-    queryset = proyecto.modulos.select_related('planta').filter(nombre__iexact=str(modulo_nombre).strip())
+    """
+    Busca un modulo del proyecto por nombre tolerando prefijos comunes.
+    Acepta coincidencia exacta o cualquier variacion con prefijos MOD_, MOD-, MODULO_, MODULO-.
+    Devuelve (None, None) cuando no hay match — no es un error, significa que el
+    registro tecnico no corresponde a ningun modulo del proyecto (se omite silenciosamente).
+    """
+    target = str(modulo_nombre).strip()
+    if not target:
+        return None, None
+
+    candidates = {target}
+    # Intentar sin prefijo comun (ej: MOD_A01 -> A01)
+    for prefix in ('MODULO_', 'MODULO-', 'MOD_', 'MOD-'):
+        if target.upper().startswith(prefix):
+            candidates.add(target[len(prefix):])
+    # Intentar con prefijo (ej: A01 -> MOD_A01, MODULO_A01)
+    for prefix in ('MOD_', 'MODULO_'):
+        candidates.add(f'{prefix}{target}')
+
+    name_filter = Q()
+    for cand in candidates:
+        name_filter |= Q(nombre__iexact=cand)
+
+    queryset = proyecto.modulos.select_related('planta').filter(name_filter)
     if planta_nombre:
         queryset = queryset.filter(planta__nombre__iexact=str(planta_nombre).strip())
 
     matches = list(queryset[:2])
     if not matches:
-        if planta_nombre:
-            return None, f'No se encontro el modulo "{modulo_nombre}" en la planta "{planta_nombre}"'
-        return None, f'No se encontro el modulo "{modulo_nombre}"'
+        # No es un error: el registro tecnico no tiene contraparte en el proyecto
+        return None, None
     if len(matches) > 1:
         return None, f'El modulo "{modulo_nombre}" es ambiguo; indica tambien la planta'
     return matches[0], None
@@ -828,6 +850,10 @@ class ProyectoViewSet(viewsets.ModelViewSet):
             )
             if error:
                 stats['errors'].append(error)
+                continue
+            if modulo is None:
+                # Registro tecnico sin contraparte en el proyecto: se omite
+                stats['skipped'] += 1
                 continue
 
             module_updated = self._apply_module_fields(modulo, record.get('module_fields', {}))
