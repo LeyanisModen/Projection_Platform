@@ -126,6 +126,31 @@ def _normalize_phase(value):
     return PHASE_PREFIXES.get(canonical)
 
 
+DECIMAL_FIELDS_2_PLACES = {
+    'espesor_cm',
+    'peso_malla_inicial_kg',
+    'peso_malla_final_kg',
+    'desperdicio_kg',
+    'peso_refuerzos_kg',
+    'peso_zunchos_kg',
+    'peso_separadores_kg',
+    'peso_punzos_kg',
+    'dificultad_fabricacion',
+    'ancho_cm',
+}
+
+
+def _coerce_field_value(target_field, value):
+    """Round decimal fields to 2 places so they fit the model's DecimalField precision."""
+    if value is None or target_field not in DECIMAL_FIELDS_2_PLACES:
+        return value
+    try:
+        dec = Decimal(str(value))
+    except (TypeError, InvalidOperation):
+        return value
+    return dec.quantize(Decimal('0.01'))
+
+
 def _extract_detail_fields(row, prefix=None):
     detail_fields = {}
     for target_field, aliases in TECHNICAL_FIELD_ALIASES.items():
@@ -141,7 +166,7 @@ def _extract_detail_fields(row, prefix=None):
             search_aliases = prefixed + search_aliases
         value = _extract_value(row, search_aliases)
         if value is not None:
-            detail_fields[target_field] = value
+            detail_fields[target_field] = _coerce_field_value(target_field, value)
     return detail_fields
 
 
@@ -150,7 +175,7 @@ def _extract_module_fields(row):
     for target_field, aliases in MODULE_FIELD_ALIASES.items():
         value = _extract_value(row, aliases)
         if value is not None:
-            module_fields[target_field] = value
+            module_fields[target_field] = _coerce_field_value(target_field, value)
     return module_fields
 
 
