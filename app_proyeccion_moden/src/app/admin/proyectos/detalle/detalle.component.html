@@ -4,7 +4,7 @@
 
         <div class="header-content">
 
-            <a routerLink="/admin-dashboard/proyectos" class="btn btn-secondary btn-sm mb-2">â Volver</a>
+            <a routerLink="/admin-dashboard/proyectos" class="btn btn-secondary btn-sm mb-2">← Volver</a>
 
             <h1>{{ proyecto.nombre }}</h1>
 
@@ -73,7 +73,7 @@
                 <div class="project-config-header">
                     <div>
                         <label class="d-block mb-1">Bastidor de referencia</label>
-                        <small class="text-muted">La capacidad por mÃ³dulo se calcularÃ¡ como `bastidor / ancho del mÃ³dulo`.</small>
+                        <small class="text-muted">La capacidad por módulo se calculará como `bastidor / ancho del módulo`.</small>
                     </div>
                 </div>
                 <div class="project-config-controls">
@@ -93,15 +93,15 @@
                     </button>
                 </div>
                 <small class="project-config-hint">
-                    Valor actual para bastidores de prueba. Si cambia el sistema fÃ­sico, aquÃ­ ajustaremos la longitud util del bastidor.
+                    Valor actual para bastidores de prueba. Si cambia el sistema físico, aquí ajustaremos la longitud útil del bastidor.
                 </small>
             </div>
 
             <div class="project-config-card mb-3 p-3 bg-white rounded border">
                 <div class="project-config-header">
                     <div>
-                        <label class="d-block mb-1">Datos tÃ©cnicos del proyecto</label>
-                        <small class="text-muted">Importa un JSON, CSV o SQLite (.db) con ancho de mÃ³dulo, espesores, pesos y dificultad.</small>
+                        <label class="d-block mb-1">Datos técnicos del proyecto</label>
+                        <small class="text-muted">Importa un JSON, CSV o SQLite (.db) con ancho de módulo, espesores, pesos y dificultad.</small>
                     </div>
                 </div>
                 <div class="project-config-controls">
@@ -111,7 +111,7 @@
                         class="btn btn-sm btn-import-planta"
                         (click)="triggerTechnicalDataUpload(technicalDataInput)"
                         [disabled]="technicalImporting">
-                        {{ technicalImporting ? 'Importando...' : 'Importar datos tÃ©cnicos' }}
+                        {{ technicalImporting ? 'Importando...' : 'Importar datos técnicos' }}
                     </button>
                 </div>
                 <div class="technical-import-summary" *ngIf="technicalImportStats">
@@ -328,7 +328,7 @@
 
                     <div *ngIf="modulos.length === 0" class="text-center p-5 text-muted">
 
-                        Esta planta no tiene mÃ³dulos.
+                        Este proyecto no tiene módulos.
 
                     </div>
 
@@ -346,7 +346,7 @@
 
                     <h3>Aún no hay módulos</h3>
 
-                    <p>Importa una planta desde el panel de la izquierda para visualizar sus mÃ³dulos y estado.</p>
+                    <p>Importa la carpeta del proyecto usando el botón "Importar nuevos Módulos" de la izquierda.</p>
 
                 </div>
 
@@ -370,7 +370,7 @@
 
                 <h4>Archivos del Proyecto</h4>
 
-                <small class="text-muted">Plano e informaciÃ³n de planilla por planta.</small>
+                <small class="text-muted">Plano e información de planilla del proyecto.</small>
 
             </div>
 
@@ -526,7 +526,7 @@
 
         <div *ngIf="!loadingFotos && fotos.length === 0" class="text-center p-3 text-muted">
 
-            No hay fotos para este mÃ³dulo.
+            No hay fotos para este módulo.
 
         </div>
 
@@ -538,19 +538,19 @@
 
                 <button class="slideshow-btn prev" (click)="prevFoto()" [disabled]="selectedFotoIndex === 0">
 
-                    â¹
+                    ❮
 
                 </button>
 
                 <div class="slideshow-image-wrap">
 
-                    <img [src]="getFotoUrl(fotos[selectedFotoIndex])" alt="Foto fabricaciÃ³n">
+                    <img [src]="getFotoUrl(fotos[selectedFotoIndex])" alt="Foto fabricación">
 
                 </div>
 
                 <button class="slideshow-btn next" (click)="nextFoto()" [disabled]="selectedFotoIndex >= fotos.length - 1">
 
-                    âº
+                    ❯
 
                 </button>
 
