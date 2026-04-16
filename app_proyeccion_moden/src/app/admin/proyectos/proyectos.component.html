@@ -155,8 +155,8 @@
                     <span *ngIf="!group.userUrl">📋</span>
                     {{ group.username }}
                 </h3>
-                <span class="badge" [class.badge-warning]="!group.userUrl" [class.badge-info]="group.userUrl">
-                    {{ group.projects.length }} Proyecto(s)
+                <span class="badge badge-count" [class.badge-warning]="!group.userUrl" [class.badge-info]="group.userUrl">
+                    {{ group.projects.length }} {{ group.projects.length === 1 ? 'proyecto' : 'proyectos' }}
                 </span>
             </div>
             <div class="card-body p-0" *ngIf="!group.collapsed">

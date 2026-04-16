@@ -127,11 +127,13 @@
 }
 
 .badge {
-    background: var(--moden-primary, #e8590c);
+    background: var(--moden-primary, #f0640f);
     color: white;
-    padding: 0.25rem 0.5rem;
+    padding: 0.2rem 0.7rem;
     border-radius: 12px;
-    font-size: 0.85rem;
+    font-size: 0.8rem;
+    font-weight: 500;
+    letter-spacing: 0.02em;
 }
 
 .card-body {
