@@ -1152,9 +1152,14 @@ export class Dashboard implements OnInit, OnDestroy {
     return this.getMesaQueueItems(mesaId).find(i => i.status === 'MOSTRANDO') || null;
   }
 
-  /** Max items shown per mesa queue (roughly a working day's output). */
-  private getMesaDailyCapForProject(): number {
-    return this.selectedProyecto?.capacidad_diaria_modulos || 6;
+  /**
+   * Daily cap shown in each mesa queue.
+   * INF1 and INF2 each produce `capacidad_diaria`, so the SUP mesa has to
+   * finish the superiores of both of them → SUP shows 2x the capacity.
+   */
+  private getMesaDailyCapForProject(mesa?: Mesa): number {
+    const base = this.selectedProyecto?.capacidad_diaria_modulos || 6;
+    return mesa?.rol === 'SUPERIORES' ? base * 2 : base;
   }
 
   /**
@@ -1162,29 +1167,34 @@ export class Dashboard implements OnInit, OnDestroy {
    * entries. Everything else is collapsed into a "+N más" caption.
    */
   getVisibleMesaQueueItems(mesaId: number): MesaQueueItem[] {
-    return this.getMesaQueueItems(mesaId).slice(0, this.getMesaDailyCapForProject());
+    const mesa = this.mesas.find(m => m.id === mesaId);
+    return this.getMesaQueueItems(mesaId).slice(0, this.getMesaDailyCapForProject(mesa));
   }
 
   getHiddenMesaQueueCount(mesaId: number): number {
+    const mesa = this.mesas.find(m => m.id === mesaId);
     const total = this.getMesaQueueItems(mesaId).length;
-    return Math.max(0, total - this.getMesaDailyCapForProject());
+    return Math.max(0, total - this.getMesaDailyCapForProject(mesa));
   }
 
   /**
    * Split SUP queue into two columns based on item parity among non-showing items.
    * The planner emits items alternating between INF1 and INF2 feeders.
-   * Only the first `capacidad_diaria` items are surfaced so the view stays focused.
+   * Only the first `2 x capacidad_diaria` items are surfaced so SUP matches
+   * the daily output of both INF mesas combined.
    */
   getSupQueueColumn(mesaId: number, columnIndex: number): MesaQueueItem[] {
+    const mesa = this.mesas.find(m => m.id === mesaId);
     const rest = this.getMesaQueueItems(mesaId)
       .filter(i => i.status !== 'MOSTRANDO')
-      .slice(0, this.getMesaDailyCapForProject());
+      .slice(0, this.getMesaDailyCapForProject(mesa));
     return rest.filter((_, i) => i % 2 === columnIndex);
   }
 
   getSupHiddenCount(mesaId: number): number {
+    const mesa = this.mesas.find(m => m.id === mesaId);
     const rest = this.getMesaQueueItems(mesaId).filter(i => i.status !== 'MOSTRANDO');
-    return Math.max(0, rest.length - this.getMesaDailyCapForProject());
+    return Math.max(0, rest.length - this.getMesaDailyCapForProject(mesa));
   }
 
   getGrupoRoleLabel(rol: string): string {
