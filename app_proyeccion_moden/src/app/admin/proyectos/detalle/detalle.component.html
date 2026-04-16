@@ -72,11 +72,11 @@
             <div class="project-config-card mb-3 p-3 bg-white rounded border">
                 <div class="project-config-header">
                     <div>
-                        <label class="d-block mb-1">Datos técnicos del proyecto</label>
+                        <label class="d-block mb-1">
+                            Datos técnicos del proyecto
+                            <i *ngIf="proyecto.datos_tecnicos_importados" class="fa fa-check-circle text-success ml-1" title="Datos técnicos importados"></i>
+                        </label>
                         <small class="text-muted" *ngIf="!proyecto.datos_tecnicos_importados">Importa un JSON, CSV o SQLite (.db) con ancho de módulo, espesores, pesos y dificultad. Al importar se calcularán los grupos de bastidor.</small>
-                        <small class="text-success d-block" *ngIf="proyecto.datos_tecnicos_importados">
-                            <i class="fa fa-check-circle"></i> Datos técnicos ya importados. Para cambiarlos, elimina el proyecto y créalo de nuevo.
-                        </small>
                     </div>
                 </div>
                 <div class="project-config-controls" *ngIf="!proyecto.datos_tecnicos_importados">
@@ -105,25 +105,32 @@
 
             <!-- Archivos del proyecto -->
             <div class="project-config-card mb-3 p-3 bg-white rounded border" *ngIf="selectedPlanta">
-                <div class="project-config-header">
+                <div class="project-config-header d-flex justify-content-between align-items-start">
                     <div>
                         <label class="d-block mb-1">Archivos del proyecto</label>
-                        <small class="text-muted">Plano de referencia y planilla del proyecto.</small>
                     </div>
-                </div>
-                <div class="project-config-controls mt-2">
-                    <button type="button" class="btn btn-sm btn-outline-secondary mr-2"
+                    <button type="button" class="btn btn-sm btn-link p-0"
                         (click)="openPlantaFilesModal(selectedPlanta)"
-                        title="Gestionar archivos del proyecto">
-                        <i class="fa fa-paperclip" aria-hidden="true"></i> Gestionar PDF/Plano
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary"
-                        (click)="downloadFotosPlanta(selectedPlanta)"
-                        [disabled]="downloadingZip"
-                        title="Descargar fotos completas">
-                        <i class="fa fa-download" aria-hidden="true"></i> Fotos ZIP
+                        title="Editar archivos del proyecto">
+                        <i class="fa fa-pencil" aria-hidden="true"></i>
                     </button>
                 </div>
+                <ul class="archivo-proyecto-list mt-2">
+                    <li>
+                        <strong>Plano:</strong>
+                        <span *ngIf="selectedPlanta.plano_imagen" class="text-success">
+                            <i class="fa fa-check"></i> cargado
+                        </span>
+                        <span *ngIf="!selectedPlanta.plano_imagen" class="text-muted">sin cargar</span>
+                    </li>
+                    <li>
+                        <strong>Planilla:</strong>
+                        <span *ngIf="selectedPlanta.fichero_corte" class="text-success">
+                            <i class="fa fa-check"></i> cargada
+                        </span>
+                        <span *ngIf="!selectedPlanta.fichero_corte" class="text-muted">sin cargar</span>
+                    </li>
+                </ul>
             </div>
 
             <!-- Importar modulos desde carpeta local -->
@@ -175,32 +182,28 @@
                         <p class="mb-0 mt-2">Importa los datos técnicos (fichero .db, .csv o .json) desde el panel izquierdo para agrupar los módulos por bastidor.</p>
                     </div>
 
-                    <!-- Vista por grupos -->
-                    <div *ngFor="let grupo of grupos" class="grupo-bastidor-card mb-4 p-3 rounded border">
-                        <div class="grupo-bastidor-header d-flex justify-content-between align-items-center mb-2">
-                            <h4 class="mb-0">Grupo {{ grupo.indice }}</h4>
-                            <span class="badge badge-info">{{ grupo.modulos.length }} módulos</span>
-                        </div>
-                        <div class="modules-grid-compact">
-                            <div *ngFor="let modulo of grupo.modulos" class="module-compact"
-                                [class.status-pendiente]="modulo.estado === 'PENDIENTE'"
-                                [class.status-progreso]="modulo.estado === 'EN_PROGRESO'"
-                                [class.status-completado]="modulo.estado === 'COMPLETADO'"
-                                [class.status-cerrado]="modulo.estado === 'CERRADO'">
-
-                                <div class="module-header-row">
-                                    <span class="module-name">{{ modulo.nombre }}</span>
-                                </div>
-
-                                <div class="module-actions mt-2">
-                                    <button type="button" class="btn btn-sm btn-outline-warning w-100"
-                                        (click)="reiniciarModulo(modulo.id, $event)"
-                                        [disabled]="modulo.estado === 'PENDIENTE'"
-                                        title="Reiniciar módulo (pone INF y SUP como pendientes)">
-                                        <i class="fa fa-undo" aria-hidden="true"></i> Reiniciar
-                                    </button>
-                                </div>
+                    <!-- Vista por grupos (compacta, tipo lista) -->
+                    <div class="grupos-wrapper">
+                        <div *ngFor="let grupo of grupos" class="grupo-bastidor-card">
+                            <div class="grupo-bastidor-header">
+                                <h4>Grupo {{ grupo.indice }}</h4>
+                                <span class="badge badge-info">{{ grupo.modulos.length }} módulos</span>
                             </div>
+                            <ul class="grupo-modulos-list">
+                                <li *ngFor="let modulo of grupo.modulos"
+                                    class="grupo-modulo-item"
+                                    [class.is-completado]="modulo.estado === 'COMPLETADO' || modulo.estado === 'CERRADO'"
+                                    [class.is-progreso]="modulo.estado === 'EN_PROGRESO'">
+                                    <span class="grupo-modulo-nombre">{{ modulo.nombre }}</span>
+                                    <button type="button"
+                                        class="grupo-modulo-reset"
+                                        *ngIf="modulo.estado !== 'PENDIENTE'"
+                                        (click)="reiniciarModulo(modulo.id, $event)"
+                                        title="Reiniciar módulo">
+                                        <i class="fa fa-undo" aria-hidden="true"></i>
+                                    </button>
+                                </li>
+                            </ul>
                         </div>
                     </div>
 

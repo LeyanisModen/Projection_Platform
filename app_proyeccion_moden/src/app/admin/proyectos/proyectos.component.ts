@@ -202,12 +202,14 @@ export class ProyectosComponent implements OnInit {
         // CASE 1: Module (directory like MOD-01)
         if (childHandle.kind === 'directory') {
           const moduloName = childName;
+          // Strip common prefixes so names match the technical DB (MODULO_A01 -> A01)
+          const cleanName = moduloName.replace(/^(MODULO|MOD)[_-]/i, '');
 
-          this.importProgress = `Procesando modulo: ${moduloName}...`;
+          this.importProgress = `Procesando modulo: ${cleanName}...`;
           this.cdr.detectChanges();
 
           const moduloData: any = {
-            nombre: moduloName,
+            nombre: cleanName,
             imagenes: []
           };
 

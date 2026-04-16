@@ -649,27 +649,104 @@
     padding: 0.25rem;
 }
 
+.grupos-wrapper {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 1rem;
+}
+
 .grupo-bastidor-card {
     background-color: #f8f9fa;
-    border-left: 4px solid #0d6efd !important;
+    border: 1px solid #dee2e6;
+    border-left: 4px solid #0d6efd;
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+}
+
+.grupo-bastidor-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+    padding-bottom: 0.35rem;
+    border-bottom: 1px solid #e9ecef;
 }
 
 .grupo-bastidor-header h4 {
     color: #0d6efd;
-    font-size: 1.1rem;
+    font-size: 0.95rem;
     font-weight: 600;
     margin: 0;
 }
 
-.module-actions {
-    display: flex;
-    gap: 0.5rem;
-    margin-top: 0.35rem;
+.grupo-modulos-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
 }
 
-.module-actions .btn {
-    font-size: 0.7rem;
-    padding: 0.15rem 0.35rem;
+.grupo-modulo-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.15rem 0.25rem;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #212529;
+    border-radius: 3px;
+}
+
+.grupo-modulo-item:hover {
+    background-color: #eef2f7;
+}
+
+.grupo-modulo-item.is-completado {
+    color: #adb5bd;
+    text-decoration: line-through;
+}
+
+.grupo-modulo-item.is-progreso {
+    color: #856404;
+}
+
+.grupo-modulo-nombre {
+    flex: 1;
+}
+
+.grupo-modulo-reset {
+    background: none;
+    border: none;
+    color: #fd7e14;
+    cursor: pointer;
+    padding: 0.1rem 0.35rem;
+    font-size: 0.8rem;
+    line-height: 1;
+    border-radius: 3px;
+    transition: background-color 0.15s;
+}
+
+.grupo-modulo-reset:hover {
+    background-color: #fff3cd;
+    color: #d35400;
+}
+
+.archivo-proyecto-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    font-size: 0.85rem;
+}
+
+.archivo-proyecto-list li {
+    padding: 0.15rem 0;
+    display: flex;
+    gap: 0.4rem;
+    align-items: center;
+}
+
+.archivo-proyecto-list li strong {
+    color: #495057;
+    font-weight: 600;
 }
 
 .module-compact {

@@ -470,6 +470,8 @@ export class ProyectoDetailComponent implements OnInit {
                             cleanName = parts.slice(0, -1).join('_');
                         }
                     }
+                    // Strip common prefixes (MODULO_, MOD_, MODULO-, MOD-) so names match DB records
+                    cleanName = cleanName.replace(/^(MODULO|MOD)[_-]/i, '');
 
                     const moduloData: any = {
                         nombre: cleanName,
