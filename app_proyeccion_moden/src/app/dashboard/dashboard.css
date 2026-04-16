@@ -926,19 +926,24 @@
 
 .mesas-grid {
   display: grid;
-  /* Default: Attempt to fit 3 columns, but respect min-width. 
-     Using 1fr ensures they fill space. 
-     We use media queries below to force 3 columns on desktop. */
-  grid-template-columns: repeat(3, 1fr);
+  /* 4-column base grid; SUP mesa spans 2 columns so the layout
+     becomes effectively INF1 | INF2 | SUP(2 cols). */
+  grid-template-columns: repeat(4, 1fr);
   gap: 24px;
-  /* Increased gap slightly for breathing room */
   overflow-y: auto;
   padding-bottom: 20px;
+}
+
+.mesa-card.mesa-sup {
+  grid-column: span 2;
 }
 
 @media (max-width: 1366px) {
   .mesas-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+  .mesa-card.mesa-sup {
+    grid-column: span 2;
   }
 }
 
@@ -1085,6 +1090,25 @@
   letter-spacing: 0.1em;
   padding: 0.4rem 0 0.2rem;
   text-transform: uppercase;
+}
+
+.mesa-queue-sup {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 0 8px;
+}
+
+.sup-column {
+  display: flex;
+  flex-direction: column;
+}
+
+.sup-column .queue-group-divider {
+  position: sticky;
+  top: 0;
+  background: var(--card-bg, #fff);
+  z-index: 1;
 }
 
 .drop-zone {

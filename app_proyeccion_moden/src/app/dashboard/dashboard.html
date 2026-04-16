@@ -72,7 +72,10 @@
 
                         <div class="mesas-grid grupo-mesas-grid">
                             @for (mesa of getMesasForGrupo(grupo.id); track trackByMesa($index, mesa)) {
-                            <div class="mesa-card" [class.locked]="mesa.locked" [class.blackout]="mesa.blackout">
+                            <div class="mesa-card"
+                                [class.locked]="mesa.locked"
+                                [class.blackout]="mesa.blackout"
+                                [class.mesa-sup]="mesa.rol === 'SUPERIORES'">
                                 <div class="mesa-header">
                                     <div class="mesa-title-container">
                                         <span class="mesa-role-badge">{{ getMesaRoleLabel(mesa) }}</span>
@@ -112,21 +115,48 @@
                                     </div>
                                 </div>
 
-                                <div class="mesa-queue">
-                                    @for (item of getMesaQueueItems(mesa.id); track trackByItem($index, item)) {
-                                    @if (shouldShowGroupDivider(item, $index, mesa)) {
-                                        <div class="queue-group-divider">
-                                            — Grupo {{ getItemGrupoIndice(item) }} —
+                                @if (mesa.rol === 'SUPERIORES') {
+                                    <div class="mesa-queue mesa-queue-sup">
+                                        <div class="sup-column">
+                                            <div class="queue-group-divider">— INF1 —</div>
+                                            @for (item of getSupQueueColumn(mesa.id, 0); track trackByItem($index, item)) {
+                                                <div class="queue-item" [class]="getItemStatusClass(item.status)">
+                                                    <div class="queue-item-info">
+                                                        <span class="queue-item-nombre">{{ item.modulo_nombre }}</span>
+                                                        <span class="queue-item-status">{{ item.status }}</span>
+                                                    </div>
+                                                </div>
+                                            }
                                         </div>
-                                    }
-                                    <div class="queue-item" [class]="getItemStatusClass(item.status)">
-                                        <div class="queue-item-info">
-                                            <span class="queue-item-nombre">{{ item.modulo_nombre }}</span>
-                                            <span class="queue-item-status">{{ item.status }}</span>
+                                        <div class="sup-column">
+                                            <div class="queue-group-divider">— INF2 —</div>
+                                            @for (item of getSupQueueColumn(mesa.id, 1); track trackByItem($index, item)) {
+                                                <div class="queue-item" [class]="getItemStatusClass(item.status)">
+                                                    <div class="queue-item-info">
+                                                        <span class="queue-item-nombre">{{ item.modulo_nombre }}</span>
+                                                        <span class="queue-item-status">{{ item.status }}</span>
+                                                    </div>
+                                                </div>
+                                            }
                                         </div>
                                     </div>
-                                    }
-                                </div>
+                                } @else {
+                                    <div class="mesa-queue">
+                                        @for (item of getMesaQueueItems(mesa.id); track trackByItem($index, item)) {
+                                            @if (shouldShowGroupDivider(item, $index, mesa)) {
+                                                <div class="queue-group-divider">
+                                                    — Grupo {{ getItemGrupoIndice(item) }} —
+                                                </div>
+                                            }
+                                            <div class="queue-item" [class]="getItemStatusClass(item.status)">
+                                                <div class="queue-item-info">
+                                                    <span class="queue-item-nombre">{{ item.modulo_nombre }}</span>
+                                                    <span class="queue-item-status">{{ item.status }}</span>
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+                                }
                             </div>
                             }
                         </div>

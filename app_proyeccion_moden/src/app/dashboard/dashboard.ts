@@ -1144,6 +1144,15 @@ export class Dashboard implements OnInit, OnDestroy {
     return item.plan_group_index ?? null;
   }
 
+  /**
+   * Split SUP queue into two columns based on item parity.
+   * The planner emits items alternating between INF1 and INF2 feeders,
+   * so even-position items go to the INF1 column and odd to INF2.
+   */
+  getSupQueueColumn(mesaId: number, columnIndex: number): MesaQueueItem[] {
+    return this.getMesaQueueItems(mesaId).filter((_, i) => i % 2 === columnIndex);
+  }
+
   getGrupoRoleLabel(rol: string): string {
     switch (rol) {
       case 'INFERIOR_1':
