@@ -42,16 +42,15 @@
 
 /* Custom styles for bigger cards */
 .ferralla-selector {
-    padding: 25px !important;
-    min-height: 140px;
+    padding: 0.75rem 1rem !important;
     display: flex;
     flex-direction: column;
     justify-content: center;
 }
 
 .ferralla-selector label {
-    font-size: 1.1rem;
-    margin-bottom: 10px;
+    font-size: 0.95rem;
+    margin-bottom: 0.35rem;
     font-weight: 500;
 }
 
@@ -477,9 +476,10 @@
 }
 
 .custom-dropdown-arrow {
-    font-size: 0.7rem;
-    color: #94a3b8;
+    font-size: 1.1rem;
+    color: #6c757d;
     margin-left: 0.4rem;
+    line-height: 1;
 }
 
 .custom-dropdown-menu {
