@@ -658,25 +658,47 @@
 .grupo-bastidor-card {
     background-color: #f8f9fa;
     border: 1px solid #dee2e6;
-    border-left: 4px solid #0d6efd;
+    border-left: 4px solid #adb5bd;
     border-radius: 6px;
     padding: 0.75rem 1rem;
 }
 
+.grupo-bastidor-card.grupo-pendiente {
+    border-left-color: #ffc107;
+}
+
+.grupo-bastidor-card.grupo-completado {
+    border-left-color: #28a745;
+}
+
 .grupo-bastidor-header {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
+    flex-direction: column;
+    align-items: flex-start;
     margin-bottom: 0.5rem;
     padding-bottom: 0.35rem;
     border-bottom: 1px solid #e9ecef;
 }
 
 .grupo-bastidor-header h4 {
-    color: #0d6efd;
+    color: #495057;
     font-size: 0.95rem;
     font-weight: 600;
     margin: 0;
+}
+
+.grupo-bastidor-card.grupo-pendiente .grupo-bastidor-header h4 {
+    color: #b38600;
+}
+
+.grupo-bastidor-card.grupo-completado .grupo-bastidor-header h4 {
+    color: #1e7e34;
+}
+
+.grupo-modulos-count {
+    color: #6c757d;
+    font-size: 0.75rem;
+    margin-top: 0.1rem;
 }
 
 .grupo-modulos-list {
@@ -728,6 +750,17 @@
 .grupo-modulo-reset:hover {
     background-color: #fff3cd;
     color: #d35400;
+}
+
+.btn-edit-icon {
+    color: #6c757d;
+    background: none;
+    border: none;
+}
+
+.btn-edit-icon:hover {
+    color: #343a40;
+    background: none;
 }
 
 .archivo-proyecto-list {

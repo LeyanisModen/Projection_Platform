@@ -185,6 +185,7 @@ export class ProyectosComponent implements OnInit {
     try {
       const formData = new FormData();
       const validExtensions = ['.png', '.jpg', '.jpeg'];
+      let technicalDbFile: File | null = null;
 
       // Single virtual "General" planta for backend compatibility
       const plantaUnicaData: any = {
@@ -261,11 +262,15 @@ export class ProyectosComponent implements OnInit {
             formData.append(uniqueFilename, file, uniqueFilename);
             plantaUnicaData.plano_filename = uniqueFilename;
           }
-          else if (['.pdf', '.xls', '.xlsx', '.csv'].includes(ext)) {
+          else if (['.pdf', '.xls', '.xlsx'].includes(ext)) {
             console.log(`[IMPORT] Found DOC for project: ${fileName}`);
             const file = await (childHandle as any).getFile();
             formData.append(uniqueFilename, file, uniqueFilename);
             plantaUnicaData.corte_filename = uniqueFilename;
+          }
+          else if (['.db', '.sqlite', '.sqlite3'].includes(ext)) {
+            console.log(`[IMPORT] Found technical DB for project: ${fileName}`);
+            technicalDbFile = await (childHandle as any).getFile();
           }
         }
       }
@@ -279,20 +284,38 @@ export class ProyectosComponent implements OnInit {
       this.api.importProjectStructure(proyectoId, formData).subscribe({
         next: (result) => {
           this.importStats = result.stats;
-          this.importing = false;
-          this.importProgress = '';
           console.log('Import complete:', result);
 
-          if (result.stats.errors.length > 0) {
-            this.error = `Importacion completada con ${result.stats.errors.length} errores`;
+          const finishImport = () => {
+            this.importing = false;
+            this.importProgress = '';
+            if (result.stats.errors.length > 0) {
+              this.error = `Importacion completada con ${result.stats.errors.length} errores`;
+            } else {
+              this.showForm = false;
+              this.selectedFolder = null;
+              this.folderName = '';
+              this.importStats = null;
+            }
+            this.cdr.detectChanges();
+          };
+
+          // If a .db/.sqlite was found, auto-import technical data
+          if (technicalDbFile) {
+            this.importProgress = 'Importando datos técnicos...';
+            this.cdr.detectChanges();
+            const techForm = new FormData();
+            techForm.append('technical_file', technicalDbFile);
+            this.api.importProjectTechnicalData(proyectoId, techForm).subscribe({
+              next: () => finishImport(),
+              error: (err) => {
+                console.warn('Auto technical import failed:', err);
+                finishImport();
+              }
+            });
           } else {
-            // Success - close form and reset
-            this.showForm = false;
-            this.selectedFolder = null;
-            this.folderName = '';
-            this.importStats = null;
+            finishImport();
           }
-          this.cdr.detectChanges();
         },
         error: (err) => {
           console.error('Error importing structure:', err);

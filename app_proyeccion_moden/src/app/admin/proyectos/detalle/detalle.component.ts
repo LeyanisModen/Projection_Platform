@@ -141,6 +141,11 @@ export class ProyectoDetailComponent implements OnInit {
         });
     }
 
+    isGrupoCompletado(grupo: GrupoBastidor): boolean {
+        if (!grupo.modulos.length) return false;
+        return grupo.modulos.every(m => m.estado === 'COMPLETADO' || m.estado === 'CERRADO');
+    }
+
     reiniciarModulo(moduloId: number, event?: Event): void {
         if (event) event.stopPropagation();
         const confirmed = confirm('Reiniciar este modulo volvera a poner las fases INF y SUP como pendientes. Continuar?');
@@ -442,6 +447,7 @@ export class ProyectoDetailComponent implements OnInit {
 
             const formData = new FormData();
             const validExtensions = ['.png', '.jpg', '.jpeg'];
+            let technicalDbFile: File | null = null;
 
             // Use single virtual "General" planta for backend compatibility
             const plantaUnicaData: any = {
@@ -452,6 +458,14 @@ export class ProyectoDetailComponent implements OnInit {
 
             // Iterate modules (direct children of project folder)
             for await (const [childName, childHandle] of (projectHandle as any).entries()) {
+                if (childHandle.kind === 'file') {
+                    const fileName = childName;
+                    const ext = fileName.toLowerCase().substring(fileName.lastIndexOf('.'));
+                    if (['.db', '.sqlite', '.sqlite3'].includes(ext)) {
+                        technicalDbFile = await (childHandle as any).getFile();
+                    }
+                    continue;
+                }
                 if (childHandle.kind === 'directory') {
                     const moduloName = childName;
                     const moduloHandle = childHandle;
@@ -521,10 +535,29 @@ export class ProyectoDetailComponent implements OnInit {
             // Upload
             this.api.importProjectStructure(this.proyectoId, formData).subscribe({
                 next: (res) => {
-                    this.importing = false;
-                    this.importProgress = '';
-                    alert(`Modulos importados correctamente: ${res.stats.modulos} creados.`);
-                    this.loadData();
+                    const finish = () => {
+                        this.importing = false;
+                        this.importProgress = '';
+                        alert(`Modulos importados correctamente: ${res.stats.modulos} creados.`);
+                        this.loadData();
+                    };
+
+                    // Auto-import technical data if .db was found in the folder
+                    if (technicalDbFile && this.proyectoId) {
+                        this.importProgress = 'Importando datos técnicos...';
+                        this.cdr.detectChanges();
+                        const techForm = new FormData();
+                        techForm.append('technical_file', technicalDbFile);
+                        this.api.importProjectTechnicalData(this.proyectoId, techForm).subscribe({
+                            next: () => finish(),
+                            error: (err) => {
+                                console.warn('Auto technical import failed:', err);
+                                finish();
+                            }
+                        });
+                    } else {
+                        finish();
+                    }
                 },
                 error: (err) => {
                     console.error('Error uploading modules', err);

@@ -109,7 +109,7 @@
                     <div>
                         <label class="d-block mb-1">Archivos del proyecto</label>
                     </div>
-                    <button type="button" class="btn btn-sm btn-link p-0"
+                    <button type="button" class="btn btn-sm btn-edit-icon p-0"
                         (click)="openPlantaFilesModal(selectedPlanta)"
                         title="Editar archivos del proyecto">
                         <i class="fa fa-pencil" aria-hidden="true"></i>
@@ -142,7 +142,7 @@
                     </div>
                 </div>
                 <div class="project-config-controls mt-2">
-                    <button class="btn btn-sm btn-primary w-100" (click)="importPlantaFromFolder()"
+                    <button class="btn btn-sm btn-secondary w-100" (click)="importPlantaFromFolder()"
                         [disabled]="importing">
                         {{ importing ? 'Importando...' : 'Importar nuevos Módulos' }}
                     </button>
@@ -184,10 +184,13 @@
 
                     <!-- Vista por grupos (compacta, tipo lista) -->
                     <div class="grupos-wrapper">
-                        <div *ngFor="let grupo of grupos" class="grupo-bastidor-card">
+                        <div *ngFor="let grupo of grupos"
+                            class="grupo-bastidor-card"
+                            [class.grupo-completado]="isGrupoCompletado(grupo)"
+                            [class.grupo-pendiente]="!isGrupoCompletado(grupo)">
                             <div class="grupo-bastidor-header">
                                 <h4>Grupo {{ grupo.indice }}</h4>
-                                <span class="badge badge-info">{{ grupo.modulos.length }} módulos</span>
+                                <small class="grupo-modulos-count">{{ grupo.modulos.length }} módulos</small>
                             </div>
                             <ul class="grupo-modulos-list">
                                 <li *ngFor="let modulo of grupo.modulos"
