@@ -741,21 +741,58 @@
     flex: 1;
 }
 
-.grupo-modulo-reset {
+.grupo-modulo-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.15rem;
+}
+
+.grupo-modulo-reset,
+.grupo-modulo-camera {
     background: none;
     border: none;
-    color: #fd7e14;
     cursor: pointer;
-    padding: 0.1rem 0.35rem;
-    font-size: 0.8rem;
+    padding: 0.1rem 0.3rem;
+    font-size: 0.75rem;
     line-height: 1;
     border-radius: 3px;
-    transition: background-color 0.15s;
+    transition: background-color 0.15s, color 0.15s;
+}
+
+.grupo-modulo-reset {
+    color: #fd7e14;
 }
 
 .grupo-modulo-reset:hover {
     background-color: #fff3cd;
     color: #d35400;
+}
+
+.grupo-modulo-camera.has-fotos {
+    color: #0d6efd;
+}
+
+.grupo-modulo-camera.has-fotos:hover {
+    background-color: #e7f1ff;
+    color: #0a58ca;
+}
+
+.grupo-modulo-camera.no-fotos {
+    color: #adb5bd;
+    cursor: not-allowed;
+    position: relative;
+}
+
+/* Tachado diagonal cuando no hay fotos */
+.grupo-modulo-camera.no-fotos::after {
+    content: "";
+    position: absolute;
+    left: 15%;
+    right: 15%;
+    top: 50%;
+    border-top: 1.5px solid #adb5bd;
+    transform: rotate(-20deg);
+    transform-origin: center;
 }
 
 .btn-edit-icon {

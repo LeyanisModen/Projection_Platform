@@ -58,7 +58,7 @@ export class ProyectoDetailComponent implements OnInit {
 
     // Photo Gallery State
     showFotosModal = false;
-    fotosTarget: Modulo | null = null;
+    fotosTarget: { id: number; nombre: string } | null = null;
     fotos: FotoFabricacion[] = [];
     loadingFotos = false;
     downloadingZip = false;
@@ -787,9 +787,9 @@ export class ProyectoDetailComponent implements OnInit {
     // =========================================================================
     // PHOTO GALLERY
     // =========================================================================
-    openFotosModal(modulo: Modulo, event?: Event): void {
+    openFotosModal(modulo: { id: number; nombre: string }, event?: Event): void {
         if (event) event.stopPropagation();
-        this.fotosTarget = modulo;
+        this.fotosTarget = { id: modulo.id, nombre: modulo.nombre };
         this.showFotosModal = true;
         this.selectedFotoIndex = 0;
         this.loadFotos(modulo.id);

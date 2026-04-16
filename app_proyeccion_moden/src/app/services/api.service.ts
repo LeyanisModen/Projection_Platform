@@ -46,6 +46,7 @@ export interface GrupoBastidorModulo {
     inferior_hecho: boolean;
     superior_hecho: boolean;
     cerrado: boolean;
+    fotos_count: number;
 }
 
 export interface GrupoBastidor {

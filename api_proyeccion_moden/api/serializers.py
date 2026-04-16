@@ -179,6 +179,7 @@ class GrupoBastidorSerializer(serializers.ModelSerializer):
                 "inferior_hecho": m.inferior_hecho,
                 "superior_hecho": m.superior_hecho,
                 "cerrado": m.cerrado,
+                "fotos_count": m.fotos_fabricacion.count(),
             }
             for m in modulos
         ]
