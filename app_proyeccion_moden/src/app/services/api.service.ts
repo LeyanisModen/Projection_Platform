@@ -36,6 +36,7 @@ export interface Proyecto {
     usuario: string;
     bastidor_longitud_cm: number;
     datos_tecnicos_importados: boolean;
+    capacidad_diaria_modulos?: number;
     grupos_count?: number;
     modulos_count?: number;
     modulos_completados?: number;

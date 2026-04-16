@@ -1152,13 +1152,39 @@ export class Dashboard implements OnInit, OnDestroy {
     return this.getMesaQueueItems(mesaId).find(i => i.status === 'MOSTRANDO') || null;
   }
 
+  /** Max items shown per mesa queue (roughly a working day's output). */
+  private getMesaDailyCapForProject(): number {
+    return this.selectedProyecto?.capacidad_diaria_modulos || 6;
+  }
+
+  /**
+   * Items visible in a regular (INF) mesa queue: at most `capacidad_diaria`
+   * entries. Everything else is collapsed into a "+N más" caption.
+   */
+  getVisibleMesaQueueItems(mesaId: number): MesaQueueItem[] {
+    return this.getMesaQueueItems(mesaId).slice(0, this.getMesaDailyCapForProject());
+  }
+
+  getHiddenMesaQueueCount(mesaId: number): number {
+    const total = this.getMesaQueueItems(mesaId).length;
+    return Math.max(0, total - this.getMesaDailyCapForProject());
+  }
+
   /**
    * Split SUP queue into two columns based on item parity among non-showing items.
    * The planner emits items alternating between INF1 and INF2 feeders.
+   * Only the first `capacidad_diaria` items are surfaced so the view stays focused.
    */
   getSupQueueColumn(mesaId: number, columnIndex: number): MesaQueueItem[] {
-    const rest = this.getMesaQueueItems(mesaId).filter(i => i.status !== 'MOSTRANDO');
+    const rest = this.getMesaQueueItems(mesaId)
+      .filter(i => i.status !== 'MOSTRANDO')
+      .slice(0, this.getMesaDailyCapForProject());
     return rest.filter((_, i) => i % 2 === columnIndex);
+  }
+
+  getSupHiddenCount(mesaId: number): number {
+    const rest = this.getMesaQueueItems(mesaId).filter(i => i.status !== 'MOSTRANDO');
+    return Math.max(0, rest.length - this.getMesaDailyCapForProject());
   }
 
   getGrupoRoleLabel(rol: string): string {
@@ -1177,6 +1203,50 @@ export class Dashboard implements OnInit, OnDestroy {
   getProyectoNombre(projectId: number | null): string {
     if (!projectId) return 'Sin proyecto asignado';
     return this.proyectos.find((proyecto) => proyecto.id === projectId)?.nombre || `Proyecto ${projectId}`;
+  }
+
+  // =========================================================================
+  // PROJECT PROGRESS DONUT
+  // =========================================================================
+  private getProyectoBreakdown(p: Proyecto) {
+    const total = p.modulos_count || 0;
+    const done = p.modulos_completados || 0;
+    const pending = Math.max(total - done, 0);
+    const daily = p.capacidad_diaria_modulos || 6;
+    const hoy = Math.min(pending, daily);
+    const semana = Math.min(Math.max(pending - hoy, 0), daily * 4);
+    const resto = Math.max(pending - hoy - semana, 0);
+    return { total, done, hoy, semana, resto };
+  }
+
+  getProyectoHoy(p: Proyecto): number {
+    return this.getProyectoBreakdown(p).hoy;
+  }
+
+  getProyectoSemana(p: Proyecto): number {
+    return this.getProyectoBreakdown(p).semana;
+  }
+
+  getProyectoPct(p: Proyecto): number {
+    const { total, done } = this.getProyectoBreakdown(p);
+    if (!total) return 0;
+    return Math.round((done / total) * 100);
+  }
+
+  /**
+   * Returns the stroke-dasharray for the requested donut layer.
+   * Each layer is additive (done ⊂ todayish ⊂ weekish), so the outer
+   * rings partially cover the base track.
+   */
+  getDonutDash(p: Proyecto, layer: 'done' | 'todayish' | 'weekish'): string {
+    const { total, done, hoy, semana } = this.getProyectoBreakdown(p);
+    if (!total) return '0 100';
+    let value = 0;
+    if (layer === 'done') value = done;
+    else if (layer === 'todayish') value = done + hoy;
+    else value = done + hoy + semana;
+    const pct = (value / total) * 100;
+    return `${pct} ${100 - pct}`;
   }
 
   getMesasForGrupo(grupoId: number): Mesa[] {

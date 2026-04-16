@@ -49,6 +49,10 @@ class Proyecto(models.Model):
         default=False,
         help_text='Indica si ya se importo el fichero de datos tecnicos y se calcularon los grupos.'
     )
+    capacidad_diaria_modulos = models.PositiveIntegerField(
+        default=6,
+        help_text='Numero estimado de modulos que la ferralla produce por dia.'
+    )
 
     def __str__(self):
         return self.nombre

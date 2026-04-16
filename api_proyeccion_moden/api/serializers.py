@@ -91,6 +91,7 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
         fields = [
             "id", "url", "nombre", "usuario", "usuario_nombre", "num_plantas",
             "bastidor_longitud_cm", "datos_tecnicos_importados",
+            "capacidad_diaria_modulos",
             "grupos_count", "modulos_count", "modulos_completados",
         ]
         extra_kwargs = {

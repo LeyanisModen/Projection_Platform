@@ -1123,6 +1123,18 @@
   grid-column: 2;
 }
 
+.queue-more-caption {
+  text-align: center;
+  font-size: 0.75rem;
+  color: #6c757d;
+  padding: 8px 0 4px;
+  font-style: italic;
+}
+
+.mesa-queue-sup .queue-more-caption {
+  grid-column: 1 / -1;
+}
+
 .drop-zone {
   margin: 12px;
   padding: 16px;
@@ -2185,10 +2197,35 @@
   margin: 0 0 4px 0;
   font-size: 1rem;
 }
+.project-inline-card .project-info {
+  flex: 1;
+  min-width: 0;
+}
+
 .project-inline-card .project-info .project-status {
   font-size: 0.8rem;
   color: #4caf50;
   font-weight: 500;
+}
+
+.project-progress-donut {
+  flex-shrink: 0;
+  width: 56px;
+  height: 56px;
+}
+
+.project-progress-donut svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.project-progress-donut .donut-pct {
+  font-size: 18px;
+  font-weight: 700;
+  fill: #212529;
+  font-family: inherit;
+  dominant-baseline: middle;
 }
 
 .dashboard-main.infinite-scroll {

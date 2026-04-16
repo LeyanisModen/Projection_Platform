@@ -147,10 +147,13 @@
                                                 </div>
                                             }
                                         </div>
+                                        @if (getSupHiddenCount(mesa.id) > 0) {
+                                            <div class="queue-more-caption">+{{ getSupHiddenCount(mesa.id) }} más programados</div>
+                                        }
                                     </div>
                                 } @else {
                                     <div class="mesa-queue">
-                                        @for (item of getMesaQueueItems(mesa.id); track trackByItem($index, item)) {
+                                        @for (item of getVisibleMesaQueueItems(mesa.id); track trackByItem($index, item)) {
                                             @if (shouldShowGroupDivider(item, $index, mesa)) {
                                                 <div class="queue-group-divider">
                                                     — Grupo {{ getItemGrupoIndice(item) }} —
@@ -162,6 +165,9 @@
                                                     <span class="queue-item-status">{{ item.status }}</span>
                                                 </div>
                                             </div>
+                                        }
+                                        @if (getHiddenMesaQueueCount(mesa.id) > 0) {
+                                            <div class="queue-more-caption">+{{ getHiddenMesaQueueCount(mesa.id) }} más programados</div>
                                         }
                                     </div>
                                 }
@@ -212,6 +218,30 @@
                             <h3>{{ proyecto.nombre }}</h3>
                             <span class="project-status">Activo</span>
                         </div>
+                        @if (proyecto.modulos_count) {
+                            <div class="project-progress-donut" [attr.title]="'Completados: ' + (proyecto.modulos_completados || 0) + '/' + proyecto.modulos_count + ' · Hoy: ' + getProyectoHoy(proyecto) + ' · Esta semana: ' + (getProyectoHoy(proyecto) + getProyectoSemana(proyecto))">
+                                <svg viewBox="0 0 80 80">
+                                    <!-- track base (resto pendiente) -->
+                                    <circle cx="40" cy="40" r="32" fill="none" stroke="#e9ecef" stroke-width="10"/>
+                                    <!-- completado + hoy + semana (gris medio) -->
+                                    <circle cx="40" cy="40" r="32" fill="none" stroke="#adb5bd" stroke-width="10"
+                                            [attr.pathLength]="100"
+                                            [attr.stroke-dasharray]="getDonutDash(proyecto, 'weekish')"
+                                            transform="rotate(-90 40 40)"/>
+                                    <!-- completado + hoy (gris oscuro) -->
+                                    <circle cx="40" cy="40" r="32" fill="none" stroke="#495057" stroke-width="10"
+                                            [attr.pathLength]="100"
+                                            [attr.stroke-dasharray]="getDonutDash(proyecto, 'todayish')"
+                                            transform="rotate(-90 40 40)"/>
+                                    <!-- completado (verde) -->
+                                    <circle cx="40" cy="40" r="32" fill="none" stroke="#28a745" stroke-width="10"
+                                            [attr.pathLength]="100"
+                                            [attr.stroke-dasharray]="getDonutDash(proyecto, 'done')"
+                                            transform="rotate(-90 40 40)"/>
+                                    <text x="40" y="44" text-anchor="middle" class="donut-pct">{{ getProyectoPct(proyecto) }}%</text>
+                                </svg>
+                            </div>
+                        }
                     </article>
                     }
                 </div>
