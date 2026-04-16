@@ -502,6 +502,10 @@ export class ApiService {
         return this.http.post<Modulo>(`${this.baseUrl}/modulos/${id}/reiniciar/`, {}, { headers: this.getHeaders() });
     }
 
+    completarModulo(id: number): Observable<Modulo> {
+        return this.http.post<Modulo>(`${this.baseUrl}/modulos/${id}/completar/`, {}, { headers: this.getHeaders() });
+    }
+
     getGruposBastidor(proyectoId: number): Observable<GrupoBastidor[]> {
         return this.http.get<GrupoBastidor[]>(
             `${this.baseUrl}/grupos-bastidor/?proyecto=${proyectoId}`,

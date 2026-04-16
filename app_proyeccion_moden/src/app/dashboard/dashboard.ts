@@ -1304,36 +1304,6 @@ export class Dashboard implements OnInit, OnDestroy {
     return Math.max(0, rest.length - this.getMesaDailyCapForProject(mesa));
   }
 
-  /**
-   * Mark a queue item as HECHO. The backend also flips the matching
-   * modulo phase so the module eventually reaches COMPLETADO.
-   */
-  markItemDone(item: MesaQueueItem): void {
-    if (item.status === 'HECHO') return;
-    this.api.markMesaQueueItemDone(item.id)
-      .pipe(takeUntil(this.destroy$))
-      .subscribe({
-        next: () => {
-          this.refreshMesaQueue(item.mesa);
-          this.loadProductionStats();
-        },
-        error: (err) => {
-          console.error('Error marking queue item done', err);
-          alert('No se pudo marcar como terminado');
-        }
-      });
-  }
-
-  private refreshMesaQueue(mesaId: number): void {
-    this.api.getMesaQueueItems(mesaId)
-      .pipe(takeUntil(this.destroy$))
-      .subscribe({
-        next: (items) => {
-          this.mesaQueueItems.set(mesaId, items);
-          this.cdr.detectChanges();
-        }
-      });
-  }
 
   getGrupoRoleLabel(rol: string): string {
     switch (rol) {

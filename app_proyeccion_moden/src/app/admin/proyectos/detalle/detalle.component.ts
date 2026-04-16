@@ -163,6 +163,20 @@ export class ProyectoDetailComponent implements OnInit {
         });
     }
 
+    completarModulo(moduloId: number, event?: Event): void {
+        if (event) event.stopPropagation();
+        this.api.completarModulo(moduloId).subscribe({
+            next: () => {
+                this.loadData();
+            },
+            error: (err: any) => {
+                console.error('Error completando modulo', err);
+                alert('Error al completar el modulo');
+                this.cdr.detectChanges();
+            }
+        });
+    }
+
     togglePlantaForm() {
         this.showPlantaForm = !this.showPlantaForm;
         // Auto-suggest next order

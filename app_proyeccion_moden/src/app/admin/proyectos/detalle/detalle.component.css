@@ -773,6 +773,23 @@
     color: #d35400;
 }
 
+.grupo-modulo-done {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0.1rem 0.3rem;
+    font-size: 0.75rem;
+    line-height: 1;
+    border-radius: 3px;
+    color: #28a745;
+    transition: background-color 0.15s, color 0.15s;
+}
+
+.grupo-modulo-done:hover {
+    background-color: #e2f5e7;
+    color: #1e7e34;
+}
+
 .grupo-modulo-camera.has-fotos {
     color: #495057;
 }

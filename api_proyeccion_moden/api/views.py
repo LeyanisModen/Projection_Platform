@@ -1042,6 +1042,17 @@ class ModuloViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(modulo)
         return Response(serializer.data)
 
+    @action(detail=True, methods=['post'])
+    def completar(self, request, pk=None):
+        """Force module to COMPLETADO (both phases marked done)."""
+        modulo = self.get_object()
+        modulo.inferior_hecho = True
+        modulo.superior_hecho = True
+        modulo.estado = 'COMPLETADO'
+        modulo.save()
+        serializer = self.get_serializer(modulo)
+        return Response(serializer.data)
+
     def perform_create(self, serializer):
         modulo = serializer.save()
         _assign_modulo_to_group_on_create(modulo)

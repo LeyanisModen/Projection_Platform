@@ -198,6 +198,13 @@
                                             <i class="fa fa-camera" aria-hidden="true"></i>
                                         </button>
                                         <button type="button"
+                                            class="grupo-modulo-done"
+                                            *ngIf="modulo.estado !== 'COMPLETADO' && modulo.estado !== 'CERRADO'"
+                                            (click)="completarModulo(modulo.id, $event)"
+                                            title="Marcar módulo como terminado">
+                                            <i class="fa fa-check" aria-hidden="true"></i>
+                                        </button>
+                                        <button type="button"
                                             class="grupo-modulo-reset"
                                             *ngIf="modulo.estado !== 'PENDIENTE'"
                                             (click)="reiniciarModulo(modulo.id, $event)"

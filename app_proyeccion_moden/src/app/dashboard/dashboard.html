@@ -123,11 +123,6 @@
                                                     <span class="queue-item-nombre">{{ mostrando.modulo_nombre }}</span>
                                                     <span class="queue-item-status">{{ mostrando.status }}</span>
                                                 </div>
-                                                @if (mostrando.status !== 'HECHO') {
-                                                    <button class="queue-item-done-btn" (click)="markItemDone(mostrando)" title="Marcar como terminado">
-                                                        <i class="fa fa-check" aria-hidden="true"></i>
-                                                    </button>
-                                                }
                                             </div>
                                         }
                                         <div class="queue-group-divider sup-divider-inf1">— INF1 —</div>
@@ -139,11 +134,6 @@
                                                         <span class="queue-item-nombre">{{ item.modulo_nombre }}</span>
                                                         <span class="queue-item-status">{{ item.status }}</span>
                                                     </div>
-                                                    @if (item.status !== 'HECHO') {
-                                                        <button class="queue-item-done-btn" (click)="markItemDone(item)" title="Marcar como terminado">
-                                                            <i class="fa fa-check" aria-hidden="true"></i>
-                                                        </button>
-                                                    }
                                                 </div>
                                             }
                                         </div>
@@ -154,11 +144,6 @@
                                                         <span class="queue-item-nombre">{{ item.modulo_nombre }}</span>
                                                         <span class="queue-item-status">{{ item.status }}</span>
                                                     </div>
-                                                    @if (item.status !== 'HECHO') {
-                                                        <button class="queue-item-done-btn" (click)="markItemDone(item)" title="Marcar como terminado">
-                                                            <i class="fa fa-check" aria-hidden="true"></i>
-                                                        </button>
-                                                    }
                                                 </div>
                                             }
                                         </div>
@@ -179,11 +164,6 @@
                                                     <span class="queue-item-nombre">{{ item.modulo_nombre }}</span>
                                                     <span class="queue-item-status">{{ item.status }}</span>
                                                 </div>
-                                                @if (item.status !== 'HECHO') {
-                                                    <button class="queue-item-done-btn" (click)="markItemDone(item)" title="Marcar como terminado">
-                                                        <i class="fa fa-check" aria-hidden="true"></i>
-                                                    </button>
-                                                }
                                             </div>
                                         }
                                         @if (getHiddenMesaQueueCount(mesa.id) > 0) {
