@@ -162,10 +162,10 @@ class Modulo(models.Model):
 
     # Codigo de color de 4 posiciones para validacion de fotos
     codigos_color = models.CharField(
-        max_length=4,
-        default='xxxx',
+        max_length=8,
+        default='xxxxxxxx',
         blank=True,
-        help_text='4 chars: y=yellow, g=green, c=cyan, v=violet, m=magenta, o=orange, x=skip'
+        help_text='Up to 8 chars: y=yellow, g=green, c=cyan, v=violet, m=magenta, o=orange, x=skip'
     )
 
     def __str__(self):
@@ -318,7 +318,12 @@ class DetalleModuloFase(models.Model):
         welds = Decimal('0')
         welds += _welds(_num(self.cantidad_refuerzos), _num(self.metros_refuerzos), Decimal('1'))
         if not is_sup:
-            welds += _welds(_num(self.cantidad_separadores), _num(self.metros_separadores), Decimal('3'))
+            # Separadores: la DB actual aún no trae longitud; asumir 2m por unidad
+            sep_count = _num(self.cantidad_separadores)
+            sep_meters = _num(self.metros_separadores)
+            if sep_meters <= 0 and sep_count > 0:
+                sep_meters = sep_count * Decimal('2')
+            welds += _welds(sep_count, sep_meters, Decimal('3'))
             welds += _welds(_num(self.cantidad_zunchos), _num(self.metros_zunchos), Decimal('4'))
             welds += _welds(_num(self.cantidad_punzos), _num(self.metros_punzos), Decimal('4'))
 

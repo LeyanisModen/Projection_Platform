@@ -64,6 +64,9 @@ MODULE_FIELD_ALIASES = {
         'module_width_cm', 'module_width', 'width_cm', 'width',
         'canto_armado_cm', 'canto_armado', 'canto',
     ],
+    'codigos_color': [
+        'codigos_color', 'codigo_color', 'colores', 'color_codes', 'colors',
+    ],
 }
 
 MODULE_NAME_ALIASES = ['modulo', 'modulo_nombre', 'nombre_modulo', 'module', 'module_name']
@@ -309,31 +312,53 @@ def _load_technical_records_from_sqlite(uploaded_file):
             if ancho_cm in [None, '']:
                 ancho_cm = 17
 
+            # Concatenate color slots (pos_color_1..pos_color_8) into a
+            # single string of 8 chars, padding empty / None with 'x'.
+            color_chars = []
+            for i in range(1, 9):
+                raw = row_dict.get(f'pos_color_{i}')
+                if raw in [None, '']:
+                    color_chars.append('x')
+                else:
+                    ch = str(raw).strip().lower()
+                    color_chars.append(ch[0] if ch else 'x')
+            codigos_color = ''.join(color_chars) or 'xxxxxxxx'
+
             technical_records.append({
                 'modulo': module_name,
                 'ancho_cm': ancho_cm,
+                'codigos_color': codigos_color,
                 'inf_peso_malla_inicial_kg': row_dict.get('peso_mallazo_pedido_inf'),
                 'sup_peso_malla_inicial_kg': row_dict.get('peso_mallazo_pedido_sup'),
                 'inf_desperdicio_kg': row_dict.get('peso_mallazo_desperdicio_inf'),
                 'sup_desperdicio_kg': row_dict.get('peso_mallazo_desperdicio_sup'),
                 'inf_peso_malla_final_kg': row_dict.get('peso_mallazo_recortado_inf'),
                 'sup_peso_malla_final_kg': row_dict.get('peso_mallazo_recortado_sup'),
-                'inf_cantidad_cortes': row_dict.get('numero_cortes_mallazo'),
+                # Cuts split per phase (older DBs had a single numero_cortes_mallazo)
+                'inf_cantidad_cortes': row_dict.get('numero_cortes_mallazo_inf')
+                                       or row_dict.get('numero_cortes_mallazo'),
+                'sup_cantidad_cortes': row_dict.get('numero_cortes_mallazo_sup'),
                 'inf_cantidad_refuerzos': row_dict.get('cantidad_refuerzos_inf'),
                 'sup_cantidad_refuerzos': row_dict.get('cantidad_refuerzos_sup'),
                 'inf_peso_refuerzos_kg': row_dict.get('peso_refuerzos_inf'),
                 'sup_peso_refuerzos_kg': row_dict.get('peso_refuerzos_sup'),
-                'inf_metros_refuerzos': row_dict.get('metros_refuerzos_inf'),
-                'sup_metros_refuerzos': row_dict.get('metros_refuerzos_sup'),
+                # 'longitud_*' in the DB maps to metros_* on our side
+                'inf_metros_refuerzos': row_dict.get('longitud_refuerzos_inf')
+                                        or row_dict.get('metros_refuerzos_inf'),
+                'sup_metros_refuerzos': row_dict.get('longitud_refuerzos_sup')
+                                        or row_dict.get('metros_refuerzos_sup'),
                 'inf_cantidad_zunchos': row_dict.get('cantidad_zunchos'),
                 'inf_peso_zunchos_kg': row_dict.get('peso_zunchos'),
-                'inf_metros_zunchos': row_dict.get('metros_zunchos'),
+                'inf_metros_zunchos': row_dict.get('longitud_zunchos')
+                                      or row_dict.get('metros_zunchos'),
                 'inf_cantidad_punzos': row_dict.get('cantidad_punzonamientos'),
                 'inf_peso_punzos_kg': row_dict.get('peso_punzonamientos'),
-                'inf_metros_punzos': row_dict.get('metros_punzonamientos'),
+                'inf_metros_punzos': row_dict.get('longitud_punzonamientos')
+                                     or row_dict.get('metros_punzonamientos'),
                 'inf_cantidad_separadores': row_dict.get('cantidad_separadores'),
                 'inf_peso_separadores_kg': row_dict.get('peso_separadores'),
-                'inf_metros_separadores': row_dict.get('metros_separadores'),
+                'inf_metros_separadores': row_dict.get('longitud_separadores')
+                                          or row_dict.get('metros_separadores'),
             })
 
         return technical_records
@@ -679,6 +704,17 @@ class ProyectoViewSet(viewsets.ModelViewSet):
             modulo.ancho_cm = fields['ancho_cm']
             updated_fields.append('ancho_cm')
 
+        raw_color = fields.get('codigos_color')
+        if raw_color not in [None, '']:
+            normalized = str(raw_color).lower().strip()
+            # Pad to 8, replace any non-recognized char with 'x' (skip)
+            normalized = ''.join(
+                c if c in 'ygcvmox' else 'x' for c in normalized[:8]
+            ).ljust(8, 'x')
+            if normalized != modulo.codigos_color:
+                modulo.codigos_color = normalized
+                updated_fields.append('codigos_color')
+
         if updated_fields:
             modulo.save(update_fields=updated_fields)
             return True
@@ -787,7 +823,7 @@ class ProyectoViewSet(viewsets.ModelViewSet):
                             planta=planta,
                             proyecto=proyecto,
                             estado='PENDIENTE',
-                            codigos_color=modulo_data.get('codigos_color', 'xxxx')
+                            codigos_color=(modulo_data.get('codigos_color') or 'xxxxxxxx').ljust(8, 'x')[:8]
                         )
                         stats['modulos'] += 1
                         
@@ -1572,7 +1608,11 @@ def _compute_dificultad(detalle):
     welds = Decimal('0')
     welds += _welds(_num(detalle.cantidad_refuerzos), _num(detalle.metros_refuerzos), Decimal('1'))
     if not is_sup:
-        welds += _welds(_num(detalle.cantidad_separadores), _num(detalle.metros_separadores), Decimal('3'))
+        sep_count = _num(detalle.cantidad_separadores)
+        sep_meters = _num(detalle.metros_separadores)
+        if sep_meters <= 0 and sep_count > 0:
+            sep_meters = sep_count * Decimal('2')
+        welds += _welds(sep_count, sep_meters, Decimal('3'))
         welds += _welds(_num(detalle.cantidad_zunchos), _num(detalle.metros_zunchos), Decimal('4'))
         welds += _welds(_num(detalle.cantidad_punzos), _num(detalle.metros_punzos), Decimal('4'))
 
