@@ -1686,7 +1686,8 @@ class ProductionStatsView(APIView):
         for modulo in modulos_list:
             dia_key = timezone.localtime(modulo.completado_at, current_tz).date().isoformat()
             if dia_key not in por_dia:
-                por_dia[dia_key] = {'fecha': dia_key, **empty_totals()}
+                por_dia[dia_key] = {'fecha': dia_key, 'modulos_completados': 0, **empty_totals()}
+            por_dia[dia_key]['modulos_completados'] += 1
 
             for detalle in modulo.detalles_fase.all():
                 add_detalle(totals, detalle)

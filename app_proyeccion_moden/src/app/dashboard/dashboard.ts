@@ -7,7 +7,7 @@ import { DragDropModule, CdkDragDrop, moveItemInArray, transferArrayItem } from 
 import {
   ApiService,
   Proyecto, Planta, Modulo, Mesa, ModuloQueueItem, MesaQueueItem, Imagen,
-  GrupoMesas, GrupoPlanSummary, ProductionStatsResponse
+  GrupoMesas, GrupoPlanSummary, ProductionStatsResponse, ProductionStatsDay
 } from '../services/api.service';
 import { Subject, takeUntil, forkJoin, interval } from 'rxjs';
 import { environment } from '../../environments/environment';
@@ -605,6 +605,81 @@ export class Dashboard implements OnInit, OnDestroy {
     if (!this.weeklyStats || !this.weeklyStats.por_dia.length) return 0;
     const max = Math.max(...this.weeklyStats.por_dia.map(d => d.fases_completadas), 1);
     return Math.round((value / max) * 100);
+  }
+
+  // =========================================================================
+  // WEEKLY CHARTS (SVG)
+  // =========================================================================
+
+  /**
+   * Returns Mon-Fri slots merged with whatever data the backend returned
+   * for the week, so missing days render as empty bars instead of being
+   * dropped entirely.
+   */
+  weeklyChartDays(): Array<ProductionStatsDay & { isoLabel: string }> {
+    if (!this.weeklyStats) return [];
+    const monday = this.getMondayOfWeek(new Date());
+    const byDate = new Map(this.weeklyStats.por_dia.map(d => [d.fecha, d]));
+    const days: Array<ProductionStatsDay & { isoLabel: string }> = [];
+    for (let i = 0; i < 5; i++) {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      const iso = this.toLocalIsoDate(d);
+      const found = byDate.get(iso);
+      if (found) {
+        days.push({ ...found, isoLabel: this.dayLabel(iso) });
+      } else {
+        days.push({
+          fecha: iso,
+          isoLabel: this.dayLabel(iso),
+          modulos_completados: 0,
+          fases_completadas: 0,
+          peso_malla_inicial_kg: 0,
+          peso_malla_final_kg: 0,
+          desperdicio_kg: 0,
+          cantidad_cortes: 0,
+          cantidad_refuerzos: 0,
+          cantidad_zunchos: 0,
+          cantidad_separadores: 0,
+          cantidad_punzos: 0,
+          dificultad_total: 0,
+        });
+      }
+    }
+    return days;
+  }
+
+  /** Daily capacity used as the reference line on the modules chart. */
+  weeklyDailyCap(): number {
+    return this.weeklyStats?.esperado?.capacidad_diaria_modulos || 12;
+  }
+
+  /** Max Y value for the modules chart (uses meta as the floor). */
+  weeklyMaxModulos(): number {
+    const days = this.weeklyChartDays();
+    const maxReal = Math.max(0, ...days.map(d => d.modulos_completados || 0));
+    const cap = this.weeklyDailyCap();
+    return Math.max(maxReal, cap, 1) * 1.15;
+  }
+
+  /** Max Y value for the weight chart. */
+  weeklyMaxPeso(): number {
+    const days = this.weeklyChartDays();
+    const max = Math.max(0, ...days.map(d => d.peso_malla_final_kg || 0));
+    return Math.max(max, 1) * 1.15;
+  }
+
+  /** % height (0..100) of a value on the modules chart. */
+  modulosBarPct(value: number): number {
+    const max = this.weeklyMaxModulos();
+    if (max <= 0) return 0;
+    return Math.min(100, (value / max) * 100);
+  }
+
+  pesoBarPct(value: number): number {
+    const max = this.weeklyMaxPeso();
+    if (max <= 0) return 0;
+    return Math.min(100, (value / max) * 100);
   }
 
   loadPlantasForProyecto(proyectoId: number): void {

@@ -272,6 +272,7 @@ export interface ProductionStatsMesa extends ProductionStatsBucket {
 
 export interface ProductionStatsDay extends ProductionStatsBucket {
     fecha: string;
+    modulos_completados: number;
 }
 
 export interface ProductionStatsResponse {
