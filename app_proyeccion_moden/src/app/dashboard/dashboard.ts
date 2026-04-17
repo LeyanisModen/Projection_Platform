@@ -344,6 +344,11 @@ export class Dashboard implements OnInit, OnDestroy {
           if (this.selectedProyecto) {
             const updated = data.find(p => p.id === this.selectedProyecto?.id);
             if (updated) this.selectedProyecto = updated;
+          } else if (data.length > 0) {
+            // Auto-select the first project on initial load so the stats
+            // boards and donut have something to show without requiring
+            // the user to click the sidebar card first.
+            this.selectProyecto(data[0]);
           }
           this.loadingProyectos = false;
           this.cdr.detectChanges();
