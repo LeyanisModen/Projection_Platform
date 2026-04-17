@@ -45,12 +45,16 @@ TECHNICAL_FIELD_ALIASES = {
     'cantidad_cortes': ['cantidad_cortes', 'cortes', 'numero_cortes'],
     'cantidad_refuerzos': ['cantidad_refuerzos', 'refuerzos', 'numero_refuerzos'],
     'peso_refuerzos_kg': ['peso_refuerzos_kg', 'peso_refuerzos'],
+    'metros_refuerzos': ['metros_refuerzos', 'refuerzos_metros', 'refuerzos_metros_lineales', 'm_refuerzos', 'metros_refuerzo'],
     'cantidad_zunchos': ['cantidad_zunchos', 'zunchos', 'numero_zunchos'],
     'peso_zunchos_kg': ['peso_zunchos_kg', 'peso_zunchos'],
+    'metros_zunchos': ['metros_zunchos', 'zunchos_metros', 'zunchos_metros_lineales', 'm_zunchos', 'metros_zuncho'],
     'cantidad_separadores': ['cantidad_separadores', 'separadores', 'numero_separadores'],
     'peso_separadores_kg': ['peso_separadores_kg', 'peso_separadores'],
+    'metros_separadores': ['metros_separadores', 'separadores_metros', 'separadores_metros_lineales', 'm_separadores', 'metros_separador'],
     'cantidad_punzos': ['cantidad_punzos', 'punzos', 'numero_punzos'],
     'peso_punzos_kg': ['peso_punzos_kg', 'peso_punzos'],
+    'metros_punzos': ['metros_punzos', 'punzos_metros', 'punzos_metros_lineales', 'm_punzos', 'metros_punzo'],
     'dificultad_fabricacion': ['dificultad_fabricacion', 'dificultad', 'complejidad'],
     'observaciones': ['observaciones', 'observacion', 'notas', 'comentarios'],
 }
@@ -136,6 +140,10 @@ DECIMAL_FIELDS_2_PLACES = {
     'peso_zunchos_kg',
     'peso_separadores_kg',
     'peso_punzos_kg',
+    'metros_refuerzos',
+    'metros_zunchos',
+    'metros_separadores',
+    'metros_punzos',
     'dificultad_fabricacion',
     'ancho_cm',
 }
@@ -315,12 +323,17 @@ def _load_technical_records_from_sqlite(uploaded_file):
                 'sup_cantidad_refuerzos': row_dict.get('cantidad_refuerzos_sup'),
                 'inf_peso_refuerzos_kg': row_dict.get('peso_refuerzos_inf'),
                 'sup_peso_refuerzos_kg': row_dict.get('peso_refuerzos_sup'),
+                'inf_metros_refuerzos': row_dict.get('metros_refuerzos_inf'),
+                'sup_metros_refuerzos': row_dict.get('metros_refuerzos_sup'),
                 'inf_cantidad_zunchos': row_dict.get('cantidad_zunchos'),
                 'inf_peso_zunchos_kg': row_dict.get('peso_zunchos'),
+                'inf_metros_zunchos': row_dict.get('metros_zunchos'),
                 'inf_cantidad_punzos': row_dict.get('cantidad_punzonamientos'),
                 'inf_peso_punzos_kg': row_dict.get('peso_punzonamientos'),
+                'inf_metros_punzos': row_dict.get('metros_punzonamientos'),
                 'inf_cantidad_separadores': row_dict.get('cantidad_separadores'),
                 'inf_peso_separadores_kg': row_dict.get('peso_separadores'),
+                'inf_metros_separadores': row_dict.get('metros_separadores'),
             })
 
         return technical_records
@@ -1535,15 +1548,42 @@ def _count_working_days(start_date, end_date):
 
 
 def _compute_dificultad(detalle):
-    """Mirror of DetalleModuloFase.dificultad_calculada but tolerant to None."""
-    refuerzos = detalle.cantidad_refuerzos or 0
-    zunchos = detalle.cantidad_zunchos or 0
-    separadores = detalle.cantidad_separadores or 0
-    cortes = detalle.cantidad_cortes or 0
+    """Mirror of DetalleModuloFase.dificultad_calculada, tolerant to None.
 
-    solderings = refuerzos * 4 + (zunchos + separadores) * 8
-    time_units = solderings * 2 + cortes
+    Time units: cut=1, weld=2, color ribbon=1.5 (only SUPERIOR).
+    Each element: welds = (count*2 + meters) * multiplier, where
+    multiplier is 1 for refuerzos, 3 for separadores, 4 for zunchos/punzos.
+    Separadores/zunchos/punzos only count on INFERIOR phase. Weight /100.
+    """
+    def _num(value):
+        if value is None or value == '':
+            return Decimal('0')
+        try:
+            return Decimal(value)
+        except (TypeError, InvalidOperation):
+            return Decimal('0')
 
+    cortes = _num(detalle.cantidad_cortes)
+    is_sup = detalle.fase == 'SUPERIOR'
+
+    def _welds(count, meters, multiplier):
+        return (count * Decimal('2') + meters) * multiplier
+
+    welds = Decimal('0')
+    welds += _welds(_num(detalle.cantidad_refuerzos), _num(detalle.metros_refuerzos), Decimal('1'))
+    if not is_sup:
+        welds += _welds(_num(detalle.cantidad_separadores), _num(detalle.metros_separadores), Decimal('3'))
+        welds += _welds(_num(detalle.cantidad_zunchos), _num(detalle.metros_zunchos), Decimal('4'))
+        welds += _welds(_num(detalle.cantidad_punzos), _num(detalle.metros_punzos), Decimal('4'))
+
+    time_units = cortes * Decimal('1') + welds * Decimal('2')
+
+    # Color ribbons: only SUPERIOR, count non-'x' chars in modulo code.
+    if is_sup and detalle.modulo and detalle.modulo.codigos_color:
+        ribbons = sum(1 for c in detalle.modulo.codigos_color if c and c.lower() != 'x')
+        time_units += Decimal(ribbons) * Decimal('1.5')
+
+    # Weight component (normalized /100).
     peso = Decimal('0')
     values = [
         detalle.peso_malla_final_kg,
@@ -1558,7 +1598,7 @@ def _compute_dificultad(detalle):
                 peso += Decimal(v)
             except (TypeError, InvalidOperation):
                 pass
-    return float(Decimal(time_units) + peso / Decimal('10'))
+    return float(time_units + peso / Decimal('100'))
 
 
 class ProductionStatsView(APIView):

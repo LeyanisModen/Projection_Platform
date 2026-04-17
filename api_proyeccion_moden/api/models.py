@@ -249,6 +249,12 @@ class DetalleModuloFase(models.Model):
     cantidad_punzos = models.PositiveIntegerField(null=True, blank=True)
     peso_punzos_kg = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
 
+    # Linear meters of each element kind (per phase totals).
+    metros_refuerzos = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    metros_zunchos = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    metros_separadores = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    metros_punzos = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+
     dificultad_fabricacion = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
     observaciones = models.TextField(blank=True, null=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -284,28 +290,55 @@ class DetalleModuloFase(models.Model):
     @property
     def dificultad_calculada(self):
         """
-        Heuristic difficulty score:
-          solderings = refuerzos*4 + (zunchos + separadores)*8
-          time  ≈ solderings*2 + cortes      (welding ~2x cutting time)
-          score = time + weight_kg / 10      (1 extra point per 10kg material)
+        Heuristic difficulty score per phase.
+
+        Time units: cut=1, weld=2, color ribbon=1.5.
+
+        Each element contributes (cantidad*2 + metros_lineales) welds at
+        its extremes plus one weld every linear meter. Separators count
+        x3 (2 bottom bars + 1 top), zunchos and punzos x4. Color ribbons
+        only apply on SUPERIOR phase and come from modulo.codigos_color
+        (any char != 'x' counts as one ribbon). Weight is normalized /100.
         """
-        refuerzos = self.cantidad_refuerzos or 0
-        zunchos = self.cantidad_zunchos or 0
-        separadores = self.cantidad_separadores or 0
-        cortes = self.cantidad_cortes or 0
+        def _num(value):
+            if value is None or value == '':
+                return Decimal('0')
+            try:
+                return Decimal(value)
+            except (TypeError, InvalidOperation):
+                return Decimal('0')
 
-        solderings = refuerzos * 4 + (zunchos + separadores) * 8
-        time_units = solderings * 2 + cortes
+        cortes = _num(self.cantidad_cortes)
+        is_sup = self.fase == Fase.SUPERIOR
 
+        # Soldaduras por elemento
+        def _welds(count, meters, multiplier):
+            return (count * Decimal('2') + meters) * multiplier
+
+        welds = Decimal('0')
+        welds += _welds(_num(self.cantidad_refuerzos), _num(self.metros_refuerzos), Decimal('1'))
+        if not is_sup:
+            welds += _welds(_num(self.cantidad_separadores), _num(self.metros_separadores), Decimal('3'))
+            welds += _welds(_num(self.cantidad_zunchos), _num(self.metros_zunchos), Decimal('4'))
+            welds += _welds(_num(self.cantidad_punzos), _num(self.metros_punzos), Decimal('4'))
+
+        time_units = cortes * Decimal('1') + welds * Decimal('2')
+
+        # Color ribbons: only SUPERIOR, count non-'x' chars in modulo code.
+        if is_sup and self.modulo and self.modulo.codigos_color:
+            ribbons = sum(1 for c in self.modulo.codigos_color if c and c.lower() != 'x')
+            time_units += Decimal(ribbons) * Decimal('1.5')
+
+        # Weight component (normalized /100 as modules are heavy).
         weight_component = Decimal('0')
         total_weight = self.peso_total_kg
         if total_weight is not None:
             try:
-                weight_component = Decimal(total_weight) / Decimal('10')
+                weight_component = Decimal(total_weight) / Decimal('100')
             except (TypeError, InvalidOperation):
                 weight_component = Decimal('0')
 
-        return float(Decimal(time_units) + weight_component)
+        return float(time_units + weight_component)
 
     class Meta:
         db_table = 'api_detalle_modulo_fase'
