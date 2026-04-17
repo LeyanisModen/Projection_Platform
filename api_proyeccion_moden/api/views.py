@@ -1029,8 +1029,37 @@ class ModuloViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
     @action(detail=True, methods=['post'])
+    def completar(self, request, pk=None):
+        """Force module to COMPLETADO (both phases marked done).
+        Also marks any linked MesaQueueItems as HECHO so the module
+        disappears from mesa queues and shows up in production stats.
+        """
+        from django.utils import timezone
+        modulo = self.get_object()
+        modulo.inferior_hecho = True
+        modulo.superior_hecho = True
+        modulo.estado = 'COMPLETADO'
+        modulo.save()
+
+        now = timezone.now()
+        user = request.user if request.user.is_authenticated else None
+        pending_items = MesaQueueItem.objects.filter(modulo=modulo).exclude(status=MesaQueueStatus.HECHO)
+        for item in pending_items:
+            item.status = MesaQueueStatus.HECHO
+            if item.done_at is None:
+                item.done_at = now
+            item.done_by = user
+            item.save(update_fields=['status', 'done_at', 'done_by'])
+
+        serializer = self.get_serializer(modulo)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'])
     def reiniciar(self, request, pk=None):
-        """Reset module to PENDIENTE, keeping its grupo_bastidor."""
+        """Reset module to PENDIENTE keeping its grupo_bastidor.
+        Also reverts linked MesaQueueItems back to EN_COLA so they
+        reappear in mesa queues.
+        """
         modulo = self.get_object()
         modulo.inferior_hecho = False
         modulo.superior_hecho = False
@@ -1039,17 +1068,13 @@ class ModuloViewSet(viewsets.ModelViewSet):
         modulo.cerrado_by = None
         modulo.estado = 'PENDIENTE'
         modulo.save()
-        serializer = self.get_serializer(modulo)
-        return Response(serializer.data)
 
-    @action(detail=True, methods=['post'])
-    def completar(self, request, pk=None):
-        """Force module to COMPLETADO (both phases marked done)."""
-        modulo = self.get_object()
-        modulo.inferior_hecho = True
-        modulo.superior_hecho = True
-        modulo.estado = 'COMPLETADO'
-        modulo.save()
+        MesaQueueItem.objects.filter(modulo=modulo, status=MesaQueueStatus.HECHO).update(
+            status=MesaQueueStatus.EN_COLA,
+            done_at=None,
+            done_by=None,
+        )
+
         serializer = self.get_serializer(modulo)
         return Response(serializer.data)
 

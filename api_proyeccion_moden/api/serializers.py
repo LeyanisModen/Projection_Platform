@@ -98,6 +98,7 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
     grupos_count = serializers.SerializerMethodField()
     modulos_count = serializers.SerializerMethodField()
     modulos_completados = serializers.SerializerMethodField()
+    modulos_completados_hoy = serializers.SerializerMethodField()
 
     class Meta:
         model = Proyecto
@@ -106,6 +107,7 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
             "bastidor_longitud_cm", "datos_tecnicos_importados",
             "capacidad_diaria_usuario",
             "grupos_count", "modulos_count", "modulos_completados",
+            "modulos_completados_hoy",
         ]
 
     def get_capacidad_diaria_usuario(self, obj):
@@ -128,6 +130,19 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
         if cached is not None:
             return cached
         return obj.modulos.filter(estado__in=['COMPLETADO', 'CERRADO']).count()
+
+    def get_modulos_completados_hoy(self, obj):
+        from django.utils import timezone
+        today = timezone.localdate()
+        current_tz = timezone.get_current_timezone()
+        from datetime import timedelta, datetime
+        start = timezone.make_aware(datetime.combine(today, datetime.min.time()), current_tz)
+        end = timezone.make_aware(datetime.combine(today + timedelta(days=1), datetime.min.time()), current_tz)
+        return obj.modulos.filter(
+            completado_at__isnull=False,
+            completado_at__gte=start,
+            completado_at__lt=end,
+        ).count()
 
 
     def create(self, validated_data):

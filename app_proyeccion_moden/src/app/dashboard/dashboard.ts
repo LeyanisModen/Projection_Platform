@@ -1198,7 +1198,8 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   getMesaQueueItems(mesaId: number): MesaQueueItem[] {
-    return this.mesaQueueItems.get(mesaId) || [];
+    // Hide items already done; they shouldn't stay in the queue view.
+    return (this.mesaQueueItems.get(mesaId) || []).filter(i => i.status !== 'HECHO');
   }
 
   getMesaRoleLabel(mesa: Mesa): string {
@@ -1331,7 +1332,12 @@ export class Dashboard implements OnInit, OnDestroy {
     const done = p.modulos_completados || 0;
     const pending = Math.max(total - done, 0);
     const daily = p.capacidad_diaria_usuario || 12;
-    const hoy = Math.min(pending, daily);
+    const doneToday = p.modulos_completados_hoy || 0;
+    // How many more can still be produced today after what's already done.
+    const remainingToday = Math.max(daily - doneToday, 0);
+    const hoy = Math.min(pending, remainingToday);
+    // Week = 5 working days; today already covers doneToday + hoy, so the
+    // rest-of-the-week slot fits at most the remaining 4 days of capacity.
     const semana = Math.min(Math.max(pending - hoy, 0), daily * 4);
     const resto = Math.max(pending - hoy - semana, 0);
     return { total, done, hoy, semana, resto };

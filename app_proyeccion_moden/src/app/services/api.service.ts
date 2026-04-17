@@ -41,6 +41,7 @@ export interface Proyecto {
     grupos_count?: number;
     modulos_count?: number;
     modulos_completados?: number;
+    modulos_completados_hoy?: number;
 }
 
 export interface GrupoBastidorModulo {
