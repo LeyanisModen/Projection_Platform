@@ -1592,26 +1592,38 @@ class ProductionStatsView(APIView):
             current_tz,
         )
 
-        # Query MesaQueueItems marked HECHO in the range
-        items_qs = (
-            MesaQueueItem.objects
-            .select_related('mesa', 'modulo', 'modulo__proyecto')
-            .filter(status=MesaQueueStatus.HECHO, done_at__isnull=False,
-                    done_at__gte=from_dt, done_at__lt=to_dt_exclusive)
+        # Source of truth: modules whose completado_at falls in the range.
+        # This covers both flows: modules finished via mesa queues and
+        # modules marked completed from the admin detail (which may or
+        # may not have MesaQueueItem rows attached).
+        modulos_qs = (
+            Modulo.objects
+            .select_related('proyecto')
+            .prefetch_related('detalles_fase')
+            .filter(completado_at__isnull=False,
+                    completado_at__gte=from_dt,
+                    completado_at__lt=to_dt_exclusive)
         )
         if proyecto_id:
-            items_qs = items_qs.filter(modulo__proyecto_id=proyecto_id)
+            modulos_qs = modulos_qs.filter(proyecto_id=proyecto_id)
         if not _is_admin(request.user):
-            items_qs = items_qs.filter(modulo__proyecto__usuario=request.user)
+            modulos_qs = modulos_qs.filter(proyecto__usuario=request.user)
 
-        # Pre-fetch the DetalleModuloFase for each (modulo, fase) pair
-        items = list(items_qs)
-        detalle_lookup = {}
-        modulo_fase_pairs = {(it.modulo_id, it.fase) for it in items}
-        if modulo_fase_pairs:
-            modulo_ids = {m for m, _ in modulo_fase_pairs}
-            for d in DetalleModuloFase.objects.filter(modulo_id__in=modulo_ids):
-                detalle_lookup[(d.modulo_id, d.fase)] = d
+        modulos_list = list(modulos_qs)
+        modulos_completados = len(modulos_list)
+
+        # Build a lookup of MesaQueueItem HECHO for the same (modulo, fase)
+        # so we can attribute phases to their mesa when available.
+        modulo_ids = [m.id for m in modulos_list]
+        item_by_modulo_fase = {}
+        if modulo_ids:
+            mesa_items_qs = (
+                MesaQueueItem.objects
+                .select_related('mesa')
+                .filter(modulo_id__in=modulo_ids, status=MesaQueueStatus.HECHO)
+            )
+            for it in mesa_items_qs:
+                item_by_modulo_fase[(it.modulo_id, it.fase)] = it
 
         def empty_totals():
             return {
@@ -1648,36 +1660,40 @@ class ProductionStatsView(APIView):
         por_mesa = {}
         por_dia = {}
 
-        for item in items:
-            detalle = detalle_lookup.get((item.modulo_id, item.fase))
-            add_detalle(totals, detalle)
-
-            mesa_key = item.mesa_id
-            if mesa_key not in por_mesa:
-                por_mesa[mesa_key] = {
-                    'mesa_id': mesa_key,
-                    'mesa_nombre': item.mesa.nombre,
-                    'rol': item.mesa.rol,
-                    **empty_totals(),
-                }
-            add_detalle(por_mesa[mesa_key], detalle)
-
-            dia_key = timezone.localtime(item.done_at, current_tz).date().isoformat()
+        # Each completed module contributes its INF + SUP phases to the
+        # aggregated stats. For per-mesa break-down we look up the
+        # matching MesaQueueItem; if not present, phases are attributed
+        # to a synthetic "Manual" bucket (no mesa id).
+        for modulo in modulos_list:
+            dia_key = timezone.localtime(modulo.completado_at, current_tz).date().isoformat()
             if dia_key not in por_dia:
                 por_dia[dia_key] = {'fecha': dia_key, **empty_totals()}
-            add_detalle(por_dia[dia_key], detalle)
 
-        # Modules fully completed in the range (not just phases)
-        modulos_qs = Modulo.objects.filter(
-            completado_at__isnull=False,
-            completado_at__gte=from_dt,
-            completado_at__lt=to_dt_exclusive,
-        )
-        if proyecto_id:
-            modulos_qs = modulos_qs.filter(proyecto_id=proyecto_id)
-        if not _is_admin(request.user):
-            modulos_qs = modulos_qs.filter(proyecto__usuario=request.user)
-        modulos_completados = modulos_qs.count()
+            for detalle in modulo.detalles_fase.all():
+                add_detalle(totals, detalle)
+                add_detalle(por_dia[dia_key], detalle)
+
+                it = item_by_modulo_fase.get((modulo.id, detalle.fase))
+                if it is not None:
+                    mesa_key = it.mesa_id
+                    if mesa_key not in por_mesa:
+                        por_mesa[mesa_key] = {
+                            'mesa_id': mesa_key,
+                            'mesa_nombre': it.mesa.nombre,
+                            'rol': it.mesa.rol,
+                            **empty_totals(),
+                        }
+                    add_detalle(por_mesa[mesa_key], detalle)
+                else:
+                    manual_key = f'manual-{detalle.fase}'
+                    if manual_key not in por_mesa:
+                        por_mesa[manual_key] = {
+                            'mesa_id': None,
+                            'mesa_nombre': f'Manual ({detalle.fase})',
+                            'rol': 'LEGACY',
+                            **empty_totals(),
+                        }
+                    add_detalle(por_mesa[manual_key], detalle)
 
         # Expected output for the range (capacity lives on the ferralla/user profile)
         capacidad_diaria = 12

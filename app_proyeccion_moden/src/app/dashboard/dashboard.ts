@@ -177,6 +177,14 @@ export class Dashboard implements OnInit, OnDestroy {
         this.pollMesasQueue();
         this.refreshActivePlantaModules();
       });
+
+    // Slower loop (20s) to refresh project counters + production stats
+    // so donut and stats boards follow admin actions without a reload.
+    interval(20000)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(() => {
+        this.silentRefreshProyectosAndStats();
+      });
   }
 
   logout(): void {
@@ -331,6 +339,12 @@ export class Dashboard implements OnInit, OnDestroy {
       .subscribe({
         next: (data) => {
           this.proyectos = data;
+          // Refresh the selected project reference so the donut picks
+          // up updated modulos_completados / modulos_completados_hoy.
+          if (this.selectedProyecto) {
+            const updated = data.find(p => p.id === this.selectedProyecto?.id);
+            if (updated) this.selectedProyecto = updated;
+          }
           this.loadingProyectos = false;
           this.cdr.detectChanges();
         },
@@ -339,6 +353,29 @@ export class Dashboard implements OnInit, OnDestroy {
           this.loadingProyectos = false;
         }
       });
+  }
+
+  /**
+   * Silent refresh of projects + production stats — used by the polling
+   * loop so donut and stats boards stay in sync with what the admin
+   * does in parallel (completar/reiniciar) without a full page reload.
+   */
+  silentRefreshProyectosAndStats(): void {
+    this.api.getProyectos()
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (data) => {
+          this.proyectos = data;
+          if (this.selectedProyecto) {
+            const updated = data.find(p => p.id === this.selectedProyecto?.id);
+            if (updated) this.selectedProyecto = updated;
+          }
+          this.cdr.detectChanges();
+        }
+      });
+    if (this.selectedProyecto) {
+      this.loadProductionStats();
+    }
   }
 
   loadMesas(): void {
