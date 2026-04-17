@@ -517,15 +517,18 @@ export class ProyectoDetailComponent implements OnInit {
                         const fase = faseNormalizada === 'INF' ? 'INFERIOR' : 'SUPERIOR';
                         let ordenImg = 1;
 
-                        // Read images in fase folder
+                        // Collect image files first, then sort alphabetically
+                        const imgFiles: Array<[string, any]> = [];
                         for await (const [fileName, fileHandle] of faseHandle.entries()) {
                             if (fileHandle.kind !== 'file') continue;
-
                             const ext = fileName.toLowerCase().substring(fileName.lastIndexOf('.'));
                             if (!validExtensions.includes(ext)) continue;
+                            imgFiles.push([fileName, fileHandle]);
+                        }
+                        imgFiles.sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }));
 
+                        for (const [fileName, fileHandle] of imgFiles) {
                             const file = await fileHandle.getFile();
-                            // Unique filename to avoid collisions
                             const formFileKey = `MOD_${moduloName}_${faseName}_${fileName}`;
                             formData.append(formFileKey, file);
 

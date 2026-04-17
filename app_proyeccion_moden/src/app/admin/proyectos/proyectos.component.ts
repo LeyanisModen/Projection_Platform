@@ -224,13 +224,17 @@ export class ProyectosComponent implements OnInit {
             const fase = faseNormalizada === 'INF' ? 'INFERIOR' : 'SUPERIOR';
             let orden = 1;
 
-            // Read images inside INF/SUP
+            // Collect image files first, then sort alphabetically
+            const imageFiles: Array<[string, any]> = [];
             for await (const [fileName, fileHandle] of faseHandle.entries()) {
               if (fileHandle.kind !== 'file') continue;
-
               const ext = fileName.toLowerCase().substring(fileName.lastIndexOf('.'));
               if (!validExtensions.includes(ext)) continue;
+              imageFiles.push([fileName, fileHandle]);
+            }
+            imageFiles.sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }));
 
+            for (const [fileName, fileHandle] of imageFiles) {
               this.importProgress = `Cargando imagen: ${fileName}...`;
               this.cdr.detectChanges();
 
