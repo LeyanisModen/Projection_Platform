@@ -1020,12 +1020,16 @@
 .weekly-charts-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 16px;
+  gap: 12px;
   margin-top: 16px;
 }
 
 .weekly-chart {
   min-width: 0;
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 10px;
+  padding: 12px 14px 10px;
 }
 
 .weekly-chart-header {
@@ -1035,6 +1039,8 @@
   margin-bottom: 10px;
   flex-wrap: wrap;
   gap: 6px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e9ecef;
 }
 
 .weekly-chart-header h4 {
@@ -1085,7 +1091,6 @@
   gap: 8px;
   height: 160px;
   padding: 6px 2px 22px;
-  border-bottom: 1px solid #e9ecef;
   position: relative;
 }
 
