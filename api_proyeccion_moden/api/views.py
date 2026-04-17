@@ -1613,9 +1613,12 @@ class ProductionStatsView(APIView):
         modulos_completados = len(modulos_list)
 
         # Build a lookup of MesaQueueItem HECHO for the same (modulo, fase)
-        # so we can attribute phases to their mesa when available.
+        # so we can attribute phases to their mesa when available, and a
+        # fallback map from modulo id -> GrupoMesas id so we can guess the
+        # right mesa for phases that never went through a queue.
         modulo_ids = [m.id for m in modulos_list]
         item_by_modulo_fase = {}
+        grupo_mesas_by_modulo = {}
         if modulo_ids:
             mesa_items_qs = (
                 MesaQueueItem.objects
@@ -1624,6 +1627,22 @@ class ProductionStatsView(APIView):
             )
             for it in mesa_items_qs:
                 item_by_modulo_fase[(it.modulo_id, it.fase)] = it
+                if it.mesa and it.mesa.grupo_id:
+                    grupo_mesas_by_modulo.setdefault(it.modulo_id, it.mesa.grupo_id)
+
+        # Cache: GrupoMesas id -> {rol: Mesa} so we can attribute orphan
+        # phases to the right mesa in the same group.
+        grupo_mesa_by_rol: dict = {}
+        grupo_ids_needed = set(grupo_mesas_by_modulo.values())
+        if grupo_ids_needed:
+            for mesa in Mesa.objects.filter(grupo_id__in=grupo_ids_needed):
+                grupo_mesa_by_rol.setdefault(mesa.grupo_id, {})[mesa.rol] = mesa
+
+        def _rol_for_fase(fase):
+            # INFERIOR phases default to INFERIOR_1 if the group has one.
+            if fase == 'SUPERIOR':
+                return ['SUPERIORES']
+            return ['INFERIOR_1', 'INFERIOR_2']
 
         def empty_totals():
             return {
@@ -1684,13 +1703,36 @@ class ProductionStatsView(APIView):
                             **empty_totals(),
                         }
                     add_detalle(por_mesa[mesa_key], detalle)
+                    continue
+
+                # Fallback: use any mesa in the same group with the right
+                # role for this fase. Keeps 'manual' completions visible
+                # on the correct mesa instead of a LEGACY bucket.
+                fallback_mesa = None
+                grupo_id = grupo_mesas_by_modulo.get(modulo.id)
+                if grupo_id:
+                    group_roles = grupo_mesa_by_rol.get(grupo_id, {})
+                    for rol_candidate in _rol_for_fase(detalle.fase):
+                        if rol_candidate in group_roles:
+                            fallback_mesa = group_roles[rol_candidate]
+                            break
+                if fallback_mesa is not None:
+                    mesa_key = fallback_mesa.id
+                    if mesa_key not in por_mesa:
+                        por_mesa[mesa_key] = {
+                            'mesa_id': mesa_key,
+                            'mesa_nombre': fallback_mesa.nombre,
+                            'rol': fallback_mesa.rol,
+                            **empty_totals(),
+                        }
+                    add_detalle(por_mesa[mesa_key], detalle)
                 else:
-                    manual_key = f'manual-{detalle.fase}'
+                    manual_key = f'sin-mesa-{detalle.fase}'
                     if manual_key not in por_mesa:
                         por_mesa[manual_key] = {
                             'mesa_id': None,
-                            'mesa_nombre': f'Manual ({detalle.fase})',
-                            'rol': 'LEGACY',
+                            'mesa_nombre': f'Sin mesa asignada ({detalle.fase})',
+                            'rol': detalle.fase,
                             **empty_totals(),
                         }
                     add_detalle(por_mesa[manual_key], detalle)

@@ -379,8 +379,9 @@ export class Dashboard implements OnInit, OnDestroy {
           this.cdr.detectChanges();
         }
       });
-    // Stats aggregate everything the ferralla owns — always refresh.
-    this.loadProductionStats();
+    // Stats aggregate everything the ferralla owns — always refresh,
+    // silently so the polling doesn't toggle the loading placeholder.
+    this.loadProductionStats(true);
   }
 
   loadMesas(): void {
@@ -530,12 +531,15 @@ export class Dashboard implements OnInit, OnDestroy {
    * Loads stats for today (Diario) and the current Mon-Fri window
    * (Semanal). Stats are aggregated at the ferralla level (all mesas,
    * all projects of the logged user).
+   *
+   * When silent=true we avoid flipping the loading spinners so the
+   * periodic polling doesn't cause a "Cargando…" flash every 20s.
    */
-  loadProductionStats(): void {
+  loadProductionStats(silent: boolean = false): void {
     const today = this.toLocalIsoDate(new Date());
     const monday = this.toLocalIsoDate(this.getMondayOfWeek(new Date()));
 
-    this.loadingDailyStats = true;
+    if (!silent || !this.dailyStats) this.loadingDailyStats = true;
     this.api.getProductionStats({ from: today, to: today })
       .pipe(takeUntil(this.destroy$))
       .subscribe({
@@ -550,7 +554,7 @@ export class Dashboard implements OnInit, OnDestroy {
         }
       });
 
-    this.loadingWeeklyStats = true;
+    if (!silent || !this.weeklyStats) this.loadingWeeklyStats = true;
     this.api.getProductionStats({ from: monday, to: today })
       .pipe(takeUntil(this.destroy$))
       .subscribe({
