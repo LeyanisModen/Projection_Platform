@@ -682,6 +682,25 @@ export class Dashboard implements OnInit, OnDestroy {
     return Math.min(100, (value / max) * 100);
   }
 
+  weeklyMaxDificultad(): number {
+    const days = this.weeklyChartDays();
+    const max = Math.max(0, ...days.map(d => d.dificultad_total || 0));
+    return Math.max(max, 1) * 1.15;
+  }
+
+  dificultadBarPct(value: number): number {
+    const max = this.weeklyMaxDificultad();
+    if (max <= 0) return 0;
+    return Math.min(100, (value / max) * 100);
+  }
+
+  /** Short label for large difficulty numbers (e.g. 1346 -> '1.3k'). */
+  formatDificultadShort(value: number): string {
+    if (!value) return '';
+    if (value >= 1000) return (value / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+    return Math.round(value).toString();
+  }
+
   loadPlantasForProyecto(proyectoId: number): void {
     this.loadingPlantas = true;
     this.api.getPlantas(proyectoId)

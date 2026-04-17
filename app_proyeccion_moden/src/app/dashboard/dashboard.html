@@ -286,65 +286,91 @@
                             </div>
                         </div>
 
-                        <!-- Chart 1: Módulos vs Meta -->
-                        <div class="weekly-chart">
-                            <div class="weekly-chart-header">
-                                <h4>Módulos vs Meta</h4>
-                                <div class="weekly-legend">
-                                    <span class="legend-swatch swatch-primary"></span> Producidos
-                                    <span class="legend-swatch swatch-target"></span> Meta diaria
+                        <div class="weekly-charts-row">
+                            <!-- Chart 1: Módulos vs Meta -->
+                            <div class="weekly-chart">
+                                <div class="weekly-chart-header">
+                                    <h4>Módulos vs Meta</h4>
+                                    <div class="weekly-legend">
+                                        <span class="legend-swatch swatch-primary"></span>Producidos
+                                        <span class="legend-swatch swatch-target"></span>Meta
+                                    </div>
+                                </div>
+                                <div class="weekly-chart-body">
+                                    @for (day of weeklyChartDays(); track day.fecha) {
+                                        <div class="chart-day">
+                                            <div class="chart-bar-area">
+                                                <div class="chart-bar chart-bar-target"
+                                                    [style.height.%]="modulosBarPct(weeklyDailyCap())"
+                                                    [title]="'Meta: ' + weeklyDailyCap() + ' módulos'"></div>
+                                                <div class="chart-bar chart-bar-primary"
+                                                    [style.height.%]="modulosBarPct(day.modulos_completados || 0)"
+                                                    [title]="day.isoLabel + ': ' + (day.modulos_completados || 0) + ' módulos'">
+                                                    <span class="chart-bar-value" *ngIf="(day.modulos_completados || 0) > 0">
+                                                        {{ day.modulos_completados }}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <span class="chart-day-label">{{ day.isoLabel }}</span>
+                                        </div>
+                                    }
                                 </div>
                             </div>
-                            <div class="weekly-chart-body">
-                                @for (day of weeklyChartDays(); track day.fecha) {
-                                    <div class="chart-day">
-                                        <div class="chart-bar-area">
-                                            <!-- Meta line as a ghost bar -->
-                                            <div class="chart-bar chart-bar-target"
-                                                [style.height.%]="modulosBarPct(weeklyDailyCap())"
-                                                [title]="'Meta: ' + weeklyDailyCap() + ' módulos'"></div>
-                                            <!-- Real bar overlapping -->
-                                            <div class="chart-bar chart-bar-primary"
-                                                [style.height.%]="modulosBarPct(day.modulos_completados || 0)"
-                                                [title]="day.isoLabel + ': ' + (day.modulos_completados || 0) + ' módulos'">
-                                                <span class="chart-bar-value" *ngIf="(day.modulos_completados || 0) > 0">
-                                                    {{ day.modulos_completados }}
-                                                </span>
-                                            </div>
-                                        </div>
-                                        <span class="chart-day-label">{{ day.isoLabel }}</span>
-                                    </div>
-                                }
-                            </div>
-                        </div>
 
-                        <!-- Chart 2: Peso y desperdicio -->
-                        <div class="weekly-chart">
-                            <div class="weekly-chart-header">
-                                <h4>Peso y desperdicio</h4>
-                                <div class="weekly-legend">
-                                    <span class="legend-swatch swatch-neutral"></span> Peso (kg)
-                                    <span class="legend-swatch swatch-waste"></span> Desperdicio (kg)
+                            <!-- Chart 2: Peso y desperdicio -->
+                            <div class="weekly-chart">
+                                <div class="weekly-chart-header">
+                                    <h4>Peso y desperdicio</h4>
+                                    <div class="weekly-legend">
+                                        <span class="legend-swatch swatch-neutral"></span>Peso
+                                        <span class="legend-swatch swatch-waste"></span>Desperdicio
+                                    </div>
+                                </div>
+                                <div class="weekly-chart-body">
+                                    @for (day of weeklyChartDays(); track day.fecha) {
+                                        <div class="chart-day">
+                                            <div class="chart-bar-area">
+                                                <div class="chart-bar chart-bar-neutral"
+                                                    [style.height.%]="pesoBarPct(day.peso_malla_final_kg || 0)"
+                                                    [title]="day.isoLabel + ': ' + (day.peso_malla_final_kg | number:'1.0-1') + ' kg'">
+                                                    <span class="chart-bar-value" *ngIf="(day.peso_malla_final_kg || 0) > 0">
+                                                        {{ day.peso_malla_final_kg | number:'1.0-0' }}
+                                                    </span>
+                                                </div>
+                                                <div class="chart-bar chart-bar-waste"
+                                                    [style.height.%]="pesoBarPct(day.desperdicio_kg || 0)"
+                                                    [title]="'Desperdicio ' + day.isoLabel + ': ' + (day.desperdicio_kg | number:'1.0-1') + ' kg'"></div>
+                                            </div>
+                                            <span class="chart-day-label">{{ day.isoLabel }}</span>
+                                        </div>
+                                    }
                                 </div>
                             </div>
-                            <div class="weekly-chart-body">
-                                @for (day of weeklyChartDays(); track day.fecha) {
-                                    <div class="chart-day">
-                                        <div class="chart-bar-area">
-                                            <div class="chart-bar chart-bar-neutral"
-                                                [style.height.%]="pesoBarPct(day.peso_malla_final_kg || 0)"
-                                                [title]="day.isoLabel + ': ' + (day.peso_malla_final_kg | number:'1.0-1') + ' kg'">
-                                                <span class="chart-bar-value" *ngIf="(day.peso_malla_final_kg || 0) > 0">
-                                                    {{ day.peso_malla_final_kg | number:'1.0-0' }}
-                                                </span>
-                                            </div>
-                                            <div class="chart-bar chart-bar-waste"
-                                                [style.height.%]="pesoBarPct(day.desperdicio_kg || 0)"
-                                                [title]="'Desperdicio ' + day.isoLabel + ': ' + (day.desperdicio_kg | number:'1.0-1') + ' kg'"></div>
-                                        </div>
-                                        <span class="chart-day-label">{{ day.isoLabel }}</span>
+
+                            <!-- Chart 3: Dificultad ejecutada -->
+                            <div class="weekly-chart">
+                                <div class="weekly-chart-header">
+                                    <h4>Dificultad ejecutada</h4>
+                                    <div class="weekly-legend">
+                                        <span class="legend-swatch swatch-difficulty"></span>Puntos
                                     </div>
-                                }
+                                </div>
+                                <div class="weekly-chart-body">
+                                    @for (day of weeklyChartDays(); track day.fecha) {
+                                        <div class="chart-day">
+                                            <div class="chart-bar-area">
+                                                <div class="chart-bar chart-bar-difficulty"
+                                                    [style.height.%]="dificultadBarPct(day.dificultad_total || 0)"
+                                                    [title]="day.isoLabel + ': ' + (day.dificultad_total | number:'1.0-0') + ' puntos de dificultad'">
+                                                    <span class="chart-bar-value" *ngIf="(day.dificultad_total || 0) > 0">
+                                                        {{ formatDificultadShort(day.dificultad_total) }}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <span class="chart-day-label">{{ day.isoLabel }}</span>
+                                        </div>
+                                    }
+                                </div>
                             </div>
                         </div>
                     }

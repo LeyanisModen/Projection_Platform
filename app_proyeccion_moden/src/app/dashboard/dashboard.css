@@ -1017,8 +1017,15 @@
   margin-right: 6px;
 }
 
-.weekly-chart {
+.weekly-charts-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
   margin-top: 16px;
+}
+
+.weekly-chart {
+  min-width: 0;
 }
 
 .weekly-chart-header {
@@ -1026,6 +1033,8 @@
   justify-content: space-between;
   align-items: baseline;
   margin-bottom: 10px;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .weekly-chart-header h4 {
@@ -1036,11 +1045,12 @@
 }
 
 .weekly-legend {
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   color: #6c757d;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .legend-swatch {
@@ -1065,13 +1075,16 @@
 .legend-swatch.swatch-waste {
   background: #dc3545;
 }
+.legend-swatch.swatch-difficulty {
+  background: #3d5a80;
+}
 
 .weekly-chart-body {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  gap: 12px;
-  height: 180px;
-  padding: 6px 4px 24px;
+  gap: 8px;
+  height: 160px;
+  padding: 6px 2px 22px;
   border-bottom: 1px solid #e9ecef;
   position: relative;
 }
@@ -1142,6 +1155,13 @@
   background: #dc3545;
   z-index: 3;
   border-radius: 3px 3px 0 0;
+}
+
+.chart-bar-difficulty {
+  width: 60%;
+  left: 20%;
+  background: #3d5a80;
+  z-index: 2;
 }
 
 .chart-bar-value {
