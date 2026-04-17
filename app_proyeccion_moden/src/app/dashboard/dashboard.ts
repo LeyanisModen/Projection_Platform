@@ -168,6 +168,7 @@ export class Dashboard implements OnInit, OnDestroy {
     this.loadProyectos();
     this.loadMesas();
     this.loadGruposMesas();
+    this.loadProductionStats();
 
     // Start Polling for Queue Updates (Every 5 seconds)
     // This handles the "Auto-DJ" logic: if an item finishes, the next one is picked up
@@ -378,9 +379,8 @@ export class Dashboard implements OnInit, OnDestroy {
           this.cdr.detectChanges();
         }
       });
-    if (this.selectedProyecto) {
-      this.loadProductionStats();
-    }
+    // Stats aggregate everything the ferralla owns — always refresh.
+    this.loadProductionStats();
   }
 
   loadMesas(): void {
@@ -527,21 +527,16 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   /**
-   * Loads stats for today (Diario) and the current Mon-Fri window (Semanal)
-   * scoped to the selected project.
+   * Loads stats for today (Diario) and the current Mon-Fri window
+   * (Semanal). Stats are aggregated at the ferralla level (all mesas,
+   * all projects of the logged user).
    */
   loadProductionStats(): void {
-    if (!this.selectedProyecto) {
-      this.dailyStats = null;
-      this.weeklyStats = null;
-      return;
-    }
-    const proyecto = this.selectedProyecto.id;
     const today = this.toLocalIsoDate(new Date());
     const monday = this.toLocalIsoDate(this.getMondayOfWeek(new Date()));
 
     this.loadingDailyStats = true;
-    this.api.getProductionStats({ from: today, to: today, proyecto })
+    this.api.getProductionStats({ from: today, to: today })
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (res) => {
@@ -556,7 +551,7 @@ export class Dashboard implements OnInit, OnDestroy {
       });
 
     this.loadingWeeklyStats = true;
-    this.api.getProductionStats({ from: monday, to: today, proyecto })
+    this.api.getProductionStats({ from: monday, to: today })
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (res) => {

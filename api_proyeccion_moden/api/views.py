@@ -1695,14 +1695,21 @@ class ProductionStatsView(APIView):
                         }
                     add_detalle(por_mesa[manual_key], detalle)
 
-        # Expected output for the range (capacity lives on the ferralla/user profile)
+        # Expected output for the range. Stats are per ferralla, so the
+        # capacity comes from the logged user's profile. Admins with an
+        # optional proyecto= filter fall back to that project's ferralla.
         capacidad_diaria = 12
-        if proyecto_id:
+        profile_user = None
+        if _is_admin(request.user) and proyecto_id:
             proyecto = Proyecto.objects.select_related('usuario__profile').filter(id=proyecto_id).first()
-            if proyecto and proyecto.usuario and hasattr(proyecto.usuario, 'profile'):
-                profile_cap = proyecto.usuario.profile.capacidad_diaria_modulos
-                if profile_cap:
-                    capacidad_diaria = profile_cap
+            if proyecto and proyecto.usuario:
+                profile_user = proyecto.usuario
+        if profile_user is None and request.user.is_authenticated and not _is_admin(request.user):
+            profile_user = request.user
+        if profile_user is not None and hasattr(profile_user, 'profile'):
+            profile_cap = profile_user.profile.capacidad_diaria_modulos
+            if profile_cap:
+                capacidad_diaria = profile_cap
         working_days = _count_working_days(from_date, to_date)
 
         return Response({
