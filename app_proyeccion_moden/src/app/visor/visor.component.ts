@@ -410,9 +410,11 @@ export class VisorComponent implements OnInit, OnDestroy {
     if (!currentImage) return;
 
     const imageUrl: string = currentImage.url || currentImage.src || '';
-    const filename = imageUrl.split('/').pop() || '';
+    const filename = (imageUrl.split('/').pop() || '').toLowerCase();
 
-    if (filename.includes('_photo')) {
+    // Fire the capture when the image filename marks a verification
+    // step: '_foto' / '_photo' (proceso intermedio) or '_check' (final).
+    if (filename.includes('_foto') || filename.includes('_photo') || filename.includes('_check')) {
       this.triggerPhotoCapture();
     }
   }
