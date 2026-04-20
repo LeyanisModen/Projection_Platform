@@ -27,6 +27,16 @@
     50%      { box-shadow: 0 6px 24px rgba(220, 38, 38, 0.8); }
 }
 
+.camera-warning.camera-warning-dirty {
+    background: #d97706;
+    animation: camera-warning-pulse-amber 3s ease-in-out infinite;
+}
+
+@keyframes camera-warning-pulse-amber {
+    0%, 100% { box-shadow: 0 6px 20px rgba(217, 119, 6, 0.35); }
+    50%      { box-shadow: 0 6px 24px rgba(217, 119, 6, 0.8); }
+}
+
 /* Visor Component - Full Screen Kiosk Mode */
 .visor-container {
     position: fixed;

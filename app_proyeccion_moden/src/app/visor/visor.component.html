@@ -6,6 +6,11 @@
         <span class="camera-warning-icon">⚠</span>
         <span class="camera-warning-text">Cámara no disponible</span>
     </div>
+    } @else if (cameraSharpness === 'blurry') {
+    <div class="camera-warning camera-warning-dirty" role="alert" title="La cámara parece sucia: limpiar el objetivo con un paño seco.">
+        <span class="camera-warning-icon">⚠</span>
+        <span class="camera-warning-text">Cámara sucia: limpiar objetivo</span>
+    </div>
     }
 
     <!-- LOADING STATE -->

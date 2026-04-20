@@ -60,6 +60,8 @@ export class VisorComponent implements OnInit, OnDestroy {
 
   // Local capture-service health (null = unknown, true = ok, false = down)
   captureServiceOnline: boolean | null = null;
+  // Daily lens sharpness status (unknown | ok | warning | blurry)
+  cameraSharpness: 'unknown' | 'ok' | 'warning' | 'blurry' = 'unknown';
   private captureHealthSub: Subscription | null = null;
 
   // White screen (blank projection for photo capture or manual pause)
@@ -123,16 +125,24 @@ export class VisorComponent implements OnInit, OnDestroy {
   }
 
   private startCaptureHealthPolling(): void {
-    // Check immediately, then every 30s.
+    // Poll /stats so we pick up both health + daily sharpness status
+    // in the same request. Immediately on load, then every 30 s.
     this.captureHealthSub = interval(30000).pipe(
       startWith(0),
       switchMap(() =>
-        this.http.get(`${this.captureServiceUrl}/health`, {
-          responseType: 'text',
-        }).pipe(catchError(() => of(null)))
+        this.http.get<any>(`${this.captureServiceUrl}/stats`)
+          .pipe(catchError(() => of(null)))
       )
-    ).subscribe(result => {
-      this.captureServiceOnline = result !== null;
+    ).subscribe(stats => {
+      if (stats === null) {
+        this.captureServiceOnline = false;
+      } else {
+        this.captureServiceOnline = true;
+        const status = stats?.sharpness_status;
+        if (status === 'ok' || status === 'warning' || status === 'blurry' || status === 'unknown') {
+          this.cameraSharpness = status;
+        }
+      }
       this.cdr.detectChanges();
     });
   }

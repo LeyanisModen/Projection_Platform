@@ -47,3 +47,19 @@ max_local_gb = 30
 active_days = MON,TUE,WED,THU,FRI
 active_start_hour = 5
 active_end_hour = 19
+
+
+[sharpness]
+; Once per active day (on the first tick of the morning) the service
+; grabs a frame and runs a variance-of-Laplacian analysis on it. Low
+; variance means soft edges, which on a fixed-focus camera points to
+; a dirty lens. The result is exposed in /stats (sharpness_status) and
+; the visor uses it to show an amber "Cámara sucia" warning on screen.
+enabled = true
+
+; Variance thresholds. Tune after observing real values on /stats:
+;   > threshold_warning      -> status 'ok'
+;   >= threshold_blurry      -> status 'warning' (borderline)
+;   < threshold_blurry       -> status 'blurry' (likely dirty lens)
+threshold_blurry = 50
+threshold_warning = 150

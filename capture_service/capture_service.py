@@ -65,6 +65,12 @@ class Config:
         self.active_start_hour = 5
         self.active_end_hour = 19
 
+        # Daily sharpness check (uses variance of Laplacian on the first
+        # frame of the day; low variance = blurry / dirty lens).
+        self.sharpness_enabled = True
+        self.sharpness_threshold_blurry = 50.0
+        self.sharpness_threshold_warning = 150.0
+
         if path.exists():
             self._load(path)
 
@@ -99,6 +105,16 @@ class Config:
             }
             self.active_start_hour = d.getint('active_start_hour', self.active_start_hour)
             self.active_end_hour = d.getint('active_end_hour', self.active_end_hour)
+
+        if cp.has_section('sharpness'):
+            s = cp['sharpness']
+            self.sharpness_enabled = s.getboolean('enabled', self.sharpness_enabled)
+            self.sharpness_threshold_blurry = s.getfloat(
+                'threshold_blurry', self.sharpness_threshold_blurry
+            )
+            self.sharpness_threshold_warning = s.getfloat(
+                'threshold_warning', self.sharpness_threshold_warning
+            )
 
 
 CONFIG = Config(CONFIG_PATH)
@@ -144,6 +160,11 @@ _stats = {
     'local_disk_bytes': 0,
     'last_error': None,
     'skipped_out_of_schedule': 0,
+    # Sharpness check (runs once per day on the first active tick)
+    'sharpness_status': 'unknown',  # unknown | ok | warning | blurry
+    'sharpness_score': None,
+    'sharpness_checked_at': None,
+    'sharpness_checked_date': None,
 }
 
 
@@ -160,6 +181,52 @@ def _update_stats_after_save():
 def _set_last_error(msg: str):
     with _stats_lock:
         _stats['last_error'] = msg
+
+
+# ---------------------------------------------------------------------------
+# Sharpness check — detects a dirty / blurry lens once per day.
+# ---------------------------------------------------------------------------
+def _laplacian_variance(frame) -> float:
+    """Higher variance = sharper image. A dirty / smudged lens softens
+    edges and drops the variance significantly."""
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    return float(cv2.Laplacian(gray, cv2.CV_64F).var())
+
+
+def _sharpness_status_for(score: float) -> str:
+    if score < CONFIG.sharpness_threshold_blurry:
+        return 'blurry'
+    if score < CONFIG.sharpness_threshold_warning:
+        return 'warning'
+    return 'ok'
+
+
+def _ensure_sharpness_checked_today():
+    """Runs the sharpness analysis once per active day. Needs _camera_lock
+    on entry. No-op if already checked today, disabled, or we already
+    have a fresh capture in flight."""
+    if not CONFIG.sharpness_enabled:
+        return
+    today_iso = datetime.now().date().isoformat()
+    with _stats_lock:
+        if _stats['sharpness_checked_date'] == today_iso:
+            return
+    try:
+        with _camera_lock:
+            ret, frame = capture_frame()
+        if not ret or frame is None:
+            return
+        score = _laplacian_variance(frame)
+        status = _sharpness_status_for(score)
+        now_iso = datetime.now().isoformat(timespec='seconds')
+        with _stats_lock:
+            _stats['sharpness_score'] = round(score, 2)
+            _stats['sharpness_status'] = status
+            _stats['sharpness_checked_at'] = now_iso
+            _stats['sharpness_checked_date'] = today_iso
+        print(f'[Sharpness] {status} (score={score:.1f}) for {CONFIG.mesa_id}')
+    except Exception as exc:
+        _set_last_error(f'sharpness: {exc}')
 
 
 # ---------------------------------------------------------------------------
@@ -261,6 +328,10 @@ def documentation_loop():
             # sleep a little longer when out of hours to avoid burning cpu
             time.sleep(min(30.0, max(CONFIG.interval_seconds, 10.0)))
             continue
+
+        # First active tick of the day: run the sharpness self-test so
+        # the operator is warned early if the lens is dirty.
+        _ensure_sharpness_checked_today()
 
         try:
             with _camera_lock:
