@@ -382,19 +382,39 @@ class MesaQueueItemSerializer(serializers.ModelSerializer):
     mesa_nombre = serializers.CharField(source='mesa.nombre', read_only=True)
     modulo_planta_id = serializers.SerializerMethodField()
     modulo_proyecto_id = serializers.SerializerMethodField()
-    
+    dificultad = serializers.SerializerMethodField()
+
     class Meta:
         model = MesaQueueItem
         fields = [
             "id", "mesa", "mesa_nombre",
             "modulo", "modulo_nombre", "modulo_planta_id", "modulo_proyecto_id",
             "fase", "imagen", "imagen_url",
-            "position", "plan_group_index", "status",
+            "position", "plan_group_index", "status", "dificultad",
             "assigned_by", "assigned_at",
             "done_by", "done_at"
         ]
         read_only_fields = ["assigned_at", "done_at"]
         validators = []
+
+    def get_dificultad(self, obj):
+        """Normalized dificultad (100 = ferralla average) of the DetalleModuloFase
+        matching this queue item's modulo+fase, or None if not available."""
+        if obj.modulo is None:
+            return None
+        detalle = None
+        cached = getattr(obj.modulo, '_prefetched_objects_cache', {}).get('detalles_fase')
+        candidates = cached if cached is not None else obj.modulo.detalles_fase.all()
+        for d in candidates:
+            if d.fase == obj.fase:
+                detalle = d
+                break
+        if detalle is None:
+            return None
+        from api.views import _compute_dificultad
+        raw = _compute_dificultad(detalle)
+        scale = self.context.get('dificultad_scale', 1.0)
+        return round(raw * scale, 1)
 
     def validate(self, data):
         """

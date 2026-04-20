@@ -205,6 +205,7 @@ export interface MesaQueueItem {
     position: number;
     plan_group_index?: number | null;
     status: 'EN_COLA' | 'MOSTRANDO' | 'HECHO';
+    dificultad?: number | null;
     assigned_by: string | null;
     assigned_at: string;
     done_by: string | null;

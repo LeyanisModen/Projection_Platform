@@ -122,6 +122,7 @@
                                                 <div class="queue-item-info">
                                                     <span class="queue-item-nombre">{{ mostrando.modulo_nombre }}</span>
                                                     <span class="queue-item-status">{{ mostrando.status }}</span>
+                                                    <span class="queue-item-dificultad" *ngIf="mostrando.dificultad != null" [title]="'Dificultad (100 = media)'">{{ mostrando.dificultad | number:'1.0-0' }}</span>
                                                 </div>
                                             </div>
                                         }
@@ -133,6 +134,7 @@
                                                     <div class="queue-item-info">
                                                         <span class="queue-item-nombre">{{ item.modulo_nombre }}</span>
                                                         <span class="queue-item-status">{{ item.status }}</span>
+                                                        <span class="queue-item-dificultad" *ngIf="item.dificultad != null" [title]="'Dificultad (100 = media)'">{{ item.dificultad | number:'1.0-0' }}</span>
                                                     </div>
                                                 </div>
                                             }
@@ -143,6 +145,7 @@
                                                     <div class="queue-item-info">
                                                         <span class="queue-item-nombre">{{ item.modulo_nombre }}</span>
                                                         <span class="queue-item-status">{{ item.status }}</span>
+                                                        <span class="queue-item-dificultad" *ngIf="item.dificultad != null" [title]="'Dificultad (100 = media)'">{{ item.dificultad | number:'1.0-0' }}</span>
                                                     </div>
                                                 </div>
                                             }
@@ -163,6 +166,7 @@
                                                 <div class="queue-item-info">
                                                     <span class="queue-item-nombre">{{ item.modulo_nombre }}</span>
                                                     <span class="queue-item-status">{{ item.status }}</span>
+                                                    <span class="queue-item-dificultad" *ngIf="item.dificultad != null" [title]="'Dificultad (100 = media)'">{{ item.dificultad | number:'1.0-0' }}</span>
                                                 </div>
                                             </div>
                                         }

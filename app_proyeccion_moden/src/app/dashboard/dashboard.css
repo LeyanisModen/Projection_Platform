@@ -1427,6 +1427,17 @@
   position: relative;
 }
 
+.queue-item-dificultad {
+  margin-left: auto;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #3d5a80;
+  background: rgba(61, 90, 128, 0.1);
+  padding: 2px 6px;
+  border-radius: 10px;
+  line-height: 1;
+}
+
 .queue-item-done-btn {
   background: none;
   border: 1px solid #c8e6c9;

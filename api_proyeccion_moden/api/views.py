@@ -1175,8 +1175,17 @@ class MesaViewSet(viewsets.ModelViewSet):
     def queue_items(self, request, pk=None):
         """Get the work queue for a desk."""
         mesa = self.get_object()
-        items = mesa.queue_items.all().order_by('position')
-        serializer = MesaQueueItemSerializer(items, many=True, context={'request': request})
+        items = (
+            mesa.queue_items
+            .select_related('mesa', 'modulo', 'imagen')
+            .prefetch_related('modulo__detalles_fase')
+            .all()
+            .order_by('position')
+        )
+        scale = _compute_dificultad_scale(request.user)
+        serializer = MesaQueueItemSerializer(
+            items, many=True, context={'request': request, 'dificultad_scale': scale}
+        )
         return Response(serializer.data)
 
     @action(detail=True, methods=['get'])
@@ -1583,6 +1592,29 @@ def _count_working_days(start_date, end_date):
     return total
 
 
+def _compute_dificultad_scale(user, fallback_detalles=None, proyecto_id=None):
+    """
+    Computes the scale factor that maps the user's mean raw dificultad
+    to 100. Used by both the stats endpoint and the mesa queue items
+    so dificultad values in the UI share the same reference.
+    """
+    qs = DetalleModuloFase.objects.select_related('modulo')
+    if proyecto_id:
+        qs = qs.filter(modulo__proyecto_id=proyecto_id)
+    if user is not None and not (user.is_staff or user.is_superuser):
+        qs = qs.filter(modulo__proyecto__usuario=user)
+    detalles = list(qs)
+    if not detalles and fallback_detalles:
+        detalles = list(fallback_detalles)
+    if not detalles:
+        return 1.0
+    total = 0.0
+    for d in detalles:
+        total += _compute_dificultad(d)
+    mean_raw = total / len(detalles) if total > 0 else 0
+    return 100.0 / mean_raw if mean_raw > 0 else 1.0
+
+
 def _compute_dificultad(detalle):
     """Mirror of DetalleModuloFase.dificultad_calculada, tolerant to None.
 
@@ -1692,32 +1724,14 @@ class ProductionStatsView(APIView):
         modulos_list = list(modulos_qs)
         modulos_completados = len(modulos_list)
 
-        # --- Dificultad normalization ---
-        # Scale every per-phase dificultad so that the global mean of all
-        # DetalleModuloFase rows known for this user maps to 100. Fallback
-        # to the recently completed set if nothing else is available.
-        all_detalles_qs = (
-            DetalleModuloFase.objects
-            .select_related('modulo')
+        # Dificultad normalization: mean -> 100 so every UI surface
+        # speaks the same language ("relative to the average module").
+        fallback = []
+        for m in modulos_list:
+            fallback.extend(m.detalles_fase.all())
+        dificultad_scale = _compute_dificultad_scale(
+            request.user, fallback_detalles=fallback, proyecto_id=proyecto_id
         )
-        if proyecto_id:
-            all_detalles_qs = all_detalles_qs.filter(modulo__proyecto_id=proyecto_id)
-        if not _is_admin(request.user):
-            all_detalles_qs = all_detalles_qs.filter(modulo__proyecto__usuario=request.user)
-        all_detalles_list = list(all_detalles_qs)
-        if not all_detalles_list:
-            # Fallback: use phases of the modules finished in the range
-            for m in modulos_list:
-                all_detalles_list.extend(m.detalles_fase.all())
-
-        total_sum_raw = 0.0
-        for d in all_detalles_list:
-            total_sum_raw += _compute_dificultad(d)
-        if all_detalles_list and total_sum_raw > 0:
-            mean_raw = total_sum_raw / len(all_detalles_list)
-            dificultad_scale = 100.0 / mean_raw
-        else:
-            dificultad_scale = 1.0
 
         # Build a lookup of MesaQueueItem HECHO for the same (modulo, fase)
         # so we can attribute phases to their mesa when available, and a
@@ -2536,7 +2550,13 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        queryset = MesaQueueItem.objects.select_related('mesa', 'modulo', 'imagen', 'modulo__planta', 'modulo__planta__proyecto').all().order_by('position')
+        queryset = (
+            MesaQueueItem.objects
+            .select_related('mesa', 'modulo', 'imagen', 'modulo__planta', 'modulo__planta__proyecto')
+            .prefetch_related('modulo__detalles_fase')
+            .all()
+            .order_by('position')
+        )
         if not _is_admin(self.request.user):
             queryset = queryset.filter(mesa__usuario=self.request.user)
         mesa_id = self.request.query_params.get('mesa', None)
@@ -2546,6 +2566,15 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
         if status_filter is not None:
             queryset = queryset.filter(status=status_filter)
         return queryset
+
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        # Compute the dificultad scale once per request so every item in
+        # the returned queue shares the same reference (100 = ferralla
+        # average). Same helper used by the stats endpoint.
+        user = self.request.user if hasattr(self, 'request') else None
+        ctx['dificultad_scale'] = _compute_dificultad_scale(user)
+        return ctx
 
     @action(detail=True, methods=['post'], url_path='mark_done')
     def mark_done(self, request, pk=None):
