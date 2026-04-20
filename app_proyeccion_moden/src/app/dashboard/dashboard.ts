@@ -670,6 +670,33 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   /**
+   * Color for the dificultad dot. Gradient: blue (easy, near 0) ->
+   * green (average, ~100) -> red (hard, 200+). Values are clamped so
+   * the dot never leaves the scale.
+   */
+  dificultadColor(value: number | null | undefined): string {
+    if (value == null) return 'transparent';
+    const clamped = Math.min(Math.max(value, 0), 200);
+    let hue: number;
+    if (clamped <= 100) {
+      hue = 210 - (clamped / 100) * 90;          // blue (210) -> green (120)
+    } else {
+      hue = 120 - ((clamped - 100) / 100) * 120; // green (120) -> red (0)
+    }
+    return `hsl(${hue}, 65%, 50%)`;
+  }
+
+  /** Short label so the tooltip is easier to read than a bare number. */
+  dificultadLabel(value: number | null | undefined): string {
+    if (value == null) return '';
+    if (value < 60) return 'Muy fácil';
+    if (value < 90) return 'Fácil';
+    if (value < 115) return 'Media';
+    if (value < 150) return 'Difícil';
+    return 'Muy difícil';
+  }
+
+  /**
    * Desperdicio as a percentage of the material initially loaded.
    * Returns null when there's nothing to compare against so the
    * caller can decide whether to render the subtext at all.

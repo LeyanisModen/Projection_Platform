@@ -1433,15 +1433,15 @@
   position: relative;
 }
 
-.queue-item-dificultad {
+.queue-item-dif-dot {
   margin-left: auto;
-  font-size: 0.7rem;
-  font-weight: 600;
-  color: #3d5a80;
-  background: rgba(61, 90, 128, 0.1);
-  padding: 2px 6px;
-  border-radius: 10px;
-  line-height: 1;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
+  flex-shrink: 0;
+  cursor: help;
 }
 
 .queue-item-done-btn {
