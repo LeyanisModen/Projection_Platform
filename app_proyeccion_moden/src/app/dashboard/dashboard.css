@@ -1006,34 +1006,14 @@
   box-shadow: 0 0 0 3px rgba(240, 100, 15, 0.15);
 }
 
-/* Tabs (Detalle por mesa / Infografía) */
-.stats-tabs {
-  display: flex;
-  gap: 4px;
-  border-bottom: 1px solid rgba(26, 26, 46, 0.08);
-  padding-bottom: 2px;
-}
-
-.stats-tab {
-  background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
-  padding: 8px 14px;
-  font-size: 0.88rem;
-  font-weight: 600;
+/* Section subtitle inside the stats board */
+.stats-subtitle {
+  margin: 6px 0 -4px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
   color: #6c757d;
-  cursor: pointer;
-  transition: color 0.15s ease, border-color 0.15s ease;
-  margin-bottom: -1px;
-}
-
-.stats-tab:hover {
-  color: #212529;
-}
-
-.stats-tab.active {
-  color: var(--moden-primary, #f0640f);
-  border-bottom-color: var(--moden-primary, #f0640f);
 }
 
 .stats-kpi-row {

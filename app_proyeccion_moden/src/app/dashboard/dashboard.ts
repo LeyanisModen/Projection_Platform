@@ -67,7 +67,6 @@ export class Dashboard implements OnInit, OnDestroy {
   statsPreset: 'day' | 'week' | 'month' | 'custom' = 'day';
   statsFrom: string = '';
   statsTo: string = '';
-  statsTab: 'detail' | 'charts' = 'detail';
 
   // UI State
   expandedModulo: number | null = null; // ID of expanded module
@@ -582,10 +581,6 @@ export class Dashboard implements OnInit, OnDestroy {
       this.statsTo = this.statsFrom;
     }
     this.loadStats();
-  }
-
-  switchStatsTab(tab: 'detail' | 'charts'): void {
-    this.statsTab = tab;
   }
 
   private toLocalIsoDate(d: Date): string {

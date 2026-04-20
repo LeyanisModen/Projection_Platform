@@ -266,43 +266,34 @@
                             </div>
                         </div>
 
-                        <!-- Tabs -->
-                        <div class="stats-tabs">
-                            <button type="button" class="stats-tab"
-                                [class.active]="statsTab === 'detail'"
-                                (click)="switchStatsTab('detail')">Detalle por mesa</button>
-                            <button type="button" class="stats-tab"
-                                [class.active]="statsTab === 'charts'"
-                                (click)="switchStatsTab('charts')">Infografía</button>
-                        </div>
-
-                        @if (statsTab === 'detail') {
-                            <table class="stats-table">
-                                <thead>
+                        <h4 class="stats-subtitle">Detalle por mesa</h4>
+                        <table class="stats-table">
+                            <thead>
+                                <tr>
+                                    <th>Mesa</th>
+                                    <th class="num">Fases</th>
+                                    <th class="num">Peso (kg)</th>
+                                    <th class="num">Desperdicio (kg)</th>
+                                    <th class="num">Cortes</th>
+                                    <th class="num">Dificultad</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @for (mesa of statsData.por_mesa; track mesa.mesa_id) {
                                     <tr>
-                                        <th>Mesa</th>
-                                        <th class="num">Fases</th>
-                                        <th class="num">Peso (kg)</th>
-                                        <th class="num">Desperdicio (kg)</th>
-                                        <th class="num">Cortes</th>
-                                        <th class="num">Dificultad</th>
+                                        <td><span class="stats-mesa-badge">{{ mesaRolShort(mesa.rol) }}</span> {{ mesa.mesa_nombre }}</td>
+                                        <td class="num">{{ mesa.fases_completadas }}</td>
+                                        <td class="num">{{ mesa.peso_malla_final_kg | number:'1.0-1' }}</td>
+                                        <td class="num">{{ mesa.desperdicio_kg | number:'1.0-1' }}</td>
+                                        <td class="num">{{ mesa.cantidad_cortes }}</td>
+                                        <td class="num">{{ mesa.dificultad_total | number:'1.0-0' }}</td>
                                     </tr>
-                                </thead>
-                                <tbody>
-                                    @for (mesa of statsData.por_mesa; track mesa.mesa_id) {
-                                        <tr>
-                                            <td><span class="stats-mesa-badge">{{ mesaRolShort(mesa.rol) }}</span> {{ mesa.mesa_nombre }}</td>
-                                            <td class="num">{{ mesa.fases_completadas }}</td>
-                                            <td class="num">{{ mesa.peso_malla_final_kg | number:'1.0-1' }}</td>
-                                            <td class="num">{{ mesa.desperdicio_kg | number:'1.0-1' }}</td>
-                                            <td class="num">{{ mesa.cantidad_cortes }}</td>
-                                            <td class="num">{{ mesa.dificultad_total | number:'1.0-0' }}</td>
-                                        </tr>
-                                    }
-                                </tbody>
-                            </table>
-                        } @else {
-                            <div class="weekly-charts-row">
+                                }
+                            </tbody>
+                        </table>
+
+                        <h4 class="stats-subtitle">Infografía</h4>
+                        <div class="weekly-charts-row">
                                 <!-- Chart 1: Módulos vs Objetivo -->
                                 <div class="weekly-chart">
                                     <div class="weekly-chart-header">
@@ -389,7 +380,6 @@
                                     </div>
                                 </div>
                             </div>
-                        }
                     }
                 </div>
             </section>
