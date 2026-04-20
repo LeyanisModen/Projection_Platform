@@ -1,0 +1,49 @@
+; Copy this file to config.ini next to capture_service.py and edit
+; the values for each mini-PC. Anything you do not set here falls back
+; to the defaults baked into capture_service.py.
+
+[service]
+; HTTP server binding. Keep it on loopback so nothing external can hit it.
+host = 127.0.0.1
+port = 5555
+
+; Camera index (first webcam = 0, second = 1, ...).
+camera_index = 0
+
+; On-demand /capture size and quality (4K native for OBSBOT Tiny 2).
+capture_width = 3840
+capture_height = 2160
+jpeg_quality = 95
+
+
+[documentation]
+; Set enabled = false to turn the periodic capture loop off entirely.
+enabled = true
+
+; Root folder that Google Drive Desktop is syncing. Each mini-PC should
+; point to the same Google Drive mounted letter so everything lands in
+; the shared corporate drive.
+output_dir = G:\Mi unidad\capturas_moden
+
+; Unique id per mesa (subfolder inside output_dir). The three mesas
+; typically use: mesa_inf1, mesa_inf2, mesa_sup.
+mesa_id = mesa_inf1
+
+; Seconds between captures. 1 second = ~50k pictures per 14h shift.
+interval_seconds = 1
+
+; Resolution + quality for the documentation images. FullHD at q=88
+; comes out around 350-500 KB per frame.
+width = 1920
+height = 1080
+jpeg_quality = 88
+
+; Local disk cap for the documentation buffer. When the size of
+; output_dir/<mesa_id> goes above this number, the oldest YYYY-MM-DD
+; folders are dropped (today is never touched).
+max_local_gb = 30
+
+; Working window. Outside of it the loop sleeps and nothing is written.
+active_days = MON,TUE,WED,THU,FRI
+active_start_hour = 5
+active_end_hour = 19

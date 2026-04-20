@@ -1,32 +1,112 @@
 """
 Local camera capture HTTP service for OBSBOT Tiny 2.
 Runs on each mini-PC alongside the browser Player.
-Listens on localhost:5555.
 
-Endpoints:
-  POST /capture  -> Captures a photo from camera, returns JPEG bytes
-  GET  /health   -> Health check
+Listens on localhost:5555. Two jobs in one process:
 
-Usage:
-  python capture_service.py
+  1. HTTP server (on-demand)
+     POST /capture   -> take a fresh 4K JPEG and return the bytes
+                        (used by the visor when an image filename
+                         contains _foto / _photo / _check)
+     GET  /health    -> { "status": "ok" }
+     GET  /stats     -> { documentation / counters / local disk usage }
+
+  2. Documentation thread (periodic, configurable)
+     Every `interval_seconds` saves a resized JPEG into
+       <output_dir>/<mesa_id>/YYYY-MM-DD/HH-MM-SS.jpg
+     so Google Drive Desktop (pointing at output_dir) syncs it to the
+     cloud. Runs only inside the configured working window (days + hours)
+     and prunes the oldest day folders when the local footprint exceeds
+     `max_local_gb`.
+
+All settings come from `config.ini` next to this script.
 """
-import time
+import configparser
 import json
+import os
+import shutil
 import threading
+import time
+from datetime import datetime, time as dtime
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from pathlib import Path
 
 import cv2
 
-# Camera settings (matches detector.pyw 4K config)
-CAMERA_INDEX = 0
-CAPTURE_WIDTH = 3840
-CAPTURE_HEIGHT = 2160
-JPEG_QUALITY = 95
+# ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
+CONFIG_PATH = Path(__file__).with_name('config.ini')
 
-HOST = '127.0.0.1'
-PORT = 5555
+DAY_NAME_TO_INDEX = {
+    'MON': 0, 'TUE': 1, 'WED': 2, 'THU': 3, 'FRI': 4, 'SAT': 5, 'SUN': 6,
+}
 
-# Lazy camera singleton
+
+class Config:
+    def __init__(self, path: Path):
+        self.capture_width = 3840
+        self.capture_height = 2160
+        self.jpeg_quality = 95
+        self.host = '127.0.0.1'
+        self.port = 5555
+        self.camera_index = 0
+
+        # documentation defaults (disabled until the .ini turns it on)
+        self.doc_enabled = False
+        self.output_dir = Path('C:/moden/capturas')
+        self.mesa_id = 'mesa_unknown'
+        self.interval_seconds = 1.0
+        self.doc_width = 1920
+        self.doc_height = 1080
+        self.doc_jpeg_quality = 88
+        self.max_local_gb = 30.0
+        self.active_days = {0, 1, 2, 3, 4}  # MON..FRI
+        self.active_start_hour = 5
+        self.active_end_hour = 19
+
+        if path.exists():
+            self._load(path)
+
+    def _load(self, path: Path):
+        cp = configparser.ConfigParser()
+        cp.read(path, encoding='utf-8')
+
+        if cp.has_section('service'):
+            s = cp['service']
+            self.host = s.get('host', self.host)
+            self.port = s.getint('port', self.port)
+            self.camera_index = s.getint('camera_index', self.camera_index)
+            self.capture_width = s.getint('capture_width', self.capture_width)
+            self.capture_height = s.getint('capture_height', self.capture_height)
+            self.jpeg_quality = s.getint('jpeg_quality', self.jpeg_quality)
+
+        if cp.has_section('documentation'):
+            d = cp['documentation']
+            self.doc_enabled = d.getboolean('enabled', self.doc_enabled)
+            self.output_dir = Path(d.get('output_dir', str(self.output_dir)))
+            self.mesa_id = d.get('mesa_id', self.mesa_id)
+            self.interval_seconds = d.getfloat('interval_seconds', self.interval_seconds)
+            self.doc_width = d.getint('width', self.doc_width)
+            self.doc_height = d.getint('height', self.doc_height)
+            self.doc_jpeg_quality = d.getint('jpeg_quality', self.doc_jpeg_quality)
+            self.max_local_gb = d.getfloat('max_local_gb', self.max_local_gb)
+            days_raw = d.get('active_days', 'MON,TUE,WED,THU,FRI')
+            self.active_days = {
+                DAY_NAME_TO_INDEX[x.strip().upper()]
+                for x in days_raw.split(',')
+                if x.strip().upper() in DAY_NAME_TO_INDEX
+            }
+            self.active_start_hour = d.getint('active_start_hour', self.active_start_hour)
+            self.active_end_hour = d.getint('active_end_hour', self.active_end_hour)
+
+
+CONFIG = Config(CONFIG_PATH)
+
+
+# ---------------------------------------------------------------------------
+# Camera singleton
+# ---------------------------------------------------------------------------
 _camera = None
 _camera_lock = threading.Lock()
 
@@ -35,15 +115,222 @@ def get_camera():
     global _camera
     with _camera_lock:
         if _camera is None or not _camera.isOpened():
-            _camera = cv2.VideoCapture(CAMERA_INDEX)
-            _camera.set(cv2.CAP_PROP_FRAME_WIDTH, CAPTURE_WIDTH)
-            _camera.set(cv2.CAP_PROP_FRAME_HEIGHT, CAPTURE_HEIGHT)
-            # Allow auto-exposure to settle
+            _camera = cv2.VideoCapture(CONFIG.camera_index)
+            _camera.set(cv2.CAP_PROP_FRAME_WIDTH, CONFIG.capture_width)
+            _camera.set(cv2.CAP_PROP_FRAME_HEIGHT, CONFIG.capture_height)
             time.sleep(0.5)
         return _camera
 
 
+def capture_frame():
+    """Fresh frame from the camera. Caller must hold _camera_lock."""
+    cam = get_camera()
+    # Discard a few buffered frames so we get a fresh one.
+    for _ in range(3):
+        cam.read()
+    return cam.read()
+
+
+# ---------------------------------------------------------------------------
+# Documentation stats (shared with /stats endpoint)
+# ---------------------------------------------------------------------------
+_stats_lock = threading.Lock()
+_stats = {
+    'documentation_enabled': CONFIG.doc_enabled,
+    'mesa_id': CONFIG.mesa_id,
+    'last_capture_at': None,
+    'captures_today': 0,
+    'captures_today_date': None,  # ISO date
+    'local_disk_bytes': 0,
+    'last_error': None,
+    'skipped_out_of_schedule': 0,
+}
+
+
+def _update_stats_after_save():
+    today_iso = datetime.now().date().isoformat()
+    with _stats_lock:
+        if _stats['captures_today_date'] != today_iso:
+            _stats['captures_today_date'] = today_iso
+            _stats['captures_today'] = 0
+        _stats['captures_today'] += 1
+        _stats['last_capture_at'] = datetime.now().isoformat(timespec='seconds')
+
+
+def _set_last_error(msg: str):
+    with _stats_lock:
+        _stats['last_error'] = msg
+
+
+# ---------------------------------------------------------------------------
+# Schedule check
+# ---------------------------------------------------------------------------
+def in_active_window(now: datetime = None) -> bool:
+    now = now or datetime.now()
+    if now.weekday() not in CONFIG.active_days:
+        return False
+    start = dtime(CONFIG.active_start_hour, 0)
+    end = dtime(CONFIG.active_end_hour, 0)
+    current = now.time()
+    return start <= current < end
+
+
+# ---------------------------------------------------------------------------
+# Disk usage + purge (only inside output_dir/mesa_id)
+# ---------------------------------------------------------------------------
+def _mesa_root() -> Path:
+    return CONFIG.output_dir / CONFIG.mesa_id
+
+
+def _dir_size_bytes(path: Path) -> int:
+    total = 0
+    for root, _, files in os.walk(path):
+        for f in files:
+            fp = Path(root) / f
+            try:
+                total += fp.stat().st_size
+            except OSError:
+                pass
+    return total
+
+
+def _prune_if_needed():
+    """Drop the oldest day folders until we're back under max_local_gb."""
+    root = _mesa_root()
+    if not root.exists():
+        return
+    max_bytes = int(CONFIG.max_local_gb * (1024 ** 3))
+    used = _dir_size_bytes(root)
+    with _stats_lock:
+        _stats['local_disk_bytes'] = used
+    if used <= max_bytes:
+        return
+
+    # Day folders are YYYY-MM-DD so alphabetical == chronological.
+    day_dirs = sorted(
+        [p for p in root.iterdir() if p.is_dir()],
+        key=lambda p: p.name,
+    )
+    today = datetime.now().date().isoformat()
+    for day_dir in day_dirs:
+        if used <= max_bytes:
+            break
+        if day_dir.name == today:
+            break  # never touch today's folder
+        try:
+            freed = _dir_size_bytes(day_dir)
+            shutil.rmtree(day_dir, ignore_errors=True)
+            used = max(0, used - freed)
+        except Exception as exc:
+            _set_last_error(f'prune: {exc}')
+            break
+
+    with _stats_lock:
+        _stats['local_disk_bytes'] = used
+
+
+# ---------------------------------------------------------------------------
+# Documentation thread
+# ---------------------------------------------------------------------------
+def documentation_loop():
+    if not CONFIG.doc_enabled:
+        print('[Docs] Disabled in config.ini')
+        return
+
+    try:
+        CONFIG.output_dir.mkdir(parents=True, exist_ok=True)
+    except Exception as exc:
+        _set_last_error(f'output_dir: {exc}')
+        print(f'[Docs] Cannot create output_dir: {exc}')
+        return
+
+    print(f'[Docs] Enabled. mesa_id={CONFIG.mesa_id!r} '
+          f'interval={CONFIG.interval_seconds}s '
+          f'size={CONFIG.doc_width}x{CONFIG.doc_height}@q{CONFIG.doc_jpeg_quality}')
+    print(f'[Docs] output={CONFIG.output_dir}')
+    print(f'[Docs] schedule={sorted(CONFIG.active_days)} '
+          f'{CONFIG.active_start_hour:02d}:00-{CONFIG.active_end_hour:02d}:00')
+
+    prune_counter = 0
+    while True:
+        started = time.monotonic()
+        now = datetime.now()
+        if not in_active_window(now):
+            with _stats_lock:
+                _stats['skipped_out_of_schedule'] += 1
+            # sleep a little longer when out of hours to avoid burning cpu
+            time.sleep(min(30.0, max(CONFIG.interval_seconds, 10.0)))
+            continue
+
+        try:
+            with _camera_lock:
+                ret, frame = capture_frame()
+            if not ret or frame is None:
+                _set_last_error('camera read failed')
+            else:
+                # Resize to documentation size
+                resized = cv2.resize(
+                    frame,
+                    (CONFIG.doc_width, CONFIG.doc_height),
+                    interpolation=cv2.INTER_AREA,
+                )
+
+                day_dir = _mesa_root() / now.strftime('%Y-%m-%d')
+                day_dir.mkdir(parents=True, exist_ok=True)
+                filename = now.strftime('%H-%M-%S.jpg')
+                out_path = day_dir / filename
+
+                ok, buf = cv2.imencode(
+                    '.jpg', resized,
+                    [cv2.IMWRITE_JPEG_QUALITY, CONFIG.doc_jpeg_quality],
+                )
+                if ok:
+                    out_path.write_bytes(buf.tobytes())
+                    _update_stats_after_save()
+                else:
+                    _set_last_error('jpeg encode failed')
+
+            # Prune disk usage once every ~60 captures (i.e. ~once per minute
+            # at 1s interval) so we don't stat the whole tree on every tick.
+            prune_counter += 1
+            if prune_counter >= 60:
+                _prune_if_needed()
+                prune_counter = 0
+        except Exception as exc:
+            _set_last_error(str(exc))
+            print(f'[Docs] tick error: {exc}')
+
+        elapsed = time.monotonic() - started
+        sleep_for = max(0.0, CONFIG.interval_seconds - elapsed)
+        time.sleep(sleep_for)
+
+
+# ---------------------------------------------------------------------------
+# HTTP handler
+# ---------------------------------------------------------------------------
 class CaptureHandler(BaseHTTPRequestHandler):
+
+    def _cors(self):
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self._cors()
+        self.end_headers()
+
+    def do_GET(self):
+        if self.path == '/health':
+            self._respond_json(200, {'status': 'ok'})
+        elif self.path == '/stats':
+            with _stats_lock:
+                payload = dict(_stats)
+            payload['in_active_window'] = in_active_window()
+            payload['output_dir'] = str(CONFIG.output_dir)
+            self._respond_json(200, payload)
+        else:
+            self.send_error(404)
 
     def do_POST(self):
         if self.path == '/capture':
@@ -51,62 +338,57 @@ class CaptureHandler(BaseHTTPRequestHandler):
         else:
             self.send_error(404)
 
-    def do_GET(self):
-        if self.path == '/health':
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.send_header('Access-Control-Allow-Origin', '*')
-            self.end_headers()
-            self.wfile.write(json.dumps({'status': 'ok'}).encode())
-        else:
-            self.send_error(404)
-
-    def do_OPTIONS(self):
-        """CORS preflight for cross-origin requests from the Player."""
-        self.send_response(200)
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
-        self.end_headers()
-
     def _handle_capture(self):
-        cam = get_camera()
-
-        # Discard stale buffered frames to get a fresh capture
-        for _ in range(3):
-            cam.read()
-
-        ret, frame = cam.read()
-        if not ret:
+        with _camera_lock:
+            ret, frame = capture_frame()
+        if not ret or frame is None:
             self.send_error(500, 'Camera capture failed')
             return
 
-        success, jpeg_bytes = cv2.imencode(
-            '.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY]
+        ok, jpeg_bytes = cv2.imencode(
+            '.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, CONFIG.jpeg_quality]
         )
-        if not success:
+        if not ok:
             self.send_error(500, 'JPEG encoding failed')
             return
 
         data = jpeg_bytes.tobytes()
-
         self.send_response(200)
         self.send_header('Content-Type', 'image/jpeg')
         self.send_header('Content-Length', str(len(data)))
-        self.send_header('Access-Control-Allow-Origin', '*')
+        self._cors()
         self.end_headers()
         self.wfile.write(data)
 
+    def _respond_json(self, status, payload):
+        body = json.dumps(payload, default=str).encode('utf-8')
+        self.send_response(status)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(body)))
+        self._cors()
+        self.end_headers()
+        self.wfile.write(body)
+
     def log_message(self, format, *args):
-        # Suppress default per-request logging noise
+        # Silent per-request logging
         pass
 
 
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 def main():
-    server = HTTPServer((HOST, PORT), CaptureHandler)
-    print(f'[CaptureService] Listening on http://{HOST}:{PORT}')
-    print('[CaptureService] POST /capture -> take photo')
-    print('[CaptureService] GET  /health  -> health check')
+    # Start the documentation thread (no-op if disabled in config)
+    doc_thread = threading.Thread(
+        target=documentation_loop, name='DocumentationLoop', daemon=True
+    )
+    doc_thread.start()
+
+    server = HTTPServer((CONFIG.host, CONFIG.port), CaptureHandler)
+    print(f'[CaptureService] Listening on http://{CONFIG.host}:{CONFIG.port}')
+    print('[CaptureService] POST /capture  -> take a 4K photo')
+    print('[CaptureService] GET  /health   -> health check')
+    print('[CaptureService] GET  /stats    -> documentation stats')
     try:
         server.serve_forever()
     except KeyboardInterrupt:
