@@ -669,6 +669,19 @@ export class Dashboard implements OnInit, OnDestroy {
     return Math.max(max, 1) * 1.15;
   }
 
+  /**
+   * Desperdicio as a percentage of the material initially loaded.
+   * Returns null when there's nothing to compare against so the
+   * caller can decide whether to render the subtext at all.
+   */
+  desperdicioPct(totals: { desperdicio_kg?: number; peso_malla_inicial_kg?: number } | null | undefined): number | null {
+    if (!totals) return null;
+    const initial = totals.peso_malla_inicial_kg || 0;
+    if (initial <= 0) return null;
+    const waste = totals.desperdicio_kg || 0;
+    return (waste / initial) * 100;
+  }
+
   /** % height (0..100) of a value on the modules chart. */
   modulosBarPct(value: number): number {
     const max = this.weeklyMaxModulos();

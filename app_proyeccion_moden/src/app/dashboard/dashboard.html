@@ -219,6 +219,9 @@
                             <div class="stats-kpi">
                                 <span class="stats-kpi-label">Desperdicio</span>
                                 <span class="stats-kpi-value">{{ dailyStats.totals.desperdicio_kg | number:'1.0-1' }} <small>kg</small></span>
+                                <span class="stats-kpi-subtext" *ngIf="desperdicioPct(dailyStats.totals) !== null">
+                                    {{ desperdicioPct(dailyStats.totals) | number:'1.1-1' }}% del total
+                                </span>
                             </div>
                             <div class="stats-kpi">
                                 <span class="stats-kpi-label">Cortes</span>
@@ -283,6 +286,9 @@
                             <div class="stats-kpi">
                                 <span class="stats-kpi-label">Desperdicio</span>
                                 <span class="stats-kpi-value">{{ weeklyStats.totals.desperdicio_kg | number:'1.0-1' }} <small>kg</small></span>
+                                <span class="stats-kpi-subtext" *ngIf="desperdicioPct(weeklyStats.totals) !== null">
+                                    {{ desperdicioPct(weeklyStats.totals) | number:'1.1-1' }}% del total
+                                </span>
                             </div>
                             <div class="stats-kpi">
                                 <span class="stats-kpi-label">Dificultad</span>
