@@ -297,13 +297,13 @@
                         </div>
 
                         <div class="weekly-charts-row">
-                            <!-- Chart 1: Módulos vs Meta -->
+                            <!-- Chart 1: Módulos vs Objetivo -->
                             <div class="weekly-chart">
                                 <div class="weekly-chart-header">
-                                    <h4>Módulos vs Meta</h4>
+                                    <h4>Módulos vs Objetivo</h4>
                                     <div class="weekly-legend">
-                                        <span class="legend-swatch swatch-primary"></span>Producidos
-                                        <span class="legend-swatch swatch-target"></span>Meta
+                                        <span class="legend-swatch swatch-primary"></span>Fabricados
+                                        <span class="legend-swatch swatch-target"></span>Objetivo
                                     </div>
                                 </div>
                                 <div class="weekly-chart-body">
@@ -312,7 +312,7 @@
                                             <div class="chart-bar-area">
                                                 <div class="chart-bar chart-bar-target"
                                                     [style.height.%]="modulosBarPct(weeklyDailyCap())"
-                                                    [title]="'Meta: ' + weeklyDailyCap() + ' módulos'"></div>
+                                                    [title]="'Objetivo: ' + weeklyDailyCap() + ' módulos'"></div>
                                                 <div class="chart-bar chart-bar-primary"
                                                     [style.height.%]="modulosBarPct(day.modulos_completados || 0)"
                                                     [title]="day.isoLabel + ': ' + (day.modulos_completados || 0) + ' módulos'">
