@@ -1,5 +1,13 @@
 <div class="visor-container" [class.blackout]="mesaState?.blackout" [class.white-screen]="whiteScreen">
 
+    <!-- Capture service health banner -->
+    @if (captureServiceOnline === false) {
+    <div class="camera-warning" role="alert" title="El servicio local de cámara (puerto 5555) no responde.">
+        <span class="camera-warning-icon">⚠</span>
+        <span class="camera-warning-text">Cámara no disponible</span>
+    </div>
+    }
+
     <!-- LOADING STATE -->
     @if (mode === 'LOADING') {
     <div class="loading-screen">

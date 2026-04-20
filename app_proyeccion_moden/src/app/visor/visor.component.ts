@@ -58,6 +58,10 @@ export class VisorComponent implements OnInit, OnDestroy {
   private capturingPhoto = false;
   captureStatus: 'idle' | 'capturing' | 'uploading' | 'done' | 'error' = 'idle';
 
+  // Local capture-service health (null = unknown, true = ok, false = down)
+  captureServiceOnline: boolean | null = null;
+  private captureHealthSub: Subscription | null = null;
+
   // White screen (blank projection for photo capture or manual pause)
   whiteScreen = false;
 
@@ -111,6 +115,26 @@ export class VisorComponent implements OnInit, OnDestroy {
     } else {
       this.requestPairingCode();
     }
+
+    // Watch the local capture service so the operator gets a warning
+    // banner the moment it goes down (instead of discovering it only
+    // when a _foto/_check photo silently fails).
+    this.startCaptureHealthPolling();
+  }
+
+  private startCaptureHealthPolling(): void {
+    // Check immediately, then every 30s.
+    this.captureHealthSub = interval(30000).pipe(
+      startWith(0),
+      switchMap(() =>
+        this.http.get(`${this.captureServiceUrl}/health`, {
+          responseType: 'text',
+        }).pipe(catchError(() => of(null)))
+      )
+    ).subscribe(result => {
+      this.captureServiceOnline = result !== null;
+      this.cdr.detectChanges();
+    });
   }
 
   private loadMesaDirectly(mesaId: number): void {
@@ -141,6 +165,7 @@ export class VisorComponent implements OnInit, OnDestroy {
     this.statePollSub?.unsubscribe();
     this.heartbeatSub?.unsubscribe();
     this.itemPollSub?.unsubscribe();
+    this.captureHealthSub?.unsubscribe();
     if (this.eventSource) this.eventSource.close();
   }
 
@@ -438,6 +463,8 @@ export class VisorComponent implements OnInit, OnDestroy {
           // Restore projection immediately after capture
           this.whiteScreen = false;
           this.captureStatus = 'uploading';
+          // A successful capture means the service is alive right now.
+          this.captureServiceOnline = true;
           this.cdr.detectChanges();
 
           // Step 3: Compress if needed and upload
@@ -448,6 +475,10 @@ export class VisorComponent implements OnInit, OnDestroy {
           this.whiteScreen = false;
           this.captureStatus = 'error';
           this.capturingPhoto = false;
+          // Either the service is down or the camera read failed.
+          // Flag it so the banner appears right away, the periodic
+          // health poll will re-confirm later.
+          this.captureServiceOnline = false;
           this.cdr.detectChanges();
           setTimeout(() => {
             this.captureStatus = 'idle';
