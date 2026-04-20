@@ -934,6 +934,108 @@
   font-style: italic;
 }
 
+/* Period selector (presets + custom range) */
+.stats-period-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(26, 26, 46, 0.08);
+}
+
+.stats-period-presets {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.period-chip {
+  border: 1px solid rgba(26, 26, 46, 0.12);
+  background: #fff;
+  color: #495057;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.period-chip:hover {
+  background: #f8f9fa;
+}
+
+.period-chip.active {
+  background: var(--moden-primary, #f0640f);
+  border-color: var(--moden-primary, #f0640f);
+  color: #fff;
+}
+
+.stats-period-dates {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.stats-period-dates label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6c757d;
+  font-weight: 600;
+}
+
+.stats-period-dates input[type="date"] {
+  border: 1px solid rgba(26, 26, 46, 0.15);
+  border-radius: 8px;
+  padding: 5px 9px;
+  font-size: 0.85rem;
+  font-family: inherit;
+  color: #212529;
+  background: #fff;
+}
+
+.stats-period-dates input[type="date"]:focus {
+  outline: none;
+  border-color: var(--moden-primary, #f0640f);
+  box-shadow: 0 0 0 3px rgba(240, 100, 15, 0.15);
+}
+
+/* Tabs (Detalle por mesa / Infografía) */
+.stats-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid rgba(26, 26, 46, 0.08);
+  padding-bottom: 2px;
+}
+
+.stats-tab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 8px 14px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #6c757d;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+  margin-bottom: -1px;
+}
+
+.stats-tab:hover {
+  color: #212529;
+}
+
+.stats-tab.active {
+  color: var(--moden-primary, #f0640f);
+  border-bottom-color: var(--moden-primary, #f0640f);
+}
+
 .stats-kpi-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
@@ -1093,11 +1195,13 @@
 
 .weekly-chart-body {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(36px, 1fr);
   gap: 8px;
   height: 160px;
   padding: 6px 2px 22px;
   position: relative;
+  overflow-x: auto;
 }
 
 .chart-day {

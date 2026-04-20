@@ -62,10 +62,12 @@ export class Dashboard implements OnInit, OnDestroy {
   selectedModulo: Modulo | null = null;
 
   // Stats State
-  dailyStats: ProductionStatsResponse | null = null;
-  weeklyStats: ProductionStatsResponse | null = null;
-  loadingDailyStats = false;
-  loadingWeeklyStats = false;
+  statsData: ProductionStatsResponse | null = null;
+  loadingStats = false;
+  statsPreset: 'day' | 'week' | 'month' | 'custom' = 'day';
+  statsFrom: string = '';
+  statsTo: string = '';
+  statsTab: 'detail' | 'charts' = 'detail';
 
   // UI State
   expandedModulo: number | null = null; // ID of expanded module
@@ -168,7 +170,7 @@ export class Dashboard implements OnInit, OnDestroy {
     this.loadProyectos();
     this.loadMesas();
     this.loadGruposMesas();
-    this.loadProductionStats();
+    this.selectStatsPreset('day');
 
     // Start Polling for Queue Updates (Every 5 seconds)
     // This handles the "Auto-DJ" logic: if an item finishes, the next one is picked up
@@ -381,7 +383,7 @@ export class Dashboard implements OnInit, OnDestroy {
       });
     // Stats aggregate everything the ferralla owns — always refresh,
     // silently so the polling doesn't toggle the loading placeholder.
-    this.loadProductionStats(true);
+    this.loadStats(true);
   }
 
   loadMesas(): void {
@@ -523,51 +525,67 @@ export class Dashboard implements OnInit, OnDestroy {
     this.selectedPlanta = null;
     this.selectedModulo = null;
     this.navLevel = 'projects';
-    this.loadProductionStats();
     this.cdr.detectChanges();
   }
 
   /**
-   * Loads stats for today (Diario) and the current Mon-Fri window
-   * (Semanal). Stats are aggregated at the ferralla level (all mesas,
-   * all projects of the logged user).
+   * Loads stats for the currently selected range (statsFrom..statsTo).
+   * Stats are aggregated at the ferralla level — one request covers
+   * everything the user needs on the board.
    *
-   * When silent=true we avoid flipping the loading spinners so the
-   * periodic polling doesn't cause a "Cargando…" flash every 20s.
+   * silent=true skips the loading flag so the periodic polling doesn't
+   * flash 'Cargando…' every 20s when data already exists.
    */
-  loadProductionStats(silent: boolean = false): void {
-    const today = this.toLocalIsoDate(new Date());
-    const monday = this.toLocalIsoDate(this.getMondayOfWeek(new Date()));
-
-    if (!silent || !this.dailyStats) this.loadingDailyStats = true;
-    this.api.getProductionStats({ from: today, to: today })
+  loadStats(silent: boolean = false): void {
+    if (!this.statsFrom || !this.statsTo) {
+      // Defaults: today → today
+      const today = this.toLocalIsoDate(new Date());
+      this.statsFrom = today;
+      this.statsTo = today;
+    }
+    if (!silent || !this.statsData) this.loadingStats = true;
+    this.api.getProductionStats({ from: this.statsFrom, to: this.statsTo })
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (res) => {
-          this.dailyStats = res;
-          this.loadingDailyStats = false;
+          this.statsData = res;
+          this.loadingStats = false;
           this.cdr.detectChanges();
         },
         error: () => {
-          this.loadingDailyStats = false;
+          this.loadingStats = false;
           this.cdr.detectChanges();
         }
       });
+  }
 
-    if (!silent || !this.weeklyStats) this.loadingWeeklyStats = true;
-    this.api.getProductionStats({ from: monday, to: today })
-      .pipe(takeUntil(this.destroy$))
-      .subscribe({
-        next: (res) => {
-          this.weeklyStats = res;
-          this.loadingWeeklyStats = false;
-          this.cdr.detectChanges();
-        },
-        error: () => {
-          this.loadingWeeklyStats = false;
-          this.cdr.detectChanges();
-        }
-      });
+  selectStatsPreset(preset: 'day' | 'week' | 'month'): void {
+    const today = new Date();
+    this.statsPreset = preset;
+    if (preset === 'day') {
+      this.statsFrom = this.toLocalIsoDate(today);
+      this.statsTo = this.toLocalIsoDate(today);
+    } else if (preset === 'week') {
+      this.statsFrom = this.toLocalIsoDate(this.getMondayOfWeek(today));
+      this.statsTo = this.toLocalIsoDate(today);
+    } else if (preset === 'month') {
+      const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+      this.statsFrom = this.toLocalIsoDate(firstDay);
+      this.statsTo = this.toLocalIsoDate(today);
+    }
+    this.loadStats();
+  }
+
+  onStatsDateChange(): void {
+    this.statsPreset = 'custom';
+    if (this.statsFrom && this.statsTo && this.statsFrom > this.statsTo) {
+      this.statsTo = this.statsFrom;
+    }
+    this.loadStats();
+  }
+
+  switchStatsTab(tab: 'detail' | 'charts'): void {
+    this.statsTab = tab;
   }
 
   private toLocalIsoDate(d: Date): string {
@@ -601,71 +619,148 @@ export class Dashboard implements OnInit, OnDestroy {
     return `${names[d.getDay()]} ${String(d.getDate()).padStart(2, '0')}`;
   }
 
-  dailyBarPct(value: number): number {
-    if (!this.weeklyStats || !this.weeklyStats.por_dia.length) return 0;
-    const max = Math.max(...this.weeklyStats.por_dia.map(d => d.fases_completadas), 1);
-    return Math.round((value / max) * 100);
-  }
-
   // =========================================================================
-  // WEEKLY CHARTS (SVG)
+  // STATS BUCKETS (daily for short ranges, ISO-week for long ones)
   // =========================================================================
 
   /**
-   * Returns Mon-Fri slots merged with whatever data the backend returned
-   * for the week, so missing days render as empty bars instead of being
-   * dropped entirely.
+   * Splits the selected range into chart buckets. Ranges up to 20 days
+   * produce one bucket per day so short views stay readable; longer
+   * ranges collapse each ISO week into a single bucket so a month+
+   * selection doesn't create a forest of skinny bars.
+   *
+   * Each bucket already includes its own expected meta (daily cap ×
+   * working days it covers), so the charts can draw the objetivo line
+   * correctly regardless of granularity.
    */
-  weeklyChartDays(): Array<ProductionStatsDay & { isoLabel: string }> {
-    if (!this.weeklyStats) return [];
-    const monday = this.getMondayOfWeek(new Date());
-    const byDate = new Map(this.weeklyStats.por_dia.map(d => [d.fecha, d]));
-    const days: Array<ProductionStatsDay & { isoLabel: string }> = [];
-    for (let i = 0; i < 5; i++) {
-      const d = new Date(monday);
-      d.setDate(monday.getDate() + i);
-      const iso = this.toLocalIsoDate(d);
-      const found = byDate.get(iso);
-      if (found) {
-        days.push({ ...found, isoLabel: this.dayLabel(iso) });
-      } else {
-        days.push({
-          fecha: iso,
-          isoLabel: this.dayLabel(iso),
-          modulos_completados: 0,
-          fases_completadas: 0,
-          peso_malla_inicial_kg: 0,
-          peso_malla_final_kg: 0,
-          desperdicio_kg: 0,
-          cantidad_cortes: 0,
-          cantidad_refuerzos: 0,
-          cantidad_zunchos: 0,
-          cantidad_separadores: 0,
-          cantidad_punzos: 0,
-          dificultad_total: 0,
+  statsBuckets(): Array<{
+    key: string;
+    label: string;
+    modulos_completados: number;
+    fases_completadas: number;
+    peso_malla_inicial_kg: number;
+    peso_malla_final_kg: number;
+    desperdicio_kg: number;
+    dificultad_total: number;
+    meta_modulos: number;
+    working_days: number;
+    granularity: 'day' | 'week';
+  }> {
+    if (!this.statsData || !this.statsFrom || !this.statsTo) return [];
+    const from = this.parseIsoDate(this.statsFrom);
+    const to = this.parseIsoDate(this.statsTo);
+    if (!from || !to || from > to) return [];
+
+    const dayCount = Math.floor((to.getTime() - from.getTime()) / 86400000) + 1;
+    const byDate = new Map(this.statsData.por_dia.map(d => [d.fecha, d]));
+    const dailyCap = this.statsData.esperado?.capacidad_diaria_modulos || 0;
+
+    if (dayCount <= 20) {
+      const buckets = [];
+      for (let i = 0; i < dayCount; i++) {
+        const d = new Date(from);
+        d.setDate(from.getDate() + i);
+        const iso = this.toLocalIsoDate(d);
+        const found = byDate.get(iso);
+        const working = this.isWorkingDay(d);
+        buckets.push({
+          key: iso,
+          label: this.dayLabel(iso),
+          modulos_completados: found?.modulos_completados || 0,
+          fases_completadas: found?.fases_completadas || 0,
+          peso_malla_inicial_kg: found?.peso_malla_inicial_kg || 0,
+          peso_malla_final_kg: found?.peso_malla_final_kg || 0,
+          desperdicio_kg: found?.desperdicio_kg || 0,
+          dificultad_total: found?.dificultad_total || 0,
+          meta_modulos: working ? dailyCap : 0,
+          working_days: working ? 1 : 0,
+          granularity: 'day' as const
         });
       }
+      return buckets;
     }
-    return days;
+
+    const buckets = [];
+    const cursor = this.getMondayOfWeek(from);
+    while (cursor <= to) {
+      const weekStart = new Date(cursor);
+      const weekEnd = new Date(cursor);
+      weekEnd.setDate(weekEnd.getDate() + 6);
+      const segStart = weekStart < from ? new Date(from) : weekStart;
+      const segEnd = weekEnd > to ? new Date(to) : weekEnd;
+
+      let modulos = 0, fases = 0, pi = 0, pf = 0, desp = 0, dif = 0, workDays = 0;
+      const d = new Date(segStart);
+      while (d <= segEnd) {
+        const iso = this.toLocalIsoDate(d);
+        const found = byDate.get(iso);
+        if (found) {
+          modulos += found.modulos_completados || 0;
+          fases += found.fases_completadas || 0;
+          pi += found.peso_malla_inicial_kg || 0;
+          pf += found.peso_malla_final_kg || 0;
+          desp += found.desperdicio_kg || 0;
+          dif += found.dificultad_total || 0;
+        }
+        if (this.isWorkingDay(d)) workDays++;
+        d.setDate(d.getDate() + 1);
+      }
+
+      buckets.push({
+        key: this.toLocalIsoDate(weekStart),
+        label: `S${this.getIsoWeek(weekStart)}`,
+        modulos_completados: modulos,
+        fases_completadas: fases,
+        peso_malla_inicial_kg: pi,
+        peso_malla_final_kg: pf,
+        desperdicio_kg: desp,
+        dificultad_total: dif,
+        meta_modulos: dailyCap * workDays,
+        working_days: workDays,
+        granularity: 'week' as const
+      });
+
+      cursor.setDate(cursor.getDate() + 7);
+    }
+    return buckets;
   }
 
-  /** Daily capacity used as the reference line on the modules chart. */
-  weeklyDailyCap(): number {
-    return this.weeklyStats?.esperado?.capacidad_diaria_modulos || 12;
+  private parseIsoDate(iso: string): Date | null {
+    if (!iso) return null;
+    const parts = iso.split('-').map(Number);
+    if (parts.length !== 3 || parts.some(isNaN)) return null;
+    return new Date(parts[0], parts[1] - 1, parts[2]);
+  }
+
+  private isWorkingDay(d: Date): boolean {
+    const day = d.getDay();
+    return day >= 1 && day <= 5;
+  }
+
+  private getIsoWeek(d: Date): number {
+    const target = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const dayNr = (target.getDay() + 6) % 7;
+    target.setDate(target.getDate() - dayNr + 3);
+    const firstThursday = target.getTime();
+    target.setMonth(0, 1);
+    if (target.getDay() !== 4) {
+      target.setMonth(0, 1 + ((4 - target.getDay()) + 7) % 7);
+    }
+    return 1 + Math.ceil((firstThursday - target.getTime()) / 604800000);
   }
 
   /** Max Y value for the modules chart (uses meta as the floor). */
-  weeklyMaxModulos(): number {
-    const days = this.weeklyChartDays();
-    const maxReal = Math.max(0, ...days.map(d => d.modulos_completados || 0));
-    const cap = this.weeklyDailyCap();
-    return Math.max(maxReal, cap, 1) * 1.15;
+  chartMaxModulos(): number {
+    const buckets = this.statsBuckets();
+    const maxReal = Math.max(0, ...buckets.map(b => b.modulos_completados || 0));
+    const maxMeta = Math.max(0, ...buckets.map(b => b.meta_modulos || 0));
+    return Math.max(maxReal, maxMeta, 1) * 1.15;
   }
 
   /** Max Y value for the weight chart. */
-  weeklyMaxPeso(): number {
-    const days = this.weeklyChartDays();
-    const max = Math.max(0, ...days.map(d => d.peso_malla_final_kg || 0));
+  chartMaxPeso(): number {
+    const buckets = this.statsBuckets();
+    const max = Math.max(0, ...buckets.map(b => b.peso_malla_final_kg || 0));
     return Math.max(max, 1) * 1.15;
   }
 
@@ -711,25 +806,25 @@ export class Dashboard implements OnInit, OnDestroy {
 
   /** % height (0..100) of a value on the modules chart. */
   modulosBarPct(value: number): number {
-    const max = this.weeklyMaxModulos();
+    const max = this.chartMaxModulos();
     if (max <= 0) return 0;
     return Math.min(100, (value / max) * 100);
   }
 
   pesoBarPct(value: number): number {
-    const max = this.weeklyMaxPeso();
+    const max = this.chartMaxPeso();
     if (max <= 0) return 0;
     return Math.min(100, (value / max) * 100);
   }
 
-  weeklyMaxDificultad(): number {
-    const days = this.weeklyChartDays();
-    const max = Math.max(0, ...days.map(d => d.dificultad_total || 0));
+  chartMaxDificultad(): number {
+    const buckets = this.statsBuckets();
+    const max = Math.max(0, ...buckets.map(b => b.dificultad_total || 0));
     return Math.max(max, 1) * 1.15;
   }
 
   dificultadBarPct(value: number): number {
-    const max = this.weeklyMaxDificultad();
+    const max = this.chartMaxDificultad();
     if (max <= 0) return 0;
     return Math.min(100, (value / max) * 100);
   }

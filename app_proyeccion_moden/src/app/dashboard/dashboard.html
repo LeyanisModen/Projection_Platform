@@ -198,203 +198,198 @@
 
             <section class="stats-section" id="estadisticas-section">
                 <div class="section-header legacy-header">
-                    <h2>Boards de Estadísticas</h2>
+                    <h2>Estadísticas de producción</h2>
                 </div>
 
                 <div class="stats-board">
-                    <div class="stats-board-header">
-                        <h3>Diario</h3>
-                        <small>{{ dailyStats?.range?.from }}</small>
+                    <!-- Period selector -->
+                    <div class="stats-period-bar">
+                        <div class="stats-period-presets">
+                            <button type="button" class="period-chip"
+                                [class.active]="statsPreset === 'day'"
+                                (click)="selectStatsPreset('day')">Hoy</button>
+                            <button type="button" class="period-chip"
+                                [class.active]="statsPreset === 'week'"
+                                (click)="selectStatsPreset('week')">Esta semana</button>
+                            <button type="button" class="period-chip"
+                                [class.active]="statsPreset === 'month'"
+                                (click)="selectStatsPreset('month')">Este mes</button>
+                        </div>
+                        <div class="stats-period-dates">
+                            <label>
+                                Desde
+                                <input type="date" [(ngModel)]="statsFrom" (change)="onStatsDateChange()">
+                            </label>
+                            <label>
+                                Hasta
+                                <input type="date" [(ngModel)]="statsTo" (change)="onStatsDateChange()">
+                            </label>
+                        </div>
                     </div>
 
-                    @if (loadingDailyStats) {
+                    @if (loadingStats) {
                         <div class="stats-loading">Cargando…</div>
-                    } @else if (!dailyStats || dailyStats.totals.fases_completadas === 0) {
-                        <div class="stats-empty">Aún no hay fases completadas hoy.</div>
+                    } @else if (!statsData || statsData.totals.fases_completadas === 0) {
+                        <div class="stats-empty">No hay producción registrada en el rango seleccionado.</div>
                     } @else {
+                        <!-- Shared KPIs -->
                         <div class="stats-kpi-row">
                             <div class="stats-kpi">
-                                <span class="stats-kpi-label">Módulos completos</span>
+                                <span class="stats-kpi-label">Módulos</span>
                                 <span class="stats-kpi-value">
-                                    {{ dailyStats.totals.modulos_completados }}
-                                    <small class="stats-kpi-expected">/ {{ dailyStats.esperado.capacidad_diaria_modulos }}</small>
+                                    {{ statsData.totals.modulos_completados }}
+                                    <small class="stats-kpi-expected">/ {{ statsData.esperado.modulos_esperados }}</small>
                                 </span>
                             </div>
                             <div class="stats-kpi">
                                 <span class="stats-kpi-label">Fases producidas</span>
-                                <span class="stats-kpi-value">{{ dailyStats.totals.fases_completadas }}</span>
+                                <span class="stats-kpi-value">{{ statsData.totals.fases_completadas }}</span>
                             </div>
                             <div class="stats-kpi">
                                 <span class="stats-kpi-label">Peso producido</span>
-                                <span class="stats-kpi-value">{{ dailyStats.totals.peso_malla_final_kg | number:'1.0-1' }} <small>kg</small></span>
+                                <span class="stats-kpi-value">{{ statsData.totals.peso_malla_final_kg | number:'1.0-1' }} <small>kg</small></span>
                             </div>
                             <div class="stats-kpi">
                                 <span class="stats-kpi-label">Desperdicio</span>
                                 <span class="stats-kpi-value">
-                                    {{ dailyStats.totals.desperdicio_kg | number:'1.0-1' }} <small>kg</small>
-                                    <small class="stats-kpi-expected" *ngIf="desperdicioPct(dailyStats.totals) !== null">· {{ desperdicioPct(dailyStats.totals) | number:'1.1-1' }}%</small>
+                                    {{ statsData.totals.desperdicio_kg | number:'1.0-1' }} <small>kg</small>
+                                    <small class="stats-kpi-expected" *ngIf="desperdicioPct(statsData.totals) !== null">· {{ desperdicioPct(statsData.totals) | number:'1.1-1' }}%</small>
                                 </span>
                             </div>
                             <div class="stats-kpi">
                                 <span class="stats-kpi-label">Cortes</span>
-                                <span class="stats-kpi-value">{{ dailyStats.totals.cantidad_cortes }}</span>
+                                <span class="stats-kpi-value">{{ statsData.totals.cantidad_cortes }}</span>
                             </div>
                             <div class="stats-kpi">
                                 <span class="stats-kpi-label">Dificultad</span>
-                                <span class="stats-kpi-value">{{ dailyStats.totals.dificultad_total | number:'1.0-0' }}</span>
+                                <span class="stats-kpi-value">{{ statsData.totals.dificultad_total | number:'1.0-0' }}</span>
                             </div>
                         </div>
 
-                        <table class="stats-table">
-                            <thead>
-                                <tr>
-                                    <th>Mesa</th>
-                                    <th class="num">Fases</th>
-                                    <th class="num">Peso (kg)</th>
-                                    <th class="num">Desperdicio (kg)</th>
-                                    <th class="num">Cortes</th>
-                                    <th class="num">Dificultad</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @for (mesa of dailyStats.por_mesa; track mesa.mesa_id) {
+                        <!-- Tabs -->
+                        <div class="stats-tabs">
+                            <button type="button" class="stats-tab"
+                                [class.active]="statsTab === 'detail'"
+                                (click)="switchStatsTab('detail')">Detalle por mesa</button>
+                            <button type="button" class="stats-tab"
+                                [class.active]="statsTab === 'charts'"
+                                (click)="switchStatsTab('charts')">Infografía</button>
+                        </div>
+
+                        @if (statsTab === 'detail') {
+                            <table class="stats-table">
+                                <thead>
                                     <tr>
-                                        <td><span class="stats-mesa-badge">{{ mesaRolShort(mesa.rol) }}</span> {{ mesa.mesa_nombre }}</td>
-                                        <td class="num">{{ mesa.fases_completadas }}</td>
-                                        <td class="num">{{ mesa.peso_malla_final_kg | number:'1.0-1' }}</td>
-                                        <td class="num">{{ mesa.desperdicio_kg | number:'1.0-1' }}</td>
-                                        <td class="num">{{ mesa.cantidad_cortes }}</td>
-                                        <td class="num">{{ mesa.dificultad_total | number:'1.0-0' }}</td>
+                                        <th>Mesa</th>
+                                        <th class="num">Fases</th>
+                                        <th class="num">Peso (kg)</th>
+                                        <th class="num">Desperdicio (kg)</th>
+                                        <th class="num">Cortes</th>
+                                        <th class="num">Dificultad</th>
                                     </tr>
-                                }
-                            </tbody>
-                        </table>
-                    }
-                </div>
-
-                <div class="stats-board">
-                    <div class="stats-board-header">
-                        <h3>Semanal</h3>
-                        <small *ngIf="weeklyStats">{{ weeklyStats.range.from }} — {{ weeklyStats.range.to }}</small>
-                    </div>
-
-                    @if (loadingWeeklyStats) {
-                        <div class="stats-loading">Cargando…</div>
-                    } @else if (!weeklyStats || weeklyStats.totals.fases_completadas === 0) {
-                        <div class="stats-empty">Aún no hay producción registrada esta semana.</div>
-                    } @else {
-                        <div class="stats-kpi-row">
-                            <div class="stats-kpi">
-                                <span class="stats-kpi-label">Módulos esta semana</span>
-                                <span class="stats-kpi-value">
-                                    {{ weeklyStats.totals.modulos_completados }}
-                                    <small class="stats-kpi-expected">/ {{ weeklyStats.esperado.modulos_esperados }}</small>
-                                </span>
-                            </div>
-                            <div class="stats-kpi">
-                                <span class="stats-kpi-label">Peso total</span>
-                                <span class="stats-kpi-value">{{ weeklyStats.totals.peso_malla_final_kg | number:'1.0-1' }} <small>kg</small></span>
-                            </div>
-                            <div class="stats-kpi">
-                                <span class="stats-kpi-label">Desperdicio</span>
-                                <span class="stats-kpi-value">
-                                    {{ weeklyStats.totals.desperdicio_kg | number:'1.0-1' }} <small>kg</small>
-                                    <small class="stats-kpi-expected" *ngIf="desperdicioPct(weeklyStats.totals) !== null">· {{ desperdicioPct(weeklyStats.totals) | number:'1.1-1' }}%</small>
-                                </span>
-                            </div>
-                            <div class="stats-kpi">
-                                <span class="stats-kpi-label">Dificultad</span>
-                                <span class="stats-kpi-value">{{ weeklyStats.totals.dificultad_total | number:'1.0-0' }}</span>
-                            </div>
-                        </div>
-
-                        <div class="weekly-charts-row">
-                            <!-- Chart 1: Módulos vs Objetivo -->
-                            <div class="weekly-chart">
-                                <div class="weekly-chart-header">
-                                    <h4>Módulos vs Objetivo</h4>
-                                    <div class="weekly-legend">
-                                        <span class="legend-swatch swatch-primary"></span>Fabricados
-                                        <span class="legend-swatch swatch-target"></span>Objetivo
+                                </thead>
+                                <tbody>
+                                    @for (mesa of statsData.por_mesa; track mesa.mesa_id) {
+                                        <tr>
+                                            <td><span class="stats-mesa-badge">{{ mesaRolShort(mesa.rol) }}</span> {{ mesa.mesa_nombre }}</td>
+                                            <td class="num">{{ mesa.fases_completadas }}</td>
+                                            <td class="num">{{ mesa.peso_malla_final_kg | number:'1.0-1' }}</td>
+                                            <td class="num">{{ mesa.desperdicio_kg | number:'1.0-1' }}</td>
+                                            <td class="num">{{ mesa.cantidad_cortes }}</td>
+                                            <td class="num">{{ mesa.dificultad_total | number:'1.0-0' }}</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        } @else {
+                            <div class="weekly-charts-row">
+                                <!-- Chart 1: Módulos vs Objetivo -->
+                                <div class="weekly-chart">
+                                    <div class="weekly-chart-header">
+                                        <h4>Módulos vs Objetivo</h4>
+                                        <div class="weekly-legend">
+                                            <span class="legend-swatch swatch-primary"></span>Fabricados
+                                            <span class="legend-swatch swatch-target"></span>Objetivo
+                                        </div>
+                                    </div>
+                                    <div class="weekly-chart-body">
+                                        @for (b of statsBuckets(); track b.key) {
+                                            <div class="chart-day">
+                                                <div class="chart-bar-area">
+                                                    <div class="chart-bar chart-bar-target"
+                                                        [style.height.%]="modulosBarPct(b.meta_modulos)"
+                                                        [title]="'Objetivo: ' + b.meta_modulos + ' módulos'"></div>
+                                                    <div class="chart-bar chart-bar-primary"
+                                                        [style.height.%]="modulosBarPct(b.modulos_completados)"
+                                                        [title]="b.label + ': ' + b.modulos_completados + ' módulos'">
+                                                        <span class="chart-bar-value" *ngIf="b.modulos_completados > 0">
+                                                            {{ b.modulos_completados }}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <span class="chart-day-label">{{ b.label }}</span>
+                                            </div>
+                                        }
                                     </div>
                                 </div>
-                                <div class="weekly-chart-body">
-                                    @for (day of weeklyChartDays(); track day.fecha) {
-                                        <div class="chart-day">
-                                            <div class="chart-bar-area">
-                                                <div class="chart-bar chart-bar-target"
-                                                    [style.height.%]="modulosBarPct(weeklyDailyCap())"
-                                                    [title]="'Objetivo: ' + weeklyDailyCap() + ' módulos'"></div>
-                                                <div class="chart-bar chart-bar-primary"
-                                                    [style.height.%]="modulosBarPct(day.modulos_completados || 0)"
-                                                    [title]="day.isoLabel + ': ' + (day.modulos_completados || 0) + ' módulos'">
-                                                    <span class="chart-bar-value" *ngIf="(day.modulos_completados || 0) > 0">
-                                                        {{ day.modulos_completados }}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                            <span class="chart-day-label">{{ day.isoLabel }}</span>
-                                        </div>
-                                    }
-                                </div>
-                            </div>
 
-                            <!-- Chart 2: Peso y desperdicio -->
-                            <div class="weekly-chart">
-                                <div class="weekly-chart-header">
-                                    <h4>Peso y desperdicio</h4>
-                                    <div class="weekly-legend">
-                                        <span class="legend-swatch swatch-neutral"></span>Peso
-                                        <span class="legend-swatch swatch-waste"></span>Desperdicio
+                                <!-- Chart 2: Peso y desperdicio -->
+                                <div class="weekly-chart">
+                                    <div class="weekly-chart-header">
+                                        <h4>Peso y desperdicio</h4>
+                                        <div class="weekly-legend">
+                                            <span class="legend-swatch swatch-neutral"></span>Peso
+                                            <span class="legend-swatch swatch-waste"></span>Desperdicio
+                                        </div>
+                                    </div>
+                                    <div class="weekly-chart-body">
+                                        @for (b of statsBuckets(); track b.key) {
+                                            <div class="chart-day">
+                                                <div class="chart-bar-area">
+                                                    <div class="chart-bar chart-bar-neutral"
+                                                        [style.height.%]="pesoBarPct(b.peso_malla_final_kg)"
+                                                        [title]="b.label + ': ' + (b.peso_malla_final_kg | number:'1.0-1') + ' kg'">
+                                                        <span class="chart-bar-value" *ngIf="b.peso_malla_final_kg > 0">
+                                                            {{ b.peso_malla_final_kg | number:'1.0-0' }}
+                                                        </span>
+                                                    </div>
+                                                    <div class="chart-bar chart-bar-waste"
+                                                        [style.height.%]="pesoBarPct(b.desperdicio_kg)"
+                                                        [title]="'Desperdicio ' + b.label + ': ' + (b.desperdicio_kg | number:'1.0-1') + ' kg'"></div>
+                                                </div>
+                                                <span class="chart-day-label">{{ b.label }}</span>
+                                            </div>
+                                        }
                                     </div>
                                 </div>
-                                <div class="weekly-chart-body">
-                                    @for (day of weeklyChartDays(); track day.fecha) {
-                                        <div class="chart-day">
-                                            <div class="chart-bar-area">
-                                                <div class="chart-bar chart-bar-neutral"
-                                                    [style.height.%]="pesoBarPct(day.peso_malla_final_kg || 0)"
-                                                    [title]="day.isoLabel + ': ' + (day.peso_malla_final_kg | number:'1.0-1') + ' kg'">
-                                                    <span class="chart-bar-value" *ngIf="(day.peso_malla_final_kg || 0) > 0">
-                                                        {{ day.peso_malla_final_kg | number:'1.0-0' }}
-                                                    </span>
-                                                </div>
-                                                <div class="chart-bar chart-bar-waste"
-                                                    [style.height.%]="pesoBarPct(day.desperdicio_kg || 0)"
-                                                    [title]="'Desperdicio ' + day.isoLabel + ': ' + (day.desperdicio_kg | number:'1.0-1') + ' kg'"></div>
-                                            </div>
-                                            <span class="chart-day-label">{{ day.isoLabel }}</span>
-                                        </div>
-                                    }
-                                </div>
-                            </div>
 
-                            <!-- Chart 3: Dificultad ejecutada -->
-                            <div class="weekly-chart">
-                                <div class="weekly-chart-header">
-                                    <h4>Dificultad ejecutada</h4>
-                                    <div class="weekly-legend">
-                                        <span class="legend-swatch swatch-difficulty"></span>Puntos
+                                <!-- Chart 3: Dificultad ejecutada -->
+                                <div class="weekly-chart">
+                                    <div class="weekly-chart-header">
+                                        <h4>Dificultad ejecutada</h4>
+                                        <div class="weekly-legend">
+                                            <span class="legend-swatch swatch-difficulty"></span>Puntos
+                                        </div>
+                                    </div>
+                                    <div class="weekly-chart-body">
+                                        @for (b of statsBuckets(); track b.key) {
+                                            <div class="chart-day">
+                                                <div class="chart-bar-area">
+                                                    <div class="chart-bar chart-bar-difficulty"
+                                                        [style.height.%]="dificultadBarPct(b.dificultad_total)"
+                                                        [title]="b.label + ': ' + (b.dificultad_total | number:'1.0-0') + ' puntos de dificultad'">
+                                                        <span class="chart-bar-value" *ngIf="b.dificultad_total > 0">
+                                                            {{ formatDificultadShort(b.dificultad_total) }}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <span class="chart-day-label">{{ b.label }}</span>
+                                            </div>
+                                        }
                                     </div>
                                 </div>
-                                <div class="weekly-chart-body">
-                                    @for (day of weeklyChartDays(); track day.fecha) {
-                                        <div class="chart-day">
-                                            <div class="chart-bar-area">
-                                                <div class="chart-bar chart-bar-difficulty"
-                                                    [style.height.%]="dificultadBarPct(day.dificultad_total || 0)"
-                                                    [title]="day.isoLabel + ': ' + (day.dificultad_total | number:'1.0-0') + ' puntos de dificultad'">
-                                                    <span class="chart-bar-value" *ngIf="(day.dificultad_total || 0) > 0">
-                                                        {{ formatDificultadShort(day.dificultad_total) }}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                            <span class="chart-day-label">{{ day.isoLabel }}</span>
-                                        </div>
-                                    }
-                                </div>
                             </div>
-                        </div>
+                        }
                     }
                 </div>
             </section>
