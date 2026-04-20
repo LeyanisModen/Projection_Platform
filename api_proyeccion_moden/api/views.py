@@ -1692,6 +1692,33 @@ class ProductionStatsView(APIView):
         modulos_list = list(modulos_qs)
         modulos_completados = len(modulos_list)
 
+        # --- Dificultad normalization ---
+        # Scale every per-phase dificultad so that the global mean of all
+        # DetalleModuloFase rows known for this user maps to 100. Fallback
+        # to the recently completed set if nothing else is available.
+        all_detalles_qs = (
+            DetalleModuloFase.objects
+            .select_related('modulo')
+        )
+        if proyecto_id:
+            all_detalles_qs = all_detalles_qs.filter(modulo__proyecto_id=proyecto_id)
+        if not _is_admin(request.user):
+            all_detalles_qs = all_detalles_qs.filter(modulo__proyecto__usuario=request.user)
+        all_detalles_list = list(all_detalles_qs)
+        if not all_detalles_list:
+            # Fallback: use phases of the modules finished in the range
+            for m in modulos_list:
+                all_detalles_list.extend(m.detalles_fase.all())
+
+        total_sum_raw = 0.0
+        for d in all_detalles_list:
+            total_sum_raw += _compute_dificultad(d)
+        if all_detalles_list and total_sum_raw > 0:
+            mean_raw = total_sum_raw / len(all_detalles_list)
+            dificultad_scale = 100.0 / mean_raw
+        else:
+            dificultad_scale = 1.0
+
         # Build a lookup of MesaQueueItem HECHO for the same (modulo, fase)
         # so we can attribute phases to their mesa when available, and a
         # fallback map from modulo id -> GrupoMesas id so we can guess the
@@ -1753,7 +1780,7 @@ class ProductionStatsView(APIView):
             target['cantidad_zunchos'] += detalle.cantidad_zunchos or 0
             target['cantidad_separadores'] += detalle.cantidad_separadores or 0
             target['cantidad_punzos'] += detalle.cantidad_punzos or 0
-            target['dificultad_total'] += _compute_dificultad(detalle)
+            target['dificultad_total'] += _compute_dificultad(detalle) * dificultad_scale
 
         totals = empty_totals()
         por_mesa = {}
