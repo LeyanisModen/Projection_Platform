@@ -2016,10 +2016,12 @@ class ProductionStatsView(APIView):
                 if it.mesa and it.mesa.grupo_id:
                     grupo_mesas_by_modulo.setdefault(it.modulo_id, it.mesa.grupo_id)
 
-        # For modulos that never went through a mesa queue (e.g. seeded
-        # demo data or modules completed from the admin detail), we still
-        # want them on a mesa row. Use the first grupo-mesas that has the
-        # project in its cola as the fallback owner.
+        # For modulos that never went through a mesa queue (seeded demo
+        # data, admin-only completions, or projects already drained
+        # from the cola) we still want them on a mesa row. Try several
+        # sources in order: the project's current cola, any bastidor
+        # already reserved to a grupo, and finally any grupo owned by
+        # the project's user.
         proyecto_ids_in_scope = {m.proyecto_id for m in modulos_list}
         proyecto_to_grupo: dict = {}
         if proyecto_ids_in_scope:
@@ -2029,11 +2031,43 @@ class ProductionStatsView(APIView):
             for entry in cola_qs:
                 proyecto_to_grupo.setdefault(entry.proyecto_id, entry.grupo_mesas_id)
 
+        # Bastidor reservation falls back second — once a bastidor is
+        # stamped with asignado_a, it keeps pointing at its owner grupo
+        # even after the project has drained from that grupo's cola.
+        reservation_by_modulo: dict = {}
+        if proyecto_ids_in_scope:
+            bastidor_rows = Modulo.objects.filter(
+                id__in=[m.id for m in modulos_list],
+                grupo_bastidor__asignado_a__isnull=False,
+            ).values_list('id', 'grupo_bastidor__asignado_a_id')
+            for modulo_id, grupo_id in bastidor_rows:
+                reservation_by_modulo[modulo_id] = grupo_id
+
+        # Last resort: first grupo operativo of the project's user.
+        proyecto_usuario_map = {
+            p.id: p.usuario_id
+            for p in Proyecto.objects.filter(id__in=proyecto_ids_in_scope)
+        }
+        usuario_to_first_grupo: dict = {}
+        usuarios_needed = {uid for uid in proyecto_usuario_map.values() if uid}
+        if usuarios_needed:
+            for grupo in GrupoMesas.objects.filter(
+                usuario_id__in=usuarios_needed
+            ).order_by('usuario_id', 'nombre'):
+                usuario_to_first_grupo.setdefault(grupo.usuario_id, grupo.id)
+
         for m in modulos_list:
-            if m.id not in grupo_mesas_by_modulo:
-                grupo = proyecto_to_grupo.get(m.proyecto_id)
-                if grupo is not None:
-                    grupo_mesas_by_modulo[m.id] = grupo
+            if m.id in grupo_mesas_by_modulo:
+                continue
+            grupo = proyecto_to_grupo.get(m.proyecto_id)
+            if grupo is None:
+                grupo = reservation_by_modulo.get(m.id)
+            if grupo is None:
+                usuario_id = proyecto_usuario_map.get(m.proyecto_id)
+                if usuario_id is not None:
+                    grupo = usuario_to_first_grupo.get(usuario_id)
+            if grupo is not None:
+                grupo_mesas_by_modulo[m.id] = grupo
 
         # Cache: GrupoMesas id -> {rol: Mesa} so we can attribute orphan
         # phases to the right mesa in the same group.

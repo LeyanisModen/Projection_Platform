@@ -962,13 +962,15 @@ export class Dashboard implements OnInit, OnDestroy {
     const dailyCap = this.statsData.esperado?.capacidad_diaria_modulos || 0;
 
     if (dayCount <= 20) {
+      // Daily view: skip weekends entirely so the X axis stays clean
+      // (no empty Sat/Sun columns breaking the visual).
       const buckets = [];
       for (let i = 0; i < dayCount; i++) {
         const d = new Date(from);
         d.setDate(from.getDate() + i);
+        if (!this.isWorkingDay(d)) continue;
         const iso = this.toLocalIsoDate(d);
         const found = byDate.get(iso);
-        const working = this.isWorkingDay(d);
         buckets.push({
           key: iso,
           label: this.dayLabel(iso),
@@ -978,8 +980,8 @@ export class Dashboard implements OnInit, OnDestroy {
           peso_malla_final_kg: found?.peso_malla_final_kg || 0,
           desperdicio_kg: found?.desperdicio_kg || 0,
           dificultad_total: found?.dificultad_total || 0,
-          meta_modulos: working ? dailyCap : 0,
-          working_days: working ? 1 : 0,
+          meta_modulos: dailyCap,
+          working_days: 1,
           granularity: 'day' as const
         });
       }

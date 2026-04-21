@@ -295,9 +295,6 @@
                                                     <div class="chart-bar chart-bar-primary"
                                                         [style.height.%]="modulosBarPct(b.modulos_completados)"
                                                         [title]="b.label + ': ' + b.modulos_completados + ' módulos'">
-                                                        <span class="chart-bar-value" *ngIf="b.modulos_completados > 0">
-                                                            {{ b.modulos_completados }}
-                                                        </span>
                                                     </div>
                                                 </div>
                                                 <span class="chart-day-label">{{ b.label }}</span>
@@ -322,9 +319,6 @@
                                                     <div class="chart-bar chart-bar-neutral"
                                                         [style.height.%]="pesoBarPct(b.peso_malla_final_kg)"
                                                         [title]="b.label + ': ' + (b.peso_malla_final_kg | number:'1.0-1') + ' kg'">
-                                                        <span class="chart-bar-value" *ngIf="b.peso_malla_final_kg > 0">
-                                                            {{ b.peso_malla_final_kg | number:'1.0-0' }}
-                                                        </span>
                                                     </div>
                                                     <div class="chart-bar chart-bar-waste"
                                                         [style.height.%]="pesoBarPct(b.desperdicio_kg)"
@@ -351,9 +345,6 @@
                                                     <div class="chart-bar chart-bar-difficulty"
                                                         [style.height.%]="dificultadBarPct(b.dificultad_total)"
                                                         [title]="b.label + ': ' + (b.dificultad_total | number:'1.0-0') + ' puntos de dificultad'">
-                                                        <span class="chart-bar-value" *ngIf="b.dificultad_total > 0">
-                                                            {{ formatDificultadShort(b.dificultad_total) }}
-                                                        </span>
                                                     </div>
                                                 </div>
                                                 <span class="chart-day-label">{{ b.label }}</span>
