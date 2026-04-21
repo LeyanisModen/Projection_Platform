@@ -28,7 +28,8 @@ from api.serializers import (
 from api.models import (
     Modulo, Proyecto, Planta, Imagen, Mesa,
     ModuloQueue, ModuloQueueItem, MesaQueueItem,
-    FotoFabricacion, GrupoMesas, DetalleModuloFase, MesaQueueStatus,
+    FotoFabricacion, GrupoMesas, GrupoMesasProyecto,
+    DetalleModuloFase, MesaQueueStatus,
     GrupoBastidor
 )
 from rest_framework.authtoken.views import ObtainAuthToken
@@ -1264,12 +1265,16 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
     """
     API endpoint para grupos operativos de tres mesas por ferralla.
     """
-    queryset = GrupoMesas.objects.select_related('usuario', 'proyecto_actual').prefetch_related('mesas').all()
+    queryset = GrupoMesas.objects.select_related('usuario', 'proyecto_actual').prefetch_related(
+        'mesas', 'proyectos_cola__proyecto'
+    ).all()
     serializer_class = GrupoMesasSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        queryset = GrupoMesas.objects.select_related('usuario', 'proyecto_actual').prefetch_related('mesas').all()
+        queryset = GrupoMesas.objects.select_related('usuario', 'proyecto_actual').prefetch_related(
+            'mesas', 'proyectos_cola__proyecto'
+        ).all()
         if not _is_admin(self.request.user):
             queryset = queryset.filter(usuario=self.request.user)
         usuario_id = self.request.query_params.get('usuario')
@@ -1305,6 +1310,99 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         with transaction.atomic():
             instance.mesas.all().delete()
             instance.delete()
+
+    def _check_grupo_access(self, grupo):
+        from rest_framework.exceptions import PermissionDenied
+        if not _is_admin(self.request.user) and grupo.usuario_id != self.request.user.id:
+            raise PermissionDenied('No puedes gestionar grupos de otra ferralla')
+
+    def _sync_proyecto_actual(self, grupo):
+        """Mantiene GrupoMesas.proyecto_actual alineado con la cabeza de la cola."""
+        head = grupo.proyectos_cola.order_by('orden', 'id').first()
+        new_id = head.proyecto_id if head else None
+        if grupo.proyecto_actual_id != new_id:
+            grupo.proyecto_actual_id = new_id
+            grupo.save(update_fields=['proyecto_actual'])
+
+    @action(detail=True, methods=['post'], url_path='cola/add')
+    def cola_add(self, request, pk=None):
+        """Encola un proyecto al final (o en una posicion concreta)."""
+        grupo = self.get_object()
+        self._check_grupo_access(grupo)
+
+        proyecto_id = request.data.get('proyecto')
+        if not proyecto_id:
+            return Response({'detail': "Campo 'proyecto' requerido."}, status=400)
+        try:
+            proyecto = Proyecto.objects.get(pk=proyecto_id)
+        except Proyecto.DoesNotExist:
+            return Response({'detail': 'Proyecto no encontrado.'}, status=404)
+
+        with transaction.atomic():
+            if grupo.proyectos_cola.filter(proyecto=proyecto).exists():
+                return Response({'detail': 'El proyecto ya esta en la cola.'}, status=400)
+            last = grupo.proyectos_cola.order_by('-orden').first()
+            next_orden = (last.orden + 1) if last else 0
+            GrupoMesasProyecto.objects.create(
+                grupo_mesas=grupo,
+                proyecto=proyecto,
+                orden=next_orden,
+            )
+            self._sync_proyecto_actual(grupo)
+
+        grupo.refresh_from_db()
+        return Response(GrupoMesasSerializer(grupo).data)
+
+    @action(detail=True, methods=['post'], url_path='cola/remove')
+    def cola_remove(self, request, pk=None):
+        """Quita un proyecto de la cola. No desanula nada de lo ya fabricado."""
+        grupo = self.get_object()
+        self._check_grupo_access(grupo)
+
+        proyecto_id = request.data.get('proyecto')
+        if not proyecto_id:
+            return Response({'detail': "Campo 'proyecto' requerido."}, status=400)
+
+        with transaction.atomic():
+            deleted, _ = grupo.proyectos_cola.filter(proyecto_id=proyecto_id).delete()
+            if not deleted:
+                return Response({'detail': 'El proyecto no estaba en la cola.'}, status=404)
+            # Compactar orden (0, 1, 2, ...)
+            for index, entry in enumerate(grupo.proyectos_cola.order_by('orden', 'id')):
+                if entry.orden != index:
+                    entry.orden = index
+                    entry.save(update_fields=['orden'])
+            self._sync_proyecto_actual(grupo)
+
+        grupo.refresh_from_db()
+        return Response(GrupoMesasSerializer(grupo).data)
+
+    @action(detail=True, methods=['post'], url_path='cola/reorder')
+    def cola_reorder(self, request, pk=None):
+        """Recibe {proyecto_ids: [...]} con el orden deseado."""
+        grupo = self.get_object()
+        self._check_grupo_access(grupo)
+
+        proyecto_ids = request.data.get('proyecto_ids')
+        if not isinstance(proyecto_ids, list):
+            return Response({'detail': "Campo 'proyecto_ids' debe ser una lista."}, status=400)
+
+        with transaction.atomic():
+            existing = {e.proyecto_id: e for e in grupo.proyectos_cola.all()}
+            if set(proyecto_ids) != set(existing.keys()):
+                return Response(
+                    {'detail': 'La lista de proyectos no coincide con la cola actual.'},
+                    status=400,
+                )
+            for index, proyecto_id in enumerate(proyecto_ids):
+                entry = existing[proyecto_id]
+                if entry.orden != index:
+                    entry.orden = index
+                    entry.save(update_fields=['orden'])
+            self._sync_proyecto_actual(grupo)
+
+        grupo.refresh_from_db()
+        return Response(GrupoMesasSerializer(grupo).data)
 
     def _create_queue_for_mesa(self, mesa, modules, fase, user, module_group_map, group_offset=0, start_position=0, has_active_items=False):
         created_items = []

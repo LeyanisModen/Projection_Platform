@@ -222,11 +222,19 @@ export interface GrupoMesaResumen {
     is_linked: boolean;
 }
 
+export interface GrupoMesasProyectoEntry {
+    id: number;
+    proyecto: number;
+    proyecto_nombre: string;
+    orden: number;
+}
+
 export interface GrupoMesas {
     id: number;
     nombre: string;
     usuario: number;
     proyecto_actual: number | null;
+    proyectos_cola: GrupoMesasProyectoEntry[];
     activa: boolean;
     created_at: string;
     mesas: GrupoMesaResumen[];
@@ -568,6 +576,30 @@ export class ApiService {
         return this.http.post<PlanificarGrupoResponse>(
             `${this.baseUrl}/grupos-mesas/${grupoId}/planificar/`,
             { proyecto_id: proyectoId },
+            { headers: this.getHeaders() }
+        );
+    }
+
+    colaGrupoMesasAdd(grupoId: number, proyectoId: number): Observable<GrupoMesas> {
+        return this.http.post<GrupoMesas>(
+            `${this.baseUrl}/grupos-mesas/${grupoId}/cola/add/`,
+            { proyecto: proyectoId },
+            { headers: this.getHeaders() }
+        );
+    }
+
+    colaGrupoMesasRemove(grupoId: number, proyectoId: number): Observable<GrupoMesas> {
+        return this.http.post<GrupoMesas>(
+            `${this.baseUrl}/grupos-mesas/${grupoId}/cola/remove/`,
+            { proyecto: proyectoId },
+            { headers: this.getHeaders() }
+        );
+    }
+
+    colaGrupoMesasReorder(grupoId: number, proyectoIds: number[]): Observable<GrupoMesas> {
+        return this.http.post<GrupoMesas>(
+            `${this.baseUrl}/grupos-mesas/${grupoId}/cola/reorder/`,
+            { proyecto_ids: proyectoIds },
             { headers: this.getHeaders() }
         );
     }

@@ -4,7 +4,8 @@ from rest_framework import serializers
 from api.models import (
     Proyecto, Planta, Modulo, Imagen, Mesa,
     ModuloQueue, ModuloQueueItem, MesaQueueItem, UserProfile, MesaQueueStatus,
-    FotoFabricacion, GrupoMesas, DetalleModuloFase, GrupoBastidor
+    FotoFabricacion, GrupoMesas, GrupoMesasProyecto,
+    DetalleModuloFase, GrupoBastidor
 )
 
 
@@ -350,17 +351,37 @@ class MesaResumenGrupoSerializer(serializers.ModelSerializer):
         return bool(obj.device_token_hash)
 
 
+class GrupoMesasProyectoSerializer(serializers.ModelSerializer):
+    proyecto_nombre = serializers.CharField(source='proyecto.nombre', read_only=True)
+
+    class Meta:
+        model = GrupoMesasProyecto
+        fields = ["id", "proyecto", "proyecto_nombre", "orden"]
+        read_only_fields = ["id", "proyecto_nombre"]
+
+
 class GrupoMesasSerializer(serializers.ModelSerializer):
     mesas = MesaResumenGrupoSerializer(many=True, read_only=True)
+    proyectos_cola = serializers.SerializerMethodField()
 
     class Meta:
         model = GrupoMesas
-        fields = ["id", "nombre", "usuario", "proyecto_actual", "activa", "created_at", "mesas"]
-        read_only_fields = ["created_at", "mesas"]
+        fields = [
+            "id", "nombre", "usuario",
+            "proyecto_actual", "proyectos_cola",
+            "activa", "created_at", "mesas",
+        ]
+        read_only_fields = ["created_at", "mesas", "proyectos_cola"]
         extra_kwargs = {
             "usuario": {"required": False},
             "proyecto_actual": {"required": False, "allow_null": True},
         }
+
+    def get_proyectos_cola(self, obj):
+        entries = getattr(obj, '_prefetched_objects_cache', {}).get('proyectos_cola')
+        if entries is None:
+            entries = obj.proyectos_cola.select_related('proyecto').order_by('orden', 'id')
+        return GrupoMesasProyectoSerializer(entries, many=True).data
 
 
 class ModuloQueueItemSerializer(serializers.ModelSerializer):

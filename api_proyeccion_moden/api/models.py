@@ -497,7 +497,7 @@ class GrupoMesas(models.Model):
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='grupos_mesas_activos'
+        related_name='grupos_mesas_activos',
     )
     activa = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -530,6 +530,45 @@ class GrupoMesas(models.Model):
             models.UniqueConstraint(
                 fields=['usuario', 'nombre'],
                 name='unique_grupo_mesas_nombre_por_usuario'
+            ),
+        ]
+
+
+class GrupoMesasProyecto(models.Model):
+    """
+    Cola ordenada de proyectos asignados a un grupo operativo de mesas.
+    El primero (orden mas bajo) es el que se esta fabricando ahora mismo;
+    los siguientes entraran cuando el actual se agote. Un mismo proyecto
+    puede estar en la cola de varios grupos operativos a la vez (fabricacion
+    en paralelo).
+    """
+    id = models.AutoField(primary_key=True)
+    grupo_mesas = models.ForeignKey(
+        'GrupoMesas',
+        on_delete=models.CASCADE,
+        related_name='proyectos_cola',
+    )
+    proyecto = models.ForeignKey(
+        Proyecto,
+        on_delete=models.CASCADE,
+        related_name='colas_grupos_mesas',
+    )
+    orden = models.PositiveIntegerField(
+        default=0,
+        help_text='Posicion en la cola. Menor => antes se fabrica.'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.grupo_mesas.nombre} #{self.orden}: {self.proyecto.nombre}"
+
+    class Meta:
+        db_table = 'api_grupo_mesas_proyecto'
+        ordering = ['grupo_mesas', 'orden']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['grupo_mesas', 'proyecto'],
+                name='unique_proyecto_por_grupo_mesas'
             ),
         ]
 
