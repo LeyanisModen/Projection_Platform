@@ -215,8 +215,8 @@ class GrupoBastidorSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = GrupoBastidor
-        fields = ["id", "proyecto", "indice", "created_at", "modulos"]
-        read_only_fields = ["created_at"]
+        fields = ["id", "proyecto", "indice", "nombre", "created_at", "modulos"]
+        read_only_fields = ["created_at", "proyecto", "indice"]
 
     def get_modulos(self, obj):
         modulos = obj.modulos.all().order_by('nombre')
@@ -382,6 +382,12 @@ class MesaQueueItemSerializer(serializers.ModelSerializer):
     mesa_nombre = serializers.CharField(source='mesa.nombre', read_only=True)
     modulo_planta_id = serializers.SerializerMethodField()
     modulo_proyecto_id = serializers.SerializerMethodField()
+    grupo_bastidor_indice = serializers.IntegerField(
+        source='modulo.grupo_bastidor.indice', read_only=True, default=None
+    )
+    grupo_bastidor_nombre = serializers.CharField(
+        source='modulo.grupo_bastidor.nombre', read_only=True, default=''
+    )
     dificultad = serializers.SerializerMethodField()
 
     class Meta:
@@ -390,7 +396,9 @@ class MesaQueueItemSerializer(serializers.ModelSerializer):
             "id", "mesa", "mesa_nombre",
             "modulo", "modulo_nombre", "modulo_planta_id", "modulo_proyecto_id",
             "fase", "imagen", "imagen_url",
-            "position", "plan_group_index", "status", "dificultad",
+            "position", "plan_group_index",
+            "grupo_bastidor_indice", "grupo_bastidor_nombre",
+            "status", "dificultad",
             "assigned_by", "assigned_at",
             "done_by", "done_at"
         ]

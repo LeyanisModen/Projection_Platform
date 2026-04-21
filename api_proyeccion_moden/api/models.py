@@ -65,9 +65,17 @@ class GrupoBastidor(models.Model):
     id = models.AutoField(primary_key=True)
     proyecto = models.ForeignKey(Proyecto, on_delete=models.CASCADE, related_name='grupos_bastidor')
     indice = models.PositiveIntegerField(help_text='Numero de grupo dentro del proyecto (1, 2, 3...).')
+    nombre = models.CharField(
+        max_length=120,
+        blank=True,
+        default='',
+        help_text='Alias opcional del grupo (p.ej. "Fachada norte"). Vacio => se usa el indice.'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
+        if self.nombre:
+            return f"{self.proyecto.nombre} - {self.nombre}"
         return f"{self.proyecto.nombre} - Grupo {self.indice}"
 
     class Meta:

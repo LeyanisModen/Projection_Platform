@@ -1577,6 +1577,19 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   /**
+   * Divider label for queue items. Uses the per-project grupo_bastidor
+   * indice (so numbering restarts when the queue crosses into a
+   * different project) and appends the optional nombre (alias) so the
+   * operator can read "G1 — Fachada norte" instead of just a number.
+   */
+  getItemGrupoLabel(item: MesaQueueItem): string {
+    const indice = item.grupo_bastidor_indice;
+    const nombre = (item.grupo_bastidor_nombre || '').trim();
+    const base = indice != null ? `Grupo ${indice}` : 'Grupo';
+    return nombre ? `${base} — ${nombre}` : base;
+  }
+
+  /**
    * The item currently MOSTRANDO on a SUP mesa is shown above both
    * INF1/INF2 sub-columns (full width) so the operator can spot it fast.
    */

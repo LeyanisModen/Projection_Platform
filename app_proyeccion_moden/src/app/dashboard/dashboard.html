@@ -155,7 +155,7 @@
                                         @for (item of getVisibleMesaQueueItems(mesa.id); track trackByItem($index, item)) {
                                             @if (shouldShowGroupDivider(item, $index, mesa)) {
                                                 <div class="queue-group-divider">
-                                                    — Grupo {{ getItemGrupoIndice(item) }} —
+                                                    — {{ getItemGrupoLabel(item) }} —
                                                 </div>
                                             }
                                             <div class="queue-item" [class]="getItemStatusClass(item.status)">

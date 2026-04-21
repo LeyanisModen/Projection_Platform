@@ -146,6 +146,42 @@ export class ProyectoDetailComponent implements OnInit {
         return grupo.modulos.every(m => m.estado === 'COMPLETADO' || m.estado === 'CERRADO');
     }
 
+    // Inline rename state for GrupoBastidor alias.
+    editingGrupoId: number | null = null;
+    editingGrupoNombre: string = '';
+
+    startEditingGrupo(grupo: GrupoBastidor, event?: Event): void {
+        event?.stopPropagation();
+        this.editingGrupoId = grupo.id;
+        this.editingGrupoNombre = grupo.nombre || '';
+    }
+
+    cancelEditingGrupo(): void {
+        this.editingGrupoId = null;
+        this.editingGrupoNombre = '';
+    }
+
+    saveGrupoNombre(grupo: GrupoBastidor): void {
+        const target = this.editingGrupoNombre.trim();
+        if (target === (grupo.nombre || '')) {
+            this.cancelEditingGrupo();
+            return;
+        }
+        this.api.updateGrupoBastidor(grupo.id, { nombre: target }).subscribe({
+            next: (updated) => {
+                grupo.nombre = updated.nombre;
+                this.cancelEditingGrupo();
+                this.cdr.detectChanges();
+            },
+            error: (err) => {
+                console.error('Error renaming grupo', err);
+                alert('No se pudo guardar el nombre del grupo.');
+                this.cancelEditingGrupo();
+                this.cdr.detectChanges();
+            }
+        });
+    }
+
     reiniciarModulo(moduloId: number, event?: Event): void {
         if (event) event.stopPropagation();
         const confirmed = confirm('Reiniciar este modulo volvera a poner las fases INF y SUP como pendientes. Continuar?');

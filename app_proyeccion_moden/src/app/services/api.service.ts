@@ -59,6 +59,7 @@ export interface GrupoBastidor {
     id: number;
     proyecto: number;
     indice: number;
+    nombre: string;
     created_at: string;
     modulos: GrupoBastidorModulo[];
 }
@@ -204,6 +205,8 @@ export interface MesaQueueItem {
     imagen_url?: string;
     position: number;
     plan_group_index?: number | null;
+    grupo_bastidor_indice?: number | null;
+    grupo_bastidor_nombre?: string | null;
     status: 'EN_COLA' | 'MOSTRANDO' | 'HECHO';
     dificultad?: number | null;
     assigned_by: string | null;
@@ -512,6 +515,14 @@ export class ApiService {
     getGruposBastidor(proyectoId: number): Observable<GrupoBastidor[]> {
         return this.http.get<GrupoBastidor[]>(
             `${this.baseUrl}/grupos-bastidor/?proyecto=${proyectoId}`,
+            { headers: this.getHeaders() }
+        );
+    }
+
+    updateGrupoBastidor(id: number, data: { nombre: string }): Observable<GrupoBastidor> {
+        return this.http.patch<GrupoBastidor>(
+            `${this.baseUrl}/grupos-bastidor/${id}/`,
+            data,
             { headers: this.getHeaders() }
         );
     }

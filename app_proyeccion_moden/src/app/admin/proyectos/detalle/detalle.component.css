@@ -712,6 +712,51 @@
     margin-top: 0.1rem;
 }
 
+.grupo-bastidor-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.grupo-nombre-alias {
+    color: #495057;
+    font-size: 0.82rem;
+    font-weight: 500;
+}
+
+.grupo-nombre-edit-btn {
+    border: none;
+    background: transparent;
+    color: #adb5bd;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    transition: color 0.15s ease, background 0.15s ease;
+}
+
+.grupo-nombre-edit-btn:hover {
+    color: #fd7e14;
+    background: rgba(253, 126, 20, 0.08);
+}
+
+.grupo-nombre-input {
+    border: 1px solid #ced4da;
+    border-radius: 6px;
+    padding: 2px 8px;
+    font-size: 0.82rem;
+    color: #212529;
+    font-family: inherit;
+    width: 180px;
+}
+
+.grupo-nombre-input:focus {
+    outline: none;
+    border-color: #fd7e14;
+    box-shadow: 0 0 0 2px rgba(253, 126, 20, 0.15);
+}
+
 .grupo-modulos-list {
     list-style: none;
     padding: 0;

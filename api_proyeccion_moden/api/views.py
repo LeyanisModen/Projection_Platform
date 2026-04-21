@@ -989,16 +989,18 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         })
 
 
-class GrupoBastidorViewSet(viewsets.ReadOnlyModelViewSet):
+class GrupoBastidorViewSet(viewsets.ModelViewSet):
     """
-    API endpoint para consultar los grupos de bastidor de un proyecto.
+    API endpoint para consultar y renombrar los grupos de bastidor de un proyecto.
     Filtrar con ?proyecto=ID
-    Los grupos se crean automaticamente al importar datos tecnicos y son inmutables.
+    Solo el alias ``nombre`` es editable; el resto de los campos son inmutables
+    porque los grupos se calculan al importar datos tecnicos.
     """
     queryset = GrupoBastidor.objects.prefetch_related('modulos').all().order_by('proyecto', 'indice')
     serializer_class = GrupoBastidorSerializer
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = None
+    http_method_names = ['get', 'patch', 'head', 'options']
 
     def get_queryset(self):
         queryset = GrupoBastidor.objects.prefetch_related('modulos').all().order_by('proyecto', 'indice')

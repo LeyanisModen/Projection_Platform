@@ -178,7 +178,29 @@
                             [class.grupo-completado]="isGrupoCompletado(grupo)"
                             [class.grupo-pendiente]="!isGrupoCompletado(grupo)">
                             <div class="grupo-bastidor-header">
-                                <h4>Grupo {{ grupo.indice }}</h4>
+                                <div class="grupo-bastidor-title">
+                                    <h4>Grupo {{ grupo.indice }}</h4>
+                                    <ng-container *ngIf="editingGrupoId === grupo.id; else grupoNombreStatic">
+                                        <input type="text"
+                                            class="grupo-nombre-input"
+                                            [(ngModel)]="editingGrupoNombre"
+                                            (keydown.enter)="saveGrupoNombre(grupo)"
+                                            (keydown.escape)="cancelEditingGrupo()"
+                                            (blur)="saveGrupoNombre(grupo)"
+                                            placeholder="Alias opcional"
+                                            maxlength="120"
+                                            autofocus>
+                                    </ng-container>
+                                    <ng-template #grupoNombreStatic>
+                                        <span class="grupo-nombre-alias" *ngIf="grupo.nombre">— {{ grupo.nombre }}</span>
+                                        <button type="button"
+                                            class="grupo-nombre-edit-btn"
+                                            (click)="startEditingGrupo(grupo, $event)"
+                                            [title]="grupo.nombre ? 'Renombrar alias' : 'Añadir alias'">
+                                            <i class="fa fa-pencil" aria-hidden="true"></i>
+                                        </button>
+                                    </ng-template>
+                                </div>
                                 <small class="grupo-modulos-count">{{ grupo.modulos.length }} módulos</small>
                             </div>
                             <ul class="grupo-modulos-list">
