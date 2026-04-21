@@ -215,6 +215,31 @@ export class Dashboard implements OnInit, OnDestroy {
     return 'pending';
   }
 
+  /**
+   * Visual state of a project card: 'fabricando' when it's at the head of
+   * at least one grupo-mesas queue (production running now); 'en-cola' when
+   * it appears elsewhere in some queue but isn't the head; 'libre' when it
+   * isn't in any queue.
+   */
+  proyectoEstado(proyecto: Proyecto): 'fabricando' | 'en-cola' | 'libre' {
+    let enCola = false;
+    for (const grupo of this.gruposMesas) {
+      const cola = grupo.proyectos_cola || [];
+      if (!cola.length) continue;
+      if (cola[0].proyecto === proyecto.id) return 'fabricando';
+      if (cola.some(e => e.proyecto === proyecto.id)) enCola = true;
+    }
+    return enCola ? 'en-cola' : 'libre';
+  }
+
+  proyectoEstadoLabel(proyecto: Proyecto): string {
+    switch (this.proyectoEstado(proyecto)) {
+      case 'fabricando': return 'En fabricación';
+      case 'en-cola': return 'En cola';
+      default: return 'Sin asignar';
+    }
+  }
+
   // =========================================================================
   // GESTIONAR MESA MODAL
   // =========================================================================

@@ -364,7 +364,12 @@
                 <div class="projects-inline-grid">
                     @if (loadingProyectos) { <div class="loading">Cargando...</div> }
                     @for (proyecto of proyectos; track proyecto.id) {
-                    <article class="project-inline-card" [class.selected]="selectedProyecto?.id === proyecto.id" (click)="selectProyecto(proyecto)">
+                    <article class="project-inline-card"
+                        [class.selected]="selectedProyecto?.id === proyecto.id"
+                        [class.estado-fabricando]="proyectoEstado(proyecto) === 'fabricando'"
+                        [class.estado-en-cola]="proyectoEstado(proyecto) === 'en-cola'"
+                        [class.estado-libre]="proyectoEstado(proyecto) === 'libre'"
+                        (click)="selectProyecto(proyecto)">
                         <button class="project-icon" type="button"
                             title="Ver lista de módulos"
                             (click)="openPlanModal(proyecto, $event)">
@@ -372,7 +377,7 @@
                         </button>
                         <div class="project-info">
                             <h3>{{ proyecto.nombre }}</h3>
-                            <span class="project-status">Activo</span>
+                            <span class="project-status">{{ proyectoEstadoLabel(proyecto) }}</span>
                         </div>
                         @if (proyecto.modulos_count) {
                             <div class="project-progress-donut" [attr.title]="'Completados: ' + (proyecto.modulos_completados || 0) + '/' + proyecto.modulos_count + ' · Hoy: ' + getProyectoHoy(proyecto) + ' · Esta semana: ' + (getProyectoHoy(proyecto) + getProyectoSemana(proyecto))">

@@ -2907,6 +2907,29 @@
   font-weight: 500;
 }
 
+/* Visual state per-project (driven by grupos-mesas queues) */
+.project-inline-card.estado-fabricando {
+  border-left: 4px solid #28a745;
+}
+.project-inline-card.estado-fabricando .project-status {
+  color: #1f8a3b;
+}
+
+.project-inline-card.estado-en-cola {
+  border-left: 4px solid #f0b429;
+}
+.project-inline-card.estado-en-cola .project-status {
+  color: #b7791f;
+}
+
+.project-inline-card.estado-libre {
+  border-left: 4px solid transparent;
+}
+.project-inline-card.estado-libre .project-status {
+  color: #6c757d;
+  font-weight: 400;
+}
+
 .project-progress-donut {
   flex-shrink: 0;
   width: 56px;
