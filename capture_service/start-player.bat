@@ -27,4 +27,4 @@ start "" chrome.exe ^
   --disable-features=TranslateUI ^
   --disable-pinch ^
   --overscroll-history-navigation=0 ^
-  "https://moden.up.railway.app/"
+  "https://moden.up.railway.app/player"
