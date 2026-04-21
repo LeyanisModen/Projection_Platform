@@ -2606,7 +2606,22 @@
 
 .project-inline-card .project-icon {
   color: var(--accent-orange);
-  display: flex;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: transparent;
+  border-radius: 10px;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.project-inline-card .project-icon:hover {
+  background: rgba(240, 100, 15, 0.12);
 }
 
 .project-inline-card .project-info h3 {
@@ -2642,27 +2657,6 @@
   fill: #212529;
   font-family: inherit;
   dominant-baseline: middle;
-}
-
-.project-plan-btn {
-  flex-shrink: 0;
-  width: 28px;
-  height: 28px;
-  border: 1px solid rgba(26, 26, 46, 0.12);
-  border-radius: 8px;
-  background: #fff;
-  color: #6c757d;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
-}
-
-.project-plan-btn:hover {
-  background: var(--moden-primary, #f0640f);
-  color: #fff;
-  border-color: var(--moden-primary, #f0640f);
 }
 
 /* Project plan modal */
