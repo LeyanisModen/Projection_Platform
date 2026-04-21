@@ -521,7 +521,11 @@ def _persist_bastidor_groups(proyecto):
 
     created_groups = 0
     for indice, modulos_in_group in enumerate(grouped, start=1):
-        grupo = GrupoBastidor.objects.create(proyecto=proyecto, indice=indice)
+        grupo = GrupoBastidor.objects.create(
+            proyecto=proyecto,
+            indice=indice,
+            nombre=f'Grupo {indice}',
+        )
         created_groups += 1
         modulo_ids = [m.id for m in modulos_in_group]
         proyecto.modulos.filter(id__in=modulo_ids).update(grupo_bastidor=grupo)
@@ -551,7 +555,7 @@ def _assign_modulo_to_group_on_create(modulo):
         proyecto.grupos_bastidor.order_by('-indice').first()
     )
     if ultimo_grupo is None:
-        nuevo = GrupoBastidor.objects.create(proyecto=proyecto, indice=1)
+        nuevo = GrupoBastidor.objects.create(proyecto=proyecto, indice=1, nombre='Grupo 1')
         modulo.grupo_bastidor = nuevo
         modulo.save(update_fields=['grupo_bastidor'])
         return
@@ -565,9 +569,11 @@ def _assign_modulo_to_group_on_create(modulo):
     if suma_actual + modulo_width <= bastidor_longitud:
         modulo.grupo_bastidor = ultimo_grupo
     else:
+        siguiente_indice = ultimo_grupo.indice + 1
         nuevo = GrupoBastidor.objects.create(
             proyecto=proyecto,
-            indice=ultimo_grupo.indice + 1,
+            indice=siguiente_indice,
+            nombre=f'Grupo {siguiente_indice}',
         )
         modulo.grupo_bastidor = nuevo
     modulo.save(update_fields=['grupo_bastidor'])

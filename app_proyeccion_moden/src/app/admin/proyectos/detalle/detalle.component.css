@@ -721,12 +721,6 @@
     min-width: 0;
 }
 
-.grupo-nombre-alias {
-    color: #495057;
-    font-size: 0.82rem;
-    font-weight: 500;
-}
-
 .grupo-nombre-edit-btn {
     border: none;
     background: transparent;
