@@ -7,7 +7,7 @@ import { DragDropModule, CdkDragDrop, moveItemInArray, transferArrayItem } from 
 import {
   ApiService,
   Proyecto, Planta, Modulo, Mesa, ModuloQueueItem, MesaQueueItem, Imagen,
-  GrupoMesas, GrupoPlanSummary, ProductionStatsResponse, ProductionStatsDay
+  GrupoMesas, ProductionStatsResponse
 } from '../services/api.service';
 import { Subject, takeUntil, forkJoin, interval } from 'rxjs';
 import { environment } from '../../environments/environment';
@@ -43,7 +43,6 @@ export class Dashboard implements OnInit, OnDestroy {
   mesas: Mesa[] = [];
   gruposMesas: GrupoMesas[] = [];
   selectedProyectoPorGrupo: Record<number, number | null> = {};
-  groupPlanSummaries: Record<number, GrupoPlanSummary | undefined> = {};
 
   // Subfases for the selected module
   activeSubfases: Subfase[] = [];
@@ -100,6 +99,13 @@ export class Dashboard implements OnInit, OnDestroy {
   showBlueprintModal = false;
   blueprintUrl: string | null = null;
 
+  // Project-plan Modal State
+  showPlanModal = false;
+  planModalProyecto: Proyecto | null = null;
+  planModalModulos: Modulo[] = [];
+  private planModalPlantas = new Map<number, string>();
+  loadingPlanModal = false;
+
   verPlano(planta: Planta): void {
     if (planta.plano_imagen) {
       this.blueprintUrl = this.resolveUrl(planta.plano_imagen);
@@ -126,6 +132,78 @@ export class Dashboard implements OnInit, OnDestroy {
     this.showBlueprintModal = false;
     this.blueprintUrl = null;
     this.cdr.detectChanges();
+  }
+
+  openPlanModal(proyecto: Proyecto, event?: Event): void {
+    event?.stopPropagation();
+    this.showPlanModal = true;
+    this.planModalProyecto = proyecto;
+    this.planModalModulos = [];
+    this.planModalPlantas.clear();
+    this.loadingPlanModal = true;
+    this.cdr.detectChanges();
+
+    forkJoin({
+      modulos: this.api.getProyectoModulos(proyecto.id),
+      plantas: this.api.getPlantas(proyecto.id)
+    }).pipe(takeUntil(this.destroy$)).subscribe({
+      next: ({ modulos, plantas }) => {
+        this.planModalModulos = modulos;
+        this.planModalPlantas = new Map(plantas.map(p => [p.id, p.nombre]));
+        this.loadingPlanModal = false;
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.loadingPlanModal = false;
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  closePlanModal(): void {
+    this.showPlanModal = false;
+    this.planModalProyecto = null;
+    this.planModalModulos = [];
+    this.planModalPlantas.clear();
+    this.cdr.detectChanges();
+  }
+
+  /** Groups modulos of the open plan modal by planta (in-project order). */
+  planModalGroupedByPlanta(): Array<{ plantaId: number | null; plantaNombre: string; modulos: Modulo[]; done: number; total: number }> {
+    const groups = new Map<number | null, Modulo[]>();
+    for (const m of this.planModalModulos) {
+      const key = m.planta ?? null;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(m);
+    }
+    const result: Array<{ plantaId: number | null; plantaNombre: string; modulos: Modulo[]; done: number; total: number }> = [];
+    for (const [plantaId, modulos] of groups.entries()) {
+      const sorted = [...modulos].sort((a, b) =>
+        a.nombre.localeCompare(b.nombre, undefined, { numeric: true })
+      );
+      const done = sorted.filter(m => m.inferior_hecho && m.superior_hecho).length;
+      result.push({
+        plantaId,
+        plantaNombre: plantaId != null ? (this.planModalPlantas.get(plantaId) || `Planta ${plantaId}`) : 'Sin planta',
+        modulos: sorted,
+        done,
+        total: sorted.length
+      });
+    }
+    result.sort((a, b) => a.plantaNombre.localeCompare(b.plantaNombre, undefined, { numeric: true }));
+    return result;
+  }
+
+  moduloEstadoLabel(m: Modulo): 'Fabricado' | 'En proceso' | 'Pendiente' {
+    if (m.inferior_hecho && m.superior_hecho) return 'Fabricado';
+    if (m.inferior_hecho || m.superior_hecho) return 'En proceso';
+    return 'Pendiente';
+  }
+
+  moduloEstadoClass(m: Modulo): 'done' | 'partial' | 'pending' {
+    if (m.inferior_hecho && m.superior_hecho) return 'done';
+    if (m.inferior_hecho || m.superior_hecho) return 'partial';
+    return 'pending';
   }
 
 
@@ -488,7 +566,6 @@ export class Dashboard implements OnInit, OnDestroy {
       .subscribe({
         next: (response) => {
           this.selectedProyectoPorGrupo[grupo.id] = response.grupo.proyecto_actual;
-          this.groupPlanSummaries[grupo.id] = response.plan;
           this.planningGroupId = null;
           this.loadGruposMesas();
           this.loadMesas();

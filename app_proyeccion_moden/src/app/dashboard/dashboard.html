@@ -55,19 +55,6 @@
                                 </div>
                             </div>
 
-                            @if (groupPlanSummaries[grupo.id]; as plan) {
-                            <div class="planner-summary">
-                                <div class="planner-summary-header">
-                                    <strong>{{ plan.project_name }}</strong>
-                                    <span>{{ plan.bastidor_groups.length }} bastidores</span>
-                                </div>
-                                <div class="planner-queue-summary">
-                                    <span>INF1: {{ plan.queues.INFERIOR_1.join(', ') || 'sin cola' }}</span>
-                                    <span>INF2: {{ plan.queues.INFERIOR_2.join(', ') || 'sin cola' }}</span>
-                                    <span>SUP: {{ plan.queues.SUPERIORES.join(', ') || 'sin cola' }}</span>
-                                </div>
-                            </div>
-                            }
                         </div>
 
                         <div class="mesas-grid grupo-mesas-grid">
@@ -399,6 +386,11 @@
                             <h3>{{ proyecto.nombre }}</h3>
                             <span class="project-status">Activo</span>
                         </div>
+                        <button class="project-plan-btn" type="button"
+                            title="Ver lista de módulos"
+                            (click)="openPlanModal(proyecto, $event)">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+                        </button>
                         @if (proyecto.modulos_count) {
                             <div class="project-progress-donut" [attr.title]="'Completados: ' + (proyecto.modulos_completados || 0) + '/' + proyecto.modulos_count + ' · Hoy: ' + getProyectoHoy(proyecto) + ' · Esta semana: ' + (getProyectoHoy(proyecto) + getProyectoSemana(proyecto))">
                                 <svg viewBox="0 0 80 80">
@@ -430,4 +422,51 @@
             }
         </section>
     </main>
+
+    @if (showPlanModal) {
+        <div class="modal-overlay" (click)="closePlanModal()">
+            <div class="modal-content plan-modal" (click)="$event.stopPropagation()">
+                <div class="plan-modal-header">
+                    <div>
+                        <h3>{{ planModalProyecto?.nombre }}</h3>
+                        @if (planModalProyecto && planModalProyecto.modulos_count) {
+                            <span class="plan-modal-subtitle">
+                                {{ planModalProyecto.modulos_completados || 0 }} / {{ planModalProyecto.modulos_count }} fabricados
+                            </span>
+                        }
+                    </div>
+                    <button type="button" class="plan-modal-close" (click)="closePlanModal()" title="Cerrar">×</button>
+                </div>
+
+                @if (loadingPlanModal) {
+                    <div class="plan-modal-loading">Cargando módulos…</div>
+                } @else if (planModalModulos.length === 0) {
+                    <div class="plan-modal-loading">Este proyecto no tiene módulos.</div>
+                } @else {
+                    <div class="plan-modal-body">
+                        @for (group of planModalGroupedByPlanta(); track group.plantaId) {
+                            <div class="plan-planta-block">
+                                <div class="plan-planta-header">
+                                    <strong>{{ group.plantaNombre }}</strong>
+                                    <span class="plan-planta-count">{{ group.done }}/{{ group.total }}</span>
+                                </div>
+                                <ul class="plan-modulo-list">
+                                    @for (m of group.modulos; track m.id) {
+                                        <li class="plan-modulo-row"
+                                            [class.done]="moduloEstadoClass(m) === 'done'"
+                                            [class.partial]="moduloEstadoClass(m) === 'partial'"
+                                            [class.pending]="moduloEstadoClass(m) === 'pending'">
+                                            <span class="plan-modulo-dot"></span>
+                                            <span class="plan-modulo-nombre">{{ m.nombre }}</span>
+                                            <span class="plan-modulo-estado">{{ moduloEstadoLabel(m) }}</span>
+                                        </li>
+                                    }
+                                </ul>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    }
 </div>
