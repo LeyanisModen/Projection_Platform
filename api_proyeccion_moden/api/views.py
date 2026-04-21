@@ -1504,7 +1504,8 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
 
         return preserve_until, preserved_by_role, preserved_keys
 
-    def _build_plan_sequences(self, proyecto, excluded_phase_keys=None, group_index_offset=0):
+    def _build_plan_sequences(self, proyecto, excluded_phase_keys=None, group_index_offset=0,
+                               initial_inf1_load=0, initial_inf2_load=0):
         excluded_phase_keys = excluded_phase_keys or set()
         modulos = list(
             proyecto.modulos.select_related('planta').prefetch_related('detalles_fase').all()
@@ -1539,21 +1540,33 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         group_summaries = []
         module_group_map = {}
 
-        for index, modules_in_group in enumerate(bastidor_groups, start=1):
-            effective_index = group_index_offset + index
+        # Longest-Processing-Time heuristic: process the biggest
+        # bastidores first so the smaller ones absorb the residual
+        # imbalance. Keeps each bastidor whole on a single mesa.
+        ordered_bastidores = sorted(
+            enumerate(bastidor_groups, start=1),
+            key=lambda pair: (-len(pair[1]), pair[0]),
+        )
+
+        # Live module counts per inferior mesa (including any already
+        # preserved/planned items from prior calls) so balancing works
+        # across successive plan passes in the same grupo.
+        inf1_load = initial_inf1_load
+        inf2_load = initial_inf2_load
+
+        for original_index, modules_in_group in ordered_bastidores:
+            effective_index = group_index_offset + original_index
             reversed_group = list(reversed(modules_in_group))
             for module in modules_in_group:
                 module_group_map[module.id] = effective_index
-            # Assign each bastidor to the inferior mesa with the lighter
-            # load so far. This keeps INF1 and INF2 balanced even when
-            # bastidores have very different module counts (the old
-            # odd/even parity could leave one mesa 3x heavier).
-            if len(inferior_1_sequence) <= len(inferior_2_sequence):
+            if inf1_load <= inf2_load:
                 target_role = 'INFERIOR_1'
                 inferior_1_sequence.extend(reversed_group)
+                inf1_load += len(modules_in_group)
             else:
                 target_role = 'INFERIOR_2'
                 inferior_2_sequence.extend(reversed_group)
+                inf2_load += len(modules_in_group)
 
             group_summaries.append({
                 'group_index': effective_index,
@@ -1622,12 +1635,20 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
             reservation_phase_keys.add((mid, 'INFERIOR'))
             reservation_phase_keys.add((mid, 'SUPERIOR'))
 
+        # Seed the balance with however many items already sit on each
+        # inferior mesa (from preserved/in-flight work). Keeps INF1 and
+        # INF2 leveled even across successive planificar passes.
+        initial_inf1_load = len(preserved_by_role.get('INFERIOR_1', []))
+        initial_inf2_load = len(preserved_by_role.get('INFERIOR_2', []))
+
         plan_data = self._build_plan_sequences(
             proyecto,
             excluded_phase_keys=(
                 preserved_phase_keys | external_phase_keys | reservation_phase_keys
             ),
             group_index_offset=preserved_until or 0,
+            initial_inf1_load=initial_inf1_load,
+            initial_inf2_load=initial_inf2_load,
         )
         skipped_external_conflicts = [
                 f'{item.modulo.nombre} {item.fase} ya está en {item.mesa.nombre}'
