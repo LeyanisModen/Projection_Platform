@@ -162,21 +162,31 @@ export class ProyectoDetailComponent implements OnInit {
     }
 
     saveGrupoNombre(grupo: GrupoBastidor): void {
+        // Ignore if this callback is re-entered (e.g. Enter triggers save,
+        // which unmounts the input, which fires blur -> save again with
+        // editingGrupoNombre already cleared).
+        if (this.editingGrupoId !== grupo.id) return;
+
         const target = this.editingGrupoNombre.trim();
-        if (target === (grupo.nombre || '')) {
-            this.cancelEditingGrupo();
+        const current = (grupo.nombre || '').trim();
+
+        // Leave edit mode up front so any follow-up blur is a no-op.
+        this.editingGrupoId = null;
+        this.editingGrupoNombre = '';
+
+        if (target === current) {
+            this.cdr.detectChanges();
             return;
         }
+
         this.api.updateGrupoBastidor(grupo.id, { nombre: target }).subscribe({
             next: (updated) => {
                 grupo.nombre = updated.nombre;
-                this.cancelEditingGrupo();
                 this.cdr.detectChanges();
             },
             error: (err) => {
                 console.error('Error renaming grupo', err);
                 alert('No se pudo guardar el nombre del grupo.');
-                this.cancelEditingGrupo();
                 this.cdr.detectChanges();
             }
         });
