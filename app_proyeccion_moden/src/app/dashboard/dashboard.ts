@@ -402,8 +402,13 @@ export class Dashboard implements OnInit, OnDestroy {
     }
     this.gestionarPlanificando = true;
     this.api.planificarGrupoMesas(grupo.id, head.proyecto).subscribe({
-      next: () => {
-        this.loadGruposMesas();
+      next: (response: any) => {
+        // The response carries the fresh grupo payload; apply it to the
+        // modal state directly so the cola, header and mesas refresh
+        // without waiting for the background list reload.
+        if (response?.grupo) {
+          this.applyGestionarGrupoUpdate(response.grupo);
+        }
         this.loadMesas();
         this.gestionarPlanificando = false;
         this.cdr.detectChanges();

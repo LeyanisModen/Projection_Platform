@@ -1544,7 +1544,11 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
             reversed_group = list(reversed(modules_in_group))
             for module in modules_in_group:
                 module_group_map[module.id] = effective_index
-            if effective_index % 2 == 1:
+            # Assign each bastidor to the inferior mesa with the lighter
+            # load so far. This keeps INF1 and INF2 balanced even when
+            # bastidores have very different module counts (the old
+            # odd/even parity could leave one mesa 3x heavier).
+            if len(inferior_1_sequence) <= len(inferior_2_sequence):
                 target_role = 'INFERIOR_1'
                 inferior_1_sequence.extend(reversed_group)
             else:
