@@ -613,7 +613,18 @@ class Mesa(models.Model):
     locked = models.BooleanField(default=False)
     blackout = models.BooleanField(default=False)
     last_seen = models.DateTimeField(null=True, blank=True)
-    
+
+    # Reported by the visor's heartbeat so the dashboard can flag a
+    # mini-PC whose local capture service is down or whose lens looks
+    # dirty. null => nothing reported yet.
+    capture_service_online = models.BooleanField(null=True, blank=True)
+    camera_sharpness = models.CharField(
+        max_length=16,
+        null=True,
+        blank=True,
+        help_text="Reported by the mini-PC: 'ok' | 'warning' | 'blurry' | 'unknown'.",
+    )
+
     # Device Pairing (PoC)
     device_token_hash = models.CharField(max_length=128, null=True, blank=True, unique=True)
     pairing_code = models.CharField(max_length=10, null=True, blank=True)

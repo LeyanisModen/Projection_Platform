@@ -171,6 +171,8 @@ export interface Mesa {
     blackout: boolean;
     last_seen: string | null;
     is_linked: boolean;
+    capture_service_online?: boolean | null;
+    camera_sharpness?: 'ok' | 'warning' | 'blurry' | 'unknown' | null;
 }
 
 export interface ModuloQueue {
@@ -220,6 +222,8 @@ export interface GrupoMesaResumen {
     nombre: string;
     rol: 'LEGACY' | 'INFERIOR_1' | 'INFERIOR_2' | 'SUPERIORES';
     is_linked: boolean;
+    capture_service_online?: boolean | null;
+    camera_sharpness?: 'ok' | 'warning' | 'blurry' | 'unknown' | null;
 }
 
 export interface GrupoMesasProyectoEntry {

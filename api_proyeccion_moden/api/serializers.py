@@ -322,6 +322,7 @@ class MesaSerializer(serializers.HyperlinkedModelSerializer):
             "grupo", "rol",
             "imagen_actual", "ultima_actualizacion", "imagen",
             "locked", "blackout", "last_seen", "is_linked",
+            "capture_service_online", "camera_sharpness",
             "mapper_enabled", "current_image_index", "calibration_json"
         ]
 
@@ -345,7 +346,10 @@ class MesaResumenGrupoSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Mesa
-        fields = ["id", "nombre", "rol", "is_linked"]
+        fields = [
+            "id", "nombre", "rol", "is_linked",
+            "capture_service_online", "camera_sharpness",
+        ]
 
     def get_is_linked(self, obj):
         return bool(obj.device_token_hash)
@@ -541,6 +545,11 @@ class DeviceHeartbeatSerializer(serializers.Serializer):
     mode = serializers.CharField(required=False, allow_blank=True)
     player_version = serializers.CharField(required=False, allow_blank=True)
     last_error = serializers.CharField(required=False, allow_blank=True)
+    capture_service_online = serializers.BooleanField(required=False, allow_null=True)
+    camera_sharpness = serializers.ChoiceField(
+        required=False, allow_blank=True, allow_null=True,
+        choices=['ok', 'warning', 'blurry', 'unknown'],
+    )
 
 class MesaStateSerializer(serializers.ModelSerializer):
     image_url = serializers.CharField(source='imagen_actual.url', read_only=True)

@@ -1,12 +1,14 @@
 <div class="visor-container" [class.blackout]="mesaState?.blackout" [class.white-screen]="whiteScreen">
 
-    <!-- Capture service health banner -->
-    @if (captureServiceOnline === false) {
+    <!-- Capture service health banner (supervisor view only; the player
+         must never interrupt the projected image — the dashboard shows
+         the same warning on the mesa card via the heartbeat). -->
+    @if (isSupervisor && captureServiceOnline === false) {
     <div class="camera-warning" role="alert" title="El servicio local de cámara (puerto 5555) no responde.">
         <span class="camera-warning-icon">⚠</span>
         <span class="camera-warning-text">Cámara no disponible</span>
     </div>
-    } @else if (cameraSharpness === 'blurry') {
+    } @else if (isSupervisor && cameraSharpness === 'blurry') {
     <div class="camera-warning camera-warning-dirty" role="alert" title="La cámara parece sucia: limpiar el objetivo con un paño seco.">
         <span class="camera-warning-icon">⚠</span>
         <span class="camera-warning-text">Cámara sucia: limpiar objetivo</span>
@@ -48,41 +50,42 @@
             [allowInteraction]="isSupervisor">
         </app-mapper>
 
-        <!-- Active Item Info Overlay -->
-        @if (showOverlay) {
-        <div class="active-item-info">
-            <span class="info-title">{{ activeItem?.modulo_nombre }} - {{ activeItem?.fase }}</span>
+        <!-- Overlays only in the supervisor view. The mini-PC projects
+             a clean image: anything else would show up on the mesa. -->
+        @if (isSupervisor) {
+            @if (showOverlay) {
+            <div class="active-item-info">
+                <span class="info-title">{{ activeItem?.modulo_nombre }} - {{ activeItem?.fase }}</span>
 
-            @if (loadingImages) {
-            <span class="info-progress">Cargando imágenes...</span>
-            } @else if (images.length > 0) {
-            <span class="info-progress">{{ currentIndex + 1 }} / {{ images.length }}</span>
-            } @else {
-            <span class="info-progress" style="color: red;">⚠ No hay imágenes</span>
-            <span style="font-size: 0.8rem;">Modulo: {{ activeItem?.modulo }} ({{ activeItem?.modulo?.id ||
-                activeItem?.modulo }})</span>
+                @if (loadingImages) {
+                <span class="info-progress">Cargando imágenes...</span>
+                } @else if (images.length > 0) {
+                <span class="info-progress">{{ currentIndex + 1 }} / {{ images.length }}</span>
+                } @else {
+                <span class="info-progress" style="color: red;">⚠ No hay imágenes</span>
+                <span style="font-size: 0.8rem;">Modulo: {{ activeItem?.modulo }} ({{ activeItem?.modulo?.id ||
+                    activeItem?.modulo }})</span>
+                }
+            </div>
             }
-        </div>
-        }
 
-        <!-- Photo Capture Status Indicator -->
-        @if (captureStatus !== 'idle') {
-        <div class="capture-status"
-            [class.capturing]="captureStatus === 'capturing'"
-            [class.uploading]="captureStatus === 'uploading'"
-            [class.done]="captureStatus === 'done'"
-            [class.error]="captureStatus === 'error'">
-            @if (captureStatus === 'capturing') { Capturando foto... }
-            @else if (captureStatus === 'uploading') { Subiendo foto... }
-            @else if (captureStatus === 'done') { Foto guardada }
-            @else if (captureStatus === 'error') { Error en captura }
-        </div>
-        }
+            @if (captureStatus !== 'idle') {
+            <div class="capture-status"
+                [class.capturing]="captureStatus === 'capturing'"
+                [class.uploading]="captureStatus === 'uploading'"
+                [class.done]="captureStatus === 'done'"
+                [class.error]="captureStatus === 'error'">
+                @if (captureStatus === 'capturing') { Capturando foto... }
+                @else if (captureStatus === 'uploading') { Subiendo foto... }
+                @else if (captureStatus === 'done') { Foto guardada }
+                @else if (captureStatus === 'error') { Error en captura }
+            </div>
+            }
 
-        <!-- Mesa Watermark for debugging -->
-        <div class="mesa-watermark">
-            {{ mesaState?.nombre || 'Mesa ID: ' + mesaState?.id }}
-        </div>
+            <div class="mesa-watermark">
+                {{ mesaState?.nombre || 'Mesa ID: ' + mesaState?.id }}
+            </div>
+        }
     </div>
     }
 

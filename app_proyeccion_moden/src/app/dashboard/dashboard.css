@@ -2411,6 +2411,35 @@
   gap: 8px;
 }
 
+/* Camera health badge reported by the visor's heartbeat */
+.mesa-camera-warning {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: default;
+}
+
+.mesa-camera-warning.offline {
+  background: rgba(220, 38, 38, 0.15);
+  color: #dc2626;
+  animation: mesa-camera-pulse 2.2s ease-in-out infinite;
+}
+
+.mesa-camera-warning.dirty {
+  background: rgba(217, 119, 6, 0.18);
+  color: #b7791f;
+}
+
+@keyframes mesa-camera-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.35); }
+  50%      { box-shadow: 0 0 0 6px rgba(220, 38, 38, 0); }
+}
+
 .header-link-status {
   display: flex;
   align-items: center;

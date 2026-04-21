@@ -2552,12 +2552,18 @@ class DeviceViewSet(viewsets.ViewSet):
         from django.utils import timezone
         
         serializer = DeviceHeartbeatSerializer(data=request.data)
+        fields = ['last_seen']
+        mesa.last_seen = timezone.now()
         if serializer.is_valid():
-            # Update generic stats
-            mesa.last_seen = timezone.now()
-            # Could save other stats if model supports it
-            mesa.save(update_fields=['last_seen'])
-            
+            data = serializer.validated_data
+            if 'capture_service_online' in data:
+                mesa.capture_service_online = data['capture_service_online']
+                fields.append('capture_service_online')
+            if 'camera_sharpness' in data:
+                mesa.camera_sharpness = data['camera_sharpness'] or None
+                fields.append('camera_sharpness')
+        mesa.save(update_fields=fields)
+
         return Response({'status': 'ok'})
 
 

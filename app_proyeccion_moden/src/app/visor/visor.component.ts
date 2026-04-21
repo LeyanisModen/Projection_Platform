@@ -759,7 +759,16 @@ export class VisorComponent implements OnInit, OnDestroy {
     this.heartbeatSub = interval(30000).pipe(
       switchMap(() => {
         const mesaId = this.mesaIdForPairing || this.mesaState?.id;
-        const payload = mesaId ? { mesa_id: mesaId } : {};
+        const payload: Record<string, any> = mesaId ? { mesa_id: mesaId } : {};
+        // Pipe the local capture service state to the backend so the
+        // dashboard can surface 'camera offline' / 'camera dirty'
+        // warnings on the mesa card.
+        if (this.captureServiceOnline !== null) {
+          payload['capture_service_online'] = this.captureServiceOnline;
+        }
+        if (this.cameraSharpness && this.cameraSharpness !== 'unknown') {
+          payload['camera_sharpness'] = this.cameraSharpness;
+        }
         return this.http.post(`${this.apiUrl}heartbeat/`, payload, { headers: this.getAuthHeaders() });
       }),
       catchError((err) => {

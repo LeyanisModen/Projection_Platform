@@ -73,6 +73,17 @@
                                     <div class="mesa-header-actions">
                                         @if (mesa.locked) { <span class="mesa-badge locked">LOCK</span> }
                                         @if (mesa.blackout) { <span class="mesa-badge blackout">OFF</span> }
+                                        @if (mesa.is_linked && mesa.capture_service_online === false) {
+                                            <span class="mesa-camera-warning offline"
+                                                  title="El servicio de cámara del mini-PC no responde.">
+                                                <i class="fa fa-video-slash" aria-hidden="true"></i>
+                                            </span>
+                                        } @else if (mesa.is_linked && mesa.camera_sharpness === 'blurry') {
+                                            <span class="mesa-camera-warning dirty"
+                                                  title="La cámara parece sucia: limpiar el objetivo.">
+                                                <i class="fa fa-video" aria-hidden="true"></i>
+                                            </span>
+                                        }
                                         <div class="header-link-status">
                                             @if (mesa.is_linked) {
                                             <button class="btn-icon connected" (click)="openProjectionView(mesa)"
