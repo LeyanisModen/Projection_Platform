@@ -769,7 +769,6 @@ export class VisorComponent implements OnInit, OnDestroy {
     ).subscribe();
   }
 
-  private authRetries = 0;
   handleUnauthorized(source: string = 'Unknown'): void {
     if (this.isSupervisor) {
       this.errorMessage = 'Sesion expirada. Vuelve a iniciar sesion en el dashboard.';
@@ -778,21 +777,27 @@ export class VisorComponent implements OnInit, OnDestroy {
       return;
     }
 
-    console.warn(`[Visor] Unauthorized access detected from ${source}. Retries: ${this.authRetries}`);
-    this.authRetries++;
-    // If token is invalid, it's usually permanent (unlinked). Fail fast.
-    if (this.authRetries >= 1) {
-      if (this.eventSource) {
-        this.eventSource.close();
-        this.eventSource = null;
-      }
-      localStorage.removeItem(this.getTokenKey());
-      this.deviceToken = null;
-      this.mesaState = null;
-      this.statePollSub?.unsubscribe();
-      this.heartbeatSub?.unsubscribe();
-      this.requestPairingCode();
-      this.authRetries = 0; // Reset counter
+    // Guard against re-entry: while we're already falling back to
+    // pairing mode, later 401s from in-flight polls must NOT trigger
+    // another requestPairingCode or the visor keeps minting new codes
+    // every couple of seconds.
+    if (this.mode === 'LOADING' || this.mode === 'PAIRING') {
+      return;
     }
+
+    console.warn(`[Visor] Unauthorized access detected from ${source}.`);
+
+    if (this.eventSource) {
+      this.eventSource.close();
+      this.eventSource = null;
+    }
+    localStorage.removeItem(this.getTokenKey());
+    this.deviceToken = null;
+    this.mesaState = null;
+    this.statePollSub?.unsubscribe();
+    this.itemPollSub?.unsubscribe();
+    this.heartbeatSub?.unsubscribe();
+    this.pairingPollSub?.unsubscribe();
+    this.requestPairingCode();
   }
 }
