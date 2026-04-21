@@ -70,10 +70,19 @@ function Step([string]$name) {
 }
 
 function Set-RegValue([string]$Path, [string]$Name, $Value, [string]$Type = 'DWord') {
-    if (-not (Test-Path $Path)) {
-        New-Item -Path $Path -Force | Out-Null
+    # Windows 11 protects some registry paths (taskbar, explorer,
+    # policies propagated by the enterprise). If a single key fails we
+    # warn but keep going — the rest of the hardening + app install +
+    # capture service deploy are more important than a couple of
+    # cosmetic toggles.
+    try {
+        if (-not (Test-Path $Path)) {
+            New-Item -Path $Path -Force -ErrorAction Stop | Out-Null
+        }
+        Set-ItemProperty -Path $Path -Name $Name -Value $Value -Type $Type -Force -ErrorAction Stop
+    } catch {
+        Write-Warning ("No se pudo escribir {0}\{1}: {2}" -f $Path, $Name, $_.Exception.Message)
     }
-    New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType $Type -Force | Out-Null
 }
 
 Require-Admin
