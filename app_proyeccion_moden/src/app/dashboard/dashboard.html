@@ -37,24 +37,25 @@
                     @for (grupo of gruposMesas; track trackByGrupo($index, grupo)) {
                     <section class="grupo-operativo">
                         <div class="grupo-operativo-header">
-                            <div class="grupo-operativo-title" style="display: flex; align-items: center; justify-content: space-between;">
-                                <div>
+                            <div class="grupo-operativo-title">
+                                <div class="grupo-operativo-info">
                                     <h3>{{ grupo.nombre }}</h3>
-                                    <p *ngIf="!grupo.proyecto_actual" style="font-size:0.85rem; color:#888; margin:4px 0 0 0">Sin proyecto asignado</p>
+                                    @if (grupo.proyectos_cola.length === 0) {
+                                        <p class="grupo-cola-sub sin-cola">Sin proyectos en cola</p>
+                                    } @else {
+                                        <p class="grupo-cola-sub">
+                                            <strong>{{ grupo.proyectos_cola[0].proyecto_nombre }}</strong>
+                                            @if (grupo.proyectos_cola.length > 1) {
+                                                <span class="grupo-cola-more">+ {{ grupo.proyectos_cola.length - 1 }} en cola</span>
+                                            }
+                                        </p>
+                                    }
                                 </div>
-
-                                <div style="display:flex; align-items:center; gap: 16px;">
-                                    <select [(ngModel)]="selectedProyectoPorGrupo[grupo.id]"
-                                        (ngModelChange)="onProyectoGrupoSeleccionado(grupo, $event)"
-                                        style="min-width: 300px; border: 1px solid var(--border-light); border-radius: 6px; padding: 8px 12px; font-size: 0.9rem; background:#fff">
-                                        <option [ngValue]="null">Selecciona un proyecto</option>
-                                        @for (proyecto of proyectos; track proyecto.id) {
-                                        <option [ngValue]="proyecto.id">{{ proyecto.nombre }}</option>
-                                        }
-                                    </select>
-                                </div>
+                                <button type="button" class="btn-gestionar" (click)="openGestionarModal(grupo)">
+                                    <i class="fa fa-sliders" aria-hidden="true"></i>
+                                    Gestionar
+                                </button>
                             </div>
-
                         </div>
 
                         <div class="mesas-grid grupo-mesas-grid">
@@ -66,22 +67,7 @@
                                 <div class="mesa-header">
                                     <div class="mesa-title-container">
                                         <span class="mesa-role-badge">{{ getMesaRoleLabel(mesa) }}</span>
-                                        @if (editingMesaId === mesa.id) {
-                                            <input type="text"
-                                                class="mesa-name-input"
-                                                [(ngModel)]="editingMesaName"
-                                                (keydown.enter)="updateMesaName(mesa)"
-                                                (keydown.escape)="stopEditingMesa()"
-                                                (blur)="updateMesaName(mesa)"
-                                                autofocus>
-                                        } @else {
-                                            <h3>{{ mesa.nombre }}</h3>
-                                            <button class="mesa-name-edit-btn"
-                                                (click)="startEditingMesa(mesa)"
-                                                title="Renombrar mesa">
-                                                <i class="fa fa-pencil" aria-hidden="true"></i>
-                                            </button>
-                                        }
+                                        <h3>{{ mesa.nombre }}</h3>
                                     </div>
                                     <div class="mesa-header-actions">
                                         @if (mesa.locked) { <span class="mesa-badge locked">LOCK</span> }
@@ -463,6 +449,96 @@
                         }
                     </div>
                 }
+            </div>
+        </div>
+    }
+
+    @if (showGestionarModal && gestionandoGrupo) {
+        <div class="modal-overlay" (click)="closeGestionarModal()">
+            <div class="modal-content gestionar-modal" (click)="$event.stopPropagation()">
+                <div class="gestionar-modal-header">
+                    <h3>Gestionar · {{ gestionandoGrupo.nombre }}</h3>
+                    <button type="button" class="plan-modal-close" (click)="closeGestionarModal()" title="Cerrar">×</button>
+                </div>
+
+                <div class="gestionar-modal-body">
+                    <section class="gestionar-section">
+                        <h4>Nombre del grupo</h4>
+                        <input type="text"
+                            class="gestionar-input"
+                            [(ngModel)]="gestionarGrupoNombre"
+                            (blur)="saveGestionarGrupoNombre()"
+                            (keydown.enter)="saveGestionarGrupoNombre()"
+                            maxlength="200">
+                    </section>
+
+                    <section class="gestionar-section">
+                        <h4>Mesas</h4>
+                        <div class="gestionar-mesa-list">
+                            @for (mesa of getMesasForGrupo(gestionandoGrupo.id); track mesa.id) {
+                                <div class="gestionar-mesa-row">
+                                    <span class="mesa-role-badge">{{ getMesaRoleLabel(mesa) }}</span>
+                                    <input type="text"
+                                        class="gestionar-input gestionar-mesa-input"
+                                        [(ngModel)]="gestionarMesasNombres[mesa.id]"
+                                        (blur)="saveGestionarMesaNombre(mesa)"
+                                        (keydown.enter)="saveGestionarMesaNombre(mesa)"
+                                        maxlength="200">
+                                </div>
+                            }
+                        </div>
+                    </section>
+
+                    <section class="gestionar-section">
+                        <div class="gestionar-section-header">
+                            <h4>Cola de proyectos</h4>
+                            <button type="button" class="btn-planificar"
+                                [disabled]="gestionarPlanificando || gestionandoGrupo.proyectos_cola.length === 0"
+                                (click)="planificarActual()">
+                                {{ gestionarPlanificando ? 'Planificando…' : 'Planificar ahora' }}
+                            </button>
+                        </div>
+
+                        @if (gestionandoGrupo.proyectos_cola.length === 0) {
+                            <p class="gestionar-empty">No hay proyectos en cola. Añade uno abajo.</p>
+                        } @else {
+                            <ul class="cola-list" cdkDropList (cdkDropListDropped)="onColaDrop($event)">
+                                @for (entry of gestionandoGrupo.proyectos_cola; track entry.id; let i = $index) {
+                                    <li class="cola-row" cdkDrag>
+                                        <span class="cola-handle" cdkDragHandle title="Arrastra para reordenar">
+                                            <i class="fa fa-grip-vertical" aria-hidden="true"></i>
+                                        </span>
+                                        <span class="cola-position">{{ i + 1 }}</span>
+                                        <span class="cola-nombre">{{ entry.proyecto_nombre }}</span>
+                                        @if (i === 0) {
+                                            <span class="cola-badge-head">En fabricación</span>
+                                        }
+                                        <button type="button" class="cola-remove"
+                                            (click)="removeProyectoFromCola(entry.proyecto)"
+                                            [disabled]="gestionarBusy"
+                                            title="Quitar de la cola">
+                                            <i class="fa fa-times" aria-hidden="true"></i>
+                                        </button>
+                                    </li>
+                                }
+                            </ul>
+                        }
+
+                        <div class="cola-add-row">
+                            <select [(ngModel)]="gestionarAddProyectoId" class="gestionar-input">
+                                <option [ngValue]="null">Selecciona un proyecto para añadir…</option>
+                                @for (p of proyectosDisponibles(gestionandoGrupo); track p.id) {
+                                    <option [ngValue]="p.id">{{ p.nombre }}</option>
+                                }
+                            </select>
+                            <button type="button" class="btn-add-cola"
+                                [disabled]="!gestionarAddProyectoId || gestionarBusy"
+                                (click)="addProyectoToCola()">
+                                Añadir
+                            </button>
+                        </div>
+                    </section>
+                </div>
             </div>
         </div>
     }

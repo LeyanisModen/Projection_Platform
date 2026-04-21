@@ -7,7 +7,7 @@ import { DragDropModule, CdkDragDrop, moveItemInArray, transferArrayItem } from 
 import {
   ApiService,
   Proyecto, Planta, Modulo, Mesa, ModuloQueueItem, MesaQueueItem, Imagen,
-  GrupoMesas, ProductionStatsResponse
+  GrupoMesas, GrupoMesasProyectoEntry, ProductionStatsResponse
 } from '../services/api.service';
 import { Subject, takeUntil, forkJoin, interval } from 'rxjs';
 import { environment } from '../../environments/environment';
@@ -105,6 +105,15 @@ export class Dashboard implements OnInit, OnDestroy {
   planModalModulos: Modulo[] = [];
   private planModalPlantas = new Map<number, string>();
   loadingPlanModal = false;
+
+  // Gestionar Mesa Modal State (rename grupo + mesas, manage project queue)
+  showGestionarModal = false;
+  gestionandoGrupo: GrupoMesas | null = null;
+  gestionarGrupoNombre: string = '';
+  gestionarMesasNombres: Record<number, string> = {};
+  gestionarAddProyectoId: number | null = null;
+  gestionarBusy = false;
+  gestionarPlanificando = false;
 
   verPlano(planta: Planta): void {
     if (planta.plano_imagen) {
@@ -204,6 +213,201 @@ export class Dashboard implements OnInit, OnDestroy {
     if (m.inferior_hecho && m.superior_hecho) return 'done';
     if (m.inferior_hecho || m.superior_hecho) return 'partial';
     return 'pending';
+  }
+
+  // =========================================================================
+  // GESTIONAR MESA MODAL
+  // =========================================================================
+  openGestionarModal(grupo: GrupoMesas): void {
+    this.gestionandoGrupo = grupo;
+    this.gestionarGrupoNombre = grupo.nombre;
+    this.gestionarMesasNombres = {};
+    for (const mesa of this.getMesasForGrupo(grupo.id)) {
+      this.gestionarMesasNombres[mesa.id] = mesa.nombre;
+    }
+    this.gestionarAddProyectoId = null;
+    this.showGestionarModal = true;
+    this.cdr.detectChanges();
+  }
+
+  closeGestionarModal(): void {
+    this.showGestionarModal = false;
+    this.gestionandoGrupo = null;
+    this.gestionarGrupoNombre = '';
+    this.gestionarMesasNombres = {};
+    this.gestionarAddProyectoId = null;
+    this.cdr.detectChanges();
+  }
+
+  /** Projects that aren't already queued on this grupo — used for the 'add' dropdown. */
+  proyectosDisponibles(grupo: GrupoMesas | null): Proyecto[] {
+    if (!grupo) return this.proyectos;
+    const queued = new Set(grupo.proyectos_cola.map(e => e.proyecto));
+    return this.proyectos.filter(p => !queued.has(p.id));
+  }
+
+  /** Persist grupo rename (only if it actually changed). */
+  saveGestionarGrupoNombre(): void {
+    if (!this.gestionandoGrupo) return;
+    const grupo = this.gestionandoGrupo;
+    const target = this.gestionarGrupoNombre.trim();
+    if (!target || target === grupo.nombre) return;
+    this.gestionarBusy = true;
+    this.api.updateGrupoMesas(grupo.id, { nombre: target }).subscribe({
+      next: (updated) => {
+        grupo.nombre = updated.nombre;
+        // Also refresh the local grupo reference in gruposMesas
+        const found = this.gruposMesas.find(g => g.id === grupo.id);
+        if (found) found.nombre = updated.nombre;
+        this.gestionarBusy = false;
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        alert('No se pudo renombrar el grupo.');
+        this.gestionarGrupoNombre = grupo.nombre;
+        this.gestionarBusy = false;
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  /** Persist mesa rename from inside the modal. Reuses ApiService.updateMesa. */
+  saveGestionarMesaNombre(mesa: Mesa): void {
+    const target = (this.gestionarMesasNombres[mesa.id] || '').trim();
+    if (!target || target === mesa.nombre) {
+      this.gestionarMesasNombres[mesa.id] = mesa.nombre;
+      return;
+    }
+    this.gestionarBusy = true;
+    this.api.updateMesa(mesa.id, { nombre: target }).subscribe({
+      next: (updated) => {
+        mesa.nombre = updated.nombre;
+        this.gestionarMesasNombres[mesa.id] = updated.nombre;
+        for (const [key, val] of this.subfaseAssignedToMesa) {
+          if (val.mesaName && val.mesaName === mesa.nombre) {
+            val.mesaName = updated.nombre;
+          }
+        }
+        this.gestionarBusy = false;
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        alert('No se pudo renombrar la mesa.');
+        this.gestionarMesasNombres[mesa.id] = mesa.nombre;
+        this.gestionarBusy = false;
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  addProyectoToCola(): void {
+    if (!this.gestionandoGrupo || !this.gestionarAddProyectoId) return;
+    const grupo = this.gestionandoGrupo;
+    this.gestionarBusy = true;
+    this.api.colaGrupoMesasAdd(grupo.id, this.gestionarAddProyectoId).subscribe({
+      next: (updated) => {
+        this.applyGestionarGrupoUpdate(updated);
+        this.gestionarAddProyectoId = null;
+        this.gestionarBusy = false;
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        alert(err?.error?.detail || 'No se pudo añadir el proyecto a la cola.');
+        this.gestionarBusy = false;
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  removeProyectoFromCola(proyectoId: number): void {
+    if (!this.gestionandoGrupo) return;
+    const grupo = this.gestionandoGrupo;
+    this.gestionarBusy = true;
+    this.api.colaGrupoMesasRemove(grupo.id, proyectoId).subscribe({
+      next: (updated) => {
+        this.applyGestionarGrupoUpdate(updated);
+        this.gestionarBusy = false;
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        alert('No se pudo quitar el proyecto de la cola.');
+        this.gestionarBusy = false;
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  /**
+   * Reorder via CDK drag-drop. Applies the new order locally (for instant
+   * feedback), then persists. On error we revert.
+   */
+  onColaDrop(event: CdkDragDrop<GrupoMesasProyectoEntry[]>): void {
+    if (!this.gestionandoGrupo) return;
+    if (event.previousIndex === event.currentIndex) return;
+
+    const grupo = this.gestionandoGrupo;
+    const previous = [...grupo.proyectos_cola];
+    moveItemInArray(grupo.proyectos_cola, event.previousIndex, event.currentIndex);
+    this.cdr.detectChanges();
+
+    const ids = grupo.proyectos_cola.map(e => e.proyecto);
+    this.gestionarBusy = true;
+    this.api.colaGrupoMesasReorder(grupo.id, ids).subscribe({
+      next: (updated) => {
+        this.applyGestionarGrupoUpdate(updated);
+        this.gestionarBusy = false;
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        alert('No se pudo reordenar la cola.');
+        grupo.proyectos_cola = previous;
+        this.gestionarBusy = false;
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  planificarActual(): void {
+    if (!this.gestionandoGrupo) return;
+    const grupo = this.gestionandoGrupo;
+    const head = grupo.proyectos_cola[0];
+    if (!head) {
+      alert('La cola está vacía: añade al menos un proyecto antes de planificar.');
+      return;
+    }
+    this.gestionarPlanificando = true;
+    this.api.planificarGrupoMesas(grupo.id, head.proyecto).subscribe({
+      next: () => {
+        this.loadGruposMesas();
+        this.loadMesas();
+        this.gestionarPlanificando = false;
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        const detail = err?.error?.detail;
+        const conflicts = err?.error?.conflicts;
+        if (Array.isArray(conflicts) && conflicts.length) {
+          alert(`${detail || 'No se pudo planificar.'}\n\n${conflicts.join('\n')}`);
+        } else {
+          alert(detail || 'No se pudo planificar.');
+        }
+        this.gestionarPlanificando = false;
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  /** Apply a fresh GrupoMesas payload onto the open modal and the sidebar list. */
+  private applyGestionarGrupoUpdate(updated: GrupoMesas): void {
+    const grupo = this.gruposMesas.find(g => g.id === updated.id);
+    if (grupo) {
+      grupo.proyecto_actual = updated.proyecto_actual;
+      grupo.proyectos_cola = updated.proyectos_cola;
+      grupo.nombre = updated.nombre;
+    }
+    if (this.gestionandoGrupo?.id === updated.id) {
+      this.gestionandoGrupo = grupo || updated;
+    }
   }
 
 
