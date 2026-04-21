@@ -717,6 +717,8 @@
     align-items: center;
     gap: 6px;
     flex-wrap: wrap;
+    width: 100%;
+    min-width: 0;
 }
 
 .grupo-nombre-alias {
@@ -748,7 +750,10 @@
     font-size: 0.82rem;
     color: #212529;
     font-family: inherit;
-    width: 180px;
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
 }
 
 .grupo-nombre-input:focus {
