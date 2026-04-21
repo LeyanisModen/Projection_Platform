@@ -41,14 +41,14 @@
                                 <div class="grupo-operativo-info">
                                     <h3>{{ grupo.nombre }}</h3>
                                     @if (grupo.proyectos_cola.length === 0) {
-                                        <p class="grupo-cola-sub sin-cola">Sin proyectos en cola</p>
+                                        <span class="grupo-cola-inline sin-cola">Sin proyectos en cola</span>
                                     } @else {
-                                        <p class="grupo-cola-sub">
+                                        <span class="grupo-cola-inline">
                                             <strong>{{ grupo.proyectos_cola[0].proyecto_nombre }}</strong>
                                             @if (grupo.proyectos_cola.length > 1) {
                                                 <span class="grupo-cola-more">+ {{ grupo.proyectos_cola.length - 1 }} en cola</span>
                                             }
-                                        </p>
+                                        </span>
                                     }
                                 </div>
                                 <button type="button" class="btn-gestionar" (click)="openGestionarModal(grupo)">

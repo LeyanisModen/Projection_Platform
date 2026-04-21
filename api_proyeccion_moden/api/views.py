@@ -1350,6 +1350,16 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
             )
             self._sync_proyecto_actual(grupo)
 
+        # Auto-plan so the newly added project shows up in the mesa
+        # queues without requiring a second click. Preserves in-flight
+        # items thanks to _get_preserved_active_prefix.
+        try:
+            self._plan_cola(grupo, request.user)
+        except ValidationError:
+            # Planning issues (e.g. missing mesas) shouldn't roll back
+            # the cola insertion — surface them on the next 'planificar'.
+            pass
+
         grupo.refresh_from_db()
         return Response(GrupoMesasSerializer(grupo).data)
 
@@ -1443,27 +1453,28 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         return normalized
 
     def _get_preserved_active_prefix(self, grupo):
-        group_items = MesaQueueItem.objects.select_related('mesa', 'modulo').filter(mesa__grupo=grupo)
-        active_items = group_items.filter(status__in=ACTIVE_QUEUE_STATUSES)
-        completed_group_indexes = list(
-            group_items.filter(
-                plan_group_index__isnull=False,
-                modulo__inferior_hecho=True,
-                modulo__superior_hecho=True,
-            ).values_list('plan_group_index', flat=True).distinct()
-        )
+        """Preserves every currently active queue item in the grupo.
 
-        preserve_until = max(completed_group_indexes) if completed_group_indexes else None
+        With multi-project queues the safe default is 'don't destroy
+        in-flight work'; a re-plan just appends whatever is new after
+        the existing tail. The highest plan_group_index among active
+        items becomes the offset so new groups keep climbing.
+        """
+        active_items = list(
+            MesaQueueItem.objects.select_related('mesa', 'modulo').filter(
+                mesa__grupo=grupo,
+                status__in=ACTIVE_QUEUE_STATUSES,
+            ).order_by('mesa_id', 'position')
+        )
         preserved_by_role = {}
         preserved_keys = set()
+        preserve_until = None
 
-        if preserve_until is None:
-            return preserve_until, preserved_by_role, preserved_keys
-
-        preserved_items = active_items.filter(plan_group_index__lte=preserve_until).order_by('mesa_id', 'position')
-        for item in preserved_items:
+        for item in active_items:
             preserved_keys.add((item.modulo_id, item.fase))
             preserved_by_role.setdefault(item.mesa.rol, []).append(item)
+            if item.plan_group_index is not None:
+                preserve_until = max(preserve_until or 0, item.plan_group_index)
 
         return preserve_until, preserved_by_role, preserved_keys
 
@@ -1678,32 +1689,64 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
             },
         }
 
+    def _plan_cola(self, grupo, user):
+        """Plans every project queued on the grupo, in order.
+
+        First call with an empty queue just seeds the mesa queues; later
+        calls append whatever is new without disturbing in-flight items,
+        because _get_preserved_active_prefix keeps all active items.
+        """
+        from rest_framework.exceptions import PermissionDenied
+
+        entries = list(
+            grupo.proyectos_cola.select_related('proyecto').order_by('orden', 'id')
+        )
+        plan_summaries = []
+        for entry in entries:
+            proyecto = entry.proyecto
+            if not _is_admin(user) and proyecto.usuario_id != user.id:
+                raise PermissionDenied('No puedes planificar proyectos de otra ferralla')
+            plan_summaries.append(self._build_group_plan(grupo, proyecto, user))
+        return plan_summaries
+
     @action(detail=True, methods=['post'], url_path='planificar')
     def planificar(self, request, pk=None):
         from rest_framework.exceptions import PermissionDenied
 
         grupo = self.get_object()
-        proyecto_id = request.data.get('proyecto_id') or request.data.get('proyecto') or grupo.proyecto_actual_id
-        if not proyecto_id:
-            raise ValidationError({'proyecto_id': 'Debes indicar el proyecto a planificar'})
 
-        try:
-            proyecto = Proyecto.objects.get(id=int(proyecto_id))
-        except (TypeError, ValueError, Proyecto.DoesNotExist):
-            raise ValidationError({'proyecto_id': 'Proyecto inválido'})
+        # Back-compat: if the body carries a proyecto, make sure it's
+        # in the cola (push it to the head if missing) so the planner
+        # picks it up naturally.
+        explicit_id = request.data.get('proyecto_id') or request.data.get('proyecto')
+        if explicit_id:
+            try:
+                proyecto = Proyecto.objects.get(id=int(explicit_id))
+            except (TypeError, ValueError, Proyecto.DoesNotExist):
+                raise ValidationError({'proyecto_id': 'Proyecto inválido'})
+            if not _is_admin(request.user) and proyecto.usuario_id != request.user.id:
+                raise PermissionDenied('No puedes planificar proyectos de otra ferralla')
+            with transaction.atomic():
+                existing = grupo.proyectos_cola.filter(proyecto=proyecto).first()
+                if existing is None:
+                    last = grupo.proyectos_cola.order_by('-orden').first()
+                    next_orden = (last.orden + 1) if last else 0
+                    GrupoMesasProyecto.objects.create(
+                        grupo_mesas=grupo, proyecto=proyecto, orden=next_orden,
+                    )
 
-        if not _is_admin(request.user) and proyecto.usuario_id != request.user.id:
-            raise PermissionDenied('No puedes planificar proyectos de otra ferralla')
+        plan_summaries = self._plan_cola(grupo, request.user)
+        self._sync_proyecto_actual(grupo)
 
-        grupo.proyecto_actual = proyecto
-        grupo.save(update_fields=['proyecto_actual'])
-        plan_summary = self._build_group_plan(grupo, proyecto, request.user)
-
+        grupo.refresh_from_db()
         serializer = self.get_serializer(grupo)
         return Response({
             'status': 'ok',
             'grupo': serializer.data,
-            'plan': plan_summary,
+            'plans': plan_summaries,
+            # Keep the legacy 'plan' key populated (head project) so old
+            # clients don't break while they migrate.
+            'plan': plan_summaries[0] if plan_summaries else None,
         })
 
 
