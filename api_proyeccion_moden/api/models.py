@@ -71,6 +71,14 @@ class GrupoBastidor(models.Model):
         default='',
         help_text='Alias opcional del grupo (p.ej. "Fachada norte"). Vacio => se usa el indice.'
     )
+    asignado_a = models.ForeignKey(
+        'GrupoMesas',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='grupos_bastidor_reservados',
+        help_text='Grupo operativo al que se ha reservado este bastidor. Null => disponible.',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

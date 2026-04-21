@@ -1564,9 +1564,25 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
             (item.modulo_id, item.fase)
             for item in external_conflicts
         }
+
+        # Bastidores already reserved to another grupo-mesas are off-limits:
+        # their modules must not enter this grupo's plan.
+        reserved_elsewhere_modulo_ids = set(
+            Modulo.objects.filter(
+                proyecto=proyecto,
+                grupo_bastidor__asignado_a__isnull=False,
+            ).exclude(grupo_bastidor__asignado_a=grupo).values_list('id', flat=True)
+        )
+        reservation_phase_keys = set()
+        for mid in reserved_elsewhere_modulo_ids:
+            reservation_phase_keys.add((mid, 'INFERIOR'))
+            reservation_phase_keys.add((mid, 'SUPERIOR'))
+
         plan_data = self._build_plan_sequences(
             proyecto,
-            excluded_phase_keys=preserved_phase_keys | external_phase_keys,
+            excluded_phase_keys=(
+                preserved_phase_keys | external_phase_keys | reservation_phase_keys
+            ),
             group_index_offset=preserved_until or 0,
         )
         skipped_external_conflicts = [
@@ -1629,6 +1645,26 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
                 mesa.imagen_actual = current_item.imagen if current_item else None
                 mesa.current_image_index = 0
                 mesa.save(update_fields=['imagen_actual', 'current_image_index', 'ultima_actualizacion'])
+
+            # Reserve the GrupoBastidor rows that now have modules in this
+            # grupo's plan. Other grupos won't touch them on subsequent
+            # planificar calls until this grupo releases them (eg. via
+            # release endpoint, TBD).
+            planned_modulo_ids = {m.id for m in plan_data['inferior_1_sequence']}
+            planned_modulo_ids.update(m.id for m in plan_data['inferior_2_sequence'])
+            planned_modulo_ids.update(m.id for m in plan_data['superior_sequence'])
+            if planned_modulo_ids:
+                reserved_bastidor_ids = set(
+                    Modulo.objects.filter(
+                        id__in=planned_modulo_ids,
+                        grupo_bastidor__isnull=False,
+                    ).values_list('grupo_bastidor_id', flat=True)
+                )
+                if reserved_bastidor_ids:
+                    GrupoBastidor.objects.filter(
+                        id__in=reserved_bastidor_ids,
+                        asignado_a__isnull=True,
+                    ).update(asignado_a=grupo)
 
         return {
             'project_id': proyecto.id,
