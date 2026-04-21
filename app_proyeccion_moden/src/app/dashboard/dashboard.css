@@ -2948,7 +2948,7 @@
 }
 
 .project-inline-card.estado-libre {
-  border-left: 4px solid transparent;
+  border-left: 4px solid #dee2e6;
 }
 .project-inline-card.estado-libre .project-status {
   color: #6c757d;
