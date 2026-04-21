@@ -1453,13 +1453,39 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         return normalized
 
     def _get_preserved_active_prefix(self, grupo):
-        """Preserves every currently active queue item in the grupo.
+        """Destructive mode: preserve only items whose bastidor group has
+        at least one fully-completed module. Everything else (in-flight
+        but not yet closed) gets wiped and re-planned. Used by the
+        explicit 'Planificar ahora' button on the head project."""
+        group_items = MesaQueueItem.objects.select_related('mesa', 'modulo').filter(mesa__grupo=grupo)
+        active_items = group_items.filter(status__in=ACTIVE_QUEUE_STATUSES)
+        completed_group_indexes = list(
+            group_items.filter(
+                plan_group_index__isnull=False,
+                modulo__inferior_hecho=True,
+                modulo__superior_hecho=True,
+            ).values_list('plan_group_index', flat=True).distinct()
+        )
 
-        With multi-project queues the safe default is 'don't destroy
-        in-flight work'; a re-plan just appends whatever is new after
-        the existing tail. The highest plan_group_index among active
-        items becomes the offset so new groups keep climbing.
-        """
+        preserve_until = max(completed_group_indexes) if completed_group_indexes else None
+        preserved_by_role = {}
+        preserved_keys = set()
+
+        if preserve_until is None:
+            return preserve_until, preserved_by_role, preserved_keys
+
+        preserved_items = active_items.filter(plan_group_index__lte=preserve_until).order_by('mesa_id', 'position')
+        for item in preserved_items:
+            preserved_keys.add((item.modulo_id, item.fase))
+            preserved_by_role.setdefault(item.mesa.rol, []).append(item)
+
+        return preserve_until, preserved_by_role, preserved_keys
+
+    def _get_all_active_prefix(self, grupo):
+        """Append mode: preserve every active queue item (EN_COLA /
+        MOSTRANDO). New items just slot in at the tail. Used for
+        planning subsequent projects of the cola and for auto-plan
+        after cola/add."""
         active_items = list(
             MesaQueueItem.objects.select_related('mesa', 'modulo').filter(
                 mesa__grupo=grupo,
@@ -1556,7 +1582,7 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
             'superior_sequence': superior_sequence,
         }
 
-    def _build_group_plan(self, grupo, proyecto, user):
+    def _build_group_plan(self, grupo, proyecto, user, append_mode=False):
         grupo.ensure_default_mesas()
         grupo.refresh_from_db()
 
@@ -1565,7 +1591,10 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         if missing_roles:
             raise ValidationError(f'Faltan mesas requeridas en el grupo: {", ".join(missing_roles)}')
 
-        preserved_until, preserved_by_role, preserved_phase_keys = self._get_preserved_active_prefix(grupo)
+        if append_mode:
+            preserved_until, preserved_by_role, preserved_phase_keys = self._get_all_active_prefix(grupo)
+        else:
+            preserved_until, preserved_by_role, preserved_phase_keys = self._get_preserved_active_prefix(grupo)
         external_conflicts = MesaQueueItem.objects.select_related('mesa', 'modulo').filter(
             status__in=ACTIVE_QUEUE_STATUSES,
             modulo__proyecto=proyecto,
@@ -1692,21 +1721,47 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
     def _plan_cola(self, grupo, user):
         """Plans every project queued on the grupo, in order.
 
-        First call with an empty queue just seeds the mesa queues; later
-        calls append whatever is new without disturbing in-flight items,
-        because _get_preserved_active_prefix keeps all active items.
+        - The head project runs in destructive mode: non-completed queue
+          items are wiped and re-planned (so re-clicking 'Planificar
+          ahora' really recomputes).
+        - Subsequent projects run in append mode: they preserve everything
+          active and just slot in at the tail.
+        - Projects whose modules are all done are removed from the cola
+          before planning, so a finished P1 doesn't keep blocking P2
+          from becoming the visible head.
         """
         from rest_framework.exceptions import PermissionDenied
+
+        # Drop completed projects from the cola so the head is always
+        # a project that still has work left.
+        dropped_ids = []
+        for entry in list(grupo.proyectos_cola.select_related('proyecto').order_by('orden', 'id')):
+            has_pending = entry.proyecto.modulos.filter(
+                cerrado=False,
+            ).filter(
+                Q(inferior_hecho=False) | Q(superior_hecho=False),
+            ).exists()
+            if not has_pending:
+                dropped_ids.append(entry.id)
+        if dropped_ids:
+            grupo.proyectos_cola.filter(id__in=dropped_ids).delete()
+            for index, entry in enumerate(grupo.proyectos_cola.order_by('orden', 'id')):
+                if entry.orden != index:
+                    entry.orden = index
+                    entry.save(update_fields=['orden'])
 
         entries = list(
             grupo.proyectos_cola.select_related('proyecto').order_by('orden', 'id')
         )
         plan_summaries = []
-        for entry in entries:
+        for position, entry in enumerate(entries):
             proyecto = entry.proyecto
             if not _is_admin(user) and proyecto.usuario_id != user.id:
                 raise PermissionDenied('No puedes planificar proyectos de otra ferralla')
-            plan_summaries.append(self._build_group_plan(grupo, proyecto, user))
+            append_mode = position > 0
+            plan_summaries.append(
+                self._build_group_plan(grupo, proyecto, user, append_mode=append_mode)
+            )
         return plan_summaries
 
     @action(detail=True, methods=['post'], url_path='planificar')
