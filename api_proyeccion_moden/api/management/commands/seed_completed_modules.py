@@ -30,14 +30,14 @@ class Command(BaseCommand):
                             help='Modulos a completar por dia laborable (default 5).')
         parser.add_argument('--days', type=int, default=8,
                             help='Cantidad de dias laborables hacia atras a rellenar (default 8).')
-        parser.add_argument('--include-today', action='store_true',
-                            help='Si se pasa, incluye hoy como dia mas reciente.')
+        parser.add_argument('--skip-today', action='store_true',
+                            help='Si se pasa, omite hoy del reparto (por defecto hoy SI se incluye).')
 
     def handle(self, *args, **options):
         project_name = options['project']
         per_day = options['per_day']
         days = options['days']
-        include_today = options['include_today']
+        skip_today = options['skip_today']
 
         try:
             proyecto = Proyecto.objects.get(nombre=project_name)
@@ -54,16 +54,15 @@ class Command(BaseCommand):
         )
         random.shuffle(pending)
 
-        # Build the list of working days, newest last so iteration fills
-        # the past first and today (if included) at the end.
+        # Build the list of working days, newest first so iteration fills
+        # today first and older days only if there are modules left.
         today = timezone.localdate()
         working_days = []
-        cursor = today if include_today else today - timedelta(days=1)
+        cursor = today - timedelta(days=1) if skip_today else today
         while len(working_days) < days:
             if cursor.weekday() < 5:  # 0=Mon .. 4=Fri
                 working_days.append(cursor)
             cursor = cursor - timedelta(days=1)
-        working_days.reverse()
 
         tz = timezone.get_current_timezone()
         total_target = per_day * len(working_days)

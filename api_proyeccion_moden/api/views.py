@@ -1936,6 +1936,25 @@ class ProductionStatsView(APIView):
                 if it.mesa and it.mesa.grupo_id:
                     grupo_mesas_by_modulo.setdefault(it.modulo_id, it.mesa.grupo_id)
 
+        # For modulos that never went through a mesa queue (e.g. seeded
+        # demo data or modules completed from the admin detail), we still
+        # want them on a mesa row. Use the first grupo-mesas that has the
+        # project in its cola as the fallback owner.
+        proyecto_ids_in_scope = {m.proyecto_id for m in modulos_list}
+        proyecto_to_grupo: dict = {}
+        if proyecto_ids_in_scope:
+            cola_qs = GrupoMesasProyecto.objects.filter(
+                proyecto_id__in=proyecto_ids_in_scope,
+            ).order_by('proyecto_id', 'orden', 'id')
+            for entry in cola_qs:
+                proyecto_to_grupo.setdefault(entry.proyecto_id, entry.grupo_mesas_id)
+
+        for m in modulos_list:
+            if m.id not in grupo_mesas_by_modulo:
+                grupo = proyecto_to_grupo.get(m.proyecto_id)
+                if grupo is not None:
+                    grupo_mesas_by_modulo[m.id] = grupo
+
         # Cache: GrupoMesas id -> {rol: Mesa} so we can attribute orphan
         # phases to the right mesa in the same group.
         grupo_mesa_by_rol: dict = {}
@@ -1944,10 +1963,15 @@ class ProductionStatsView(APIView):
             for mesa in Mesa.objects.filter(grupo_id__in=grupo_ids_needed):
                 grupo_mesa_by_rol.setdefault(mesa.grupo_id, {})[mesa.rol] = mesa
 
-        def _rol_for_fase(fase):
-            # INFERIOR phases default to INFERIOR_1 if the group has one.
+        def _rol_for_fase(fase, modulo):
+            # INFERIOR phases split between INF1 and INF2 based on the
+            # bastidor group parity (odd -> INF1, even -> INF2). Matches
+            # how the planner already distributes bastidores.
             if fase == 'SUPERIOR':
                 return ['SUPERIORES']
+            gb = getattr(modulo, 'grupo_bastidor', None)
+            if gb is not None and gb.indice % 2 == 0:
+                return ['INFERIOR_2', 'INFERIOR_1']
             return ['INFERIOR_1', 'INFERIOR_2']
 
         def empty_totals():
@@ -2019,7 +2043,7 @@ class ProductionStatsView(APIView):
                 grupo_id = grupo_mesas_by_modulo.get(modulo.id)
                 if grupo_id:
                     group_roles = grupo_mesa_by_rol.get(grupo_id, {})
-                    for rol_candidate in _rol_for_fase(detalle.fase):
+                    for rol_candidate in _rol_for_fase(detalle.fase, modulo):
                         if rol_candidate in group_roles:
                             fallback_mesa = group_roles[rol_candidate]
                             break
