@@ -63,6 +63,31 @@ futura esté autocontenida.
 
 ---
 
+## 3-6. Atajo automatizado (recomendado)
+
+Si ya clonaste/copiaste este repo en el mini-PC, los pasos 3 a 6 están
+encapsulados en [`install-minipc.ps1`](install-minipc.ps1). Abre
+PowerShell **como administrador** desde la carpeta `capture_service/`
+del repo y lanza:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\install-minipc.ps1 -MesaId mesa_inf1 -ModenPassword "tu-clave"
+```
+
+Cambia `mesa_inf1` por la mesa que toque (`mesa_inf1`, `mesa_inf2`
+o `mesa_sup`). Omite `-ModenPassword` si prefieres configurar el
+auto-login después con `netplwiz`.
+
+El script es idempotente: lo puedes volver a ejecutar para
+reinstalar el capture service o re-endurecer Windows sin que afecte
+a la configuración ya presente. Deja un log en `%TEMP%\moden-minipc-setup-*.log`.
+
+Los tres apartados siguientes describen lo mismo paso a paso por si
+necesitas revisarlo a mano o revertir algo.
+
+---
+
 ## 3. Endurecer Windows (script único)
 
 Abre **PowerShell como administrador** y ejecuta todo este bloque.
