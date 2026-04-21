@@ -216,7 +216,7 @@
                                 </span>
                             </div>
                             <div class="stats-kpi">
-                                <span class="stats-kpi-label">Fases producidas</span>
+                                <span class="stats-kpi-label">Paneles producidos</span>
                                 <span class="stats-kpi-value">{{ statsData.totals.fases_completadas }}</span>
                             </div>
                             <div class="stats-kpi">
@@ -245,10 +245,14 @@
                             <thead>
                                 <tr>
                                     <th>Mesa</th>
-                                    <th class="num">Fases</th>
+                                    <th class="num">Paneles</th>
                                     <th class="num">Peso (kg)</th>
                                     <th class="num">Desperdicio (kg)</th>
                                     <th class="num">Cortes</th>
+                                    <th class="num">Refuerzos</th>
+                                    <th class="num">Zunchos</th>
+                                    <th class="num">Separadores</th>
+                                    <th class="num">Punzos</th>
                                     <th class="num">Dificultad</th>
                                 </tr>
                             </thead>
@@ -260,6 +264,10 @@
                                         <td class="num">{{ mesa.peso_malla_final_kg | number:'1.0-1' }}</td>
                                         <td class="num">{{ mesa.desperdicio_kg | number:'1.0-1' }}</td>
                                         <td class="num">{{ mesa.cantidad_cortes }}</td>
+                                        <td class="num">{{ mesa.cantidad_refuerzos }}</td>
+                                        <td class="num">{{ mesa.cantidad_zunchos }}</td>
+                                        <td class="num">{{ mesa.cantidad_separadores }}</td>
+                                        <td class="num">{{ mesa.cantidad_punzos }}</td>
                                         <td class="num">{{ mesa.dificultad_total | number:'1.0-0' }}</td>
                                     </tr>
                                 }
