@@ -2360,7 +2360,7 @@ class DeviceViewSet(viewsets.ViewSet):
             # Generate new code
             code = secrets.token_hex(3).upper()
             mesa.pairing_code = code
-            mesa.pairing_code_expires_at = timezone.now() + timezone.timedelta(minutes=10)
+            mesa.pairing_code_expires_at = timezone.now() + timezone.timedelta(minutes=2)
             mesa.save(update_fields=['pairing_code', 'pairing_code_expires_at'])
             return Response({'pairing_code': code, 'expires_at': mesa.pairing_code_expires_at, 'mode': 'mesa'})
         
@@ -2382,7 +2382,7 @@ class DeviceViewSet(viewsets.ViewSet):
         
         # Generate new session
         code = secrets.token_hex(3).upper()
-        expires_at = timezone.now() + timezone.timedelta(minutes=10)
+        expires_at = timezone.now() + timezone.timedelta(minutes=2)
         session = PairingSession.objects.create(
             pairing_code=code,
             expires_at=expires_at,
