@@ -147,11 +147,45 @@ Lo instaló winget, pero hay que configurarlo a mano:
    Debe salir `True` después de que Drive termine la primera sincronización.
 
 Google Drive debe quedarse **activo al inicio** — es quien monta `G:\` y
-sincroniza las capturas al cloud. No lo desactives en la limpieza del paso 7.
+sincroniza las capturas al cloud. No lo desactives en la limpieza del paso 8.
 
 ---
 
-## 6. OBSBOT Tiny 2
+## 6. AnyDesk — acceso desatendido
+
+winget ya instaló AnyDesk en el paso 3. Ahora hay que configurarlo para que
+puedas entrar en remoto sin que nadie en el mini-PC tenga que aceptar la
+conexión.
+
+1. Abre **AnyDesk** en el mini-PC. Verás el **ID de AnyDesk** (9 dígitos)
+   en la parte superior — **anótalo**, es el que usarás desde tu portátil.
+2. Arriba a la derecha, click en el ☰ menú → **Configuración** /
+   *Preferences*.
+3. Pestaña **Seguridad** / *Security* → click en **"Desbloquear
+   configuración de seguridad"** (requiere UAC).
+4. Marca **"Permitir el acceso desatendido"** / *Enable unattended access*.
+5. Click en **"Establecer contraseña para acceso desatendido"** →
+   introduce una contraseña fuerte dos veces → **Aplicar**.
+   > Recomendación: misma contraseña en los tres mini-PCs para simplificar
+   > el soporte, distinta de la contraseña de la cuenta Windows.
+6. (Opcional, recomendado) En la misma pestaña, marca también:
+   - **"Inicio automático con Windows"** — para que esté disponible incluso
+     antes de que el kiosko arranque.
+   - **Bloquear la lista de IDs permitidos** si quieres limitar el acceso
+     solo a tu portátil (apartado *"Control de acceso"*).
+
+Anota en la hoja de entrega de cada mini-PC:
+- ID AnyDesk (9 dígitos)
+- Contraseña desatendida
+- Mesa asignada
+
+Verifica desde tu portátil: abre AnyDesk en el portátil → introduce el ID
+→ debería pedir contraseña (no "accept/deny" en el otro lado) → conecta
+directamente.
+
+---
+
+## 7. OBSBOT Tiny 2
 
 ### Instalación
 
@@ -194,7 +228,7 @@ Ajustes → Privacidad y seguridad → **Cámara**:
 
 ---
 
-## 7. Limpiar el arranque de Windows
+## 8. Limpiar el arranque de Windows
 
 ### Quitar el delay intencional de Startup (Win 11)
 
@@ -229,7 +263,7 @@ Centro de Opiniones, etc.
 
 ---
 
-## 8. Programador de Tareas (reemplaza shell:startup)
+## 9. Programador de Tareas (reemplaza shell:startup)
 
 La carpeta `shell:startup` sufre el delay mencionado arriba. Para un kiosko
 profesional la tarea programada "at logon, no delay" es más fiable:
@@ -258,7 +292,7 @@ desencadenador *"Cuando el usuario inicie sesión"*.
 
 ---
 
-## 9. Vinculación con el dashboard
+## 10. Vinculación con el dashboard
 
 1. Cierra sesión y vuelve a entrar (o reinicia) → debe salir Chrome en
    kiosk en 2-3 segundos mostrando el **código de emparejamiento** de 6
@@ -274,7 +308,7 @@ nuevo automáticamente.
 
 ---
 
-## 10. Pruebas finales antes de entrega
+## 11. Pruebas finales antes de entrega
 
 En el mini-PC, PowerShell:
 
@@ -301,13 +335,14 @@ Y en el dashboard (desde tu laptop):
 
 ---
 
-## 11. Checklist de entrega al cliente
+## 12. Checklist de entrega al cliente
 
 Antes de empacar cada mini-PC:
 
 - [ ] Nombre del equipo = `MODEN-MESA-<ID>` (según tabla).
 - [ ] Cuenta `moden` (con o sin contraseña documentada).
-- [ ] AnyDesk: contraseña de acceso desatendido puesta + **ID anotado**.
+- [ ] AnyDesk: **ID anotado** + contraseña desatendida puesta + probada
+      desde el portátil (conecta sin preguntar al mini-PC).
 - [ ] `config.ini` en `C:\moden\capture_service` tiene el `mesa_id` correcto.
 - [ ] `/health` responde 200.
 - [ ] `/capture` devuelve foto real.
@@ -350,7 +385,7 @@ ya configurado). Casos habituales:
 
 | Síntoma | Causa habitual | Arreglo |
 |---------|----------------|---------|
-| Chrome tarda 1 min en arrancar | Windows 11 startup delay + apps parasitas | Paso 7 (StartupDelayInMSec=0 + limpiar Inicio) |
+| Chrome tarda 1 min en arrancar | Windows 11 startup delay + apps parasitas | Paso 8 (StartupDelayInMSec=0 + limpiar Inicio) |
 | El visor queda "dormido" hasta clicar | `CalculateNativeWinOcclusion` | Ya incluido en los flags de `start-player.bat` |
 | `/capture` tarda 30s sin responder | MSMF hang / OBSBOT Center ocupada | `CAP_DSHOW` (ya en el .py) + matar `*obsbot*` |
 | `MissingSectionHeaderError` en el capture service | BOM en `config.ini` por PowerShell | Reescribir sin BOM (one-liner al final) |
