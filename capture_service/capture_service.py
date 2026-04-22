@@ -330,9 +330,12 @@ def documentation_loop():
     try:
         CONFIG.output_dir.mkdir(parents=True, exist_ok=True)
     except Exception as exc:
-        _set_last_error(f'output_dir: {exc}')
-        print(f'[Docs] Cannot create output_dir: {exc}')
-        return
+        # Most common cause on boot: Google Drive Desktop hasn't
+        # finished mounting G:\ yet. Don't kill the loop — each tick
+        # re-tries creating its day_dir, and as soon as Drive comes up
+        # captures start flowing.
+        _set_last_error(f'output_dir pending: {exc}')
+        print(f'[Docs] output_dir not ready ({exc}); will keep retrying each tick.')
 
     print(f'[Docs] Enabled. mesa_id={CONFIG.mesa_id!r} '
           f'interval={CONFIG.interval_seconds}s '
