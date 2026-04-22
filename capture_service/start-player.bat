@@ -12,8 +12,12 @@ REM ---------------------------------------------------------------------------
 
 set ROOT=C:\moden\capture_service
 
-REM 1. Capture service en background (no muestra ventana).
-start "CaptureService" /B "%ROOT%\venv\Scripts\python.exe" "%ROOT%\capture_service.py"
+REM 1. Capture service en background con pythonw.exe (sin consola).
+REM    Usando python.exe cada print del servicio hacía parpadear la
+REM    barra de tareas sobre el kiosko; pythonw no tiene stdout en
+REM    consola, así que no existe ese problema. Los mensajes siguen
+REM    disponibles vía /stats (last_error, last_capture_at, ...).
+start "CaptureService" /B "%ROOT%\venv\Scripts\pythonw.exe" "%ROOT%\capture_service.py"
 
 REM 2. Chrome fullscreen kiosk. Flags:
 REM    --no-first-run / --no-default-browser-check → sin splash inicial.
