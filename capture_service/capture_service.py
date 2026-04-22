@@ -76,7 +76,11 @@ class Config:
 
     def _load(self, path: Path):
         cp = configparser.ConfigParser()
-        cp.read(path, encoding='utf-8')
+        # utf-8-sig strips the byte-order mark if some Windows tool
+        # (PowerShell's Set-Content, Notepad's 'UTF-8') added one when
+        # the operator edited the config. Without this, configparser
+        # fails with MissingSectionHeaderError on the first line.
+        cp.read(path, encoding='utf-8-sig')
 
         if cp.has_section('service'):
             s = cp['service']

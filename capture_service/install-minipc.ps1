@@ -187,9 +187,16 @@ if (-not $SkipCaptureService) {
     if (Test-Path $configPath) {
         Write-Host "  · ya existe, lo dejo intacto (edita a mano si hay que cambiar algo)"
     } elseif (Test-Path $examplePath) {
-        (Get-Content $examplePath -Raw) `
-            -replace 'mesa_id\s*=\s*mesa_inf1', "mesa_id = $MesaId" |
-            Set-Content -Path $configPath -Encoding UTF8
+        # PowerShell 5.1's `Set-Content -Encoding UTF8` sneaks a BOM in
+        # at the start of the file, which Python's configparser reads
+        # as a non-comment character and blows up with
+        # MissingSectionHeaderError. Write with .NET to guarantee
+        # UTF-8 WITHOUT BOM.
+        $content = (Get-Content $examplePath -Raw) `
+            -replace 'mesa_id\s*=\s*mesa_inf1', "mesa_id = $MesaId"
+        [System.IO.File]::WriteAllText(
+            $configPath, $content, [System.Text.UTF8Encoding]::new($false)
+        )
         Write-Host "  · creado desde config.ini.example"
     } else {
         Write-Warning "No encontré config.ini.example; crea el config.ini a mano."
