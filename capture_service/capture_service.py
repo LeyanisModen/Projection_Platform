@@ -51,6 +51,9 @@ class Config:
         self.host = '127.0.0.1'
         self.port = 5555
         self.camera_index = 0
+        # Backend name (resolved later as cv2.<name>). CAP_ANY lets OpenCV
+        # pick; override to CAP_DSHOW or CAP_MSMF if a given PC needs it.
+        self.camera_backend = 'CAP_ANY'
 
         # documentation defaults (disabled until the .ini turns it on)
         self.doc_enabled = False
@@ -87,6 +90,7 @@ class Config:
             self.host = s.get('host', self.host)
             self.port = s.getint('port', self.port)
             self.camera_index = s.getint('camera_index', self.camera_index)
+            self.camera_backend = s.get('camera_backend', self.camera_backend)
             self.capture_width = s.getint('capture_width', self.capture_width)
             self.capture_height = s.getint('capture_height', self.capture_height)
             self.jpeg_quality = s.getint('jpeg_quality', self.jpeg_quality)
@@ -132,18 +136,21 @@ _camera_lock = threading.Lock()
 
 
 def get_camera():
+    """Open the webcam. The backend is read from config (`camera_backend`)
+    because DSHOW and MSMF behave differently across machines — on some
+    PCs DSHOW opens fast but the reads block; on others MSMF is the one
+    that hangs. Default is CAP_ANY so OpenCV picks whatever the driver
+    prefers, which is what worked historically with this project."""
     global _camera
     with _camera_lock:
         if _camera is None or not _camera.isOpened():
-            # DirectShow (CAP_DSHOW) is far more reliable than the default
-            # MSMF backend on Windows with USB webcams — MSMF hangs for
-            # 20-30 s when the device is actually present but another
-            # process recently held it. DSHOW opens fast or fails fast.
-            _camera = cv2.VideoCapture(CONFIG.camera_index, cv2.CAP_DSHOW)
+            backend = getattr(cv2, CONFIG.camera_backend, cv2.CAP_ANY)
+            _camera = cv2.VideoCapture(CONFIG.camera_index, backend)
             if not _camera.isOpened():
                 print(f'[CaptureService] Camera index {CONFIG.camera_index} '
-                      f'could not be opened (DSHOW). Check that no other '
-                      f'app is holding it (OBSBOT Center, Teams, Zoom).')
+                      f'could not be opened (backend={CONFIG.camera_backend}). '
+                      f'Check that no other app is holding it (OBSBOT Center, '
+                      f'Teams, Zoom).')
                 return _camera
             _camera.set(cv2.CAP_PROP_FRAME_WIDTH, CONFIG.capture_width)
             _camera.set(cv2.CAP_PROP_FRAME_HEIGHT, CONFIG.capture_height)
