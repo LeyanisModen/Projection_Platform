@@ -132,7 +132,10 @@ CONFIG = Config(CONFIG_PATH)
 # Camera singleton
 # ---------------------------------------------------------------------------
 _camera = None
-_camera_lock = threading.Lock()
+# Reentrant so get_camera() can nest inside a caller that already
+# holds the lock (handler or doc_loop). A plain Lock() deadlocks the
+# first time capture_frame() is called.
+_camera_lock = threading.RLock()
 
 
 def get_camera():
