@@ -10,9 +10,12 @@ port = 5555
 ; Camera index (first webcam = 0, second = 1, ...).
 camera_index = 0
 
-; On-demand /capture size and quality (4K native for OBSBOT Tiny 2).
-capture_width = 3840
-capture_height = 2160
+; On-demand /capture size. The OBSBOT Tiny 2 soporta 4K nativo pero
+; el driver UVC se queda colgado en read() si le pides 3840x2160 nada
+; más abrirla (sleep mode / warm-up). FullHD arranca estable en todos
+; los mini-PCs probados y es suficiente para proyección de obra.
+capture_width = 1920
+capture_height = 1080
 jpeg_quality = 95
 
 
@@ -29,8 +32,10 @@ output_dir = G:\Mi unidad\capturas_moden
 ; typically use: mesa_inf1, mesa_inf2, mesa_sup.
 mesa_id = mesa_inf1
 
-; Seconds between captures. 1 second = ~50k pictures per 14h shift.
-interval_seconds = 1
+; Seconds between captures. 3 s ~ 17k pictures per 14h shift (~8 GB/day
+; at 350-500 KB/frame), which Drive syncs comfortably and still captures
+; enough movement for documentation/marketing.
+interval_seconds = 3
 
 ; Resolution + quality for the documentation images. FullHD at q=88
 ; comes out around 350-500 KB per frame.
