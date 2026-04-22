@@ -135,7 +135,16 @@ def get_camera():
     global _camera
     with _camera_lock:
         if _camera is None or not _camera.isOpened():
-            _camera = cv2.VideoCapture(CONFIG.camera_index)
+            # DirectShow (CAP_DSHOW) is far more reliable than the default
+            # MSMF backend on Windows with USB webcams — MSMF hangs for
+            # 20-30 s when the device is actually present but another
+            # process recently held it. DSHOW opens fast or fails fast.
+            _camera = cv2.VideoCapture(CONFIG.camera_index, cv2.CAP_DSHOW)
+            if not _camera.isOpened():
+                print(f'[CaptureService] Camera index {CONFIG.camera_index} '
+                      f'could not be opened (DSHOW). Check that no other '
+                      f'app is holding it (OBSBOT Center, Teams, Zoom).')
+                return _camera
             _camera.set(cv2.CAP_PROP_FRAME_WIDTH, CONFIG.capture_width)
             _camera.set(cv2.CAP_PROP_FRAME_HEIGHT, CONFIG.capture_height)
             time.sleep(0.5)
