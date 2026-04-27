@@ -2821,14 +2821,26 @@ class DeviceViewSet(viewsets.ViewSet):
         check_result = None
         check_detail = None
         if run_check:
-            try:
-                from api.color_detection import detect_colors
-                result = detect_colors(foto_bytes, modulo.codigos_color or '')
-                check_result = bool(result.get('valid'))
-                check_detail = result
-            except Exception as exc:
+            test_mode = os.environ.get('COLOR_CHECK_TEST_MODE', '').strip().lower()
+            if test_mode == 'always_true':
+                check_result = True
+                check_detail = {'mode': 'always_true_test'}
+            elif test_mode == 'always_false':
                 check_result = False
-                check_detail = {'error': str(exc)}
+                check_detail = {'mode': 'always_false_test'}
+            elif test_mode == 'random':
+                import random
+                check_result = random.choice([True, False])
+                check_detail = {'mode': 'random_test', 'roll': check_result}
+            else:
+                try:
+                    from api.color_detection import detect_colors
+                    result = detect_colors(foto_bytes, modulo.codigos_color or '')
+                    check_result = bool(result.get('valid'))
+                    check_detail = result
+                except Exception as exc:
+                    check_result = False
+                    check_detail = {'error': str(exc)}
 
         foto, created = FotoFabricacion.objects.update_or_create(
             modulo=modulo,

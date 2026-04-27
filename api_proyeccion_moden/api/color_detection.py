@@ -5,10 +5,13 @@ filters by area / solidity / aspect ratio / bbox density), so the same
 ranges that we calibrated against real coloured cards in front of the
 camera are used here.
 
-A colour is "present" if at least one card-shaped contour survives every
-filter. The photo is valid when every colour expected by the module's
-`codigos_color` is present.
+The photo is valid when, for every colour expected by the module's
+`codigos_color`, the number of card-shaped contours found is at least
+the number of times that colour appears in the code (so 'bb' requires
+TWO blue cards, not one).
 """
+
+from collections import Counter
 
 import cv2
 import numpy as np
@@ -126,11 +129,13 @@ def _count_cards(hsv_blurred, color_name, total_area):
 
 def detect_colors(image_bytes, codigos_color):
     expected = _expected_color_names(codigos_color)
+    expected_counts = Counter(expected)
+
     if not expected:
         return {
             'valid': True,
             'expected': [],
-            'detected': [],
+            'expected_counts': {},
             'cards_per_color': {},
         }
 
@@ -140,7 +145,7 @@ def detect_colors(image_bytes, codigos_color):
         return {
             'valid': False,
             'expected': expected,
-            'detected': [],
+            'expected_counts': dict(expected_counts),
             'cards_per_color': {},
             'error': 'invalid_image',
         }
@@ -152,18 +157,18 @@ def detect_colors(image_bytes, codigos_color):
     blurred = cv2.GaussianBlur(hsv, _BLUR_KERNEL, 0)
 
     cards_per_color = {}
-    detected = []
-    for color in sorted(set(expected)):
-        cards = _count_cards(blurred, color, total_area)
-        cards_per_color[color] = cards
-        if cards >= 1:
-            detected.append(color)
+    missing = {}
+    for color, needed in expected_counts.items():
+        found = _count_cards(blurred, color, total_area)
+        cards_per_color[color] = found
+        if found < needed:
+            missing[color] = needed - found
 
-    valid = all(c in detected for c in expected)
     return {
-        'valid': valid,
+        'valid': not missing,
         'expected': expected,
-        'detected': sorted(detected),
+        'expected_counts': dict(expected_counts),
         'cards_per_color': cards_per_color,
+        'missing': missing,
         'image_size': [width, height],
     }

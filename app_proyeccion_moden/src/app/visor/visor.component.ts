@@ -341,11 +341,18 @@ export class VisorComponent implements OnInit, OnDestroy {
     const key = event.key.toLowerCase();
 
     // A failed color check blocks navigation until the operator
-    // acknowledges it with space. Calibration toggles still work.
+    // acknowledges it with space. SPACE clears the red overlay AND
+    // advances to the next slide -- the operator should not have to
+    // press two keys to recover. Calibration toggles still work.
     if (this.checkBlock) {
       if (key === ' ' || key === 'spacebar' || key === 'space') {
         event.preventDefault();
         this.clearCheckOverlay();
+        // Bypass the 5 s read-lock: the operator already waited blocked
+        // on the failed check, no need to make them wait again.
+        this.slideLockUntil = 0;
+        this.nextImage();
+        return;
       }
       if (key === 'arrowright' || key === 'arrowleft') {
         return;
@@ -405,6 +412,8 @@ export class VisorComponent implements OnInit, OnDestroy {
     if (Date.now() < this.slideLockUntil) return;
 
     if (this.currentIndex < this.images.length - 1) {
+      // Clear any lingering green overlay from the previous slide.
+      if (this.checkOverlay !== 'none') this.clearCheckOverlay();
       this.currentIndex++;
       this.updateProjectedImage();
       this.slideLockUntil = Date.now() + VisorComponent.SLIDE_LOCK_MS;
@@ -419,6 +428,7 @@ export class VisorComponent implements OnInit, OnDestroy {
     if (Date.now() < this.slideLockUntil) return;
 
     if (this.currentIndex > 0) {
+      if (this.checkOverlay !== 'none') this.clearCheckOverlay();
       this.currentIndex--;
       this.updateProjectedImage();
       this.slideLockUntil = Date.now() + VisorComponent.SLIDE_LOCK_MS;
@@ -681,13 +691,9 @@ export class VisorComponent implements OnInit, OnDestroy {
       this.checkSuccessTimer = null;
     }
     if (valid === true) {
+      // Stays visible until the operator navigates away.
       this.checkOverlay = 'success';
       this.checkBlock = false;
-      this.checkSuccessTimer = setTimeout(() => {
-        this.checkOverlay = 'none';
-        this.checkSuccessTimer = null;
-        this.cdr.detectChanges();
-      }, 1500);
     } else {
       this.checkOverlay = 'error';
       this.checkBlock = true;
