@@ -515,31 +515,27 @@ export class VisorComponent implements OnInit, OnDestroy {
     this.capturingPhoto = true;
     this.captureMode = mode;
     this.captureStatus = 'capturing';
-
-    // Step 1: Show white screen so the projector doesn't overlay the blueprint on the module
-    this.whiteScreen = true;
     this.cdr.detectChanges();
 
-    // Step 2: Wait for projector to refresh (~500ms), then capture
+    // Wait ~500 ms for the projector to actually show the current
+    // slide (the operator may have just navigated here) before asking
+    // the camera to capture, otherwise we risk photographing the
+    // previous slide.
     setTimeout(() => {
       this.http.post(
         `${this.captureServiceUrl}/capture`, {},
         { responseType: 'blob' }
       ).subscribe({
         next: (blob: Blob) => {
-          // Restore projection immediately after capture
-          this.whiteScreen = false;
           this.captureStatus = 'uploading';
           // A successful capture means the service is alive right now.
           this.captureServiceOnline = true;
           this.cdr.detectChanges();
 
-          // Step 3: Compress if needed and upload
           this.compressAndUpload(blob);
         },
         error: (err) => {
           console.error('[Visor] Camera capture failed:', err);
-          this.whiteScreen = false;
           this.captureStatus = 'error';
           this.capturingPhoto = false;
           // Either the service is down or the camera read failed.
