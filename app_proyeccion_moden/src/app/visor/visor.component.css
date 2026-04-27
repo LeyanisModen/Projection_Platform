@@ -278,3 +278,47 @@
     from { opacity: 0; transform: translateY(-10px); }
     to { opacity: 1; transform: translateY(0); }
 }
+
+/* Color-check overlay: huge centred mark projected on the mesa. */
+.check-overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 10500;
+    pointer-events: none;
+    animation: checkOverlayIn 0.18s ease-out;
+}
+
+.check-overlay-ok {
+    background: rgba(46, 160, 67, 0.82);
+}
+
+.check-overlay-ko {
+    background: rgba(218, 54, 51, 0.85);
+}
+
+.check-overlay-icon {
+    color: #fff;
+    font-size: 42vh;
+    line-height: 1;
+    font-weight: 900;
+    text-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+}
+
+.check-overlay-hint {
+    margin-top: 4vh;
+    color: #fff;
+    font-size: 2.2rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+@keyframes checkOverlayIn {
+    from { opacity: 0; transform: scale(0.96); }
+    to { opacity: 1; transform: scale(1); }
+}

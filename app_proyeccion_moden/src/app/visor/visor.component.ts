@@ -18,6 +18,8 @@ interface MesaState {
   blackout: boolean;
   locked: boolean;
   is_linked?: boolean;
+  capture_service_online?: boolean | null;
+  camera_sharpness?: 'ok' | 'warning' | 'blurry' | 'unknown' | null;
 }
 
 interface PairingResponse {
@@ -56,6 +58,7 @@ export class VisorComponent implements OnInit, OnDestroy {
   // Photo capture
   private captureServiceUrl = 'http://127.0.0.1:5555';
   private capturingPhoto = false;
+  private captureMode: 'foto' | 'check' = 'foto';
   captureStatus: 'idle' | 'capturing' | 'uploading' | 'done' | 'error' = 'idle';
 
   // Local capture-service health (null = unknown, true = ok, false = down)
@@ -66,6 +69,17 @@ export class VisorComponent implements OnInit, OnDestroy {
 
   // White screen (blank projection for photo capture or manual pause)
   whiteScreen = false;
+
+  // Color-check overlay: shown after a '_check' photo is validated.
+  // 'success' auto-hides; 'error' stays until the operator presses space.
+  checkOverlay: 'none' | 'success' | 'error' = 'none';
+  private checkBlock = false;
+  private checkSuccessTimer: any = null;
+
+  // 5-second lock between slides so the operator reads the caption before
+  // moving on (many consecutive slides only change the title text).
+  private static readonly SLIDE_LOCK_MS = 5000;
+  private slideLockUntil = 0;
 
   get isSupervisor(): boolean {
     return !!this.mesaIdForPairing;
@@ -118,10 +132,13 @@ export class VisorComponent implements OnInit, OnDestroy {
       this.requestPairingCode();
     }
 
-    // Watch the local capture service so the operator gets a warning
-    // banner the moment it goes down (instead of discovering it only
-    // when a _foto/_check photo silently fails).
-    this.startCaptureHealthPolling();
+    // The local capture service only exists on the mini-PC. In
+    // supervisor mode (visor opened from another computer) the camera
+    // health is read from the mesa state, which the mini-PC reports to
+    // the backend via heartbeat — see startStatePolling().
+    if (!this.isSupervisor) {
+      this.startCaptureHealthPolling();
+    }
   }
 
   private startCaptureHealthPolling(): void {
@@ -322,6 +339,19 @@ export class VisorComponent implements OnInit, OnDestroy {
   handleKeyboardEvent(event: KeyboardEvent) {
     if (this.mode !== 'PROJECTION') return;
     const key = event.key.toLowerCase();
+
+    // A failed color check blocks navigation until the operator
+    // acknowledges it with space. Calibration toggles still work.
+    if (this.checkBlock) {
+      if (key === ' ' || key === 'spacebar' || key === 'space') {
+        event.preventDefault();
+        this.clearCheckOverlay();
+      }
+      if (key === 'arrowright' || key === 'arrowleft') {
+        return;
+      }
+    }
+
     if (key === 'c') {
       this.toggleCalibration(-1);
     } else if (key === 'g') {
@@ -337,12 +367,22 @@ export class VisorComponent implements OnInit, OnDestroy {
       }
     } else if (key === 'p') {
       // Manual photo capture trigger (for testing)
-      this.triggerPhotoCapture();
+      this.triggerPhotoCapture('foto');
     } else if (key === 'w') {
       // Toggle white screen (manual pause)
       this.whiteScreen = !this.whiteScreen;
       this.cdr.detectChanges();
     }
+  }
+
+  private clearCheckOverlay(): void {
+    this.checkOverlay = 'none';
+    this.checkBlock = false;
+    if (this.checkSuccessTimer) {
+      clearTimeout(this.checkSuccessTimer);
+      this.checkSuccessTimer = null;
+    }
+    this.cdr.detectChanges();
   }
 
   toggleCalibration(targetIndex: number): void {
@@ -362,10 +402,12 @@ export class VisorComponent implements OnInit, OnDestroy {
 
   nextImage(): void {
     if (this.currentIndex < 0) return;
+    if (Date.now() < this.slideLockUntil) return;
 
     if (this.currentIndex < this.images.length - 1) {
       this.currentIndex++;
       this.updateProjectedImage();
+      this.slideLockUntil = Date.now() + VisorComponent.SLIDE_LOCK_MS;
       this.checkPhotoTrigger();
     } else if (this.images.length > 0) {
       this.finishActiveItem();
@@ -374,10 +416,12 @@ export class VisorComponent implements OnInit, OnDestroy {
 
   prevImage(): void {
     if (this.currentIndex < 0) return;
+    if (Date.now() < this.slideLockUntil) return;
 
     if (this.currentIndex > 0) {
       this.currentIndex--;
       this.updateProjectedImage();
+      this.slideLockUntil = Date.now() + VisorComponent.SLIDE_LOCK_MS;
       this.checkPhotoTrigger();
     }
   }
@@ -447,16 +491,19 @@ export class VisorComponent implements OnInit, OnDestroy {
     const imageUrl: string = currentImage.url || currentImage.src || '';
     const filename = (imageUrl.split('/').pop() || '').toLowerCase();
 
-    // Fire the capture when the image filename marks a verification
-    // step: '_foto' / '_photo' (proceso intermedio) or '_check' (final).
-    if (filename.includes('_foto') || filename.includes('_photo') || filename.includes('_check')) {
-      this.triggerPhotoCapture();
+    // '_check' triggers capture + color validation (blocks advance on
+    // failure). '_foto' / '_photo' only capture evidence, no block.
+    if (filename.includes('_check')) {
+      this.triggerPhotoCapture('check');
+    } else if (filename.includes('_foto') || filename.includes('_photo')) {
+      this.triggerPhotoCapture('foto');
     }
   }
 
-  triggerPhotoCapture(): void {
+  triggerPhotoCapture(mode: 'foto' | 'check' = 'foto'): void {
     if (this.capturingPhoto || !this.activeItem) return;
     this.capturingPhoto = true;
+    this.captureMode = mode;
     this.captureStatus = 'capturing';
 
     // Step 1: Show white screen so the projector doesn't overlay the blueprint on the module
@@ -559,11 +606,15 @@ export class VisorComponent implements OnInit, OnDestroy {
   }
 
   private uploadPhoto(blob: Blob): void {
+    const mode = this.captureMode;
     const formData = new FormData();
     formData.append('foto', blob, 'capture.jpg');
     formData.append('modulo_id', String(this.activeItem.modulo));
     formData.append('fase', this.activeItem.fase);
     formData.append('paso', String(this.currentIndex));
+    if (mode === 'check') {
+      formData.append('check', 'true');
+    }
 
     const currentImage = this.images[this.currentIndex];
     if (currentImage?.id) {
@@ -590,13 +641,16 @@ export class VisorComponent implements OnInit, OnDestroy {
       }
     }
 
-    this.http.post(
+    this.http.post<any>(
       `${this.apiUrl}upload_foto/`, formData,
       { headers }
     ).subscribe({
-      next: () => {
+      next: (res: any) => {
         this.captureStatus = 'done';
         this.capturingPhoto = false;
+        if (mode === 'check') {
+          this.applyCheckResult(res?.check_result);
+        }
         this.cdr.detectChanges();
         setTimeout(() => {
           this.captureStatus = 'idle';
@@ -607,6 +661,11 @@ export class VisorComponent implements OnInit, OnDestroy {
         console.error('[Visor] Photo upload failed:', err);
         this.captureStatus = 'error';
         this.capturingPhoto = false;
+        if (mode === 'check') {
+          // Treat upload failure on a check step as a failed check: we
+          // don't want the operator to blow past a missing validation.
+          this.applyCheckResult(false);
+        }
         this.cdr.detectChanges();
         setTimeout(() => {
           this.captureStatus = 'idle';
@@ -614,6 +673,25 @@ export class VisorComponent implements OnInit, OnDestroy {
         }, 3000);
       }
     });
+  }
+
+  private applyCheckResult(valid: boolean | null | undefined): void {
+    if (this.checkSuccessTimer) {
+      clearTimeout(this.checkSuccessTimer);
+      this.checkSuccessTimer = null;
+    }
+    if (valid === true) {
+      this.checkOverlay = 'success';
+      this.checkBlock = false;
+      this.checkSuccessTimer = setTimeout(() => {
+        this.checkOverlay = 'none';
+        this.checkSuccessTimer = null;
+        this.cdr.detectChanges();
+      }, 1500);
+    } else {
+      this.checkOverlay = 'error';
+      this.checkBlock = true;
+    }
   }
 
   startStatePolling(): void {
@@ -657,6 +735,17 @@ export class VisorComponent implements OnInit, OnDestroy {
       }
       if (typeof state.current_image_index === 'number') {
         this.currentIndex = state.current_image_index;
+      }
+      // In supervisor mode the camera lives on the mini-PC, not on
+      // localhost, so we mirror what the mini-PC last reported.
+      if (this.isSupervisor) {
+        if (state.capture_service_online !== undefined) {
+          this.captureServiceOnline = state.capture_service_online ?? null;
+        }
+        const sharp = state.camera_sharpness;
+        if (sharp === 'ok' || sharp === 'warning' || sharp === 'blurry' || sharp === 'unknown') {
+          this.cameraSharpness = sharp;
+        }
       }
       this.cdr.detectChanges();
     });

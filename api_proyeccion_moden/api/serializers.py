@@ -290,10 +290,11 @@ class FotoFabricacionSerializer(serializers.ModelSerializer):
             "id", "modulo", "modulo_nombre", "planta_nombre", "proyecto_id",
             "mesa", "mesa_nombre",
             "fase", "fase_label", "paso", "imagen_referencia",
-            "url", "capturada_at",
-            "filename_original", "file_size"
+            "url", "capturada_at", "updated_at",
+            "filename_original", "file_size",
+            "check_result", "check_detail",
         ]
-        read_only_fields = ["capturada_at", "url", "file_size"]
+        read_only_fields = ["capturada_at", "updated_at", "url", "file_size"]
 
     def get_fase_label(self, obj):
         return "INF" if obj.fase == "INFERIOR" else "SUP"

@@ -2731,16 +2731,17 @@ class DeviceViewSet(viewsets.ViewSet):
         - 'paso': int (0-based image index)
         - 'imagen_id': int (optional, the blueprint image being projected)
         - 'mesa_id': int (required when using user Token auth)
+        - 'check': 'true' to validate colors against modulo.codigos_color
+
+        A (modulo, fase, paso) has at most one photo: re-capturing the
+        same step overwrites the previous file and updates the row.
         """
         import os
         from django.conf import settings as django_settings
-        from django.utils import timezone
         from api.models import Fase
 
-        # Try device auth first, then fall back to user Token auth
         mesa = self._authenticate_device(request)
         if not mesa:
-            # Check if user is authenticated via DRF Token auth
             if hasattr(request, 'user') and request.user and request.user.is_authenticated:
                 mesa_id = request.data.get('mesa_id')
                 if mesa_id:
@@ -2758,6 +2759,7 @@ class DeviceViewSet(viewsets.ViewSet):
         fase = request.data.get('fase')
         paso = request.data.get('paso')
         imagen_id = request.data.get('imagen_id')
+        run_check = str(request.data.get('check', '')).lower() in ('true', '1', 'yes')
 
         if not all([modulo_id, fase, paso is not None]):
             return Response({'detail': 'modulo_id, fase, and paso are required'}, status=400)
@@ -2777,39 +2779,74 @@ class DeviceViewSet(viewsets.ViewSet):
             except Imagen.DoesNotExist:
                 pass
 
-        # Build file path: fotos/{proyecto_id}/{planta_id}/{modulo_id}/
+        foto_bytes = foto_file.read()
+
         proyecto_id = modulo.proyecto_id
         planta_id = modulo.planta_id or 0
         media_path = os.path.join('fotos', str(proyecto_id), str(planta_id), str(modulo.id))
         full_dir = os.path.join(django_settings.MEDIA_ROOT, media_path)
         os.makedirs(full_dir, exist_ok=True)
 
-        # Generate unique filename
-        ts = timezone.now().strftime('%Y%m%d_%H%M%S')
+        # Deterministic filename: the file is overwritten in-place on
+        # re-capture so each (modulo, fase, paso) has exactly one file.
         fase_pref = 'INF' if fase == Fase.INFERIOR else 'SUP'
-        ext = os.path.splitext(foto_file.name)[1] or '.jpg'
-        filename = f"{modulo.nombre}_{fase_pref}_paso{paso}_{ts}{ext}"
-
+        ext = os.path.splitext(foto_file.name)[1].lower() or '.jpg'
+        safe_modulo = ''.join(
+            c if c.isalnum() or c in '-_' else '_'
+            for c in (modulo.nombre or '')
+        ) or f'modulo{modulo.id}'
+        filename = f"{safe_modulo}_{fase_pref}_paso{int(paso)}{ext}"
         file_path = os.path.join(full_dir, filename)
-        with open(file_path, 'wb+') as destination:
-            for chunk in foto_file.chunks():
-                destination.write(chunk)
-
         url = f'/media/{media_path}/{filename}'
 
-        foto = FotoFabricacion.objects.create(
+        # Remove the old file if the previous row pointed somewhere else
+        # (e.g. legacy timestamped names before this change).
+        previous = FotoFabricacion.objects.filter(
+            modulo=modulo, fase=fase, paso=int(paso)
+        ).first()
+        if previous and previous.url and previous.url != url:
+            prev_rel = previous.url.lstrip('/')
+            if prev_rel.startswith('media/'):
+                prev_rel = prev_rel[len('media/'):]
+            prev_abs = os.path.join(django_settings.MEDIA_ROOT, prev_rel)
+            try:
+                if os.path.isfile(prev_abs):
+                    os.remove(prev_abs)
+            except OSError:
+                pass
+
+        with open(file_path, 'wb') as destination:
+            destination.write(foto_bytes)
+
+        check_result = None
+        check_detail = None
+        if run_check:
+            try:
+                from api.color_detection import detect_colors
+                result = detect_colors(foto_bytes, modulo.codigos_color or '')
+                check_result = bool(result.get('valid'))
+                check_detail = result
+            except Exception as exc:
+                check_result = False
+                check_detail = {'error': str(exc)}
+
+        foto, created = FotoFabricacion.objects.update_or_create(
             modulo=modulo,
-            mesa=mesa,
             fase=fase,
             paso=int(paso),
-            imagen_referencia=imagen_ref,
-            url=url,
-            filename_original=foto_file.name,
-            file_size=foto_file.size
+            defaults={
+                'mesa': mesa,
+                'imagen_referencia': imagen_ref,
+                'url': url,
+                'filename_original': foto_file.name,
+                'file_size': len(foto_bytes),
+                'check_result': check_result,
+                'check_detail': check_detail,
+            },
         )
 
         serializer = FotoFabricacionSerializer(foto)
-        return Response(serializer.data, status=201)
+        return Response(serializer.data, status=201 if created else 200)
 
     @action(detail=False, methods=['get'])
     def state(self, request):

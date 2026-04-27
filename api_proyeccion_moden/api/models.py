@@ -471,8 +471,19 @@ class FotoFabricacion(models.Model):
         help_text="Ruta URL relativa al archivo de foto almacenado"
     )
     capturada_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
     filename_original = models.CharField(max_length=255, blank=True, null=True)
     file_size = models.PositiveIntegerField(null=True, blank=True, help_text="Tamano del archivo en bytes")
+    check_result = models.BooleanField(
+        null=True,
+        blank=True,
+        help_text="Resultado de la validacion de colores. null = foto no pasada por check."
+    )
+    check_detail = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="Detalle del algoritmo: expected, detected, pixel_ratios, min_ratio."
+    )
 
     def __str__(self):
         fase_pref = "INF" if self.fase == "INFERIOR" else "SUP"
@@ -481,6 +492,7 @@ class FotoFabricacion(models.Model):
     class Meta:
         db_table = 'api_foto_fabricacion'
         ordering = ['-capturada_at']
+        unique_together = [('modulo', 'fase', 'paso')]
         indexes = [
             models.Index(fields=['modulo', 'fase']),
             models.Index(fields=['modulo', 'fase', 'paso']),
