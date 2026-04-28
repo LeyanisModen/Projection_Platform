@@ -9,6 +9,16 @@
             @if (!imageUrl) {
             <div class="no-image-text">Imagen/Plano no asignado</div>
             }
+            @if (checkOverlay === 'success') {
+            <div class="mapper-check-overlay mapper-check-ok" role="status" aria-label="Check correcto">
+                <div class="mapper-check-icon">&#10003;</div>
+            </div>
+            } @else if (checkOverlay === 'error') {
+            <div class="mapper-check-overlay mapper-check-ko" role="alert" aria-label="Check fallido">
+                <div class="mapper-check-icon">&#10007;</div>
+                <div class="mapper-check-hint">Pulsa ESPACIO para desbloquear</div>
+            </div>
+            }
         </div>
 
     </div>

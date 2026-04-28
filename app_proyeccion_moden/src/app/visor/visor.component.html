@@ -47,21 +47,9 @@
         <!-- Simplified Mapper for Debug -->
         <app-mapper [imageUrl]="projectedImage" [isCalibrationActive]="isCalibrationActive"
             [mesaId]="mesaState?.id ?? null" [calibrationJson]="mesaState?.calibration_json ?? null"
-            [allowInteraction]="isSupervisor">
+            [allowInteraction]="isSupervisor"
+            [checkOverlay]="checkOverlay">
         </app-mapper>
-
-        <!-- Color-check overlay: visible on both supervisor and device
-             so the operator sees it projected on the mesa. -->
-        @if (checkOverlay === 'success') {
-        <div class="check-overlay check-overlay-ok" role="status" aria-label="Check correcto">
-            <div class="check-overlay-icon">&#10003;</div>
-        </div>
-        } @else if (checkOverlay === 'error') {
-        <div class="check-overlay check-overlay-ko" role="alert" aria-label="Check fallido">
-            <div class="check-overlay-icon">&#10007;</div>
-            <div class="check-overlay-hint">Pulsa ESPACIO para desbloquear</div>
-        </div>
-        }
 
         <!-- Overlays only in the supervisor view. The mini-PC projects
              a clean image: anything else would show up on the mesa. -->

@@ -411,6 +411,46 @@ p {
     z-index: 5;
 }
 
+/* Color-check overlay (sits inside #result so it is warped by the
+   same perspective transform as the blueprint). */
+.mapper-check-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    animation: show 0.18s ease-out;
+    z-index: 6;
+}
+
+.mapper-check-ok {
+    background: rgba(46, 160, 67, 0.82);
+}
+
+.mapper-check-ko {
+    background: rgba(218, 54, 51, 0.85);
+}
+
+.mapper-check-icon {
+    color: #fff;
+    font-size: 42vh;
+    line-height: 1;
+    font-weight: 900;
+    text-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+}
+
+.mapper-check-hint {
+    margin-top: 4vh;
+    color: #fff;
+    font-size: 2.2rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
 /* Calibration Controls */
 .calibration-controls {
     position: fixed;
