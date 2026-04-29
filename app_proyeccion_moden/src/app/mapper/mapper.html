@@ -18,6 +18,11 @@
                 <div class="mapper-check-icon">&#10007;</div>
                 <div class="mapper-check-hint">Pulsa ESPACIO para desbloquear</div>
             </div>
+            } @else if (checkOverlay === 'no_camera') {
+            <div class="mapper-check-overlay mapper-check-ko" role="alert" aria-label="Cámara no disponible">
+                <div class="mapper-check-icon">&#9888;</div>
+                <div class="mapper-check-hint">Cámara no disponible<br>Pulsa ESPACIO para continuar</div>
+            </div>
             }
         </div>
 

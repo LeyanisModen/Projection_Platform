@@ -33,7 +33,9 @@ export class Mapper implements OnChanges {
   // Color-check feedback rendered inside the perspective-corrected
   // surface so the icon lands on the module with the same distortion
   // as the projected blueprint.
-  @Input() checkOverlay: 'none' | 'success' | 'error' = 'none';
+  // 'success' = check passed, 'error' = colours wrong, 'no_camera' =
+  // local capture service didn't answer after the retry budget.
+  @Input() checkOverlay: 'none' | 'success' | 'error' | 'no_camera' = 'none';
 
   // Variables para gestionar la lógica del setter de calibración
   private _calibrationJson: any = null;

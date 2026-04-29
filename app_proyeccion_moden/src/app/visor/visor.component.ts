@@ -71,10 +71,17 @@ export class VisorComponent implements OnInit, OnDestroy {
   whiteScreen = false;
 
   // Color-check overlay: shown after a '_check' photo is validated.
-  // 'success' auto-hides; 'error' stays until the operator presses space.
-  checkOverlay: 'none' | 'success' | 'error' = 'none';
+  // 'success' stays until the operator navigates away; 'error' /
+  // 'no_camera' stay until the operator presses space.
+  checkOverlay: 'none' | 'success' | 'error' | 'no_camera' = 'none';
   private checkBlock = false;
   private checkSuccessTimer: any = null;
+
+  // Retry budget for the local capture service when a _check photo
+  // can't be taken. Three attempts spaced by 1 s gives the cable /
+  // service ~3 s to recover before we surface the failure.
+  private static readonly CAPTURE_MAX_ATTEMPTS = 3;
+  private static readonly CAPTURE_RETRY_MS = 1000;
 
   // 5-second lock between slides so the operator reads the caption before
   // moving on (many consecutive slides only change the title text).
@@ -521,35 +528,51 @@ export class VisorComponent implements OnInit, OnDestroy {
     // slide (the operator may have just navigated here) before asking
     // the camera to capture, otherwise we risk photographing the
     // previous slide.
-    setTimeout(() => {
-      this.http.post(
-        `${this.captureServiceUrl}/capture`, {},
-        { responseType: 'blob' }
-      ).subscribe({
-        next: (blob: Blob) => {
-          this.captureStatus = 'uploading';
-          // A successful capture means the service is alive right now.
-          this.captureServiceOnline = true;
-          this.cdr.detectChanges();
+    setTimeout(() => this.attemptCapture(1), 500);
+  }
 
-          this.compressAndUpload(blob);
-        },
-        error: (err) => {
-          console.error('[Visor] Camera capture failed:', err);
-          this.captureStatus = 'error';
-          this.capturingPhoto = false;
-          // Either the service is down or the camera read failed.
-          // Flag it so the banner appears right away, the periodic
-          // health poll will re-confirm later.
-          this.captureServiceOnline = false;
-          this.cdr.detectChanges();
-          setTimeout(() => {
-            this.captureStatus = 'idle';
-            this.cdr.detectChanges();
-          }, 3000);
+  private attemptCapture(attempt: number): void {
+    this.http.post(
+      `${this.captureServiceUrl}/capture`, {},
+      { responseType: 'blob' }
+    ).subscribe({
+      next: (blob: Blob) => {
+        this.captureStatus = 'uploading';
+        // A successful capture means the service is alive right now.
+        this.captureServiceOnline = true;
+        this.cdr.detectChanges();
+        this.compressAndUpload(blob);
+      },
+      error: (err) => {
+        console.warn(
+          `[Visor] Camera capture failed (attempt ${attempt}/${VisorComponent.CAPTURE_MAX_ATTEMPTS}):`,
+          err
+        );
+        if (attempt < VisorComponent.CAPTURE_MAX_ATTEMPTS) {
+          setTimeout(
+            () => this.attemptCapture(attempt + 1),
+            VisorComponent.CAPTURE_RETRY_MS
+          );
+          return;
         }
-      });
-    }, 500);
+        // Final failure: surface it.
+        console.error('[Visor] Camera capture exhausted retries.');
+        this.captureStatus = 'error';
+        this.capturingPhoto = false;
+        this.captureServiceOnline = false;
+        this.cdr.detectChanges();
+        if (this.captureMode === 'check') {
+          // No photo means we cannot validate -- block the operator
+          // with a 'camera unavailable' message instead of letting
+          // them silently skip a verification step.
+          this.applyCheckResult(false, 'no_camera');
+        }
+        setTimeout(() => {
+          this.captureStatus = 'idle';
+          this.cdr.detectChanges();
+        }, 3000);
+      }
+    });
   }
 
   private compressAndUpload(blob: Blob): void {
@@ -681,7 +704,10 @@ export class VisorComponent implements OnInit, OnDestroy {
     });
   }
 
-  private applyCheckResult(valid: boolean | null | undefined): void {
+  private applyCheckResult(
+    valid: boolean | null | undefined,
+    reason: 'check' | 'no_camera' = 'check'
+  ): void {
     if (this.checkSuccessTimer) {
       clearTimeout(this.checkSuccessTimer);
       this.checkSuccessTimer = null;
@@ -691,7 +717,7 @@ export class VisorComponent implements OnInit, OnDestroy {
       this.checkOverlay = 'success';
       this.checkBlock = false;
     } else {
-      this.checkOverlay = 'error';
+      this.checkOverlay = reason === 'no_camera' ? 'no_camera' : 'error';
       this.checkBlock = true;
     }
   }
