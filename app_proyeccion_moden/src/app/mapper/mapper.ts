@@ -621,8 +621,14 @@ export class Mapper implements OnChanges {
 
       this.update();
       this.saveCalibration();
-      // Throttled save to server for real-time sync with player
+      // Throttle keeps the player updating during a key-repeat (visual
+      // feedback ~ every 250 ms); debounce guarantees the FINAL value
+      // reaches the backend 150 ms after the last keypress, even if it
+      // fell inside the throttle window. Without the debounce, holding
+      // an arrow key and releasing in the wrong instant could leave
+      // the player stuck a pixel or two behind the visor.
       this.throttledSaveToServer();
+      this.debouncedSaveToServer();
     }
   };
 
