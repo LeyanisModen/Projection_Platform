@@ -441,6 +441,13 @@ p {
     text-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
 }
 
+.mapper-check-icon-svg {
+    width: 38vh;
+    height: 38vh;
+    color: #fff;
+    filter: drop-shadow(0 6px 24px rgba(0, 0, 0, 0.35));
+}
+
 .mapper-check-hint {
     margin-top: 4vh;
     color: #fff;

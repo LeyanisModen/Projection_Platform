@@ -20,7 +20,14 @@
             </div>
             } @else if (checkOverlay === 'no_camera') {
             <div class="mapper-check-overlay mapper-check-ko" role="alert" aria-label="Cámara no disponible">
-                <div class="mapper-check-icon">&#9888;</div>
+                <svg class="mapper-check-icon-svg" viewBox="0 0 100 100" aria-hidden="true">
+                    <rect x="20" y="32" width="60" height="44" rx="5" fill="none" stroke="currentColor"
+                        stroke-width="7" />
+                    <rect x="38" y="25" width="24" height="10" fill="currentColor" />
+                    <circle cx="50" cy="55" r="12" fill="none" stroke="currentColor" stroke-width="7" />
+                    <line x1="18" y1="20" x2="82" y2="84" stroke="currentColor" stroke-width="10"
+                        stroke-linecap="round" />
+                </svg>
                 <div class="mapper-check-hint">Cámara no disponible<br>Pulsa ESPACIO para continuar</div>
             </div>
             }

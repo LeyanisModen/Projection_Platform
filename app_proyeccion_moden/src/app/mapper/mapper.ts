@@ -819,6 +819,13 @@ export class Mapper implements OnChanges {
       e.preventDefault();
       this.setDirectory();
     } else if (e.key === " ") {
+      // While a colour-check overlay is showing, SPACE belongs to the
+      // visor (clear the block + advance). Toggling blackout on top of
+      // that would leave the supervisor in a black screen for no
+      // reason.
+      if (this.checkOverlay !== 'none') {
+        return;
+      }
       e.preventDefault();
       this.isBlackout = !this.isBlackout;
     } else if (e.key == "Home" || e.key == "PageUp" || e.key == "End" || e.key == "PageDown") {
