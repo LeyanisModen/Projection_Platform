@@ -970,6 +970,17 @@ export class Mapper implements OnChanges {
 
     this.initCorners(initialTargetCorners);
 
+    // initCorners() assigned the saved pixels verbatim; if the saved
+    // calibration came from a screen with a different resolution
+    // (e.g. the supervisor calibrated on the projector PC and is now
+    // re-opening from a smaller laptop), re-run the auto-scale so
+    // every corner stays inside the current viewport.
+    if (this.calibrationJson?.corners
+        && this.calibrationJson?.screenWidth
+        && this.calibrationJson?.screenHeight) {
+      this.applyCalibrationFromServer(this.calibrationJson);
+    }
+
     setInterval(this.updateResolution, 1000);
 
     this.scheduleUserInactive();
