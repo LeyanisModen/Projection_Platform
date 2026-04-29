@@ -216,16 +216,12 @@ export class Mapper implements OnChanges {
       });
     }
 
-    // SAFETY CLAMP: Ensure no corner is ever outside the visible viewport
-    // Handle is ~60px, so we ensure the center is at least 30px from edges
-    const padding = 40;
-    finalCorners = finalCorners.map((val, index) => {
-      const isX = index % 2 === 0;
-      const max = isX ? currentWidth : currentHeight;
-      // Clamp between padding and max-padding
-      return Math.max(padding, Math.min(max - padding, val));
-    });
-
+    // No safety clamp here: the original 40 px padding was meant to
+    // keep drag-handles reachable, but in the player the handles are
+    // hidden and we want the projected quad to be able to hug the
+    // physical edge of the table. The supervisor view is in
+    // 'calibrating' mode when it gets here, so this branch only runs
+    // in the player anyway.
     this.corners = finalCorners;
 
     // Update marker positions on screen
