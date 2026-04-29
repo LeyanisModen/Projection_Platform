@@ -2857,8 +2857,55 @@ class DeviceViewSet(viewsets.ViewSet):
             },
         )
 
+        # Mirror the result on the mesa so both the player and the
+        # supervisor visor can react to it via the polling state.
+        if run_check:
+            mesa.check_overlay = 'success' if check_result else 'error'
+            mesa.save(update_fields=['check_overlay', 'ultima_actualizacion'])
+
         serializer = FotoFabricacionSerializer(foto)
         return Response(serializer.data, status=201 if created else 200)
+
+    @action(detail=False, methods=['post'])
+    def notify_no_camera(self, request):
+        """Visor reports that the local capture service didn't answer
+        after the retry budget on a _check slide. Block both views via
+        mesa.check_overlay = 'no_camera'."""
+        mesa = self._authenticate_device(request)
+        if not mesa:
+            if hasattr(request, 'user') and request.user and request.user.is_authenticated:
+                mesa_id = request.data.get('mesa_id')
+                if mesa_id:
+                    mesa = Mesa.objects.filter(id=mesa_id).first()
+                if not mesa:
+                    return Response({'detail': 'mesa_id required for user auth'}, status=400)
+            else:
+                return Response({'detail': 'Unauthorized'}, status=401)
+
+        mesa.check_overlay = 'no_camera'
+        mesa.save(update_fields=['check_overlay', 'ultima_actualizacion'])
+        return Response({'status': 'ok', 'check_overlay': 'no_camera'})
+
+    @action(detail=False, methods=['post'])
+    def clear_check_overlay(self, request):
+        """Clear the mesa.check_overlay block. Accepts both the device
+        bearer token (operator at the mini-PC) and a logged-in user
+        (supervisor at the dashboard). When we add unlock auditing,
+        this is the single insertion point."""
+        mesa = self._authenticate_device(request)
+        if not mesa:
+            if hasattr(request, 'user') and request.user and request.user.is_authenticated:
+                mesa_id = request.data.get('mesa_id')
+                if mesa_id:
+                    mesa = Mesa.objects.filter(id=mesa_id).first()
+                if not mesa:
+                    return Response({'detail': 'mesa_id required for user auth'}, status=400)
+            else:
+                return Response({'detail': 'Unauthorized'}, status=401)
+
+        mesa.check_overlay = None
+        mesa.save(update_fields=['check_overlay', 'ultima_actualizacion'])
+        return Response({'status': 'ok', 'check_overlay': None})
 
     @action(detail=False, methods=['get'])
     def state(self, request):

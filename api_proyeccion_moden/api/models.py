@@ -636,6 +636,16 @@ class Mesa(models.Model):
         blank=True,
         help_text="Reported by the mini-PC: 'ok' | 'warning' | 'blurry' | 'unknown'.",
     )
+    # Latest result of a _check slide. Source of truth for both the
+    # player (mini-PC) and the visor (dashboard) so they show the same
+    # success/error/no_camera overlay and apply the same SPACE-to-clear
+    # block. Cleared by an explicit POST to clear_check_overlay/.
+    check_overlay = models.CharField(
+        max_length=16,
+        null=True,
+        blank=True,
+        help_text="Latest _check result for this mesa: 'success' | 'error' | 'no_camera' | null.",
+    )
 
     # Device Pairing (PoC)
     device_token_hash = models.CharField(max_length=128, null=True, blank=True, unique=True)

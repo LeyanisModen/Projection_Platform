@@ -20,6 +20,7 @@ interface MesaState {
   is_linked?: boolean;
   capture_service_online?: boolean | null;
   camera_sharpness?: 'ok' | 'warning' | 'blurry' | 'unknown' | null;
+  check_overlay?: 'success' | 'error' | 'no_camera' | null;
 }
 
 interface PairingResponse {
@@ -71,11 +72,16 @@ export class VisorComponent implements OnInit, OnDestroy {
   whiteScreen = false;
 
   // Color-check overlay: shown after a '_check' photo is validated.
-  // 'success' stays until the operator navigates away; 'error' /
-  // 'no_camera' stay until the operator presses space.
+  // The source of truth is mesa.check_overlay on the backend, mirrored
+  // by the state polling so player and visor see the same thing. We
+  // also set it locally for instant feedback (optimistic update); the
+  // poll then either confirms or corrects it.
   checkOverlay: 'none' | 'success' | 'error' | 'no_camera' = 'none';
   private checkBlock = false;
   private checkSuccessTimer: any = null;
+  // While a clear request is in flight, ignore the polling so we
+  // don't briefly re-paint a state we just told the backend to drop.
+  private clearingOverlay = false;
 
   // Retry budget for the local capture service when a _check photo
   // can't be taken. Three attempts spaced by 1 s gives the cable /
@@ -390,6 +396,7 @@ export class VisorComponent implements OnInit, OnDestroy {
   }
 
   private clearCheckOverlay(): void {
+    if (this.checkOverlay === 'none' && !this.checkBlock) return;
     this.checkOverlay = 'none';
     this.checkBlock = false;
     if (this.checkSuccessTimer) {
@@ -397,6 +404,40 @@ export class VisorComponent implements OnInit, OnDestroy {
       this.checkSuccessTimer = null;
     }
     this.cdr.detectChanges();
+
+    // Tell the backend so the other view (player or visor) clears too.
+    this.clearingOverlay = true;
+    const url = `${this.apiUrl}clear_check_overlay/`;
+    const { headers, body } = this.deviceOrSupervisorRequest();
+    this.http.post(url, body, { headers }).subscribe({
+      next: () => { this.clearingOverlay = false; },
+      error: (err) => {
+        console.error('[Visor] clear_check_overlay failed:', err);
+        this.clearingOverlay = false;
+      }
+    });
+  }
+
+  private notifyNoCamera(): void {
+    const url = `${this.apiUrl}notify_no_camera/`;
+    const { headers, body } = this.deviceOrSupervisorRequest();
+    this.http.post(url, body, { headers }).subscribe({
+      next: () => {},
+      error: (err) => console.error('[Visor] notify_no_camera failed:', err),
+    });
+  }
+
+  private deviceOrSupervisorRequest(): { headers: HttpHeaders; body: any } {
+    const body: any = {};
+    let headers: HttpHeaders;
+    if (this.isSupervisor) {
+      headers = this.getUserAuthHeaders();
+      const mesaId = this.mesaIdForPairing || this.mesaState?.id;
+      if (mesaId) body['mesa_id'] = mesaId;
+    } else {
+      headers = this.getAuthHeaders();
+    }
+    return { headers, body };
   }
 
   toggleCalibration(targetIndex: number): void {
@@ -564,8 +605,10 @@ export class VisorComponent implements OnInit, OnDestroy {
         if (this.captureMode === 'check') {
           // No photo means we cannot validate -- block the operator
           // with a 'camera unavailable' message instead of letting
-          // them silently skip a verification step.
+          // them silently skip a verification step. Mirror it on the
+          // backend so the supervisor visor sees the same block.
           this.applyCheckResult(false, 'no_camera');
+          this.notifyNoCamera();
         }
         setTimeout(() => {
           this.captureStatus = 'idle';
@@ -773,6 +816,25 @@ export class VisorComponent implements OnInit, OnDestroy {
         const sharp = state.camera_sharpness;
         if (sharp === 'ok' || sharp === 'warning' || sharp === 'blurry' || sharp === 'unknown') {
           this.cameraSharpness = sharp;
+        }
+      }
+
+      // Mesa-wide check overlay (success/error/no_camera) is the
+      // source of truth for both the player and the supervisor visor:
+      // whoever runs the _check sets it on the backend and both views
+      // pick it up on the next poll. We skip while a clear request is
+      // in flight to avoid briefly re-painting the state we just told
+      // the backend to drop.
+      if (!this.clearingOverlay) {
+        const remote: 'none' | 'success' | 'error' | 'no_camera' =
+          (state.check_overlay as any) ?? 'none';
+        if (remote !== this.checkOverlay) {
+          this.checkOverlay = remote;
+          this.checkBlock = remote === 'error' || remote === 'no_camera';
+          if (remote === 'none' && this.checkSuccessTimer) {
+            clearTimeout(this.checkSuccessTimer);
+            this.checkSuccessTimer = null;
+          }
         }
       }
       this.cdr.detectChanges();

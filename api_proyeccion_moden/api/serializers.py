@@ -323,7 +323,7 @@ class MesaSerializer(serializers.HyperlinkedModelSerializer):
             "grupo", "rol",
             "imagen_actual", "ultima_actualizacion", "imagen",
             "locked", "blackout", "last_seen", "is_linked",
-            "capture_service_online", "camera_sharpness",
+            "capture_service_online", "camera_sharpness", "check_overlay",
             "mapper_enabled", "current_image_index", "calibration_json"
         ]
 
@@ -554,12 +554,12 @@ class DeviceHeartbeatSerializer(serializers.Serializer):
 
 class MesaStateSerializer(serializers.ModelSerializer):
     image_url = serializers.CharField(source='imagen_actual.url', read_only=True)
-    
+
     class Meta:
         model = Mesa
         fields = [
-            'id', 'nombre', 
+            'id', 'nombre',
             'imagen_actual', 'image_url',
             'mapper_enabled', 'current_image_index', 'calibration_json',
-            'blackout', 'locked', 'last_seen'
+            'blackout', 'locked', 'last_seen', 'check_overlay'
         ]
