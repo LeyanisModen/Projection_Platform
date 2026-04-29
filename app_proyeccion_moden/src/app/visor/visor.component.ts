@@ -458,6 +458,11 @@ export class VisorComponent implements OnInit, OnDestroy {
   nextImage(): void {
     if (this.currentIndex < 0) return;
     if (Date.now() < this.slideLockUntil) return;
+    // While a _check capture is in flight, freeze the navigation: the
+    // 5 s read-lock can run out before the round-trip
+    // camera + backend finishes, and we must not let the operator skip
+    // a verification step.
+    if (this.capturingPhoto && this.captureMode === 'check') return;
 
     if (this.currentIndex < this.images.length - 1) {
       // Clear any lingering green overlay from the previous slide.
@@ -474,6 +479,7 @@ export class VisorComponent implements OnInit, OnDestroy {
   prevImage(): void {
     if (this.currentIndex < 0) return;
     if (Date.now() < this.slideLockUntil) return;
+    if (this.capturingPhoto && this.captureMode === 'check') return;
 
     if (this.currentIndex > 0) {
       if (this.checkOverlay !== 'none') this.clearCheckOverlay();
@@ -945,7 +951,11 @@ export class VisorComponent implements OnInit, OnDestroy {
         if (this.captureServiceOnline !== null) {
           payload['capture_service_online'] = this.captureServiceOnline;
         }
-        if (this.cameraSharpness && this.cameraSharpness !== 'unknown') {
+        // Always report the current value, even 'unknown', so a
+        // mini-PC that swapped out (or removed) its camera overwrites
+        // the stale 'blurry' / 'warning' the backend may have kept
+        // from a previous deployment of this rol.
+        if (this.cameraSharpness) {
           payload['camera_sharpness'] = this.cameraSharpness;
         }
         return this.http.post(`${this.apiUrl}heartbeat/`, payload, { headers: this.getAuthHeaders() });
