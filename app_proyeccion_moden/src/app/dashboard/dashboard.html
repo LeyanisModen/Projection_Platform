@@ -376,8 +376,18 @@
             </section>
 
             <section class="projects-section" id="proyectos-section">
-                <div class="section-header legacy-header">
+                <div class="section-header legacy-header projects-header">
                     <h2>Proyectos</h2>
+                    <button type="button" class="btn-shopping-general"
+                        (click)="openShoppingGeneralModal()"
+                        title="Lista de compra general (todos los proyectos)">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <circle cx="9" cy="21" r="1"></circle>
+                            <circle cx="20" cy="21" r="1"></circle>
+                            <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
+                        </svg>
+                        Lista de compra general
+                    </button>
                 </div>
                 <div class="projects-inline-grid">
                     @if (loadingProyectos) { <div class="loading">Cargando...</div> }
@@ -392,6 +402,15 @@
                             title="Ver lista de módulos"
                             (click)="openPlanModal(proyecto, $event)">
                             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                        </button>
+                        <button class="project-icon project-icon-shopping" type="button"
+                            title="Lista de compra del proyecto"
+                            (click)="openShoppingModal(proyecto, $event)">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <circle cx="9" cy="21" r="1"></circle>
+                                <circle cx="20" cy="21" r="1"></circle>
+                                <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
+                            </svg>
                         </button>
                         <div class="project-info">
                             <h3>{{ proyecto.nombre }}</h3>
@@ -469,6 +488,151 @@
                                     }
                                 </ul>
                             </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    @if (showShoppingModal) {
+        <div class="modal-overlay" (click)="closeShoppingModal()">
+            <div class="modal-content shopping-modal" (click)="$event.stopPropagation()">
+                <div class="plan-modal-header">
+                    <div>
+                        <h3>Lista de compra · {{ shoppingModalProyecto?.nombre }}</h3>
+                        <span class="plan-modal-subtitle">Marca lo que ya tienes en almacén.</span>
+                    </div>
+                    <button type="button" class="plan-modal-close" (click)="closeShoppingModal()" title="Cerrar">×</button>
+                </div>
+
+                @if (loadingShoppingModal) {
+                    <div class="plan-modal-loading">Cargando lista…</div>
+                } @else if (!shoppingModalData || shoppingModalData.renglones.length === 0) {
+                    <div class="plan-modal-loading">Este proyecto no tiene materiales registrados.</div>
+                } @else {
+                    <div class="plan-modal-body shopping-modal-body">
+                        <ul class="shopping-list">
+                            @for (r of shoppingModalData.renglones; track r.clave) {
+                                <li class="shopping-row"
+                                    [class.consumed]="isShoppingRowConsumed(r)"
+                                    [class.checked]="r.informado"
+                                    [class.pending-update]="isShoppingRowPending(r.clave)">
+                                    <label class="shopping-row-label">
+                                        <input type="checkbox"
+                                            [checked]="r.informado || isShoppingRowConsumed(r)"
+                                            [disabled]="isShoppingRowPending(r.clave) || isShoppingRowConsumed(r)"
+                                            (change)="toggleShoppingProyecto(r)">
+                                        <span class="shopping-row-text">
+                                            <span class="shopping-row-name">{{ r.etiqueta }}</span>
+                                            @if (r.origen === 'GENERAL') {
+                                                <span class="shopping-origen-tag" title="Marcado desde la lista general">G</span>
+                                            }
+                                        </span>
+                                    </label>
+                                    <div class="shopping-row-progress">
+                                        <span class="shopping-row-amount">
+                                            <strong>{{ r.pendiente | number:'1.0-2' }}</strong>
+                                            <span class="shopping-row-amount-total"> / {{ r.total | number:'1.0-2' }} {{ r.unidad }}</span>
+                                        </span>
+                                        <div class="shopping-bar">
+                                            <div class="shopping-bar-fill" [style.width.%]="shoppingRowProgressPct(r)"></div>
+                                        </div>
+                                    </div>
+                                </li>
+                            }
+                        </ul>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    @if (showShoppingGeneralModal) {
+        <div class="modal-overlay" (click)="closeShoppingGeneralModal()">
+            <div class="modal-content shopping-modal shopping-modal-general" (click)="$event.stopPropagation()">
+                <div class="plan-modal-header">
+                    <div>
+                        <h3>Lista de compra general</h3>
+                        <span class="plan-modal-subtitle">Suma de todos los proyectos activos.</span>
+                    </div>
+                    <button type="button" class="plan-modal-close" (click)="closeShoppingGeneralModal()" title="Cerrar">×</button>
+                </div>
+
+                @if (loadingShoppingGeneralModal) {
+                    <div class="plan-modal-loading">Cargando lista general…</div>
+                } @else if (!shoppingGeneralData || (shoppingGeneralData.agrupados.length === 0 && shoppingGeneralData.por_proyecto.length === 0)) {
+                    <div class="plan-modal-loading">No hay materiales pendientes en proyectos activos.</div>
+                } @else {
+                    <div class="plan-modal-body shopping-modal-body">
+                        @if (shoppingGeneralData.agrupados.length > 0) {
+                            <h4 class="shopping-block-title">Materiales agrupables</h4>
+                            <ul class="shopping-list">
+                                @for (a of shoppingGeneralData.agrupados; track a.clave) {
+                                    <li class="shopping-row shopping-row-general"
+                                        [class.consumed]="isAgrupadoConsumed(a)"
+                                        [class.checked]="a.todos_marcados"
+                                        [class.pending-update]="isAgrupadoPending(a.clave)">
+                                        <label class="shopping-row-label">
+                                            <input type="checkbox"
+                                                [checked]="a.todos_marcados || isAgrupadoConsumed(a)"
+                                                [disabled]="isAgrupadoPending(a.clave) || isAgrupadoConsumed(a)"
+                                                (change)="toggleShoppingGeneral(a)">
+                                            <span class="shopping-row-text">
+                                                <span class="shopping-row-name">{{ a.etiqueta }}</span>
+                                                <span class="shopping-row-meta">{{ a.proyectos_count }} proyectos</span>
+                                            </span>
+                                        </label>
+                                        <div class="shopping-row-progress">
+                                            <span class="shopping-row-amount">
+                                                <strong>{{ a.informado_total | number:'1.0-2' }}</strong>
+                                                <span class="shopping-row-amount-total"> / {{ a.total | number:'1.0-2' }} {{ a.unidad }}</span>
+                                            </span>
+                                            <div class="shopping-bar shopping-bar-dual">
+                                                <div class="shopping-bar-fill consumed" [style.width.%]="agrupadoProgressPct(a)"></div>
+                                                <div class="shopping-bar-fill informed" [style.width.%]="agrupadoInformadoPct(a)"></div>
+                                            </div>
+                                        </div>
+                                    </li>
+                                }
+                            </ul>
+                        }
+
+                        @if (shoppingGeneralData.por_proyecto.length > 0) {
+                            <h4 class="shopping-block-title">Específicos por proyecto</h4>
+                            <p class="shopping-block-hint">Estos materiales no se pueden agrupar entre proyectos (definición específica de cada uno).</p>
+                            @for (bloque of shoppingGeneralData.por_proyecto; track bloque.proyecto_id) {
+                                <div class="shopping-proyecto-block">
+                                    <div class="shopping-proyecto-header">{{ bloque.proyecto_nombre }}</div>
+                                    <ul class="shopping-list">
+                                        @for (r of bloque.renglones; track r.clave) {
+                                            <li class="shopping-row"
+                                                [class.consumed]="isShoppingRowConsumed(r)"
+                                                [class.checked]="r.informado"
+                                                [class.pending-update]="isEspecificoPending(bloque.proyecto_id, r.clave)">
+                                                <label class="shopping-row-label">
+                                                    <input type="checkbox"
+                                                        [checked]="r.informado || isShoppingRowConsumed(r)"
+                                                        [disabled]="isEspecificoPending(bloque.proyecto_id, r.clave) || isShoppingRowConsumed(r)"
+                                                        (change)="toggleShoppingGeneralEspecifico(bloque.proyecto_id, r)">
+                                                    <span class="shopping-row-text">
+                                                        <span class="shopping-row-name">{{ r.etiqueta }}</span>
+                                                    </span>
+                                                </label>
+                                                <div class="shopping-row-progress">
+                                                    <span class="shopping-row-amount">
+                                                        <strong>{{ r.pendiente | number:'1.0-2' }}</strong>
+                                                        <span class="shopping-row-amount-total"> / {{ r.total | number:'1.0-2' }} {{ r.unidad }}</span>
+                                                    </span>
+                                                    <div class="shopping-bar">
+                                                        <div class="shopping-bar-fill" [style.width.%]="shoppingRowProgressPct(r)"></div>
+                                                    </div>
+                                                </div>
+                                            </li>
+                                        }
+                                    </ul>
+                                </div>
+                            }
                         }
                     </div>
                 }

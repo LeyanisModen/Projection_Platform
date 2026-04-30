@@ -9,6 +9,14 @@ import {
   Proyecto, Planta, Modulo, Mesa, ModuloQueueItem, MesaQueueItem, Imagen,
   GrupoMesas, GrupoMesasProyectoEntry, ProductionStatsResponse
 } from '../services/api.service';
+import {
+  ListaCompraService,
+  ListaCompraProyecto,
+  ListaCompraGeneral,
+  RenglonLista,
+  RenglonGeneralAgrupado,
+  BloqueGeneralPorProyecto,
+} from '../services/lista-compra.service';
 import { Subject, takeUntil, forkJoin, interval } from 'rxjs';
 import { environment } from '../../environments/environment';
 
@@ -106,6 +114,20 @@ export class Dashboard implements OnInit, OnDestroy {
   private planModalPlantas = new Map<number, string>();
   loadingPlanModal = false;
 
+  // Shopping-list Modal State (per-project)
+  showShoppingModal = false;
+  shoppingModalProyecto: Proyecto | null = null;
+  shoppingModalData: ListaCompraProyecto | null = null;
+  loadingShoppingModal = false;
+  private shoppingPendingByClave = new Set<string>();
+
+  // Shopping-list Modal State (general)
+  showShoppingGeneralModal = false;
+  shoppingGeneralData: ListaCompraGeneral | null = null;
+  loadingShoppingGeneralModal = false;
+  private shoppingGeneralPendingByClave = new Set<string>();
+  private shoppingGeneralPendingProyectoClave = new Set<string>();
+
   // Gestionar Mesa Modal State (rename grupo + mesas, manage project queue)
   showGestionarModal = false;
   gestionandoGrupo: GrupoMesas | null = null;
@@ -175,6 +197,205 @@ export class Dashboard implements OnInit, OnDestroy {
     this.planModalModulos = [];
     this.planModalPlantas.clear();
     this.cdr.detectChanges();
+  }
+
+  // --- Lista de compra: por proyecto ---
+
+  openShoppingModal(proyecto: Proyecto, event?: Event): void {
+    event?.stopPropagation();
+    this.showShoppingModal = true;
+    this.shoppingModalProyecto = proyecto;
+    this.shoppingModalData = null;
+    this.shoppingPendingByClave.clear();
+    this.loadingShoppingModal = true;
+    this.cdr.detectChanges();
+
+    this.listaCompra.getListaProyecto(proyecto.id)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (data) => {
+          this.shoppingModalData = data;
+          this.loadingShoppingModal = false;
+          this.cdr.detectChanges();
+        },
+        error: () => {
+          this.loadingShoppingModal = false;
+          this.cdr.detectChanges();
+        },
+      });
+  }
+
+  closeShoppingModal(): void {
+    this.showShoppingModal = false;
+    this.shoppingModalProyecto = null;
+    this.shoppingModalData = null;
+    this.shoppingPendingByClave.clear();
+    this.cdr.detectChanges();
+  }
+
+  toggleShoppingProyecto(renglon: RenglonLista): void {
+    if (!this.shoppingModalProyecto || !this.shoppingModalData) return;
+    if (this.shoppingPendingByClave.has(renglon.clave)) return;
+    if (this.isShoppingRowConsumed(renglon)) return;
+
+    const proyectoId = this.shoppingModalProyecto.id;
+    const nuevo = !renglon.informado;
+    this.shoppingPendingByClave.add(renglon.clave);
+    this.cdr.detectChanges();
+
+    this.listaCompra.setInformadoProyecto(proyectoId, renglon.clave, nuevo)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (updated) => {
+          if (this.shoppingModalData && updated) {
+            this.shoppingModalData = {
+              ...this.shoppingModalData,
+              renglones: this.shoppingModalData.renglones.map((r) =>
+                r.clave === updated.clave ? updated : r,
+              ),
+            };
+          }
+          this.shoppingPendingByClave.delete(renglon.clave);
+          this.cdr.detectChanges();
+        },
+        error: () => {
+          this.shoppingPendingByClave.delete(renglon.clave);
+          this.cdr.detectChanges();
+        },
+      });
+  }
+
+  isShoppingRowPending(clave: string): boolean {
+    return this.shoppingPendingByClave.has(clave);
+  }
+
+  isShoppingRowConsumed(renglon: RenglonLista): boolean {
+    return renglon.pendiente <= 0;
+  }
+
+  shoppingRowProgressPct(renglon: RenglonLista): number {
+    if (renglon.total <= 0) return 0;
+    const consumido = renglon.total - renglon.pendiente;
+    return Math.max(0, Math.min(100, (consumido / renglon.total) * 100));
+  }
+
+  // --- Lista de compra: general ---
+
+  openShoppingGeneralModal(): void {
+    this.showShoppingGeneralModal = true;
+    this.shoppingGeneralData = null;
+    this.shoppingGeneralPendingByClave.clear();
+    this.shoppingGeneralPendingProyectoClave.clear();
+    this.loadingShoppingGeneralModal = true;
+    this.cdr.detectChanges();
+
+    this.listaCompra.getListaGeneral()
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (data) => {
+          this.shoppingGeneralData = data;
+          this.loadingShoppingGeneralModal = false;
+          this.cdr.detectChanges();
+        },
+        error: () => {
+          this.loadingShoppingGeneralModal = false;
+          this.cdr.detectChanges();
+        },
+      });
+  }
+
+  closeShoppingGeneralModal(): void {
+    this.showShoppingGeneralModal = false;
+    this.shoppingGeneralData = null;
+    this.shoppingGeneralPendingByClave.clear();
+    this.shoppingGeneralPendingProyectoClave.clear();
+    this.cdr.detectChanges();
+  }
+
+  toggleShoppingGeneral(agrupado: RenglonGeneralAgrupado): void {
+    if (this.shoppingGeneralPendingByClave.has(agrupado.clave)) return;
+    if (this.isAgrupadoConsumed(agrupado)) return;
+
+    const nuevo = !agrupado.todos_marcados;
+    this.shoppingGeneralPendingByClave.add(agrupado.clave);
+    this.cdr.detectChanges();
+
+    this.listaCompra.setInformadoGeneral(agrupado.clave, nuevo)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (data) => {
+          this.shoppingGeneralData = data;
+          this.shoppingGeneralPendingByClave.delete(agrupado.clave);
+          this.cdr.detectChanges();
+        },
+        error: () => {
+          this.shoppingGeneralPendingByClave.delete(agrupado.clave);
+          this.cdr.detectChanges();
+        },
+      });
+  }
+
+  toggleShoppingGeneralEspecifico(proyectoId: number, renglon: RenglonLista): void {
+    const key = `${proyectoId}::${renglon.clave}`;
+    if (this.shoppingGeneralPendingProyectoClave.has(key)) return;
+    if (this.isShoppingRowConsumed(renglon)) return;
+
+    const nuevo = !renglon.informado;
+    this.shoppingGeneralPendingProyectoClave.add(key);
+    this.cdr.detectChanges();
+
+    this.listaCompra.setInformadoProyecto(proyectoId, renglon.clave, nuevo)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (updated) => {
+          if (this.shoppingGeneralData && updated) {
+            this.shoppingGeneralData = {
+              ...this.shoppingGeneralData,
+              por_proyecto: this.shoppingGeneralData.por_proyecto.map((bloque) =>
+                bloque.proyecto_id !== proyectoId
+                  ? bloque
+                  : {
+                      ...bloque,
+                      renglones: bloque.renglones.map((r) =>
+                        r.clave === updated.clave ? updated : r,
+                      ),
+                    },
+              ),
+            };
+          }
+          this.shoppingGeneralPendingProyectoClave.delete(key);
+          this.cdr.detectChanges();
+        },
+        error: () => {
+          this.shoppingGeneralPendingProyectoClave.delete(key);
+          this.cdr.detectChanges();
+        },
+      });
+  }
+
+  isAgrupadoPending(clave: string): boolean {
+    return this.shoppingGeneralPendingByClave.has(clave);
+  }
+
+  isAgrupadoConsumed(agrupado: RenglonGeneralAgrupado): boolean {
+    return agrupado.pendiente <= 0;
+  }
+
+  isEspecificoPending(proyectoId: number, clave: string): boolean {
+    return this.shoppingGeneralPendingProyectoClave.has(`${proyectoId}::${clave}`);
+  }
+
+  agrupadoProgressPct(agrupado: RenglonGeneralAgrupado): number {
+    if (agrupado.total <= 0) return 0;
+    const consumido = agrupado.total - agrupado.pendiente;
+    return Math.max(0, Math.min(100, (consumido / agrupado.total) * 100));
+  }
+
+  agrupadoInformadoPct(agrupado: RenglonGeneralAgrupado): number {
+    if (agrupado.pendiente <= 0) return 100;
+    const denominador = agrupado.total;
+    if (denominador <= 0) return 0;
+    return Math.max(0, Math.min(100, (agrupado.informado_total / denominador) * 100));
   }
 
   /** Groups modulos of the open plan modal by planta (in-project order). */
@@ -459,7 +680,12 @@ export class Dashboard implements OnInit, OnDestroy {
 
   private destroy$ = new Subject<void>();
 
-  constructor(private api: ApiService, private cdr: ChangeDetectorRef, private router: Router) { }
+  constructor(
+    private api: ApiService,
+    private cdr: ChangeDetectorRef,
+    private router: Router,
+    private listaCompra: ListaCompraService,
+  ) { }
 
   username: string = '';
 
@@ -653,6 +879,7 @@ export class Dashboard implements OnInit, OnDestroy {
       .subscribe({
         next: (data) => {
           this.proyectos = data;
+          this.listaCompra.registerProyectos(data);
           // Refresh the selected project reference so the donut picks
           // up updated modulos_completados / modulos_completados_hoy.
           if (this.selectedProyecto) {
@@ -685,6 +912,7 @@ export class Dashboard implements OnInit, OnDestroy {
       .subscribe({
         next: (data) => {
           this.proyectos = data;
+          this.listaCompra.registerProyectos(data);
           if (this.selectedProyecto) {
             const updated = data.find(p => p.id === this.selectedProyecto?.id);
             if (updated) this.selectedProyecto = updated;
