@@ -1,0 +1,16 @@
+# Entorno virtual local
+.venv/
+
+# Artefactos de PyInstaller
+build/
+dist/
+*.spec
+build.log
+
+# Cache de Python
+__pycache__/
+*.py[cod]
+
+# Calibraciones de prueba que el usuario pueda dejar al lado
+*.json
+!**/*.json.example
