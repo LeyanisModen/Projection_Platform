@@ -32,6 +32,19 @@ class MesaRol(models.TextChoices):
     SUPERIORES = 'SUPERIORES', 'Superiores'
 
 
+class MaterialTipo(models.TextChoices):
+    REFUERZO = 'REFUERZO', 'Refuerzo'
+    BARRA_SOLAPE = 'BARRA_SOLAPE', 'Barra de solape de zuncho'
+    ZUNCHO = 'ZUNCHO', 'Zuncho'
+    SEPARADOR = 'SEPARADOR', 'Separador'
+    PUNZO = 'PUNZO', 'Punzonamiento'
+
+
+class MaterialOrigenCheck(models.TextChoices):
+    PROYECTO = 'PROYECTO', 'Proyecto'
+    GENERAL = 'GENERAL', 'General'
+
+
 # =============================================================================
 # CORE MODELS
 # =============================================================================
@@ -923,4 +936,84 @@ class MesaQueueItem(models.Model):
             models.Index(fields=['modulo', 'fase']),
             models.Index(fields=['mesa', 'plan_group_index']),
         ]
+
+
+# =============================================================================
+# SHOPPING LIST (lista de compra de materiales)
+# =============================================================================
+class MaterialPieza(models.Model):
+    """One row per individual piece imported from the per-project materials .db.
+
+    Refuerzos and barras_solape carry an explicit `capa` column in the source
+    .db. Zunchos, separadores and punzos do not — by domain rule they always
+    belong to the inferior phase, so the importer stores them as INFERIOR.
+    `subtipo` is the canonical identifier within a tipo: '10' for Ø10,
+    'Z1' for zuncho Z1, '20' for separador altura 20cm, etc.
+    """
+    proyecto = models.ForeignKey(
+        Proyecto,
+        on_delete=models.CASCADE,
+        related_name='materiales',
+    )
+    modulo = models.ForeignKey(
+        Modulo,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='materiales',
+    )
+    tipo = models.CharField(max_length=20, choices=MaterialTipo.choices)
+    capa = models.CharField(max_length=20, choices=Fase.choices)
+    subtipo = models.CharField(max_length=40)
+    longitud = models.DecimalField(max_digits=10, decimal_places=4)
+
+    class Meta:
+        db_table = 'api_material_pieza'
+        indexes = [
+            models.Index(fields=['proyecto', 'tipo', 'subtipo']),
+            models.Index(fields=['modulo', 'capa']),
+        ]
+
+    def __str__(self):
+        return f"{self.tipo} {self.subtipo} · {self.longitud}m"
+
+
+class MaterialInformado(models.Model):
+    """Per-project, per-material-key state of the shopping-list checkbox.
+
+    `origen` differentiates whether a row was marked from the per-project
+    modal ('PROYECTO') or propagated from the general aggregated view
+    ('GENERAL'), so unchecking from the general view only affects rows
+    it itself marked, leaving manual per-project marks alone.
+    """
+    proyecto = models.ForeignKey(
+        Proyecto,
+        on_delete=models.CASCADE,
+        related_name='materiales_informados',
+    )
+    clave_material = models.CharField(max_length=80)
+    informado = models.BooleanField(default=False)
+    origen = models.CharField(
+        max_length=20,
+        choices=MaterialOrigenCheck.choices,
+        null=True,
+        blank=True,
+    )
+    fecha_marcado = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'api_material_informado'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['proyecto', 'clave_material'],
+                name='unique_material_informado_proyecto_clave',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['proyecto', 'informado']),
+            models.Index(fields=['clave_material']),
+        ]
+
+    def __str__(self):
+        return f"{self.proyecto_id} · {self.clave_material} = {self.informado}"
 

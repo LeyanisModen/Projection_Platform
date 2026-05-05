@@ -21,5 +21,15 @@ router.register(r"device", views.DeviceViewSet, basename="device")
 # Additionally, we include login URLs for the browsable API.
 urlpatterns = [
     path("", include(router.urls)),
+    path(
+        "lista-compra/general/",
+        views.ListaCompraGeneralView.as_view(),
+        name="lista-compra-general",
+    ),
+    path(
+        "lista-compra/general/<str:clave>/",
+        views.ListaCompraGeneralView.as_view(),
+        name="lista-compra-general-toggle",
+    ),
     path("api-auth/", include("rest_framework.urls", namespace="rest_framework")),
 ]

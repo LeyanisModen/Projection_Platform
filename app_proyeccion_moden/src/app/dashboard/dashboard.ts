@@ -879,7 +879,6 @@ export class Dashboard implements OnInit, OnDestroy {
       .subscribe({
         next: (data) => {
           this.proyectos = data;
-          this.listaCompra.registerProyectos(data);
           // Refresh the selected project reference so the donut picks
           // up updated modulos_completados / modulos_completados_hoy.
           if (this.selectedProyecto) {
@@ -912,7 +911,6 @@ export class Dashboard implements OnInit, OnDestroy {
       .subscribe({
         next: (data) => {
           this.proyectos = data;
-          this.listaCompra.registerProyectos(data);
           if (this.selectedProyecto) {
             const updated = data.find(p => p.id === this.selectedProyecto?.id);
             if (updated) this.selectedProyecto = updated;

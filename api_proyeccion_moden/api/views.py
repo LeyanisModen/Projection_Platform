@@ -29,9 +29,11 @@ from api.models import (
     Modulo, Proyecto, Planta, Imagen, Mesa,
     ModuloQueue, ModuloQueueItem, MesaQueueItem,
     FotoFabricacion, GrupoMesas, GrupoMesasProyecto,
-    DetalleModuloFase, MesaQueueStatus,
-    GrupoBastidor
+    DetalleModuloFase, MesaQueueStatus, ModuloEstado, Fase,
+    GrupoBastidor, MaterialPieza, MaterialInformado, MaterialOrigenCheck,
+    MaterialTipo,
 )
+from django.utils import timezone
 from rest_framework.authtoken.views import ObtainAuthToken
 from rest_framework.authtoken.models import Token
 
@@ -277,6 +279,12 @@ def _flatten_json_technical_data(payload):
 
 
 def _load_technical_records_from_sqlite(uploaded_file):
+    """Read both the legacy `resumen` table (per-module technical data) and,
+    if present, the per-piece materials tables (refuerzos, zunchos,
+    separadores, punzonamientos, barras_solape_zunchos). Returns a tuple
+    `(technical_records, materiales_pieces)`. Materials tables are optional;
+    if the .db doesn't include them, `materiales_pieces` is an empty list.
+    """
     temp_path = None
     connection = None
     try:
@@ -362,7 +370,9 @@ def _load_technical_records_from_sqlite(uploaded_file):
                                           or row_dict.get('metros_separadores'),
             })
 
-        return technical_records
+        materiales_pieces = _read_materiales_tables(cursor, table_names)
+
+        return technical_records, materiales_pieces
     except sqlite3.Error as exc:
         raise ValidationError(f'No se pudo leer la base SQLite: {str(exc)}')
     finally:
@@ -372,7 +382,117 @@ def _load_technical_records_from_sqlite(uploaded_file):
             os.unlink(temp_path)
 
 
+def _read_materiales_tables(cursor, table_names):
+    """Read the per-piece materials tables from the project .db.
+
+    All five tables are optional; we read whichever ones are present so
+    older .db files keep working. Returns a list of dicts with the
+    canonical fields the importer will persist as MaterialPieza rows:
+      { tipo, capa, modulo, subtipo, longitud }
+
+    Domain rules:
+      - refuerzos / barras_solape_zunchos carry an explicit `capa`.
+      - zunchos / separadores / punzonamientos always belong to the
+        inferior phase (no `capa` column in source).
+      - subtipo is the canonical id within a tipo:
+          refuerzo / barra_solape -> str(int(diametro))      e.g. '10'
+          zuncho / punzo          -> tipo string, uppercased  e.g. 'Z1'
+          separador               -> int(altura*100) as cm   e.g. '20'
+    """
+    pieces = []
+
+    def _capa(value):
+        if not value:
+            return None
+        v = str(value).strip().upper()
+        if v in ('INF', 'INFERIOR'):
+            return 'INFERIOR'
+        if v in ('SUP', 'SUPERIOR'):
+            return 'SUPERIOR'
+        return None
+
+    if 'refuerzos' in table_names:
+        for row in cursor.execute(
+            "SELECT modulo, capa, diametro, longitud FROM refuerzos"
+        ):
+            modulo = (row['modulo'] or '').strip()
+            capa = _capa(row['capa'])
+            if not modulo or capa is None or row['diametro'] is None or row['longitud'] is None:
+                continue
+            pieces.append({
+                'tipo': 'REFUERZO',
+                'capa': capa,
+                'modulo': modulo,
+                'subtipo': str(int(round(float(row['diametro'])))),
+                'longitud': float(row['longitud']),
+            })
+
+    if 'barras_solape_zunchos' in table_names:
+        for row in cursor.execute(
+            "SELECT modulo, capa, diametro, longitud FROM barras_solape_zunchos"
+        ):
+            modulo = (row['modulo'] or '').strip()
+            capa = _capa(row['capa'])
+            if not modulo or capa is None or row['diametro'] is None or row['longitud'] is None:
+                continue
+            pieces.append({
+                'tipo': 'BARRA_SOLAPE',
+                'capa': capa,
+                'modulo': modulo,
+                'subtipo': str(int(round(float(row['diametro'])))),
+                'longitud': float(row['longitud']),
+            })
+
+    if 'zunchos' in table_names:
+        for row in cursor.execute("SELECT modulo, tipo, longitud FROM zunchos"):
+            modulo = (row['modulo'] or '').strip()
+            tipo = (row['tipo'] or '').strip().upper()
+            if not modulo or not tipo or row['longitud'] is None:
+                continue
+            pieces.append({
+                'tipo': 'ZUNCHO',
+                'capa': 'INFERIOR',
+                'modulo': modulo,
+                'subtipo': tipo,
+                'longitud': float(row['longitud']),
+            })
+
+    if 'separadores' in table_names:
+        for row in cursor.execute(
+            "SELECT modulo, altura, longitud_total FROM separadores"
+        ):
+            modulo = (row['modulo'] or '').strip()
+            if not modulo or row['altura'] is None or row['longitud_total'] is None:
+                continue
+            altura_cm = int(round(float(row['altura']) * 100))
+            pieces.append({
+                'tipo': 'SEPARADOR',
+                'capa': 'INFERIOR',
+                'modulo': modulo,
+                'subtipo': str(altura_cm),
+                'longitud': float(row['longitud_total']),
+            })
+
+    if 'punzonamientos' in table_names:
+        for row in cursor.execute("SELECT modulo, tipo, longitud FROM punzonamientos"):
+            modulo = (row['modulo'] or '').strip()
+            tipo = (row['tipo'] or '').strip().upper()
+            if not modulo or not tipo or row['longitud'] is None:
+                continue
+            pieces.append({
+                'tipo': 'PUNZO',
+                'capa': 'INFERIOR',
+                'modulo': modulo,
+                'subtipo': tipo,
+                'longitud': float(row['longitud']),
+            })
+
+    return pieces
+
+
 def _load_technical_records_from_upload(uploaded_file):
+    """Returns (technical_records, materiales_pieces). Non-SQLite uploads
+    (json/csv) carry no materials and return [] for the second element."""
     filename = uploaded_file.name.lower()
 
     if filename.endswith('.db') or filename.endswith('.sqlite') or filename.endswith('.sqlite3'):
@@ -385,13 +505,51 @@ def _load_technical_records_from_upload(uploaded_file):
         text = content.decode('latin-1')
 
     if filename.endswith('.json'):
-        return _flatten_json_technical_data(json.loads(text))
+        return _flatten_json_technical_data(json.loads(text)), []
 
     if filename.endswith('.csv'):
         reader = csv.DictReader(io.StringIO(text))
-        return list(reader)
+        return list(reader), []
 
     raise ValidationError('Formato no soportado. Usa un archivo JSON, CSV o SQLite (.db).')
+
+
+def _persist_materiales_pieces(proyecto, pieces):
+    """Replace the project's MaterialPieza rows with the imported batch.
+
+    Modules are matched by `Modulo.nombre`. Pieces whose module is not in
+    the project are stored with `modulo=None` so the data isn't lost; the
+    aggregations later filter by FK so they're effectively ignored. The
+    whole batch runs in one transaction: the project either ends up with
+    all the new pieces or with none.
+    """
+    stats = {'created': 0, 'orphan': 0, 'total': len(pieces)}
+    if not pieces:
+        return stats
+
+    modulo_by_name = {m.nombre: m for m in proyecto.modulos.all()}
+
+    with transaction.atomic():
+        MaterialPieza.objects.filter(proyecto=proyecto).delete()
+
+        batch = []
+        for p in pieces:
+            modulo = modulo_by_name.get(p['modulo'])
+            if modulo is None:
+                stats['orphan'] += 1
+            batch.append(MaterialPieza(
+                proyecto=proyecto,
+                modulo=modulo,
+                tipo=p['tipo'],
+                capa=p['capa'],
+                subtipo=p['subtipo'],
+                longitud=Decimal(str(p['longitud'])),
+            ))
+        if batch:
+            MaterialPieza.objects.bulk_create(batch, batch_size=500)
+            stats['created'] = len(batch)
+
+    return stats
 
 
 def _resolve_modulo_for_record(proyecto, modulo_nombre, planta_nombre=None):
@@ -920,9 +1078,10 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         technical_file = request.FILES.get('technical_file')
         raw_records = request.data.get('records')
 
+        materiales_pieces = []
         try:
             if technical_file:
-                records = _load_technical_records_from_upload(technical_file)
+                records, materiales_pieces = _load_technical_records_from_upload(technical_file)
             elif isinstance(raw_records, str):
                 records = _flatten_json_technical_data(json.loads(raw_records))
             elif raw_records:
@@ -980,6 +1139,8 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         if not normalized_records:
             stats['errors'].append('No se encontraron registros validos para importar')
 
+        stats['materiales'] = _persist_materiales_pieces(proyecto, materiales_pieces)
+
         grupos_creados = 0
         if stats['processed'] > 0 and not stats['errors']:
             grupos_creados = _persist_bastidor_groups(proyecto)
@@ -994,6 +1155,308 @@ class ProyectoViewSet(viewsets.ModelViewSet):
             'proyecto_id': proyecto.id,
             'stats': stats,
         })
+
+    @action(detail=True, methods=['get'], url_path='lista-compra')
+    def lista_compra(self, request, pk=None):
+        """Aggregated shopping list for a single project."""
+        proyecto = self.get_object()
+        return Response({
+            'proyecto_id': proyecto.id,
+            'proyecto_nombre': proyecto.nombre,
+            'renglones': _compute_lista_compra_proyecto(proyecto),
+        })
+
+    @action(detail=True, methods=['patch'], url_path=r'lista-compra/(?P<clave>[\w-]+)')
+    def lista_compra_toggle(self, request, pk=None, clave=None):
+        """Toggle the 'informado' check for one row of a project's shopping list.
+        Marking sets origen='PROYECTO'; unmarking clears origen, regardless of
+        what set it (a manual unmark from the per-project view is always honored)."""
+        proyecto = self.get_object()
+        informado = bool(request.data.get('informado'))
+        mi, _ = MaterialInformado.objects.get_or_create(
+            proyecto=proyecto,
+            clave_material=clave,
+        )
+        mi.informado = informado
+        mi.origen = MaterialOrigenCheck.PROYECTO if informado else None
+        mi.fecha_marcado = timezone.now() if informado else None
+        mi.save()
+
+        renglones = _compute_lista_compra_proyecto(proyecto)
+        actualizado = next((r for r in renglones if r['clave'] == clave), None)
+        if actualizado is None:
+            return Response(
+                {'detail': f'La clave {clave} no aparece en la lista del proyecto.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        return Response(actualizado)
+
+
+# =============================================================================
+# SHOPPING LIST helpers
+# =============================================================================
+
+_COLOR_CHARS = {
+    'y': ('yellow', 'amarilla'),
+    'g': ('green', 'verde'),
+    'c': ('cyan', 'cian'),
+    'v': ('violet', 'violeta'),
+    'm': ('magenta', 'magenta'),
+    'o': ('orange', 'naranja'),
+}
+
+# 0.25 m of color ribbon per mark, only on the SUPERIOR phase (matches the
+# heuristic in DetalleModuloFase.dificultad_calculada).
+_RIBBON_M_PER_MARK = 0.25
+
+
+def _compute_lista_compra_proyecto(proyecto):
+    """Aggregate one project's MaterialPieza rows + constants (mallazo,
+    pieza bastidor, color ribbon) into shopping-list rows.
+
+    A row's `pendiente` is the portion of `total` that hasn't been consumed
+    yet — i.e. it belongs to a (modulo, capa) whose `<capa>_hecho` flag is
+    still False. For ribbons, only SUPERIOR is considered consumed.
+    """
+    modulos = list(
+        proyecto.modulos.all().only(
+            'id', 'nombre', 'inferior_hecho', 'superior_hecho', 'codigos_color',
+        )
+    )
+
+    pieces = MaterialPieza.objects.filter(
+        proyecto=proyecto, modulo__isnull=False,
+    ).select_related('modulo')
+
+    informados = {
+        mi.clave_material: mi
+        for mi in MaterialInformado.objects.filter(proyecto=proyecto)
+    }
+
+    acc = {}
+
+    def _add(clave, etiqueta, unidad, total_qty, pendiente_qty, agrupable):
+        e = acc.get(clave)
+        if e is None:
+            acc[clave] = {
+                'etiqueta': etiqueta,
+                'unidad': unidad,
+                'total': 0.0,
+                'pendiente': 0.0,
+                'agrupable': agrupable,
+            }
+            e = acc[clave]
+        e['total'] += float(total_qty)
+        e['pendiente'] += float(pendiente_qty)
+
+    for p in pieces:
+        capa_hecha = (
+            p.modulo.inferior_hecho
+            if p.capa == Fase.INFERIOR
+            else p.modulo.superior_hecho
+        )
+        long_total = float(p.longitud)
+        long_pendiente = 0.0 if capa_hecha else long_total
+
+        if p.tipo in (MaterialTipo.REFUERZO, MaterialTipo.BARRA_SOLAPE):
+            _add(
+                f'refuerzo_d{p.subtipo}',
+                f'Refuerzo Ø{p.subtipo}',
+                'm', long_total, long_pendiente, True,
+            )
+        elif p.tipo == MaterialTipo.ZUNCHO:
+            _add(
+                f'zuncho_{p.subtipo.lower()}',
+                f'Zuncho {p.subtipo}',
+                'm', long_total, long_pendiente, False,
+            )
+        elif p.tipo == MaterialTipo.SEPARADOR:
+            _add(
+                f'separador_a{p.subtipo}',
+                f'Separador {p.subtipo} cm',
+                'm', long_total, long_pendiente, True,
+            )
+        elif p.tipo == MaterialTipo.PUNZO:
+            _add(
+                f'punzo_{p.subtipo.lower()}',
+                f'Punzo {p.subtipo}',
+                'm', long_total, long_pendiente, False,
+            )
+
+    for m in modulos:
+        _add('mallazo_inf', 'Mallazo inferior', 'ud',
+             1, 0 if m.inferior_hecho else 1, True)
+        _add('mallazo_sup', 'Mallazo superior', 'ud',
+             1, 0 if m.superior_hecho else 1, True)
+        _add('pieza_bastidor_inf', 'Pieza bastidor inferior', 'ud',
+             4, 0 if m.inferior_hecho else 4, True)
+        _add('pieza_bastidor_sup', 'Pieza bastidor superior', 'ud',
+             4, 0 if m.superior_hecho else 4, True)
+
+        if m.codigos_color:
+            consumed = m.superior_hecho
+            for ch in m.codigos_color:
+                color = _COLOR_CHARS.get(ch)
+                if color is None:
+                    continue
+                color_id, color_label = color
+                _add(
+                    f'cinta_{color_id}',
+                    f'Cinta {color_label}',
+                    'm',
+                    _RIBBON_M_PER_MARK,
+                    0.0 if consumed else _RIBBON_M_PER_MARK,
+                    True,
+                )
+
+    renglones = []
+    for clave, data in acc.items():
+        mi = informados.get(clave)
+        renglones.append({
+            'clave': clave,
+            'etiqueta': data['etiqueta'],
+            'unidad': data['unidad'],
+            'total': round(data['total'], 4),
+            'pendiente': round(data['pendiente'], 4),
+            'informado': mi.informado if mi else False,
+            'origen': mi.origen if mi else None,
+            'agrupable': data['agrupable'],
+        })
+
+    renglones.sort(key=lambda r: r['etiqueta'])
+    return renglones
+
+
+def _proyectos_activos_for_user(user):
+    """Projects that exist and aren't fully completed (at least one module
+    not in COMPLETADO/CERRADO)."""
+    if user.is_staff or user.is_superuser:
+        qs = Proyecto.objects.all()
+    else:
+        qs = Proyecto.objects.filter(usuario=user)
+
+    return qs.filter(
+        modulos__estado__in=[ModuloEstado.PENDIENTE, ModuloEstado.EN_PROGRESO]
+    ).distinct()
+
+
+def _compute_lista_compra_general(proyectos):
+    """Aggregate shopping lists across multiple projects.
+
+    Returns a dict with two blocks:
+      - `agrupados`: rows whose clave is shareable across projects
+        (refuerzos, separadores, mallazo, pieza bastidor, cinta), summed.
+      - `por_proyecto`: rows whose clave is project-specific (zunchos and
+        punzos — same code can mean different things between projects),
+        listed under each project as a subsection.
+    """
+    agrupables_acc = {}      # clave -> { etiqueta, unidad, total, pendiente, informado_total, todos_marcados, proyectos_count }
+    por_proyecto_acc = []    # [{ proyecto_id, proyecto_nombre, renglones: [...] }]
+
+    for proyecto in proyectos:
+        renglones = _compute_lista_compra_proyecto(proyecto)
+        especificos = []
+        for r in renglones:
+            if r['agrupable']:
+                e = agrupables_acc.get(r['clave'])
+                if e is None:
+                    agrupables_acc[r['clave']] = {
+                        'etiqueta': r['etiqueta'],
+                        'unidad': r['unidad'],
+                        'total': 0.0,
+                        'pendiente': 0.0,
+                        'informado_total': 0.0,
+                        'proyectos_count': 0,
+                        'todos_marcados': True,
+                    }
+                    e = agrupables_acc[r['clave']]
+                e['total'] += r['total']
+                e['pendiente'] += r['pendiente']
+                e['proyectos_count'] += 1
+                if r['informado']:
+                    e['informado_total'] += r['total']
+                else:
+                    e['todos_marcados'] = False
+            else:
+                especificos.append(r)
+
+        if especificos:
+            por_proyecto_acc.append({
+                'proyecto_id': proyecto.id,
+                'proyecto_nombre': proyecto.nombre,
+                'renglones': especificos,
+            })
+
+    agrupados = []
+    for clave, data in agrupables_acc.items():
+        agrupados.append({
+            'clave': clave,
+            'etiqueta': data['etiqueta'],
+            'unidad': data['unidad'],
+            'total': round(data['total'], 4),
+            'pendiente': round(data['pendiente'], 4),
+            'informado_total': round(data['informado_total'], 4),
+            'proyectos_count': data['proyectos_count'],
+            'todos_marcados': data['todos_marcados'] and data['proyectos_count'] > 0,
+        })
+    agrupados.sort(key=lambda r: r['etiqueta'])
+    por_proyecto_acc.sort(key=lambda b: b['proyecto_nombre'])
+
+    return {
+        'agrupados': agrupados,
+        'por_proyecto': por_proyecto_acc,
+    }
+
+
+class ListaCompraGeneralView(APIView):
+    """Aggregated shopping list across all active projects of the user.
+
+    PATCH propagates a check to every project that contributes to the row.
+    The 'origen' field on each per-project MaterialInformado lets unmark
+    only what the general view itself marked, preserving manual marks.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        proyectos = list(_proyectos_activos_for_user(request.user))
+        return Response(_compute_lista_compra_general(proyectos))
+
+    def patch(self, request, clave=None):
+        if not clave:
+            return Response(
+                {'detail': 'Falta la clave de material.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        informado = bool(request.data.get('informado'))
+        proyectos = list(_proyectos_activos_for_user(request.user))
+
+        # Only operate on projects that actually contribute to this clave —
+        # otherwise we'd create stale MaterialInformado rows for projects
+        # that don't even have the material.
+        contributors = []
+        for p in proyectos:
+            if any(r['clave'] == clave for r in _compute_lista_compra_proyecto(p)):
+                contributors.append(p)
+
+        with transaction.atomic():
+            if informado:
+                for p in contributors:
+                    mi, _ = MaterialInformado.objects.get_or_create(
+                        proyecto=p, clave_material=clave,
+                    )
+                    if not mi.informado:
+                        mi.informado = True
+                        mi.origen = MaterialOrigenCheck.GENERAL
+                        mi.fecha_marcado = timezone.now()
+                        mi.save()
+            else:
+                MaterialInformado.objects.filter(
+                    proyecto__in=contributors,
+                    clave_material=clave,
+                    origen=MaterialOrigenCheck.GENERAL,
+                ).update(informado=False, origen=None, fecha_marcado=None)
+
+        return Response(_compute_lista_compra_general(proyectos))
 
 
 class GrupoBastidorViewSet(viewsets.ModelViewSet):
