@@ -77,6 +77,16 @@ export class VisorComponent implements OnInit, OnDestroy {
   // also set it locally for instant feedback (optimistic update); the
   // poll then either confirms or corrects it.
   checkOverlay: 'none' | 'success' | 'error' | 'no_camera' = 'none';
+  // Local-only debug snapshot of the latest check (cards expected vs.
+  // detected, missing colours). Set on the mini-PC after upload_foto
+  // when the backend is in COLOR_CHECK_DEBUG mode. Only displayed in
+  // the player view -- the supervisor sees just the ✓/✗ overlay and
+  // can open the annotated image on Drive for the rest.
+  checkDebugInfo: {
+    expected_counts?: Record<string, number>;
+    cards_per_color?: Record<string, number>;
+    missing?: Record<string, number>;
+  } | null = null;
   private checkBlock = false;
   private checkSuccessTimer: any = null;
   // While a clear request is in flight, ignore the polling so we
@@ -399,6 +409,7 @@ export class VisorComponent implements OnInit, OnDestroy {
     if (this.checkOverlay === 'none' && !this.checkBlock) return;
     this.checkOverlay = 'none';
     this.checkBlock = false;
+    this.checkDebugInfo = null;
     if (this.checkSuccessTimer) {
       clearTimeout(this.checkSuccessTimer);
       this.checkSuccessTimer = null;
@@ -727,7 +738,16 @@ export class VisorComponent implements OnInit, OnDestroy {
         this.captureStatus = 'done';
         this.capturingPhoto = false;
         if (mode === 'check') {
-          this.applyCheckResult(res?.check_result);
+          const detail = res?.check_detail;
+          this.applyCheckResult(res?.check_result, 'check', detail);
+          // In debug mode the backend renders an annotated overlay
+          // with the bbox of every detection (passed and rejected)
+          // and exposes its URL. Mirror it to Drive via the local
+          // capture service so the supervisor finds it next to the
+          // raw captures without leaving the file explorer.
+          if (!this.isSupervisor && detail?.annotated_url) {
+            this.mirrorAnnotatedToDrive(detail.annotated_url);
+          }
         }
         this.cdr.detectChanges();
         setTimeout(() => {
@@ -755,7 +775,8 @@ export class VisorComponent implements OnInit, OnDestroy {
 
   private applyCheckResult(
     valid: boolean | null | undefined,
-    reason: 'check' | 'no_camera' = 'check'
+    reason: 'check' | 'no_camera' = 'check',
+    detail?: any,
   ): void {
     if (this.checkSuccessTimer) {
       clearTimeout(this.checkSuccessTimer);
@@ -769,6 +790,60 @@ export class VisorComponent implements OnInit, OnDestroy {
       this.checkOverlay = reason === 'no_camera' ? 'no_camera' : 'error';
       this.checkBlock = true;
     }
+    if (detail && (detail.expected_counts || detail.cards_per_color || detail.missing)) {
+      this.checkDebugInfo = {
+        expected_counts: detail.expected_counts,
+        cards_per_color: detail.cards_per_color,
+        missing: detail.missing,
+      };
+    } else {
+      this.checkDebugInfo = null;
+    }
+  }
+
+  // Template helpers for the debug panel.
+  formatCountMap(map: Record<string, number> | undefined | null): string {
+    if (!map) return '';
+    return Object.entries(map)
+      .map(([color, n]) => `${color}×${n}`)
+      .join(', ');
+  }
+
+  objectKeys(obj: object | undefined | null): string[] {
+    return obj ? Object.keys(obj) : [];
+  }
+
+  private mirrorAnnotatedToDrive(annotatedUrl: string): void {
+    // The annotated_url is server-relative (e.g. /media/fotos/.../foo.jpg).
+    // Build an absolute URL against the backend root so we don't depend
+    // on the current page origin.
+    let fullUrl = annotatedUrl;
+    if (annotatedUrl.startsWith('/')) {
+      const apiRoot = environment.apiUrl.replace(/\/$/, '');
+      // environment.apiUrl is e.g. https://moden.up.railway.app/api;
+      // strip the /api suffix to get the host root that serves /media/.
+      const hostRoot = apiRoot.replace(/\/api$/, '');
+      fullUrl = `${hostRoot}${annotatedUrl}`;
+    }
+    const filename = annotatedUrl.split('/').pop() || 'annotated.jpg';
+
+    this.http.get(fullUrl, { responseType: 'blob' }).subscribe({
+      next: (blob: Blob) => {
+        const headers = new HttpHeaders({
+          'Content-Type': 'image/jpeg',
+          'X-Filename': filename,
+        });
+        this.http.post(
+          `${this.captureServiceUrl}/save_debug_image`,
+          blob,
+          { headers, responseType: 'json' as const }
+        ).subscribe({
+          next: () => console.log('[Visor] Annotated mirrored to Drive:', filename),
+          error: (err) => console.warn('[Visor] save_debug_image failed:', err),
+        });
+      },
+      error: (err) => console.warn('[Visor] download annotated failed:', err),
+    });
   }
 
   startStatePolling(): void {

@@ -279,3 +279,53 @@
     to { opacity: 1; transform: translateY(0); }
 }
 
+/* Debug panel for the colour-check overlay (only shown when the
+   backend ran with COLOR_CHECK_DEBUG=true and returned detail). */
+.check-debug-panel {
+    position: fixed;
+    bottom: 18px;
+    right: 18px;
+    z-index: 11000;
+    padding: 12px 16px;
+    background: rgba(15, 25, 15, 0.85);
+    border-left: 4px solid #2ea043;
+    border-radius: 6px;
+    color: #fff;
+    font-family: 'Segoe UI', sans-serif;
+    font-size: 0.95rem;
+    line-height: 1.35;
+    min-width: 220px;
+    max-width: 360px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+    pointer-events: none;
+    animation: fadeIn 0.25s ease;
+}
+
+.check-debug-panel-ko {
+    background: rgba(35, 12, 12, 0.88);
+    border-left-color: #da3633;
+}
+
+.check-debug-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+}
+
+.check-debug-row {
+    display: flex;
+    gap: 8px;
+}
+
+.check-debug-label {
+    color: rgba(255, 255, 255, 0.65);
+    min-width: 78px;
+}
+
+.check-debug-missing {
+    color: #ffb3b0;
+    font-weight: 600;
+}
+

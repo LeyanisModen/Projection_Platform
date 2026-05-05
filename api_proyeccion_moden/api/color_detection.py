@@ -9,6 +9,11 @@ The photo is valid when, for every colour expected by the module's
 `codigos_color`, the number of card-shaped contours found is at least
 the number of times that colour appears in the code (so 'bb' requires
 TWO blue cards, not one).
+
+When called with debug=True, every contour that survived the minimum
+area filter is reported individually with its metrics and (if it was
+rejected) the filter that rejected it. annotate_image() consumes that
+detection list to draw a debug overlay on top of the original photo.
 """
 
 from collections import Counter
@@ -76,12 +81,69 @@ def _expected_color_names(codigos_color):
     return out
 
 
-def _count_cards(hsv_blurred, color_name, total_area):
-    """Run the detector.pyw pipeline for a single colour.
+def _evaluate_contour(cnt, total_area):
+    """Run every card filter on a single contour and return either
+    ('passed', metrics_dict) or (rejected_by, metrics_dict).
 
-    Returns the number of contours that pass every filter (area,
-    solidity, aspect ratio, bbox density).
+    metrics_dict has bbox, area, solidity, aspect_ratio, bbox_density
+    so the caller can render an annotated overlay or surface the data
+    in a debug panel.
+
+    Returns None when the contour is below the minimum area threshold
+    (sub-pixel noise we don't even want to report).
     """
+    area = cv2.contourArea(cnt)
+    min_area = _MIN_AREA_RATIO * total_area
+    max_area = _MAX_AREA_RATIO * total_area
+
+    if area <= min_area:
+        return None  # noise, not interesting
+
+    metrics = {
+        'area': float(round(area, 1)),
+        'solidity': None,
+        'aspect_ratio': None,
+        'bbox_density': None,
+        'bbox': None,
+    }
+
+    if area >= max_area:
+        x, y, w, h = cv2.boundingRect(cnt)
+        metrics['bbox'] = [int(x), int(y), int(w), int(h)]
+        return 'area_too_large', metrics
+
+    hull_area = cv2.contourArea(cv2.convexHull(cnt))
+    if hull_area <= 0:
+        x, y, w, h = cv2.boundingRect(cnt)
+        metrics['bbox'] = [int(x), int(y), int(w), int(h)]
+        return 'invalid_hull', metrics
+    solidity = float(area) / float(hull_area)
+    metrics['solidity'] = round(solidity, 3)
+
+    x, y, w, h = cv2.boundingRect(cnt)
+    metrics['bbox'] = [int(x), int(y), int(w), int(h)]
+
+    if solidity < _SOLIDITY_MIN:
+        return 'solidity', metrics
+
+    if h <= 0 or w <= 0:
+        return 'invalid_bbox', metrics
+    ar = float(w) / float(h)
+    metrics['aspect_ratio'] = round(ar, 3)
+    if not any(lo < ar < hi for lo, hi in _ASPECT_RATIO_RANGES):
+        return 'aspect_ratio', metrics
+
+    bbox_area = w * h
+    density = (area / bbox_area) * 100.0
+    metrics['bbox_density'] = round(density, 1)
+    if density < _BBOX_DENSITY_MIN:
+        return 'bbox_density', metrics
+
+    return 'passed', metrics
+
+
+def _scan_color(hsv_blurred, color_name, total_area):
+    """Return every reportable detection for a single colour."""
     lower, upper = _COLOR_HSV_RANGES[color_name]
     mask = cv2.inRange(
         hsv_blurred,
@@ -95,48 +157,35 @@ def _count_cards(hsv_blurred, color_name, total_area):
         mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
     )
 
-    min_area = _MIN_AREA_RATIO * total_area
-    max_area = _MAX_AREA_RATIO * total_area
-
-    cards = 0
+    out = []
     for cnt in contours:
-        area = cv2.contourArea(cnt)
-        if not (min_area < area < max_area):
+        result = _evaluate_contour(cnt, total_area)
+        if result is None:
             continue
-
-        hull_area = cv2.contourArea(cv2.convexHull(cnt))
-        if hull_area <= 0:
-            continue
-        if (area / hull_area) < _SOLIDITY_MIN:
-            continue
-
-        x, y, w, h = cv2.boundingRect(cnt)
-        if h <= 0 or w <= 0:
-            continue
-        ar = w / float(h)
-        if not any(lo < ar < hi for lo, hi in _ASPECT_RATIO_RANGES):
-            continue
-
-        bbox_area = w * h
-        density_pct = (area / bbox_area) * 100.0
-        if density_pct < _BBOX_DENSITY_MIN:
-            continue
-
-        cards += 1
-
-    return cards
+        verdict, metrics = result
+        out.append({
+            'color': color_name,
+            'passed': verdict == 'passed',
+            'rejected_by': None if verdict == 'passed' else verdict,
+            **metrics,
+        })
+    return out
 
 
-def detect_colors(image_bytes, codigos_color):
+def detect_colors(image_bytes, codigos_color, debug=False):
     expected = _expected_color_names(codigos_color)
     expected_counts = Counter(expected)
+
+    base = {
+        'expected': expected,
+        'expected_counts': dict(expected_counts),
+    }
 
     if not expected:
         return {
             'valid': True,
-            'expected': [],
-            'expected_counts': {},
             'cards_per_color': {},
+            **base,
         }
 
     arr = np.frombuffer(image_bytes, dtype=np.uint8)
@@ -144,10 +193,9 @@ def detect_colors(image_bytes, codigos_color):
     if bgr is None:
         return {
             'valid': False,
-            'expected': expected,
-            'expected_counts': dict(expected_counts),
             'cards_per_color': {},
             'error': 'invalid_image',
+            **base,
         }
 
     height, width = bgr.shape[:2]
@@ -157,18 +205,120 @@ def detect_colors(image_bytes, codigos_color):
     blurred = cv2.GaussianBlur(hsv, _BLUR_KERNEL, 0)
 
     cards_per_color = {}
-    missing = {}
-    for color, needed in expected_counts.items():
-        found = _count_cards(blurred, color, total_area)
-        cards_per_color[color] = found
-        if found < needed:
-            missing[color] = needed - found
+    detections_all = []
+    for color in sorted(set(expected)):
+        color_detections = _scan_color(blurred, color, total_area)
+        cards_per_color[color] = sum(1 for d in color_detections if d['passed'])
+        detections_all.extend(color_detections)
 
-    return {
+    missing = {
+        color: needed - cards_per_color.get(color, 0)
+        for color, needed in expected_counts.items()
+        if cards_per_color.get(color, 0) < needed
+    }
+
+    result = {
         'valid': not missing,
-        'expected': expected,
-        'expected_counts': dict(expected_counts),
         'cards_per_color': cards_per_color,
         'missing': missing,
         'image_size': [width, height],
+        **base,
     }
+    if debug:
+        result['detections'] = detections_all
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Annotated-image rendering (debug-only)
+# ---------------------------------------------------------------------------
+
+# BGR colours for the overlay (the photo is BGR while in OpenCV).
+_PASSED_BGR = (0, 220, 0)        # green
+_REJECTED_BGR = (0, 140, 255)    # orange
+_TEXT_BGR = (255, 255, 255)
+_TEXT_SHADOW_BGR = (0, 0, 0)
+
+_BORDER_PASSED = 4
+_BORDER_REJECTED = 3
+
+
+def annotate_image(image_bytes, detections, jpeg_quality=85):
+    """Draw every detection on the photo and return the JPEG bytes.
+
+    Passed contours get a thick green border; rejected ones get an
+    orange border with the rejection reason next to them. Useful for
+    eyeballing why a real card isn't passing (HSV range, area,
+    aspect ratio, etc.).
+    """
+    arr = np.frombuffer(image_bytes, dtype=np.uint8)
+    bgr = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    if bgr is None:
+        return image_bytes  # nothing we can do
+
+    h_img, w_img = bgr.shape[:2]
+    # Scale text and line widths so the overlay is legible regardless
+    # of resolution.
+    font_scale = max(0.5, min(w_img, h_img) / 1500.0)
+    line_thickness = max(2, int(round(min(w_img, h_img) / 700.0)))
+
+    for det in detections:
+        bbox = det.get('bbox')
+        if not bbox:
+            continue
+        x, y, w, h = bbox
+        passed = det.get('passed')
+        color = _PASSED_BGR if passed else _REJECTED_BGR
+        thickness = _BORDER_PASSED if passed else _BORDER_REJECTED
+        thickness = max(thickness, line_thickness)
+        cv2.rectangle(bgr, (x, y), (x + w, y + h), color, thickness)
+
+        # Build a short label with the colour, verdict and the most
+        # informative metric.
+        label_parts = [det.get('color', '?')]
+        if passed:
+            label_parts.append('OK')
+        else:
+            reason = det.get('rejected_by') or 'rej'
+            label_parts.append(reason)
+            metric_value = None
+            if reason == 'solidity':
+                metric_value = det.get('solidity')
+            elif reason == 'aspect_ratio':
+                metric_value = det.get('aspect_ratio')
+            elif reason == 'bbox_density':
+                metric_value = det.get('bbox_density')
+            elif reason in ('area_too_large', 'area_too_small'):
+                metric_value = det.get('area')
+            if metric_value is not None:
+                label_parts.append(f'{metric_value}')
+        label = ' '.join(str(p) for p in label_parts)
+
+        # Place the label above the bbox; if there's no room, put it
+        # inside the top-left corner.
+        text_size, _ = cv2.getTextSize(
+            label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, line_thickness
+        )
+        text_w, text_h = text_size
+        text_x = x
+        text_y = y - 6
+        if text_y - text_h < 0:
+            text_y = y + text_h + 6
+        # Black shadow for legibility on bright backgrounds.
+        cv2.putText(
+            bgr, label, (text_x + 1, text_y + 1),
+            cv2.FONT_HERSHEY_SIMPLEX, font_scale,
+            _TEXT_SHADOW_BGR, line_thickness + 1, cv2.LINE_AA,
+        )
+        cv2.putText(
+            bgr, label, (text_x, text_y),
+            cv2.FONT_HERSHEY_SIMPLEX, font_scale,
+            _TEXT_BGR, line_thickness, cv2.LINE_AA,
+        )
+
+    ok, jpeg = cv2.imencode(
+        '.jpg', bgr, [cv2.IMWRITE_JPEG_QUALITY, int(jpeg_quality)]
+    )
+    if not ok:
+        return image_bytes
+    return jpeg.tobytes()

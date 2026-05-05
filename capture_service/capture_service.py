@@ -5,11 +5,19 @@ Runs on each mini-PC alongside the browser Player.
 Listens on localhost:5555. Two jobs in one process:
 
   1. HTTP server (on-demand)
-     POST /capture   -> take a fresh 4K JPEG and return the bytes
-                        (used by the visor when an image filename
-                         contains _foto / _photo / _check)
-     GET  /health    -> { "status": "ok" }
-     GET  /stats     -> { documentation / counters / local disk usage }
+     POST /capture            -> take a fresh 4K JPEG and return the
+                                  bytes (used by the visor when an
+                                  image filename contains _foto /
+                                  _photo / _check)
+     POST /save_debug_image   -> raw JPEG body + X-Filename header.
+                                  Persisted to <output_dir>/<mesa_id>/
+                                  debug/YYYY-MM-DD/<filename>.
+                                  Used by the visor in COLOR_CHECK_DEBUG
+                                  mode to mirror the annotated overlay
+                                  to Drive.
+     GET  /health             -> { "status": "ok" }
+     GET  /stats              -> { documentation / counters / local
+                                  disk usage }
 
   2. Documentation thread (periodic, configurable)
      Every `interval_seconds` saves a resized JPEG into
@@ -432,6 +440,8 @@ class CaptureHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path == '/capture':
             self._handle_capture()
+        elif self.path == '/save_debug_image':
+            self._handle_save_debug_image()
         else:
             self.send_error(404)
 
@@ -456,6 +466,54 @@ class CaptureHandler(BaseHTTPRequestHandler):
         self._cors()
         self.end_headers()
         self.wfile.write(data)
+
+    def _handle_save_debug_image(self):
+        """Persist a debug image (e.g. an annotated check overlay) to
+        Drive next to the raw captures: <output_dir>/<mesa_id>/debug/
+        YYYY-MM-DD/<filename>. The visor uses this after a _check
+        round-trip when COLOR_CHECK_DEBUG is on, so the bbox-overlay
+        ends up alongside the day folders the supervisor already opens
+        on Google Drive.
+
+        The body is the raw JPEG bytes; the filename comes in the
+        X-Filename header. Path traversal is rejected.
+        """
+        raw_filename = self.headers.get('X-Filename', '').strip()
+        # Strip any path component the caller may have sneaked in.
+        safe_name = os.path.basename(raw_filename)
+        if not safe_name or safe_name in ('.', '..'):
+            self.send_error(400, 'X-Filename header missing or invalid')
+            return
+
+        try:
+            length = int(self.headers.get('Content-Length', '0'))
+        except ValueError:
+            length = 0
+        if length <= 0:
+            self.send_error(400, 'Empty body')
+            return
+        # Cap accepted size at 10 MB to avoid runaway uploads.
+        if length > 10 * 1024 * 1024:
+            self.send_error(413, 'Body too large')
+            return
+
+        body = self.rfile.read(length)
+
+        day = datetime.now().strftime('%Y-%m-%d')
+        dest_dir = _mesa_root() / 'debug' / day
+        try:
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            dest_path = dest_dir / safe_name
+            with open(dest_path, 'wb') as fh:
+                fh.write(body)
+        except OSError as exc:
+            self.send_error(500, f'Cannot write file: {exc}')
+            return
+
+        self._respond_json(200, {
+            'status': 'ok',
+            'path': str(dest_path),
+        })
 
     def _respond_json(self, status, payload):
         body = json.dumps(payload, default=str).encode('utf-8')
@@ -483,9 +541,10 @@ def main():
 
     server = HTTPServer((CONFIG.host, CONFIG.port), CaptureHandler)
     print(f'[CaptureService] Listening on http://{CONFIG.host}:{CONFIG.port}')
-    print('[CaptureService] POST /capture  -> take a 4K photo')
-    print('[CaptureService] GET  /health   -> health check')
-    print('[CaptureService] GET  /stats    -> documentation stats')
+    print('[CaptureService] POST /capture            -> take a 4K photo')
+    print('[CaptureService] POST /save_debug_image   -> persist a debug image to Drive')
+    print('[CaptureService] GET  /health             -> health check')
+    print('[CaptureService] GET  /stats              -> documentation stats')
     try:
         server.serve_forever()
     except KeyboardInterrupt:

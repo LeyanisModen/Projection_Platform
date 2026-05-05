@@ -51,6 +51,36 @@
             [checkOverlay]="checkOverlay">
         </app-mapper>
 
+        <!-- Debug-only panel rendered next to the check overlay.
+             Lives outside the mapper so the text is not warped by the
+             perspective transform. Only the player sets checkDebugInfo;
+             the supervisor side stays clean. -->
+        @if (checkDebugInfo && checkOverlay !== 'none') {
+        <div class="check-debug-panel" [class.check-debug-panel-ko]="checkOverlay !== 'success'">
+            <div class="check-debug-title">
+                {{ checkOverlay === 'success' ? 'Check OK' : (checkOverlay === 'no_camera' ? 'Sin cámara' : 'Check fallido') }}
+            </div>
+            @if (checkDebugInfo.expected_counts) {
+            <div class="check-debug-row">
+                <span class="check-debug-label">Esperado:</span>
+                <span>{{ formatCountMap(checkDebugInfo.expected_counts) || '—' }}</span>
+            </div>
+            }
+            @if (checkDebugInfo.cards_per_color) {
+            <div class="check-debug-row">
+                <span class="check-debug-label">Detectado:</span>
+                <span>{{ formatCountMap(checkDebugInfo.cards_per_color) || '—' }}</span>
+            </div>
+            }
+            @if (checkDebugInfo.missing && objectKeys(checkDebugInfo.missing).length > 0) {
+            <div class="check-debug-row check-debug-missing">
+                <span class="check-debug-label">Falta:</span>
+                <span>{{ formatCountMap(checkDebugInfo.missing) }}</span>
+            </div>
+            }
+        </div>
+        }
+
         <!-- Overlays only in the supervisor view. The mini-PC projects
              a clean image: anything else would show up on the mesa. -->
         @if (isSupervisor) {

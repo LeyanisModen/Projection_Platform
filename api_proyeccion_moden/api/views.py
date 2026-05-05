@@ -3328,6 +3328,7 @@ class DeviceViewSet(viewsets.ViewSet):
         check_detail = None
         if run_check:
             test_mode = os.environ.get('COLOR_CHECK_TEST_MODE', '').strip().lower()
+            debug_mode = os.environ.get('COLOR_CHECK_DEBUG', '').strip().lower() in ('1', 'true', 'yes')
             if test_mode == 'always_true':
                 check_result = True
                 check_detail = {'mode': 'always_true_test'}
@@ -3340,10 +3341,37 @@ class DeviceViewSet(viewsets.ViewSet):
                 check_detail = {'mode': 'random_test', 'roll': check_result}
             else:
                 try:
-                    from api.color_detection import detect_colors
-                    result = detect_colors(foto_bytes, modulo.codigos_color or '')
+                    from api.color_detection import detect_colors, annotate_image
+                    result = detect_colors(
+                        foto_bytes,
+                        modulo.codigos_color or '',
+                        debug=debug_mode,
+                    )
                     check_result = bool(result.get('valid'))
                     check_detail = result
+
+                    # Debug mode: render the annotated overlay next to
+                    # the raw photo and expose its URL so the visor
+                    # can mirror it to Drive.
+                    if debug_mode and result.get('detections'):
+                        try:
+                            annotated_bytes = annotate_image(
+                                foto_bytes, result['detections']
+                            )
+                            annotated_filename = (
+                                f"{safe_modulo}_{fase_pref}_paso{int(paso)}_annotated.jpg"
+                            )
+                            annotated_path = os.path.join(full_dir, annotated_filename)
+                            with open(annotated_path, 'wb') as af:
+                                af.write(annotated_bytes)
+                            check_detail['annotated_url'] = (
+                                f'/media/{media_path}/{annotated_filename}'
+                            )
+                        except Exception as exc:
+                            # Don't fail the check on overlay failure;
+                            # surface the error so it shows up during
+                            # inspection.
+                            check_detail['annotation_error'] = str(exc)
                 except Exception as exc:
                     check_result = False
                     check_detail = {'error': str(exc)}
