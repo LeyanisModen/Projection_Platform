@@ -32,6 +32,16 @@ urlpatterns = [
     path("api-auth/", include("rest_framework.urls", namespace="rest_framework")),
     path("api/token-auth/", views.CustomAuthToken.as_view()),
     path("api/stats/production/", views.ProductionStatsView.as_view(), name="production-stats"),
+    path(
+        "api/lista-materiales/general/",
+        views.ListaMaterialesGeneralView.as_view(),
+        name="lista-materiales-general",
+    ),
+    path(
+        "api/lista-materiales/general/<str:clave>/",
+        views.ListaMaterialesGeneralView.as_view(),
+        name="lista-materiales-general-toggle",
+    ),
     path("admin/", admin.site.urls),
 ]
 
