@@ -580,12 +580,17 @@
                                                 (change)="toggleMaterialesGeneral(a)">
                                             <span class="materiales-row-text">
                                                 <span class="materiales-row-name">{{ a.etiqueta }}</span>
-                                                <span class="materiales-row-meta">{{ a.proyectos_count }} proyectos</span>
+                                                <span class="materiales-row-meta">
+                                                    {{ a.proyectos_count }} proyectos
+                                                    @if (a.informado_total > 0) {
+                                                        · {{ a.informado_total | number:'1.0-2' }} {{ a.unidad }} informado
+                                                    }
+                                                </span>
                                             </span>
                                         </label>
                                         <div class="materiales-row-progress">
                                             <span class="materiales-row-amount">
-                                                <strong>{{ a.informado_total | number:'1.0-2' }}</strong>
+                                                <strong>{{ a.pendiente | number:'1.0-2' }}</strong>
                                                 <span class="materiales-row-amount-total"> / {{ a.total | number:'1.0-2' }} {{ a.unidad }}</span>
                                             </span>
                                             <div class="materiales-bar materiales-bar-dual">
