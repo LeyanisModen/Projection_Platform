@@ -740,13 +740,16 @@ export class VisorComponent implements OnInit, OnDestroy {
         if (mode === 'check') {
           const detail = res?.check_detail;
           this.applyCheckResult(res?.check_result, 'check', detail);
-          // In debug mode the backend renders an annotated overlay
-          // with the bbox of every detection (passed and rejected)
-          // and exposes its URL. Mirror it to Drive via the local
-          // capture service so the supervisor finds it next to the
-          // raw captures without leaving the file explorer.
-          if (!this.isSupervisor && detail?.annotated_url) {
-            this.mirrorAnnotatedToDrive(detail.annotated_url);
+          // In debug mode the backend renders the annotated overlay
+          // in memory and ships the bytes back as base64 (it does NOT
+          // persist them on Railway). Mirror them to Drive via the
+          // local capture service -- Drive is the only place these
+          // annotated images live.
+          if (!this.isSupervisor && res?.annotated_jpeg_b64 && res?.annotated_filename) {
+            this.mirrorAnnotatedToDrive(
+              res.annotated_jpeg_b64,
+              res.annotated_filename,
+            );
           }
         }
         this.cdr.detectChanges();
@@ -813,36 +816,34 @@ export class VisorComponent implements OnInit, OnDestroy {
     return obj ? Object.keys(obj) : [];
   }
 
-  private mirrorAnnotatedToDrive(annotatedUrl: string): void {
-    // The annotated_url is server-relative (e.g. /media/fotos/.../foo.jpg).
-    // Build an absolute URL against the backend root so we don't depend
-    // on the current page origin.
-    let fullUrl = annotatedUrl;
-    if (annotatedUrl.startsWith('/')) {
-      const apiRoot = environment.apiUrl.replace(/\/$/, '');
-      // environment.apiUrl is e.g. https://moden.up.railway.app/api;
-      // strip the /api suffix to get the host root that serves /media/.
-      const hostRoot = apiRoot.replace(/\/api$/, '');
-      fullUrl = `${hostRoot}${annotatedUrl}`;
+  private mirrorAnnotatedToDrive(jpegB64: string, filename: string): void {
+    // The annotated JPEG arrives as base64 inside the upload response;
+    // decode it to a Blob and POST it to the capture service so it
+    // ends up on Drive next to the raw captures.
+    let blob: Blob;
+    try {
+      const binary = atob(jpegB64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      blob = new Blob([bytes], { type: 'image/jpeg' });
+    } catch (err) {
+      console.warn('[Visor] failed to decode annotated jpeg:', err);
+      return;
     }
-    const filename = annotatedUrl.split('/').pop() || 'annotated.jpg';
 
-    this.http.get(fullUrl, { responseType: 'blob' }).subscribe({
-      next: (blob: Blob) => {
-        const headers = new HttpHeaders({
-          'Content-Type': 'image/jpeg',
-          'X-Filename': filename,
-        });
-        this.http.post(
-          `${this.captureServiceUrl}/save_debug_image`,
-          blob,
-          { headers, responseType: 'json' as const }
-        ).subscribe({
-          next: () => console.log('[Visor] Annotated mirrored to Drive:', filename),
-          error: (err) => console.warn('[Visor] save_debug_image failed:', err),
-        });
-      },
-      error: (err) => console.warn('[Visor] download annotated failed:', err),
+    const headers = new HttpHeaders({
+      'Content-Type': 'image/jpeg',
+      'X-Filename': filename,
+    });
+    this.http.post(
+      `${this.captureServiceUrl}/save_debug_image`,
+      blob,
+      { headers, responseType: 'json' as const }
+    ).subscribe({
+      next: () => console.log('[Visor] Annotated mirrored to Drive:', filename),
+      error: (err) => console.warn('[Visor] save_debug_image failed:', err),
     });
   }
 

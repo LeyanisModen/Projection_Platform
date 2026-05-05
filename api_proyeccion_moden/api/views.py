@@ -3326,6 +3326,8 @@ class DeviceViewSet(viewsets.ViewSet):
 
         check_result = None
         check_detail = None
+        annotated_b64 = None
+        annotated_filename = None
         if run_check:
             test_mode = os.environ.get('COLOR_CHECK_TEST_MODE', '').strip().lower()
             debug_mode = os.environ.get('COLOR_CHECK_DEBUG', '').strip().lower() in ('1', 'true', 'yes')
@@ -3350,27 +3352,25 @@ class DeviceViewSet(viewsets.ViewSet):
                     check_result = bool(result.get('valid'))
                     check_detail = result
 
-                    # Debug mode: render the annotated overlay next to
-                    # the raw photo and expose its URL so the visor
-                    # can mirror it to Drive.
+                    # Debug mode: render the annotated overlay in
+                    # memory and ship the bytes back to the visor as
+                    # base64. We DON'T persist the overlay on Railway
+                    # storage -- the visor will mirror it to Drive
+                    # via the local capture service. Drive is the
+                    # only place the annotated image lives.
                     if debug_mode and result.get('detections'):
                         try:
+                            import base64
                             annotated_bytes = annotate_image(
                                 foto_bytes, result['detections']
                             )
+                            annotated_b64 = base64.b64encode(
+                                annotated_bytes
+                            ).decode('ascii')
                             annotated_filename = (
                                 f"{safe_modulo}_{fase_pref}_paso{int(paso)}_annotated.jpg"
                             )
-                            annotated_path = os.path.join(full_dir, annotated_filename)
-                            with open(annotated_path, 'wb') as af:
-                                af.write(annotated_bytes)
-                            check_detail['annotated_url'] = (
-                                f'/media/{media_path}/{annotated_filename}'
-                            )
                         except Exception as exc:
-                            # Don't fail the check on overlay failure;
-                            # surface the error so it shows up during
-                            # inspection.
                             check_detail['annotation_error'] = str(exc)
                 except Exception as exc:
                     check_result = False
@@ -3398,7 +3398,15 @@ class DeviceViewSet(viewsets.ViewSet):
             mesa.save(update_fields=['check_overlay', 'ultima_actualizacion'])
 
         serializer = FotoFabricacionSerializer(foto)
-        return Response(serializer.data, status=201 if created else 200)
+        data = serializer.data
+        # Debug-only top-level fields: never persisted, only used by
+        # the visor to push the annotated image to Drive and then
+        # forget about it. Stripped automatically when COLOR_CHECK_DEBUG
+        # is off.
+        if annotated_b64:
+            data['annotated_jpeg_b64'] = annotated_b64
+            data['annotated_filename'] = annotated_filename
+        return Response(data, status=201 if created else 200)
 
     @action(detail=False, methods=['post'])
     def notify_no_camera(self, request):
