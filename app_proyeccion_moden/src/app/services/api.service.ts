@@ -291,11 +291,17 @@ export interface ProductionStatsDay extends ProductionStatsBucket {
     modulos_completados: number;
 }
 
+export interface ProductionStatsHour extends ProductionStatsBucket {
+    hora: string;
+    modulos_completados: number;
+}
+
 export interface ProductionStatsResponse {
     range: { from: string; to: string; working_days: number };
     totals: ProductionStatsBucket & { modulos_completados: number };
     por_mesa: ProductionStatsMesa[];
     por_dia: ProductionStatsDay[];
+    por_hora?: ProductionStatsHour[] | null;
     esperado: { capacidad_diaria_modulos: number; modulos_esperados: number };
 }
 

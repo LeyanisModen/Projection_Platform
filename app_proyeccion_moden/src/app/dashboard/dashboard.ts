@@ -1189,7 +1189,7 @@ export class Dashboard implements OnInit, OnDestroy {
     dificultad_total: number;
     meta_modulos: number;
     working_days: number;
-    granularity: 'day' | 'week';
+    granularity: 'hour' | 'day' | 'week';
   }> {
     if (!this.statsData || !this.statsFrom || !this.statsTo) return [];
     const from = this.parseIsoDate(this.statsFrom);
@@ -1199,6 +1199,31 @@ export class Dashboard implements OnInit, OnDestroy {
     const dayCount = Math.floor((to.getTime() - from.getTime()) / 86400000) + 1;
     const byDate = new Map(this.statsData.por_dia.map(d => [d.fecha, d]));
     const dailyCap = this.statsData.esperado?.capacidad_diaria_modulos || 0;
+
+    // Single-day view: bucket por hour using por_hora from the backend.
+    // Fixed working window 08h-17h so the X axis stays predictable; data
+    // outside that window is rare and would only be visible in the table.
+    if (dayCount === 1 && this.statsData.por_hora) {
+      const byHour = new Map(this.statsData.por_hora.map(h => [h.hora, h]));
+      const hoursToShow = ['08', '09', '10', '11', '12', '13', '14', '15', '16', '17'];
+      const hourlyCap = dailyCap > 0 ? dailyCap / hoursToShow.length : 0;
+      return hoursToShow.map((hh) => {
+        const found = byHour.get(hh);
+        return {
+          key: hh,
+          label: `${hh}h`,
+          modulos_completados: found?.modulos_completados || 0,
+          fases_completadas: found?.fases_completadas || 0,
+          peso_malla_inicial_kg: found?.peso_malla_inicial_kg || 0,
+          peso_malla_final_kg: found?.peso_malla_final_kg || 0,
+          desperdicio_kg: found?.desperdicio_kg || 0,
+          dificultad_total: found?.dificultad_total || 0,
+          meta_modulos: hourlyCap,
+          working_days: 0,
+          granularity: 'hour' as const,
+        };
+      });
+    }
 
     if (dayCount <= 20) {
       // Daily view: skip weekends entirely so the X axis stays clean

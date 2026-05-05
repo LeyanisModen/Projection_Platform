@@ -2616,20 +2616,31 @@ class ProductionStatsView(APIView):
         totals = empty_totals()
         por_mesa = {}
         por_dia = {}
+        por_hora = {}
+        single_day = from_date == to_date
 
         # Each completed module contributes its INF + SUP phases to the
         # aggregated stats. For per-mesa break-down we look up the
         # matching MesaQueueItem; if not present, phases are attributed
         # to a synthetic "Manual" bucket (no mesa id).
         for modulo in modulos_list:
-            dia_key = timezone.localtime(modulo.completado_at, current_tz).date().isoformat()
+            local_dt = timezone.localtime(modulo.completado_at, current_tz)
+            dia_key = local_dt.date().isoformat()
             if dia_key not in por_dia:
                 por_dia[dia_key] = {'fecha': dia_key, 'modulos_completados': 0, **empty_totals()}
             por_dia[dia_key]['modulos_completados'] += 1
 
+            if single_day:
+                hora_key = f'{local_dt.hour:02d}'
+                if hora_key not in por_hora:
+                    por_hora[hora_key] = {'hora': hora_key, 'modulos_completados': 0, **empty_totals()}
+                por_hora[hora_key]['modulos_completados'] += 1
+
             for detalle in modulo.detalles_fase.all():
                 add_detalle(totals, detalle)
                 add_detalle(por_dia[dia_key], detalle)
+                if single_day:
+                    add_detalle(por_hora[hora_key], detalle)
 
                 it = item_by_modulo_fase.get((modulo.id, detalle.fase))
                 if it is not None:
@@ -2705,6 +2716,7 @@ class ProductionStatsView(APIView):
             },
             'por_mesa': sorted(por_mesa.values(), key=lambda x: (x['rol'], x['mesa_nombre'])),
             'por_dia': sorted(por_dia.values(), key=lambda x: x['fecha']),
+            'por_hora': sorted(por_hora.values(), key=lambda x: x['hora']) if single_day else None,
             'esperado': {
                 'capacidad_diaria_modulos': capacidad_diaria,
                 'modulos_esperados': capacidad_diaria * working_days,
