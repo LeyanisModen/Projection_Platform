@@ -10,13 +10,14 @@ import {
   GrupoMesas, GrupoMesasProyectoEntry, ProductionStatsResponse
 } from '../services/api.service';
 import {
-  ListaCompraService,
-  ListaCompraProyecto,
-  ListaCompraGeneral,
+  ListaMaterialesService,
+  ListaMaterialesProyecto,
+  ListaMaterialesGeneral,
   RenglonLista,
   RenglonGeneralAgrupado,
   BloqueGeneralPorProyecto,
-} from '../services/lista-compra.service';
+  GrupoMaterial,
+} from '../services/lista-materiales.service';
 import { Subject, takeUntil, forkJoin, interval } from 'rxjs';
 import { environment } from '../../environments/environment';
 
@@ -114,19 +115,19 @@ export class Dashboard implements OnInit, OnDestroy {
   private planModalPlantas = new Map<number, string>();
   loadingPlanModal = false;
 
-  // Shopping-list Modal State (per-project)
-  showShoppingModal = false;
-  shoppingModalProyecto: Proyecto | null = null;
-  shoppingModalData: ListaCompraProyecto | null = null;
-  loadingShoppingModal = false;
-  private shoppingPendingByClave = new Set<string>();
+  // Materiales-list Modal State (per-project)
+  showMaterialesModal = false;
+  materialesModalProyecto: Proyecto | null = null;
+  materialesModalData: ListaMaterialesProyecto | null = null;
+  loadingMaterialesModal = false;
+  private materialesPendingByClave = new Set<string>();
 
-  // Shopping-list Modal State (general)
-  showShoppingGeneralModal = false;
-  shoppingGeneralData: ListaCompraGeneral | null = null;
-  loadingShoppingGeneralModal = false;
-  private shoppingGeneralPendingByClave = new Set<string>();
-  private shoppingGeneralPendingProyectoClave = new Set<string>();
+  // Materiales-list Modal State (general)
+  showMaterialesGeneralModal = false;
+  materialesGeneralData: ListaMaterialesGeneral | null = null;
+  loadingMaterialesGeneralModal = false;
+  private materialesGeneralPendingByClave = new Set<string>();
+  private materialesGeneralPendingProyectoClave = new Set<string>();
 
   // Gestionar Mesa Modal State (rename grupo + mesas, manage project queue)
   showGestionarModal = false;
@@ -199,159 +200,159 @@ export class Dashboard implements OnInit, OnDestroy {
     this.cdr.detectChanges();
   }
 
-  // --- Lista de compra: por proyecto ---
+  // --- Lista de materiales: por proyecto ---
 
-  openShoppingModal(proyecto: Proyecto, event?: Event): void {
+  openMaterialesModal(proyecto: Proyecto, event?: Event): void {
     event?.stopPropagation();
-    this.showShoppingModal = true;
-    this.shoppingModalProyecto = proyecto;
-    this.shoppingModalData = null;
-    this.shoppingPendingByClave.clear();
-    this.loadingShoppingModal = true;
+    this.showMaterialesModal = true;
+    this.materialesModalProyecto = proyecto;
+    this.materialesModalData = null;
+    this.materialesPendingByClave.clear();
+    this.loadingMaterialesModal = true;
     this.cdr.detectChanges();
 
-    this.listaCompra.getListaProyecto(proyecto.id)
+    this.listaMateriales.getListaProyecto(proyecto.id)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (data) => {
-          this.shoppingModalData = data;
-          this.loadingShoppingModal = false;
+          this.materialesModalData = data;
+          this.loadingMaterialesModal = false;
           this.cdr.detectChanges();
         },
         error: () => {
-          this.loadingShoppingModal = false;
+          this.loadingMaterialesModal = false;
           this.cdr.detectChanges();
         },
       });
   }
 
-  closeShoppingModal(): void {
-    this.showShoppingModal = false;
-    this.shoppingModalProyecto = null;
-    this.shoppingModalData = null;
-    this.shoppingPendingByClave.clear();
+  closeMaterialesModal(): void {
+    this.showMaterialesModal = false;
+    this.materialesModalProyecto = null;
+    this.materialesModalData = null;
+    this.materialesPendingByClave.clear();
     this.cdr.detectChanges();
   }
 
-  toggleShoppingProyecto(renglon: RenglonLista): void {
-    if (!this.shoppingModalProyecto || !this.shoppingModalData) return;
-    if (this.shoppingPendingByClave.has(renglon.clave)) return;
-    if (this.isShoppingRowConsumed(renglon)) return;
+  toggleMaterialesProyecto(renglon: RenglonLista): void {
+    if (!this.materialesModalProyecto || !this.materialesModalData) return;
+    if (this.materialesPendingByClave.has(renglon.clave)) return;
+    if (this.isMaterialesRowConsumed(renglon)) return;
 
-    const proyectoId = this.shoppingModalProyecto.id;
+    const proyectoId = this.materialesModalProyecto.id;
     const nuevo = !renglon.informado;
-    this.shoppingPendingByClave.add(renglon.clave);
+    this.materialesPendingByClave.add(renglon.clave);
     this.cdr.detectChanges();
 
-    this.listaCompra.setInformadoProyecto(proyectoId, renglon.clave, nuevo)
+    this.listaMateriales.setInformadoProyecto(proyectoId, renglon.clave, nuevo)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (updated) => {
-          if (this.shoppingModalData && updated) {
-            this.shoppingModalData = {
-              ...this.shoppingModalData,
-              renglones: this.shoppingModalData.renglones.map((r) =>
+          if (this.materialesModalData && updated) {
+            this.materialesModalData = {
+              ...this.materialesModalData,
+              renglones: this.materialesModalData.renglones.map((r) =>
                 r.clave === updated.clave ? updated : r,
               ),
             };
           }
-          this.shoppingPendingByClave.delete(renglon.clave);
+          this.materialesPendingByClave.delete(renglon.clave);
           this.cdr.detectChanges();
         },
         error: () => {
-          this.shoppingPendingByClave.delete(renglon.clave);
+          this.materialesPendingByClave.delete(renglon.clave);
           this.cdr.detectChanges();
         },
       });
   }
 
-  isShoppingRowPending(clave: string): boolean {
-    return this.shoppingPendingByClave.has(clave);
+  isMaterialesRowPending(clave: string): boolean {
+    return this.materialesPendingByClave.has(clave);
   }
 
-  isShoppingRowConsumed(renglon: RenglonLista): boolean {
+  isMaterialesRowConsumed(renglon: RenglonLista): boolean {
     return renglon.pendiente <= 0;
   }
 
-  shoppingRowProgressPct(renglon: RenglonLista): number {
+  materialesRowProgressPct(renglon: RenglonLista): number {
     if (renglon.total <= 0) return 0;
     const consumido = renglon.total - renglon.pendiente;
     return Math.max(0, Math.min(100, (consumido / renglon.total) * 100));
   }
 
-  // --- Lista de compra: general ---
+  // --- Lista de materiales: general ---
 
-  openShoppingGeneralModal(): void {
-    this.showShoppingGeneralModal = true;
-    this.shoppingGeneralData = null;
-    this.shoppingGeneralPendingByClave.clear();
-    this.shoppingGeneralPendingProyectoClave.clear();
-    this.loadingShoppingGeneralModal = true;
+  openMaterialesGeneralModal(): void {
+    this.showMaterialesGeneralModal = true;
+    this.materialesGeneralData = null;
+    this.materialesGeneralPendingByClave.clear();
+    this.materialesGeneralPendingProyectoClave.clear();
+    this.loadingMaterialesGeneralModal = true;
     this.cdr.detectChanges();
 
-    this.listaCompra.getListaGeneral()
+    this.listaMateriales.getListaGeneral()
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (data) => {
-          this.shoppingGeneralData = data;
-          this.loadingShoppingGeneralModal = false;
+          this.materialesGeneralData = data;
+          this.loadingMaterialesGeneralModal = false;
           this.cdr.detectChanges();
         },
         error: () => {
-          this.loadingShoppingGeneralModal = false;
+          this.loadingMaterialesGeneralModal = false;
           this.cdr.detectChanges();
         },
       });
   }
 
-  closeShoppingGeneralModal(): void {
-    this.showShoppingGeneralModal = false;
-    this.shoppingGeneralData = null;
-    this.shoppingGeneralPendingByClave.clear();
-    this.shoppingGeneralPendingProyectoClave.clear();
+  closeMaterialesGeneralModal(): void {
+    this.showMaterialesGeneralModal = false;
+    this.materialesGeneralData = null;
+    this.materialesGeneralPendingByClave.clear();
+    this.materialesGeneralPendingProyectoClave.clear();
     this.cdr.detectChanges();
   }
 
-  toggleShoppingGeneral(agrupado: RenglonGeneralAgrupado): void {
-    if (this.shoppingGeneralPendingByClave.has(agrupado.clave)) return;
+  toggleMaterialesGeneral(agrupado: RenglonGeneralAgrupado): void {
+    if (this.materialesGeneralPendingByClave.has(agrupado.clave)) return;
     if (this.isAgrupadoConsumed(agrupado)) return;
 
     const nuevo = !agrupado.todos_marcados;
-    this.shoppingGeneralPendingByClave.add(agrupado.clave);
+    this.materialesGeneralPendingByClave.add(agrupado.clave);
     this.cdr.detectChanges();
 
-    this.listaCompra.setInformadoGeneral(agrupado.clave, nuevo)
+    this.listaMateriales.setInformadoGeneral(agrupado.clave, nuevo)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (data) => {
-          this.shoppingGeneralData = data;
-          this.shoppingGeneralPendingByClave.delete(agrupado.clave);
+          this.materialesGeneralData = data;
+          this.materialesGeneralPendingByClave.delete(agrupado.clave);
           this.cdr.detectChanges();
         },
         error: () => {
-          this.shoppingGeneralPendingByClave.delete(agrupado.clave);
+          this.materialesGeneralPendingByClave.delete(agrupado.clave);
           this.cdr.detectChanges();
         },
       });
   }
 
-  toggleShoppingGeneralEspecifico(proyectoId: number, renglon: RenglonLista): void {
+  toggleMaterialesGeneralEspecifico(proyectoId: number, renglon: RenglonLista): void {
     const key = `${proyectoId}::${renglon.clave}`;
-    if (this.shoppingGeneralPendingProyectoClave.has(key)) return;
-    if (this.isShoppingRowConsumed(renglon)) return;
+    if (this.materialesGeneralPendingProyectoClave.has(key)) return;
+    if (this.isMaterialesRowConsumed(renglon)) return;
 
     const nuevo = !renglon.informado;
-    this.shoppingGeneralPendingProyectoClave.add(key);
+    this.materialesGeneralPendingProyectoClave.add(key);
     this.cdr.detectChanges();
 
-    this.listaCompra.setInformadoProyecto(proyectoId, renglon.clave, nuevo)
+    this.listaMateriales.setInformadoProyecto(proyectoId, renglon.clave, nuevo)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (updated) => {
-          if (this.shoppingGeneralData && updated) {
-            this.shoppingGeneralData = {
-              ...this.shoppingGeneralData,
-              por_proyecto: this.shoppingGeneralData.por_proyecto.map((bloque) =>
+          if (this.materialesGeneralData && updated) {
+            this.materialesGeneralData = {
+              ...this.materialesGeneralData,
+              por_proyecto: this.materialesGeneralData.por_proyecto.map((bloque) =>
                 bloque.proyecto_id !== proyectoId
                   ? bloque
                   : {
@@ -363,18 +364,18 @@ export class Dashboard implements OnInit, OnDestroy {
               ),
             };
           }
-          this.shoppingGeneralPendingProyectoClave.delete(key);
+          this.materialesGeneralPendingProyectoClave.delete(key);
           this.cdr.detectChanges();
         },
         error: () => {
-          this.shoppingGeneralPendingProyectoClave.delete(key);
+          this.materialesGeneralPendingProyectoClave.delete(key);
           this.cdr.detectChanges();
         },
       });
   }
 
   isAgrupadoPending(clave: string): boolean {
-    return this.shoppingGeneralPendingByClave.has(clave);
+    return this.materialesGeneralPendingByClave.has(clave);
   }
 
   isAgrupadoConsumed(agrupado: RenglonGeneralAgrupado): boolean {
@@ -382,7 +383,7 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   isEspecificoPending(proyectoId: number, clave: string): boolean {
-    return this.shoppingGeneralPendingProyectoClave.has(`${proyectoId}::${clave}`);
+    return this.materialesGeneralPendingProyectoClave.has(`${proyectoId}::${clave}`);
   }
 
   agrupadoProgressPct(agrupado: RenglonGeneralAgrupado): number {
@@ -396,6 +397,18 @@ export class Dashboard implements OnInit, OnDestroy {
     const denominador = agrupado.total;
     if (denominador <= 0) return 0;
     return Math.max(0, Math.min(100, (agrupado.informado_total / denominador) * 100));
+  }
+
+  /** Group rows in a stable display order (consumibles → barras → elementos). */
+  groupRowsByGrupo<T extends { grupo: GrupoMaterial }>(rows: T[]): Array<{ grupo: GrupoMaterial; label: string; rows: T[] }> {
+    const order: Array<{ grupo: GrupoMaterial; label: string }> = [
+      { grupo: 'consumibles', label: 'Consumibles' },
+      { grupo: 'barras', label: 'Barras' },
+      { grupo: 'elementos', label: 'Elementos' },
+    ];
+    return order
+      .map((g) => ({ ...g, rows: rows.filter((r) => r.grupo === g.grupo) }))
+      .filter((g) => g.rows.length > 0);
   }
 
   /** Groups modulos of the open plan modal by planta (in-project order). */
@@ -684,7 +697,7 @@ export class Dashboard implements OnInit, OnDestroy {
     private api: ApiService,
     private cdr: ChangeDetectorRef,
     private router: Router,
-    private listaCompra: ListaCompraService,
+    private listaMateriales: ListaMaterialesService,
   ) { }
 
   username: string = '';

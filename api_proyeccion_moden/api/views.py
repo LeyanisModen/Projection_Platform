@@ -1156,19 +1156,19 @@ class ProyectoViewSet(viewsets.ModelViewSet):
             'stats': stats,
         })
 
-    @action(detail=True, methods=['get'], url_path='lista-compra')
-    def lista_compra(self, request, pk=None):
-        """Aggregated shopping list for a single project."""
+    @action(detail=True, methods=['get'], url_path='lista-materiales')
+    def lista_materiales(self, request, pk=None):
+        """Aggregated materials list for a single project."""
         proyecto = self.get_object()
         return Response({
             'proyecto_id': proyecto.id,
             'proyecto_nombre': proyecto.nombre,
-            'renglones': _compute_lista_compra_proyecto(proyecto),
+            'renglones': _compute_lista_materiales_proyecto(proyecto),
         })
 
-    @action(detail=True, methods=['patch'], url_path=r'lista-compra/(?P<clave>[\w-]+)')
-    def lista_compra_toggle(self, request, pk=None, clave=None):
-        """Toggle the 'informado' check for one row of a project's shopping list.
+    @action(detail=True, methods=['patch'], url_path=r'lista-materiales/(?P<clave>[\w-]+)')
+    def lista_materiales_toggle(self, request, pk=None, clave=None):
+        """Toggle the 'informado' check for one row of a project's materials list.
         Marking sets origen='PROYECTO'; unmarking clears origen, regardless of
         what set it (a manual unmark from the per-project view is always honored)."""
         proyecto = self.get_object()
@@ -1182,7 +1182,7 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         mi.fecha_marcado = timezone.now() if informado else None
         mi.save()
 
-        renglones = _compute_lista_compra_proyecto(proyecto)
+        renglones = _compute_lista_materiales_proyecto(proyecto)
         actualizado = next((r for r in renglones if r['clave'] == clave), None)
         if actualizado is None:
             return Response(
@@ -1193,7 +1193,7 @@ class ProyectoViewSet(viewsets.ModelViewSet):
 
 
 # =============================================================================
-# SHOPPING LIST helpers
+# MATERIALS LIST helpers
 # =============================================================================
 
 _COLOR_CHARS = {
@@ -1209,15 +1209,28 @@ _COLOR_CHARS = {
 # heuristic in DetalleModuloFase.dificultad_calculada).
 _RIBBON_M_PER_MARK = 0.25
 
+# Coarse grouping for the UI: consumibles (externals: ribbons, brackets,
+# spray cans), barras (rebar + welded mesh), elementos (built pieces).
+_GRUPO_CONSUMIBLES = 'consumibles'
+_GRUPO_BARRAS = 'barras'
+_GRUPO_ELEMENTOS = 'elementos'
 
-def _compute_lista_compra_proyecto(proyecto):
+# 1 spray can covers ~20 modules (rough estimate, may be tuned later).
+_MODULOS_PER_SPRAY = 20
+
+
+def _compute_lista_materiales_proyecto(proyecto):
     """Aggregate one project's MaterialPieza rows + constants (mallazo,
-    pieza bastidor, color ribbon) into shopping-list rows.
+    pieza bastidor, color ribbon, white spray) into materials-list rows.
 
     A row's `pendiente` is the portion of `total` that hasn't been consumed
     yet — i.e. it belongs to a (modulo, capa) whose `<capa>_hecho` flag is
-    still False. For ribbons, only SUPERIOR is considered consumed.
+    still False. For ribbons, only SUPERIOR is considered consumed. For
+    the spray (rough 1/20 modules estimate), a module counts as consumed
+    once both phases are done.
     """
+    import math
+
     modulos = list(
         proyecto.modulos.all().only(
             'id', 'nombre', 'inferior_hecho', 'superior_hecho', 'codigos_color',
@@ -1235,7 +1248,7 @@ def _compute_lista_compra_proyecto(proyecto):
 
     acc = {}
 
-    def _add(clave, etiqueta, unidad, total_qty, pendiente_qty, agrupable):
+    def _add(clave, etiqueta, unidad, total_qty, pendiente_qty, agrupable, grupo):
         e = acc.get(clave)
         if e is None:
             acc[clave] = {
@@ -1244,6 +1257,7 @@ def _compute_lista_compra_proyecto(proyecto):
                 'total': 0.0,
                 'pendiente': 0.0,
                 'agrupable': agrupable,
+                'grupo': grupo,
             }
             e = acc[clave]
         e['total'] += float(total_qty)
@@ -1262,36 +1276,36 @@ def _compute_lista_compra_proyecto(proyecto):
             _add(
                 f'refuerzo_d{p.subtipo}',
                 f'Refuerzo Ø{p.subtipo}',
-                'm', long_total, long_pendiente, True,
+                'm', long_total, long_pendiente, True, _GRUPO_BARRAS,
             )
         elif p.tipo == MaterialTipo.ZUNCHO:
             _add(
                 f'zuncho_{p.subtipo.lower()}',
                 f'Zuncho {p.subtipo}',
-                'm', long_total, long_pendiente, False,
+                'm', long_total, long_pendiente, False, _GRUPO_ELEMENTOS,
             )
         elif p.tipo == MaterialTipo.SEPARADOR:
             _add(
                 f'separador_a{p.subtipo}',
                 f'Separador {p.subtipo} cm',
-                'm', long_total, long_pendiente, True,
+                'm', long_total, long_pendiente, True, _GRUPO_ELEMENTOS,
             )
         elif p.tipo == MaterialTipo.PUNZO:
             _add(
                 f'punzo_{p.subtipo.lower()}',
                 f'Punzo {p.subtipo}',
-                'm', long_total, long_pendiente, False,
+                'm', long_total, long_pendiente, False, _GRUPO_ELEMENTOS,
             )
 
     for m in modulos:
         _add('mallazo_inf', 'Mallazo inferior', 'ud',
-             1, 0 if m.inferior_hecho else 1, True)
+             1, 0 if m.inferior_hecho else 1, True, _GRUPO_BARRAS)
         _add('mallazo_sup', 'Mallazo superior', 'ud',
-             1, 0 if m.superior_hecho else 1, True)
+             1, 0 if m.superior_hecho else 1, True, _GRUPO_BARRAS)
         _add('pieza_bastidor_inf', 'Pieza bastidor inferior', 'ud',
-             4, 0 if m.inferior_hecho else 4, True)
+             4, 0 if m.inferior_hecho else 4, True, _GRUPO_CONSUMIBLES)
         _add('pieza_bastidor_sup', 'Pieza bastidor superior', 'ud',
-             4, 0 if m.superior_hecho else 4, True)
+             4, 0 if m.superior_hecho else 4, True, _GRUPO_CONSUMIBLES)
 
         if m.codigos_color:
             consumed = m.superior_hecho
@@ -1306,8 +1320,21 @@ def _compute_lista_compra_proyecto(proyecto):
                     'm',
                     _RIBBON_M_PER_MARK,
                     0.0 if consumed else _RIBBON_M_PER_MARK,
-                    True,
+                    True, _GRUPO_CONSUMIBLES,
                 )
+
+    # White spray paint: 1 can covers ~20 modules (project-wide constant).
+    # A module counts toward the consumed side once both phases are done.
+    n_modulos = len(modulos)
+    if n_modulos > 0:
+        n_pendientes = sum(
+            1 for m in modulos
+            if not (m.inferior_hecho and m.superior_hecho)
+        )
+        total_botes = math.ceil(n_modulos / _MODULOS_PER_SPRAY)
+        pendiente_botes = math.ceil(n_pendientes / _MODULOS_PER_SPRAY)
+        _add('spray_blanco', 'Spray blanco', 'ud',
+             total_botes, pendiente_botes, True, _GRUPO_CONSUMIBLES)
 
     renglones = []
     for clave, data in acc.items():
@@ -1321,6 +1348,7 @@ def _compute_lista_compra_proyecto(proyecto):
             'informado': mi.informado if mi else False,
             'origen': mi.origen if mi else None,
             'agrupable': data['agrupable'],
+            'grupo': data['grupo'],
         })
 
     renglones.sort(key=lambda r: r['etiqueta'])
@@ -1340,21 +1368,22 @@ def _proyectos_activos_for_user(user):
     ).distinct()
 
 
-def _compute_lista_compra_general(proyectos):
-    """Aggregate shopping lists across multiple projects.
+def _compute_lista_materiales_general(proyectos):
+    """Aggregate materials lists across multiple projects.
 
     Returns a dict with two blocks:
       - `agrupados`: rows whose clave is shareable across projects
-        (refuerzos, separadores, mallazo, pieza bastidor, cinta), summed.
+        (refuerzos, separadores, mallazo, pieza bastidor, cinta, spray),
+        summed.
       - `por_proyecto`: rows whose clave is project-specific (zunchos and
         punzos — same code can mean different things between projects),
         listed under each project as a subsection.
     """
-    agrupables_acc = {}      # clave -> { etiqueta, unidad, total, pendiente, informado_total, todos_marcados, proyectos_count }
+    agrupables_acc = {}      # clave -> { etiqueta, unidad, total, pendiente, informado_total, todos_marcados, proyectos_count, grupo }
     por_proyecto_acc = []    # [{ proyecto_id, proyecto_nombre, renglones: [...] }]
 
     for proyecto in proyectos:
-        renglones = _compute_lista_compra_proyecto(proyecto)
+        renglones = _compute_lista_materiales_proyecto(proyecto)
         especificos = []
         for r in renglones:
             if r['agrupable']:
@@ -1363,6 +1392,7 @@ def _compute_lista_compra_general(proyectos):
                     agrupables_acc[r['clave']] = {
                         'etiqueta': r['etiqueta'],
                         'unidad': r['unidad'],
+                        'grupo': r['grupo'],
                         'total': 0.0,
                         'pendiente': 0.0,
                         'informado_total': 0.0,
@@ -1393,6 +1423,7 @@ def _compute_lista_compra_general(proyectos):
             'clave': clave,
             'etiqueta': data['etiqueta'],
             'unidad': data['unidad'],
+            'grupo': data['grupo'],
             'total': round(data['total'], 4),
             'pendiente': round(data['pendiente'], 4),
             'informado_total': round(data['informado_total'], 4),
@@ -1408,8 +1439,8 @@ def _compute_lista_compra_general(proyectos):
     }
 
 
-class ListaCompraGeneralView(APIView):
-    """Aggregated shopping list across all active projects of the user.
+class ListaMaterialesGeneralView(APIView):
+    """Aggregated materials list across all active projects of the user.
 
     PATCH propagates a check to every project that contributes to the row.
     The 'origen' field on each per-project MaterialInformado lets unmark
@@ -1419,7 +1450,7 @@ class ListaCompraGeneralView(APIView):
 
     def get(self, request):
         proyectos = list(_proyectos_activos_for_user(request.user))
-        return Response(_compute_lista_compra_general(proyectos))
+        return Response(_compute_lista_materiales_general(proyectos))
 
     def patch(self, request, clave=None):
         if not clave:
@@ -1435,7 +1466,7 @@ class ListaCompraGeneralView(APIView):
         # that don't even have the material.
         contributors = []
         for p in proyectos:
-            if any(r['clave'] == clave for r in _compute_lista_compra_proyecto(p)):
+            if any(r['clave'] == clave for r in _compute_lista_materiales_proyecto(p)):
                 contributors.append(p)
 
         with transaction.atomic():
@@ -1456,7 +1487,7 @@ class ListaCompraGeneralView(APIView):
                     origen=MaterialOrigenCheck.GENERAL,
                 ).update(informado=False, origen=None, fecha_marcado=None)
 
-        return Response(_compute_lista_compra_general(proyectos))
+        return Response(_compute_lista_materiales_general(proyectos))
 
 
 class GrupoBastidorViewSet(viewsets.ModelViewSet):

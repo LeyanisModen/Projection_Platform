@@ -22,14 +22,14 @@ router.register(r"device", views.DeviceViewSet, basename="device")
 urlpatterns = [
     path("", include(router.urls)),
     path(
-        "lista-compra/general/",
-        views.ListaCompraGeneralView.as_view(),
-        name="lista-compra-general",
+        "lista-materiales/general/",
+        views.ListaMaterialesGeneralView.as_view(),
+        name="lista-materiales-general",
     ),
     path(
-        "lista-compra/general/<str:clave>/",
-        views.ListaCompraGeneralView.as_view(),
-        name="lista-compra-general-toggle",
+        "lista-materiales/general/<str:clave>/",
+        views.ListaMaterialesGeneralView.as_view(),
+        name="lista-materiales-general-toggle",
     ),
     path("api-auth/", include("rest_framework.urls", namespace="rest_framework")),
 ]
