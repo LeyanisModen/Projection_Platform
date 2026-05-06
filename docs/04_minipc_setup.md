@@ -22,6 +22,7 @@ En tu ordenador de oficina, copia al pendrive:
 pendrive/
 ├── capture_service/                ← la carpeta tal cual del repo
 │   ├── capture_service.py
+│   ├── COMANDOS.txt                ← cheatsheet copy-paste para el mini-PC
 │   ├── config.ini.example
 │   ├── install-minipc.ps1
 │   ├── requirements.txt
@@ -32,49 +33,131 @@ pendrive/
 ```
 
 La carpeta `capture_service/` se obtiene del repositorio:
-https://github.com/LeyanisModen/Projection_Platform/tree/main/capture_service
+<https://github.com/LeyanisModen/Projection_Platform/tree/main/capture_service>
 
 **OBSBOT WebCam** se descarga desde:
-https://www.obsbot.com/download/tiny-2-lite
+<https://www.obsbot.com/download/tiny-2-lite>
 
 Llévate también un **teclado USB** (harás falta al menos una vez para salir
 del Chrome kiosk con `Alt + F4`) y anota las credenciales corporativas de la
 cuenta Google Drive de Moden.
 
-Tabla de valores por mini-PC:
+Tabla de valores por mini-PC. El nombre del equipo sigue el formato
+`(<CLI>-G<N>-<ROL>)` y el `mesa_id` es el mismo en minúsculas con
+guiones bajos (`<cli>_g<N>_<rol>`):
 
-| Mesa física | `mesa_id`   | Nombre del equipo   |
-|-------------|-------------|---------------------|
-| Inferior 1  | `mesa_inf1` | `MODEN-MESA-INF1`   |
-| Inferior 2  | `mesa_inf2` | `MODEN-MESA-INF2`   |
-| Superiores  | `mesa_sup`  | `MODEN-MESA-SUP`    |
+- `<CLI>` — código corto del cliente (3-4 letras). Ferralia = `FER`.
+- `G<N>` — número de grupo operativo dentro de ese cliente
+  (`G1`, `G2`, …). Cada grupo agrupa 3 mini-PCs.
+- `<ROL>` — papel físico de la mesa: `INF1`, `INF2` o `SUP`.
+
+El `mesa_id` se usa como subcarpeta en Google Drive (y se muestra en el
+dashboard), así que la misma separación entre clientes / grupos impide
+que las capturas colisionen.
+
+| Cliente    | Grupo | Mesa física | `mesa_id`     | Nombre del equipo |
+|------------|-------|-------------|---------------|-------------------|
+| Ferralia   | G1    | Inferior 1  | `fer_g1_inf1` | `FER-G1-INF1`     |
+| Ferralia   | G1    | Inferior 2  | `fer_g1_inf2` | `FER-G1-INF2`     |
+| Ferralia   | G1    | Superiores  | `fer_g1_sup`  | `FER-G1-SUP`      |
+| Ferralia   | G2    | Inferior 1  | `fer_g2_inf1` | `FER-G2-INF1`     |
+| Ferralia   | G2    | …           | …             | …                 |
+
+El nombre del equipo cabe holgadamente en los 15 caracteres que
+permite NetBIOS, así que caben clientes con código de hasta 4 letras
+y hasta 9 grupos sin rozar el límite.
+
+---
+
+## 0.1. Imprime etiquetas para identificar los equipos
+
+## 0.5. Si el mini-PC ya viene con Windows preinstalado (Mele fanless y similares)
+
+Los Mele fanless (y otros mini-PCs de marca blanca) llegan con Windows 11
+Pro ya configurado y una cuenta local administradora llamada `Usuario`
+(sin contraseña). No hay OOBE que completar; en su lugar, hay que crear
+`moden` y borrar `Usuario` antes de seguir.
+
+> No intentes renombrar `Usuario` → `moden` desde `netplwiz` o
+> `lusrmgr.msc`. Eso cambia solo el display name y deja la carpeta de
+> perfil en `C:\Users\Usuario`, lo que rompe el `-User 'moden'` de la
+> tarea programada del paso 9 y el `-ModenPassword` del instalador.
+
+1. Inicia sesión como `Usuario` y abre **PowerShell como Administrador**.
+2. Crea la cuenta `moden` como administrador:
+
+   ```powershell
+   $pw = Read-Host "Contraseña para moden" -AsSecureString
+   New-LocalUser -Name 'moden' -Password $pw -FullName 'Moden' `
+       -Description 'Cuenta de producción' -PasswordNeverExpires
+   Add-LocalGroupMember -Group 'Administradores' -Member 'moden'
+   # Si el Windows está en inglés: -Group 'Administrators'
+   ```
+
+3. **Cierra sesión** de `Usuario` → **inicia sesión como `moden`**. La
+   primera vez Windows tarda 30-60 s creando `C:\Users\moden`.
+4. Verifica que `moden` quedó en el grupo de administradores:
+
+   ```powershell
+   net localgroup Administradores    # o Administrators si está en inglés
+   ```
+
+5. Desde la sesión de `moden`, borra la cuenta antigua y su perfil:
+
+   ```powershell
+   Remove-LocalUser -Name 'Usuario'
+   Remove-Item 'C:\Users\Usuario' -Recurse -Force -ErrorAction SilentlyContinue
+   ```
+
+   Si `Remove-Item` se queja por archivos en uso, reinicia y repite.
+
+Hecho esto, **salta los puntos 1.1 y 1.2** del siguiente apartado y
+continúa directamente en **1.3** (nombre del equipo).
 
 ---
 
 ## 1. Primer arranque de Windows 11
+
+> Si seguiste el paso 0.5 (Mele u otro mini-PC preinstalado) ya tienes
+> la cuenta `moden` creada: salta al punto 3.
 
 1. En el OOBE, cuando Windows te fuerce a cuenta Microsoft, pulsa
    `Shift + F10` → teclea `OOBE\BYPASSNRO` → Enter. Te deja crear **cuenta
    local**.
 2. Usuario local: `moden` (mismo nombre en los tres mini-PCs para que el
    soporte remoto sea sencillo). Contraseña simple de producción — anótala.
-3. Nombre del equipo: Ajustes → Sistema → Acerca de → **Cambiar nombre**:
-   `MODEN-MESA-INF1` (o el que toque según tabla arriba).
-4. Conecta a la wifi de la oficina y deja que termine la primera ronda de
-   Windows Update.
+3. Conecta a la wifi de la oficina
+4. Nombre del equipo: Ajustes → Sistema → Acerca de → **Cambiar nombre**:
+   `FER-G1-INF1` (o el que toque según tabla arriba).
+5. Reinicia y deja que termine la primera ronda de Windows Update.
 
 ---
 
 ## 2. BIOS: arranque automático al volver la luz
 
-1. Reinicia y entra al BIOS (normalmente `Supr`, `F2` o `Del` al arrancar).
-2. Busca `Restore on AC Power Loss`, `State After Power Failure` o similar
-   (suele estar en *Chipset* o *Power Management*).
-3. Cambia a **Power On**.
-4. Guarda cambios (`F10`) y sal.
+Mode
 
-De aquí en adelante, cuando vuelva la luz en la fábrica, el mini-PC se
-enciende solo.
+1. Reinicia y entra al BIOS (normalmente `F7` o `Del` al arrancar presionando continuamente).
+2. Localiza la opción de encendido tras corte de corriente — según
+   modelo se llama `Restore on AC Power Loss`, `State After Power
+   Failure`, `Auto Power On` o similar.
+
+   **En los Mele Quieter 4C** (BIOS AMI Aptio v2.22.x) está oculta en
+   un menú OEM, no en los sitios habituales:
+
+   > `Advanced` → `Customer Exclusive Functions` → **`Auto Power On`**
+
+   El resto de ubicaciones habituales en AMI Aptio para otros modelos:
+   `Chipset → PCH-IO Configuration → State After G3`,
+   `Chipset → PCH-IO Configuration → State After G3`,
+   `Advanced → APM Configuration → Restore AC Power Loss`,
+   `Advanced → Power & Performance → AC Loss`.
+
+3. Cámbialo a **Enabled** / **Power On** (no `Last State`).
+4. `F4` → Save & Exit → Yes.
+
+**Prueba**: desenchufa el cable 5 segundos y vuelve a enchufarlo sin
+tocar el botón. Debe arrancar solo.
 
 ---
 
@@ -85,27 +168,33 @@ En el mini-PC, con el pendrive conectado:
 1. Abre **Terminal (Administrador)** → verifica que estás en PowerShell
    (si abre CMD, teclea `powershell` y Enter).
 2. Navega a la carpeta del pendrive:
+
    ```powershell
-   cd E:\capture_service    # cambia E: por la letra del pendrive
+   cd D:\capture_service    # cambia D: por la letra del pendrive
    ```
+
 3. Permite ejecutar scripts solo en esta sesión:
+
    ```powershell
    Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
    ```
-4. Lanza el instalador (reemplaza `mesa_inf1` por la mesa que toque):
-   ```powershell
-   .\install-minipc.ps1 -MesaId mesa_inf1
-   ```
-   > Si la cuenta `moden` tiene contraseña y quieres auto-login al estilo
-   > Windows clásico, añade `-ModenPassword "laclave"`. Si la cuenta no
-   > tiene contraseña, omite el flag — Windows entra directo igual.
 
-Esto hace:
+4. Lanza el instalador (reemplaza `fer_g1_inf1` por el `mesa_id` que
+   toque según la tabla del paso 0):
+
+   ```powershell
+   .\install-minipc.ps1 -MesaId fer_g1_inf1 -ModenPassword "Moden1234"
+   ```
+
 - **Hardening**: apaga widgets, Copilot, news, Windows Update sin reinicio
   automático, energía sin suspender, limpia barra de tareas. Si alguna
   entrada del registro está protegida por Windows 11 el script avisa
   (`WARNING`) y sigue.
-- **Apps vía winget**: Python 3.12, Chrome, Google Drive Desktop, AnyDesk.
+- **Apps base**: Python 3.12, Chrome y Google Drive Desktop vía winget;
+  Chrome Remote Desktop host vía MSI directo de Google. El script fuerza
+  `--source winget` para saltarse la fuente `msstore`, que en los Mele
+  de fábrica trae un winget v1.6 con certificado caducado y rompe con
+  `0x8a15005e`.
 - **Capture service**: `robocopy` a `C:\moden\capture_service\`, crea la
   venv, `pip install -r requirements.txt`, genera `config.ini` con el
   `mesa_id` correcto (sin BOM — importante, el BOM rompía configparser).
@@ -116,16 +205,36 @@ Al terminar imprime `Listo.` en verde y guarda un log en
 
 ---
 
-## 4. Auto-login (si pusiste contraseña)
+## 4. Auto-login — (rescate, normalmente no hace falta)
 
-Si omitiste `-ModenPassword` y sí quieres auto-login:
+Si pasaste `-ModenPassword` al instalador en el paso 3, el auto-login
+**ya está configurado** (el script escribe las 4 claves de
+`HKLM:\...\Winlogon`: `AutoAdminLogon`, `DefaultUsername`,
+`DefaultPassword`, `DefaultDomainName`). Salta directo al paso 5.
 
-1. `Win + R` → `netplwiz` → Enter.
-2. Selecciona el usuario `moden`.
-3. **Desmarca** *"Los usuarios deben escribir su nombre y contraseña"*.
-4. Aplicar. Introduce la contraseña dos veces para confirmar.
+Solo necesitas tocar algo aquí si olvidaste el flag o quieres
+cambiarlo después. Opciones:
 
-Con la cuenta sin contraseña, Windows 11 entra directo; no hace falta nada.
+- **Registro directo** (mismo efecto que el flag, PowerShell admin):
+
+  ```powershell
+  $w = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
+  Set-ItemProperty $w 'AutoAdminLogon'    '1'               -Type String -Force
+  Set-ItemProperty $w 'DefaultUsername'   'moden'           -Type String -Force
+  Set-ItemProperty $w 'DefaultPassword'   'Moden1234'       -Type String -Force
+  Set-ItemProperty $w 'DefaultDomainName' $env:COMPUTERNAME -Type String -Force
+  ```
+
+- **Vía netplwiz** (Windows 11 oculta la casilla por defecto, hay que
+  habilitarla primero):
+
+  ```powershell
+  Set-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\PasswordLess\Device' 'DevicePasswordLessBuildVersion' 0 -Type DWord -Force
+  ```
+
+  Luego `Win+R` → `netplwiz` → seleccionar `moden` → desmarcar *"Los
+  usuarios deben escribir su nombre y contraseña"* → Aplicar → pedir
+  la contraseña dos veces.
 
 ---
 
@@ -141,9 +250,11 @@ Lo instaló winget, pero hay que configurarlo a mano:
 4. Deja la letra en **`G:`**. Si la asigna a otra por un pendrive conectado,
    desconecta el pendrive y vuelve a pedir `G:`.
 5. Verifica:
+
    ```powershell
    Test-Path 'G:\Mi unidad\capturas_moden'
    ```
+
    Debe salir `True` después de que Drive termine la primera sincronización.
 
 Google Drive debe quedarse **activo al inicio** — es quien monta `G:\` y
@@ -151,37 +262,46 @@ sincroniza las capturas al cloud. No lo desactives en la limpieza del paso 8.
 
 ---
 
-## 6. AnyDesk — acceso desatendido
+## 6. Chrome Remote Desktop — emparejamiento
 
-winget ya instaló AnyDesk en el paso 3. Ahora hay que configurarlo para que
-puedas entrar en remoto sin que nadie en el mini-PC tenga que aceptar la
-conexión.
+El instalador del paso 3 ya descargó e instaló el host de Chrome Remote
+Desktop como servicio de Windows. Lo que queda es **emparejar** el
+mini-PC a la cuenta de Google corporativa de la ferralla (la misma del
+Drive, paso 5) para activar el acceso remoto.
 
-1. Abre **AnyDesk** en el mini-PC. Verás el **ID de AnyDesk** (9 dígitos)
-   en la parte superior — **anótalo**, es el que usarás desde tu portátil.
-2. Arriba a la derecha, click en el ☰ menú → **Configuración** /
-   *Preferences*.
-3. Pestaña **Seguridad** / *Security* → click en **"Desbloquear
-   configuración de seguridad"** (requiere UAC).
-4. Marca **"Permitir el acceso desatendido"** / *Enable unattended access*.
-5. Click en **"Establecer contraseña para acceso desatendido"** →
-   introduce una contraseña fuerte dos veces → **Aplicar**.
-   > Recomendación: misma contraseña en los tres mini-PCs para simplificar
-   > el soporte, distinta de la contraseña de la cuenta Windows.
-6. (Opcional, recomendado) En la misma pestaña, marca también:
-   - **"Inicio automático con Windows"** — para que esté disponible incluso
-     antes de que el kiosko arranque.
-   - **Bloquear la lista de IDs permitidos** si quieres limitar el acceso
-     solo a tu portátil (apartado *"Control de acceso"*).
+> **Mini-PCs antiguos**: los que ya están desplegados con AnyDesk se
+> quedan como están — Moden los soporta vía AnyDesk hasta el reemplazo
+> natural. Los nuevos mini-PCs van solo con Chrome Remote Desktop.
+
+1. Abre **Chrome** en el mini-PC. Inicia sesión con la **cuenta Google
+   corporativa de la ferralla** (la del Drive).
+2. Ve a:
+
+   ```text
+   https://remotedesktop.google.com/access
+   ```
+
+3. Sección **"Configurar el acceso remoto"** → click en **"Activar"**
+   / *Turn on*.
+4. **Nombre del dispositivo**: pon el computer name (`FER-G1-INF1`,
+   `FER-G1-INF2`, `FER-G1-SUP`, …) para que en la lista de Moden
+   aparezca cada mini-PC con su nombre real.
+5. **PIN de 6 dígitos**: misma PIN para los tres mini-PCs de cada
+   ferralla (simplifica soporte), distinta entre ferrallas distintas.
+   Anótala en la hoja de entrega.
+6. Cuando Windows pida permisos UAC al instalar el servicio host,
+   acepta.
 
 Anota en la hoja de entrega de cada mini-PC:
-- ID AnyDesk (9 dígitos)
-- Contraseña desatendida
-- Mesa asignada
 
-Verifica desde tu portátil: abre AnyDesk en el portátil → introduce el ID
-→ debería pedir contraseña (no "accept/deny" en el otro lado) → conecta
-directamente.
+- Nombre del dispositivo en CRD (= computer name)
+- PIN de 6 dígitos (123456789)
+- Cuenta Google de la ferralla (la misma del Drive)
+
+Verifica desde tu portátil: entra a
+<https://remotedesktop.google.com/access> con la misma cuenta de Google
+→ debe aparecer el mini-PC en la lista de **"Equipos remotos"** →
+click → introduce la PIN → conecta.
 
 ---
 
@@ -198,9 +318,10 @@ La Tiny 2 apaga el sensor y parca el cabezal tras unos minutos sin uso.
 OpenCV luego no puede abrirla aunque el USB esté conectado:
 
 1. Abre **OBSBOT Center** / **WebCam**.
-2. Settings → busca **Sleep Mode** / **Auto Sleep** / *"Modo de
+2. Settings / más → busca **Sleep Mode** / **Auto Sleep** / *"Modo de
    suspensión"*.
 3. Pon **OFF** o **Nunca**.
+4. Desactivar el seguimiento también
 
 El setting queda grabado en el firmware de la cámara, así que aunque
 después desinstales OBSBOT Center la cámara sigue despierta.
@@ -221,6 +342,7 @@ a la vez.
 ### Permiso de Python para la cámara
 
 Ajustes → Privacidad y seguridad → **Cámara**:
+
 - Acceso a cámara: **On**.
 - Permitir que las aplicaciones accedan a la cámara: **On**.
 - **Permitir que las aplicaciones de escritorio accedan a la cámara: On**
@@ -238,6 +360,7 @@ para que el escritorio "se sienta rápido". En un kiosko eso es un lastre:
 ```cmd
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Serialize" /v StartupDelayInMSec /t REG_DWORD /d 0 /f
 ```
+
 (ejecutar como el usuario `moden`, en CMD o PowerShell).
 
 ### Desactivar apps de inicio innecesarias
@@ -245,11 +368,11 @@ reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Serialize" /v S
 Ajustes → Aplicaciones → **Inicio**. Apaga todo salvo:
 
 - ✅ **Google Drive** — monta `G:\`, necesario.
-- ✅ **Moden Player** (`start-player.bat`) — la aplicación principal.
-- ✅ **AnyDesk** — para poder entrar en remoto.
 
 Apaga sin problema: OneDrive, Teams personal, Edge, Cortana, Widgets,
-Centro de Opiniones, etc.
+Centro de Opiniones, etc. **Moden Player** y **Chrome Remote Desktop**
+no aparecen en esta lista porque arrancan por tarea programada y
+servicio de Windows respectivamente, no por `shell:startup`.
 
 ### Deshabilitar tareas programadas basura
 
@@ -263,13 +386,21 @@ Centro de Opiniones, etc.
 
 ---
 
-## 9. Programador de Tareas (reemplaza shell:startup)
+## 9. Verifica la tarea programada "MODEN Player"
 
-La carpeta `shell:startup` sufre el delay mencionado arriba. Para un kiosko
-profesional la tarea programada "at logon, no delay" es más fiable:
+El instalador del paso 3 ya crea la tarea programada `MODEN Player`
+con trigger *at logon* para la cuenta `moden`. No hace falta crearla
+a mano ni tocar `shell:startup` (usamos tarea programada precisamente
+para evitar el delay de Windows 11 sobre la carpeta de inicio).
+
+`Win + R` → `taskschd.msc` → **Biblioteca del Programador de tareas**:
+debe aparecer **MODEN Player** con desencadenador *"Cuando el usuario
+`moden` inicie sesión"*.
+
+Si por lo que sea falta (mini-PC configurado antes de tener este paso
+integrado), la recreas así en PowerShell admin:
 
 ```powershell
-# PowerShell admin. Si tu cuenta se llama distinto, cambia -User 'moden'.
 $bat = 'C:\moden\capture_service\start-player.bat'
 $action   = New-ScheduledTaskAction  -Execute $bat
 $trigger  = New-ScheduledTaskTrigger -AtLogOn -User 'moden'
@@ -278,17 +409,10 @@ $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries `
 Register-ScheduledTask -TaskName 'MODEN Player' `
     -Action $action -Trigger $trigger -Settings $settings `
     -RunLevel Limited -User 'moden' -Force
-```
 
-Una vez creada, **elimina** el acceso directo viejo para que no se lance
-dos veces:
-
+# Limpia un posible shortcut heredado:
+Remove-Item (Join-Path ([Environment]::GetFolderPath('Startup')) 'Moden Player.lnk') -Force -ErrorAction SilentlyContinue
 ```
-Win + R → shell:startup → eliminar "Moden Player.lnk"
-```
-
-Verifica en Programador de tareas que sale **MODEN Player** con
-desencadenador *"Cuando el usuario inicie sesión"*.
 
 ---
 
@@ -325,11 +449,12 @@ start test.jpg
 # captures_today incrementando cada segundo si estás dentro del horario.
 (Invoke-WebRequest http://127.0.0.1:5555/stats -UseBasicParsing).Content
 
-# Drive montado y escribiendo
-Test-Path 'G:\Mi unidad\capturas_moden\mesa_inf1'
+# Drive montado y escribiendo (reemplaza fer_g1_inf1 por el mesa_id que toque)
+Test-Path 'G:\Mi unidad\capturas_moden\fer_g1_inf1'
 ```
 
 Y en el dashboard (desde tu laptop):
+
 - El icono de monitor de la mesa es verde (vinculada).
 - No aparece el chip rojo ni ámbar de "cámara" en la cabecera.
 
@@ -339,10 +464,11 @@ Y en el dashboard (desde tu laptop):
 
 Antes de empacar cada mini-PC:
 
-- [ ] Nombre del equipo = `MODEN-MESA-<ID>` (según tabla).
+- [ ] Nombre del equipo = `<CLI>-G<N>-<ROL>` (según tabla, p.ej. `FER-G1-INF1`).
 - [ ] Cuenta `moden` (con o sin contraseña documentada).
-- [ ] AnyDesk: **ID anotado** + contraseña desatendida puesta + probada
-      desde el portátil (conecta sin preguntar al mini-PC).
+- [ ] Chrome Remote Desktop: dispositivo emparejado con la cuenta Google
+      de la ferralla, PIN configurada y probada desde el portátil
+      (conecta entrando en `remotedesktop.google.com/access`).
 - [ ] `config.ini` en `C:\moden\capture_service` tiene el `mesa_id` correcto.
 - [ ] `/health` responde 200.
 - [ ] `/capture` devuelve foto real.
@@ -356,15 +482,18 @@ En el cliente, al conectarlo a su red:
 - [ ] `Alt + F4` para salir del kiosk (necesitas teclado externo una vez).
 - [ ] Conectar la Wi-Fi del cliente desde la bandeja.
 - [ ] Reiniciar — debe arrancar solo en el entorno del cliente.
-- [ ] Confirmar desde el dashboard (vía AnyDesk si no tienes VPN) que la
-      mesa sigue vinculada y las fotos suben a Drive.
+- [ ] Confirmar desde el dashboard (vía Chrome Remote Desktop si no
+      tienes VPN) que la mesa sigue vinculada y las fotos suben a Drive.
 
 ---
 
 ## Mantenimiento remoto
 
-Todo el mantenimiento posterior se hace con **AnyDesk** (acceso desatendido
-ya configurado). Casos habituales:
+Todo el mantenimiento posterior se hace con **Chrome Remote Desktop**
+(emparejamiento ya configurado). Desde tu portátil, entra a
+<https://remotedesktop.google.com/access> con la cuenta Google
+corporativa de la ferralla, elige el mini-PC en la lista y conecta con
+la PIN. Casos habituales:
 
 - **Cambiar mesa_id / horarios / resolución**: edita
   `C:\moden\capture_service\config.ini` → mata el proceso Python y reinicia
@@ -393,6 +522,7 @@ ya configurado). Casos habituales:
 | Código de vinculación cambia cada pocos segundos | Ya resuelto en el backend; refresca el visor | — |
 
 **Arreglo del BOM en `config.ini`** (si pasa, one-liner):
+
 ```powershell
 $p = 'C:\moden\capture_service\config.ini'
 $raw = Get-Content $p -Raw

@@ -35,3 +35,8 @@ Thumbs.db
 docs/E04*
 app_proyeccion_moden/public/
 docker-compose.yml
+
+# --- Local-only (per-project DBs, personal cheatsheets) ---
+docs/*.db
+docs/usuarios_activos.txt
+capture_service/COMANDOS.txt

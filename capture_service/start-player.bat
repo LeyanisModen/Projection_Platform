@@ -2,9 +2,10 @@
 REM ---------------------------------------------------------------------------
 REM start-player.bat — lanza el capture service y Chrome kiosk en paralelo.
 REM
-REM Pensado para estar enganchado en shell:startup. Los dos `start` salen
-REM inmediatamente (no bloquean), así que Windows termina el login rápido
-REM y cada proceso resuelve su propio arranque:
+REM Pensado para lanzarse por la tarea programada 'MODEN Player' (trigger
+REM "at logon" del usuario moden) que registra install-minipc.ps1. Los dos
+REM `start` salen inmediatamente (no bloquean), así que Windows termina
+REM el login rápido y cada proceso resuelve su propio arranque:
 REM   - Python hace su import de OpenCV (2-3 s) y abre el puerto 5555.
 REM   - Chrome arranca en kiosk; si la red aún no está resuelta, reintenta
 REM     por su cuenta — más rápido que un ping loop bloqueante.

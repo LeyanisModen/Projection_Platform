@@ -19,16 +19,23 @@ ajuste de cámara, entrega al cliente).
 ## 0. Material y valores por mesa
 
 Cada mini-PC es idéntico salvo por el `mesa_id` y la asignación física
-a una mesa. Llévate esta tabla a la configuración:
+a una mesa. El nombre del equipo es `<CLI>-G<N>-<ROL>` (cliente +
+número de grupo + rol); el `mesa_id` es el mismo en minúscula con
+guiones bajos. Esa pareja se usa como carpeta de Drive y evita
+colisiones entre clientes / grupos distintos.
 
-| Mesa física   | `mesa_id`   | Nombre sugerido del equipo | AnyDesk alias |
-|---------------|-------------|----------------------------|---------------|
-| Inferior 1    | `mesa_inf1` | `MODEN-MESA-INF1`          | `moden-inf1`  |
-| Inferior 2    | `mesa_inf2` | `MODEN-MESA-INF2`          | `moden-inf2`  |
-| Superiores    | `mesa_sup`  | `MODEN-MESA-SUP`           | `moden-sup`   |
+| Cliente    | Grupo | Mesa física | `mesa_id`     | Nombre del equipo |
+|------------|-------|-------------|---------------|-------------------|
+| Ferralia   | G1    | Inferior 1  | `fer_g1_inf1` | `FER-G1-INF1`     |
+| Ferralia   | G1    | Inferior 2  | `fer_g1_inf2` | `FER-G1-INF2`     |
+| Ferralia   | G1    | Superiores  | `fer_g1_sup`  | `FER-G1-SUP`      |
+| Ferralia   | G2    | Inferior 1  | `fer_g2_inf1` | `FER-G2-INF1`     |
+| Ferralia   | G2    | …           | …             | …                 |
 
 Anota también para cada mini-PC:
-- AnyDesk ID + contraseña de acceso desatendido.
+- Nombre del dispositivo en Chrome Remote Desktop (= computer name) y
+  PIN de 6 dígitos (compartida entre los 3 mini-PCs de la ferralla).
+- Cuenta Google corporativa de la ferralla (la misma del Drive y de CRD).
 - Código de emparejamiento del visor (aparece en pantalla la primera vez
   que se abre — se introduce en el dashboard para vincularlo a la mesa).
 
@@ -44,7 +51,7 @@ futura esté autocontenida.
 | Python 3.12 (Windows x64) | https://www.python.org/downloads/ | Marca **Add Python to PATH** al instalar |
 | Google Chrome | https://www.google.com/chrome/ | |
 | Google Drive Desktop | https://www.google.com/drive/download/ | Modo *Virtual drive* para tener `G:\` |
-| AnyDesk | https://anydesk.com/es/downloads/windows | |
+| Chrome Remote Desktop host | https://dl.google.com/edgedl/chrome-remote-desktop/chromeremotedesktophost.msi | El instalador lo descarga solo; aquí por si lo quieres pre-cargar en el pendrive |
 | OBSBOT WebCam (controla la Tiny 2) | https://www.obsbot.com/download/tiny-2-lite | Incluye los presets de movimiento |
 | Este repo, subcarpeta `capture_service\` | `git clone` o zip del repo | |
 
@@ -72,12 +79,12 @@ del repo y lanza:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\install-minipc.ps1 -MesaId mesa_inf1 -ModenPassword "tu-clave"
+.\install-minipc.ps1 -MesaId fer_g1_inf1 -ModenPassword "tu-clave"
 ```
 
-Cambia `mesa_inf1` por la mesa que toque (`mesa_inf1`, `mesa_inf2`
-o `mesa_sup`). Omite `-ModenPassword` si prefieres configurar el
-auto-login después con `netplwiz`.
+Cambia `fer_g1_inf1` por el `mesa_id` que toque según la tabla de
+arriba (formato `<cli>_g<N>_<rol>`). Omite `-ModenPassword` si prefieres
+configurar el auto-login después con `netplwiz`.
 
 El script es idempotente: lo puedes volver a ejecutar para
 reinstalar el capture service o re-endurecer Windows sin que afecte
@@ -178,10 +185,14 @@ puede necesitar):
    - Configuración → *Mi unidad* → **Transmitir archivos** (esto es el
      modo "virtual drive"). Deja `G:` como letra.
    - Pausar copias USB y fotos (no queremos que Drive suba nada más).
-4. **AnyDesk**:
-   - *Set password for unattended access* → la misma contraseña que la
-     cuenta `moden` (sencillo para recordar).
-   - Anota el ID de AnyDesk del equipo.
+4. **Chrome Remote Desktop** — emparejar contra la cuenta Google
+   corporativa de la ferralla:
+   - Abre Chrome (sesión iniciada con esa cuenta) →
+     `https://remotedesktop.google.com/access` → *"Configurar el acceso
+     remoto"* → **Activar**.
+   - Nombre del dispositivo = computer name (`FER-G1-INF1`, etc.).
+   - PIN de 6 dígitos compartida entre los 3 mini-PCs de la ferralla.
+   - Anota el nombre y la PIN.
 5. **OBSBOT Tiny 2 (WebCam)**:
    - Conecta la cámara por USB-C.
    - Abre la app → comprueba vídeo → ajusta zoom/ángulo al plano de
@@ -211,7 +222,7 @@ notepad config.ini
 ```
 
 Ajusta en `config.ini`:
-- `mesa_id = mesa_inf1`  (o `mesa_inf2` / `mesa_sup`)
+- `mesa_id = fer_g1_inf1`  (formato `<cli>_g<N>_<rol>` — ver tabla arriba)
 - `output_dir = G:\Mi unidad\capturas_moden`
 - Si el equipo tiene cámara integrada **además** de la OBSBOT revisa
   `camera_index` (0 = primera detectada — normalmente la OBSBOT si no
@@ -231,13 +242,25 @@ Y que aparezcan JPEGs nuevos bajo `G:\Mi unidad\capturas_moden\<mesa_id>\<fecha>
 
 ## 6. Auto-arranque al iniciar sesión
 
-1. `Win + R` → `shell:startup`.
-2. Copia el fichero **`start-player.bat`** (o un acceso directo a él)
-   dentro de esa carpeta. Vive en
-   `C:\Users\moden\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\`.
-3. Reinicia: al iniciar sesión debe salir Chrome en kiosk apuntando a
-   `https://moden.up.railway.app/`, con el capture service corriendo
-   en segundo plano.
+Registramos una tarea programada *at logon* (en lugar de un shortcut
+en `shell:startup`, que sufre el delay de ~10-15 s de Windows 11).
+Desde PowerShell admin:
+
+```powershell
+$bat = 'C:\moden\capture_service\start-player.bat'
+$action   = New-ScheduledTaskAction  -Execute $bat
+$trigger  = New-ScheduledTaskTrigger -AtLogOn -User 'moden'
+$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries `
+              -DontStopIfGoingOnBatteries -StartWhenAvailable
+Register-ScheduledTask -TaskName 'MODEN Player' `
+    -Action $action -Trigger $trigger -Settings $settings `
+    -RunLevel Limited -User 'moden' -Force
+```
+
+Reinicia: al iniciar sesión debe salir Chrome en kiosk apuntando a
+`https://moden.up.railway.app/`, con el capture service corriendo en
+segundo plano. `install-minipc.ps1` ya ejecuta este bloque; solo
+hazlo a mano si estás montando el servicio fuera del instalador.
 
 La **primera vez** que Chrome cargue el visor te pedirá permiso de
 cámara/micrófono → *Permitir siempre para este sitio*. Queda grabado
@@ -274,17 +297,21 @@ Al llegar al sitio:
 - [ ] Probar una captura manual con un `_foto` y verificar que aparece
       tanto en el dashboard como en la carpeta de Drive.
 - [ ] Anotar en la hoja de entrega: nombre del equipo, mesa asignada,
-      AnyDesk ID, fecha.
+      nombre + PIN de Chrome Remote Desktop, fecha.
 
 ---
 
 ## 9. Mantenimiento desde remoto
 
-- **Cambiar horarios de captura o mesa_id**: AnyDesk → editar
+Acceso por **Chrome Remote Desktop** desde
+<https://remotedesktop.google.com/access> con la cuenta Google de la
+ferralla (la del Drive). Casos típicos:
+
+- **Cambiar horarios de captura o mesa_id**: CRD → editar
   `C:\moden\capture_service\config.ini` → `taskkill /im python.exe /f`
   → el .bat ya no relanza, así que cierra sesión y vuelve a entrar
   (o reinicia el mini-PC).
-- **Actualizar el capture service**: AnyDesk → `robocopy` la carpeta
+- **Actualizar el capture service**: CRD → `robocopy` la carpeta
   nueva sobre `C:\moden\capture_service` (excluyendo `config.ini` y la
   venv) → reinicio.
 - **Problema grave**: Alt+F4 para salir del kiosk, revisar `/stats`

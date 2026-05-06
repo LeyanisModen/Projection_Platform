@@ -43,14 +43,29 @@ to the Chrome kiosk. Single Python process:
    notepad config.ini
    ```
    Edit **at least** these fields:
-   - `mesa_id = mesa_inf1` (or `mesa_inf2`, `mesa_sup`, …)
+   - `mesa_id = fer_g1_inf1` (format `<cli>_g<N>_<rol>`, e.g.
+     `fer_g1_inf2`, `fer_g2_sup`, …)
    - `output_dir = G:\Mi unidad\capturas_moden`
 
-6. **Auto-start**
-   - Press `Win+R` → `shell:startup` → drop a shortcut to
-     `start-player.bat` (or the .bat itself).
-   - Next reboot Windows will launch the capture service and open
-     Chrome in kiosk mode automatically.
+6. **Auto-start** — register a scheduled task "at logon" for the
+   `moden` account so `start-player.bat` fires without the
+   `shell:startup` delay:
+
+   ```powershell
+   $bat = 'C:\moden\capture_service\start-player.bat'
+   $action   = New-ScheduledTaskAction  -Execute $bat
+   $trigger  = New-ScheduledTaskTrigger -AtLogOn -User 'moden'
+   $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries `
+                 -DontStopIfGoingOnBatteries -StartWhenAvailable
+   Register-ScheduledTask -TaskName 'MODEN Player' `
+       -Action $action -Trigger $trigger -Settings $settings `
+       -RunLevel Limited -User 'moden' -Force
+   ```
+
+   Next reboot, Windows will launch the capture service and open
+   Chrome in kiosk mode automatically. `install-minipc.ps1` already
+   does this step — only run it by hand if you're setting up the
+   service outside the installer.
 
 ## Manual smoke test
 
@@ -74,7 +89,7 @@ and that Google Drive Desktop shows them "uploaded".
 
 ```
 G:\Mi unidad\capturas_moden\
-└── mesa_inf1\
+└── fer_g1_inf1\
     ├── 2026-04-20\
     │   ├── 05-00-00.jpg
     │   ├── 05-00-01.jpg
