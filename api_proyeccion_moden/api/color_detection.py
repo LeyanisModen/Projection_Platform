@@ -54,13 +54,20 @@ _CODE_TO_COLOR = {
     'x': None,       # skip
 }
 
-# Pipeline parameters (from detector.pyw). Areas are stored as a fraction
-# of the reference 4K frame so they auto-scale to whatever resolution the
-# uploaded photo actually has (the visor downscales to 2048 px on the
-# longer side before upload).
+# Pipeline parameters. Areas are stored as a fraction of the reference
+# 4K frame so they auto-scale to whatever resolution the uploaded photo
+# actually has (the visor downscales to 2048 px on the longer side
+# before upload).
+#
+# Range tuned for OBSBOT Tiny 2 mounted ~4.5 m above one edge of a 3 m
+# wide table, looking at 15x5 cm coloured cards. At that geometry the
+# card is roughly 600-3000 px² on the compressed (2048 px) frame, so
+# a ~225-4500 px² window leaves headroom for cards a bit further
+# (~6 m) without letting random small specks through. Detector.pyw's
+# original (3000, 8000) range assumed smaller cards / closer camera.
 _REF_FRAME_AREA = 3840 * 2160
-_MIN_AREA_RATIO = 3000 / _REF_FRAME_AREA
-_MAX_AREA_RATIO = 8000 / _REF_FRAME_AREA
+_MIN_AREA_RATIO = 800 / _REF_FRAME_AREA    # ~225 px² on a 2048x1152 frame
+_MAX_AREA_RATIO = 16000 / _REF_FRAME_AREA  # ~4500 px² on a 2048x1152 frame
 
 _SOLIDITY_MIN = 0.65
 _BBOX_DENSITY_MIN = 70.0  # percent
