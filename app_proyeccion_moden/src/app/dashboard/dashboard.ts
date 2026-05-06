@@ -455,7 +455,10 @@ export class Dashboard implements OnInit, OnDestroy {
    * it appears elsewhere in some queue but isn't the head; 'libre' when it
    * isn't in any queue.
    */
-  proyectoEstado(proyecto: Proyecto): 'fabricando' | 'en-cola' | 'libre' {
+  proyectoEstado(proyecto: Proyecto): 'finalizado' | 'fabricando' | 'en-cola' | 'libre' {
+    const total = proyecto.modulos_count || 0;
+    const done = proyecto.modulos_completados || 0;
+    if (total > 0 && done >= total) return 'finalizado';
     let enCola = false;
     for (const grupo of this.gruposMesas) {
       const cola = grupo.proyectos_cola || [];
@@ -468,6 +471,7 @@ export class Dashboard implements OnInit, OnDestroy {
 
   proyectoEstadoLabel(proyecto: Proyecto): string {
     switch (this.proyectoEstado(proyecto)) {
+      case 'finalizado': return 'Finalizado';
       case 'fabricando': return 'En fabricación';
       case 'en-cola': return 'En cola';
       default: return 'Sin asignar';
@@ -2186,6 +2190,13 @@ export class Dashboard implements OnInit, OnDestroy {
     const total = p.modulos_count || 0;
     const done = p.modulos_completados || 0;
     const pending = Math.max(total - done, 0);
+    // Only the project at the head of some grupo-mesas queue is actually
+    // being worked on right now; queued/free projects shouldn't show a
+    // forecast on the donut because nobody is producing them yet.
+    const isFabricando = this.proyectoEstado(p) === 'fabricando';
+    if (!isFabricando) {
+      return { total, done, hoy: 0, semana: 0, resto: pending };
+    }
     const daily = p.capacidad_diaria_usuario || 12;
     const doneToday = p.modulos_completados_hoy || 0;
     // How many more can still be produced today after what's already done.

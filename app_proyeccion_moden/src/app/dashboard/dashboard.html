@@ -394,6 +394,7 @@
                     @for (proyecto of proyectos; track proyecto.id) {
                     <article class="project-inline-card"
                         [class.selected]="selectedProyecto?.id === proyecto.id"
+                        [class.estado-finalizado]="proyectoEstado(proyecto) === 'finalizado'"
                         [class.estado-fabricando]="proyectoEstado(proyecto) === 'fabricando'"
                         [class.estado-en-cola]="proyectoEstado(proyecto) === 'en-cola'"
                         [class.estado-libre]="proyectoEstado(proyecto) === 'libre'"

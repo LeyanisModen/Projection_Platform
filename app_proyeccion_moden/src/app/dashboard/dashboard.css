@@ -2963,6 +2963,15 @@
 }
 
 /* Visual state per-project (driven by grupos-mesas queues) */
+.project-inline-card.estado-finalizado {
+  border-left: 4px solid #1f8a3b;
+  background: #f0f9f3;
+}
+.project-inline-card.estado-finalizado .project-status {
+  color: #1f8a3b;
+  font-weight: 600;
+}
+
 .project-inline-card.estado-fabricando {
   border-left: 4px solid #28a745;
 }
