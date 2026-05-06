@@ -187,3 +187,11 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(
             f"OK: {len(plan)} modulos marcados como COMPLETADO."
         ))
+
+        # Reconcile queues so finished projects don't keep blocking the
+        # head of any grupo and stale MesaQueueItem rows aren't left
+        # MOSTRANDO/EN_COLA when their phase is already done.
+        from django.core.management import call_command
+        self.stdout.write("")
+        self.stdout.write("Sincronizando colas y MesaQueueItem...")
+        call_command('sincronizar_estado_colas', usuario=username)
