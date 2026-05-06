@@ -3370,8 +3370,26 @@ class DeviceViewSet(viewsets.ViewSet):
                             annotated_filename = (
                                 f"{safe_modulo}_{fase_pref}_paso{int(paso)}_annotated.jpg"
                             )
+                            print(
+                                f'[debug-check] annotated for {modulo.nombre} '
+                                f'{fase_pref}-paso{paso}: '
+                                f'detections={len(result["detections"])} '
+                                f'bytes={len(annotated_bytes)} '
+                                f'b64_len={len(annotated_b64)}',
+                                flush=True,
+                            )
                         except Exception as exc:
                             check_detail['annotation_error'] = str(exc)
+                            print(
+                                f'[debug-check] annotate FAILED for {modulo.nombre}: {exc}',
+                                flush=True,
+                            )
+                    elif debug_mode:
+                        print(
+                            f'[debug-check] no detections for {modulo.nombre} '
+                            f'{fase_pref}-paso{paso} - skipping annotation',
+                            flush=True,
+                        )
                 except Exception as exc:
                     check_result = False
                     check_detail = {'error': str(exc)}

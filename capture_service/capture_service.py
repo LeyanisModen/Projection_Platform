@@ -478,10 +478,22 @@ class CaptureHandler(BaseHTTPRequestHandler):
         The body is the raw JPEG bytes; the filename comes in the
         X-Filename header. Path traversal is rejected.
         """
+        # Logging to file because pythonw silences stdout. The log
+        # lives in <output_dir>/<mesa_id>/debug/log.txt so the
+        # supervisor can read it on Drive without touching the box.
+        def _log_line(msg):
+            try:
+                log_dir = _mesa_root() / 'debug'
+                log_dir.mkdir(parents=True, exist_ok=True)
+                with open(log_dir / 'log.txt', 'a', encoding='utf-8') as fh:
+                    fh.write(f'{datetime.now().isoformat(timespec="seconds")} {msg}\n')
+            except OSError:
+                pass
+
         raw_filename = self.headers.get('X-Filename', '').strip()
-        # Strip any path component the caller may have sneaked in.
         safe_name = os.path.basename(raw_filename)
         if not safe_name or safe_name in ('.', '..'):
+            _log_line(f'400 X-Filename invalid: {raw_filename!r}')
             self.send_error(400, 'X-Filename header missing or invalid')
             return
 
@@ -490,10 +502,11 @@ class CaptureHandler(BaseHTTPRequestHandler):
         except ValueError:
             length = 0
         if length <= 0:
+            _log_line(f'400 empty body for {safe_name}')
             self.send_error(400, 'Empty body')
             return
-        # Cap accepted size at 10 MB to avoid runaway uploads.
         if length > 10 * 1024 * 1024:
+            _log_line(f'413 body too large ({length} bytes) for {safe_name}')
             self.send_error(413, 'Body too large')
             return
 
@@ -507,9 +520,11 @@ class CaptureHandler(BaseHTTPRequestHandler):
             with open(dest_path, 'wb') as fh:
                 fh.write(body)
         except OSError as exc:
+            _log_line(f'500 write failed for {safe_name}: {exc}')
             self.send_error(500, f'Cannot write file: {exc}')
             return
 
+        _log_line(f'200 wrote {safe_name} ({length} bytes) -> {dest_path}')
         self._respond_json(200, {
             'status': 'ok',
             'path': str(dest_path),
