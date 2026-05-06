@@ -3358,15 +3358,11 @@ class DeviceViewSet(viewsets.ViewSet):
                     # storage -- the visor will mirror it to Drive
                     # via the local capture service. Drive is the
                     # only place the annotated image lives.
-                    # Generate it even when 'detections' is empty:
-                    # if nothing matched the algorithm (cards too small,
-                    # colour out of range, camera not aimed correctly),
-                    # the raw capture itself is what we need to debug.
-                    if debug_mode:
+                    if debug_mode and result.get('detections'):
                         try:
                             import base64
                             annotated_bytes = annotate_image(
-                                foto_bytes, result.get('detections', [])
+                                foto_bytes, result['detections']
                             )
                             annotated_b64 = base64.b64encode(
                                 annotated_bytes
