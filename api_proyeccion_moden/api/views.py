@@ -3361,14 +3361,21 @@ class DeviceViewSet(viewsets.ViewSet):
                     if debug_mode and result.get('detections'):
                         try:
                             import base64
+                            from django.utils import timezone
                             annotated_bytes = annotate_image(
                                 foto_bytes, result['detections']
                             )
                             annotated_b64 = base64.b64encode(
                                 annotated_bytes
                             ).decode('ascii')
+                            # Each call gets its own filename so Drive
+                            # keeps the full history of a paso under
+                            # debug/<date>/ instead of overwriting on
+                            # every retry. The date is already in the
+                            # folder, so just HH-MM-SS is enough.
+                            ts = timezone.localtime(timezone.now()).strftime('%H-%M-%S')
                             annotated_filename = (
-                                f"{safe_modulo}_{fase_pref}_paso{int(paso)}_annotated.jpg"
+                                f"{safe_modulo}_{fase_pref}_paso{int(paso)}_{ts}_annotated.jpg"
                             )
                             print(
                                 f'[debug-check] annotated for {modulo.nombre} '
