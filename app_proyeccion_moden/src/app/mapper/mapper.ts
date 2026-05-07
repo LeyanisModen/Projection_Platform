@@ -794,8 +794,6 @@ export class Mapper implements OnChanges {
     }
   }
 
-  public isBlackout = false;
-
   @HostListener('document:keydown', ['$event'])
   async keydownHandler(e: KeyboardEvent) {
     if (!this.allowInteraction) return;
@@ -820,16 +818,6 @@ export class Mapper implements OnChanges {
     } else if (e.key === "o" || e.key === "O") {
       e.preventDefault();
       this.setDirectory();
-    } else if (e.key === " ") {
-      // While a colour-check overlay is showing, SPACE belongs to the
-      // visor (clear the block + advance). Toggling blackout on top of
-      // that would leave the supervisor in a black screen for no
-      // reason.
-      if (this.checkOverlay !== 'none') {
-        return;
-      }
-      e.preventDefault();
-      this.isBlackout = !this.isBlackout;
     } else if (e.key == "Home" || e.key == "PageUp" || e.key == "End" || e.key == "PageDown") {
       if (this.calibrating) {
         this.scheduleUserInactive();
