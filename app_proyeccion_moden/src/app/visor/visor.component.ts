@@ -494,16 +494,32 @@ export class VisorComponent implements OnInit, OnDestroy {
 
   prevImage(): void {
     if (this.currentIndex < 0) return;
-    if (Date.now() < this.slideLockUntil) return;
     if (this.capturingPhoto && this.captureMode === 'check') return;
+    // Going backwards is a review pass: no 5 s read-lock and no
+    // capture/check retriggering. The operator is scrubbing back to
+    // inspect something. Skip past _foto / _check slides on the way
+    // -- when they go forward again, those same slides fire normally
+    // and we re-capture / re-validate as if it were the first time.
 
     if (this.currentIndex > 0) {
       if (this.checkOverlay !== 'none') this.clearCheckOverlay();
-      this.currentIndex--;
+      let target = this.currentIndex - 1;
+      while (target > 0 && this.isCaptureSlide(target)) {
+        target--;
+      }
+      this.currentIndex = target;
       this.updateProjectedImage();
-      this.slideLockUntil = Date.now() + VisorComponent.SLIDE_LOCK_MS;
-      this.checkPhotoTrigger();
     }
+  }
+
+  private isCaptureSlide(index: number): boolean {
+    const img = this.images[index];
+    if (!img) return false;
+    const url: string = img.url || img.src || '';
+    const filename = (url.split('/').pop() || '').toLowerCase();
+    return filename.includes('_foto')
+      || filename.includes('_photo')
+      || filename.includes('_check');
   }
 
   updateProjectedImage(): void {
