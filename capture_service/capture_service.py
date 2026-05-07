@@ -418,7 +418,11 @@ class CaptureHandler(BaseHTTPRequestHandler):
     def _cors(self):
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        # X-Filename is sent by the visor on /save_debug_image; if it
+        # isn't whitelisted here Chrome rejects the preflight and the
+        # POST is never made (visor sees an HTTP error 0 with no
+        # status code).
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type, X-Filename')
 
     def do_OPTIONS(self):
         self.send_response(200)
