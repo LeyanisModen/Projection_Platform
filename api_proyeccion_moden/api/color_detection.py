@@ -23,16 +23,26 @@ import numpy as np
 
 
 # ---------------------------------------------------------------------------
-# HSV ranges (from detector.pyw - tuned against real cards in the workshop).
-# Hue is 0-179 in OpenCV.
-# NOTE: 'yellow' upper-S (150) is below lower-S (180); this matches
-# detector.pyw verbatim. If yellow stops detecting in real tests, this is
-# the first place to look.
+# HSV ranges. Hue is 0-179 in OpenCV.
+#
+# Originally inherited from detector.pyw, but tuned in May-2026 against
+# real shop-floor photos at Ferralia (3.5-5 m camera distance, mixed
+# fluorescent + daylight). Notes:
+#  * 'yellow' had upper_S=150 < lower_S=180 in the inherited values,
+#    which made the mask permanently empty. Fixed.
+#  * 'orange' lower_S/V dropped from 180 to 120/140 so paler / shadowed
+#    orange cards still match. Hue extended to 22 to cover the
+#    orange-yellow border without clashing with yellow (which now
+#    starts at 23).
+#  * 'green' S/V minimums dropped from 130 to 80/90 to tolerate pastel
+#    greens and greens lit by the projector (which washes saturation).
+#  * 'blue' deliberately kept strict so the dark blue tape currently
+#    on the wall is NOT picked up.
 # ---------------------------------------------------------------------------
 _COLOR_HSV_RANGES = {
-    'orange': ((5, 180, 180),    (20, 255, 255)),
-    'yellow': ((22, 180, 180),   (30, 150, 255)),
-    'green':  ((40, 130, 130),   (85, 255, 255)),
+    'orange': ((5, 120, 140),    (22, 255, 255)),
+    'yellow': ((23, 120, 150),   (33, 255, 255)),
+    'green':  ((35, 80, 90),     (85, 255, 255)),
     'blue':   ((90, 120, 130),   (125, 255, 255)),
     'purple': ((125, 100, 100),  (145, 255, 255)),
     'pink':   ((140, 60, 150),   (179, 120, 255)),
