@@ -25,7 +25,10 @@ import numpy as np
 # ---------------------------------------------------------------------------
 # HSV ranges. Hue is 0-179 in OpenCV.
 #
-# Originally inherited from detector.pyw, but tuned in May-2026 against
+# Each entry is a LIST of (lower, upper) HSV tuples. Most colours need
+# a single range, but 'red' wraps around H=0/180 so we OR two masks.
+#
+# Originally inherited from detector.pyw, tuned in May-2026 against
 # real shop-floor photos at Ferralia (3.5-5 m camera distance, mixed
 # fluorescent + daylight). Notes:
 #  * 'yellow' had upper_S=150 < lower_S=180 in the inherited values,
@@ -36,16 +39,24 @@ import numpy as np
 #    starts at 23).
 #  * 'green' S/V minimums dropped from 130 to 80/90 to tolerate pastel
 #    greens and greens lit by the projector (which washes saturation).
-#  * 'blue' deliberately kept strict so the dark blue tape currently
-#    on the wall is NOT picked up.
+#  * 'blue' lower_S raised from 120 to 180. The previous threshold was
+#    matching washed-out / cool-white pixels (projector glare on the
+#    wall) as blue, generating dozens of false positives in the
+#    annotated overlay. The dark blue tape on the wall already is
+#    excluded by V min and that's intentional.
+#  * 'red' added with two ranges (H 0-10 and H 170-179) because it
+#    wraps around the Hue cylinder. Useful for red duct tape, which
+#    is one of the most common cards in the shop.
 # ---------------------------------------------------------------------------
 _COLOR_HSV_RANGES = {
-    'orange': ((5, 120, 140),    (22, 255, 255)),
-    'yellow': ((23, 120, 150),   (33, 255, 255)),
-    'green':  ((35, 80, 90),     (85, 255, 255)),
-    'blue':   ((90, 120, 130),   (125, 255, 255)),
-    'purple': ((125, 100, 100),  (145, 255, 255)),
-    'pink':   ((140, 60, 150),   (179, 120, 255)),
+    'orange': [((5, 120, 140),    (22, 255, 255))],
+    'yellow': [((23, 120, 150),   (33, 255, 255))],
+    'green':  [((35, 80, 90),     (85, 255, 255))],
+    'blue':   [((90, 180, 130),   (125, 255, 255))],
+    'purple': [((125, 100, 100),  (145, 255, 255))],
+    'pink':   [((140, 60, 150),   (179, 120, 255))],
+    'red':    [((0, 120, 100),    (10, 255, 255)),
+               ((170, 120, 100),  (179, 255, 255))],
 }
 
 # Map Modulo.codigos_color chars to detector colour names. The model's
@@ -61,6 +72,7 @@ _CODE_TO_COLOR = {
     'p': 'pink',
     'm': 'pink',     # magenta -> pink range
     'o': 'orange',
+    'r': 'red',
     'x': None,       # skip
 }
 
@@ -160,13 +172,20 @@ def _evaluate_contour(cnt, total_area):
 
 
 def _scan_color(hsv_blurred, color_name, total_area):
-    """Return every reportable detection for a single colour."""
-    lower, upper = _COLOR_HSV_RANGES[color_name]
-    mask = cv2.inRange(
-        hsv_blurred,
-        np.array(lower, dtype=np.uint8),
-        np.array(upper, dtype=np.uint8),
-    )
+    """Return every reportable detection for a single colour.
+
+    A colour can have multiple HSV ranges (used by 'red', which wraps
+    around H=0/180); their masks are OR'd before morphology + contour
+    extraction.
+    """
+    mask = None
+    for lower, upper in _COLOR_HSV_RANGES[color_name]:
+        m = cv2.inRange(
+            hsv_blurred,
+            np.array(lower, dtype=np.uint8),
+            np.array(upper, dtype=np.uint8),
+        )
+        mask = m if mask is None else cv2.bitwise_or(mask, m)
     mask = cv2.erode(mask, _MORPH_KERNEL, iterations=1)
     mask = cv2.dilate(mask, _MORPH_KERNEL, iterations=2)
 
