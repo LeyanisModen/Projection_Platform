@@ -87,6 +87,10 @@ export class VisorComponent implements OnInit, OnDestroy {
     cards_per_color?: Record<string, number>;
     missing?: Record<string, number>;
   } | null = null;
+  // Status of the round-trip backend->visor->capture_service->Drive.
+  // Surfaces in the same debug panel so we can see from AnyDesk
+  // whether the bytes ever leave Chrome (kiosk blocks F12).
+  checkMirrorStatus: string | null = null;
   private checkBlock = false;
   private checkSuccessTimer: any = null;
   // While a clear request is in flight, ignore the polling so we
@@ -410,6 +414,7 @@ export class VisorComponent implements OnInit, OnDestroy {
     this.checkOverlay = 'none';
     this.checkBlock = false;
     this.checkDebugInfo = null;
+    this.checkMirrorStatus = null;
     if (this.checkSuccessTimer) {
       clearTimeout(this.checkSuccessTimer);
       this.checkSuccessTimer = null;
@@ -745,7 +750,14 @@ export class VisorComponent implements OnInit, OnDestroy {
           // persist them on Railway). Mirror them to Drive via the
           // local capture service -- Drive is the only place these
           // annotated images live.
-          if (!this.isSupervisor && res?.annotated_jpeg_b64 && res?.annotated_filename) {
+          const hasB64 = !!res?.annotated_jpeg_b64;
+          const hasName = !!res?.annotated_filename;
+          if (this.isSupervisor) {
+            this.checkMirrorStatus = 'modo supervisor (no se hace mirror)';
+          } else if (!hasB64 || !hasName) {
+            this.checkMirrorStatus = `sin datos (b64=${hasB64} name=${hasName})`;
+          } else {
+            this.checkMirrorStatus = `enviando (${Math.round(res.annotated_jpeg_b64.length / 1024)} KB)…`;
             this.mirrorAnnotatedToDrive(
               res.annotated_jpeg_b64,
               res.annotated_filename,
@@ -817,9 +829,6 @@ export class VisorComponent implements OnInit, OnDestroy {
   }
 
   private mirrorAnnotatedToDrive(jpegB64: string, filename: string): void {
-    // The annotated JPEG arrives as base64 inside the upload response;
-    // decode it to a Blob and POST it to the capture service so it
-    // ends up on Drive next to the raw captures.
     let blob: Blob;
     try {
       const binary = atob(jpegB64);
@@ -828,8 +837,9 @@ export class VisorComponent implements OnInit, OnDestroy {
         bytes[i] = binary.charCodeAt(i);
       }
       blob = new Blob([bytes], { type: 'image/jpeg' });
-    } catch (err) {
-      console.warn('[Visor] failed to decode annotated jpeg:', err);
+    } catch (err: any) {
+      this.checkMirrorStatus = `decode error: ${err?.message || err}`;
+      this.cdr.detectChanges();
       return;
     }
 
@@ -842,8 +852,16 @@ export class VisorComponent implements OnInit, OnDestroy {
       blob,
       { headers, responseType: 'json' as const }
     ).subscribe({
-      next: () => console.log('[Visor] Annotated mirrored to Drive:', filename),
-      error: (err) => console.warn('[Visor] save_debug_image failed:', err),
+      next: () => {
+        this.checkMirrorStatus = `OK (${filename})`;
+        this.cdr.detectChanges();
+      },
+      error: (err: any) => {
+        const code = err?.status ?? '?';
+        const msg = err?.statusText || err?.message || 'desconocido';
+        this.checkMirrorStatus = `error ${code}: ${msg}`;
+        this.cdr.detectChanges();
+      },
     });
   }
 

@@ -78,6 +78,12 @@
                 <span>{{ formatCountMap(checkDebugInfo.missing) }}</span>
             </div>
             }
+            @if (checkMirrorStatus) {
+            <div class="check-debug-row">
+                <span class="check-debug-label">Mirror:</span>
+                <span>{{ checkMirrorStatus }}</span>
+            </div>
+            }
         </div>
         }
 
