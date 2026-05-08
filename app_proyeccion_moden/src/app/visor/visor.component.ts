@@ -496,10 +496,17 @@ export class VisorComponent implements OnInit, OnDestroy {
     // a verification step.
     if (this.capturingPhoto && this.captureMode === 'check') return;
 
-    if (this.currentIndex < this.images.length - 1) {
-      // Clear any lingering green overlay from the previous slide.
+    // After a successful auto check, advance TWO slides in one press:
+    // by convention the slide right after a _check is the manual
+    // visual-revision step, only relevant when the auto check failed.
+    // SPACE-cleared overlays (error / no_camera) advance just one,
+    // landing on that visual revision exactly when needed.
+    const step = this.checkOverlay === 'success' ? 2 : 1;
+
+    if (this.currentIndex < this.images.length - step) {
+      // Clear any lingering overlay from the previous slide.
       if (this.checkOverlay !== 'none') this.clearCheckOverlay();
-      this.currentIndex++;
+      this.currentIndex += step;
       this.updateProjectedImage();
       this.slideLockUntil = Date.now() + VisorComponent.SLIDE_LOCK_MS;
       this.checkPhotoTrigger();
