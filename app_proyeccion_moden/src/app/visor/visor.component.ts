@@ -348,6 +348,22 @@ export class VisorComponent implements OnInit, OnDestroy {
   get projectedImage(): string | null {
     if (this.currentIndex === -1) return `${this.assetBase}assets/calibration_grid.jpg`;
     if (this.currentIndex === -2) return `${this.assetBase}assets/calibration_grid_with_x.jpg`;
+
+    // Color-check states: project a dedicated slide through the same
+    // perspective transform as the blueprint, so the operator at the
+    // mesa sees the result aligned to the table without any HTML
+    // overlay on top.
+    if (this.checkOverlay === 'no_camera') return `${this.assetBase}assets/check/check_no_camera.jpg`;
+    if (this.checkOverlay === 'error')     return `${this.assetBase}assets/check/check_error.jpg`;
+    if (this.checkOverlay === 'success')   return `${this.assetBase}assets/check/check_success.jpg`;
+    // While a _check capture is in flight (camera retry or backend
+    // round-trip), show the 'waiting' slide so the operator knows the
+    // system is busy instead of staring at the original _check
+    // blueprint.
+    if (this.capturingPhoto && this.captureMode === 'check') {
+      return `${this.assetBase}assets/check/check_waiting.jpg`;
+    }
+
     if (this.images.length > 0 && this.currentIndex >= 0 && this.currentIndex < this.images.length) {
       return this.images[this.currentIndex].url || this.images[this.currentIndex].src || this.images[this.currentIndex];
     }

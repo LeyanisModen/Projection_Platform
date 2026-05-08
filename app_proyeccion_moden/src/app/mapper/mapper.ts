@@ -30,12 +30,6 @@ export class Mapper implements OnChanges {
   @Input() isCalibrationActive: boolean = false;
   @Input() mesaId: number | null = null;
   @Input() allowInteraction: boolean = true;
-  // Color-check feedback rendered inside the perspective-corrected
-  // surface so the icon lands on the module with the same distortion
-  // as the projected blueprint.
-  // 'success' = check passed, 'error' = colours wrong, 'no_camera' =
-  // local capture service didn't answer after the retry budget.
-  @Input() checkOverlay: 'none' | 'success' | 'error' | 'no_camera' = 'none';
 
   // Variables para gestionar la lógica del setter de calibración
   private _calibrationJson: any = null;

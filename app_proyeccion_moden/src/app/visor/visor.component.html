@@ -47,8 +47,7 @@
         <!-- Simplified Mapper for Debug -->
         <app-mapper [imageUrl]="projectedImage" [isCalibrationActive]="isCalibrationActive"
             [mesaId]="mesaState?.id ?? null" [calibrationJson]="mesaState?.calibration_json ?? null"
-            [allowInteraction]="isSupervisor"
-            [checkOverlay]="checkOverlay">
+            [allowInteraction]="isSupervisor">
         </app-mapper>
 
         <!-- Debug-only panel rendered next to the check overlay.

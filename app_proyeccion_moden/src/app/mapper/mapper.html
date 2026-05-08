@@ -9,28 +9,6 @@
             @if (!imageUrl) {
             <div class="no-image-text">Imagen/Plano no asignado</div>
             }
-            @if (checkOverlay === 'success') {
-            <div class="mapper-check-overlay mapper-check-ok" role="status" aria-label="Check correcto">
-                <div class="mapper-check-icon">&#10003;</div>
-            </div>
-            } @else if (checkOverlay === 'error') {
-            <div class="mapper-check-overlay mapper-check-ko" role="alert" aria-label="Check fallido">
-                <div class="mapper-check-icon">&#10007;</div>
-                <div class="mapper-check-hint">Pulsa ESPACIO para desbloquear</div>
-            </div>
-            } @else if (checkOverlay === 'no_camera') {
-            <div class="mapper-check-overlay mapper-check-ko" role="alert" aria-label="Cámara no disponible">
-                <svg class="mapper-check-icon-svg" viewBox="0 0 100 100" aria-hidden="true">
-                    <rect x="20" y="32" width="60" height="44" rx="5" fill="none" stroke="currentColor"
-                        stroke-width="7" />
-                    <rect x="38" y="25" width="24" height="10" fill="currentColor" />
-                    <circle cx="50" cy="55" r="12" fill="none" stroke="currentColor" stroke-width="7" />
-                    <line x1="18" y1="20" x2="82" y2="84" stroke="currentColor" stroke-width="10"
-                        stroke-linecap="round" />
-                </svg>
-                <div class="mapper-check-hint">Cámara no disponible<br>Pulsa ESPACIO para continuar</div>
-            </div>
-            }
         </div>
 
     </div>
