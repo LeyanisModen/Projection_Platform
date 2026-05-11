@@ -59,6 +59,26 @@ _COLOR_HSV_RANGES = {
                ((170, 120, 100),  (179, 255, 255))],
 }
 
+# Debug-only wildcard categories. Scanned ONLY when debug=True and
+# never mapped to any codigos_color char, so they can't count toward
+# valid/missing. They exist purely to surface ribbons that the
+# production palette would otherwise drop silently -- terracotas,
+# browns, dark reds, dark blues, near-black tape, etc. -- with a
+# bbox in the annotated overlay so we can see what the camera sees.
+_DEBUG_EXTRA_RANGES = {
+    'descarte': [
+        # Browns / terracotas / warm dark tones (H 10-25 low V)
+        ((10, 50, 40),  (25, 220, 130)),
+        # Dark reds below the regular red V threshold (wraps around)
+        ((0, 80, 30),   (10, 255, 100)),
+        ((170, 80, 30), (179, 255, 100)),
+        # Dark blues below the strict blue S threshold
+        ((90, 80, 30),  (130, 200, 130)),
+        # Near-black tape (low V, any hue)
+        ((0, 0, 0),     (179, 100, 50)),
+    ],
+}
+
 # Map Modulo.codigos_color chars to detector colour names. The model's
 # help_text uses y/g/c/v/m/o/x; the detector calibrated against pink
 # (instead of magenta), blue (instead of cyan) and purple (instead of
@@ -182,15 +202,21 @@ def _evaluate_contour(cnt, total_area):
     return 'passed', metrics
 
 
-def _scan_color(hsv_blurred, color_name, total_area):
+def _scan_color(hsv_blurred, color_name, total_area,
+                ranges_source=_COLOR_HSV_RANGES, is_extra=False):
     """Return every reportable detection for a single colour.
 
     A colour can have multiple HSV ranges (used by 'red', which wraps
-    around H=0/180); their masks are OR'd before morphology + contour
-    extraction.
+    around H=0/180, and by every wildcard category in
+    _DEBUG_EXTRA_RANGES); their masks are OR'd before morphology +
+    contour extraction.
+
+    `is_extra=True` flags each detection so annotate_image can paint
+    it in a distinct colour and the supervisor can tell wildcard
+    matches apart from production-palette ones.
     """
     mask = None
-    for lower, upper in _COLOR_HSV_RANGES[color_name]:
+    for lower, upper in ranges_source[color_name]:
         m = cv2.inRange(
             hsv_blurred,
             np.array(lower, dtype=np.uint8),
@@ -214,6 +240,7 @@ def _scan_color(hsv_blurred, color_name, total_area):
             'color': color_name,
             'passed': verdict == 'passed',
             'rejected_by': None if verdict == 'passed' else verdict,
+            'is_extra': is_extra,
             **metrics,
         })
     return out
@@ -268,6 +295,20 @@ def detect_colors(image_bytes, codigos_color, debug=False):
         cards_per_color[color] = sum(1 for d in color_detections if d['passed'])
         detections_all.extend(color_detections)
 
+    # Debug-only wildcard pass: surface ribbons outside the production
+    # palette (browns, dark reds, dark blues, near-black). Never
+    # counted toward valid/missing because no codigos_color char maps
+    # here.
+    if debug:
+        for color in sorted(_DEBUG_EXTRA_RANGES.keys()):
+            extra_detections = _scan_color(
+                blurred, color, total_area,
+                ranges_source=_DEBUG_EXTRA_RANGES,
+                is_extra=True,
+            )
+            cards_per_color[color] = sum(1 for d in extra_detections if d['passed'])
+            detections_all.extend(extra_detections)
+
     missing = {
         color: needed - cards_per_color.get(color, 0)
         for color, needed in expected_counts.items()
@@ -291,8 +332,9 @@ def detect_colors(image_bytes, codigos_color, debug=False):
 # ---------------------------------------------------------------------------
 
 # BGR colours for the overlay (the photo is BGR while in OpenCV).
-_PASSED_BGR = (0, 220, 0)        # green
-_REJECTED_BGR = (0, 140, 255)    # orange
+_PASSED_BGR = (0, 220, 0)        # green - production palette, valid
+_REJECTED_BGR = (0, 140, 255)    # orange - production palette, filtered
+_EXTRA_BGR = (255, 200, 0)       # cyan - debug wildcard (descarte)
 _TEXT_BGR = (255, 255, 255)
 _TEXT_SHADOW_BGR = (0, 0, 0)
 
@@ -325,7 +367,15 @@ def annotate_image(image_bytes, detections, jpeg_quality=85):
             continue
         x, y, w, h = bbox
         passed = det.get('passed')
-        color = _PASSED_BGR if passed else _REJECTED_BGR
+        is_extra = det.get('is_extra', False)
+        # Wildcard / 'descarte' detections always use cyan regardless
+        # of whether they passed the filters; they are never part of
+        # the production palette so 'OK / rejected' colour coding
+        # would be misleading.
+        if is_extra:
+            color = _EXTRA_BGR
+        else:
+            color = _PASSED_BGR if passed else _REJECTED_BGR
         thickness = _BORDER_PASSED if passed else _BORDER_REJECTED
         thickness = max(thickness, line_thickness)
         cv2.rectangle(bgr, (x, y), (x + w, y + h), color, thickness)
