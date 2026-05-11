@@ -92,8 +92,18 @@ _MIN_AREA_RATIO = 800 / _REF_FRAME_AREA    # ~225 px² on a 2048x1152 frame
 _MAX_AREA_RATIO = 16000 / _REF_FRAME_AREA  # ~4500 px² on a 2048x1152 frame
 
 _SOLIDITY_MIN = 0.65
-_BBOX_DENSITY_MIN = 70.0  # percent
-_ASPECT_RATIO_RANGES = ((0.3, 0.85), (1.15, 3.5))
+# bbox_density min lowered from 70 to 65 after watching real shop
+# captures: legitimate ribbons sit around 68-90 % depending on edge
+# shadows and tape wrinkles. 65 still rejects splatters and noise
+# (which usually fall well below 50 %).
+_BBOX_DENSITY_MIN = 65.0  # percent
+# Single AR range covering both vertical and horizontal tape. The
+# previous split (0.3, 0.85) / (1.15, 3.5) had a 'dead zone' around
+# 1.0 designed to reject square shapes -- but real tape often photographs
+# nearly square (rolled, foreshortened or seen at a bad angle), so we
+# were rejecting valid detections. The solidity + bbox_density filters
+# already keep random square noise out.
+_ASPECT_RATIO_RANGES = ((0.25, 4.0),)
 
 _MORPH_KERNEL = np.ones((5, 5), np.uint8)
 _BLUR_KERNEL = (5, 5)
