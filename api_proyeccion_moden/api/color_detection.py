@@ -72,8 +72,11 @@ _DEBUG_EXTRA_RANGES = {
         # Dark reds below the regular red V threshold (wraps around)
         ((0, 80, 30),   (10, 255, 100)),
         ((170, 80, 30), (179, 255, 100)),
-        # Dark blues below the strict blue S threshold
-        ((90, 80, 30),  (130, 200, 130)),
+        # Mid-saturated blues that sit between the production blue
+        # (S ≥ 180) and the very dark / unlit blue range. V max raised
+        # to 200 (was 130) so blue tape with average lighting also
+        # surfaces in the wildcard instead of vanishing in the gap.
+        ((90, 80, 30),  (130, 255, 200)),
         # Near-black tape (low V, any hue)
         ((0, 0, 0),     (179, 100, 50)),
     ],
@@ -102,15 +105,21 @@ _CODE_TO_COLOR = {
 # before upload).
 #
 # Range tuned for OBSBOT Tiny 2 mounted ~4.5 m above one edge of a 3 m
-# wide table, looking at 15x5 cm coloured cards. Min area was lowered
-# from 800 to 400 px² (4K equivalent ~113 px² on the compressed 2048
-# frame) after seeing how small tape lands when the camera is at the
-# far edge of the table or the tape is folded/partial; with the old
-# threshold many real ribbons were being filtered silently before any
-# reporting filter could even see them.
+# wide table, looking at 15x5 cm coloured cards.
+#  * MIN_AREA_RATIO: 600 px² on 4K (~170 px² on the compressed 2048
+#    frame). Strict enough to ignore letters in the cardboard boxes
+#    and dust specks, lax enough that a small ribbon at the far side
+#    of the table still reports.
+#  * MIN_AREA_RATIO_DISCARDED: stricter (1500 px² on 4K). The
+#    'descarte' wildcard only exists for diagnostic value; small
+#    detections of dark / brown / dark-red / dark-blue / near-black
+#    pixels are usually shadows, scratches or pencil marks rather
+#    than real ribbons, so we keep the threshold higher to keep the
+#    annotated overlay readable.
 _REF_FRAME_AREA = 3840 * 2160
-_MIN_AREA_RATIO = 400 / _REF_FRAME_AREA    # ~113 px² on a 2048x1152 frame
-_MAX_AREA_RATIO = 16000 / _REF_FRAME_AREA  # ~4500 px² on a 2048x1152 frame
+_MIN_AREA_RATIO = 600 / _REF_FRAME_AREA              # ~170 px² @ 2048
+_MIN_AREA_RATIO_DISCARDED = 1500 / _REF_FRAME_AREA   # ~425 px² @ 2048
+_MAX_AREA_RATIO = 16000 / _REF_FRAME_AREA            # ~4500 px² @ 2048
 
 _SOLIDITY_MIN = 0.65
 # bbox_density min lowered from 70 to 65 after watching real shop
@@ -118,13 +127,12 @@ _SOLIDITY_MIN = 0.65
 # shadows and tape wrinkles. 65 still rejects splatters and noise
 # (which usually fall well below 50 %).
 _BBOX_DENSITY_MIN = 65.0  # percent
-# Single AR range covering both vertical and horizontal tape. The
-# previous split (0.3, 0.85) / (1.15, 3.5) had a 'dead zone' around
-# 1.0 designed to reject square shapes -- but real tape often photographs
-# nearly square (rolled, foreshortened or seen at a bad angle), so we
-# were rejecting valid detections. The solidity + bbox_density filters
-# already keep random square noise out.
-_ASPECT_RATIO_RANGES = ((0.25, 4.0),)
+# Single AR range covering both vertical and horizontal tape. Real
+# ribbons in perspective routinely reach AR ~4-5 (long horizontal at
+# the far end of the table); the previous 4.0 ceiling was rejecting
+# valid detections by a tenth or two. Solidity + bbox_density still
+# keep random square noise out.
+_ASPECT_RATIO_RANGES = ((0.2, 5.0),)
 
 _MORPH_KERNEL = np.ones((5, 5), np.uint8)
 _BLUR_KERNEL = (5, 5)
@@ -141,7 +149,7 @@ def _expected_color_names(codigos_color):
     return out
 
 
-def _evaluate_contour(cnt, total_area):
+def _evaluate_contour(cnt, total_area, min_area_ratio=None):
     """Run every card filter on a single contour and return either
     ('passed', metrics_dict) or (rejected_by, metrics_dict).
 
@@ -150,10 +158,13 @@ def _evaluate_contour(cnt, total_area):
     in a debug panel.
 
     Returns None when the contour is below the minimum area threshold
-    (sub-pixel noise we don't even want to report).
+    (sub-pixel noise we don't even want to report). The threshold
+    defaults to the regular palette but the 'descarte' wildcard uses
+    a stricter one so it doesn't surface tiny artefacts.
     """
     area = cv2.contourArea(cnt)
-    min_area = _MIN_AREA_RATIO * total_area
+    floor = min_area_ratio if min_area_ratio is not None else _MIN_AREA_RATIO
+    min_area = floor * total_area
     max_area = _MAX_AREA_RATIO * total_area
 
     if area <= min_area:
@@ -230,9 +241,13 @@ def _scan_color(hsv_blurred, color_name, total_area,
         mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
     )
 
+    # Wildcards get a stricter area floor so they don't fill the
+    # annotated overlay with cyan bbox over scratches, letters, etc.
+    area_floor = _MIN_AREA_RATIO_DISCARDED if is_extra else _MIN_AREA_RATIO
+
     out = []
     for cnt in contours:
-        result = _evaluate_contour(cnt, total_area)
+        result = _evaluate_contour(cnt, total_area, area_floor)
         if result is None:
             continue
         verdict, metrics = result
