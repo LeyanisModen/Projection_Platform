@@ -250,9 +250,19 @@ def detect_colors(image_bytes, codigos_color, debug=False):
     hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
     blurred = cv2.GaussianBlur(hsv, _BLUR_KERNEL, 0)
 
+    # In debug mode scan every known colour, not only the expected
+    # ones, so the supervisor can see in the annotated overlay what
+    # the algorithm picks up of every ribbon on the wall regardless
+    # of whether the module's codigos_color asked for it. The
+    # production path stays cheap (only scans expected colours).
+    if debug:
+        colors_to_scan = sorted(_COLOR_HSV_RANGES.keys())
+    else:
+        colors_to_scan = sorted(set(expected))
+
     cards_per_color = {}
     detections_all = []
-    for color in sorted(set(expected)):
+    for color in colors_to_scan:
         color_detections = _scan_color(blurred, color, total_area)
         cards_per_color[color] = sum(1 for d in color_detections if d['passed'])
         detections_all.extend(color_detections)
