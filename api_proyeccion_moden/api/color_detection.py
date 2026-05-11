@@ -82,13 +82,14 @@ _CODE_TO_COLOR = {
 # before upload).
 #
 # Range tuned for OBSBOT Tiny 2 mounted ~4.5 m above one edge of a 3 m
-# wide table, looking at 15x5 cm coloured cards. At that geometry the
-# card is roughly 600-3000 px² on the compressed (2048 px) frame, so
-# a ~225-4500 px² window leaves headroom for cards a bit further
-# (~6 m) without letting random small specks through. Detector.pyw's
-# original (3000, 8000) range assumed smaller cards / closer camera.
+# wide table, looking at 15x5 cm coloured cards. Min area was lowered
+# from 800 to 400 px² (4K equivalent ~113 px² on the compressed 2048
+# frame) after seeing how small tape lands when the camera is at the
+# far edge of the table or the tape is folded/partial; with the old
+# threshold many real ribbons were being filtered silently before any
+# reporting filter could even see them.
 _REF_FRAME_AREA = 3840 * 2160
-_MIN_AREA_RATIO = 800 / _REF_FRAME_AREA    # ~225 px² on a 2048x1152 frame
+_MIN_AREA_RATIO = 400 / _REF_FRAME_AREA    # ~113 px² on a 2048x1152 frame
 _MAX_AREA_RATIO = 16000 / _REF_FRAME_AREA  # ~4500 px² on a 2048x1152 frame
 
 _SOLIDITY_MIN = 0.65
