@@ -102,6 +102,12 @@ export class VisorComponent implements OnInit, OnDestroy {
   // service ~3 s to recover before we surface the failure.
   private static readonly CAPTURE_MAX_ATTEMPTS = 3;
   private static readonly CAPTURE_RETRY_MS = 1000;
+  // True only from the second capture attempt onwards -- used to
+  // decide whether to project the 'waiting for camera' slide. On the
+  // first attempt we keep the original _check.jpg blueprint on screen
+  // so the operator doesn't see a flash of 'waiting' every time the
+  // camera is healthy.
+  private cameraRetrying = false;
 
   // 5-second lock between slides so the operator reads the caption before
   // moving on (many consecutive slides only change the title text).
@@ -356,11 +362,11 @@ export class VisorComponent implements OnInit, OnDestroy {
     if (this.checkOverlay === 'no_camera') return `${this.assetBase}assets/check/check_no_camera.jpg`;
     if (this.checkOverlay === 'error')     return `${this.assetBase}assets/check/check_error.jpg`;
     if (this.checkOverlay === 'success')   return `${this.assetBase}assets/check/check_success.jpg`;
-    // While a _check capture is in flight (camera retry or backend
-    // round-trip), show the 'waiting' slide so the operator knows the
-    // system is busy instead of staring at the original _check
-    // blueprint.
-    if (this.capturingPhoto && this.captureMode === 'check') {
+    // Show the 'waiting for camera' slide only once we're past the
+    // first capture attempt -- if the camera answers fast on attempt
+    // 1 the operator never sees it. Keeps the _check.jpg blueprint
+    // visible while everything is healthy.
+    if (this.cameraRetrying) {
       return `${this.assetBase}assets/check/check_waiting.jpg`;
     }
 
@@ -634,11 +640,18 @@ export class VisorComponent implements OnInit, OnDestroy {
   }
 
   private attemptCapture(attempt: number): void {
+    // From the 2nd attempt onwards we know the camera didn't answer
+    // the first time, so the operator deserves the 'waiting' slide.
+    if (attempt > 1 && this.captureMode === 'check' && !this.cameraRetrying) {
+      this.cameraRetrying = true;
+      this.cdr.detectChanges();
+    }
     this.http.post(
       `${this.captureServiceUrl}/capture`, {},
       { responseType: 'blob' }
     ).subscribe({
       next: (blob: Blob) => {
+        this.cameraRetrying = false;
         this.captureStatus = 'uploading';
         // A successful capture means the service is alive right now.
         this.captureServiceOnline = true;
@@ -659,6 +672,7 @@ export class VisorComponent implements OnInit, OnDestroy {
         }
         // Final failure: surface it.
         console.error('[Visor] Camera capture exhausted retries.');
+        this.cameraRetrying = false;
         this.captureStatus = 'error';
         this.capturingPhoto = false;
         this.captureServiceOnline = false;
