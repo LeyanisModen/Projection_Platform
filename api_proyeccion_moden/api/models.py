@@ -32,6 +32,12 @@ class MesaRol(models.TextChoices):
     SUPERIORES = 'SUPERIORES', 'Superiores'
 
 
+class MesaTipo(models.TextChoices):
+    INFERIOR = 'INFERIOR', 'Inferior'
+    SUPERIOR = 'SUPERIOR', 'Superior'
+    LEGACY = 'LEGACY', 'Legacy'
+
+
 class MaterialTipo(models.TextChoices):
     REFUERZO = 'REFUERZO', 'Refuerzo'
     BARRA_SOLAPE = 'BARRA_SOLAPE', 'Barra de solape de zuncho'
@@ -539,14 +545,21 @@ class GrupoMesas(models.Model):
         return f"{self.usuario.username} - {self.nombre}"
 
     def ensure_default_mesas(self):
+        """Crea las mesas por defecto del grupo si todavia no existen.
+
+        Por ahora mantiene el default historico (2 inferiores + 1 superior)
+        para que el planificador legacy siga funcionando. Cuando el
+        planificador se generalice a N mesas, este metodo puede pasar a
+        crear solo el minimo (1 INF + 1 SUP).
+        """
         mesa_specs = [
-            (MesaRol.INFERIOR_1, 'INF1'),
-            (MesaRol.INFERIOR_2, 'INF2'),
-            (MesaRol.SUPERIORES, 'SUP'),
+            (MesaRol.INFERIOR_1, 'INF1', MesaTipo.INFERIOR, 1),
+            (MesaRol.INFERIOR_2, 'INF2', MesaTipo.INFERIOR, 2),
+            (MesaRol.SUPERIORES, 'SUP', MesaTipo.SUPERIOR, 1),
         ]
         existing_roles = set(self.mesas.values_list('rol', flat=True))
 
-        for rol, suffix in mesa_specs:
+        for rol, suffix, tipo, indice in mesa_specs:
             if rol in existing_roles:
                 continue
             Mesa.objects.create(
@@ -554,6 +567,8 @@ class GrupoMesas(models.Model):
                 usuario=self.usuario,
                 grupo=self,
                 rol=rol,
+                tipo=tipo,
+                indice=indice,
             )
 
     class Meta:
@@ -620,9 +635,19 @@ class Mesa(models.Model):
     rol = models.CharField(
         max_length=20,
         choices=MesaRol.choices,
-        default=MesaRol.LEGACY
+        default=MesaRol.LEGACY,
+        help_text='Rol legacy (INFERIOR_1/INFERIOR_2/SUPERIORES). Reemplazado por tipo+indice; mesas extra usan LEGACY.'
     )
-    
+
+    # Nuevo esquema: tipo (INFERIOR/SUPERIOR/LEGACY) + indice (1, 2, 3...).
+    # Sustituye al enum cerrado MesaRol para permitir N mesas por tipo dentro de un grupo.
+    tipo = models.CharField(
+        max_length=20,
+        choices=MesaTipo.choices,
+        default=MesaTipo.LEGACY,
+    )
+    indice = models.PositiveIntegerField(default=1)
+
     # Cache visual (source of truth is MesaQueueItem with status MOSTRANDO)
     imagen_actual = models.ForeignKey(
         Imagen,
@@ -679,6 +704,11 @@ class Mesa(models.Model):
                 fields=['grupo', 'rol'],
                 condition=models.Q(grupo__isnull=False) & ~models.Q(rol=MesaRol.LEGACY),
                 name='unique_rol_por_grupo_mesas'
+            ),
+            models.UniqueConstraint(
+                fields=['grupo', 'tipo', 'indice'],
+                condition=models.Q(grupo__isnull=False) & ~models.Q(tipo=MesaTipo.LEGACY),
+                name='unique_tipo_indice_por_grupo_mesas'
             ),
         ]
 
