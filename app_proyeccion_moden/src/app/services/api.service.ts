@@ -163,7 +163,6 @@ export interface Mesa {
     nombre: string;
     usuario: string;
     grupo: number | null;
-    rol: 'LEGACY' | 'INFERIOR_1' | 'INFERIOR_2' | 'SUPERIORES';
     tipo: MesaTipo;
     indice: number;
     imagen_actual: string | null;
@@ -224,7 +223,6 @@ export type MesaTipo = 'INFERIOR' | 'SUPERIOR' | 'LEGACY';
 export interface GrupoMesaResumen {
     id: number;
     nombre: string;
-    rol: 'LEGACY' | 'INFERIOR_1' | 'INFERIOR_2' | 'SUPERIORES';
     tipo: MesaTipo;
     indice: number;
     is_linked: boolean;
@@ -298,9 +296,10 @@ export interface ProductionStatsBucket {
 }
 
 export interface ProductionStatsMesa extends ProductionStatsBucket {
-    mesa_id: number;
+    mesa_id: number | null;
     mesa_nombre: string;
-    rol: 'LEGACY' | 'INFERIOR_1' | 'INFERIOR_2' | 'SUPERIORES';
+    tipo: MesaTipo;
+    indice: number;
 }
 
 export interface ProductionStatsDay extends ProductionStatsBucket {

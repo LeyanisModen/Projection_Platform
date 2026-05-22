@@ -323,10 +323,13 @@ class PlanningFoundationTests(APITestCase):
         self.assertEqual(response.status_code, 201)
 
         grupo = GrupoMesas.objects.get(id=response.data["id"])
-        roles = set(grupo.mesas.values_list("rol", flat=True))
+        combos = set(grupo.mesas.values_list("tipo", "indice"))
 
         self.assertEqual(grupo.mesas.count(), 3)
-        self.assertSetEqual(roles, {"INFERIOR_1", "INFERIOR_2", "SUPERIORES"})
+        self.assertSetEqual(
+            combos,
+            {("INFERIOR", 1), ("INFERIOR", 2), ("SUPERIOR", 1)},
+        )
 
     def test_eliminar_grupo_mesas_elimina_sus_mesas_hijas(self):
         create_response = self.client.post(
@@ -406,7 +409,7 @@ class PlanningFoundationTests(APITestCase):
 
     def test_destroy_mesa_permite_borrar_si_hay_otra_del_mismo_tipo(self):
         grupo = self._crear_grupo("Grupo Dos INF")
-        mesa_inf_2 = grupo.mesas.get(rol="INFERIOR_2")
+        mesa_inf_2 = grupo.mesas.get(tipo="INFERIOR", indice=2)
 
         response = self.client.delete(f"/api/mesas/{mesa_inf_2.id}/")
 
@@ -416,7 +419,7 @@ class PlanningFoundationTests(APITestCase):
 
     def test_destroy_mesa_rechaza_si_tiene_device_sin_force(self):
         grupo = self._crear_grupo("Grupo Device")
-        mesa_inf_2 = grupo.mesas.get(rol="INFERIOR_2")
+        mesa_inf_2 = grupo.mesas.get(tipo="INFERIOR", indice=2)
         mesa_inf_2.device_token_hash = "x" * 64
         mesa_inf_2.save(update_fields=["device_token_hash"])
 
@@ -428,7 +431,7 @@ class PlanningFoundationTests(APITestCase):
 
     def test_destroy_mesa_con_force_borra_aunque_tenga_device(self):
         grupo = self._crear_grupo("Grupo Device Force")
-        mesa_inf_2 = grupo.mesas.get(rol="INFERIOR_2")
+        mesa_inf_2 = grupo.mesas.get(tipo="INFERIOR", indice=2)
         mesa_inf_2.device_token_hash = "y" * 64
         mesa_inf_2.save(update_fields=["device_token_hash"])
 
@@ -554,9 +557,9 @@ class PlanningFoundationTests(APITestCase):
         # Quita las dos inferiores (la default INF2 primero, luego INF1).
         # Para borrar la ultima INF hace falta dejar la SUP, asi que solo
         # podemos llegar a 1 inferior + 1 superior por las reglas de DELETE.
-        mesa_inf_2 = grupo.mesas.get(rol="INFERIOR_2")
+        mesa_inf_2 = grupo.mesas.get(tipo="INFERIOR", indice=2)
         self.client.delete(f"/api/mesas/{mesa_inf_2.id}/")
-        mesa_inf_1 = grupo.mesas.get(rol="INFERIOR_1")
+        mesa_inf_1 = grupo.mesas.get(tipo="INFERIOR", indice=1)
         resp = self.client.delete(f"/api/mesas/{mesa_inf_1.id}/")
         # La regla impide borrar la ultima INFERIOR.
         self.assertEqual(resp.status_code, 409)
@@ -751,9 +754,9 @@ class PlanningFoundationTests(APITestCase):
         self.assertEqual(plan_response.status_code, 200)
 
         grupo = GrupoMesas.objects.get(id=grupo_response.data["id"])
-        mesa_inf_1 = grupo.mesas.get(rol="INFERIOR_1")
-        mesa_inf_2 = grupo.mesas.get(rol="INFERIOR_2")
-        mesa_sup = grupo.mesas.get(rol="SUPERIORES")
+        mesa_inf_1 = grupo.mesas.get(tipo="INFERIOR", indice=1)
+        mesa_inf_2 = grupo.mesas.get(tipo="INFERIOR", indice=2)
+        mesa_sup = grupo.mesas.get(tipo="SUPERIOR", indice=1)
 
         inf_1_queue = list(MesaQueueItem.objects.filter(mesa=mesa_inf_1).order_by("position").values_list("modulo__nombre", flat=True))
         inf_2_queue = list(MesaQueueItem.objects.filter(mesa=mesa_inf_2).order_by("position").values_list("modulo__nombre", flat=True))
@@ -808,8 +811,8 @@ class PlanningFoundationTests(APITestCase):
         self.assertEqual(plan_response.status_code, 200)
 
         grupo = GrupoMesas.objects.get(id=grupo_response.data["id"])
-        mesa_inf_1 = grupo.mesas.get(rol="INFERIOR_1")
-        mesa_inf_2 = grupo.mesas.get(rol="INFERIOR_2")
+        mesa_inf_1 = grupo.mesas.get(tipo="INFERIOR", indice=1)
+        mesa_inf_2 = grupo.mesas.get(tipo="INFERIOR", indice=2)
 
         inf_1_queue = list(
             MesaQueueItem.objects.filter(mesa=mesa_inf_1).order_by("position").values_list("modulo__nombre", flat=True)
@@ -890,8 +893,8 @@ class PlanningFoundationTests(APITestCase):
         self.assertEqual(second_plan.status_code, 200)
 
         grupo = GrupoMesas.objects.get(id=grupo_response.data["id"])
-        mesa_inf_1 = grupo.mesas.get(rol="INFERIOR_1")
-        mesa_inf_2 = grupo.mesas.get(rol="INFERIOR_2")
+        mesa_inf_1 = grupo.mesas.get(tipo="INFERIOR", indice=1)
+        mesa_inf_2 = grupo.mesas.get(tipo="INFERIOR", indice=2)
 
         inf_1_queue = list(
             MesaQueueItem.objects.filter(mesa=mesa_inf_1, status__in=["EN_COLA", "MOSTRANDO"])
@@ -965,9 +968,9 @@ class PlanningFoundationTests(APITestCase):
         self.assertEqual(second_plan.status_code, 200)
 
         grupo = GrupoMesas.objects.get(id=grupo_2.data["id"])
-        mesa_inf_1 = grupo.mesas.get(rol="INFERIOR_1")
-        mesa_inf_2 = grupo.mesas.get(rol="INFERIOR_2")
-        mesa_sup = grupo.mesas.get(rol="SUPERIORES")
+        mesa_inf_1 = grupo.mesas.get(tipo="INFERIOR", indice=1)
+        mesa_inf_2 = grupo.mesas.get(tipo="INFERIOR", indice=2)
+        mesa_sup = grupo.mesas.get(tipo="SUPERIOR", indice=1)
 
         self.assertEqual(MesaQueueItem.objects.filter(mesa=mesa_inf_1, status__in=["EN_COLA", "MOSTRANDO"]).count(), 0)
         self.assertEqual(MesaQueueItem.objects.filter(mesa=mesa_inf_2, status__in=["EN_COLA", "MOSTRANDO"]).count(), 0)

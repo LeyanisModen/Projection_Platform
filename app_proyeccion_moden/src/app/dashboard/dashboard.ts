@@ -1152,12 +1152,11 @@ export class Dashboard implements OnInit, OnDestroy {
     return result;
   }
 
-  mesaRolShort(rol: string): string {
-    switch (rol) {
-      case 'INFERIOR_1': return 'INF1';
-      case 'INFERIOR_2': return 'INF2';
-      case 'SUPERIORES': return 'SUP';
-      default: return rol;
+  mesaStatsLabel(mesa: { tipo: string; indice: number }): string {
+    switch (mesa.tipo) {
+      case 'INFERIOR': return `INF${mesa.indice}`;
+      case 'SUPERIOR': return `SUP${mesa.indice}`;
+      default: return 'Manual';
     }
   }
 
@@ -2175,19 +2174,6 @@ export class Dashboard implements OnInit, OnDestroy {
     return Math.max(0, rest.length - this.getMesaDailyCapForProject(mesa));
   }
 
-
-  getGrupoRoleLabel(rol: string): string {
-    switch (rol) {
-      case 'INFERIOR_1':
-        return 'INF1';
-      case 'INFERIOR_2':
-        return 'INF2';
-      case 'SUPERIORES':
-        return 'SUP';
-      default:
-        return rol;
-    }
-  }
 
   getProyectoNombre(projectId: number | null): string {
     if (!projectId) return 'Sin proyecto asignado';

@@ -275,7 +275,7 @@
                             <tbody>
                                 @for (mesa of statsData.por_mesa; track mesa.mesa_id) {
                                     <tr>
-                                        <td><span class="stats-mesa-badge">{{ mesaRolShort(mesa.rol) }}</span> {{ mesa.mesa_nombre }}</td>
+                                        <td><span class="stats-mesa-badge">{{ mesaStatsLabel(mesa) }}</span> {{ mesa.mesa_nombre }}</td>
                                         <td class="num">{{ mesa.fases_completadas }}</td>
                                         <td class="num">{{ mesa.peso_malla_final_kg | number:'1.0-1' }}</td>
                                         <td class="num">{{ mesa.desperdicio_kg | number:'1.0-1' }}</td>

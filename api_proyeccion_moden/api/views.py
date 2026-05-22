@@ -31,7 +31,7 @@ from api.models import (
     FotoFabricacion, GrupoMesas, GrupoMesasProyecto,
     DetalleModuloFase, MesaQueueStatus, ModuloEstado, Fase,
     GrupoBastidor, MaterialPieza, MaterialInformado, MaterialOrigenCheck,
-    MaterialTipo, MesaTipo, MesaRol,
+    MaterialTipo, MesaTipo,
 )
 from django.utils import timezone
 from rest_framework.authtoken.views import ObtainAuthToken
@@ -1873,23 +1873,6 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
             instance.mesas.all().delete()
             instance.delete()
 
-    @staticmethod
-    def _derivar_rol_legacy(tipo, indice):
-        """Mapea (tipo, indice) al campo rol legacy para retrocompat.
-
-        Mientras `rol` siga vivo en el modelo, solo los tres roles
-        historicos (INFERIOR_1, INFERIOR_2, SUPERIORES) tienen un valor
-        significativo. Cualquier mesa extra (INF3+, SUP2+, LEGACY) cae
-        en MesaRol.LEGACY hasta que Fase 6 elimine el campo.
-        """
-        if tipo == MesaTipo.INFERIOR and indice == 1:
-            return MesaRol.INFERIOR_1
-        if tipo == MesaTipo.INFERIOR and indice == 2:
-            return MesaRol.INFERIOR_2
-        if tipo == MesaTipo.SUPERIOR and indice == 1:
-            return MesaRol.SUPERIORES
-        return MesaRol.LEGACY
-
     @action(detail=True, methods=['post'], url_path='mesas')
     def add_mesa(self, request, pk=None):
         """Crea una mesa nueva dentro del grupo.
@@ -1930,7 +1913,6 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
                 grupo=grupo,
                 tipo=tipo,
                 indice=siguiente_indice,
-                rol=self._derivar_rol_legacy(tipo, siguiente_indice),
             )
 
         return Response(MesaResumenGrupoSerializer(mesa).data, status=201)
@@ -2258,8 +2240,7 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         grupo.refresh_from_db()
 
         # Mesas inferiores y superiores ordenadas por indice. El planner
-        # generaliza a N inferiores y M superiores; ya no exige roles
-        # legacy (INFERIOR_1/INFERIOR_2/SUPERIORES) literales.
+        # acepta cualquier N inferiores y M superiores por grupo.
         mesas_inf = list(grupo.mesas.filter(tipo=MesaTipo.INFERIOR).order_by('indice'))
         mesas_sup = list(grupo.mesas.filter(tipo=MesaTipo.SUPERIOR).order_by('indice'))
         if not mesas_inf:
@@ -2760,24 +2741,36 @@ class ProductionStatsView(APIView):
             if grupo is not None:
                 grupo_mesas_by_modulo[m.id] = grupo
 
-        # Cache: GrupoMesas id -> {rol: Mesa} so we can attribute orphan
-        # phases to the right mesa in the same group.
-        grupo_mesa_by_rol: dict = {}
+        # Cache: GrupoMesas id -> {'INFERIOR': [Mesa por indice], 'SUPERIOR': [...]}
+        # so we can attribute orphan phases to the right mesa in the same group.
+        grupo_mesas_by_tipo: dict = {}
         grupo_ids_needed = set(grupo_mesas_by_modulo.values())
         if grupo_ids_needed:
-            for mesa in Mesa.objects.filter(grupo_id__in=grupo_ids_needed):
-                grupo_mesa_by_rol.setdefault(mesa.grupo_id, {})[mesa.rol] = mesa
+            for mesa in Mesa.objects.filter(grupo_id__in=grupo_ids_needed).order_by('indice'):
+                bucket = grupo_mesas_by_tipo.setdefault(
+                    mesa.grupo_id, {'INFERIOR': [], 'SUPERIOR': [], 'LEGACY': []},
+                )
+                bucket.setdefault(mesa.tipo, []).append(mesa)
 
-        def _rol_for_fase(fase, modulo):
-            # INFERIOR phases split between INF1 and INF2 based on the
-            # bastidor group parity (odd -> INF1, even -> INF2). Matches
-            # how the planner already distributes bastidores.
+        def _fallback_mesa_for_fase(fase, modulo, grupo_id):
+            """Mesa probable para atribuir una fase completada manualmente.
+
+            SUPERIOR -> la primera SUP del grupo (round-robin no aplica
+            porque no hay forma de saber a posteriori cual cogio la cola).
+            INFERIOR -> distribuye ciclicamente entre las N inferiores
+            siguiendo el indice del grupo_bastidor (espejo del planner).
+            """
+            buckets = grupo_mesas_by_tipo.get(grupo_id, {})
             if fase == 'SUPERIOR':
-                return ['SUPERIORES']
+                sups = buckets.get('SUPERIOR') or []
+                return sups[0] if sups else None
+            infs = buckets.get('INFERIOR') or []
+            if not infs:
+                return None
             gb = getattr(modulo, 'grupo_bastidor', None)
-            if gb is not None and gb.indice % 2 == 0:
-                return ['INFERIOR_2', 'INFERIOR_1']
-            return ['INFERIOR_1', 'INFERIOR_2']
+            if gb is None:
+                return infs[0]
+            return infs[(gb.indice - 1) % len(infs)]
 
         def empty_totals():
             return {
@@ -2846,30 +2839,28 @@ class ProductionStatsView(APIView):
                         por_mesa[mesa_key] = {
                             'mesa_id': mesa_key,
                             'mesa_nombre': it.mesa.nombre,
-                            'rol': it.mesa.rol,
+                            'tipo': it.mesa.tipo,
+                            'indice': it.mesa.indice,
                             **empty_totals(),
                         }
                     add_detalle(por_mesa[mesa_key], detalle)
                     continue
 
-                # Fallback: use any mesa in the same group with the right
-                # role for this fase. Keeps 'manual' completions visible
-                # on the correct mesa instead of a LEGACY bucket.
-                fallback_mesa = None
-                grupo_id = grupo_mesas_by_modulo.get(modulo.id)
-                if grupo_id:
-                    group_roles = grupo_mesa_by_rol.get(grupo_id, {})
-                    for rol_candidate in _rol_for_fase(detalle.fase, modulo):
-                        if rol_candidate in group_roles:
-                            fallback_mesa = group_roles[rol_candidate]
-                            break
+                # Fallback: pick the mesa from the same group that the
+                # planner would have targeted for this fase. Keeps
+                # 'manual' completions visible on a real mesa instead of
+                # falling into a "Sin mesa asignada" bucket.
+                fallback_mesa = _fallback_mesa_for_fase(
+                    detalle.fase, modulo, grupo_mesas_by_modulo.get(modulo.id),
+                )
                 if fallback_mesa is not None:
                     mesa_key = fallback_mesa.id
                     if mesa_key not in por_mesa:
                         por_mesa[mesa_key] = {
                             'mesa_id': mesa_key,
                             'mesa_nombre': fallback_mesa.nombre,
-                            'rol': fallback_mesa.rol,
+                            'tipo': fallback_mesa.tipo,
+                            'indice': fallback_mesa.indice,
                             **empty_totals(),
                         }
                     add_detalle(por_mesa[mesa_key], detalle)
@@ -2879,7 +2870,8 @@ class ProductionStatsView(APIView):
                         por_mesa[manual_key] = {
                             'mesa_id': None,
                             'mesa_nombre': f'Sin mesa asignada ({detalle.fase})',
-                            'rol': detalle.fase,
+                            'tipo': 'LEGACY',
+                            'indice': 0,
                             **empty_totals(),
                         }
                     add_detalle(por_mesa[manual_key], detalle)
@@ -2911,7 +2903,10 @@ class ProductionStatsView(APIView):
                 'modulos_completados': modulos_completados,
                 **totals,
             },
-            'por_mesa': sorted(por_mesa.values(), key=lambda x: (x['rol'], x['mesa_nombre'])),
+            'por_mesa': sorted(
+                por_mesa.values(),
+                key=lambda x: (x['tipo'], x['indice'], x['mesa_nombre']),
+            ),
             'por_dia': sorted(por_dia.values(), key=lambda x: x['fecha']),
             'por_hora': sorted(por_hora.values(), key=lambda x: x['hora']) if single_day else None,
             'esperado': {
