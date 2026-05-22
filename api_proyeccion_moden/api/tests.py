@@ -437,6 +437,130 @@ class PlanningFoundationTests(APITestCase):
         self.assertEqual(response.status_code, 204)
         self.assertFalse(Mesa.objects.filter(id=mesa_inf_2.id).exists())
 
+    def test_planificar_balancea_carga_entre_tres_mesas_inferiores(self):
+        """Con 6 modulos y 3 inferiores, cada mesa recibe 2 modulos."""
+        self.project.bastidor_longitud_cm = 20
+        self.project.save(update_fields=["bastidor_longitud_cm"])
+
+        # 6 modulos en bastidores de 1 modulo cada uno (ancho > 10cm).
+        modulos = [self.modulo]
+        for i in range(2, 7):
+            modulos.append(
+                Modulo.objects.create(
+                    nombre=f"M-0{i}",
+                    proyecto=self.project,
+                    planta=self.planta,
+                    ancho_cm="15.00",
+                )
+            )
+        self.modulo.ancho_cm = "15.00"
+        self.modulo.save(update_fields=["ancho_cm"])
+        for modulo in modulos:
+            DetalleModuloFase.objects.create(
+                modulo=modulo, fase="INFERIOR", espesor_cm="10.00",
+            )
+
+        grupo = self._crear_grupo("Grupo 3 INF")
+        # Añade una tercera mesa inferior (INF3) via API
+        add_resp = self.client.post(
+            f"/api/grupos-mesas/{grupo.id}/mesas/",
+            {"tipo": "INFERIOR"}, format="json",
+        )
+        self.assertEqual(add_resp.status_code, 201)
+        self.assertEqual(add_resp.data["indice"], 3)
+
+        plan_resp = self.client.post(
+            f"/api/grupos-mesas/{grupo.id}/planificar/",
+            {"proyecto_id": self.project.id}, format="json",
+        )
+        self.assertEqual(plan_resp.status_code, 200)
+
+        # Cada mesa inferior tiene 2 modulos exactos.
+        mesas_inf = grupo.mesas.filter(tipo="INFERIOR").order_by("indice")
+        counts = [m.queue_items.count() for m in mesas_inf]
+        self.assertEqual(counts, [2, 2, 2])
+
+    def test_planificar_distribuye_superior_entre_dos_mesas_sup(self):
+        """Con 4 modulos cuyas fases SUP estan pendientes, las 2 SUP
+        reciben round-robin: 2 cada una."""
+        self.project.bastidor_longitud_cm = 40
+        self.project.save(update_fields=["bastidor_longitud_cm"])
+
+        modulos = [self.modulo]
+        for i in range(2, 5):
+            modulos.append(
+                Modulo.objects.create(
+                    nombre=f"M-0{i}",
+                    proyecto=self.project,
+                    planta=self.planta,
+                    ancho_cm="10.00",
+                )
+            )
+        self.modulo.ancho_cm = "10.00"
+        self.modulo.save(update_fields=["ancho_cm"])
+        for modulo in modulos:
+            DetalleModuloFase.objects.create(
+                modulo=modulo, fase="INFERIOR", espesor_cm="10.00",
+            )
+
+        grupo = self._crear_grupo("Grupo 2 SUP")
+        add_resp = self.client.post(
+            f"/api/grupos-mesas/{grupo.id}/mesas/",
+            {"tipo": "SUPERIOR"}, format="json",
+        )
+        self.assertEqual(add_resp.status_code, 201)
+        self.assertEqual(add_resp.data["indice"], 2)
+
+        plan_resp = self.client.post(
+            f"/api/grupos-mesas/{grupo.id}/planificar/",
+            {"proyecto_id": self.project.id}, format="json",
+        )
+        self.assertEqual(plan_resp.status_code, 200)
+
+        mesas_sup = grupo.mesas.filter(tipo="SUPERIOR").order_by("indice")
+        counts = [m.queue_items.filter(fase="SUPERIOR").count() for m in mesas_sup]
+        # 4 modulos, 2 mesas SUP -> 2+2.
+        self.assertEqual(counts, [2, 2])
+
+    def test_planificar_payload_devuelve_lista_dinamica_de_colas(self):
+        """El payload `queues` ahora es una lista, no un dict de roles."""
+        self.project.bastidor_longitud_cm = 20
+        self.project.save(update_fields=["bastidor_longitud_cm"])
+
+        DetalleModuloFase.objects.create(
+            modulo=self.modulo, fase="INFERIOR", espesor_cm="10.00",
+        )
+
+        grupo = self._crear_grupo("Grupo Payload")
+        plan_resp = self.client.post(
+            f"/api/grupos-mesas/{grupo.id}/planificar/",
+            {"proyecto_id": self.project.id}, format="json",
+        )
+        self.assertEqual(plan_resp.status_code, 200)
+
+        plan = plan_resp.data["plan"]
+        self.assertIsInstance(plan["queues"], list)
+        # Default: 2 INF + 1 SUP -> 3 entradas.
+        self.assertEqual(len(plan["queues"]), 3)
+        for entry in plan["queues"]:
+            self.assertIn("mesa_id", entry)
+            self.assertIn("tipo", entry)
+            self.assertIn("indice", entry)
+            self.assertIn("mesa_nombre", entry)
+            self.assertIn("modulos", entry)
+
+    def test_planificar_rechaza_grupo_sin_mesa_inferior(self):
+        grupo = self._crear_grupo("Grupo Sin INF")
+        # Quita las dos inferiores (la default INF2 primero, luego INF1).
+        # Para borrar la ultima INF hace falta dejar la SUP, asi que solo
+        # podemos llegar a 1 inferior + 1 superior por las reglas de DELETE.
+        mesa_inf_2 = grupo.mesas.get(rol="INFERIOR_2")
+        self.client.delete(f"/api/mesas/{mesa_inf_2.id}/")
+        mesa_inf_1 = grupo.mesas.get(rol="INFERIOR_1")
+        resp = self.client.delete(f"/api/mesas/{mesa_inf_1.id}/")
+        # La regla impide borrar la ultima INFERIOR.
+        self.assertEqual(resp.status_code, 409)
+
     def test_import_technical_data_from_json_creates_phase_details(self):
         technical_file = SimpleUploadedFile(
             "detalles.json",
@@ -694,8 +818,11 @@ class PlanningFoundationTests(APITestCase):
             MesaQueueItem.objects.filter(mesa=mesa_inf_2).order_by("position").values_list("modulo__nombre", flat=True)
         )
 
-        self.assertEqual(inf_1_queue, ["M-01"])
-        self.assertEqual(inf_2_queue, ["M-03", "M-02"])
+        # Bastidor grande (M-02 + M-03, ancho total 20) entra primero al
+        # planner (orden -len, indice) y va a INF1 por ser la menos
+        # cargada; el bastidor pequeno (M-01) cae a INF2.
+        self.assertEqual(inf_1_queue, ["M-03", "M-02"])
+        self.assertEqual(inf_2_queue, ["M-01"])
 
     def test_planificar_grupo_conserva_grupo_iniciado_y_reemplaza_lo_pendiente(self):
         self.project.bastidor_longitud_cm = 20
@@ -777,8 +904,12 @@ class PlanningFoundationTests(APITestCase):
             .values_list("modulo__nombre", flat=True)
         )
 
-        self.assertEqual(inf_1_queue, ["M-02", "M-01"])
-        self.assertEqual(inf_2_queue, ["N-02", "N-01"])
+        # En el destructive del original (pos 0 del cola) M-02 conserva
+        # su bastidor (M-01 va con el), M-03/M-04 se replanifican a INF2.
+        # En el append del nuevo (pos 1) ambas mesas tienen carga 2 -> el
+        # tie-break va a la mesa de menor indice (INF1).
+        self.assertEqual(inf_1_queue, ["M-02", "M-01", "N-02", "N-01"])
+        self.assertEqual(inf_2_queue, ["M-04", "M-03"])
 
     def test_planificar_grupo_ignora_fases_activas_en_otro_grupo(self):
         self.project.bastidor_longitud_cm = 20

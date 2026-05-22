@@ -164,6 +164,8 @@ export interface Mesa {
     usuario: string;
     grupo: number | null;
     rol: 'LEGACY' | 'INFERIOR_1' | 'INFERIOR_2' | 'SUPERIORES';
+    tipo: MesaTipo;
+    indice: number;
     imagen_actual: string | null;
     imagen: Imagen | null;
     ultima_actualizacion: string;
@@ -248,21 +250,32 @@ export interface GrupoMesas {
     mesas: GrupoMesaResumen[];
 }
 
+export interface PlanMesaRef {
+    id: number;
+    nombre: string;
+    tipo: MesaTipo;
+    indice: number;
+}
+
 export interface GrupoPlanBastidor {
     group_index: number;
-    target_role: 'INFERIOR_1' | 'INFERIOR_2';
+    target_mesa: PlanMesaRef;
     modules: string[];
+}
+
+export interface MesaQueuePayload {
+    mesa_id: number;
+    mesa_nombre: string;
+    tipo: MesaTipo;
+    indice: number;
+    modulos: string[];
 }
 
 export interface GrupoPlanSummary {
     project_id: number;
     project_name: string;
     bastidor_groups: GrupoPlanBastidor[];
-    queues: {
-        INFERIOR_1: string[];
-        INFERIOR_2: string[];
-        SUPERIORES: string[];
-    };
+    queues: MesaQueuePayload[];
 }
 
 export interface PlanificarGrupoResponse {

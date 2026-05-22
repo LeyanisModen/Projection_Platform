@@ -738,35 +738,58 @@ def _assign_modulo_to_group_on_create(modulo):
     modulo.save(update_fields=['grupo_bastidor'])
 
 
-def _merge_superior_sequences(primary_sequence, secondary_sequence):
+def _merge_inferior_sequences_for_superior(sequences):
+    """Mezcla N colas inferiores en una secuencia superior round-robin.
+
+    Empieza por la cola cuyo modulo de cabeza es mas dificil (asi se
+    estira el trabajo facil al final). Tras cada extraccion, avanza al
+    siguiente indice (modulo) entre las colas; cuando una se agota,
+    sigue rotando por las que quedan.
+    """
+    queues = [list(seq) for seq in sequences]
+    if not any(queues):
+        return []
+
+    # Indice de la cola por la que empezamos: la que tenga el modulo
+    # mas dificil en cabeza. Estable: en empate, gana la mas a la
+    # izquierda (es decir, la mesa con menor indice).
+    start_idx = 0
+    best_difficulty = None
+    for idx, queue in enumerate(queues):
+        if not queue:
+            continue
+        diff = _get_inferior_difficulty(queue[0])
+        if best_difficulty is None or diff > best_difficulty:
+            best_difficulty = diff
+            start_idx = idx
+
     merged = []
-    first_queue = list(primary_sequence)
-    second_queue = list(secondary_sequence)
-    use_first_queue = True
-
-    if first_queue and second_queue:
-        first_difficulty = _get_inferior_difficulty(first_queue[0])
-        second_difficulty = _get_inferior_difficulty(second_queue[0])
-        if second_difficulty > first_difficulty:
-            use_first_queue = False
-
-    while first_queue or second_queue:
-        if use_first_queue and first_queue:
-            merged.append(first_queue.pop(0))
-            use_first_queue = False
-            continue
-
-        if (not use_first_queue) and second_queue:
-            merged.append(second_queue.pop(0))
-            use_first_queue = True
-            continue
-
-        if first_queue:
-            merged.append(first_queue.pop(0))
-        elif second_queue:
-            merged.append(second_queue.pop(0))
-
+    cursor = start_idx
+    n = len(queues)
+    while any(queues):
+        # Rota desde `cursor` hasta encontrar una cola con elementos.
+        for _ in range(n):
+            if queues[cursor]:
+                merged.append(queues[cursor].pop(0))
+                cursor = (cursor + 1) % n
+                break
+            cursor = (cursor + 1) % n
     return merged
+
+
+def _distribute_superior_sequence(superior_sequence, num_superiores):
+    """Reparte la cola superior entre M mesas en round-robin simple.
+
+    Devuelve una lista de M listas, una por mesa SUPERIOR. La mesa con
+    indice 1 (posicion 0) recibe el primer modulo, la 2 el segundo,
+    etc. Garantiza que cargas queden balanceadas (diferencia maxima 1).
+    """
+    if num_superiores <= 0:
+        return []
+    superior_sequences = [[] for _ in range(num_superiores)]
+    for offset, modulo in enumerate(superior_sequence):
+        superior_sequences[offset % num_superiores].append(modulo)
+    return superior_sequences
 
 
 class CustomAuthToken(ObtainAuthToken):
@@ -2057,7 +2080,11 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         """Destructive mode: preserve only items whose bastidor group has
         at least one fully-completed module. Everything else (in-flight
         but not yet closed) gets wiped and re-planned. Used by the
-        explicit 'Planificar ahora' button on the head project."""
+        explicit 'Planificar ahora' button on the head project.
+
+        Items are keyed by ``mesa_id`` so multiple mesas of the same
+        ``tipo`` (e.g. INF1 and INF3) keep their work separate.
+        """
         group_items = MesaQueueItem.objects.select_related('mesa', 'modulo').filter(mesa__grupo=grupo)
         active_items = group_items.filter(status__in=ACTIVE_QUEUE_STATUSES)
         completed_group_indexes = list(
@@ -2069,45 +2096,77 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         )
 
         preserve_until = max(completed_group_indexes) if completed_group_indexes else None
-        preserved_by_role = {}
+        preserved_by_mesa = {}
         preserved_keys = set()
 
         if preserve_until is None:
-            return preserve_until, preserved_by_role, preserved_keys
+            return preserve_until, preserved_by_mesa, preserved_keys
 
         preserved_items = active_items.filter(plan_group_index__lte=preserve_until).order_by('mesa_id', 'position')
         for item in preserved_items:
             preserved_keys.add((item.modulo_id, item.fase))
-            preserved_by_role.setdefault(item.mesa.rol, []).append(item)
+            preserved_by_mesa.setdefault(item.mesa_id, []).append(item)
 
-        return preserve_until, preserved_by_role, preserved_keys
+        return preserve_until, preserved_by_mesa, preserved_keys
 
     def _get_all_active_prefix(self, grupo):
         """Append mode: preserve every active queue item (EN_COLA /
         MOSTRANDO). New items just slot in at the tail. Used for
         planning subsequent projects of the cola and for auto-plan
-        after cola/add."""
+        after cola/add.
+
+        Items are keyed by ``mesa_id`` so multiple mesas of the same
+        ``tipo`` keep their work separate.
+        """
         active_items = list(
             MesaQueueItem.objects.select_related('mesa', 'modulo').filter(
                 mesa__grupo=grupo,
                 status__in=ACTIVE_QUEUE_STATUSES,
             ).order_by('mesa_id', 'position')
         )
-        preserved_by_role = {}
+        preserved_by_mesa = {}
         preserved_keys = set()
         preserve_until = None
 
         for item in active_items:
             preserved_keys.add((item.modulo_id, item.fase))
-            preserved_by_role.setdefault(item.mesa.rol, []).append(item)
+            preserved_by_mesa.setdefault(item.mesa_id, []).append(item)
             if item.plan_group_index is not None:
                 preserve_until = max(preserve_until or 0, item.plan_group_index)
 
-        return preserve_until, preserved_by_role, preserved_keys
+        return preserve_until, preserved_by_mesa, preserved_keys
 
-    def _build_plan_sequences(self, proyecto, excluded_phase_keys=None, group_index_offset=0,
-                               initial_inf1_load=0, initial_inf2_load=0):
+    def _build_plan_sequences(self, proyecto, num_inferiores, excluded_phase_keys=None,
+                               group_index_offset=0, initial_loads_inf=None):
+        """Construye las secuencias de planificacion para N mesas inferiores.
+
+        ``initial_loads_inf`` es una lista de longitud ``num_inferiores`` con
+        la carga (numero de modulos preservados) que cada mesa inferior
+        ya arrastra de pasadas anteriores. El balanceo se hace siempre
+        sobre esas cargas vivas para que sucesivas planificaciones
+        queden niveladas.
+
+        Devuelve un dict con:
+        - ``inferior_sequences``: lista de N listas de Modulo, una por
+          mesa inferior (orden coincide con la lista de mesas pasadas
+          desde _build_group_plan).
+        - ``superior_sequence``: lista plana de Modulo en el orden en
+          que deben entrar a las mesas superiores (todavia sin repartir
+          entre ellas).
+        - ``group_summaries``: por cada bastidor agrupado, qué mesa
+          inferior (por indice 0-based) lo recibe.
+        - ``module_group_map``: modulo_id -> indice de grupo de bastidor.
+        - ``planned_phase_keys``: pares (modulo_id, fase) que entran en
+          este plan.
+        """
         excluded_phase_keys = excluded_phase_keys or set()
+        if num_inferiores <= 0:
+            raise ValueError('num_inferiores debe ser >= 1')
+        if initial_loads_inf is None:
+            initial_loads_inf = [0] * num_inferiores
+        elif len(initial_loads_inf) != num_inferiores:
+            raise ValueError('initial_loads_inf debe tener una entrada por mesa inferior')
+
         modulos = list(
             proyecto.modulos.select_related('planta').prefetch_related('detalles_fase').all()
         )
@@ -2136,8 +2195,7 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         }
 
         bastidor_groups = _build_bastidor_groups(proyecto, inferiors_pending)
-        inferior_1_sequence = []
-        inferior_2_sequence = []
+        inferior_sequences = [[] for _ in range(num_inferiores)]
         group_summaries = []
         module_group_map = {}
 
@@ -2149,36 +2207,32 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
             key=lambda pair: (-len(pair[1]), pair[0]),
         )
 
-        # Live module counts per inferior mesa (including any already
-        # preserved/planned items from prior calls) so balancing works
-        # across successive plan passes in the same grupo.
-        inf1_load = initial_inf1_load
-        inf2_load = initial_inf2_load
+        loads = list(initial_loads_inf)
 
         for original_index, modules_in_group in ordered_bastidores:
             effective_index = group_index_offset + original_index
             reversed_group = list(reversed(modules_in_group))
             for module in modules_in_group:
                 module_group_map[module.id] = effective_index
-            if inf1_load <= inf2_load:
-                target_role = 'INFERIOR_1'
-                inferior_1_sequence.extend(reversed_group)
-                inf1_load += len(modules_in_group)
-            else:
-                target_role = 'INFERIOR_2'
-                inferior_2_sequence.extend(reversed_group)
-                inf2_load += len(modules_in_group)
+            # Mesa con menor carga; empate -> menor indice (mas a la izquierda).
+            target_idx = min(range(num_inferiores), key=lambda i: (loads[i], i))
+            inferior_sequences[target_idx].extend(reversed_group)
+            loads[target_idx] += len(modules_in_group)
 
             group_summaries.append({
                 'group_index': effective_index,
-                'target_role': target_role,
+                'target_inferior_idx': target_idx,
                 'modules': [module.nombre for module in reversed_group],
             })
 
-        superior_from_inferiors = _merge_superior_sequences(
-            [module for module in inferior_1_sequence if not module.superior_hecho and (module.id, 'SUPERIOR') not in excluded_phase_keys],
-            [module for module in inferior_2_sequence if not module.superior_hecho and (module.id, 'SUPERIOR') not in excluded_phase_keys],
-        )
+        superior_from_inferiors = _merge_inferior_sequences_for_superior([
+            [
+                module for module in seq
+                if not module.superior_hecho
+                and (module.id, 'SUPERIOR') not in excluded_phase_keys
+            ]
+            for seq in inferior_sequences
+        ])
         superior_ids = {module.id for module in superior_from_inferiors}
         standalone_superior = sorted(
             [
@@ -2195,8 +2249,7 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
             'planned_phase_keys': planned_phase_keys,
             'group_summaries': group_summaries,
             'module_group_map': module_group_map,
-            'inferior_1_sequence': inferior_1_sequence,
-            'inferior_2_sequence': inferior_2_sequence,
+            'inferior_sequences': inferior_sequences,
             'superior_sequence': superior_sequence,
         }
 
@@ -2204,15 +2257,20 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         grupo.ensure_default_mesas()
         grupo.refresh_from_db()
 
-        mesas = {mesa.rol: mesa for mesa in grupo.mesas.all()}
-        missing_roles = [rol for rol in ['INFERIOR_1', 'INFERIOR_2', 'SUPERIORES'] if rol not in mesas]
-        if missing_roles:
-            raise ValidationError(f'Faltan mesas requeridas en el grupo: {", ".join(missing_roles)}')
+        # Mesas inferiores y superiores ordenadas por indice. El planner
+        # generaliza a N inferiores y M superiores; ya no exige roles
+        # legacy (INFERIOR_1/INFERIOR_2/SUPERIORES) literales.
+        mesas_inf = list(grupo.mesas.filter(tipo=MesaTipo.INFERIOR).order_by('indice'))
+        mesas_sup = list(grupo.mesas.filter(tipo=MesaTipo.SUPERIOR).order_by('indice'))
+        if not mesas_inf:
+            raise ValidationError('El grupo necesita al menos una mesa inferior.')
+        if not mesas_sup:
+            raise ValidationError('El grupo necesita al menos una mesa superior.')
 
         if append_mode:
-            preserved_until, preserved_by_role, preserved_phase_keys = self._get_all_active_prefix(grupo)
+            preserved_until, preserved_by_mesa, preserved_phase_keys = self._get_all_active_prefix(grupo)
         else:
-            preserved_until, preserved_by_role, preserved_phase_keys = self._get_preserved_active_prefix(grupo)
+            preserved_until, preserved_by_mesa, preserved_phase_keys = self._get_preserved_active_prefix(grupo)
         external_conflicts = MesaQueueItem.objects.select_related('mesa', 'modulo').filter(
             status__in=ACTIVE_QUEUE_STATUSES,
             modulo__proyecto=proyecto,
@@ -2236,21 +2294,30 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
             reservation_phase_keys.add((mid, 'INFERIOR'))
             reservation_phase_keys.add((mid, 'SUPERIOR'))
 
-        # Seed the balance with however many items already sit on each
-        # inferior mesa (from preserved/in-flight work). Keeps INF1 and
-        # INF2 leveled even across successive planificar passes.
-        initial_inf1_load = len(preserved_by_role.get('INFERIOR_1', []))
-        initial_inf2_load = len(preserved_by_role.get('INFERIOR_2', []))
+        # Seed inferior balancing with the items each mesa already holds
+        # (preserved/in-flight), keyed by mesa_id. Keeps loads leveled
+        # across successive planificar passes.
+        initial_loads_inf = [
+            len(preserved_by_mesa.get(mesa.id, []))
+            for mesa in mesas_inf
+        ]
 
         plan_data = self._build_plan_sequences(
             proyecto,
+            num_inferiores=len(mesas_inf),
             excluded_phase_keys=(
                 preserved_phase_keys | external_phase_keys | reservation_phase_keys
             ),
             group_index_offset=preserved_until or 0,
-            initial_inf1_load=initial_inf1_load,
-            initial_inf2_load=initial_inf2_load,
+            initial_loads_inf=initial_loads_inf,
         )
+
+        # Spread the superior cola across M mesas (round-robin so loads
+        # stay within +/- 1).
+        superior_sequences_by_mesa = _distribute_superior_sequence(
+            plan_data['superior_sequence'], len(mesas_sup),
+        )
+
         skipped_external_conflicts = [
                 f'{item.modulo.nombre} {item.fase} ya está en {item.mesa.nombre}'
             for item in external_conflicts[:5]
@@ -2263,7 +2330,7 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
             )
             preserved_ids = [
                 item.id
-                for items in preserved_by_role.values()
+                for items in preserved_by_mesa.values()
                 for item in items
             ]
             if preserved_ids:
@@ -2271,42 +2338,51 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
             else:
                 active_group_items.delete()
 
-            normalized_preserved = {}
-            for role, mesa in mesas.items():
-                normalized_preserved[role] = self._normalize_active_queue_for_mesa(
-                    mesa,
-                    preserved_by_role.get(role, []),
+            queues_payload = []
+
+            # Mesas inferiores: una secuencia por mesa, en el orden de
+            # mesas_inf (que ya esta ordenada por indice).
+            for mesa, sequence in zip(mesas_inf, plan_data['inferior_sequences']):
+                preserved_for_mesa = self._normalize_active_queue_for_mesa(
+                    mesa, preserved_by_mesa.get(mesa.id, []),
                 )
+                created = self._create_queue_for_mesa(
+                    mesa, sequence, 'INFERIOR', user,
+                    plan_data['module_group_map'],
+                    start_position=len(preserved_for_mesa),
+                    has_active_items=bool(preserved_for_mesa),
+                )
+                items = preserved_for_mesa + created
+                queues_payload.append({
+                    'mesa_id': mesa.id,
+                    'mesa_nombre': mesa.nombre,
+                    'tipo': mesa.tipo,
+                    'indice': mesa.indice,
+                    'modulos': [item.modulo.nombre for item in items],
+                })
 
-            inferior_1_items = normalized_preserved['INFERIOR_1'] + self._create_queue_for_mesa(
-                mesas['INFERIOR_1'],
-                plan_data['inferior_1_sequence'],
-                'INFERIOR',
-                user,
-                plan_data['module_group_map'],
-                start_position=len(normalized_preserved['INFERIOR_1']),
-                has_active_items=bool(normalized_preserved['INFERIOR_1']),
-            )
-            inferior_2_items = normalized_preserved['INFERIOR_2'] + self._create_queue_for_mesa(
-                mesas['INFERIOR_2'],
-                plan_data['inferior_2_sequence'],
-                'INFERIOR',
-                user,
-                plan_data['module_group_map'],
-                start_position=len(normalized_preserved['INFERIOR_2']),
-                has_active_items=bool(normalized_preserved['INFERIOR_2']),
-            )
-            superiores_items = normalized_preserved['SUPERIORES'] + self._create_queue_for_mesa(
-                mesas['SUPERIORES'],
-                plan_data['superior_sequence'],
-                'SUPERIOR',
-                user,
-                plan_data['module_group_map'],
-                start_position=len(normalized_preserved['SUPERIORES']),
-                has_active_items=bool(normalized_preserved['SUPERIORES']),
-            )
+            # Mesas superiores: distribuir la cola superior global entre
+            # ellas (round-robin) y crear los items por mesa.
+            for mesa, sequence in zip(mesas_sup, superior_sequences_by_mesa):
+                preserved_for_mesa = self._normalize_active_queue_for_mesa(
+                    mesa, preserved_by_mesa.get(mesa.id, []),
+                )
+                created = self._create_queue_for_mesa(
+                    mesa, sequence, 'SUPERIOR', user,
+                    plan_data['module_group_map'],
+                    start_position=len(preserved_for_mesa),
+                    has_active_items=bool(preserved_for_mesa),
+                )
+                items = preserved_for_mesa + created
+                queues_payload.append({
+                    'mesa_id': mesa.id,
+                    'mesa_nombre': mesa.nombre,
+                    'tipo': mesa.tipo,
+                    'indice': mesa.indice,
+                    'modulos': [item.modulo.nombre for item in items],
+                })
 
-            for mesa in mesas.values():
+            for mesa in (*mesas_inf, *mesas_sup):
                 current_item = mesa.queue_items.filter(status=MesaQueueStatus.MOSTRANDO).order_by('position').first()
                 mesa.imagen_actual = current_item.imagen if current_item else None
                 mesa.current_image_index = 0
@@ -2316,8 +2392,9 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
             # grupo's plan. Other grupos won't touch them on subsequent
             # planificar calls until this grupo releases them (eg. via
             # release endpoint, TBD).
-            planned_modulo_ids = {m.id for m in plan_data['inferior_1_sequence']}
-            planned_modulo_ids.update(m.id for m in plan_data['inferior_2_sequence'])
+            planned_modulo_ids = set()
+            for seq in plan_data['inferior_sequences']:
+                planned_modulo_ids.update(m.id for m in seq)
             planned_modulo_ids.update(m.id for m in plan_data['superior_sequence'])
             if planned_modulo_ids:
                 reserved_bastidor_ids = set(
@@ -2332,16 +2409,29 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
                         asignado_a__isnull=True,
                     ).update(asignado_a=grupo)
 
+        # Annotate bastidor groups with the resolved target mesa so the
+        # UI can present "este bastidor va a INF3" sin tener que mapear
+        # indices a mesas.
+        bastidor_groups_payload = []
+        for summary in plan_data['group_summaries']:
+            mesa = mesas_inf[summary['target_inferior_idx']]
+            bastidor_groups_payload.append({
+                'group_index': summary['group_index'],
+                'modules': summary['modules'],
+                'target_mesa': {
+                    'id': mesa.id,
+                    'nombre': mesa.nombre,
+                    'tipo': mesa.tipo,
+                    'indice': mesa.indice,
+                },
+            })
+
         return {
             'project_id': proyecto.id,
             'project_name': proyecto.nombre,
             'preserved_until_group': preserved_until,
-            'bastidor_groups': plan_data['group_summaries'],
-            'queues': {
-                'INFERIOR_1': [item.modulo.nombre for item in inferior_1_items],
-                'INFERIOR_2': [item.modulo.nombre for item in inferior_2_items],
-                'SUPERIORES': [item.modulo.nombre for item in superiores_items],
-            },
+            'bastidor_groups': bastidor_groups_payload,
+            'queues': queues_payload,
         }
 
     def _plan_cola(self, grupo, user):
