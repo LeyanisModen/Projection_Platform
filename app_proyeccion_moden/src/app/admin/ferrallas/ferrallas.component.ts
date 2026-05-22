@@ -1,7 +1,7 @@
 import { Component, OnInit, ChangeDetectorRef, HostListener } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ApiService, GrupoMesas, GrupoMesaResumen, User } from '../../services/api.service';
+import { ApiService, GrupoMesas, GrupoMesaResumen, MesaTipo, User } from '../../services/api.service';
 
 @Component({
   selector: 'app-ferrallas',
@@ -176,9 +176,64 @@ export class FerrallasComponent implements OnInit {
   }
 
   confirmDeleteGrupo(grupo: GrupoMesas) {
-    if (confirm(`Eliminar grupo "${grupo.nombre}" y sus 3 mesas?`)) {
+    const numMesas = grupo.mesas?.length ?? 0;
+    const mesasTxt = numMesas === 1 ? '1 mesa' : `${numMesas} mesas`;
+    if (confirm(`Eliminar grupo "${grupo.nombre}" y sus ${mesasTxt}?`)) {
       this.deleteGrupo(grupo);
     }
+  }
+
+  addMesaToGrupo(grupo: GrupoMesas, tipo: MesaTipo) {
+    this.loadingMesas = true;
+    this.api.addMesaToGrupo(grupo.id, tipo).subscribe({
+      next: (mesa) => {
+        grupo.mesas = [...(grupo.mesas || []), mesa];
+        this.loadingMesas = false;
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        console.error('Error creating mesa', err);
+        this.loadingMesas = false;
+        alert(err?.error?.detail || 'Error creando mesa');
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  confirmDeleteMesa(grupo: GrupoMesas, mesa: GrupoMesaResumen) {
+    if (!confirm(`Eliminar la mesa "${mesa.nombre}"?`)) return;
+    this.deleteMesa(grupo, mesa, false);
+  }
+
+  private deleteMesa(grupo: GrupoMesas, mesa: GrupoMesaResumen, force: boolean) {
+    this.loadingMesas = true;
+    this.api.deleteMesa(mesa.id, force).subscribe({
+      next: () => {
+        grupo.mesas = (grupo.mesas || []).filter(m => m.id !== mesa.id);
+        this.loadingMesas = false;
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.loadingMesas = false;
+        const body = err?.error || {};
+        if (err?.status === 409 && (body.cola_activa || body.device_vinculado) && !force) {
+          const motivos: string[] = [];
+          if (body.cola_activa) motivos.push('tiene cola activa');
+          if (body.device_vinculado) motivos.push('tiene un dispositivo vinculado');
+          const motivo = motivos.join(' y ');
+          if (confirm(`La mesa ${motivo}. Eliminarla de todos modos?`)) {
+            this.deleteMesa(grupo, mesa, true);
+            return;
+          }
+        } else if (err?.status === 409) {
+          alert(body.detail || 'No se puede eliminar la mesa.');
+        } else {
+          console.error('Error deleting mesa', err);
+          alert(body.detail || 'Error eliminando la mesa');
+        }
+        this.cdr.detectChanges();
+      }
+    });
   }
 
   deleteGrupo(grupo: GrupoMesas) {
@@ -452,16 +507,28 @@ export class FerrallasComponent implements OnInit {
   }
 
   getMesaRoleLabel(mesa: GrupoMesaResumen): string {
-    switch (mesa.rol) {
-      case 'INFERIOR_1':
-        return 'INF1';
-      case 'INFERIOR_2':
-        return 'INF2';
-      case 'SUPERIORES':
-        return 'SUP';
+    switch (mesa.tipo) {
+      case 'INFERIOR':
+        return `INF${mesa.indice}`;
+      case 'SUPERIOR':
+        return `SUP${mesa.indice}`;
       default:
         return 'LEG';
     }
+  }
+
+  getGrupoSubtitulo(grupo: GrupoMesas): string {
+    const counts = { INFERIOR: 0, SUPERIOR: 0, LEGACY: 0 };
+    for (const mesa of grupo.mesas || []) {
+      counts[mesa.tipo] = (counts[mesa.tipo] || 0) + 1;
+    }
+    const partes: string[] = [];
+    if (counts.INFERIOR) partes.push(`${counts.INFERIOR} INF`);
+    if (counts.SUPERIOR) partes.push(`${counts.SUPERIOR} SUP`);
+    if (counts.LEGACY) partes.push(`${counts.LEGACY} extra`);
+    const total = (grupo.mesas || []).length;
+    const totalTxt = total === 1 ? '1 mesa' : `${total} mesas`;
+    return partes.length ? `${totalTxt} (${partes.join(' / ')})` : totalTxt;
   }
 
   @HostListener('document:keydown.escape', ['$event'])

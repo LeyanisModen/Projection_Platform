@@ -220,13 +220,28 @@
                                                     </button>
                                                 </ng-template>
                                             </div>
-                                            <small class="text-muted">3 mesas operativas: INF1 / INF2 / SUP</small>
+                                            <small class="text-muted">{{ getGrupoSubtitulo(grupo) }}</small>
                                         </div>
-                                        <button class="btn btn-outline-danger btn-sm"
-                                            (click)="confirmDeleteGrupo(grupo)"
-                                            title="Eliminar grupo">
-                                            <i class="fa fa-trash-o"></i>
-                                        </button>
+                                        <div class="btn-group">
+                                            <button class="btn btn-outline-secondary btn-sm"
+                                                (click)="addMesaToGrupo(grupo, 'INFERIOR')"
+                                                [disabled]="loadingMesas"
+                                                title="Anadir mesa inferior">
+                                                <i class="fa fa-plus"></i> INF
+                                            </button>
+                                            <button class="btn btn-outline-secondary btn-sm"
+                                                (click)="addMesaToGrupo(grupo, 'SUPERIOR')"
+                                                [disabled]="loadingMesas"
+                                                title="Anadir mesa superior">
+                                                <i class="fa fa-plus"></i> SUP
+                                            </button>
+                                            <button class="btn btn-outline-danger btn-sm"
+                                                (click)="confirmDeleteGrupo(grupo)"
+                                                [disabled]="loadingMesas"
+                                                title="Eliminar grupo">
+                                                <i class="fa fa-trash-o"></i>
+                                            </button>
+                                        </div>
                                     </div>
 
                                     <div class="list-group list-group-flush">
@@ -248,6 +263,12 @@
                                                 <button class="btn btn-sm btn-outline-warning" *ngIf="mesa.is_linked"
                                                     (click)="openUnbindModal(mesa)" title="Desvincular Dispositivo">
                                                     <i class="fa fa-chain-broken"></i>
+                                                </button>
+                                                <button class="btn btn-sm btn-outline-danger"
+                                                    (click)="confirmDeleteMesa(grupo, mesa)"
+                                                    [disabled]="loadingMesas"
+                                                    title="Eliminar mesa">
+                                                    <i class="fa fa-trash-o"></i>
                                                 </button>
                                             </div>
                                         </div>

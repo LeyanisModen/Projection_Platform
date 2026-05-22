@@ -217,10 +217,14 @@ export interface MesaQueueItem {
     done_at: string | null;
 }
 
+export type MesaTipo = 'INFERIOR' | 'SUPERIOR' | 'LEGACY';
+
 export interface GrupoMesaResumen {
     id: number;
     nombre: string;
     rol: 'LEGACY' | 'INFERIOR_1' | 'INFERIOR_2' | 'SUPERIORES';
+    tipo: MesaTipo;
+    indice: number;
     is_linked: boolean;
     capture_service_online?: boolean | null;
     camera_sharpness?: 'ok' | 'warning' | 'blurry' | 'unknown' | null;
@@ -618,8 +622,19 @@ export class ApiService {
         return this.http.post<Mesa>(`${this.baseUrl}/mesas/`, data, { headers: this.getHeaders() });
     }
 
-    deleteMesa(id: number): Observable<void> {
-        return this.http.delete<void>(`${this.baseUrl}/mesas/${id}/`, { headers: this.getHeaders() });
+    deleteMesa(id: number, force = false): Observable<void> {
+        const url = force
+            ? `${this.baseUrl}/mesas/${id}/?force=true`
+            : `${this.baseUrl}/mesas/${id}/`;
+        return this.http.delete<void>(url, { headers: this.getHeaders() });
+    }
+
+    addMesaToGrupo(grupoId: number, tipo: MesaTipo): Observable<GrupoMesaResumen> {
+        return this.http.post<GrupoMesaResumen>(
+            `${this.baseUrl}/grupos-mesas/${grupoId}/mesas/`,
+            { tipo },
+            { headers: this.getHeaders() }
+        );
     }
 
     updateMesa(id: number, data: any): Observable<Mesa> {
