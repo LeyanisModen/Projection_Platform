@@ -2049,13 +2049,11 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   getMesaRoleLabel(mesa: Mesa): string {
-    switch (mesa.rol) {
-      case 'INFERIOR_1':
-        return 'INF1';
-      case 'INFERIOR_2':
-        return 'INF2';
-      case 'SUPERIORES':
-        return 'SUP';
+    switch (mesa.tipo) {
+      case 'INFERIOR':
+        return `INF${mesa.indice}`;
+      case 'SUPERIOR':
+        return `SUP${mesa.indice}`;
       default:
         return 'Manual';
     }
@@ -2067,7 +2065,7 @@ export class Dashboard implements OnInit, OnDestroy {
    * en mesas SUPERIORES no tiene sentido agrupar visualmente.
    */
   shouldShowGroupDivider(item: MesaQueueItem, index: number, mesa: Mesa): boolean {
-    if (mesa.rol === 'SUPERIORES') return false;
+    if (mesa.tipo === 'SUPERIOR') return false;
     const current = item.plan_group_index;
     if (current == null) return false;
     if (index === 0) return true;
@@ -2114,19 +2112,32 @@ export class Dashboard implements OnInit, OnDestroy {
   private getMesaDailyCapForProject(mesa?: Mesa): number {
     const total = this.getFerrallaDailyTotal();
     if (!mesa) return total;
-    if (mesa.rol === 'SUPERIORES') {
-      const infMesas = this.mesas.filter(m =>
-        m.grupo === mesa.grupo && (m.rol === 'INFERIOR_1' || m.rol === 'INFERIOR_2')
+    if (mesa.tipo === 'SUPERIOR') {
+      const infMesas = this.mesas.filter(
+        m => m.grupo === mesa.grupo && m.tipo === 'INFERIOR'
       );
-      const infCap = Math.ceil(total / 2);
+      const numInf = Math.max(infMesas.length, 1);
+      const infCap = Math.ceil(total / numInf);
       let sum = 0;
       for (const inf of infMesas) {
         sum += Math.min(this.getMesaQueueItems(inf.id).length, infCap);
       }
-      return sum;
+      // Reparte la suma entre las superiores del grupo (round-robin),
+      // ceil para ser generoso.
+      const numSup = Math.max(
+        this.mesas.filter(m => m.grupo === mesa.grupo && m.tipo === 'SUPERIOR').length,
+        1,
+      );
+      return Math.ceil(sum / numSup);
     }
-    // INF1 / INF2: half of the ferralla total each (rounded up to be generous)
-    return Math.ceil(total / 2);
+    if (mesa.tipo === 'INFERIOR') {
+      const numInf = Math.max(
+        this.mesas.filter(m => m.grupo === mesa.grupo && m.tipo === 'INFERIOR').length,
+        1,
+      );
+      return Math.ceil(total / numInf);
+    }
+    return total;
   }
 
   /**
@@ -2240,18 +2251,19 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   getMesasForGrupo(grupoId: number): Mesa[] {
-    const roleOrder: Record<Mesa['rol'], number> = {
+    const tipoOrder: Record<Mesa['tipo'], number> = {
+      INFERIOR: 1,
+      SUPERIOR: 2,
       LEGACY: 99,
-      INFERIOR_1: 1,
-      INFERIOR_2: 2,
-      SUPERIORES: 3,
     };
 
     return this.mesas
       .filter((mesa) => mesa.grupo === grupoId)
       .sort((a, b) => {
-        const roleDiff = (roleOrder[a.rol] ?? 99) - (roleOrder[b.rol] ?? 99);
-        if (roleDiff !== 0) return roleDiff;
+        const tipoDiff = (tipoOrder[a.tipo] ?? 99) - (tipoOrder[b.tipo] ?? 99);
+        if (tipoDiff !== 0) return tipoDiff;
+        const indiceDiff = (a.indice ?? 0) - (b.indice ?? 0);
+        if (indiceDiff !== 0) return indiceDiff;
         return a.nombre.localeCompare(b.nombre);
       });
   }

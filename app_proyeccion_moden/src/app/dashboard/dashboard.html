@@ -64,7 +64,7 @@
                             <div class="mesa-card"
                                 [class.locked]="mesa.locked"
                                 [class.blackout]="mesa.blackout"
-                                [class.mesa-sup]="mesa.rol === 'SUPERIORES'">
+                                [class.mesa-sup]="mesa.tipo === 'SUPERIOR'">
                                 <div class="mesa-header">
                                     <div class="mesa-title-container">
                                         <span class="mesa-role-badge">{{ getMesaRoleLabel(mesa) }}</span>
@@ -107,7 +107,7 @@
                                     </div>
                                 </div>
 
-                                @if (mesa.rol === 'SUPERIORES') {
+                                @if (mesa.tipo === 'SUPERIOR') {
                                     <div class="mesa-queue mesa-queue-sup">
                                         @if (getSupMostrandoItem(mesa.id); as mostrando) {
                                             <div class="queue-item sup-mostrando-banner" [class]="getItemStatusClass(mostrando.status)">
@@ -121,8 +121,6 @@
                                                 </div>
                                             </div>
                                         }
-                                        <div class="queue-group-divider sup-divider-inf1">— INF1 —</div>
-                                        <div class="queue-group-divider sup-divider-inf2">— INF2 —</div>
                                         <div class="sup-column sup-column-inf1">
                                             @for (item of getSupQueueColumn(mesa.id, 0); track trackByItem($index, item)) {
                                                 <div class="queue-item" [class]="getItemStatusClass(item.status)">
