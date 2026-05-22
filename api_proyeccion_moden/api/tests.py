@@ -348,6 +348,95 @@ class PlanningFoundationTests(APITestCase):
         self.assertFalse(GrupoMesas.objects.filter(id=grupo_id).exists())
         self.assertEqual(Mesa.objects.filter(grupo_id=grupo_id).count(), 0)
 
+    def _crear_grupo(self, nombre="Grupo CRUD"):
+        response = self.client.post(
+            "/api/grupos-mesas/",
+            {"nombre": nombre, "usuario": self.user.id},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        return GrupoMesas.objects.get(id=response.data["id"])
+
+    def test_add_mesa_inferior_asigna_siguiente_indice_libre(self):
+        grupo = self._crear_grupo("Grupo INF Extra")
+
+        response = self.client.post(
+            f"/api/grupos-mesas/{grupo.id}/mesas/",
+            {"tipo": "INFERIOR"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["tipo"], "INFERIOR")
+        self.assertEqual(response.data["indice"], 3)
+        self.assertEqual(grupo.mesas.filter(tipo="INFERIOR").count(), 3)
+
+    def test_add_mesa_superior_asigna_siguiente_indice_libre(self):
+        grupo = self._crear_grupo("Grupo SUP Extra")
+
+        response = self.client.post(
+            f"/api/grupos-mesas/{grupo.id}/mesas/",
+            {"tipo": "SUPERIOR"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["tipo"], "SUPERIOR")
+        self.assertEqual(response.data["indice"], 2)
+
+    def test_add_mesa_rechaza_tipo_invalido(self):
+        grupo = self._crear_grupo("Grupo Tipo Invalido")
+
+        response = self.client.post(
+            f"/api/grupos-mesas/{grupo.id}/mesas/",
+            {"tipo": "XYZ"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_destroy_mesa_rechaza_la_unica_superior_del_grupo(self):
+        grupo = self._crear_grupo("Grupo Unica SUP")
+        mesa_sup = grupo.mesas.get(tipo="SUPERIOR")
+
+        response = self.client.delete(f"/api/mesas/{mesa_sup.id}/")
+
+        self.assertEqual(response.status_code, 409)
+        self.assertTrue(Mesa.objects.filter(id=mesa_sup.id).exists())
+
+    def test_destroy_mesa_permite_borrar_si_hay_otra_del_mismo_tipo(self):
+        grupo = self._crear_grupo("Grupo Dos INF")
+        mesa_inf_2 = grupo.mesas.get(rol="INFERIOR_2")
+
+        response = self.client.delete(f"/api/mesas/{mesa_inf_2.id}/")
+
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(Mesa.objects.filter(id=mesa_inf_2.id).exists())
+        self.assertEqual(grupo.mesas.filter(tipo="INFERIOR").count(), 1)
+
+    def test_destroy_mesa_rechaza_si_tiene_device_sin_force(self):
+        grupo = self._crear_grupo("Grupo Device")
+        mesa_inf_2 = grupo.mesas.get(rol="INFERIOR_2")
+        mesa_inf_2.device_token_hash = "x" * 64
+        mesa_inf_2.save(update_fields=["device_token_hash"])
+
+        response = self.client.delete(f"/api/mesas/{mesa_inf_2.id}/")
+
+        self.assertEqual(response.status_code, 409)
+        self.assertTrue(response.data.get("device_vinculado"))
+        self.assertTrue(Mesa.objects.filter(id=mesa_inf_2.id).exists())
+
+    def test_destroy_mesa_con_force_borra_aunque_tenga_device(self):
+        grupo = self._crear_grupo("Grupo Device Force")
+        mesa_inf_2 = grupo.mesas.get(rol="INFERIOR_2")
+        mesa_inf_2.device_token_hash = "y" * 64
+        mesa_inf_2.save(update_fields=["device_token_hash"])
+
+        response = self.client.delete(f"/api/mesas/{mesa_inf_2.id}/?force=true")
+
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(Mesa.objects.filter(id=mesa_inf_2.id).exists())
+
     def test_import_technical_data_from_json_creates_phase_details(self):
         technical_file = SimpleUploadedFile(
             "detalles.json",

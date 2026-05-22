@@ -20,7 +20,7 @@ from rest_framework.views import APIView
 
 from api.serializers import (
     ProyectoSerializer, PlantaSerializer, UserSerializer, ModuloSerializer,
-    ImagenSerializer, MesaSerializer,
+    ImagenSerializer, MesaSerializer, MesaResumenGrupoSerializer,
     ModuloQueueSerializer, ModuloQueueItemSerializer, MesaQueueItemSerializer,
     FotoFabricacionSerializer, GrupoMesasSerializer, DetalleModuloFaseSerializer,
     GrupoBastidorSerializer
@@ -31,7 +31,7 @@ from api.models import (
     FotoFabricacion, GrupoMesas, GrupoMesasProyecto,
     DetalleModuloFase, MesaQueueStatus, ModuloEstado, Fase,
     GrupoBastidor, MaterialPieza, MaterialInformado, MaterialOrigenCheck,
-    MaterialTipo,
+    MaterialTipo, MesaTipo, MesaRol,
 )
 from django.utils import timezone
 from rest_framework.authtoken.views import ObtainAuthToken
@@ -1674,6 +1674,51 @@ class MesaViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(usuario_id=usuario_id)
         return queryset
 
+    def destroy(self, request, *args, **kwargs):
+        """Elimina una mesa con guardarrailes:
+
+        - No permite borrar la unica mesa INFERIOR/SUPERIOR de un grupo
+          (el planificador necesita al menos una de cada).
+        - Si la mesa tiene cola activa (EN_COLA/MOSTRANDO) o un dispositivo
+          vinculado, exige `?force=true` para confirmar.
+        - Las relaciones CASCADE limpian MesaQueueItem y PairingSession.
+        """
+        mesa = self.get_object()
+        force = str(request.query_params.get('force', '')).lower() in ('true', '1', 'yes')
+
+        if mesa.grupo_id and mesa.tipo in (MesaTipo.INFERIOR, MesaTipo.SUPERIOR):
+            same_type_count = Mesa.objects.filter(
+                grupo_id=mesa.grupo_id,
+                tipo=mesa.tipo,
+            ).count()
+            if same_type_count <= 1:
+                return Response(
+                    {
+                        'detail': (
+                            f'No se puede eliminar la unica mesa {mesa.tipo} del grupo. '
+                            'Crea otra antes de borrar esta.'
+                        ),
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+        has_active = mesa.queue_items.filter(status__in=ACTIVE_QUEUE_STATUSES).exists()
+        has_device = bool(mesa.device_token_hash)
+        if (has_active or has_device) and not force:
+            return Response(
+                {
+                    'detail': (
+                        'La mesa tiene cola activa o dispositivo vinculado. '
+                        'Reintenta con ?force=true para confirmar el borrado.'
+                    ),
+                    'cola_activa': has_active,
+                    'device_vinculado': has_device,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        return super().destroy(request, *args, **kwargs)
+
     @action(detail=True, methods=['get'])
     def queue_items(self, request, pk=None):
         """Get the work queue for a desk."""
@@ -1804,6 +1849,68 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         with transaction.atomic():
             instance.mesas.all().delete()
             instance.delete()
+
+    @staticmethod
+    def _derivar_rol_legacy(tipo, indice):
+        """Mapea (tipo, indice) al campo rol legacy para retrocompat.
+
+        Mientras `rol` siga vivo en el modelo, solo los tres roles
+        historicos (INFERIOR_1, INFERIOR_2, SUPERIORES) tienen un valor
+        significativo. Cualquier mesa extra (INF3+, SUP2+, LEGACY) cae
+        en MesaRol.LEGACY hasta que Fase 6 elimine el campo.
+        """
+        if tipo == MesaTipo.INFERIOR and indice == 1:
+            return MesaRol.INFERIOR_1
+        if tipo == MesaTipo.INFERIOR and indice == 2:
+            return MesaRol.INFERIOR_2
+        if tipo == MesaTipo.SUPERIOR and indice == 1:
+            return MesaRol.SUPERIORES
+        return MesaRol.LEGACY
+
+    @action(detail=True, methods=['post'], url_path='mesas')
+    def add_mesa(self, request, pk=None):
+        """Crea una mesa nueva dentro del grupo.
+
+        Body: {"tipo": "INFERIOR" | "SUPERIOR" | "LEGACY"}
+        El indice se asigna automaticamente al siguiente libre dentro
+        del grupo para ese tipo. El nombre se genera como
+        "<grupo> INF{n}" / "<grupo> SUP{n}" / "<grupo> EXTRA{n}".
+        """
+        grupo = self.get_object()
+        self._check_grupo_access(grupo)
+
+        tipo = (request.data.get('tipo') or '').upper()
+        if tipo not in MesaTipo.values:
+            return Response(
+                {'detail': f'tipo debe ser uno de {list(MesaTipo.values)}'},
+                status=400,
+            )
+
+        with transaction.atomic():
+            usados = set(
+                grupo.mesas.filter(tipo=tipo).values_list('indice', flat=True)
+            )
+            siguiente_indice = 1
+            while siguiente_indice in usados:
+                siguiente_indice += 1
+
+            if tipo == MesaTipo.INFERIOR:
+                suffix = f'INF{siguiente_indice}'
+            elif tipo == MesaTipo.SUPERIOR:
+                suffix = f'SUP{siguiente_indice}'
+            else:
+                suffix = f'EXTRA{siguiente_indice}'
+
+            mesa = Mesa.objects.create(
+                nombre=f'{grupo.nombre} {suffix}',
+                usuario=grupo.usuario,
+                grupo=grupo,
+                tipo=tipo,
+                indice=siguiente_indice,
+                rol=self._derivar_rol_legacy(tipo, siguiente_indice),
+            )
+
+        return Response(MesaResumenGrupoSerializer(mesa).data, status=201)
 
     def _check_grupo_access(self, grupo):
         from rest_framework.exceptions import PermissionDenied
