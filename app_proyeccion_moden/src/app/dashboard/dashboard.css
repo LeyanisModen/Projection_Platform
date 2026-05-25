@@ -1720,17 +1720,29 @@
   letter-spacing: 0.05em;
 }
 
-.mesa-badge.inactiva {
-  background: transparent;
-  border: 1px solid #b8bcc4;
-  color: #6c757d;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+.mesa-card.mesa-inactiva {
+  /* Sin grayscale/opacity: la card sigue limpia y el estado lo cuenta
+     el bloque .mesa-empty-inactiva centrado. */
+  background: #fafbfc;
 }
 
-.mesa-card.mesa-inactiva {
-  opacity: 0.72;
-  filter: grayscale(0.45);
+.mesa-empty-inactiva {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  color: #adb5bd;
+  text-align: center;
+}
+
+.mesa-empty-text {
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: #868e96;
 }
 
 .gestionar-mesa-row.mesa-inactiva {

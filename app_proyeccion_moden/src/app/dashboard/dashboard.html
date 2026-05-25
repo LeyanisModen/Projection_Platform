@@ -71,7 +71,6 @@
                                         <span class="mesa-tipo-chip">{{ getMesaTipoLabel(mesa) }}</span>
                                     </div>
                                     <div class="mesa-header-actions">
-                                        @if (!mesa.activa) { <span class="mesa-badge inactiva">DESACTIVADA</span> }
                                         @if (mesa.locked) { <span class="mesa-badge locked">LOCK</span> }
                                         @if (mesa.blackout) { <span class="mesa-badge blackout">OFF</span> }
                                         @if (mesa.is_linked && mesa.capture_service_online === false) {
@@ -108,7 +107,19 @@
                                     </div>
                                 </div>
 
-                                @if (mesa.tipo === 'SUPERIOR') {
+                                @if (!mesa.activa) {
+                                    <div class="mesa-empty-inactiva">
+                                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none"
+                                            stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+                                            stroke-linejoin="round" aria-hidden="true">
+                                            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                                            <line x1="8" y1="21" x2="16" y2="21"></line>
+                                            <line x1="12" y1="17" x2="12" y2="21"></line>
+                                            <line x1="3" y1="3" x2="21" y2="21"></line>
+                                        </svg>
+                                        <span class="mesa-empty-text">DESACTIVADA</span>
+                                    </div>
+                                } @else if (mesa.tipo === 'SUPERIOR') {
                                     <div class="mesa-queue mesa-queue-sup">
                                         @if (getSupMostrandoItem(mesa.id); as mostrando) {
                                             <div class="queue-item sup-mostrando-banner" [class]="getItemStatusClass(mostrando.status)">
