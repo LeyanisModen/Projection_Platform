@@ -636,6 +636,10 @@ export class Dashboard implements OnInit, OnDestroy {
     this.api.colaGrupoMesasRemove(grupo.id, proyectoId).subscribe({
       next: (updated) => {
         this.applyGestionarGrupoUpdate(updated);
+        // El backend borro items del proyecto en las mesas y replano
+        // los restantes: refrescamos colas para que los cards reflejen
+        // el nuevo estado inmediatamente.
+        this.loadMesas();
         this.gestionarBusy = false;
         this.cdr.detectChanges();
       },

@@ -2145,7 +2145,12 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'], url_path='cola/remove')
     def cola_remove(self, request, pk=None):
-        """Quita un proyecto de la cola. No desanula nada de lo ya fabricado."""
+        """Quita un proyecto de la cola y limpia sus items activos en las
+        mesas del grupo. Los items anclados (bastidor INF en curso o
+        item SUP con foto) se preservan; el resto se borra. Tras la
+        limpieza, replanifica los proyectos restantes en append para
+        que rellenen el hueco.
+        """
         grupo = self.get_object()
         self._check_grupo_access(grupo)
 
@@ -2154,14 +2159,36 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
             return Response({'detail': "Campo 'proyecto' requerido."}, status=400)
 
         with transaction.atomic():
-            deleted, _ = grupo.proyectos_cola.filter(proyecto_id=proyecto_id).delete()
-            if not deleted:
+            if not grupo.proyectos_cola.filter(proyecto_id=proyecto_id).exists():
                 return Response({'detail': 'El proyecto no estaba en la cola.'}, status=404)
-            # Compactar orden (0, 1, 2, ...)
+
+            # Borrar items activos del proyecto removido, preservando los
+            # anclados para no perder trabajo en curso.
+            anchored_ids = _collect_anchored_item_ids_for_grupo(grupo)
+            MesaQueueItem.objects.filter(
+                mesa__grupo=grupo,
+                modulo__proyecto_id=proyecto_id,
+                status__in=ACTIVE_QUEUE_STATUSES,
+            ).exclude(id__in=anchored_ids).delete()
+
+            # Quitar el proyecto de la cola y compactar orden (0, 1, 2, ...).
+            grupo.proyectos_cola.filter(proyecto_id=proyecto_id).delete()
             for index, entry in enumerate(grupo.proyectos_cola.order_by('orden', 'id')):
                 if entry.orden != index:
                     entry.orden = index
                     entry.save(update_fields=['orden'])
+
+            # Replan los proyectos restantes en append para que rellenen
+            # los huecos liberados por los items borrados.
+            entries = list(
+                grupo.proyectos_cola.select_related('proyecto').order_by('orden', 'id')
+            )
+            for entry in entries:
+                try:
+                    self._build_group_plan(grupo, entry.proyecto, request.user, append_mode=True)
+                except Exception:
+                    pass
+
             self._sync_proyecto_actual(grupo)
 
         grupo.refresh_from_db()
