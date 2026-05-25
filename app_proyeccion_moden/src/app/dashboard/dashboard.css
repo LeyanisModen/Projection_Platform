@@ -1664,6 +1664,28 @@
   height: 520px;
   min-width: 0;
   overflow: hidden;
+  position: relative;
+}
+
+/* Caption flotante en la esquina inferior derecha del card cuando hay
+   items que el clipping deja fuera de vista. Estimacion via JS
+   (estimateMesaVisibleCount) por items + dividers. */
+.mesa-overflow-caption {
+  position: absolute;
+  bottom: 6px;
+  right: 10px;
+  z-index: 1;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #6c757d;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(2px);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  padding: 3px 9px;
+  border-radius: 10px;
+  pointer-events: none;
+  letter-spacing: 0.02em;
+  font-style: italic;
 }
 
 .mesa-header {
