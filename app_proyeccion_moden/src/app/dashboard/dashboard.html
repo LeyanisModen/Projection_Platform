@@ -70,7 +70,6 @@
                                     <div class="mesa-title-container">
                                         <span class="mesa-role-badge">{{ getMesaRoleLabel(mesa) }}</span>
                                         <span class="mesa-tipo-chip">{{ getMesaTipoLabel(mesa) }}</span>
-                                        <h3>{{ mesa.nombre }}</h3>
                                     </div>
                                     <div class="mesa-header-actions">
                                         @if (!mesa.activa) { <span class="mesa-badge inactiva">DESACTIVADA</span> }
@@ -706,8 +705,22 @@
                     <section class="gestionar-section">
                         <h4>Cola de proyectos</h4>
 
+                        <div class="cola-add-row">
+                            <select [(ngModel)]="gestionarAddProyectoId" class="gestionar-input">
+                                <option [ngValue]="null">Selecciona un proyecto para añadir…</option>
+                                @for (p of proyectosDisponibles(gestionandoGrupo); track p.id) {
+                                    <option [ngValue]="p.id">{{ p.nombre }}</option>
+                                }
+                            </select>
+                            <button type="button" class="btn-add-cola"
+                                [disabled]="!gestionarAddProyectoId || gestionarBusy"
+                                (click)="addProyectoToCola()">
+                                Añadir
+                            </button>
+                        </div>
+
                         @if (gestionandoGrupo.proyectos_cola.length === 0) {
-                            <p class="gestionar-empty">No hay proyectos en cola. Añade uno abajo.</p>
+                            <p class="gestionar-empty">No hay proyectos en cola. Añade uno arriba.</p>
                         } @else {
                             <ul class="cola-list" cdkDropList (cdkDropListDropped)="onColaDrop($event)">
                                 @for (entry of gestionandoGrupo.proyectos_cola; track entry.id; let i = $index) {
@@ -730,21 +743,22 @@
                                 }
                             </ul>
                         }
-
-                        <div class="cola-add-row">
-                            <select [(ngModel)]="gestionarAddProyectoId" class="gestionar-input">
-                                <option [ngValue]="null">Selecciona un proyecto para añadir…</option>
-                                @for (p of proyectosDisponibles(gestionandoGrupo); track p.id) {
-                                    <option [ngValue]="p.id">{{ p.nombre }}</option>
-                                }
-                            </select>
-                            <button type="button" class="btn-add-cola"
-                                [disabled]="!gestionarAddProyectoId || gestionarBusy"
-                                (click)="addProyectoToCola()">
-                                Añadir
-                            </button>
-                        </div>
                     </section>
+                </div>
+
+                <div class="gestionar-modal-footer">
+                    <button type="button"
+                        class="btn-aceptar-gestionar"
+                        [disabled]="gestionarAplicandoCambios"
+                        (click)="closeGestionarModal()">
+                        @if (gestionarAplicandoCambios) {
+                            Aplicando…
+                        } @else if (cambiosMesasPendientes().length > 0) {
+                            Aplicar y cerrar
+                        } @else {
+                            Cerrar
+                        }
+                    </button>
                 </div>
             </div>
         </div>

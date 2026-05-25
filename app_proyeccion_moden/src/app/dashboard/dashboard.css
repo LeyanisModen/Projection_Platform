@@ -1730,6 +1730,36 @@
   opacity: 0.6;
 }
 
+.gestionar-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  border-top: 1px solid #eee;
+  padding-top: 12px;
+  margin-top: 4px;
+}
+
+.btn-aceptar-gestionar {
+  padding: 8px 22px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  background: var(--accent-orange, #ff6b35);
+  color: #fff;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  letter-spacing: 0.03em;
+  transition: filter 0.12s;
+}
+
+.btn-aceptar-gestionar:hover:not(:disabled) {
+  filter: brightness(0.95);
+}
+
+.btn-aceptar-gestionar:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .mesa-estado-switch {
   display: inline-flex;
   border: 1px solid #ccc;
