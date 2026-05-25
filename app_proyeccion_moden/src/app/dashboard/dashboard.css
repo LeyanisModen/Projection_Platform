@@ -1606,19 +1606,11 @@
 
 .mesas-grid {
   display: grid;
-  /* Layout: INF1 (30%) | INF2 (30%) | SUP (40%) */
-  grid-template-columns: 3fr 3fr 4fr;
-  gap: 24px;
+  /* Mesas con ancho uniforme. minmax(260px, 1fr) deja que entren cuantas
+     quepan en la fila y reparte el espacio sobrante a partes iguales. */
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
   overflow-y: auto;
-}
-
-@media (max-width: 1100px) {
-  .mesas-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-  .mesa-card.mesa-sup {
-    grid-column: 1 / -1;
-  }
 }
 
 @media (max-width: 768px) {
@@ -2048,6 +2040,31 @@
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.queue-drag-handle {
+  color: #b8bcc4;
+  cursor: grab;
+  padding: 0 8px 0 0;
+  font-size: 0.85rem;
+  user-select: none;
+}
+
+.queue-drag-handle:hover {
+  color: #6a6f78;
+}
+
+.queue-item.cdk-drag-preview {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+  background: #fff;
+}
+
+.queue-item.cdk-drag-placeholder {
+  opacity: 0.3;
+}
+
+.cdk-drop-list-dragging .queue-item:not(.cdk-drag-placeholder) {
+  transition: transform 200ms cubic-bezier(0, 0, 0.2, 1);
 }
 
 .queue-item-fase {

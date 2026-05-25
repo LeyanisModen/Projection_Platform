@@ -64,7 +64,6 @@
                             <div class="mesa-card"
                                 [class.locked]="mesa.locked"
                                 [class.blackout]="mesa.blackout"
-                                [class.mesa-sup]="mesa.tipo === 'SUPERIOR'"
                                 [class.mesa-inactiva]="!mesa.activa">
                                 <div class="mesa-header">
                                     <div class="mesa-title-container">
@@ -156,14 +155,20 @@
                                         }
                                     </div>
                                 } @else {
-                                    <div class="mesa-queue">
+                                    <div class="mesa-queue"
+                                        cdkDropList
+                                        [cdkDropListData]="getVisibleMesaQueueItems(mesa.id)"
+                                        (cdkDropListDropped)="onClienteMesaQueueDrop($event, mesa.id)">
                                         @for (item of getVisibleMesaQueueItems(mesa.id); track trackByItem($index, item)) {
                                             @if (shouldShowGroupDivider(item, $index, mesa)) {
                                                 <div class="queue-group-divider">
                                                     — {{ getItemGrupoLabel(item) }} —
                                                 </div>
                                             }
-                                            <div class="queue-item" [class]="getItemStatusClass(item.status)">
+                                            <div class="queue-item" [class]="getItemStatusClass(item.status)" cdkDrag>
+                                                <span class="queue-drag-handle" cdkDragHandle title="Arrastra para reordenar">
+                                                    <i class="fa fa-grip-vertical" aria-hidden="true"></i>
+                                                </span>
                                                 <div class="queue-item-info">
                                                     <span class="queue-item-nombre">{{ item.modulo_nombre }}</span>
                                                     <span class="queue-item-status">{{ item.status }}</span>

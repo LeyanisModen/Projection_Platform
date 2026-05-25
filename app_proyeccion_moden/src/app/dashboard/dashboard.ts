@@ -1850,6 +1850,53 @@ export class Dashboard implements OnInit, OnDestroy {
   // =========================================================================
   // QUEUE REORDERING
   // =========================================================================
+
+  /**
+   * Reorder de items dentro de la cola visible de UNA mesa (dashboard
+   * cliente). El cdkDropList trabaja con la sublista visible (cap
+   * diario); aqui combinamos esa sublista reordenada con los items
+   * ocultos (que mantienen su orden relativo) y mandamos al backend un
+   * payload con positions globales 0..N. El primer visible no puede
+   * desplazarse si es MOSTRANDO -- esa proteccion la hace el backend
+   * via su lectura del status, pero el handler tambien rechaza el drop
+   * a index 0 para no parpadear la UI.
+   */
+  onClienteMesaQueueDrop(event: CdkDragDrop<MesaQueueItem[]>, mesaId: number): void {
+    if (event.previousContainer !== event.container) return;
+    if (event.previousIndex === event.currentIndex) return;
+
+    const visible = event.container.data;
+    const hasMostrando = visible.some(i => i.status === 'MOSTRANDO');
+    if (hasMostrando && event.currentIndex === 0) {
+      // El MOSTRANDO es ancla visual; redirigir a la posicion 1.
+      event.currentIndex = 1;
+    }
+    moveItemInArray(visible, event.previousIndex, event.currentIndex);
+
+    // Reconstruir la cache local: visibles (reordenados) + ocultos (orden
+    // original) + HECHO al final, para no perder lo que no esta en el
+    // dropList.
+    const cache = this.mesaQueueItems.get(mesaId) || [];
+    const active = cache.filter(i => i.status !== 'HECHO');
+    const done = cache.filter(i => i.status === 'HECHO');
+    const visibleIds = new Set(visible.map(i => i.id));
+    const hidden = active.filter(i => !visibleIds.has(i.id));
+    const newActive = [...visible, ...hidden];
+    this.mesaQueueItems.set(mesaId, [...newActive, ...done]);
+    this.cdr.detectChanges();
+
+    // Payload con positions globales para todos los activos.
+    const payload = newActive.map((item, index) => ({ id: item.id, position: index }));
+    this.api.reorderMesaQueue(payload).subscribe({
+      next: () => { /* silent */ },
+      error: () => {
+        // Revert recargando desde backend.
+        this.loadMesaQueueItems(mesaId);
+        alert('No se pudo guardar el nuevo orden.');
+      },
+    });
+  }
+
   onMesaQueueDrop(event: CdkDragDrop<MesaQueueItem[]>, mesaId: number): void {
     if (event.previousContainer === event.container) {
       // 1. Check if first item is locked (MOSTRANDO)
