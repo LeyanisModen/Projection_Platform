@@ -2130,6 +2130,19 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         except Proyecto.DoesNotExist:
             return Response({'detail': 'Proyecto no encontrado.'}, status=404)
 
+        # Guardarrail: _plan_cola expulsa automaticamente proyectos sin
+        # modulos pendientes. Sin esta validacion, anadir un proyecto
+        # terminado a la cola produce un round-trip silencioso (anade y
+        # quita) que en la UI se ve como 'no pasa nada'.
+        has_pending = proyecto.modulos.filter(cerrado=False).filter(
+            Q(inferior_hecho=False) | Q(superior_hecho=False)
+        ).exists()
+        if not has_pending and proyecto.modulos.exists():
+            return Response(
+                {'detail': 'Este proyecto no tiene modulos pendientes (todos fabricados o cerrados).'},
+                status=400,
+            )
+
         with transaction.atomic():
             if grupo.proyectos_cola.filter(proyecto=proyecto).exists():
                 return Response({'detail': 'El proyecto ya esta en la cola.'}, status=400)

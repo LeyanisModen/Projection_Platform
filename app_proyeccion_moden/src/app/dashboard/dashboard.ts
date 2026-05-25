@@ -577,11 +577,21 @@ export class Dashboard implements OnInit, OnDestroy {
     this.intentarCerrarGestionarModal();
   }
 
-  /** Projects that aren't already queued on this grupo — used for the 'add' dropdown. */
+  /** Projects that aren't already queued on this grupo and still have
+   * pending modulos -- used for the 'add' dropdown. Proyectos sin
+   * pendientes son expulsados por _plan_cola en el backend al replan,
+   * asi que no tiene sentido ofrecerlos. */
   proyectosDisponibles(grupo: GrupoMesas | null): Proyecto[] {
-    if (!grupo) return this.proyectos;
-    const queued = new Set(grupo.proyectos_cola.map(e => e.proyecto));
-    return this.proyectos.filter(p => !queued.has(p.id));
+    const all = grupo
+      ? this.proyectos.filter(p => !new Set(grupo.proyectos_cola.map(e => e.proyecto)).has(p.id))
+      : this.proyectos;
+    return all.filter(p => {
+      const total = p.modulos_count ?? 0;
+      const done = p.modulos_completados ?? 0;
+      // Sin total: lo mostramos (todavia no se han creado modulos).
+      // Con total: solo si quedan pendientes.
+      return total === 0 || done < total;
+    });
   }
 
   /** Persist grupo rename (only if it actually changed). */
