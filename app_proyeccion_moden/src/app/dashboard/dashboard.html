@@ -756,13 +756,7 @@
                         class="btn-aceptar-gestionar"
                         [disabled]="gestionarAplicandoCambios"
                         (click)="closeGestionarModal()">
-                        @if (gestionarAplicandoCambios) {
-                            Aplicando…
-                        } @else if (cambiosMesasPendientes().length > 0) {
-                            Aplicar y cerrar
-                        } @else {
-                            Cerrar
-                        }
+                        {{ gestionarAplicandoCambios ? 'Aplicando…' : 'Aceptar y cerrar' }}
                     </button>
                 </div>
             </div>

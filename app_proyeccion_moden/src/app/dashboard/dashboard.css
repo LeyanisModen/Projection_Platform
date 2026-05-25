@@ -1017,8 +1017,17 @@
 
 .cola-handle {
   cursor: grab;
-  color: #adb5bd;
-  padding: 0 4px;
+  color: #6c757d;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 1rem;
+  transition: background 0.12s, color 0.12s;
+  user-select: none;
+}
+
+.cola-handle:hover {
+  background: rgba(255, 107, 53, 0.12);
+  color: var(--accent-orange, #ff6b35);
 }
 
 .cola-handle:active {
