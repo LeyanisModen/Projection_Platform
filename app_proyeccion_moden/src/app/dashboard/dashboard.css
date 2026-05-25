@@ -1658,9 +1658,11 @@
               0 1px 3px rgba(15, 23, 42, 0.06);
   display: flex;
   flex-direction: column;
-  min-height: 200px;
+  /* Altura fija para que todas las mesas se vean uniformes. La cola
+     interna recorta lo que no quepa via overflow:hidden -- aprovechando
+     el alto disponible mostramos lo maximo posible. */
+  height: 520px;
   min-width: 0;
-  height: 100%;
   overflow: hidden;
 }
 
@@ -1890,14 +1892,6 @@
   text-transform: uppercase;
 }
 
-.queue-more-caption {
-  text-align: center;
-  font-size: 0.75rem;
-  color: #6c757d;
-  padding: 8px 0 4px;
-  font-style: italic;
-}
-
 .queue-item {
   position: relative;
 }
@@ -1969,25 +1963,10 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
-  min-height: 100px;
+  overflow: hidden;
+  min-height: 0;
 }
 
-.mesa-queue .queue-more-caption {
-  /* Empuja el caption al fondo del card aunque haya pocos items, asi
-     todas las mesas alinean su pie. */
-  margin-top: auto;
-}
-
-
-.mesa-queue::-webkit-scrollbar {
-  width: 4px;
-}
-
-.mesa-queue::-webkit-scrollbar-thumb {
-  background: #ddd;
-  border-radius: 10px;
-}
 
 .cdk-drag-disabled {
   opacity: 0.8;

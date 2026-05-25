@@ -2169,21 +2169,16 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   /**
-   * Tope visual de items por mesa. 15 es el equilibrio: cubre la
-   * altura tipica de un card sin truncar tan pronto como 10. Las mesas
-   * con menos items dejan el caption pegado al fondo via margin-top:auto.
-   * Lo que pase de 15 cae al caption "+N más programados".
+   * Tope "duro" de items por mesa. La altura del card limita visualmente
+   * cuantos se ven (via overflow:hidden en CSS); esto solo evita
+   * renderizar cantidades absurdas si una mesa tuviera cientos de items.
    */
-  private readonly MAX_VISIBLE_ITEMS = 15;
+  private readonly MAX_VISIBLE_ITEMS = 50;
 
-  /** Items visibles en la cola de una mesa (mismo render para INF y SUP). */
+  /** Items renderizados en la cola de una mesa. El CSS del card recorta
+   * los que no caben por altura -- por eso no hay caption '+N más'. */
   getVisibleMesaQueueItems(mesaId: number): MesaQueueItem[] {
     return this.getMesaQueueItems(mesaId).slice(0, this.MAX_VISIBLE_ITEMS);
-  }
-
-  getHiddenMesaQueueCount(mesaId: number): number {
-    const total = this.getMesaQueueItems(mesaId).length;
-    return Math.max(0, total - this.MAX_VISIBLE_ITEMS);
   }
 
 
