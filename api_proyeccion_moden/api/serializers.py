@@ -408,6 +408,9 @@ class MesaQueueItemSerializer(serializers.ModelSerializer):
     mesa_nombre = serializers.CharField(source='mesa.nombre', read_only=True)
     modulo_planta_id = serializers.SerializerMethodField()
     modulo_proyecto_id = serializers.SerializerMethodField()
+    modulo_proyecto_nombre = serializers.CharField(
+        source='modulo.proyecto.nombre', read_only=True, default=''
+    )
     grupo_bastidor_indice = serializers.IntegerField(
         source='modulo.grupo_bastidor.indice', read_only=True, default=None
     )
@@ -420,7 +423,8 @@ class MesaQueueItemSerializer(serializers.ModelSerializer):
         model = MesaQueueItem
         fields = [
             "id", "mesa", "mesa_nombre",
-            "modulo", "modulo_nombre", "modulo_planta_id", "modulo_proyecto_id",
+            "modulo", "modulo_nombre", "modulo_planta_id",
+            "modulo_proyecto_id", "modulo_proyecto_nombre",
             "fase", "imagen", "imagen_url",
             "position", "plan_group_index",
             "grupo_bastidor_indice", "grupo_bastidor_nombre",

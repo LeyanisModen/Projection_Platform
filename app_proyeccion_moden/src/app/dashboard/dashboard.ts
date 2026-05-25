@@ -2117,9 +2117,9 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   /**
-   * Muestra separador "Grupo N" antes de un item si el plan_group_index
-   * difiere del item anterior. Solo se aplica a mesas inferiores;
-   * en mesas SUPERIORES no tiene sentido agrupar visualmente.
+   * Muestra separador "<Proyecto> · Grupo N" antes de un item si cambia
+   * el plan_group_index O el proyecto respecto al item anterior. Solo se
+   * aplica a mesas inferiores; en SUP no tiene sentido agrupar visualmente.
    */
   shouldShowGroupDivider(item: MesaQueueItem, index: number, mesa: Mesa): boolean {
     if (mesa.tipo === 'SUPERIOR') return false;
@@ -2127,8 +2127,9 @@ export class Dashboard implements OnInit, OnDestroy {
     if (current == null) return false;
     if (index === 0) return true;
     const items = this.getMesaQueueItems(mesa.id);
-    const previous = items[index - 1]?.plan_group_index;
-    return current !== previous;
+    const prev = items[index - 1];
+    if (!prev) return true;
+    return current !== prev.plan_group_index || item.modulo_proyecto_id !== prev.modulo_proyecto_id;
   }
 
   getItemGrupoIndice(item: MesaQueueItem): number | null {
@@ -2136,24 +2137,28 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   /**
-   * Divider label for queue items. Reads the grupo_bastidor name
-   * stored on the backend (seeded as "Grupo N" on creation, editable
-   * from the admin). The value restarts per project because each
-   * project owns its own GrupoBastidor rows.
+   * Label del divider "<Proyecto> · <Grupo>". Cuando hay varios
+   * proyectos en cola de una mesa los GrupoBastidor reinician su
+   * numeracion en cada uno, asi que sin el proyecto delante el
+   * operario no distingue 'Grupo 1' de P5 vs 'Grupo 1' de P3.
    */
   getItemGrupoLabel(item: MesaQueueItem): string {
-    const nombre = (item.grupo_bastidor_nombre || '').trim();
-    if (nombre) return nombre;
-    const indice = item.grupo_bastidor_indice;
-    return indice != null ? `Grupo ${indice}` : 'Grupo';
+    const grupoName = (item.grupo_bastidor_nombre || '').trim();
+    const grupoIdx = item.grupo_bastidor_indice;
+    const grupo = grupoName || (grupoIdx != null ? `Grupo ${grupoIdx}` : 'Grupo');
+    const proyecto = (item.modulo_proyecto_nombre || '').trim();
+    return proyecto ? `${proyecto} · ${grupo}` : grupo;
   }
 
   /**
-   * Tope visual de items por mesa en el dashboard. Limite fijo y
-   * predecible: el card no se hace infinito y todas las mesas miden
-   * lo mismo. Lo que sobra cae al caption "+N más programados".
+   * Tope visual de items por mesa en el dashboard. Lo elevamos a 30
+   * para que las mesas con muchos items rellenen el espacio del card
+   * en lugar de quedar con hueco al final; el grid iguala alturas
+   * entre mesas, asi que la mesa mas larga marca el limite real visual
+   * y las cortas usan tanto espacio como puedan. Lo que pase de 30
+   * cae al caption "+N más programados".
    */
-  private readonly MAX_VISIBLE_ITEMS = 10;
+  private readonly MAX_VISIBLE_ITEMS = 30;
 
   /** Items visibles en la cola de una mesa (mismo render para INF y SUP). */
   getVisibleMesaQueueItems(mesaId: number): MesaQueueItem[] {
