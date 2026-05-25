@@ -2151,14 +2151,12 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   /**
-   * Tope visual de items por mesa en el dashboard. Lo elevamos a 30
-   * para que las mesas con muchos items rellenen el espacio del card
-   * en lugar de quedar con hueco al final; el grid iguala alturas
-   * entre mesas, asi que la mesa mas larga marca el limite real visual
-   * y las cortas usan tanto espacio como puedan. Lo que pase de 30
-   * cae al caption "+N más programados".
+   * Tope visual de items por mesa. 15 es el equilibrio: cubre la
+   * altura tipica de un card sin truncar tan pronto como 10. Las mesas
+   * con menos items dejan el caption pegado al fondo via margin-top:auto.
+   * Lo que pase de 15 cae al caption "+N más programados".
    */
-  private readonly MAX_VISIBLE_ITEMS = 30;
+  private readonly MAX_VISIBLE_ITEMS = 15;
 
   /** Items visibles en la cola de una mesa (mismo render para INF y SUP). */
   getVisibleMesaQueueItems(mesaId: number): MesaQueueItem[] {
