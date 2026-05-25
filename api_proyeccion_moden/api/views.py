@@ -1922,6 +1922,164 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         if not _is_admin(self.request.user) and grupo.usuario_id != self.request.user.id:
             raise PermissionDenied('No puedes gestionar grupos de otra ferralla')
 
+    def _collect_anchored_item_ids(self, grupo):
+        """IDs de MesaQueueItem que no deben moverse al cambiar tipos.
+
+        - Items INFERIOR cuyo bastidor (grupo_bastidor) tiene >=1 modulo
+          con inferior_hecho=True (bastidor 'en curso').
+        - Items SUPERIOR cuyo modulo tiene >=1 FotoFabricacion fase
+          SUPERIOR registrada (item 'a mitad del proceso').
+        """
+        active_items = MesaQueueItem.objects.filter(
+            mesa__grupo=grupo,
+            status__in=ACTIVE_QUEUE_STATUSES,
+        ).select_related('modulo')
+
+        # Bastidores con al menos 1 modulo inferior_hecho. La interseccion
+        # con active_items (que ya filtra por grupo) limita el resultado a
+        # los relevantes.
+        bastidores_en_curso = set(
+            Modulo.objects.filter(
+                grupo_bastidor__isnull=False,
+                inferior_hecho=True,
+            ).values_list('grupo_bastidor_id', flat=True)
+        )
+
+        # Modulos con foto de fase SUPERIOR (item 'en proceso').
+        modulos_sup_en_proceso = set(
+            FotoFabricacion.objects.filter(
+                mesa__grupo=grupo,
+                fase='SUPERIOR',
+            ).values_list('modulo_id', flat=True)
+        )
+
+        anchored = set()
+        for item in active_items:
+            if item.fase == 'INFERIOR':
+                gb_id = item.modulo.grupo_bastidor_id
+                if gb_id is not None and gb_id in bastidores_en_curso:
+                    anchored.add(item.id)
+            elif item.fase == 'SUPERIOR':
+                if item.modulo_id in modulos_sup_en_proceso:
+                    anchored.add(item.id)
+
+        return anchored
+
+    @staticmethod
+    def _apply_tipo_changes_and_compact_indices(grupo, final_tipos):
+        """Actualiza Mesa.tipo segun ``final_tipos`` (dict mesa_id->tipo) y
+        compacta indices a 1..N por tipo en el orden actual (indice, id).
+
+        Usa indices temporales >=10000 durante la reescritura para no
+        chocar con la unique constraint (grupo, tipo, indice). PostgreSQL
+        valida constraints al final de la transaccion para constraints
+        deferred, pero las UniqueConstraint sin DEFERRABLE se validan al
+        instante, asi que la fase temporal es necesaria.
+        """
+        mesas = list(grupo.mesas.all().order_by('indice', 'id'))
+        TEMP_BASE = 10000
+
+        # Fase 1: asignar tipo final + indice temporal unico para
+        # liberar los huecos de la nueva configuracion.
+        for offset, mesa in enumerate(mesas, start=1):
+            mesa.tipo = final_tipos.get(mesa.id, mesa.tipo)
+            mesa.indice = TEMP_BASE + offset
+            mesa.save(update_fields=['tipo', 'indice'])
+
+        # Fase 2: recompactar a 1..N por tipo conservando el orden estable.
+        counters = {tipo: 0 for tipo in MesaTipo.values}
+        for mesa in mesas:
+            counters[mesa.tipo] += 1
+            mesa.indice = counters[mesa.tipo]
+            mesa.save(update_fields=['indice'])
+
+    @action(detail=True, methods=['post'], url_path='cambiar-tipos')
+    def cambiar_tipos(self, request, pk=None):
+        """Cambia el tipo de una o varias mesas del grupo y replanifica.
+
+        Body: {"cambios": [{"mesa_id": int, "tipo": "INFERIOR"|"SUPERIOR"}, ...]}
+
+        Items 'anclados' (bastidor INF en curso, item SUP con foto)
+        permanecen en su mesa actual aunque cambie de tipo. El resto se
+        borra y se redistribuye con la nueva configuracion. Atomico:
+        si alguna validacion falla no se aplica nada.
+        """
+        grupo = self.get_object()
+        self._check_grupo_access(grupo)
+
+        raw_cambios = request.data.get('cambios') or []
+        if not isinstance(raw_cambios, list) or not raw_cambios:
+            return Response(
+                {'detail': "'cambios' debe ser una lista no vacia."}, status=400,
+            )
+
+        cambios_por_mesa = {}
+        for entry in raw_cambios:
+            if not isinstance(entry, dict):
+                return Response({'detail': 'Cada cambio debe ser un objeto.'}, status=400)
+            mesa_id = entry.get('mesa_id')
+            nuevo_tipo = (entry.get('tipo') or '').upper()
+            if not isinstance(mesa_id, int):
+                return Response({'detail': 'mesa_id debe ser entero.'}, status=400)
+            if nuevo_tipo not in (MesaTipo.INFERIOR, MesaTipo.SUPERIOR):
+                return Response(
+                    {'detail': "tipo debe ser 'INFERIOR' o 'SUPERIOR'."}, status=400,
+                )
+            cambios_por_mesa[mesa_id] = nuevo_tipo
+
+        mesas_grupo = {mesa.id: mesa for mesa in grupo.mesas.all()}
+        for mesa_id in cambios_por_mesa:
+            if mesa_id not in mesas_grupo:
+                return Response(
+                    {'detail': f'La mesa {mesa_id} no pertenece a este grupo.'},
+                    status=400,
+                )
+
+        # Validar que tras los cambios queda >=1 INF y >=1 SUP.
+        final_tipos = {
+            mesa_id: cambios_por_mesa.get(mesa_id, mesa.tipo)
+            for mesa_id, mesa in mesas_grupo.items()
+        }
+        final_inf = sum(1 for t in final_tipos.values() if t == MesaTipo.INFERIOR)
+        final_sup = sum(1 for t in final_tipos.values() if t == MesaTipo.SUPERIOR)
+        if final_inf < 1 or final_sup < 1:
+            return Response(
+                {'detail': 'El grupo debe quedar con al menos 1 mesa INFERIOR y 1 SUPERIOR.'},
+                status=400,
+            )
+
+        # Si no hay cambios efectivos, salimos sin tocar nada.
+        if all(mesas_grupo[mid].tipo == t for mid, t in final_tipos.items()):
+            return Response({'detail': 'No hay cambios de tipo que aplicar.'}, status=400)
+
+        with transaction.atomic():
+            anchored_ids = self._collect_anchored_item_ids(grupo)
+
+            MesaQueueItem.objects.filter(
+                mesa__grupo=grupo,
+                status__in=ACTIVE_QUEUE_STATUSES,
+            ).exclude(id__in=anchored_ids).delete()
+
+            self._apply_tipo_changes_and_compact_indices(grupo, final_tipos)
+
+            entries = list(
+                grupo.proyectos_cola.select_related('proyecto').order_by('orden', 'id')
+            )
+            plan_summaries = []
+            for entry in entries:
+                plan_summaries.append(
+                    self._build_group_plan(grupo, entry.proyecto, request.user, append_mode=True)
+                )
+            self._sync_proyecto_actual(grupo)
+
+        grupo.refresh_from_db()
+        serializer = self.get_serializer(grupo)
+        return Response({
+            'status': 'ok',
+            'grupo': serializer.data,
+            'plans': plan_summaries,
+        })
+
     def _sync_proyecto_actual(self, grupo):
         """Mantiene GrupoMesas.proyecto_actual alineado con la cabeza de la cola."""
         head = grupo.proyectos_cola.order_by('orden', 'id').first()

@@ -664,7 +664,14 @@
                     </section>
 
                     <section class="gestionar-section">
-                        <h4>Mesas</h4>
+                        <div class="gestionar-section-header">
+                            <h4>Mesas</h4>
+                            <button type="button" class="btn-planificar"
+                                [disabled]="gestionarCambiandoTipos || cambiosTiposPendientes().length === 0"
+                                (click)="aplicarCambiosTipos()">
+                                {{ gestionarCambiandoTipos ? 'Aplicando…' : 'Aplicar cambios de tipo' }}
+                            </button>
+                        </div>
                         <div class="gestionar-mesa-list">
                             @for (mesa of getMesasForGrupo(gestionandoGrupo.id); track mesa.id) {
                                 <div class="gestionar-mesa-row">
@@ -675,9 +682,24 @@
                                         (blur)="saveGestionarMesaNombre(mesa)"
                                         (keydown.enter)="saveGestionarMesaNombre(mesa)"
                                         maxlength="200">
+                                    @if (mesa.tipo === 'INFERIOR' || mesa.tipo === 'SUPERIOR') {
+                                        <select class="gestionar-input gestionar-mesa-tipo"
+                                            [(ngModel)]="gestionarMesasTipos[mesa.id]"
+                                            [disabled]="gestionarCambiandoTipos"
+                                            title="Cambiar tipo (se aplica al pulsar 'Aplicar cambios de tipo')">
+                                            <option value="INFERIOR">INF</option>
+                                            <option value="SUPERIOR">SUP</option>
+                                        </select>
+                                    }
                                 </div>
                             }
                         </div>
+                        @if (cambiosTiposPendientes().length > 0) {
+                            <p class="gestionar-empty" style="color: #b58900;">
+                                Hay {{ cambiosTiposPendientes().length }} cambio(s) de tipo pendientes.
+                                Pulsa "Aplicar cambios de tipo" para redistribuir los módulos.
+                            </p>
+                        }
                     </section>
 
                     <section class="gestionar-section">

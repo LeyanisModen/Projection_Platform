@@ -538,26 +538,21 @@ class GrupoMesas(models.Model):
         return f"{self.usuario.username} - {self.nombre}"
 
     def ensure_default_mesas(self):
-        """Crea las mesas por defecto del grupo si todavia no existen.
+        """Crea las mesas por defecto del grupo solo si nace vacio.
 
-        Mantiene el default historico (2 inferiores + 1 superior). Si
-        la ferralla necesita mas o menos mesas, el admin puede
-        agregarlas/eliminarlas despues de crear el grupo. ``indice`` se
-        asigna como 1..N por tipo; el nombre se compone con el sufijo
-        legible.
+        Mantiene el default historico (2 inferiores + 1 superior) en el
+        momento del primer alta. Despues de eso no recrea nada, para que
+        las modificaciones del cliente (añadir/eliminar/cambiar tipo de
+        mesas) sean estables y no se reviertan en el siguiente replan.
         """
-        existing = {
-            (mesa.tipo, mesa.indice)
-            for mesa in self.mesas.all()
-        }
+        if self.mesas.exists():
+            return
         mesa_specs = [
             (MesaTipo.INFERIOR, 1, 'INF1'),
             (MesaTipo.INFERIOR, 2, 'INF2'),
             (MesaTipo.SUPERIOR, 1, 'SUP'),
         ]
         for tipo, indice, suffix in mesa_specs:
-            if (tipo, indice) in existing:
-                continue
             Mesa.objects.create(
                 nombre=f"{self.nombre} {suffix}",
                 usuario=self.usuario,

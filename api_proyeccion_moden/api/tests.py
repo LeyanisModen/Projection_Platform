@@ -14,7 +14,7 @@ from rest_framework.test import APITestCase
 
 from api.models import (
     Imagen, Mesa, MesaQueueItem, Modulo, Planta, Proyecto,
-    DetalleModuloFase, GrupoMesas
+    DetalleModuloFase, GrupoMesas, FotoFabricacion
 )
 
 
@@ -563,6 +563,179 @@ class PlanningFoundationTests(APITestCase):
         resp = self.client.delete(f"/api/mesas/{mesa_inf_1.id}/")
         # La regla impide borrar la ultima INFERIOR.
         self.assertEqual(resp.status_code, 409)
+
+    # =========================================================================
+    # CAMBIAR TIPOS (switch INF <-> SUP en mesas existentes)
+    # =========================================================================
+
+    def _setup_grupo_con_dos_inf_un_sup_y_un_modulo(self, nombre):
+        """Helper: crea proyecto+modulo+grupo y un plan inicial. Devuelve
+        (grupo, modulo)."""
+        self.project.bastidor_longitud_cm = 20
+        self.project.save(update_fields=["bastidor_longitud_cm"])
+        DetalleModuloFase.objects.create(
+            modulo=self.modulo, fase="INFERIOR", espesor_cm="10.00",
+        )
+        grupo = self._crear_grupo(nombre)
+        plan = self.client.post(
+            f"/api/grupos-mesas/{grupo.id}/planificar/",
+            {"proyecto_id": self.project.id}, format="json",
+        )
+        self.assertEqual(plan.status_code, 200)
+        return grupo, self.modulo
+
+    def test_cambiar_tipos_caso_feliz_redistribuye(self):
+        """Convertir INF2 -> SUP debe dejar 1 INF + 2 SUP y replanificar."""
+        grupo, _ = self._setup_grupo_con_dos_inf_un_sup_y_un_modulo("Grupo Switch")
+        mesa_inf_2 = grupo.mesas.get(tipo="INFERIOR", indice=2)
+
+        resp = self.client.post(
+            f"/api/grupos-mesas/{grupo.id}/cambiar-tipos/",
+            {"cambios": [{"mesa_id": mesa_inf_2.id, "tipo": "SUPERIOR"}]},
+            format="json",
+        )
+
+        self.assertEqual(resp.status_code, 200)
+        # Tras el cambio el grupo tiene 1 INF + 2 SUP.
+        self.assertEqual(grupo.mesas.filter(tipo="INFERIOR").count(), 1)
+        self.assertEqual(grupo.mesas.filter(tipo="SUPERIOR").count(), 2)
+        # Indices compactados.
+        sup_indices = sorted(grupo.mesas.filter(tipo="SUPERIOR").values_list("indice", flat=True))
+        self.assertEqual(sup_indices, [1, 2])
+
+    def test_cambiar_tipos_rechaza_si_quedaria_sin_inferior(self):
+        grupo, _ = self._setup_grupo_con_dos_inf_un_sup_y_un_modulo("Grupo Sin INF")
+        mesa_inf_1 = grupo.mesas.get(tipo="INFERIOR", indice=1)
+        mesa_inf_2 = grupo.mesas.get(tipo="INFERIOR", indice=2)
+
+        resp = self.client.post(
+            f"/api/grupos-mesas/{grupo.id}/cambiar-tipos/",
+            {"cambios": [
+                {"mesa_id": mesa_inf_1.id, "tipo": "SUPERIOR"},
+                {"mesa_id": mesa_inf_2.id, "tipo": "SUPERIOR"},
+            ]},
+            format="json",
+        )
+
+        self.assertEqual(resp.status_code, 400)
+        # No se aplico ningun cambio (atomico).
+        self.assertEqual(grupo.mesas.filter(tipo="INFERIOR").count(), 2)
+        self.assertEqual(grupo.mesas.filter(tipo="SUPERIOR").count(), 1)
+
+    def test_cambiar_tipos_ancla_bastidor_inf_en_curso(self):
+        """Si un bastidor tiene >=1 modulo inferior_hecho, el item INFERIOR
+        de los otros modulos del mismo bastidor queda anclado tras el cambio."""
+        from api.models import GrupoBastidor
+
+        self.project.bastidor_longitud_cm = 20
+        self.project.save(update_fields=["bastidor_longitud_cm"])
+        # Dos modulos en el mismo bastidor (caben los dos con ancho 10cm).
+        modulo_b = Modulo.objects.create(
+            nombre="M-02", proyecto=self.project, planta=self.planta,
+            ancho_cm="10.00",
+        )
+        self.modulo.ancho_cm = "10.00"
+        self.modulo.save(update_fields=["ancho_cm"])
+        gb = GrupoBastidor.objects.create(
+            proyecto=self.project, indice=1, nombre="GB1",
+        )
+        self.modulo.grupo_bastidor = gb
+        self.modulo.save(update_fields=["grupo_bastidor"])
+        modulo_b.grupo_bastidor = gb
+        modulo_b.save(update_fields=["grupo_bastidor"])
+        for m in (self.modulo, modulo_b):
+            DetalleModuloFase.objects.create(
+                modulo=m, fase="INFERIOR", espesor_cm="10.00",
+            )
+
+        grupo = self._crear_grupo("Grupo Ancla INF")
+        self.client.post(
+            f"/api/grupos-mesas/{grupo.id}/planificar/",
+            {"proyecto_id": self.project.id}, format="json",
+        )
+
+        # Marca M-01 como inferior_hecho (sin tocar el item).
+        self.modulo.inferior_hecho = True
+        self.modulo.actualizar_estado()
+
+        # M-02 sigue activo en alguna INF.
+        item_m2 = MesaQueueItem.objects.filter(
+            modulo=modulo_b, fase="INFERIOR", status__in=["EN_COLA", "MOSTRANDO"],
+        ).first()
+        self.assertIsNotNone(item_m2)
+        mesa_original = item_m2.mesa
+
+        # Convertimos la OTRA inferior (no la de M-02) a SUP.
+        otra_inf = grupo.mesas.filter(tipo="INFERIOR").exclude(id=mesa_original.id).first()
+        resp = self.client.post(
+            f"/api/grupos-mesas/{grupo.id}/cambiar-tipos/",
+            {"cambios": [{"mesa_id": otra_inf.id, "tipo": "SUPERIOR"}]},
+            format="json",
+        )
+
+        self.assertEqual(resp.status_code, 200)
+        # El item del bastidor en curso sigue en su mesa original.
+        item_m2.refresh_from_db()
+        self.assertEqual(item_m2.mesa_id, mesa_original.id)
+
+    def test_cambiar_tipos_ancla_sup_con_foto(self):
+        """Item SUP con FotoFabricacion registrada no se mueve."""
+        grupo, modulo = self._setup_grupo_con_dos_inf_un_sup_y_un_modulo("Grupo Ancla SUP")
+        modulo.inferior_hecho = True
+        modulo.superior_hecho = False
+        modulo.actualizar_estado()
+
+        # Asegurar un item SUP en cola (replanificar para que aparezca).
+        self.client.post(
+            f"/api/grupos-mesas/{grupo.id}/planificar/",
+            {"proyecto_id": self.project.id}, format="json",
+        )
+        item_sup = MesaQueueItem.objects.filter(modulo=modulo, fase="SUPERIOR").first()
+        self.assertIsNotNone(item_sup)
+        mesa_sup_original = item_sup.mesa
+
+        # Crea una foto fabricacion para anclarlo.
+        FotoFabricacion.objects.create(
+            modulo=modulo, mesa=mesa_sup_original, fase="SUPERIOR",
+            paso=0, url="test/foto.jpg",
+        )
+
+        # Convertir la INF2 a SUP (anade una SUP mas).
+        mesa_inf_2 = grupo.mesas.get(tipo="INFERIOR", indice=2)
+        resp = self.client.post(
+            f"/api/grupos-mesas/{grupo.id}/cambiar-tipos/",
+            {"cambios": [{"mesa_id": mesa_inf_2.id, "tipo": "SUPERIOR"}]},
+            format="json",
+        )
+
+        self.assertEqual(resp.status_code, 200)
+        item_sup.refresh_from_db()
+        # El item SUP con foto sigue en su mesa original.
+        self.assertEqual(item_sup.mesa_id, mesa_sup_original.id)
+
+    def test_cambiar_tipos_rechaza_sin_cambios_efectivos(self):
+        grupo, _ = self._setup_grupo_con_dos_inf_un_sup_y_un_modulo("Grupo Sin Cambios")
+        mesa_inf_1 = grupo.mesas.get(tipo="INFERIOR", indice=1)
+
+        # Mandar el mismo tipo que ya tiene -> rechazo.
+        resp = self.client.post(
+            f"/api/grupos-mesas/{grupo.id}/cambiar-tipos/",
+            {"cambios": [{"mesa_id": mesa_inf_1.id, "tipo": "INFERIOR"}]},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_cambiar_tipos_rechaza_mesa_que_no_es_del_grupo(self):
+        grupo, _ = self._setup_grupo_con_dos_inf_un_sup_y_un_modulo("Grupo A")
+        otro_grupo = self._crear_grupo("Grupo B")
+        mesa_otro = otro_grupo.mesas.first()
+
+        resp = self.client.post(
+            f"/api/grupos-mesas/{grupo.id}/cambiar-tipos/",
+            {"cambios": [{"mesa_id": mesa_otro.id, "tipo": "SUPERIOR"}]},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
 
     def test_import_technical_data_from_json_creates_phase_details(self):
         technical_file = SimpleUploadedFile(

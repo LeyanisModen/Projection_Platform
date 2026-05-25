@@ -598,6 +598,17 @@ export class ApiService {
         return this.http.delete<void>(`${this.baseUrl}/grupos-mesas/${id}/`, { headers: this.getHeaders() });
     }
 
+    cambiarTiposMesa(
+        grupoId: number,
+        cambios: { mesa_id: number; tipo: 'INFERIOR' | 'SUPERIOR' }[],
+    ): Observable<PlanificarGrupoResponse> {
+        return this.http.post<PlanificarGrupoResponse>(
+            `${this.baseUrl}/grupos-mesas/${grupoId}/cambiar-tipos/`,
+            { cambios },
+            { headers: this.getHeaders() }
+        );
+    }
+
     planificarGrupoMesas(grupoId: number, proyectoId: number): Observable<PlanificarGrupoResponse> {
         return this.http.post<PlanificarGrupoResponse>(
             `${this.baseUrl}/grupos-mesas/${grupoId}/planificar/`,

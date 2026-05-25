@@ -134,6 +134,11 @@ export class Dashboard implements OnInit, OnDestroy {
   gestionandoGrupo: GrupoMesas | null = null;
   gestionarGrupoNombre: string = '';
   gestionarMesasNombres: Record<number, string> = {};
+  // Tipo pendiente por mesa dentro del modal (no aplicado hasta pulsar
+  // "Aplicar cambios de tipo"). Si el valor coincide con mesa.tipo, no
+  // cuenta como cambio.
+  gestionarMesasTipos: Record<number, 'INFERIOR' | 'SUPERIOR'> = {};
+  gestionarCambiandoTipos = false;
   gestionarAddProyectoId: number | null = null;
   gestionarBusy = false;
   gestionarPlanificando = false;
@@ -485,8 +490,14 @@ export class Dashboard implements OnInit, OnDestroy {
     this.gestionandoGrupo = grupo;
     this.gestionarGrupoNombre = grupo.nombre;
     this.gestionarMesasNombres = {};
+    this.gestionarMesasTipos = {};
     for (const mesa of this.getMesasForGrupo(grupo.id)) {
       this.gestionarMesasNombres[mesa.id] = mesa.nombre;
+      // Solo proponemos INF/SUP en el switch; LEGACY queda fuera (las
+      // mesas LEGACY no se ofrecen para cambio de rol).
+      if (mesa.tipo === 'INFERIOR' || mesa.tipo === 'SUPERIOR') {
+        this.gestionarMesasTipos[mesa.id] = mesa.tipo;
+      }
     }
     this.gestionarAddProyectoId = null;
     this.showGestionarModal = true;
@@ -498,8 +509,54 @@ export class Dashboard implements OnInit, OnDestroy {
     this.gestionandoGrupo = null;
     this.gestionarGrupoNombre = '';
     this.gestionarMesasNombres = {};
+    this.gestionarMesasTipos = {};
+    this.gestionarCambiandoTipos = false;
     this.gestionarAddProyectoId = null;
     this.cdr.detectChanges();
+  }
+
+  /** Cambios de tipo pendientes (mesa.tipo actual != gestionarMesasTipos[id]). */
+  cambiosTiposPendientes(): { mesa_id: number; tipo: 'INFERIOR' | 'SUPERIOR' }[] {
+    if (!this.gestionandoGrupo) return [];
+    const out: { mesa_id: number; tipo: 'INFERIOR' | 'SUPERIOR' }[] = [];
+    for (const mesa of this.getMesasForGrupo(this.gestionandoGrupo.id)) {
+      const tipoPendiente = this.gestionarMesasTipos[mesa.id];
+      if (tipoPendiente && tipoPendiente !== mesa.tipo) {
+        out.push({ mesa_id: mesa.id, tipo: tipoPendiente });
+      }
+    }
+    return out;
+  }
+
+  aplicarCambiosTipos(): void {
+    if (!this.gestionandoGrupo) return;
+    const grupo = this.gestionandoGrupo;
+    const cambios = this.cambiosTiposPendientes();
+    if (cambios.length === 0) return;
+
+    const msg = (
+      'Esto redistribuye los modulos pendientes segun los nuevos tipos.\n' +
+      'Los bastidores INF en curso y los items SUP a medio fabricar se quedan donde estan.\n\n' +
+      'Continuar?'
+    );
+    if (!confirm(msg)) return;
+
+    this.gestionarCambiandoTipos = true;
+    this.api.cambiarTiposMesa(grupo.id, cambios).subscribe({
+      next: () => {
+        // Recargar mesas + grupos para reflejar la nueva configuracion.
+        this.loadMesas();
+        this.loadGruposMesas();
+        this.gestionarCambiandoTipos = false;
+        // Cerramos el modal: la usuaria ve el resultado en el dashboard.
+        this.closeGestionarModal();
+      },
+      error: (err) => {
+        this.gestionarCambiandoTipos = false;
+        alert(err?.error?.detail || 'No se pudo aplicar el cambio de tipos.');
+        this.cdr.detectChanges();
+      },
+    });
   }
 
   /** Projects that aren't already queued on this grupo — used for the 'add' dropdown. */
