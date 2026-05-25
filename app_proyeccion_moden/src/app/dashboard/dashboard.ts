@@ -2157,78 +2157,37 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   /**
-   * Daily cap shown in each mesa queue.
-   * The ferralla has a total daily capacity (e.g. 12) which is split
-   * evenly between INF1 and INF2 (6 each). SUP has to finish the
-   * superiores of both, so SUP = sum of INF items actually visible.
+   * Tope visual de items por mesa en el dashboard. Limite fijo y
+   * predecible: el card no se hace infinito y todas las mesas miden
+   * lo mismo. Lo que sobra cae al caption "+N más programados".
    */
-  private getFerrallaDailyTotal(): number {
-    return this.selectedProyecto?.capacidad_diaria_usuario || 12;
-  }
+  private readonly MAX_VISIBLE_ITEMS = 10;
 
-  private getMesaDailyCapForProject(mesa?: Mesa): number {
-    const total = this.getFerrallaDailyTotal();
-    if (!mesa) return total;
-    if (mesa.tipo === 'SUPERIOR') {
-      const infMesas = this.mesas.filter(
-        m => m.grupo === mesa.grupo && m.tipo === 'INFERIOR' && m.activa
-      );
-      const numInf = Math.max(infMesas.length, 1);
-      const infCap = Math.ceil(total / numInf);
-      let sum = 0;
-      for (const inf of infMesas) {
-        sum += Math.min(this.getMesaQueueItems(inf.id).length, infCap);
-      }
-      // Reparte la suma entre las superiores activas del grupo (round-robin).
-      const numSup = Math.max(
-        this.mesas.filter(m => m.grupo === mesa.grupo && m.tipo === 'SUPERIOR' && m.activa).length,
-        1,
-      );
-      return Math.ceil(sum / numSup);
-    }
-    if (mesa.tipo === 'INFERIOR') {
-      const numInf = Math.max(
-        this.mesas.filter(m => m.grupo === mesa.grupo && m.tipo === 'INFERIOR' && m.activa).length,
-        1,
-      );
-      return Math.ceil(total / numInf);
-    }
-    return total;
-  }
-
-  /**
-   * Items visible in a regular (INF) mesa queue: at most `capacidad_diaria`
-   * entries. Everything else is collapsed into a "+N más" caption.
-   */
+  /** Items visibles en la cola (INF) de una mesa. */
   getVisibleMesaQueueItems(mesaId: number): MesaQueueItem[] {
-    const mesa = this.mesas.find(m => m.id === mesaId);
-    return this.getMesaQueueItems(mesaId).slice(0, this.getMesaDailyCapForProject(mesa));
+    return this.getMesaQueueItems(mesaId).slice(0, this.MAX_VISIBLE_ITEMS);
   }
 
   getHiddenMesaQueueCount(mesaId: number): number {
-    const mesa = this.mesas.find(m => m.id === mesaId);
     const total = this.getMesaQueueItems(mesaId).length;
-    return Math.max(0, total - this.getMesaDailyCapForProject(mesa));
+    return Math.max(0, total - this.MAX_VISIBLE_ITEMS);
   }
 
   /**
    * Split SUP queue into two columns based on item parity among non-showing items.
-   * The planner emits items alternating between INF1 and INF2 feeders.
-   * Only the first `2 x capacidad_diaria` items are surfaced so SUP matches
-   * the daily output of both INF mesas combined.
+   * Limit total visible to MAX_VISIBLE_ITEMS so the SUP card behaves
+   * like the INF cards.
    */
   getSupQueueColumn(mesaId: number, columnIndex: number): MesaQueueItem[] {
-    const mesa = this.mesas.find(m => m.id === mesaId);
     const rest = this.getMesaQueueItems(mesaId)
       .filter(i => i.status !== 'MOSTRANDO')
-      .slice(0, this.getMesaDailyCapForProject(mesa));
+      .slice(0, this.MAX_VISIBLE_ITEMS);
     return rest.filter((_, i) => i % 2 === columnIndex);
   }
 
   getSupHiddenCount(mesaId: number): number {
-    const mesa = this.mesas.find(m => m.id === mesaId);
     const rest = this.getMesaQueueItems(mesaId).filter(i => i.status !== 'MOSTRANDO');
-    return Math.max(0, rest.length - this.getMesaDailyCapForProject(mesa));
+    return Math.max(0, rest.length - this.MAX_VISIBLE_ITEMS);
   }
 
 
