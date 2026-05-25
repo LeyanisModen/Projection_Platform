@@ -80,26 +80,9 @@ class Migration(migrations.Migration):
         ),
 
         # 4. Recompacta indices globalmente 1..N por grupo + rename a 'Mesa N'.
+        #    El AddConstraint nuevo y el AlterField para quitar LEGACY se hacen
+        #    en 0044, en una transaccion aparte: PostgreSQL no permite CREATE
+        #    INDEX en la misma transaccion que un RunPython que escribe a la
+        #    misma tabla ('pending trigger events').
         migrations.RunPython(recompact_global_indices_and_rename, reverse_noop),
-
-        # 5. Quita LEGACY del enum tipo.
-        migrations.AlterField(
-            model_name='mesa',
-            name='tipo',
-            field=models.CharField(
-                choices=[('INFERIOR', 'Inferior'), ('SUPERIOR', 'Superior')],
-                default='INFERIOR',
-                max_length=20,
-            ),
-        ),
-
-        # 6. Nueva constraint: indice unico por grupo (sin restriccion por tipo).
-        migrations.AddConstraint(
-            model_name='mesa',
-            constraint=models.UniqueConstraint(
-                condition=models.Q(('grupo__isnull', False)),
-                fields=('grupo', 'indice'),
-                name='unique_indice_por_grupo_mesas',
-            ),
-        ),
     ]
