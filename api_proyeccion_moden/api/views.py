@@ -2221,7 +2221,14 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'], url_path='cola/reorder')
     def cola_reorder(self, request, pk=None):
-        """Recibe {proyecto_ids: [...]} con el orden deseado."""
+        """Recibe {proyecto_ids: [...]} con el orden deseado y replanifica.
+
+        Tras cambiar el orden numerico, borra los items activos no
+        anclados de las mesas y replanifica todos los proyectos en el
+        nuevo orden. Asi el nuevo head pasa a llenar la cola de las
+        mesas inmediatamente. Items anclados (bastidor INF en curso o
+        item SUP con foto) se quedan donde estaban.
+        """
         grupo = self.get_object()
         self._check_grupo_access(grupo)
 
@@ -2236,12 +2243,32 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
                     {'detail': 'La lista de proyectos no coincide con la cola actual.'},
                     status=400,
                 )
+
+            # Aplicar nuevo orden a las entradas de cola.
             for index, proyecto_id in enumerate(proyecto_ids):
                 entry = existing[proyecto_id]
                 if entry.orden != index:
                     entry.orden = index
                     entry.save(update_fields=['orden'])
             self._sync_proyecto_actual(grupo)
+
+            # Preserve-anchored + replan: borra activos no anclados de
+            # las mesas y vuelve a planificar en el nuevo orden, asi el
+            # head pasa a fabricarse primero.
+            anchored_ids = _collect_anchored_item_ids_for_grupo(grupo)
+            MesaQueueItem.objects.filter(
+                mesa__grupo=grupo,
+                status__in=ACTIVE_QUEUE_STATUSES,
+            ).exclude(id__in=anchored_ids).delete()
+
+            entries = list(
+                grupo.proyectos_cola.select_related('proyecto').order_by('orden', 'id')
+            )
+            for entry in entries:
+                try:
+                    self._build_group_plan(grupo, entry.proyecto, request.user, append_mode=True)
+                except Exception:
+                    pass
 
         fresh = self._refresh_grupo_with_prefetch(grupo)
         return Response(GrupoMesasSerializer(fresh).data)

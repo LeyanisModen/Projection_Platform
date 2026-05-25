@@ -679,6 +679,10 @@ export class Dashboard implements OnInit, OnDestroy {
     this.api.colaGrupoMesasReorder(grupo.id, ids).subscribe({
       next: (updated) => {
         this.applyGestionarGrupoUpdate(updated);
+        // El backend reordeno la cola y replanifico las mesas, asi que
+        // las colas internas de cada mesa cambiaron. Recargamos para
+        // que los cards reflejen el nuevo orden inmediatamente.
+        this.loadMesas();
         this.gestionarBusy = false;
         this.cdr.detectChanges();
       },
