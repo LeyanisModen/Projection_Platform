@@ -165,6 +165,7 @@ export interface Mesa {
     grupo: number | null;
     tipo: MesaTipo;
     indice: number;
+    activa: boolean;
     imagen_actual: string | null;
     imagen: Imagen | null;
     ultima_actualizacion: string;
@@ -218,13 +219,14 @@ export interface MesaQueueItem {
     done_at: string | null;
 }
 
-export type MesaTipo = 'INFERIOR' | 'SUPERIOR' | 'LEGACY';
+export type MesaTipo = 'INFERIOR' | 'SUPERIOR';
 
 export interface GrupoMesaResumen {
     id: number;
     nombre: string;
     tipo: MesaTipo;
     indice: number;
+    activa: boolean;
     is_linked: boolean;
     capture_service_online?: boolean | null;
     camera_sharpness?: 'ok' | 'warning' | 'blurry' | 'unknown' | null;
@@ -656,6 +658,15 @@ export class ApiService {
         return this.http.post<GrupoMesaResumen>(
             `${this.baseUrl}/grupos-mesas/${grupoId}/mesas/`,
             { tipo },
+            { headers: this.getHeaders() }
+        );
+    }
+
+    setMesaActiva(mesaId: number, activa: boolean): Observable<Mesa> {
+        const action = activa ? 'reactivar' : 'desactivar';
+        return this.http.post<Mesa>(
+            `${this.baseUrl}/mesas/${mesaId}/${action}/`,
+            {},
             { headers: this.getHeaders() }
         );
     }

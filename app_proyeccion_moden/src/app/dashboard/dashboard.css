@@ -1702,6 +1702,56 @@
   letter-spacing: 0.08em;
 }
 
+.mesa-tipo-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 6px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.06);
+  color: #555;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.mesa-badge.inactiva {
+  background: #888;
+  color: #fff;
+}
+
+.mesa-card.mesa-inactiva {
+  opacity: 0.55;
+  filter: grayscale(0.7);
+}
+
+.gestionar-mesa-row.mesa-inactiva {
+  opacity: 0.6;
+}
+
+.mesa-toggle-activa {
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  background: #fff;
+}
+
+.mesa-toggle-activa.is-active {
+  background: #e9f7ef;
+  color: #1f7a3a;
+  border-color: #b9e2c8;
+}
+
+.mesa-toggle-activa.is-inactive {
+  background: #f5e6e6;
+  color: #9b2c2c;
+  border-color: #e2b9b9;
+}
+
 .mesa-name-input {
   width: auto;
   flex: 0 1 auto;

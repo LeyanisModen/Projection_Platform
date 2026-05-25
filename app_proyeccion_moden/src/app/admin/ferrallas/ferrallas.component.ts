@@ -507,27 +507,28 @@ export class FerrallasComponent implements OnInit {
   }
 
   getMesaRoleLabel(mesa: GrupoMesaResumen): string {
-    switch (mesa.tipo) {
-      case 'INFERIOR':
-        return `INF${mesa.indice}`;
-      case 'SUPERIOR':
-        return `SUP${mesa.indice}`;
-      default:
-        return 'LEG';
-    }
+    return `Mesa ${mesa.indice}`;
+  }
+
+  getMesaTipoLabel(mesa: GrupoMesaResumen): string {
+    return mesa.tipo === 'INFERIOR' ? 'INF' : 'SUP';
   }
 
   getGrupoSubtitulo(grupo: GrupoMesas): string {
-    const counts = { INFERIOR: 0, SUPERIOR: 0, LEGACY: 0 };
+    let inf = 0;
+    let sup = 0;
+    let inactivas = 0;
     for (const mesa of grupo.mesas || []) {
-      counts[mesa.tipo] = (counts[mesa.tipo] || 0) + 1;
+      if (!mesa.activa) inactivas++;
+      if (mesa.tipo === 'INFERIOR') inf++;
+      else if (mesa.tipo === 'SUPERIOR') sup++;
     }
-    const partes: string[] = [];
-    if (counts.INFERIOR) partes.push(`${counts.INFERIOR} INF`);
-    if (counts.SUPERIOR) partes.push(`${counts.SUPERIOR} SUP`);
-    if (counts.LEGACY) partes.push(`${counts.LEGACY} extra`);
     const total = (grupo.mesas || []).length;
     const totalTxt = total === 1 ? '1 mesa' : `${total} mesas`;
+    const partes: string[] = [];
+    if (inf) partes.push(`${inf} INF`);
+    if (sup) partes.push(`${sup} SUP`);
+    if (inactivas) partes.push(`${inactivas} desactivada(s)`);
     return partes.length ? `${totalTxt} (${partes.join(' / ')})` : totalTxt;
   }
 

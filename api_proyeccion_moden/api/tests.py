@@ -326,9 +326,10 @@ class PlanningFoundationTests(APITestCase):
         combos = set(grupo.mesas.values_list("tipo", "indice"))
 
         self.assertEqual(grupo.mesas.count(), 3)
+        # Indice global por grupo: Mesa 1 (INF), Mesa 2 (INF), Mesa 3 (SUP).
         self.assertSetEqual(
             combos,
-            {("INFERIOR", 1), ("INFERIOR", 2), ("SUPERIOR", 1)},
+            {("INFERIOR", 1), ("INFERIOR", 2), ("SUPERIOR", 3)},
         )
 
     def test_eliminar_grupo_mesas_elimina_sus_mesas_hijas(self):
@@ -361,6 +362,8 @@ class PlanningFoundationTests(APITestCase):
         return GrupoMesas.objects.get(id=response.data["id"])
 
     def test_add_mesa_inferior_asigna_siguiente_indice_libre(self):
+        """El indice ahora es global por grupo: tras 3 mesas default, la
+        nueva mesa recibe indice 4 independientemente del tipo."""
         grupo = self._crear_grupo("Grupo INF Extra")
 
         response = self.client.post(
@@ -371,7 +374,7 @@ class PlanningFoundationTests(APITestCase):
 
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data["tipo"], "INFERIOR")
-        self.assertEqual(response.data["indice"], 3)
+        self.assertEqual(response.data["indice"], 4)
         self.assertEqual(grupo.mesas.filter(tipo="INFERIOR").count(), 3)
 
     def test_add_mesa_superior_asigna_siguiente_indice_libre(self):
@@ -385,7 +388,8 @@ class PlanningFoundationTests(APITestCase):
 
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data["tipo"], "SUPERIOR")
-        self.assertEqual(response.data["indice"], 2)
+        # Indice global: tras 3 mesas default, la siguiente recibe 4.
+        self.assertEqual(response.data["indice"], 4)
 
     def test_add_mesa_rechaza_tipo_invalido(self):
         grupo = self._crear_grupo("Grupo Tipo Invalido")
@@ -398,14 +402,17 @@ class PlanningFoundationTests(APITestCase):
 
         self.assertEqual(response.status_code, 400)
 
-    def test_destroy_mesa_rechaza_la_unica_superior_del_grupo(self):
+    def test_destroy_mesa_permite_borrar_la_unica_superior(self):
+        """La regla 'no la unica del tipo' fue eliminada en Fase 8: el
+        cliente puede dejar el grupo sin SUP (fabricar solo inferiores)."""
         grupo = self._crear_grupo("Grupo Unica SUP")
         mesa_sup = grupo.mesas.get(tipo="SUPERIOR")
 
         response = self.client.delete(f"/api/mesas/{mesa_sup.id}/")
 
-        self.assertEqual(response.status_code, 409)
-        self.assertTrue(Mesa.objects.filter(id=mesa_sup.id).exists())
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(Mesa.objects.filter(id=mesa_sup.id).exists())
+        self.assertEqual(grupo.mesas.filter(tipo="SUPERIOR").count(), 0)
 
     def test_destroy_mesa_permite_borrar_si_hay_otra_del_mismo_tipo(self):
         grupo = self._crear_grupo("Grupo Dos INF")
@@ -470,7 +477,8 @@ class PlanningFoundationTests(APITestCase):
             {"tipo": "INFERIOR"}, format="json",
         )
         self.assertEqual(add_resp.status_code, 201)
-        self.assertEqual(add_resp.data["indice"], 3)
+        # Indice global por grupo: la cuarta mesa creada lleva indice 4.
+        self.assertEqual(add_resp.data["indice"], 4)
 
         plan_resp = self.client.post(
             f"/api/grupos-mesas/{grupo.id}/planificar/",
@@ -512,7 +520,8 @@ class PlanningFoundationTests(APITestCase):
             {"tipo": "SUPERIOR"}, format="json",
         )
         self.assertEqual(add_resp.status_code, 201)
-        self.assertEqual(add_resp.data["indice"], 2)
+        # Indice global por grupo: la cuarta mesa creada lleva indice 4.
+        self.assertEqual(add_resp.data["indice"], 4)
 
         plan_resp = self.client.post(
             f"/api/grupos-mesas/{grupo.id}/planificar/",
@@ -552,17 +561,34 @@ class PlanningFoundationTests(APITestCase):
             self.assertIn("mesa_nombre", entry)
             self.assertIn("modulos", entry)
 
-    def test_planificar_rechaza_grupo_sin_mesa_inferior(self):
+    def test_planificar_sin_mesa_inferior_salta_fase_inferior(self):
+        """Si el grupo no tiene mesas INF activas, planificar salta la
+        fase INFERIOR silenciosamente (devuelve 200, sin items INF)."""
+        self.project.bastidor_longitud_cm = 20
+        self.project.save(update_fields=["bastidor_longitud_cm"])
+        DetalleModuloFase.objects.create(
+            modulo=self.modulo, fase="INFERIOR", espesor_cm="10.00",
+        )
+
         grupo = self._crear_grupo("Grupo Sin INF")
-        # Quita las dos inferiores (la default INF2 primero, luego INF1).
-        # Para borrar la ultima INF hace falta dejar la SUP, asi que solo
-        # podemos llegar a 1 inferior + 1 superior por las reglas de DELETE.
-        mesa_inf_2 = grupo.mesas.get(tipo="INFERIOR", indice=2)
-        self.client.delete(f"/api/mesas/{mesa_inf_2.id}/")
-        mesa_inf_1 = grupo.mesas.get(tipo="INFERIOR", indice=1)
-        resp = self.client.delete(f"/api/mesas/{mesa_inf_1.id}/")
-        # La regla impide borrar la ultima INFERIOR.
-        self.assertEqual(resp.status_code, 409)
+        # Borra las dos inferiores: ahora se puede (la regla 'ultima' ya
+        # no existe). Queda solo la SUP del default.
+        for mesa in list(grupo.mesas.filter(tipo="INFERIOR")):
+            self.client.delete(f"/api/mesas/{mesa.id}/")
+        self.assertEqual(grupo.mesas.filter(tipo="INFERIOR").count(), 0)
+
+        plan_resp = self.client.post(
+            f"/api/grupos-mesas/{grupo.id}/planificar/",
+            {"proyecto_id": self.project.id}, format="json",
+        )
+        self.assertEqual(plan_resp.status_code, 200)
+        # No se crearon items de fase INFERIOR (no hay donde ponerlos).
+        self.assertEqual(
+            MesaQueueItem.objects.filter(
+                mesa__grupo=grupo, fase="INFERIOR",
+            ).count(),
+            0,
+        )
 
     # =========================================================================
     # CAMBIAR TIPOS (switch INF <-> SUP en mesas existentes)
@@ -585,7 +611,8 @@ class PlanningFoundationTests(APITestCase):
         return grupo, self.modulo
 
     def test_cambiar_tipos_caso_feliz_redistribuye(self):
-        """Convertir INF2 -> SUP debe dejar 1 INF + 2 SUP y replanificar."""
+        """Convertir Mesa 2 (INF) a SUP deja 1 INF + 2 SUP. Los indices son
+        globales y NO se recompactan: Mesa 2 sigue siendo indice 2."""
         grupo, _ = self._setup_grupo_con_dos_inf_un_sup_y_un_modulo("Grupo Switch")
         mesa_inf_2 = grupo.mesas.get(tipo="INFERIOR", indice=2)
 
@@ -596,14 +623,15 @@ class PlanningFoundationTests(APITestCase):
         )
 
         self.assertEqual(resp.status_code, 200)
-        # Tras el cambio el grupo tiene 1 INF + 2 SUP.
         self.assertEqual(grupo.mesas.filter(tipo="INFERIOR").count(), 1)
         self.assertEqual(grupo.mesas.filter(tipo="SUPERIOR").count(), 2)
-        # Indices compactados.
+        # Indices se conservan: las dos SUP ahora tienen indices 2 y 3.
         sup_indices = sorted(grupo.mesas.filter(tipo="SUPERIOR").values_list("indice", flat=True))
-        self.assertEqual(sup_indices, [1, 2])
+        self.assertEqual(sup_indices, [2, 3])
 
-    def test_cambiar_tipos_rechaza_si_quedaria_sin_inferior(self):
+    def test_cambiar_tipos_permite_quedar_sin_inferior(self):
+        """La regla 'minimo 1 INF + 1 SUP' fue eliminada en Fase 8: el
+        cliente puede dejar el grupo solo con SUPs (o solo con INFs)."""
         grupo, _ = self._setup_grupo_con_dos_inf_un_sup_y_un_modulo("Grupo Sin INF")
         mesa_inf_1 = grupo.mesas.get(tipo="INFERIOR", indice=1)
         mesa_inf_2 = grupo.mesas.get(tipo="INFERIOR", indice=2)
@@ -617,10 +645,9 @@ class PlanningFoundationTests(APITestCase):
             format="json",
         )
 
-        self.assertEqual(resp.status_code, 400)
-        # No se aplico ningun cambio (atomico).
-        self.assertEqual(grupo.mesas.filter(tipo="INFERIOR").count(), 2)
-        self.assertEqual(grupo.mesas.filter(tipo="SUPERIOR").count(), 1)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(grupo.mesas.filter(tipo="INFERIOR").count(), 0)
+        self.assertEqual(grupo.mesas.filter(tipo="SUPERIOR").count(), 3)
 
     def test_cambiar_tipos_ancla_bastidor_inf_en_curso(self):
         """Si un bastidor tiene >=1 modulo inferior_hecho, el item INFERIOR
@@ -735,6 +762,111 @@ class PlanningFoundationTests(APITestCase):
             {"cambios": [{"mesa_id": mesa_otro.id, "tipo": "SUPERIOR"}]},
             format="json",
         )
+        self.assertEqual(resp.status_code, 400)
+
+    # =========================================================================
+    # ACTIVAR / DESACTIVAR MESA
+    # =========================================================================
+
+    def test_desactivar_mesa_marca_activa_false_y_replan_redistribuye(self):
+        """Al desactivar Mesa 2 (INF), Mesa 1 (INF) absorbe la carga."""
+        self.project.bastidor_longitud_cm = 20
+        self.project.save(update_fields=["bastidor_longitud_cm"])
+        modulos = [self.modulo]
+        for i in range(2, 5):
+            modulos.append(
+                Modulo.objects.create(
+                    nombre=f"M-0{i}", proyecto=self.project, planta=self.planta,
+                    ancho_cm="15.00",
+                )
+            )
+        self.modulo.ancho_cm = "15.00"
+        self.modulo.save(update_fields=["ancho_cm"])
+        for m in modulos:
+            DetalleModuloFase.objects.create(
+                modulo=m, fase="INFERIOR", espesor_cm="10.00",
+            )
+
+        grupo = self._crear_grupo("Grupo Desactivar")
+        self.client.post(
+            f"/api/grupos-mesas/{grupo.id}/planificar/",
+            {"proyecto_id": self.project.id}, format="json",
+        )
+
+        mesa_inf_1 = grupo.mesas.get(tipo="INFERIOR", indice=1)
+        mesa_inf_2 = grupo.mesas.get(tipo="INFERIOR", indice=2)
+
+        resp = self.client.post(f"/api/mesas/{mesa_inf_2.id}/desactivar/")
+        self.assertEqual(resp.status_code, 200)
+
+        mesa_inf_2.refresh_from_db()
+        self.assertFalse(mesa_inf_2.activa)
+
+        # Mesa 2 ya no tiene items (no anclada => todo redistribuido).
+        self.assertEqual(
+            mesa_inf_2.queue_items.filter(status__in=["EN_COLA", "MOSTRANDO"]).count(),
+            0,
+        )
+        # Mesa 1 absorbe los 4 items INFERIOR.
+        self.assertEqual(
+            mesa_inf_1.queue_items.filter(status__in=["EN_COLA", "MOSTRANDO"]).count(),
+            4,
+        )
+
+    def test_reactivar_mesa_la_devuelve_al_planner(self):
+        """Reactivar una mesa la incluye de nuevo en la distribucion."""
+        self.project.bastidor_longitud_cm = 20
+        self.project.save(update_fields=["bastidor_longitud_cm"])
+        modulos = [self.modulo]
+        for i in range(2, 5):
+            modulos.append(
+                Modulo.objects.create(
+                    nombre=f"M-0{i}", proyecto=self.project, planta=self.planta,
+                    ancho_cm="15.00",
+                )
+            )
+        self.modulo.ancho_cm = "15.00"
+        self.modulo.save(update_fields=["ancho_cm"])
+        for m in modulos:
+            DetalleModuloFase.objects.create(
+                modulo=m, fase="INFERIOR", espesor_cm="10.00",
+            )
+
+        grupo = self._crear_grupo("Grupo Reactivar")
+        self.client.post(
+            f"/api/grupos-mesas/{grupo.id}/planificar/",
+            {"proyecto_id": self.project.id}, format="json",
+        )
+
+        mesa_inf_2 = grupo.mesas.get(tipo="INFERIOR", indice=2)
+
+        # Desactivar concentra todo en INF1.
+        self.client.post(f"/api/mesas/{mesa_inf_2.id}/desactivar/")
+        # Reactivar redistribuye.
+        resp = self.client.post(f"/api/mesas/{mesa_inf_2.id}/reactivar/")
+        self.assertEqual(resp.status_code, 200)
+
+        mesa_inf_2.refresh_from_db()
+        self.assertTrue(mesa_inf_2.activa)
+
+        mesa_inf_1 = grupo.mesas.get(tipo="INFERIOR", indice=1)
+        # 4 modulos repartidos entre 2 INF: 2 + 2.
+        self.assertEqual(
+            mesa_inf_1.queue_items.filter(status__in=["EN_COLA", "MOSTRANDO"]).count(),
+            2,
+        )
+        self.assertEqual(
+            mesa_inf_2.queue_items.filter(status__in=["EN_COLA", "MOSTRANDO"]).count(),
+            2,
+        )
+
+    def test_desactivar_mesa_rechaza_si_ya_inactiva(self):
+        grupo = self._crear_grupo("Grupo Doble Desactivar")
+        mesa = grupo.mesas.first()
+        mesa.activa = False
+        mesa.save(update_fields=["activa"])
+
+        resp = self.client.post(f"/api/mesas/{mesa.id}/desactivar/")
         self.assertEqual(resp.status_code, 400)
 
     def test_import_technical_data_from_json_creates_phase_details(self):
@@ -929,7 +1061,7 @@ class PlanningFoundationTests(APITestCase):
         grupo = GrupoMesas.objects.get(id=grupo_response.data["id"])
         mesa_inf_1 = grupo.mesas.get(tipo="INFERIOR", indice=1)
         mesa_inf_2 = grupo.mesas.get(tipo="INFERIOR", indice=2)
-        mesa_sup = grupo.mesas.get(tipo="SUPERIOR", indice=1)
+        mesa_sup = grupo.mesas.get(tipo="SUPERIOR", indice=3)
 
         inf_1_queue = list(MesaQueueItem.objects.filter(mesa=mesa_inf_1).order_by("position").values_list("modulo__nombre", flat=True))
         inf_2_queue = list(MesaQueueItem.objects.filter(mesa=mesa_inf_2).order_by("position").values_list("modulo__nombre", flat=True))
@@ -1143,7 +1275,7 @@ class PlanningFoundationTests(APITestCase):
         grupo = GrupoMesas.objects.get(id=grupo_2.data["id"])
         mesa_inf_1 = grupo.mesas.get(tipo="INFERIOR", indice=1)
         mesa_inf_2 = grupo.mesas.get(tipo="INFERIOR", indice=2)
-        mesa_sup = grupo.mesas.get(tipo="SUPERIOR", indice=1)
+        mesa_sup = grupo.mesas.get(tipo="SUPERIOR", indice=3)
 
         self.assertEqual(MesaQueueItem.objects.filter(mesa=mesa_inf_1, status__in=["EN_COLA", "MOSTRANDO"]).count(), 0)
         self.assertEqual(MesaQueueItem.objects.filter(mesa=mesa_inf_2, status__in=["EN_COLA", "MOSTRANDO"]).count(), 0)

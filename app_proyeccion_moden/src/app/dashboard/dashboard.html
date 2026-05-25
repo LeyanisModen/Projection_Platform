@@ -64,13 +64,16 @@
                             <div class="mesa-card"
                                 [class.locked]="mesa.locked"
                                 [class.blackout]="mesa.blackout"
-                                [class.mesa-sup]="mesa.tipo === 'SUPERIOR'">
+                                [class.mesa-sup]="mesa.tipo === 'SUPERIOR'"
+                                [class.mesa-inactiva]="!mesa.activa">
                                 <div class="mesa-header">
                                     <div class="mesa-title-container">
                                         <span class="mesa-role-badge">{{ getMesaRoleLabel(mesa) }}</span>
+                                        <span class="mesa-tipo-chip">{{ getMesaTipoLabel(mesa) }}</span>
                                         <h3>{{ mesa.nombre }}</h3>
                                     </div>
                                     <div class="mesa-header-actions">
+                                        @if (!mesa.activa) { <span class="mesa-badge inactiva">DESACTIVADA</span> }
                                         @if (mesa.locked) { <span class="mesa-badge locked">LOCK</span> }
                                         @if (mesa.blackout) { <span class="mesa-badge blackout">OFF</span> }
                                         @if (mesa.is_linked && mesa.capture_service_online === false) {
@@ -674,7 +677,7 @@
                         </div>
                         <div class="gestionar-mesa-list">
                             @for (mesa of getMesasForGrupo(gestionandoGrupo.id); track mesa.id) {
-                                <div class="gestionar-mesa-row">
+                                <div class="gestionar-mesa-row" [class.mesa-inactiva]="!mesa.activa">
                                     <span class="mesa-role-badge">{{ getMesaRoleLabel(mesa) }}</span>
                                     <input type="text"
                                         class="gestionar-input gestionar-mesa-input"
@@ -682,15 +685,22 @@
                                         (blur)="saveGestionarMesaNombre(mesa)"
                                         (keydown.enter)="saveGestionarMesaNombre(mesa)"
                                         maxlength="200">
-                                    @if (mesa.tipo === 'INFERIOR' || mesa.tipo === 'SUPERIOR') {
-                                        <select class="gestionar-input gestionar-mesa-tipo"
-                                            [(ngModel)]="gestionarMesasTipos[mesa.id]"
-                                            [disabled]="gestionarCambiandoTipos"
-                                            title="Cambiar tipo (se aplica al pulsar 'Aplicar cambios de tipo')">
-                                            <option value="INFERIOR">INF</option>
-                                            <option value="SUPERIOR">SUP</option>
-                                        </select>
-                                    }
+                                    <select class="gestionar-input gestionar-mesa-tipo"
+                                        [(ngModel)]="gestionarMesasTipos[mesa.id]"
+                                        [disabled]="gestionarCambiandoTipos"
+                                        title="Cambiar tipo (se aplica al pulsar 'Aplicar cambios de tipo')">
+                                        <option value="INFERIOR">INF</option>
+                                        <option value="SUPERIOR">SUP</option>
+                                    </select>
+                                    <button type="button"
+                                        class="btn-icon mesa-toggle-activa"
+                                        [class.is-active]="mesa.activa"
+                                        [class.is-inactive]="!mesa.activa"
+                                        [disabled]="gestionarBusy || gestionarCambiandoTipos"
+                                        (click)="toggleMesaActiva(mesa)"
+                                        [title]="mesa.activa ? 'Desactivar (proyector roto, mantenimiento...)' : 'Reactivar'">
+                                        {{ mesa.activa ? 'Activa' : 'Desactivada' }}
+                                    </button>
                                 </div>
                             }
                         </div>

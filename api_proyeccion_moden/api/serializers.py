@@ -320,7 +320,7 @@ class MesaSerializer(serializers.HyperlinkedModelSerializer):
         model = Mesa
         fields = [
             "id", "url", "nombre", "usuario",
-            "grupo", "tipo", "indice",
+            "grupo", "tipo", "indice", "activa",
             "imagen_actual", "ultima_actualizacion", "imagen",
             "locked", "blackout", "last_seen", "is_linked",
             "capture_service_online", "camera_sharpness", "check_overlay",
@@ -348,7 +348,7 @@ class MesaResumenGrupoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Mesa
         fields = [
-            "id", "nombre", "tipo", "indice", "is_linked",
+            "id", "nombre", "tipo", "indice", "activa", "is_linked",
             "capture_service_online", "camera_sharpness",
         ]
 

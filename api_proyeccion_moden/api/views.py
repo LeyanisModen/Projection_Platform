@@ -777,6 +777,47 @@ def _merge_inferior_sequences_for_superior(sequences):
     return merged
 
 
+def _collect_anchored_item_ids_for_grupo(grupo):
+    """IDs de MesaQueueItem del grupo que no deben moverse al replanificar
+    tras un switch de tipos o una desactivacion de mesa.
+
+    - Items INFERIOR cuyo bastidor (grupo_bastidor) tiene >=1 modulo con
+      inferior_hecho=True (bastidor 'en curso').
+    - Items SUPERIOR cuyo modulo tiene >=1 FotoFabricacion fase SUPERIOR
+      registrada (item 'a mitad del proceso').
+    """
+    active_items = MesaQueueItem.objects.filter(
+        mesa__grupo=grupo,
+        status__in=ACTIVE_QUEUE_STATUSES,
+    ).select_related('modulo')
+
+    bastidores_en_curso = set(
+        Modulo.objects.filter(
+            grupo_bastidor__isnull=False,
+            inferior_hecho=True,
+        ).values_list('grupo_bastidor_id', flat=True)
+    )
+
+    modulos_sup_en_proceso = set(
+        FotoFabricacion.objects.filter(
+            mesa__grupo=grupo,
+            fase='SUPERIOR',
+        ).values_list('modulo_id', flat=True)
+    )
+
+    anchored = set()
+    for item in active_items:
+        if item.fase == 'INFERIOR':
+            gb_id = item.modulo.grupo_bastidor_id
+            if gb_id is not None and gb_id in bastidores_en_curso:
+                anchored.add(item.id)
+        elif item.fase == 'SUPERIOR':
+            if item.modulo_id in modulos_sup_en_proceso:
+                anchored.add(item.id)
+
+    return anchored
+
+
 def _distribute_superior_sequence(superior_sequence, num_superiores):
     """Reparte la cola superior entre M mesas en round-robin simple.
 
@@ -1698,32 +1739,14 @@ class MesaViewSet(viewsets.ModelViewSet):
         return queryset
 
     def destroy(self, request, *args, **kwargs):
-        """Elimina una mesa con guardarrailes:
+        """Elimina una mesa.
 
-        - No permite borrar la unica mesa INFERIOR/SUPERIOR de un grupo
-          (el planificador necesita al menos una de cada).
-        - Si la mesa tiene cola activa (EN_COLA/MOSTRANDO) o un dispositivo
-          vinculado, exige `?force=true` para confirmar.
-        - Las relaciones CASCADE limpian MesaQueueItem y PairingSession.
+        Si tiene cola activa (EN_COLA/MOSTRANDO) o dispositivo vinculado,
+        exige `?force=true` para confirmar. Las relaciones CASCADE limpian
+        MesaQueueItem y PairingSession.
         """
         mesa = self.get_object()
         force = str(request.query_params.get('force', '')).lower() in ('true', '1', 'yes')
-
-        if mesa.grupo_id and mesa.tipo in (MesaTipo.INFERIOR, MesaTipo.SUPERIOR):
-            same_type_count = Mesa.objects.filter(
-                grupo_id=mesa.grupo_id,
-                tipo=mesa.tipo,
-            ).count()
-            if same_type_count <= 1:
-                return Response(
-                    {
-                        'detail': (
-                            f'No se puede eliminar la unica mesa {mesa.tipo} del grupo. '
-                            'Crea otra antes de borrar esta.'
-                        ),
-                    },
-                    status=status.HTTP_409_CONFLICT,
-                )
 
         has_active = mesa.queue_items.filter(status__in=ACTIVE_QUEUE_STATUSES).exists()
         has_device = bool(mesa.device_token_hash)
@@ -1804,6 +1827,68 @@ class MesaViewSet(viewsets.ModelViewSet):
             'message': 'Calibration saved successfully'
         })
 
+    def _replan_grupo_preserving_anchored(self, grupo, user):
+        """Borra items activos no anclados del grupo y replanifica cada
+        proyecto de su cola en modo append. Comparte la semantica del
+        switch de tipos: lo en curso se queda donde estaba; el resto se
+        redistribuye entre las mesas activas actuales.
+        """
+        with transaction.atomic():
+            anchored_ids = _collect_anchored_item_ids_for_grupo(grupo)
+            MesaQueueItem.objects.filter(
+                mesa__grupo=grupo,
+                status__in=ACTIVE_QUEUE_STATUSES,
+            ).exclude(id__in=anchored_ids).delete()
+
+            # Reutilizamos el planificador del GrupoMesasViewSet (todos
+            # sus helpers de planning son stateless en la practica).
+            grupo_vs = GrupoMesasViewSet()
+            entries = list(
+                grupo.proyectos_cola.select_related('proyecto').order_by('orden', 'id')
+            )
+            for entry in entries:
+                grupo_vs._build_group_plan(grupo, entry.proyecto, user, append_mode=True)
+            grupo_vs._sync_proyecto_actual(grupo)
+
+    @action(detail=True, methods=['post'])
+    def desactivar(self, request, pk=None):
+        """Marca la mesa como inactiva (no recibe trabajo nuevo) y
+        redistribuye sus items no-anclados al resto de mesas activas del
+        grupo. Los items anclados (bastidor INF en curso, item SUP con
+        foto) se quedan en la mesa desactivada hasta terminarlos.
+        """
+        mesa = self.get_object()
+        if not mesa.activa:
+            return Response({'detail': 'La mesa ya esta desactivada.'}, status=400)
+        if mesa.grupo_id is None:
+            mesa.activa = False
+            mesa.save(update_fields=['activa'])
+            return Response(MesaSerializer(mesa, context={'request': request}).data)
+
+        with transaction.atomic():
+            mesa.activa = False
+            mesa.save(update_fields=['activa'])
+            self._replan_grupo_preserving_anchored(mesa.grupo, request.user)
+
+        mesa.refresh_from_db()
+        return Response(MesaSerializer(mesa, context={'request': request}).data)
+
+    @action(detail=True, methods=['post'])
+    def reactivar(self, request, pk=None):
+        """Reactiva la mesa y replanifica para que vuelva a recibir trabajo."""
+        mesa = self.get_object()
+        if mesa.activa:
+            return Response({'detail': 'La mesa ya esta activa.'}, status=400)
+
+        with transaction.atomic():
+            mesa.activa = True
+            mesa.save(update_fields=['activa'])
+            if mesa.grupo_id:
+                self._replan_grupo_preserving_anchored(mesa.grupo, request.user)
+
+        mesa.refresh_from_db()
+        return Response(MesaSerializer(mesa, context={'request': request}).data)
+
     @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
     def set_index(self, request, pk=None):
         """
@@ -1877,38 +1962,29 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
     def add_mesa(self, request, pk=None):
         """Crea una mesa nueva dentro del grupo.
 
-        Body: {"tipo": "INFERIOR" | "SUPERIOR" | "LEGACY"}
-        El indice se asigna automaticamente al siguiente libre dentro
-        del grupo para ese tipo. El nombre se genera como
-        "<grupo> INF{n}" / "<grupo> SUP{n}" / "<grupo> EXTRA{n}".
+        Body: {"tipo": "INFERIOR" | "SUPERIOR"}
+        El indice es global por grupo (siguiente libre 1..N) y el
+        nombre se genera como "Mesa N". El tipo solo afecta a como el
+        planificador la usa; se puede cambiar luego con cambiar-tipos.
         """
         grupo = self.get_object()
         self._check_grupo_access(grupo)
 
         tipo = (request.data.get('tipo') or '').upper()
-        if tipo not in MesaTipo.values:
+        if tipo not in (MesaTipo.INFERIOR, MesaTipo.SUPERIOR):
             return Response(
-                {'detail': f'tipo debe ser uno de {list(MesaTipo.values)}'},
+                {'detail': "tipo debe ser 'INFERIOR' o 'SUPERIOR'."},
                 status=400,
             )
 
         with transaction.atomic():
-            usados = set(
-                grupo.mesas.filter(tipo=tipo).values_list('indice', flat=True)
-            )
+            usados = set(grupo.mesas.values_list('indice', flat=True))
             siguiente_indice = 1
             while siguiente_indice in usados:
                 siguiente_indice += 1
 
-            if tipo == MesaTipo.INFERIOR:
-                suffix = f'INF{siguiente_indice}'
-            elif tipo == MesaTipo.SUPERIOR:
-                suffix = f'SUP{siguiente_indice}'
-            else:
-                suffix = f'EXTRA{siguiente_indice}'
-
             mesa = Mesa.objects.create(
-                nombre=f'{grupo.nombre} {suffix}',
+                nombre=f'Mesa {siguiente_indice}',
                 usuario=grupo.usuario,
                 grupo=grupo,
                 tipo=tipo,
@@ -1923,75 +1999,20 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
             raise PermissionDenied('No puedes gestionar grupos de otra ferralla')
 
     def _collect_anchored_item_ids(self, grupo):
-        """IDs de MesaQueueItem que no deben moverse al cambiar tipos.
-
-        - Items INFERIOR cuyo bastidor (grupo_bastidor) tiene >=1 modulo
-          con inferior_hecho=True (bastidor 'en curso').
-        - Items SUPERIOR cuyo modulo tiene >=1 FotoFabricacion fase
-          SUPERIOR registrada (item 'a mitad del proceso').
-        """
-        active_items = MesaQueueItem.objects.filter(
-            mesa__grupo=grupo,
-            status__in=ACTIVE_QUEUE_STATUSES,
-        ).select_related('modulo')
-
-        # Bastidores con al menos 1 modulo inferior_hecho. La interseccion
-        # con active_items (que ya filtra por grupo) limita el resultado a
-        # los relevantes.
-        bastidores_en_curso = set(
-            Modulo.objects.filter(
-                grupo_bastidor__isnull=False,
-                inferior_hecho=True,
-            ).values_list('grupo_bastidor_id', flat=True)
-        )
-
-        # Modulos con foto de fase SUPERIOR (item 'en proceso').
-        modulos_sup_en_proceso = set(
-            FotoFabricacion.objects.filter(
-                mesa__grupo=grupo,
-                fase='SUPERIOR',
-            ).values_list('modulo_id', flat=True)
-        )
-
-        anchored = set()
-        for item in active_items:
-            if item.fase == 'INFERIOR':
-                gb_id = item.modulo.grupo_bastidor_id
-                if gb_id is not None and gb_id in bastidores_en_curso:
-                    anchored.add(item.id)
-            elif item.fase == 'SUPERIOR':
-                if item.modulo_id in modulos_sup_en_proceso:
-                    anchored.add(item.id)
-
-        return anchored
+        return _collect_anchored_item_ids_for_grupo(grupo)
 
     @staticmethod
-    def _apply_tipo_changes_and_compact_indices(grupo, final_tipos):
-        """Actualiza Mesa.tipo segun ``final_tipos`` (dict mesa_id->tipo) y
-        compacta indices a 1..N por tipo en el orden actual (indice, id).
+    def _apply_tipo_changes(grupo, final_tipos):
+        """Actualiza Mesa.tipo segun ``final_tipos`` (dict mesa_id->tipo).
 
-        Usa indices temporales >=10000 durante la reescritura para no
-        chocar con la unique constraint (grupo, tipo, indice). PostgreSQL
-        valida constraints al final de la transaccion para constraints
-        deferred, pero las UniqueConstraint sin DEFERRABLE se validan al
-        instante, asi que la fase temporal es necesaria.
+        Con indice global por grupo el indice no se toca: Mesa 1 sigue
+        siendo Mesa 1 aunque cambie su tipo de INF a SUP.
         """
-        mesas = list(grupo.mesas.all().order_by('indice', 'id'))
-        TEMP_BASE = 10000
-
-        # Fase 1: asignar tipo final + indice temporal unico para
-        # liberar los huecos de la nueva configuracion.
-        for offset, mesa in enumerate(mesas, start=1):
-            mesa.tipo = final_tipos.get(mesa.id, mesa.tipo)
-            mesa.indice = TEMP_BASE + offset
-            mesa.save(update_fields=['tipo', 'indice'])
-
-        # Fase 2: recompactar a 1..N por tipo conservando el orden estable.
-        counters = {tipo: 0 for tipo in MesaTipo.values}
-        for mesa in mesas:
-            counters[mesa.tipo] += 1
-            mesa.indice = counters[mesa.tipo]
-            mesa.save(update_fields=['indice'])
+        for mesa in grupo.mesas.all():
+            nuevo_tipo = final_tipos.get(mesa.id)
+            if nuevo_tipo and nuevo_tipo != mesa.tipo:
+                mesa.tipo = nuevo_tipo
+                mesa.save(update_fields=['tipo'])
 
     @action(detail=True, methods=['post'], url_path='cambiar-tipos')
     def cambiar_tipos(self, request, pk=None):
@@ -2035,18 +2056,10 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
                     status=400,
                 )
 
-        # Validar que tras los cambios queda >=1 INF y >=1 SUP.
         final_tipos = {
             mesa_id: cambios_por_mesa.get(mesa_id, mesa.tipo)
             for mesa_id, mesa in mesas_grupo.items()
         }
-        final_inf = sum(1 for t in final_tipos.values() if t == MesaTipo.INFERIOR)
-        final_sup = sum(1 for t in final_tipos.values() if t == MesaTipo.SUPERIOR)
-        if final_inf < 1 or final_sup < 1:
-            return Response(
-                {'detail': 'El grupo debe quedar con al menos 1 mesa INFERIOR y 1 SUPERIOR.'},
-                status=400,
-            )
 
         # Si no hay cambios efectivos, salimos sin tocar nada.
         if all(mesas_grupo[mid].tipo == t for mid, t in final_tipos.items()):
@@ -2060,7 +2073,7 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
                 status__in=ACTIVE_QUEUE_STATUSES,
             ).exclude(id__in=anchored_ids).delete()
 
-            self._apply_tipo_changes_and_compact_indices(grupo, final_tipos)
+            self._apply_tipo_changes(grupo, final_tipos)
 
             entries = list(
                 grupo.proyectos_cola.select_related('proyecto').order_by('orden', 'id')
@@ -2300,8 +2313,8 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
           este plan.
         """
         excluded_phase_keys = excluded_phase_keys or set()
-        if num_inferiores <= 0:
-            raise ValueError('num_inferiores debe ser >= 1')
+        if num_inferiores < 0:
+            raise ValueError('num_inferiores debe ser >= 0')
         if initial_loads_inf is None:
             initial_loads_inf = [0] * num_inferiores
         elif len(initial_loads_inf) != num_inferiores:
@@ -2310,9 +2323,12 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         modulos = list(
             proyecto.modulos.select_related('planta').prefetch_related('detalles_fase').all()
         )
+        # Sin mesas inferiores activas la fase INFERIOR no se planifica:
+        # los modulos pendientes de inferior se ignoran este pase.
         inferiors_pending = [
             modulo for modulo in modulos
-            if not modulo.cerrado
+            if num_inferiores > 0
+            and not modulo.cerrado
             and not modulo.inferior_hecho
             and (modulo.id, 'INFERIOR') not in excluded_phase_keys
         ]
@@ -2397,14 +2413,16 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         grupo.ensure_default_mesas()
         grupo.refresh_from_db()
 
-        # Mesas inferiores y superiores ordenadas por indice. El planner
-        # acepta cualquier N inferiores y M superiores por grupo.
-        mesas_inf = list(grupo.mesas.filter(tipo=MesaTipo.INFERIOR).order_by('indice'))
-        mesas_sup = list(grupo.mesas.filter(tipo=MesaTipo.SUPERIOR).order_by('indice'))
-        if not mesas_inf:
-            raise ValidationError('El grupo necesita al menos una mesa inferior.')
-        if not mesas_sup:
-            raise ValidationError('El grupo necesita al menos una mesa superior.')
+        # Mesas activas por tipo. El planner acepta cualquier N inferiores
+        # y M superiores; si una fase no tiene mesas activas, se salta esa
+        # fase silenciosamente (la usuaria puede fabricar solo INF o solo
+        # SUP por lotes).
+        mesas_inf = list(
+            grupo.mesas.filter(tipo=MesaTipo.INFERIOR, activa=True).order_by('indice')
+        )
+        mesas_sup = list(
+            grupo.mesas.filter(tipo=MesaTipo.SUPERIOR, activa=True).order_by('indice')
+        )
 
         if append_mode:
             preserved_until, preserved_by_mesa, preserved_phase_keys = self._get_all_active_prefix(grupo)

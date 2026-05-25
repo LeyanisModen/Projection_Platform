@@ -559,6 +559,34 @@ export class Dashboard implements OnInit, OnDestroy {
     });
   }
 
+  toggleMesaActiva(mesa: Mesa): void {
+    const queremosDesactivar = mesa.activa;
+    const accion = queremosDesactivar ? 'desactivar' : 'reactivar';
+    if (queremosDesactivar) {
+      const msg = (
+        `Desactivar Mesa ${mesa.indice}?\n\n` +
+        'No recibira trabajo nuevo. Los items anclados (bastidor INF en curso, ' +
+        'item SUP a medio fabricar) se quedan en esta mesa hasta terminarlos; ' +
+        'el resto se redistribuye a las demas mesas activas del grupo.'
+      );
+      if (!confirm(msg)) return;
+    }
+    this.gestionarBusy = true;
+    this.api.setMesaActiva(mesa.id, !queremosDesactivar).subscribe({
+      next: () => {
+        this.loadMesas();
+        this.loadGruposMesas();
+        this.gestionarBusy = false;
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.gestionarBusy = false;
+        alert(err?.error?.detail || `No se pudo ${accion} la mesa.`);
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
   /** Projects that aren't already queued on this grupo — used for the 'add' dropdown. */
   proyectosDisponibles(grupo: GrupoMesas | null): Proyecto[] {
     if (!grupo) return this.proyectos;
@@ -1210,11 +1238,9 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   mesaStatsLabel(mesa: { tipo: string; indice: number }): string {
-    switch (mesa.tipo) {
-      case 'INFERIOR': return `INF${mesa.indice}`;
-      case 'SUPERIOR': return `SUP${mesa.indice}`;
-      default: return 'Manual';
-    }
+    const tipoSuffix = mesa.tipo === 'INFERIOR' ? ' INF' :
+                       mesa.tipo === 'SUPERIOR' ? ' SUP' : '';
+    return `Mesa ${mesa.indice}${tipoSuffix}`;
   }
 
   dayLabel(iso: string): string {
@@ -2104,14 +2130,15 @@ export class Dashboard implements OnInit, OnDestroy {
     return (this.mesaQueueItems.get(mesaId) || []).filter(i => i.status !== 'HECHO');
   }
 
-  getMesaRoleLabel(mesa: Mesa): string {
+  getMesaRoleLabel(mesa: { indice: number }): string {
+    return `Mesa ${mesa.indice}`;
+  }
+
+  getMesaTipoLabel(mesa: { tipo: string }): string {
     switch (mesa.tipo) {
-      case 'INFERIOR':
-        return `INF${mesa.indice}`;
-      case 'SUPERIOR':
-        return `SUP${mesa.indice}`;
-      default:
-        return 'Manual';
+      case 'INFERIOR': return 'INF';
+      case 'SUPERIOR': return 'SUP';
+      default: return '';
     }
   }
 
@@ -2170,7 +2197,7 @@ export class Dashboard implements OnInit, OnDestroy {
     if (!mesa) return total;
     if (mesa.tipo === 'SUPERIOR') {
       const infMesas = this.mesas.filter(
-        m => m.grupo === mesa.grupo && m.tipo === 'INFERIOR'
+        m => m.grupo === mesa.grupo && m.tipo === 'INFERIOR' && m.activa
       );
       const numInf = Math.max(infMesas.length, 1);
       const infCap = Math.ceil(total / numInf);
@@ -2178,17 +2205,16 @@ export class Dashboard implements OnInit, OnDestroy {
       for (const inf of infMesas) {
         sum += Math.min(this.getMesaQueueItems(inf.id).length, infCap);
       }
-      // Reparte la suma entre las superiores del grupo (round-robin),
-      // ceil para ser generoso.
+      // Reparte la suma entre las superiores activas del grupo (round-robin).
       const numSup = Math.max(
-        this.mesas.filter(m => m.grupo === mesa.grupo && m.tipo === 'SUPERIOR').length,
+        this.mesas.filter(m => m.grupo === mesa.grupo && m.tipo === 'SUPERIOR' && m.activa).length,
         1,
       );
       return Math.ceil(sum / numSup);
     }
     if (mesa.tipo === 'INFERIOR') {
       const numInf = Math.max(
-        this.mesas.filter(m => m.grupo === mesa.grupo && m.tipo === 'INFERIOR').length,
+        this.mesas.filter(m => m.grupo === mesa.grupo && m.tipo === 'INFERIOR' && m.activa).length,
         1,
       );
       return Math.ceil(total / numInf);
@@ -2294,21 +2320,11 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   getMesasForGrupo(grupoId: number): Mesa[] {
-    const tipoOrder: Record<Mesa['tipo'], number> = {
-      INFERIOR: 1,
-      SUPERIOR: 2,
-      LEGACY: 99,
-    };
-
+    // Ahora el indice es global por grupo, asi que ordenar por indice
+    // basta. Mesa 1, Mesa 2, ... independientemente del tipo.
     return this.mesas
       .filter((mesa) => mesa.grupo === grupoId)
-      .sort((a, b) => {
-        const tipoDiff = (tipoOrder[a.tipo] ?? 99) - (tipoOrder[b.tipo] ?? 99);
-        if (tipoDiff !== 0) return tipoDiff;
-        const indiceDiff = (a.indice ?? 0) - (b.indice ?? 0);
-        if (indiceDiff !== 0) return indiceDiff;
-        return a.nombre.localeCompare(b.nombre);
-      });
+      .sort((a, b) => (a.indice ?? 0) - (b.indice ?? 0));
   }
 
   getMesasSinGrupo(): Mesa[] {

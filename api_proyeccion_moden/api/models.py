@@ -28,7 +28,6 @@ class ModuloEstado(models.TextChoices):
 class MesaTipo(models.TextChoices):
     INFERIOR = 'INFERIOR', 'Inferior'
     SUPERIOR = 'SUPERIOR', 'Superior'
-    LEGACY = 'LEGACY', 'Legacy'
 
 
 class MaterialTipo(models.TextChoices):
@@ -540,21 +539,20 @@ class GrupoMesas(models.Model):
     def ensure_default_mesas(self):
         """Crea las mesas por defecto del grupo solo si nace vacio.
 
-        Mantiene el default historico (2 inferiores + 1 superior) en el
-        momento del primer alta. Despues de eso no recrea nada, para que
-        las modificaciones del cliente (añadir/eliminar/cambiar tipo de
-        mesas) sean estables y no se reviertan en el siguiente replan.
+        Default: tres mesas con indice global 1..3 nombradas 'Mesa N',
+        con tipos (INF, INF, SUP). Despues del primer alta no recrea
+        nada para no revertir modificaciones del cliente.
         """
         if self.mesas.exists():
             return
-        mesa_specs = [
-            (MesaTipo.INFERIOR, 1, 'INF1'),
-            (MesaTipo.INFERIOR, 2, 'INF2'),
-            (MesaTipo.SUPERIOR, 1, 'SUP'),
+        defaults = [
+            (1, MesaTipo.INFERIOR),
+            (2, MesaTipo.INFERIOR),
+            (3, MesaTipo.SUPERIOR),
         ]
-        for tipo, indice, suffix in mesa_specs:
+        for indice, tipo in defaults:
             Mesa.objects.create(
-                nombre=f"{self.nombre} {suffix}",
+                nombre=f"Mesa {indice}",
                 usuario=self.usuario,
                 grupo=self,
                 tipo=tipo,
@@ -625,9 +623,13 @@ class Mesa(models.Model):
     tipo = models.CharField(
         max_length=20,
         choices=MesaTipo.choices,
-        default=MesaTipo.LEGACY,
+        default=MesaTipo.INFERIOR,
     )
     indice = models.PositiveIntegerField(default=1)
+    activa = models.BooleanField(
+        default=True,
+        help_text='Si False, el planificador la ignora pero se conserva (mesa en mantenimiento o proyector roto).',
+    )
 
     # Cache visual (source of truth is MesaQueueItem with status MOSTRANDO)
     imagen_actual = models.ForeignKey(
@@ -682,9 +684,9 @@ class Mesa(models.Model):
         db_table = 'api_mesa'
         constraints = [
             models.UniqueConstraint(
-                fields=['grupo', 'tipo', 'indice'],
-                condition=models.Q(grupo__isnull=False) & ~models.Q(tipo=MesaTipo.LEGACY),
-                name='unique_tipo_indice_por_grupo_mesas'
+                fields=['grupo', 'indice'],
+                condition=models.Q(grupo__isnull=False),
+                name='unique_indice_por_grupo_mesas'
             ),
         ]
 
