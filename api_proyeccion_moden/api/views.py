@@ -2088,8 +2088,8 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
                 )
             self._sync_proyecto_actual(grupo)
 
-        grupo.refresh_from_db()
-        serializer = self.get_serializer(grupo)
+        fresh = self._refresh_grupo_with_prefetch(grupo)
+        serializer = self.get_serializer(fresh)
         return Response({
             'status': 'ok',
             'grupo': serializer.data,
@@ -2103,6 +2103,18 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         if grupo.proyecto_actual_id != new_id:
             grupo.proyecto_actual_id = new_id
             grupo.save(update_fields=['proyecto_actual'])
+
+    def _refresh_grupo_with_prefetch(self, grupo):
+        """Lee el grupo desde BD con prefetch fresco. Es necesario tras
+        modificar proyectos_cola o mesas porque el cache de prefetch_related
+        guardado por get_object() no se invalida automaticamente, y el
+        serializer leeria valores stale (lista de cola vacia aunque acabes
+        de añadir un proyecto, por ejemplo)."""
+        return GrupoMesas.objects.select_related(
+            'usuario', 'proyecto_actual'
+        ).prefetch_related(
+            'mesas', 'proyectos_cola__proyecto',
+        ).get(id=grupo.id)
 
     @action(detail=True, methods=['post'], url_path='cola/add')
     def cola_add(self, request, pk=None):
@@ -2140,8 +2152,8 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
             # the cola insertion — surface them on the next 'planificar'.
             pass
 
-        grupo.refresh_from_db()
-        return Response(GrupoMesasSerializer(grupo).data)
+        fresh = self._refresh_grupo_with_prefetch(grupo)
+        return Response(GrupoMesasSerializer(fresh).data)
 
     @action(detail=True, methods=['post'], url_path='cola/remove')
     def cola_remove(self, request, pk=None):
@@ -2191,8 +2203,8 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
 
             self._sync_proyecto_actual(grupo)
 
-        grupo.refresh_from_db()
-        return Response(GrupoMesasSerializer(grupo).data)
+        fresh = self._refresh_grupo_with_prefetch(grupo)
+        return Response(GrupoMesasSerializer(fresh).data)
 
     @action(detail=True, methods=['post'], url_path='cola/reorder')
     def cola_reorder(self, request, pk=None):
@@ -2218,8 +2230,8 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
                     entry.save(update_fields=['orden'])
             self._sync_proyecto_actual(grupo)
 
-        grupo.refresh_from_db()
-        return Response(GrupoMesasSerializer(grupo).data)
+        fresh = self._refresh_grupo_with_prefetch(grupo)
+        return Response(GrupoMesasSerializer(fresh).data)
 
     def _create_queue_for_mesa(self, mesa, modules, fase, user, module_group_map, group_offset=0, start_position=0, has_active_items=False):
         created_items = []
@@ -2696,8 +2708,8 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         plan_summaries = self._plan_cola(grupo, request.user)
         self._sync_proyecto_actual(grupo)
 
-        grupo.refresh_from_db()
-        serializer = self.get_serializer(grupo)
+        fresh = self._refresh_grupo_with_prefetch(grupo)
+        serializer = self.get_serializer(fresh)
         return Response({
             'status': 'ok',
             'grupo': serializer.data,
