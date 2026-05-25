@@ -119,54 +119,6 @@
                                         </svg>
                                         <span class="mesa-empty-text">DESACTIVADA</span>
                                     </div>
-                                } @else if (mesa.tipo === 'SUPERIOR') {
-                                    <div class="mesa-queue mesa-queue-sup">
-                                        @if (getSupMostrandoItem(mesa.id); as mostrando) {
-                                            <div class="queue-item sup-mostrando-banner" [class]="getItemStatusClass(mostrando.status)">
-                                                <div class="queue-item-info">
-                                                    <span class="queue-item-nombre">{{ mostrando.modulo_nombre }}</span>
-                                                    <span class="queue-item-status">{{ mostrando.status }}</span>
-                                                    <span class="queue-item-dif-dot"
-    *ngIf="mostrando.dificultad != null"
-    [style.background-color]="dificultadColor(mostrando.dificultad)"
-    [title]="dificultadLabel(mostrando.dificultad) + ' (' + (mostrando.dificultad | number:'1.0-0') + ')'"></span>
-                                                </div>
-                                            </div>
-                                        }
-                                        <div class="sup-columns-grid">
-                                            <div class="sup-column sup-column-inf1">
-                                                @for (item of getSupQueueColumn(mesa.id, 0); track trackByItem($index, item)) {
-                                                    <div class="queue-item" [class]="getItemStatusClass(item.status)">
-                                                        <div class="queue-item-info">
-                                                            <span class="queue-item-nombre">{{ item.modulo_nombre }}</span>
-                                                            <span class="queue-item-status">{{ item.status }}</span>
-                                                            <span class="queue-item-dif-dot"
-    *ngIf="item.dificultad != null"
-    [style.background-color]="dificultadColor(item.dificultad)"
-    [title]="dificultadLabel(item.dificultad) + ' (' + (item.dificultad | number:'1.0-0') + ')'"></span>
-                                                        </div>
-                                                    </div>
-                                                }
-                                            </div>
-                                            <div class="sup-column sup-column-inf2">
-                                                @for (item of getSupQueueColumn(mesa.id, 1); track trackByItem($index, item)) {
-                                                    <div class="queue-item" [class]="getItemStatusClass(item.status)">
-                                                        <div class="queue-item-info">
-                                                            <span class="queue-item-nombre">{{ item.modulo_nombre }}</span>
-                                                            <span class="queue-item-status">{{ item.status }}</span>
-                                                            <span class="queue-item-dif-dot"
-    *ngIf="item.dificultad != null"
-    [style.background-color]="dificultadColor(item.dificultad)"
-    [title]="dificultadLabel(item.dificultad) + ' (' + (item.dificultad | number:'1.0-0') + ')'"></span>
-                                                        </div>
-                                                    </div>
-                                                }
-                                            </div>
-                                        </div>
-                                        @if (getSupHiddenCount(mesa.id) > 0) {
-                                            <div class="queue-more-caption">+{{ getSupHiddenCount(mesa.id) }} más programados</div>
-                                        }
-                                    </div>
                                 } @else {
                                     <div class="mesa-queue"
                                         cdkDropList

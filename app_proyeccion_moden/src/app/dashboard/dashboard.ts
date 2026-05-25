@@ -2149,21 +2149,13 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   /**
-   * The item currently MOSTRANDO on a SUP mesa is shown above both
-   * INF1/INF2 sub-columns (full width) so the operator can spot it fast.
-   */
-  getSupMostrandoItem(mesaId: number): MesaQueueItem | null {
-    return this.getMesaQueueItems(mesaId).find(i => i.status === 'MOSTRANDO') || null;
-  }
-
-  /**
    * Tope visual de items por mesa en el dashboard. Limite fijo y
    * predecible: el card no se hace infinito y todas las mesas miden
    * lo mismo. Lo que sobra cae al caption "+N más programados".
    */
   private readonly MAX_VISIBLE_ITEMS = 10;
 
-  /** Items visibles en la cola (INF) de una mesa. */
+  /** Items visibles en la cola de una mesa (mismo render para INF y SUP). */
   getVisibleMesaQueueItems(mesaId: number): MesaQueueItem[] {
     return this.getMesaQueueItems(mesaId).slice(0, this.MAX_VISIBLE_ITEMS);
   }
@@ -2171,23 +2163,6 @@ export class Dashboard implements OnInit, OnDestroy {
   getHiddenMesaQueueCount(mesaId: number): number {
     const total = this.getMesaQueueItems(mesaId).length;
     return Math.max(0, total - this.MAX_VISIBLE_ITEMS);
-  }
-
-  /**
-   * Split SUP queue into two columns based on item parity among non-showing items.
-   * Limit total visible to MAX_VISIBLE_ITEMS so the SUP card behaves
-   * like the INF cards.
-   */
-  getSupQueueColumn(mesaId: number, columnIndex: number): MesaQueueItem[] {
-    const rest = this.getMesaQueueItems(mesaId)
-      .filter(i => i.status !== 'MOSTRANDO')
-      .slice(0, this.MAX_VISIBLE_ITEMS);
-    return rest.filter((_, i) => i % 2 === columnIndex);
-  }
-
-  getSupHiddenCount(mesaId: number): number {
-    const rest = this.getMesaQueueItems(mesaId).filter(i => i.status !== 'MOSTRANDO');
-    return Math.max(0, rest.length - this.MAX_VISIBLE_ITEMS);
   }
 
 
