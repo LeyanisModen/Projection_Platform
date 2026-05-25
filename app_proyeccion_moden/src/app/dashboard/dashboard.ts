@@ -133,7 +133,6 @@ export class Dashboard implements OnInit, OnDestroy {
   showGestionarModal = false;
   gestionandoGrupo: GrupoMesas | null = null;
   gestionarGrupoNombre: string = '';
-  gestionarMesasNombres: Record<number, string> = {};
   // Estado pendiente por mesa dentro del modal (no aplicado hasta cerrar
   // y confirmar). Tres valores posibles: 'INFERIOR', 'SUPERIOR',
   // 'INACTIVA' -- la mesa solo es una cosa a la vez.
@@ -488,10 +487,8 @@ export class Dashboard implements OnInit, OnDestroy {
   openGestionarModal(grupo: GrupoMesas): void {
     this.gestionandoGrupo = grupo;
     this.gestionarGrupoNombre = grupo.nombre;
-    this.gestionarMesasNombres = {};
     this.gestionarMesasEstados = {};
     for (const mesa of this.getMesasForGrupo(grupo.id)) {
-      this.gestionarMesasNombres[mesa.id] = mesa.nombre;
       this.gestionarMesasEstados[mesa.id] = this.mesaEstadoActual(mesa);
     }
     this.gestionarAddProyectoId = null;
@@ -569,7 +566,6 @@ export class Dashboard implements OnInit, OnDestroy {
     this.showGestionarModal = false;
     this.gestionandoGrupo = null;
     this.gestionarGrupoNombre = '';
-    this.gestionarMesasNombres = {};
     this.gestionarMesasEstados = {};
     this.gestionarAplicandoCambios = false;
     this.gestionarAddProyectoId = null;
@@ -613,34 +609,6 @@ export class Dashboard implements OnInit, OnDestroy {
     });
   }
 
-  /** Persist mesa rename from inside the modal. Reuses ApiService.updateMesa. */
-  saveGestionarMesaNombre(mesa: Mesa): void {
-    const target = (this.gestionarMesasNombres[mesa.id] || '').trim();
-    if (!target || target === mesa.nombre) {
-      this.gestionarMesasNombres[mesa.id] = mesa.nombre;
-      return;
-    }
-    this.gestionarBusy = true;
-    this.api.updateMesa(mesa.id, { nombre: target }).subscribe({
-      next: (updated) => {
-        mesa.nombre = updated.nombre;
-        this.gestionarMesasNombres[mesa.id] = updated.nombre;
-        for (const [key, val] of this.subfaseAssignedToMesa) {
-          if (val.mesaName && val.mesaName === mesa.nombre) {
-            val.mesaName = updated.nombre;
-          }
-        }
-        this.gestionarBusy = false;
-        this.cdr.detectChanges();
-      },
-      error: () => {
-        alert('No se pudo renombrar la mesa.');
-        this.gestionarMesasNombres[mesa.id] = mesa.nombre;
-        this.gestionarBusy = false;
-        this.cdr.detectChanges();
-      }
-    });
-  }
 
   addProyectoToCola(): void {
     if (!this.gestionandoGrupo || !this.gestionarAddProyectoId) return;

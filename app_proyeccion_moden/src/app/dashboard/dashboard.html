@@ -673,12 +673,6 @@
                                 <div class="gestionar-mesa-row"
                                     [class.mesa-inactiva]="gestionarMesasEstados[mesa.id] === 'INACTIVA'">
                                     <span class="mesa-role-badge">{{ getMesaRoleLabel(mesa) }}</span>
-                                    <input type="text"
-                                        class="gestionar-input gestionar-mesa-input"
-                                        [(ngModel)]="gestionarMesasNombres[mesa.id]"
-                                        (blur)="saveGestionarMesaNombre(mesa)"
-                                        (keydown.enter)="saveGestionarMesaNombre(mesa)"
-                                        maxlength="200">
                                     <div class="mesa-estado-switch"
                                         role="group"
                                         [attr.aria-label]="'Estado de Mesa ' + mesa.indice">
