@@ -1004,6 +1004,16 @@
   border: 1px solid rgba(26, 26, 46, 0.06);
   border-radius: 8px;
   font-size: 0.9rem;
+  cursor: grab;
+}
+
+.cola-row:active {
+  cursor: grabbing;
+}
+
+.cola-row:hover {
+  border-color: rgba(255, 107, 53, 0.35);
+  background: #fff;
 }
 
 .cola-row.cdk-drag-preview {
@@ -1016,22 +1026,15 @@
 }
 
 .cola-handle {
-  cursor: grab;
-  color: #6c757d;
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 1rem;
-  transition: background 0.12s, color 0.12s;
+  color: #adb5bd;
+  padding: 0 2px;
+  font-size: 0.9rem;
   user-select: none;
+  pointer-events: none;
 }
 
-.cola-handle:hover {
-  background: rgba(255, 107, 53, 0.12);
+.cola-row:hover .cola-handle {
   color: var(--accent-orange, #ff6b35);
-}
-
-.cola-handle:active {
-  cursor: grabbing;
 }
 
 .cola-position {
@@ -1718,17 +1721,20 @@
 }
 
 .mesa-badge.inactiva {
-  background: #888;
-  color: #fff;
+  background: transparent;
+  border: 1px solid #b8bcc4;
+  color: #6c757d;
+  font-weight: 600;
+  letter-spacing: 0.04em;
 }
 
 .mesa-card.mesa-inactiva {
-  opacity: 0.55;
-  filter: grayscale(0.7);
+  opacity: 0.72;
+  filter: grayscale(0.45);
 }
 
 .gestionar-mesa-row.mesa-inactiva {
-  opacity: 0.6;
+  opacity: 0.75;
 }
 
 .gestionar-modal-footer {

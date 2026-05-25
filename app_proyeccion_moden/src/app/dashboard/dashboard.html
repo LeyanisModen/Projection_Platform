@@ -729,9 +729,9 @@
                         } @else {
                             <ul class="cola-list" cdkDropList (cdkDropListDropped)="onColaDrop($event)">
                                 @for (entry of gestionandoGrupo.proyectos_cola; track entry.id; let i = $index) {
-                                    <li class="cola-row" cdkDrag>
-                                        <span class="cola-handle" cdkDragHandle title="Arrastra para reordenar">
-                                            <i class="fa fa-grip-vertical" aria-hidden="true"></i>
+                                    <li class="cola-row" cdkDrag title="Arrastra para reordenar">
+                                        <span class="cola-handle" aria-hidden="true">
+                                            <i class="fa fa-grip-vertical"></i>
                                         </span>
                                         <span class="cola-position">{{ i + 1 }}</span>
                                         <span class="cola-nombre">{{ entry.proyecto_nombre }}</span>
@@ -740,6 +740,7 @@
                                         }
                                         <button type="button" class="cola-remove"
                                             (click)="removeProyectoFromCola(entry.proyecto)"
+                                            (mousedown)="$event.stopPropagation()"
                                             [disabled]="gestionarBusy"
                                             title="Quitar de la cola">
                                             <i class="fa fa-times" aria-hidden="true"></i>
