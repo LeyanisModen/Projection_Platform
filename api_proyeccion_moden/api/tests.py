@@ -617,7 +617,7 @@ class PlanningFoundationTests(APITestCase):
         mesa_inf_2 = grupo.mesas.get(tipo="INFERIOR", indice=2)
 
         resp = self.client.post(
-            f"/api/grupos-mesas/{grupo.id}/cambiar-tipos/",
+            f"/api/grupos-mesas/{grupo.id}/actualizar-mesas/",
             {"cambios": [{"mesa_id": mesa_inf_2.id, "tipo": "SUPERIOR"}]},
             format="json",
         )
@@ -637,7 +637,7 @@ class PlanningFoundationTests(APITestCase):
         mesa_inf_2 = grupo.mesas.get(tipo="INFERIOR", indice=2)
 
         resp = self.client.post(
-            f"/api/grupos-mesas/{grupo.id}/cambiar-tipos/",
+            f"/api/grupos-mesas/{grupo.id}/actualizar-mesas/",
             {"cambios": [
                 {"mesa_id": mesa_inf_1.id, "tipo": "SUPERIOR"},
                 {"mesa_id": mesa_inf_2.id, "tipo": "SUPERIOR"},
@@ -695,7 +695,7 @@ class PlanningFoundationTests(APITestCase):
         # Convertimos la OTRA inferior (no la de M-02) a SUP.
         otra_inf = grupo.mesas.filter(tipo="INFERIOR").exclude(id=mesa_original.id).first()
         resp = self.client.post(
-            f"/api/grupos-mesas/{grupo.id}/cambiar-tipos/",
+            f"/api/grupos-mesas/{grupo.id}/actualizar-mesas/",
             {"cambios": [{"mesa_id": otra_inf.id, "tipo": "SUPERIOR"}]},
             format="json",
         )
@@ -730,7 +730,7 @@ class PlanningFoundationTests(APITestCase):
         # Convertir la INF2 a SUP (anade una SUP mas).
         mesa_inf_2 = grupo.mesas.get(tipo="INFERIOR", indice=2)
         resp = self.client.post(
-            f"/api/grupos-mesas/{grupo.id}/cambiar-tipos/",
+            f"/api/grupos-mesas/{grupo.id}/actualizar-mesas/",
             {"cambios": [{"mesa_id": mesa_inf_2.id, "tipo": "SUPERIOR"}]},
             format="json",
         )
@@ -746,7 +746,7 @@ class PlanningFoundationTests(APITestCase):
 
         # Mandar el mismo tipo que ya tiene -> rechazo.
         resp = self.client.post(
-            f"/api/grupos-mesas/{grupo.id}/cambiar-tipos/",
+            f"/api/grupos-mesas/{grupo.id}/actualizar-mesas/",
             {"cambios": [{"mesa_id": mesa_inf_1.id, "tipo": "INFERIOR"}]},
             format="json",
         )
@@ -758,7 +758,7 @@ class PlanningFoundationTests(APITestCase):
         mesa_otro = otro_grupo.mesas.first()
 
         resp = self.client.post(
-            f"/api/grupos-mesas/{grupo.id}/cambiar-tipos/",
+            f"/api/grupos-mesas/{grupo.id}/actualizar-mesas/",
             {"cambios": [{"mesa_id": mesa_otro.id, "tipo": "SUPERIOR"}]},
             format="json",
         )
@@ -796,7 +796,11 @@ class PlanningFoundationTests(APITestCase):
         mesa_inf_1 = grupo.mesas.get(tipo="INFERIOR", indice=1)
         mesa_inf_2 = grupo.mesas.get(tipo="INFERIOR", indice=2)
 
-        resp = self.client.post(f"/api/mesas/{mesa_inf_2.id}/desactivar/")
+        resp = self.client.post(
+            f"/api/grupos-mesas/{grupo.id}/actualizar-mesas/",
+            {"cambios": [{"mesa_id": mesa_inf_2.id, "activa": False}]},
+            format="json",
+        )
         self.assertEqual(resp.status_code, 200)
 
         mesa_inf_2.refresh_from_db()
@@ -841,9 +845,17 @@ class PlanningFoundationTests(APITestCase):
         mesa_inf_2 = grupo.mesas.get(tipo="INFERIOR", indice=2)
 
         # Desactivar concentra todo en INF1.
-        self.client.post(f"/api/mesas/{mesa_inf_2.id}/desactivar/")
+        self.client.post(
+            f"/api/grupos-mesas/{grupo.id}/actualizar-mesas/",
+            {"cambios": [{"mesa_id": mesa_inf_2.id, "activa": False}]},
+            format="json",
+        )
         # Reactivar redistribuye.
-        resp = self.client.post(f"/api/mesas/{mesa_inf_2.id}/reactivar/")
+        resp = self.client.post(
+            f"/api/grupos-mesas/{grupo.id}/actualizar-mesas/",
+            {"cambios": [{"mesa_id": mesa_inf_2.id, "activa": True}]},
+            format="json",
+        )
         self.assertEqual(resp.status_code, 200)
 
         mesa_inf_2.refresh_from_db()
@@ -860,13 +872,38 @@ class PlanningFoundationTests(APITestCase):
             2,
         )
 
-    def test_desactivar_mesa_rechaza_si_ya_inactiva(self):
-        grupo = self._crear_grupo("Grupo Doble Desactivar")
-        mesa = grupo.mesas.first()
-        mesa.activa = False
-        mesa.save(update_fields=["activa"])
+    def test_actualizar_mesas_combina_tipo_y_activa(self):
+        """El endpoint unificado acepta cambios de tipo y activa juntos
+        en una sola llamada y replanifica una sola vez."""
+        grupo = self._crear_grupo("Grupo Combo")
+        mesa_inf_2 = grupo.mesas.get(tipo="INFERIOR", indice=2)
+        mesa_sup = grupo.mesas.get(tipo="SUPERIOR", indice=3)
 
-        resp = self.client.post(f"/api/mesas/{mesa.id}/desactivar/")
+        resp = self.client.post(
+            f"/api/grupos-mesas/{grupo.id}/actualizar-mesas/",
+            {"cambios": [
+                {"mesa_id": mesa_inf_2.id, "tipo": "SUPERIOR", "activa": True},
+                {"mesa_id": mesa_sup.id, "activa": False},
+            ]},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200)
+
+        mesa_inf_2.refresh_from_db()
+        mesa_sup.refresh_from_db()
+        self.assertEqual(mesa_inf_2.tipo, "SUPERIOR")
+        self.assertTrue(mesa_inf_2.activa)
+        self.assertFalse(mesa_sup.activa)
+
+    def test_actualizar_mesas_rechaza_sin_cambios_efectivos(self):
+        grupo = self._crear_grupo("Grupo Sin Cambios Combo")
+        mesa = grupo.mesas.get(tipo="INFERIOR", indice=1)
+
+        resp = self.client.post(
+            f"/api/grupos-mesas/{grupo.id}/actualizar-mesas/",
+            {"cambios": [{"mesa_id": mesa.id, "tipo": "INFERIOR", "activa": True}]},
+            format="json",
+        )
         self.assertEqual(resp.status_code, 400)
 
     def test_import_technical_data_from_json_creates_phase_details(self):

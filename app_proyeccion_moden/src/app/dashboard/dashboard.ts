@@ -134,14 +134,13 @@ export class Dashboard implements OnInit, OnDestroy {
   gestionandoGrupo: GrupoMesas | null = null;
   gestionarGrupoNombre: string = '';
   gestionarMesasNombres: Record<number, string> = {};
-  // Tipo pendiente por mesa dentro del modal (no aplicado hasta pulsar
-  // "Aplicar cambios de tipo"). Si el valor coincide con mesa.tipo, no
-  // cuenta como cambio.
-  gestionarMesasTipos: Record<number, 'INFERIOR' | 'SUPERIOR'> = {};
-  gestionarCambiandoTipos = false;
+  // Estado pendiente por mesa dentro del modal (no aplicado hasta cerrar
+  // y confirmar). Tres valores posibles: 'INFERIOR', 'SUPERIOR',
+  // 'INACTIVA' -- la mesa solo es una cosa a la vez.
+  gestionarMesasEstados: Record<number, 'INFERIOR' | 'SUPERIOR' | 'INACTIVA'> = {};
+  gestionarAplicandoCambios = false;
   gestionarAddProyectoId: number | null = null;
   gestionarBusy = false;
-  gestionarPlanificando = false;
 
   verPlano(planta: Planta): void {
     if (planta.plano_imagen) {
@@ -490,101 +489,96 @@ export class Dashboard implements OnInit, OnDestroy {
     this.gestionandoGrupo = grupo;
     this.gestionarGrupoNombre = grupo.nombre;
     this.gestionarMesasNombres = {};
-    this.gestionarMesasTipos = {};
+    this.gestionarMesasEstados = {};
     for (const mesa of this.getMesasForGrupo(grupo.id)) {
       this.gestionarMesasNombres[mesa.id] = mesa.nombre;
-      // Solo proponemos INF/SUP en el switch; LEGACY queda fuera (las
-      // mesas LEGACY no se ofrecen para cambio de rol).
-      if (mesa.tipo === 'INFERIOR' || mesa.tipo === 'SUPERIOR') {
-        this.gestionarMesasTipos[mesa.id] = mesa.tipo;
-      }
+      this.gestionarMesasEstados[mesa.id] = this.mesaEstadoActual(mesa);
     }
     this.gestionarAddProyectoId = null;
     this.showGestionarModal = true;
     this.cdr.detectChanges();
   }
 
-  closeGestionarModal(): void {
-    this.showGestionarModal = false;
-    this.gestionandoGrupo = null;
-    this.gestionarGrupoNombre = '';
-    this.gestionarMesasNombres = {};
-    this.gestionarMesasTipos = {};
-    this.gestionarCambiandoTipos = false;
-    this.gestionarAddProyectoId = null;
-    this.cdr.detectChanges();
+  /** Estado tri-state derivado del modelo (tipo + activa). */
+  mesaEstadoActual(mesa: { tipo: string; activa: boolean }): 'INFERIOR' | 'SUPERIOR' | 'INACTIVA' {
+    if (!mesa.activa) return 'INACTIVA';
+    return mesa.tipo === 'SUPERIOR' ? 'SUPERIOR' : 'INFERIOR';
   }
 
-  /** Cambios de tipo pendientes (mesa.tipo actual != gestionarMesasTipos[id]). */
-  cambiosTiposPendientes(): { mesa_id: number; tipo: 'INFERIOR' | 'SUPERIOR' }[] {
+  /** Cambios pendientes vs estado actual de cada mesa. */
+  cambiosMesasPendientes(): { mesa_id: number; tipo?: 'INFERIOR' | 'SUPERIOR'; activa?: boolean }[] {
     if (!this.gestionandoGrupo) return [];
-    const out: { mesa_id: number; tipo: 'INFERIOR' | 'SUPERIOR' }[] = [];
+    const out: { mesa_id: number; tipo?: 'INFERIOR' | 'SUPERIOR'; activa?: boolean }[] = [];
     for (const mesa of this.getMesasForGrupo(this.gestionandoGrupo.id)) {
-      const tipoPendiente = this.gestionarMesasTipos[mesa.id];
-      if (tipoPendiente && tipoPendiente !== mesa.tipo) {
-        out.push({ mesa_id: mesa.id, tipo: tipoPendiente });
+      const estadoPendiente = this.gestionarMesasEstados[mesa.id];
+      const estadoActual = this.mesaEstadoActual(mesa);
+      if (!estadoPendiente || estadoPendiente === estadoActual) continue;
+
+      const cambio: { mesa_id: number; tipo?: 'INFERIOR' | 'SUPERIOR'; activa?: boolean } = {
+        mesa_id: mesa.id,
+      };
+      if (estadoPendiente === 'INACTIVA') {
+        cambio.activa = false;
+        // Conservamos el tipo actual.
+      } else {
+        cambio.tipo = estadoPendiente;
+        cambio.activa = true;
       }
+      out.push(cambio);
     }
     return out;
   }
 
-  aplicarCambiosTipos(): void {
-    if (!this.gestionandoGrupo) return;
-    const grupo = this.gestionandoGrupo;
-    const cambios = this.cambiosTiposPendientes();
-    if (cambios.length === 0) return;
-
+  /** Cierre del modal: si hay cambios pendientes, confirma y aplica
+   * antes de cerrar. Si no hay cambios, cierra directo. */
+  intentarCerrarGestionarModal(): void {
+    const cambios = this.cambiosMesasPendientes();
+    if (cambios.length === 0) {
+      this.cerrarGestionarSinCambios();
+      return;
+    }
+    const total = cambios.length;
+    const palabra = total === 1 ? 'cambio' : 'cambios';
     const msg = (
-      'Esto redistribuye los modulos pendientes segun los nuevos tipos.\n' +
-      'Los bastidores INF en curso y los items SUP a medio fabricar se quedan donde estan.\n\n' +
-      'Continuar?'
+      `Aplicar ${total} ${palabra} en las mesas?\n\n` +
+      'Los modulos pendientes se redistribuyen segun la nueva configuracion. ' +
+      'Los bastidores INF en curso y los items SUP a medio fabricar se quedan donde estan.'
     );
     if (!confirm(msg)) return;
 
-    this.gestionarCambiandoTipos = true;
-    this.api.cambiarTiposMesa(grupo.id, cambios).subscribe({
+    if (!this.gestionandoGrupo) return;
+    const grupo = this.gestionandoGrupo;
+    this.gestionarAplicandoCambios = true;
+    this.api.actualizarMesasGrupo(grupo.id, cambios).subscribe({
       next: () => {
-        // Recargar mesas + grupos para reflejar la nueva configuracion.
         this.loadMesas();
         this.loadGruposMesas();
-        this.gestionarCambiandoTipos = false;
-        // Cerramos el modal: la usuaria ve el resultado en el dashboard.
-        this.closeGestionarModal();
+        this.gestionarAplicandoCambios = false;
+        this.cerrarGestionarSinCambios();
       },
       error: (err) => {
-        this.gestionarCambiandoTipos = false;
-        alert(err?.error?.detail || 'No se pudo aplicar el cambio de tipos.');
+        this.gestionarAplicandoCambios = false;
+        alert(err?.error?.detail || 'No se pudieron aplicar los cambios.');
         this.cdr.detectChanges();
       },
     });
   }
 
-  toggleMesaActiva(mesa: Mesa): void {
-    const queremosDesactivar = mesa.activa;
-    const accion = queremosDesactivar ? 'desactivar' : 'reactivar';
-    if (queremosDesactivar) {
-      const msg = (
-        `Desactivar Mesa ${mesa.indice}?\n\n` +
-        'No recibira trabajo nuevo. Los items anclados (bastidor INF en curso, ' +
-        'item SUP a medio fabricar) se quedan en esta mesa hasta terminarlos; ' +
-        'el resto se redistribuye a las demas mesas activas del grupo.'
-      );
-      if (!confirm(msg)) return;
-    }
-    this.gestionarBusy = true;
-    this.api.setMesaActiva(mesa.id, !queremosDesactivar).subscribe({
-      next: () => {
-        this.loadMesas();
-        this.loadGruposMesas();
-        this.gestionarBusy = false;
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        this.gestionarBusy = false;
-        alert(err?.error?.detail || `No se pudo ${accion} la mesa.`);
-        this.cdr.detectChanges();
-      },
-    });
+  /** Cierra el modal limpiando el estado local. No aplica nada. */
+  cerrarGestionarSinCambios(): void {
+    this.showGestionarModal = false;
+    this.gestionandoGrupo = null;
+    this.gestionarGrupoNombre = '';
+    this.gestionarMesasNombres = {};
+    this.gestionarMesasEstados = {};
+    this.gestionarAplicandoCambios = false;
+    this.gestionarAddProyectoId = null;
+    this.cdr.detectChanges();
+  }
+
+  /** Alias retrocompat para callsites que ya esperan 'close' del modal. */
+  closeGestionarModal(): void {
+    this.intentarCerrarGestionarModal();
   }
 
   /** Projects that aren't already queued on this grupo — used for the 'add' dropdown. */
@@ -710,41 +704,6 @@ export class Dashboard implements OnInit, OnDestroy {
         alert('No se pudo reordenar la cola.');
         grupo.proyectos_cola = previous;
         this.gestionarBusy = false;
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  planificarActual(): void {
-    if (!this.gestionandoGrupo) return;
-    const grupo = this.gestionandoGrupo;
-    const head = grupo.proyectos_cola[0];
-    if (!head) {
-      alert('La cola está vacía: añade al menos un proyecto antes de planificar.');
-      return;
-    }
-    this.gestionarPlanificando = true;
-    this.api.planificarGrupoMesas(grupo.id, head.proyecto).subscribe({
-      next: (response: any) => {
-        // The response carries the fresh grupo payload; apply it to the
-        // modal state directly so the cola, header and mesas refresh
-        // without waiting for the background list reload.
-        if (response?.grupo) {
-          this.applyGestionarGrupoUpdate(response.grupo);
-        }
-        this.loadMesas();
-        this.gestionarPlanificando = false;
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        const detail = err?.error?.detail;
-        const conflicts = err?.error?.conflicts;
-        if (Array.isArray(conflicts) && conflicts.length) {
-          alert(`${detail || 'No se pudo planificar.'}\n\n${conflicts.join('\n')}`);
-        } else {
-          alert(detail || 'No se pudo planificar.');
-        }
-        this.gestionarPlanificando = false;
         this.cdr.detectChanges();
       }
     });

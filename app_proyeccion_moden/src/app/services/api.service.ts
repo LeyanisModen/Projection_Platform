@@ -600,12 +600,12 @@ export class ApiService {
         return this.http.delete<void>(`${this.baseUrl}/grupos-mesas/${id}/`, { headers: this.getHeaders() });
     }
 
-    cambiarTiposMesa(
+    actualizarMesasGrupo(
         grupoId: number,
-        cambios: { mesa_id: number; tipo: 'INFERIOR' | 'SUPERIOR' }[],
+        cambios: { mesa_id: number; tipo?: 'INFERIOR' | 'SUPERIOR'; activa?: boolean }[],
     ): Observable<PlanificarGrupoResponse> {
         return this.http.post<PlanificarGrupoResponse>(
-            `${this.baseUrl}/grupos-mesas/${grupoId}/cambiar-tipos/`,
+            `${this.baseUrl}/grupos-mesas/${grupoId}/actualizar-mesas/`,
             { cambios },
             { headers: this.getHeaders() }
         );
@@ -662,14 +662,6 @@ export class ApiService {
         );
     }
 
-    setMesaActiva(mesaId: number, activa: boolean): Observable<Mesa> {
-        const action = activa ? 'reactivar' : 'desactivar';
-        return this.http.post<Mesa>(
-            `${this.baseUrl}/mesas/${mesaId}/${action}/`,
-            {},
-            { headers: this.getHeaders() }
-        );
-    }
 
     updateMesa(id: number, data: any): Observable<Mesa> {
         return this.http.patch<Mesa>(`${this.baseUrl}/mesas/${id}/`, data, { headers: this.getHeaders() });

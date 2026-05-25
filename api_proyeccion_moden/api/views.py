@@ -1212,6 +1212,33 @@ class ProyectoViewSet(viewsets.ModelViewSet):
                 proyecto.datos_tecnicos_importados = True
                 proyecto.save(update_fields=['datos_tecnicos_importados'])
 
+                # Auto-replan: cualquier grupo de mesas con este proyecto
+                # ya en cola debe replanificar para recoger los modulos
+                # recien creados (antes hacia falta pulsar 'Planificar
+                # ahora' a mano).
+                grupos_mesas_afectados = list(
+                    GrupoMesas.objects.filter(
+                        proyectos_cola__proyecto=proyecto,
+                    ).distinct()
+                )
+                grupo_vs = GrupoMesasViewSet()
+                for grupo_m in grupos_mesas_afectados:
+                    entries = list(
+                        grupo_m.proyectos_cola
+                        .select_related('proyecto')
+                        .order_by('orden', 'id')
+                    )
+                    for entry in entries:
+                        try:
+                            grupo_vs._build_group_plan(
+                                grupo_m, entry.proyecto, request.user, append_mode=True,
+                            )
+                        except Exception:
+                            # No interrumpir el import si el replan
+                            # falla en algun grupo concreto.
+                            pass
+                    grupo_vs._sync_proyecto_actual(grupo_m)
+
         stats['grupos_bastidor'] = grupos_creados
 
         return Response({
@@ -1827,68 +1854,6 @@ class MesaViewSet(viewsets.ModelViewSet):
             'message': 'Calibration saved successfully'
         })
 
-    def _replan_grupo_preserving_anchored(self, grupo, user):
-        """Borra items activos no anclados del grupo y replanifica cada
-        proyecto de su cola en modo append. Comparte la semantica del
-        switch de tipos: lo en curso se queda donde estaba; el resto se
-        redistribuye entre las mesas activas actuales.
-        """
-        with transaction.atomic():
-            anchored_ids = _collect_anchored_item_ids_for_grupo(grupo)
-            MesaQueueItem.objects.filter(
-                mesa__grupo=grupo,
-                status__in=ACTIVE_QUEUE_STATUSES,
-            ).exclude(id__in=anchored_ids).delete()
-
-            # Reutilizamos el planificador del GrupoMesasViewSet (todos
-            # sus helpers de planning son stateless en la practica).
-            grupo_vs = GrupoMesasViewSet()
-            entries = list(
-                grupo.proyectos_cola.select_related('proyecto').order_by('orden', 'id')
-            )
-            for entry in entries:
-                grupo_vs._build_group_plan(grupo, entry.proyecto, user, append_mode=True)
-            grupo_vs._sync_proyecto_actual(grupo)
-
-    @action(detail=True, methods=['post'])
-    def desactivar(self, request, pk=None):
-        """Marca la mesa como inactiva (no recibe trabajo nuevo) y
-        redistribuye sus items no-anclados al resto de mesas activas del
-        grupo. Los items anclados (bastidor INF en curso, item SUP con
-        foto) se quedan en la mesa desactivada hasta terminarlos.
-        """
-        mesa = self.get_object()
-        if not mesa.activa:
-            return Response({'detail': 'La mesa ya esta desactivada.'}, status=400)
-        if mesa.grupo_id is None:
-            mesa.activa = False
-            mesa.save(update_fields=['activa'])
-            return Response(MesaSerializer(mesa, context={'request': request}).data)
-
-        with transaction.atomic():
-            mesa.activa = False
-            mesa.save(update_fields=['activa'])
-            self._replan_grupo_preserving_anchored(mesa.grupo, request.user)
-
-        mesa.refresh_from_db()
-        return Response(MesaSerializer(mesa, context={'request': request}).data)
-
-    @action(detail=True, methods=['post'])
-    def reactivar(self, request, pk=None):
-        """Reactiva la mesa y replanifica para que vuelva a recibir trabajo."""
-        mesa = self.get_object()
-        if mesa.activa:
-            return Response({'detail': 'La mesa ya esta activa.'}, status=400)
-
-        with transaction.atomic():
-            mesa.activa = True
-            mesa.save(update_fields=['activa'])
-            if mesa.grupo_id:
-                self._replan_grupo_preserving_anchored(mesa.grupo, request.user)
-
-        mesa.refresh_from_db()
-        return Response(MesaSerializer(mesa, context={'request': request}).data)
-
     @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
     def set_index(self, request, pk=None):
         """
@@ -2002,28 +1967,42 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         return _collect_anchored_item_ids_for_grupo(grupo)
 
     @staticmethod
-    def _apply_tipo_changes(grupo, final_tipos):
-        """Actualiza Mesa.tipo segun ``final_tipos`` (dict mesa_id->tipo).
-
-        Con indice global por grupo el indice no se toca: Mesa 1 sigue
-        siendo Mesa 1 aunque cambie su tipo de INF a SUP.
+    def _apply_mesa_changes(grupo, final_states):
+        """Actualiza tipo y activa de las mesas del grupo segun
+        ``final_states`` (dict mesa_id -> {'tipo': str, 'activa': bool}).
+        El indice es global y no se toca.
         """
         for mesa in grupo.mesas.all():
-            nuevo_tipo = final_tipos.get(mesa.id)
+            target = final_states.get(mesa.id)
+            if not target:
+                continue
+            updates = []
+            nuevo_tipo = target.get('tipo')
+            nueva_activa = target.get('activa')
             if nuevo_tipo and nuevo_tipo != mesa.tipo:
                 mesa.tipo = nuevo_tipo
-                mesa.save(update_fields=['tipo'])
+                updates.append('tipo')
+            if nueva_activa is not None and nueva_activa != mesa.activa:
+                mesa.activa = nueva_activa
+                updates.append('activa')
+            if updates:
+                mesa.save(update_fields=updates)
 
-    @action(detail=True, methods=['post'], url_path='cambiar-tipos')
-    def cambiar_tipos(self, request, pk=None):
-        """Cambia el tipo de una o varias mesas del grupo y replanifica.
+    @action(detail=True, methods=['post'], url_path='actualizar-mesas')
+    def actualizar_mesas(self, request, pk=None):
+        """Aplica cambios de tipo y/o activa a varias mesas en una sola
+        llamada y replanifica una vez al final.
 
-        Body: {"cambios": [{"mesa_id": int, "tipo": "INFERIOR"|"SUPERIOR"}, ...]}
+        Body: {"cambios": [
+            {"mesa_id": int, "tipo": "INFERIOR"|"SUPERIOR", "activa": bool},
+            ...
+        ]}
 
         Items 'anclados' (bastidor INF en curso, item SUP con foto)
-        permanecen en su mesa actual aunque cambie de tipo. El resto se
-        borra y se redistribuye con la nueva configuracion. Atomico:
-        si alguna validacion falla no se aplica nada.
+        permanecen en su mesa actual. El resto se borra y se
+        redistribuye entre las mesas activas con la nueva
+        configuracion. Atomico: si alguna validacion falla, no se
+        aplica nada.
         """
         grupo = self.get_object()
         self._check_grupo_access(grupo)
@@ -2039,14 +2018,30 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
             if not isinstance(entry, dict):
                 return Response({'detail': 'Cada cambio debe ser un objeto.'}, status=400)
             mesa_id = entry.get('mesa_id')
-            nuevo_tipo = (entry.get('tipo') or '').upper()
             if not isinstance(mesa_id, int):
                 return Response({'detail': 'mesa_id debe ser entero.'}, status=400)
-            if nuevo_tipo not in (MesaTipo.INFERIOR, MesaTipo.SUPERIOR):
+
+            target = {}
+            if 'tipo' in entry:
+                tipo = (entry.get('tipo') or '').upper()
+                if tipo not in (MesaTipo.INFERIOR, MesaTipo.SUPERIOR):
+                    return Response(
+                        {'detail': "tipo debe ser 'INFERIOR' o 'SUPERIOR'."}, status=400,
+                    )
+                target['tipo'] = tipo
+            if 'activa' in entry:
+                activa = entry.get('activa')
+                if not isinstance(activa, bool):
+                    return Response(
+                        {'detail': 'activa debe ser bool.'}, status=400,
+                    )
+                target['activa'] = activa
+            if not target:
                 return Response(
-                    {'detail': "tipo debe ser 'INFERIOR' o 'SUPERIOR'."}, status=400,
+                    {'detail': 'Cada cambio debe incluir al menos tipo o activa.'},
+                    status=400,
                 )
-            cambios_por_mesa[mesa_id] = nuevo_tipo
+            cambios_por_mesa[mesa_id] = target
 
         mesas_grupo = {mesa.id: mesa for mesa in grupo.mesas.all()}
         for mesa_id in cambios_por_mesa:
@@ -2056,14 +2051,22 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
                     status=400,
                 )
 
-        final_tipos = {
-            mesa_id: cambios_por_mesa.get(mesa_id, mesa.tipo)
+        # Estado final por mesa (incluye las que no cambian, con sus valores actuales).
+        final_states = {
+            mesa_id: {
+                'tipo': cambios_por_mesa.get(mesa_id, {}).get('tipo', mesa.tipo),
+                'activa': cambios_por_mesa.get(mesa_id, {}).get('activa', mesa.activa),
+            }
             for mesa_id, mesa in mesas_grupo.items()
         }
 
         # Si no hay cambios efectivos, salimos sin tocar nada.
-        if all(mesas_grupo[mid].tipo == t for mid, t in final_tipos.items()):
-            return Response({'detail': 'No hay cambios de tipo que aplicar.'}, status=400)
+        has_changes = any(
+            mesas_grupo[mid].tipo != s['tipo'] or mesas_grupo[mid].activa != s['activa']
+            for mid, s in final_states.items()
+        )
+        if not has_changes:
+            return Response({'detail': 'No hay cambios que aplicar.'}, status=400)
 
         with transaction.atomic():
             anchored_ids = self._collect_anchored_item_ids(grupo)
@@ -2073,7 +2076,7 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
                 status__in=ACTIVE_QUEUE_STATUSES,
             ).exclude(id__in=anchored_ids).delete()
 
-            self._apply_tipo_changes(grupo, final_tipos)
+            self._apply_mesa_changes(grupo, final_states)
 
             entries = list(
                 grupo.proyectos_cola.select_related('proyecto').order_by('orden', 'id')

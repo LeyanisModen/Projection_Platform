@@ -667,17 +667,11 @@
                     </section>
 
                     <section class="gestionar-section">
-                        <div class="gestionar-section-header">
-                            <h4>Mesas</h4>
-                            <button type="button" class="btn-planificar"
-                                [disabled]="gestionarCambiandoTipos || cambiosTiposPendientes().length === 0"
-                                (click)="aplicarCambiosTipos()">
-                                {{ gestionarCambiandoTipos ? 'Aplicando…' : 'Aplicar cambios de tipo' }}
-                            </button>
-                        </div>
+                        <h4>Mesas</h4>
                         <div class="gestionar-mesa-list">
                             @for (mesa of getMesasForGrupo(gestionandoGrupo.id); track mesa.id) {
-                                <div class="gestionar-mesa-row" [class.mesa-inactiva]="!mesa.activa">
+                                <div class="gestionar-mesa-row"
+                                    [class.mesa-inactiva]="gestionarMesasEstados[mesa.id] === 'INACTIVA'">
                                     <span class="mesa-role-badge">{{ getMesaRoleLabel(mesa) }}</span>
                                     <input type="text"
                                         class="gestionar-input gestionar-mesa-input"
@@ -685,42 +679,38 @@
                                         (blur)="saveGestionarMesaNombre(mesa)"
                                         (keydown.enter)="saveGestionarMesaNombre(mesa)"
                                         maxlength="200">
-                                    <select class="gestionar-input gestionar-mesa-tipo"
-                                        [(ngModel)]="gestionarMesasTipos[mesa.id]"
-                                        [disabled]="gestionarCambiandoTipos"
-                                        title="Cambiar tipo (se aplica al pulsar 'Aplicar cambios de tipo')">
-                                        <option value="INFERIOR">INF</option>
-                                        <option value="SUPERIOR">SUP</option>
-                                    </select>
-                                    <button type="button"
-                                        class="btn-icon mesa-toggle-activa"
-                                        [class.is-active]="mesa.activa"
-                                        [class.is-inactive]="!mesa.activa"
-                                        [disabled]="gestionarBusy || gestionarCambiandoTipos"
-                                        (click)="toggleMesaActiva(mesa)"
-                                        [title]="mesa.activa ? 'Desactivar (proyector roto, mantenimiento...)' : 'Reactivar'">
-                                        {{ mesa.activa ? 'Activa' : 'Desactivada' }}
-                                    </button>
+                                    <div class="mesa-estado-switch"
+                                        role="group"
+                                        [attr.aria-label]="'Estado de Mesa ' + mesa.indice">
+                                        <button type="button"
+                                            class="estado-opcion estado-inf"
+                                            [class.active]="gestionarMesasEstados[mesa.id] === 'INFERIOR'"
+                                            [disabled]="gestionarAplicandoCambios"
+                                            (click)="gestionarMesasEstados[mesa.id] = 'INFERIOR'">
+                                            INF
+                                        </button>
+                                        <button type="button"
+                                            class="estado-opcion estado-sup"
+                                            [class.active]="gestionarMesasEstados[mesa.id] === 'SUPERIOR'"
+                                            [disabled]="gestionarAplicandoCambios"
+                                            (click)="gestionarMesasEstados[mesa.id] = 'SUPERIOR'">
+                                            SUP
+                                        </button>
+                                        <button type="button"
+                                            class="estado-opcion estado-off"
+                                            [class.active]="gestionarMesasEstados[mesa.id] === 'INACTIVA'"
+                                            [disabled]="gestionarAplicandoCambios"
+                                            (click)="gestionarMesasEstados[mesa.id] = 'INACTIVA'">
+                                            INACTIVA
+                                        </button>
+                                    </div>
                                 </div>
                             }
                         </div>
-                        @if (cambiosTiposPendientes().length > 0) {
-                            <p class="gestionar-empty" style="color: #b58900;">
-                                Hay {{ cambiosTiposPendientes().length }} cambio(s) de tipo pendientes.
-                                Pulsa "Aplicar cambios de tipo" para redistribuir los módulos.
-                            </p>
-                        }
                     </section>
 
                     <section class="gestionar-section">
-                        <div class="gestionar-section-header">
-                            <h4>Cola de proyectos</h4>
-                            <button type="button" class="btn-planificar"
-                                [disabled]="gestionarPlanificando || gestionandoGrupo.proyectos_cola.length === 0"
-                                (click)="planificarActual()">
-                                {{ gestionarPlanificando ? 'Planificando…' : 'Planificar ahora' }}
-                            </button>
-                        </div>
+                        <h4>Cola de proyectos</h4>
 
                         @if (gestionandoGrupo.proyectos_cola.length === 0) {
                             <p class="gestionar-empty">No hay proyectos en cola. Añade uno abajo.</p>
