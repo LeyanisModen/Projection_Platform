@@ -1351,6 +1351,12 @@
     opacity: 0.85;
 }
 
+/* Sin feedback de hover en modulos no arrastrables: si no aparece el
+   azulado, queda claro que ahi no se puede soltar nada. */
+.grupo-modulo-item.is-not-movable:hover {
+    background-color: transparent;
+}
+
 .grupo-modulo-item.cdk-drag-preview {
     background-color: #fff;
     border: 1px solid #fd7e14;
