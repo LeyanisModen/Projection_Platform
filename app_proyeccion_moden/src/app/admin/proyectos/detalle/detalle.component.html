@@ -206,9 +206,6 @@
                         <div *ngFor="let grupo of grupos"
                             cdkDrag
                             [cdkDragData]="grupo"
-                            cdkDragLockAxis="y"
-                            cdkDragRootElement=".grupo-bastidor-card"
-                            cdkDragHandle
                             [cdkDragDisabled]="isDraggingModulo"
                             (cdkDragStarted)="onBastidorDragStarted()"
                             (cdkDragEnded)="onBastidorDragEnded()"
@@ -219,7 +216,9 @@
 
                             <div class="grupo-bastidor-header">
                                 <div class="grupo-bastidor-title">
-                                    <span class="grupo-drag-handle" title="Arrastrar para reordenar bastidor">
+                                    <span class="grupo-drag-handle"
+                                          cdkDragHandle
+                                          title="Arrastrar para reordenar bastidor">
                                         <i class="fa fa-bars" aria-hidden="true"></i>
                                     </span>
                                     <ng-container *ngIf="editingGrupoId === grupo.id; else grupoNombreStatic">
