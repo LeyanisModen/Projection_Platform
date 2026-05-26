@@ -257,6 +257,7 @@
                                 [id]="bastidorDropListId(grupo)"
                                 [cdkDropListData]="grupo"
                                 [cdkDropListConnectedTo]="connectedDropListIds(grupo.id)"
+                                [cdkDropListSortPredicate]="bastidorSortPredicate"
                                 (cdkDropListDropped)="onModuloDropInBastidor($event)">
 
                                 <li *ngFor="let modulo of grupo.modulos"

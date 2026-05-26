@@ -1910,6 +1910,17 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
         else:
             insert_at = min(index_destino, len(destino_modulos))
 
+        # No permitir insertar antes o entre modulos ya fabricados
+        # (completado / en proceso / cerrado): esos modulos estan
+        # fisicamente en su posicion en el bastidor. Clampamos al
+        # primer hueco valido tras el ultimo bloqueado.
+        last_locked = -1
+        for i, m in enumerate(destino_modulos):
+            if m.estado != 'PENDIENTE':
+                last_locked = i
+        if insert_at <= last_locked:
+            insert_at = last_locked + 1
+
         destino_modulos.insert(insert_at, modulo)
 
         # Persistir cambio de grupo si aplica.

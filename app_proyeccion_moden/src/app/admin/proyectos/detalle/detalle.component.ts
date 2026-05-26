@@ -179,6 +179,31 @@ export class ProyectoDetailComponent implements OnInit {
         return modulo.estado === 'PENDIENTE';
     }
 
+    /** Indice del ultimo modulo no-pendiente (completado / en proceso /
+     *  cerrado) en el bastidor. Esos modulos ya estan fisicamente en su
+     *  posicion en el bastidor, asi que cualquier insercion debe ir DESPUES.
+     *  -1 si todos son pendientes (o el bastidor esta vacio). */
+    private _lastLockedIndex(grupo: GrupoBastidor): number {
+        let last = -1;
+        grupo.modulos.forEach((m, i) => {
+            if (m.estado !== 'PENDIENTE') last = i;
+        });
+        return last;
+    }
+
+    /** Predicate para cdkDropList: rechaza que el placeholder caiga en
+     *  posiciones <= ultimo bloqueado. Se ejecuta por cada movimiento de
+     *  cursor durante el drag. */
+    bastidorSortPredicate = (index: number, _drag: unknown, drop: { data: GrupoBastidor }): boolean => {
+        const grupo = drop?.data;
+        if (!grupo) return true;
+        // Cuando es el mismo grupo, el modulo arrastrado se "saca" temporalmente
+        // de la lista en CDK para calcular indices. _lastLockedIndex se calcula
+        // sobre la lista actual (sin el arrastrado), asi que es consistente.
+        const lastLocked = this._lastLockedIndex(grupo);
+        return index > lastLocked;
+    };
+
     onModuloDragStarted(grupo: GrupoBastidor): void {
         this.isDraggingModulo = true;
         this.isDraggingModuloFrom = grupo.id;
@@ -209,6 +234,17 @@ export class ProyectoDetailComponent implements OnInit {
             return;
         }
 
+        // Defensa redundante: si por cualquier razon el drop cae antes/entre
+        // modulos ya fabricados (bloqueados), reordenar destino para que el
+        // arrastrado quede justo despues del ultimo bloqueado.
+        const destinoSinArrastrado: GrupoBastidorModulo[] = destino.modulos
+            .filter(m => m.id !== modulo.id);
+        const lastLocked = destinoSinArrastrado.reduce(
+            (acc, m, i) => (m.estado !== 'PENDIENTE' ? i : acc),
+            -1,
+        );
+        const indexClamped = Math.max(indexDestino, lastLocked + 1);
+
         const sameGroup = event.previousContainer === event.container;
         if (sameGroup) {
             // Intra-bastidor: solo persiste si cambio realmente de posicion.
@@ -219,7 +255,7 @@ export class ProyectoDetailComponent implements OnInit {
         }
 
         this.movingModulo = true;
-        this.api.moveModuloEntreBastidores(modulo.id, destino.id, indexDestino).subscribe({
+        this.api.moveModuloEntreBastidores(modulo.id, destino.id, indexClamped).subscribe({
             next: (grupos) => {
                 this.grupos = grupos.sort((a, b) => a.indice - b.indice);
                 this.movingModulo = false;
