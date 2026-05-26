@@ -1812,27 +1812,20 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
 
     @staticmethod
     def _modulo_es_movible(modulo, *, cross_group):
-        """Solo se mueven modulos en PENDIENTE. Cualquier otro estado bloquea
-        para no descalibrar la cola operativa.
+        """Solo se mueven modulos en PENDIENTE. Cualquier otro estado bloquea.
 
-        Si es cross_group (cambia de bastidor), tambien bloqueamos si el
-        bastidor origen tiene fabricacion en curso (algun modulo con
-        inferior_hecho=True), porque la cola ancla items INFERIOR a su
-        grupo_bastidor_id. Para reorden intra-grupo no aplica: el ancla
-        sigue siendo el mismo grupo.
+        Los modulos pendientes son siempre movibles, aunque haya otros
+        modulos del mismo bastidor ya en fabricacion: sacar un pendiente
+        no interfiere con los que ya estan en proceso.
         """
+        # cross_group queda en la firma por compatibilidad con la llamada,
+        # pero ya no condiciona la decision.
+        del cross_group  # noqa: usado solo para documentar el contrato.
         if modulo.estado != 'PENDIENTE':
             return False, (
                 f'No se puede mover "{modulo.nombre}" porque su estado es '
                 f'{modulo.estado}. Solo se mueven modulos pendientes.'
             )
-        if cross_group and modulo.grupo_bastidor_id is not None:
-            en_curso = modulo.grupo_bastidor.modulos.filter(inferior_hecho=True).exists()
-            if en_curso:
-                return False, (
-                    f'No se puede mover "{modulo.nombre}" a otro bastidor: '
-                    f'el bastidor de origen ya tiene fabricacion en curso.'
-                )
         return True, None
 
     @action(detail=False, methods=['post'], url_path='move-modulo')
