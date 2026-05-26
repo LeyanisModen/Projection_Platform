@@ -305,6 +305,16 @@
                                             <i class="fa fa-undo" aria-hidden="true"></i>
                                         </button>
                                     </span>
+
+                                    <!-- Preview minimalista durante el drag (sin botones). -->
+                                    <div *cdkDragPreview class="grupo-modulo-drag-preview">
+                                        <span class="grupo-modulo-nombre">{{ modulo.nombre }}</span>
+                                        <span *ngIf="modulo.tipo_modulo"
+                                            class="grupo-modulo-tipo-chip"
+                                            [class.tipo-girado]="modulo.tipo_modulo === 'CENTRAL_GIRADO'">
+                                            {{ tipoModuloLabel(modulo.tipo_modulo) }}
+                                        </span>
+                                    </div>
                                 </li>
                             </ul>
                         </div>

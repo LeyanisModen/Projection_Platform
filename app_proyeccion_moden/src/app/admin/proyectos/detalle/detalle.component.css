@@ -1360,6 +1360,23 @@
     font-size: 0.85rem;
 }
 
+/* Preview minimalista del modulo arrastrado (sin botones de accion). */
+.grupo-modulo-drag-preview {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    background: #fff;
+    border: 1px solid #fd7e14;
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #212529;
+    pointer-events: none;
+    white-space: nowrap;
+}
+
 .grupo-modulo-item.cdk-drag-placeholder {
     opacity: 0.3;
     background: #fff3cd;
@@ -1401,6 +1418,9 @@
     border-color: #fd7e14 !important;
     background: rgba(253, 126, 20, 0.06);
     opacity: 1;
+    /* Durante el drag: label arriba, zona de drop libre debajo. */
+    align-items: flex-start;
+    padding-top: 0.6rem;
 }
 
 .grupo-bastidor-new-zone.cdk-drop-list-receiving,
@@ -1411,16 +1431,16 @@
 
 .grupo-bastidor-new-inner {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     align-items: center;
-    gap: 4px;
+    gap: 6px;
     color: #d35400;
     font-weight: 600;
     font-size: 0.85rem;
 }
 
 .grupo-bastidor-new-inner .fa-plus {
-    font-size: 1.4rem;
+    font-size: 1rem;
 }
 
 /* Chip pequeño con la tipologia del modulo */
