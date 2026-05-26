@@ -152,6 +152,11 @@ export class ProyectoDetailComponent implements OnInit {
     // DRAG & DROP de modulos entre bastidores + reorder de bastidores
     // =========================================================================
     isDraggingModulo = false;
+    /** Id del bastidor desde el que se esta arrastrando un modulo. Permite
+     *  habilitar el sort visual solo dentro del bastidor de origen y
+     *  evitar que en los demas se vea un placeholder mentiroso en mitad
+     *  de la lista (el orden destino lo decide el natural-sort por nombre). */
+    isDraggingModuloFrom: number | null = null;
     isDraggingBastidor = false;
     movingModulo = false;
     recalculatingBastidores = false;
@@ -174,12 +179,14 @@ export class ProyectoDetailComponent implements OnInit {
         return modulo.estado === 'PENDIENTE';
     }
 
-    onModuloDragStarted(): void {
+    onModuloDragStarted(grupo: GrupoBastidor): void {
         this.isDraggingModulo = true;
+        this.isDraggingModuloFrom = grupo.id;
     }
 
     onModuloDragEnded(): void {
         this.isDraggingModulo = false;
+        this.isDraggingModuloFrom = null;
     }
 
     onBastidorDragStarted(): void {
@@ -190,6 +197,11 @@ export class ProyectoDetailComponent implements OnInit {
         this.isDraggingBastidor = false;
     }
 
+    /** Comparador natural (A01 < A2 < A10) usado para resortear localmente. */
+    private _naturalCompare(a: string, b: string): number {
+        return (a || '').localeCompare(b || '', undefined, { numeric: true, sensitivity: 'base' });
+    }
+
     /** Drop de un modulo en otro bastidor existente. */
     onModuloDropInBastidor(event: CdkDragDrop<GrupoBastidor>): void {
         const modulo = event.item.data as GrupoBastidorModulo;
@@ -197,9 +209,8 @@ export class ProyectoDetailComponent implements OnInit {
         const origen = event.previousContainer.data as GrupoBastidor;
 
         if (event.previousContainer === event.container) {
-            // Reorden dentro del mismo bastidor: solo cosmetico en local (no
-            // persistimos orden intra-grupo porque la cola se ordena por nombre).
-            moveItemInArray(destino.modulos, event.previousIndex, event.currentIndex);
+            // Intra-bastidor: el orden interno siempre se normaliza por nombre
+            // (lo que usa la cola operativa). No persistimos posicion manual.
             return;
         }
 
@@ -208,8 +219,11 @@ export class ProyectoDetailComponent implements OnInit {
             return;
         }
 
-        // Update optimista
+        // Update optimista: transfer + resort por nombre natural para que
+        // el modulo "salte" inmediatamente a su posicion final y no parezca
+        // que se va al final del todo cuando el backend devuelve la lista.
         transferArrayItem(origen.modulos, destino.modulos, event.previousIndex, event.currentIndex);
+        destino.modulos.sort((a, b) => this._naturalCompare(a.nombre, b.nombre));
         this.movingModulo = true;
         this.api.moveModuloEntreBastidores(modulo.id, destino.id).subscribe({
             next: (grupos) => {

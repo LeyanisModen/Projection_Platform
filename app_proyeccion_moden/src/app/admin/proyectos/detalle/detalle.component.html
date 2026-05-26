@@ -248,8 +248,8 @@
                                         [class.is-overflow]="grupo.overflow"
                                         [title]="grupo.overflow ? 'Sobrepasa la longitud maxima del bastidor' : ''">
                                         {{ grupo.longitud_total_cm | number:'1.0-1' }} / {{ grupo.capacidad_cm | number:'1.0-0' }} cm
+                                        <span class="grupo-modulos-count-inline">· {{ grupo.modulos.length }} mod.</span>
                                     </small>
-                                    <small class="grupo-modulos-count">{{ grupo.modulos.length }} módulos</small>
                                 </div>
                             </div>
 
@@ -258,13 +258,14 @@
                                 [id]="bastidorDropListId(grupo)"
                                 [cdkDropListData]="grupo"
                                 [cdkDropListConnectedTo]="connectedDropListIds(grupo.id)"
+                                [cdkDropListSortingDisabled]="isDraggingModuloFrom !== grupo.id"
                                 (cdkDropListDropped)="onModuloDropInBastidor($event)">
 
                                 <li *ngFor="let modulo of grupo.modulos"
                                     cdkDrag
                                     [cdkDragData]="modulo"
                                     [cdkDragDisabled]="!isModuloMovible(modulo)"
-                                    (cdkDragStarted)="onModuloDragStarted()"
+                                    (cdkDragStarted)="onModuloDragStarted(grupo)"
                                     (cdkDragEnded)="onModuloDragEnded()"
                                     class="grupo-modulo-item"
                                     [class.is-completado]="modulo.estado === 'COMPLETADO' || modulo.estado === 'CERRADO'"
@@ -308,13 +309,16 @@
                             </ul>
                         </div>
 
-                        <!-- Card extra "+" para crear bastidor nuevo soltando aqui -->
-                        <div *ngIf="isDraggingModulo"
-                            cdkDropList
+                        <!-- Card extra "+" para crear bastidor nuevo soltando aqui.
+                             Se renderiza siempre (no *ngIf) para que el CDK lo registre
+                             como destino antes del drag; solo se muestra durante drag. -->
+                        <div cdkDropList
                             id="bastidor-drop-new"
                             [cdkDropListData]="null"
+                            [cdkDropListConnectedTo]="[]"
                             (cdkDropListDropped)="onModuloDropInNewBastidor($event)"
                             class="grupo-bastidor-card grupo-bastidor-new-zone"
+                            [class.is-visible]="isDraggingModulo"
                             title="Suelta aqui para crear un bastidor nuevo">
                             <div class="grupo-bastidor-new-inner">
                                 <i class="fa fa-plus" aria-hidden="true"></i>

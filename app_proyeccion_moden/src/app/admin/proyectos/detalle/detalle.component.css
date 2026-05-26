@@ -694,15 +694,22 @@
 
 .grupo-bastidor-meta {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.35rem;
     font-size: 0.72rem;
+    white-space: nowrap;
 }
 
 .grupo-capacidad {
     color: #6c757d;
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.grupo-modulos-count-inline {
+    color: #adb5bd;
+    margin-left: 2px;
+    font-weight: 500;
 }
 
 .grupo-capacidad.is-overflow {
@@ -779,6 +786,8 @@
     list-style: none;
     padding: 0;
     margin: 0;
+    /* Garantiza area util de drop incluso cuando el bastidor esta vacio. */
+    min-height: 60px;
 }
 
 .grupo-modulo-item {
@@ -1371,16 +1380,27 @@
     color: #dc3545;
 }
 
-/* Card "+" para crear bastidor nuevo */
+/* Card "+" para crear bastidor nuevo.
+   Siempre renderizado y visible (display:flex), porque si lo escondemos
+   con display:none / visibility:hidden el CDK no lo registra como zona
+   de drop hit-testeable. En reposo es discreto; durante el drag de un
+   modulo se resalta. */
 .grupo-bastidor-new-zone {
-    border: 2px dashed #fd7e14 !important;
-    background: rgba(253, 126, 20, 0.06);
+    border: 2px dashed #ced4da !important;
+    background: rgba(108, 117, 125, 0.04);
     display: flex;
     align-items: center;
     justify-content: center;
     min-height: 110px;
     cursor: copy;
-    transition: background-color 0.15s ease, border-color 0.15s ease;
+    opacity: 0.55;
+    transition: background-color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+}
+
+.grupo-bastidor-new-zone.is-visible {
+    border-color: #fd7e14 !important;
+    background: rgba(253, 126, 20, 0.06);
+    opacity: 1;
 }
 
 .grupo-bastidor-new-zone.cdk-drop-list-receiving,
