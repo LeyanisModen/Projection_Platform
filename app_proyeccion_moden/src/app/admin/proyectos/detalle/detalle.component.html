@@ -258,7 +258,6 @@
                                 [id]="bastidorDropListId(grupo)"
                                 [cdkDropListData]="grupo"
                                 [cdkDropListConnectedTo]="connectedDropListIds(grupo.id)"
-                                [cdkDropListSortingDisabled]="isDraggingModuloFrom !== grupo.id"
                                 (cdkDropListDropped)="onModuloDropInBastidor($event)">
 
                                 <li *ngFor="let modulo of grupo.modulos"
