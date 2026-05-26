@@ -106,6 +106,7 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
         fields = [
             "id", "url", "nombre", "usuario", "usuario_nombre", "num_plantas",
             "bastidor_longitud_cm", "datos_tecnicos_importados",
+            "estrategia_bastidor",
             "capacidad_diaria_usuario",
             "grupos_count", "modulos_count", "modulos_completados",
             "modulos_completados_hoy",
@@ -192,7 +193,7 @@ class ModuloSerializer(serializers.ModelSerializer):
     class Meta:
         model = Modulo
         fields = [
-            "id", "nombre", "ancho_cm", "planta", "proyecto", "grupo_bastidor",
+            "id", "nombre", "ancho_cm", "tipo_modulo", "planta", "proyecto", "grupo_bastidor",
             "inferior_hecho", "superior_hecho", "estado",
             "cerrado", "cerrado_at", "cerrado_by",
             "codigos_color", "fotos_count", "detalles_fase"
@@ -213,19 +214,31 @@ class ModuloSerializer(serializers.ModelSerializer):
 
 class GrupoBastidorSerializer(serializers.ModelSerializer):
     modulos = serializers.SerializerMethodField()
+    longitud_total_cm = serializers.SerializerMethodField()
+    capacidad_cm = serializers.SerializerMethodField()
+    overflow = serializers.SerializerMethodField()
 
     class Meta:
         model = GrupoBastidor
-        fields = ["id", "proyecto", "indice", "nombre", "created_at", "modulos"]
-        read_only_fields = ["created_at", "proyecto", "indice"]
+        fields = [
+            "id", "proyecto", "indice", "nombre", "created_at",
+            "modulos", "longitud_total_cm", "capacidad_cm", "overflow",
+        ]
+        read_only_fields = ["created_at", "proyecto"]
+
+    def _natural_key(self, nombre):
+        import re as _re
+        parts = _re.split(r'(\d+)', nombre or '')
+        return [int(p) if p.isdigit() else p for p in parts]
 
     def get_modulos(self, obj):
-        modulos = obj.modulos.all().order_by('nombre')
+        modulos = sorted(obj.modulos.all(), key=lambda m: self._natural_key(m.nombre))
         return [
             {
                 "id": m.id,
                 "nombre": m.nombre,
                 "ancho_cm": m.ancho_cm,
+                "tipo_modulo": m.tipo_modulo,
                 "estado": m.estado,
                 "inferior_hecho": m.inferior_hecho,
                 "superior_hecho": m.superior_hecho,
@@ -234,6 +247,28 @@ class GrupoBastidorSerializer(serializers.ModelSerializer):
             }
             for m in modulos
         ]
+
+    def get_longitud_total_cm(self, obj):
+        from decimal import Decimal, InvalidOperation
+        total = Decimal('0')
+        for m in obj.modulos.all():
+            if m.ancho_cm in [None, '']:
+                continue
+            try:
+                total += Decimal(m.ancho_cm)
+            except (TypeError, InvalidOperation):
+                continue
+        return float(total)
+
+    def get_capacidad_cm(self, obj):
+        from decimal import Decimal, InvalidOperation
+        try:
+            return float(Decimal(obj.proyecto.bastidor_longitud_cm))
+        except (TypeError, InvalidOperation, AttributeError):
+            return 114.0
+
+    def get_overflow(self, obj):
+        return self.get_longitud_total_cm(obj) > self.get_capacidad_cm(obj)
 
 
 class DetalleModuloFaseSerializer(serializers.ModelSerializer):

@@ -70,7 +70,43 @@ MODULE_FIELD_ALIASES = {
     'codigos_color': [
         'codigos_color', 'codigo_color', 'colores', 'color_codes', 'colors',
     ],
+    'tipo_modulo': [
+        'tipo_modulo', 'tipo', 'tipologia', 'tipologia_modulo', 'module_type',
+    ],
 }
+
+
+# Canonicalizacion del valor leido del .db / csv / json para tipo_modulo.
+# La BD original guarda 'CENTRAL GIRADO', 'LADO LARGO', etc. (con espacios).
+# Nuestro modelo usa enums con underscore. Esto normaliza cualquiera de los
+# formatos a la version canonica del modelo, o '' si no se reconoce.
+TIPO_MODULO_VALUES = {
+    'CENTRAL', 'CENTRAL_GIRADO', 'LADO_LARGO', 'LADO_CORTO', 'ESQUINA',
+}
+
+
+def _normalize_tipo_modulo(raw):
+    if raw is None:
+        return ''
+    text = str(raw).strip().upper()
+    if not text:
+        return ''
+    # Colapsa espacios/guiones a underscore y descarta acentos
+    canonical = unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('ascii')
+    canonical = re.sub(r'[^A-Z0-9]+', '_', canonical).strip('_')
+    if canonical in TIPO_MODULO_VALUES:
+        return canonical
+    # Casos extra: por si el origen viene en plural o con sufijos
+    alias_map = {
+        'CENTRALES': 'CENTRAL',
+        'CENTRALES_GIRADOS': 'CENTRAL_GIRADO',
+        'GIRADO': 'CENTRAL_GIRADO',
+        'CENTRAL_ROTADO': 'CENTRAL_GIRADO',
+        'LADOS_LARGOS': 'LADO_LARGO',
+        'LADOS_CORTOS': 'LADO_CORTO',
+        'ESQUINAS': 'ESQUINA',
+    }
+    return alias_map.get(canonical, '')
 
 MODULE_NAME_ALIASES = ['modulo', 'modulo_nombre', 'nombre_modulo', 'module', 'module_name']
 PLANTA_NAME_ALIASES = ['planta', 'planta_nombre', 'nombre_planta', 'nivel', 'floor']
@@ -190,7 +226,12 @@ def _extract_module_fields(row):
     for target_field, aliases in MODULE_FIELD_ALIASES.items():
         value = _extract_value(row, aliases)
         if value is not None:
-            module_fields[target_field] = _coerce_field_value(target_field, value)
+            if target_field == 'tipo_modulo':
+                normalized = _normalize_tipo_modulo(value)
+                if normalized:
+                    module_fields[target_field] = normalized
+            else:
+                module_fields[target_field] = _coerce_field_value(target_field, value)
     return module_fields
 
 
@@ -337,6 +378,7 @@ def _load_technical_records_from_sqlite(uploaded_file):
                 'modulo': module_name,
                 'ancho_cm': ancho_cm,
                 'codigos_color': codigos_color,
+                'tipo_modulo': row_dict.get('tipo_modulo'),
                 'inf_peso_malla_inicial_kg': row_dict.get('peso_mallazo_pedido_inf'),
                 'sup_peso_malla_inicial_kg': row_dict.get('peso_mallazo_pedido_sup'),
                 'inf_desperdicio_kg': row_dict.get('peso_mallazo_desperdicio_inf'),
@@ -636,26 +678,53 @@ def _get_inferior_difficulty(modulo):
         return Decimal('0')
 
 
-def _build_bastidor_groups(proyecto, modulos):
+def _build_bastidor_groups(proyecto, modulos, estrategia=None):
+    """Calcula los bastidores agrupando modulos por su orden natural.
+
+    estrategia:
+      - 'SECUENCIAL' (default): corte solo cuando se supera la longitud.
+      - 'AISLAR_CENTRAL_GIRADO': ademas de la longitud, corta el bastidor
+        cada vez que el tipo del modulo cambia entre 'CENTRAL_GIRADO' y
+        cualquier otro tipo (los CENTRAL_GIRADO viajan en bastidores propios).
+    """
     try:
         bastidor_longitud = Decimal(proyecto.bastidor_longitud_cm)
     except (TypeError, InvalidOperation):
         bastidor_longitud = Decimal('114')
 
+    if estrategia is None:
+        estrategia = getattr(proyecto, 'estrategia_bastidor', 'SECUENCIAL') or 'SECUENCIAL'
+
+    def _is_girado(modulo):
+        return getattr(modulo, 'tipo_modulo', '') == 'CENTRAL_GIRADO'
+
     ordered = sorted(modulos, key=lambda modulo: _natural_sort_key(modulo.nombre))
     groups = []
     current_group = []
     current_width = Decimal('0')
+    current_is_girado = None  # None hasta que cae el primer modulo
 
     for modulo in ordered:
         modulo_width = _get_module_planning_width(modulo, bastidor_longitud)
-        if current_group and current_width + modulo_width > bastidor_longitud:
+
+        tipo_switch = (
+            estrategia == 'AISLAR_CENTRAL_GIRADO'
+            and current_group
+            and current_is_girado is not None
+            and _is_girado(modulo) != current_is_girado
+        )
+        overflow = current_group and current_width + modulo_width > bastidor_longitud
+
+        if tipo_switch or overflow:
             groups.append(current_group)
             current_group = [modulo]
             current_width = modulo_width
+            current_is_girado = _is_girado(modulo)
         else:
             current_group.append(modulo)
             current_width += modulo_width
+            if current_is_girado is None:
+                current_is_girado = _is_girado(modulo)
 
     if current_group:
         groups.append(current_group)
@@ -944,6 +1013,13 @@ class ProyectoViewSet(viewsets.ModelViewSet):
                 modulo.codigos_color = normalized
                 updated_fields.append('codigos_color')
 
+        tipo_raw = fields.get('tipo_modulo')
+        if tipo_raw not in [None, '']:
+            tipo_canonical = _normalize_tipo_modulo(tipo_raw)
+            if tipo_canonical and tipo_canonical != modulo.tipo_modulo:
+                modulo.tipo_modulo = tipo_canonical
+                updated_fields.append('tipo_modulo')
+
         if updated_fields:
             modulo.save(update_fields=updated_fields)
             return True
@@ -1120,6 +1196,101 @@ class ProyectoViewSet(viewsets.ModelViewSet):
             'status': 'ok',
             'proyecto_id': proyecto.id,
             'stats': stats
+        })
+
+    @action(detail=True, methods=['post'], url_path='recalcular-bastidores')
+    def recalcular_bastidores(self, request, pk=None):
+        """Recalcula los GrupoBastidor del proyecto con la estrategia indicada.
+
+        Body: {"estrategia": "SECUENCIAL" | "AISLAR_CENTRAL_GIRADO"}
+
+        - Bloquea si hay modulos no-PENDIENTE para no descalibrar la cola
+          operativa (anclajes inferior_hecho / fotos SUP en proceso).
+        - Borra los grupos existentes y los rehace desde cero. El campo
+          grupo_bastidor.asignado_a se libera por SET_NULL automaticamente.
+        - Replanifica cualquier GrupoMesas en cola con este proyecto.
+        """
+        if not _is_admin(request.user):
+            return Response({'detail': 'Solo admin puede recalcular bastidores.'},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        proyecto = self.get_object()
+        estrategia = (request.data.get('estrategia') or '').upper()
+        if estrategia not in ('SECUENCIAL', 'AISLAR_CENTRAL_GIRADO'):
+            return Response(
+                {'detail': "estrategia debe ser 'SECUENCIAL' o 'AISLAR_CENTRAL_GIRADO'."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not proyecto.datos_tecnicos_importados:
+            return Response(
+                {'detail': 'Importa primero los datos tecnicos del proyecto.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        bloqueantes = list(
+            proyecto.modulos.exclude(estado='PENDIENTE').values_list('nombre', flat=True)
+        )
+        if bloqueantes:
+            return Response(
+                {
+                    'detail': (
+                        'No se puede recalcular: hay modulos que ya no estan pendientes. '
+                        'Reinicialos o termina su fabricacion antes de recalcular.'
+                    ),
+                    'modulos_bloqueantes': bloqueantes[:30],
+                    'total_bloqueantes': len(bloqueantes),
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        proyecto.estrategia_bastidor = estrategia
+        proyecto.save(update_fields=['estrategia_bastidor'])
+
+        proyecto.grupos_bastidor.all().delete()
+
+        modulos = list(
+            proyecto.modulos.select_related('proyecto').prefetch_related('detalles_fase')
+        )
+        grouped = _build_bastidor_groups(proyecto, modulos, estrategia=estrategia)
+        for indice, modulos_in_group in enumerate(grouped, start=1):
+            grupo = GrupoBastidor.objects.create(
+                proyecto=proyecto, indice=indice, nombre=f'Grupo {indice}',
+            )
+            ids = [m.id for m in modulos_in_group]
+            proyecto.modulos.filter(id__in=ids).update(grupo_bastidor=grupo)
+
+        # Replan colas operativas afectadas (mismo patron que import).
+        grupos_mesas_afectados = list(
+            GrupoMesas.objects.filter(
+                proyectos_cola__proyecto=proyecto,
+            ).distinct()
+        )
+        if grupos_mesas_afectados:
+            grupo_vs = GrupoMesasViewSet()
+            for grupo_m in grupos_mesas_afectados:
+                entries = list(
+                    grupo_m.proyectos_cola
+                    .select_related('proyecto')
+                    .order_by('orden', 'id')
+                )
+                for entry in entries:
+                    try:
+                        grupo_vs._build_group_plan(
+                            grupo_m, entry.proyecto, request.user, append_mode=True,
+                        )
+                    except Exception:
+                        pass
+                grupo_vs._sync_proyecto_actual(grupo_m)
+
+        grupos = (
+            proyecto.grupos_bastidor.prefetch_related('modulos')
+            .order_by('indice')
+        )
+        return Response({
+            'status': 'ok',
+            'estrategia': estrategia,
+            'grupos': GrupoBastidorSerializer(grupos, many=True).data,
         })
 
     @action(detail=True, methods=['post'], url_path='import-technical-data')
@@ -1583,16 +1754,18 @@ class ListaMaterialesGeneralView(APIView):
 
 class GrupoBastidorViewSet(viewsets.ModelViewSet):
     """
-    API endpoint para consultar y renombrar los grupos de bastidor de un proyecto.
-    Filtrar con ?proyecto=ID
-    Solo el alias ``nombre`` es editable; el resto de los campos son inmutables
-    porque los grupos se calculan al importar datos tecnicos.
+    API endpoint para consultar, renombrar, mover modulos entre y reordenar
+    los grupos de bastidor de un proyecto. Filtrar con ?proyecto=ID.
+
+    Acciones admin (drag-drop en el dashboard):
+      - POST /grupos-bastidor/move-modulo/  -> {modulo_id, grupo_destino_id|null}
+      - POST /grupos-bastidor/reorder/      -> {proyecto, orden: [grupo_id,...]}
     """
     queryset = GrupoBastidor.objects.prefetch_related('modulos').all().order_by('proyecto', 'indice')
     serializer_class = GrupoBastidorSerializer
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = None
-    http_method_names = ['get', 'patch', 'head', 'options']
+    http_method_names = ['get', 'patch', 'post', 'head', 'options']
 
     def get_queryset(self):
         queryset = GrupoBastidor.objects.prefetch_related('modulos').all().order_by('proyecto', 'indice')
@@ -1602,6 +1775,142 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
         if proyecto_id is not None:
             queryset = queryset.filter(proyecto_id=proyecto_id)
         return queryset
+
+    @staticmethod
+    def _reindex_grupos(proyecto):
+        """Reasigna indices 1..N a los grupos del proyecto manteniendo el orden actual."""
+        grupos = list(proyecto.grupos_bastidor.order_by('indice', 'id'))
+        for i, g in enumerate(grupos, start=1):
+            if g.indice != i:
+                g.indice = i
+                g.save(update_fields=['indice'])
+
+    @staticmethod
+    def _modulo_es_movible(modulo):
+        """Solo se mueven modulos en PENDIENTE. Cualquier otro estado bloquea
+        para no descalibrar la cola operativa (anclajes inferior_hecho/foto sup)."""
+        if modulo.estado != 'PENDIENTE':
+            return False, (
+                f'No se puede mover "{modulo.nombre}" porque su estado es '
+                f'{modulo.estado}. Solo se mueven modulos pendientes.'
+            )
+        if modulo.grupo_bastidor_id is not None:
+            # Bastidor origen "en curso": al menos un modulo del bastidor con inferior_hecho
+            en_curso = modulo.grupo_bastidor.modulos.filter(inferior_hecho=True).exists()
+            if en_curso:
+                return False, (
+                    f'No se puede mover "{modulo.nombre}": el bastidor de origen '
+                    f'ya tiene fabricacion en curso.'
+                )
+        return True, None
+
+    @action(detail=False, methods=['post'], url_path='move-modulo')
+    def move_modulo(self, request):
+        if not _is_admin(request.user):
+            return Response({'detail': 'Solo admin puede mover modulos entre bastidores.'},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        modulo_id = request.data.get('modulo_id')
+        grupo_destino_id = request.data.get('grupo_destino_id')  # null => crear nuevo
+
+        if not modulo_id:
+            return Response({'detail': 'modulo_id es obligatorio.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            modulo = Modulo.objects.select_related('proyecto', 'grupo_bastidor').get(pk=modulo_id)
+        except Modulo.DoesNotExist:
+            return Response({'detail': 'Modulo no encontrado.'},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        movible, error = self._modulo_es_movible(modulo)
+        if not movible:
+            return Response({'detail': error}, status=status.HTTP_409_CONFLICT)
+
+        proyecto = modulo.proyecto
+        grupo_origen = modulo.grupo_bastidor
+
+        if grupo_destino_id in [None, '', 'null']:
+            # Crear bastidor nuevo al final
+            ultimo = proyecto.grupos_bastidor.order_by('-indice').first()
+            siguiente_indice = (ultimo.indice + 1) if ultimo else 1
+            grupo_destino = GrupoBastidor.objects.create(
+                proyecto=proyecto,
+                indice=siguiente_indice,
+                nombre=f'Grupo {siguiente_indice}',
+            )
+        else:
+            try:
+                grupo_destino = proyecto.grupos_bastidor.get(pk=grupo_destino_id)
+            except GrupoBastidor.DoesNotExist:
+                return Response({'detail': 'Grupo destino no encontrado en este proyecto.'},
+                                status=status.HTTP_404_NOT_FOUND)
+
+        if grupo_origen and grupo_origen.id == grupo_destino.id:
+            # No-op: refrescamos por si el front lo necesita
+            self._reindex_grupos(proyecto)
+            grupos = (
+                proyecto.grupos_bastidor.prefetch_related('modulos')
+                .order_by('indice')
+            )
+            return Response(GrupoBastidorSerializer(grupos, many=True).data)
+
+        modulo.grupo_bastidor = grupo_destino
+        modulo.save(update_fields=['grupo_bastidor'])
+
+        # Borrar grupo origen si quedo vacio (libera asignado_a por SET_NULL).
+        if grupo_origen and not grupo_origen.modulos.exists():
+            grupo_origen.delete()
+
+        # Reindexar indices 1..N para que no haya huecos.
+        self._reindex_grupos(proyecto)
+
+        grupos = (
+            proyecto.grupos_bastidor.prefetch_related('modulos')
+            .order_by('indice')
+        )
+        return Response(GrupoBastidorSerializer(grupos, many=True).data)
+
+    @action(detail=False, methods=['post'], url_path='reorder')
+    def reorder(self, request):
+        if not _is_admin(request.user):
+            return Response({'detail': 'Solo admin puede reordenar bastidores.'},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        proyecto_id = request.data.get('proyecto')
+        orden = request.data.get('orden')
+
+        if not proyecto_id or not isinstance(orden, list):
+            return Response(
+                {'detail': 'Envia {proyecto, orden:[grupo_id,...]}.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            proyecto = Proyecto.objects.get(pk=proyecto_id)
+        except Proyecto.DoesNotExist:
+            return Response({'detail': 'Proyecto no encontrado.'},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        grupos_proyecto = list(proyecto.grupos_bastidor.all())
+        ids_proyecto = {g.id for g in grupos_proyecto}
+        ids_orden = [int(x) for x in orden]
+        if set(ids_orden) != ids_proyecto:
+            return Response(
+                {'detail': 'El nuevo orden debe contener exactamente los mismos bastidores del proyecto.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Asignar indices temporales primero para no chocar con la unique constraint.
+        for i, gid in enumerate(ids_orden, start=1):
+            GrupoBastidor.objects.filter(pk=gid).update(indice=10000 + i)
+        for i, gid in enumerate(ids_orden, start=1):
+            GrupoBastidor.objects.filter(pk=gid).update(indice=i)
+
+        grupos = (
+            proyecto.grupos_bastidor.prefetch_related('modulos')
+            .order_by('indice')
+        )
+        return Response(GrupoBastidorSerializer(grupos, many=True).data)
 
 
 class PlantaViewSet(viewsets.ModelViewSet):

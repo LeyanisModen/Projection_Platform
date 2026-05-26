@@ -30,6 +30,9 @@ export interface User {
 }
 
 
+export type EstrategiaBastidor = 'SECUENCIAL' | 'AISLAR_CENTRAL_GIRADO';
+export type TipoModulo = '' | 'CENTRAL' | 'CENTRAL_GIRADO' | 'LADO_LARGO' | 'LADO_CORTO' | 'ESQUINA';
+
 export interface Proyecto {
     id: number;
     url: string;
@@ -37,6 +40,7 @@ export interface Proyecto {
     usuario: string;
     bastidor_longitud_cm: number;
     datos_tecnicos_importados: boolean;
+    estrategia_bastidor: EstrategiaBastidor;
     capacidad_diaria_usuario?: number;
     grupos_count?: number;
     modulos_count?: number;
@@ -48,6 +52,7 @@ export interface GrupoBastidorModulo {
     id: number;
     nombre: string;
     ancho_cm: string | null;
+    tipo_modulo: TipoModulo;
     estado: 'PENDIENTE' | 'EN_PROGRESO' | 'COMPLETADO' | 'CERRADO';
     inferior_hecho: boolean;
     superior_hecho: boolean;
@@ -62,6 +67,9 @@ export interface GrupoBastidor {
     nombre: string;
     created_at: string;
     modulos: GrupoBastidorModulo[];
+    longitud_total_cm: number;
+    capacidad_cm: number;
+    overflow: boolean;
 }
 
 export interface Planta {
@@ -79,6 +87,7 @@ export interface Modulo {
     url: string;
     nombre: string;
     ancho_cm: string | null;
+    tipo_modulo: TipoModulo;
     planta: number | null;
     proyecto: string;
     grupo_bastidor: number | null;
@@ -552,6 +561,33 @@ export class ApiService {
     getGruposBastidor(proyectoId: number): Observable<GrupoBastidor[]> {
         return this.http.get<GrupoBastidor[]>(
             `${this.baseUrl}/grupos-bastidor/?proyecto=${proyectoId}`,
+            { headers: this.getHeaders() }
+        );
+    }
+
+    moveModuloEntreBastidores(moduloId: number, grupoDestinoId: number | null): Observable<GrupoBastidor[]> {
+        return this.http.post<GrupoBastidor[]>(
+            `${this.baseUrl}/grupos-bastidor/move-modulo/`,
+            { modulo_id: moduloId, grupo_destino_id: grupoDestinoId },
+            { headers: this.getHeaders() }
+        );
+    }
+
+    reorderBastidores(proyectoId: number, orden: number[]): Observable<GrupoBastidor[]> {
+        return this.http.post<GrupoBastidor[]>(
+            `${this.baseUrl}/grupos-bastidor/reorder/`,
+            { proyecto: proyectoId, orden },
+            { headers: this.getHeaders() }
+        );
+    }
+
+    recalcularBastidores(
+        proyectoId: number,
+        estrategia: EstrategiaBastidor
+    ): Observable<{ status: string; estrategia: EstrategiaBastidor; grupos: GrupoBastidor[] }> {
+        return this.http.post<{ status: string; estrategia: EstrategiaBastidor; grupos: GrupoBastidor[] }>(
+            `${this.baseUrl}/proyectos/${proyectoId}/recalcular-bastidores/`,
+            { estrategia },
             { headers: this.getHeaders() }
         );
     }

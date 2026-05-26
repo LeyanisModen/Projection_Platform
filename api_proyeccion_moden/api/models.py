@@ -46,6 +46,11 @@ class MaterialOrigenCheck(models.TextChoices):
 # =============================================================================
 # CORE MODELS
 # =============================================================================
+class EstrategiaBastidor(models.TextChoices):
+    SECUENCIAL = 'SECUENCIAL', 'Secuencial'
+    AISLAR_CENTRAL_GIRADO = 'AISLAR_CENTRAL_GIRADO', 'Aislar central girado'
+
+
 class Proyecto(models.Model):
     id = models.AutoField(primary_key=True)
     nombre = models.CharField(max_length=200)
@@ -59,6 +64,13 @@ class Proyecto(models.Model):
     datos_tecnicos_importados = models.BooleanField(
         default=False,
         help_text='Indica si ya se importo el fichero de datos tecnicos y se calcularon los grupos.'
+    )
+    estrategia_bastidor = models.CharField(
+        max_length=32,
+        choices=EstrategiaBastidor.choices,
+        default=EstrategiaBastidor.SECUENCIAL,
+        help_text='Estrategia de agrupacion: SECUENCIAL = corte solo por longitud; '
+                  'AISLAR_CENTRAL_GIRADO = separa modulos central_girado del resto.'
     )
 
     def __str__(self):
@@ -137,9 +149,24 @@ class Planta(models.Model):
         ]
 
 
+class TipoModulo(models.TextChoices):
+    CENTRAL = 'CENTRAL', 'Central'
+    CENTRAL_GIRADO = 'CENTRAL_GIRADO', 'Central girado'
+    LADO_LARGO = 'LADO_LARGO', 'Lado largo'
+    LADO_CORTO = 'LADO_CORTO', 'Lado corto'
+    ESQUINA = 'ESQUINA', 'Esquina'
+
+
 class Modulo(models.Model):
     id = models.AutoField(primary_key=True)
     nombre = models.CharField(max_length=200)
+    tipo_modulo = models.CharField(
+        max_length=32,
+        choices=TipoModulo.choices,
+        blank=True,
+        default='',
+        help_text='Tipologia del modulo para agrupacion: CENTRAL, CENTRAL_GIRADO, LADO_LARGO, LADO_CORTO, ESQUINA.'
+    )
     ancho_cm = models.DecimalField(
         max_digits=6,
         decimal_places=2,

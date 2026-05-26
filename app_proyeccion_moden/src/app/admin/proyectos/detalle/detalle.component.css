@@ -685,10 +685,29 @@
 .grupo-bastidor-header {
     display: flex;
     flex-direction: column;
-    align-items: flex-start;
+    align-items: stretch;
     margin-bottom: 0.35rem;
     padding-bottom: 0.25rem;
     border-bottom: 1px solid #e9ecef;
+    gap: 2px;
+}
+
+.grupo-bastidor-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.72rem;
+}
+
+.grupo-capacidad {
+    color: #6c757d;
+    font-variant-numeric: tabular-nums;
+}
+
+.grupo-capacidad.is-overflow {
+    color: #dc3545;
+    font-weight: 600;
 }
 
 .grupo-bastidor-header h4 {
@@ -1285,4 +1304,171 @@
 .foto-date {
     font-size: 0.78rem;
     color: #94a3b8;
+}
+
+/* =========================================================================
+   Drag & drop de bastidores y modulos
+   ========================================================================= */
+.grupo-drag-handle {
+    color: #adb5bd;
+    cursor: grab;
+    font-size: 0.7rem;
+    padding-right: 4px;
+}
+
+.grupo-drag-handle:active {
+    cursor: grabbing;
+}
+
+.grupo-bastidor-card.cdk-drag-preview {
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+    background-color: #fff;
+}
+
+.grupo-bastidor-card.cdk-drag-placeholder {
+    opacity: 0.35;
+}
+
+.grupo-modulo-item {
+    cursor: grab;
+}
+
+.grupo-modulo-item:active {
+    cursor: grabbing;
+}
+
+.grupo-modulo-item.is-not-movable {
+    cursor: default;
+    opacity: 0.85;
+}
+
+.grupo-modulo-item.cdk-drag-preview {
+    background-color: #fff;
+    border: 1px solid #fd7e14;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.85rem;
+}
+
+.grupo-modulo-item.cdk-drag-placeholder {
+    opacity: 0.3;
+    background: #fff3cd;
+}
+
+.grupo-modulos-list.cdk-drop-list-dragging .grupo-modulo-item:not(.cdk-drag-placeholder) {
+    transition: transform 200ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+/* Borde rojo cuando el bastidor sobrepasa su capacidad */
+.grupo-bastidor-card.grupo-overflow {
+    border: 2px solid #dc3545;
+    border-left: 4px solid #dc3545;
+    background-color: #fff8f8;
+}
+
+.grupo-bastidor-card.grupo-overflow .grupo-bastidor-header h4 {
+    color: #dc3545;
+}
+
+/* Card "+" para crear bastidor nuevo */
+.grupo-bastidor-new-zone {
+    border: 2px dashed #fd7e14 !important;
+    background: rgba(253, 126, 20, 0.06);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 110px;
+    cursor: copy;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.grupo-bastidor-new-zone.cdk-drop-list-receiving,
+.grupo-bastidor-new-zone.cdk-drop-list-dragging {
+    background: rgba(253, 126, 20, 0.15);
+    border-color: #d35400 !important;
+}
+
+.grupo-bastidor-new-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    color: #d35400;
+    font-weight: 600;
+    font-size: 0.85rem;
+}
+
+.grupo-bastidor-new-inner .fa-plus {
+    font-size: 1.4rem;
+}
+
+/* Chip pequeño con la tipologia del modulo */
+.grupo-modulo-tipo-chip {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 0 6px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    line-height: 1.5;
+    color: #495057;
+    background: #e9ecef;
+    border-radius: 8px;
+    letter-spacing: 0.02em;
+    vertical-align: middle;
+}
+
+.grupo-modulo-tipo-chip.tipo-girado {
+    color: #fff;
+    background: #6f42c1;
+}
+
+/* Switch de estrategia (secuencial / por tipo) */
+.estrategia-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    background: #f1f3f5;
+    border-radius: 999px;
+    padding: 0.2rem 0.4rem;
+}
+
+.estrategia-toggle.is-busy {
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+.estrategia-label {
+    color: #6c757d;
+    font-weight: 600;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-right: 0.2rem;
+}
+
+.estrategia-pill {
+    border: none;
+    background: transparent;
+    color: #495057;
+    font-size: 0.78rem;
+    font-weight: 600;
+    padding: 0.18rem 0.7rem;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.estrategia-pill:hover:not(.active):not(:disabled) {
+    background: rgba(253, 126, 20, 0.12);
+    color: #d35400;
+}
+
+.estrategia-pill.active {
+    background: #fd7e14;
+    color: #fff;
+}
+
+.estrategia-pill:disabled {
+    cursor: not-allowed;
 }

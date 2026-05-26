@@ -154,12 +154,36 @@
 
             <div class="card h-100" *ngIf="modulos.length > 0; else noProjectModules">
 
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <h3>Módulos del Proyecto</h3>
-                    <div class="legend d-flex align-items-center">
-                        <small class="mr-2 font-weight-bold text-uppercase" style="font-size: 0.7rem;">Estados:</small>
-                        <span class="badge badge-pendiente mr-2">Pendiente</span>
-                        <span class="badge badge-completado">Completado</span>
+                <div class="card-header d-flex justify-content-between align-items-center flex-wrap" style="gap: 0.75rem;">
+                    <h3 class="mb-0">Módulos del Proyecto</h3>
+
+                    <div class="d-flex align-items-center" style="gap: 1rem;">
+                        <!-- Switch de estrategia de agrupacion -->
+                        <div *ngIf="proyecto && grupos.length > 0" class="estrategia-toggle" [class.is-busy]="recalculatingBastidores">
+                            <small class="estrategia-label">Agrupar:</small>
+                            <button type="button"
+                                class="estrategia-pill"
+                                [class.active]="proyecto.estrategia_bastidor === 'SECUENCIAL'"
+                                [disabled]="recalculatingBastidores"
+                                (click)="onEstrategiaToggle('SECUENCIAL')"
+                                title="Agrupar siguiendo el orden natural">
+                                Secuencial
+                            </button>
+                            <button type="button"
+                                class="estrategia-pill"
+                                [class.active]="proyecto.estrategia_bastidor === 'AISLAR_CENTRAL_GIRADO'"
+                                [disabled]="recalculatingBastidores"
+                                (click)="onEstrategiaToggle('AISLAR_CENTRAL_GIRADO')"
+                                title="Aislar los central girado en bastidores propios">
+                                Por tipo
+                            </button>
+                        </div>
+
+                        <div class="legend d-flex align-items-center">
+                            <small class="mr-2 font-weight-bold text-uppercase" style="font-size: 0.7rem;">Estados:</small>
+                            <span class="badge badge-pendiente mr-2">Pendiente</span>
+                            <span class="badge badge-completado">Completado</span>
+                        </div>
                     </div>
                 </div>
 
@@ -171,14 +195,33 @@
                         <p class="mb-0 mt-2">Importa los datos técnicos (fichero .db, .csv o .json) desde el panel izquierdo para agrupar los módulos por bastidor.</p>
                     </div>
 
-                    <!-- Vista por grupos (compacta, tipo lista) -->
-                    <div class="grupos-wrapper">
+                    <!-- Vista por grupos con drag&drop entre bastidores y de bastidores -->
+                    <div *ngIf="grupos.length > 0"
+                        cdkDropList
+                        cdkDropListOrientation="mixed"
+                        class="grupos-wrapper"
+                        [cdkDropListData]="grupos"
+                        (cdkDropListDropped)="onBastidorDrop($event)">
+
                         <div *ngFor="let grupo of grupos"
+                            cdkDrag
+                            [cdkDragData]="grupo"
+                            cdkDragLockAxis="y"
+                            cdkDragRootElement=".grupo-bastidor-card"
+                            cdkDragHandle
+                            [cdkDragDisabled]="isDraggingModulo"
+                            (cdkDragStarted)="onBastidorDragStarted()"
+                            (cdkDragEnded)="onBastidorDragEnded()"
                             class="grupo-bastidor-card"
                             [class.grupo-completado]="isGrupoCompletado(grupo)"
-                            [class.grupo-pendiente]="!isGrupoCompletado(grupo)">
+                            [class.grupo-pendiente]="!isGrupoCompletado(grupo)"
+                            [class.grupo-overflow]="grupo.overflow">
+
                             <div class="grupo-bastidor-header">
                                 <div class="grupo-bastidor-title">
+                                    <span class="grupo-drag-handle" title="Arrastrar para reordenar bastidor">
+                                        <i class="fa fa-bars" aria-hidden="true"></i>
+                                    </span>
                                     <ng-container *ngIf="editingGrupoId === grupo.id; else grupoNombreStatic">
                                         <input type="text"
                                             class="grupo-nombre-input"
@@ -200,14 +243,42 @@
                                         </button>
                                     </ng-template>
                                 </div>
-                                <small class="grupo-modulos-count">{{ grupo.modulos.length }} módulos</small>
+                                <div class="grupo-bastidor-meta">
+                                    <small class="grupo-capacidad"
+                                        [class.is-overflow]="grupo.overflow"
+                                        [title]="grupo.overflow ? 'Sobrepasa la longitud maxima del bastidor' : ''">
+                                        {{ grupo.longitud_total_cm | number:'1.0-1' }} / {{ grupo.capacidad_cm | number:'1.0-0' }} cm
+                                    </small>
+                                    <small class="grupo-modulos-count">{{ grupo.modulos.length }} módulos</small>
+                                </div>
                             </div>
-                            <ul class="grupo-modulos-list">
+
+                            <ul class="grupo-modulos-list"
+                                cdkDropList
+                                [id]="bastidorDropListId(grupo)"
+                                [cdkDropListData]="grupo"
+                                [cdkDropListConnectedTo]="connectedDropListIds(grupo.id)"
+                                (cdkDropListDropped)="onModuloDropInBastidor($event)">
+
                                 <li *ngFor="let modulo of grupo.modulos"
+                                    cdkDrag
+                                    [cdkDragData]="modulo"
+                                    [cdkDragDisabled]="!isModuloMovible(modulo)"
+                                    (cdkDragStarted)="onModuloDragStarted()"
+                                    (cdkDragEnded)="onModuloDragEnded()"
                                     class="grupo-modulo-item"
                                     [class.is-completado]="modulo.estado === 'COMPLETADO' || modulo.estado === 'CERRADO'"
-                                    [class.is-progreso]="modulo.estado === 'EN_PROGRESO'">
-                                    <span class="grupo-modulo-nombre">{{ modulo.nombre }}</span>
+                                    [class.is-progreso]="modulo.estado === 'EN_PROGRESO'"
+                                    [class.is-not-movable]="!isModuloMovible(modulo)">
+                                    <span class="grupo-modulo-nombre">
+                                        {{ modulo.nombre }}
+                                        <span *ngIf="modulo.tipo_modulo"
+                                            class="grupo-modulo-tipo-chip"
+                                            [class.tipo-girado]="modulo.tipo_modulo === 'CENTRAL_GIRADO'"
+                                            [title]="tipoModuloFullLabel(modulo.tipo_modulo)">
+                                            {{ tipoModuloLabel(modulo.tipo_modulo) }}
+                                        </span>
+                                    </span>
                                     <span class="grupo-modulo-actions">
                                         <button type="button"
                                             class="grupo-modulo-camera"
@@ -236,6 +307,25 @@
                                 </li>
                             </ul>
                         </div>
+
+                        <!-- Card extra "+" para crear bastidor nuevo soltando aqui -->
+                        <div *ngIf="isDraggingModulo"
+                            cdkDropList
+                            id="bastidor-drop-new"
+                            [cdkDropListData]="null"
+                            (cdkDropListDropped)="onModuloDropInNewBastidor($event)"
+                            class="grupo-bastidor-card grupo-bastidor-new-zone"
+                            title="Suelta aqui para crear un bastidor nuevo">
+                            <div class="grupo-bastidor-new-inner">
+                                <i class="fa fa-plus" aria-hidden="true"></i>
+                                <span>Nuevo bastidor</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div *ngIf="movingModulo || recalculatingBastidores" class="text-center text-muted mt-2">
+                        <div class="spinner spinner-sm"></div>
+                        <small class="ml-2">{{ recalculatingBastidores ? 'Recalculando bastidores...' : 'Moviendo modulo...' }}</small>
                     </div>
 
                 </div>

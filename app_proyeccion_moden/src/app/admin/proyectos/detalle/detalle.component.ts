@@ -3,8 +3,15 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterModule } from '@angular/router';
 import {
+    CdkDragDrop,
+    DragDropModule,
+    moveItemInArray,
+    transferArrayItem,
+} from '@angular/cdk/drag-drop';
+import {
     ApiService, Proyecto, Planta, Modulo, User, FotoFabricacion,
-    DetalleModuloFase, TechnicalImportStats, GrupoBastidor
+    DetalleModuloFase, TechnicalImportStats, GrupoBastidor, GrupoBastidorModulo,
+    EstrategiaBastidor
 } from '../../../services/api.service';
 import { switchMap, forkJoin, of } from 'rxjs';
 import { environment } from '../../../../environments/environment';
@@ -12,7 +19,7 @@ import { environment } from '../../../../environments/environment';
 @Component({
     selector: 'app-proyecto-detalle',
     standalone: true,
-    imports: [CommonModule, FormsModule, RouterModule],
+    imports: [CommonModule, FormsModule, RouterModule, DragDropModule],
     templateUrl: './detalle.component.html',
     styleUrls: ['./detalle.component.css']
 })
@@ -139,6 +146,187 @@ export class ProyectoDetailComponent implements OnInit {
                 this.cdr.detectChanges();
             }
         });
+    }
+
+    // =========================================================================
+    // DRAG & DROP de modulos entre bastidores + reorder de bastidores
+    // =========================================================================
+    isDraggingModulo = false;
+    isDraggingBastidor = false;
+    movingModulo = false;
+    recalculatingBastidores = false;
+
+    /** ID DOM unico para cada cdkDropList del bastidor (se inyecta a connectedTo). */
+    bastidorDropListId(grupo: GrupoBastidor): string {
+        return `bastidor-drop-${grupo.id}`;
+    }
+
+    /** Lista de IDs a los que cada bastidor se conecta (todos los demas + el slot "nuevo"). */
+    connectedDropListIds(currentGrupoId: number): string[] {
+        const ids = this.grupos
+            .filter(g => g.id !== currentGrupoId)
+            .map(g => this.bastidorDropListId(g));
+        ids.push('bastidor-drop-new');
+        return ids;
+    }
+
+    isModuloMovible(modulo: GrupoBastidorModulo): boolean {
+        return modulo.estado === 'PENDIENTE';
+    }
+
+    onModuloDragStarted(): void {
+        this.isDraggingModulo = true;
+    }
+
+    onModuloDragEnded(): void {
+        this.isDraggingModulo = false;
+    }
+
+    onBastidorDragStarted(): void {
+        this.isDraggingBastidor = true;
+    }
+
+    onBastidorDragEnded(): void {
+        this.isDraggingBastidor = false;
+    }
+
+    /** Drop de un modulo en otro bastidor existente. */
+    onModuloDropInBastidor(event: CdkDragDrop<GrupoBastidor>): void {
+        const modulo = event.item.data as GrupoBastidorModulo;
+        const destino = event.container.data as GrupoBastidor;
+        const origen = event.previousContainer.data as GrupoBastidor;
+
+        if (event.previousContainer === event.container) {
+            // Reorden dentro del mismo bastidor: solo cosmetico en local (no
+            // persistimos orden intra-grupo porque la cola se ordena por nombre).
+            moveItemInArray(destino.modulos, event.previousIndex, event.currentIndex);
+            return;
+        }
+
+        if (!this.isModuloMovible(modulo)) {
+            alert(`No se puede mover "${modulo.nombre}": estado ${modulo.estado}.`);
+            return;
+        }
+
+        // Update optimista
+        transferArrayItem(origen.modulos, destino.modulos, event.previousIndex, event.currentIndex);
+        this.movingModulo = true;
+        this.api.moveModuloEntreBastidores(modulo.id, destino.id).subscribe({
+            next: (grupos) => {
+                this.grupos = grupos.sort((a, b) => a.indice - b.indice);
+                this.movingModulo = false;
+                this.cdr.detectChanges();
+            },
+            error: (err) => {
+                console.error('Error moviendo modulo', err);
+                const detail = err?.error?.detail || 'No se pudo mover el modulo.';
+                alert(detail);
+                this.movingModulo = false;
+                this.loadData();
+            }
+        });
+    }
+
+    /** Drop sobre el card "+" => crear bastidor nuevo. */
+    onModuloDropInNewBastidor(event: CdkDragDrop<null>): void {
+        const modulo = event.item.data as GrupoBastidorModulo;
+        if (!this.isModuloMovible(modulo)) {
+            alert(`No se puede mover "${modulo.nombre}": estado ${modulo.estado}.`);
+            return;
+        }
+        this.movingModulo = true;
+        this.api.moveModuloEntreBastidores(modulo.id, null).subscribe({
+            next: (grupos) => {
+                this.grupos = grupos.sort((a, b) => a.indice - b.indice);
+                this.movingModulo = false;
+                this.cdr.detectChanges();
+            },
+            error: (err) => {
+                console.error('Error creando bastidor nuevo', err);
+                alert(err?.error?.detail || 'No se pudo crear el bastidor.');
+                this.movingModulo = false;
+                this.loadData();
+            }
+        });
+    }
+
+    /** Drop de reordenamiento del listado de bastidores. */
+    onBastidorDrop(event: CdkDragDrop<GrupoBastidor[]>): void {
+        if (event.previousIndex === event.currentIndex) return;
+        moveItemInArray(this.grupos, event.previousIndex, event.currentIndex);
+        this.cdr.detectChanges();
+        if (!this.proyectoId) return;
+        const orden = this.grupos.map(g => g.id);
+        this.api.reorderBastidores(this.proyectoId, orden).subscribe({
+            next: (grupos) => {
+                this.grupos = grupos.sort((a, b) => a.indice - b.indice);
+                this.cdr.detectChanges();
+            },
+            error: (err) => {
+                console.error('Error reordenando bastidores', err);
+                alert(err?.error?.detail || 'No se pudo guardar el orden.');
+                this.loadData();
+            }
+        });
+    }
+
+    /** Switch de estrategia. Recalcula bastidores en backend. */
+    onEstrategiaToggle(nueva: EstrategiaBastidor): void {
+        if (!this.proyecto || !this.proyectoId) return;
+        if (nueva === this.proyecto.estrategia_bastidor) return;
+
+        const aviso = nueva === 'AISLAR_CENTRAL_GIRADO'
+            ? 'Esto rehara los bastidores separando los CENTRAL GIRADO del resto. Los movimientos manuales actuales se perderan. Continuar?'
+            : 'Esto rehara los bastidores en orden secuencial. Los movimientos manuales actuales se perderan. Continuar?';
+        if (!confirm(aviso)) return;
+
+        this.recalculatingBastidores = true;
+        this.api.recalcularBastidores(this.proyectoId, nueva).subscribe({
+            next: (res) => {
+                if (this.proyecto) {
+                    this.proyecto.estrategia_bastidor = res.estrategia;
+                }
+                this.grupos = res.grupos.sort((a, b) => a.indice - b.indice);
+                this.recalculatingBastidores = false;
+                this.cdr.detectChanges();
+            },
+            error: (err) => {
+                console.error('Error recalculando bastidores', err);
+                const data = err?.error;
+                if (data?.modulos_bloqueantes?.length) {
+                    const lista = data.modulos_bloqueantes.slice(0, 10).join(', ');
+                    const extra = data.total_bloqueantes > 10
+                        ? ` (+${data.total_bloqueantes - 10} mas)` : '';
+                    alert(`${data.detail}\n\nBloqueantes: ${lista}${extra}`);
+                } else {
+                    alert(data?.detail || 'No se pudieron recalcular los bastidores.');
+                }
+                this.recalculatingBastidores = false;
+                this.cdr.detectChanges();
+            }
+        });
+    }
+
+    tipoModuloLabel(tipo: GrupoBastidorModulo['tipo_modulo']): string {
+        switch (tipo) {
+            case 'CENTRAL': return 'C';
+            case 'CENTRAL_GIRADO': return 'CG';
+            case 'LADO_LARGO': return 'LL';
+            case 'LADO_CORTO': return 'LC';
+            case 'ESQUINA': return 'E';
+            default: return '';
+        }
+    }
+
+    tipoModuloFullLabel(tipo: GrupoBastidorModulo['tipo_modulo']): string {
+        switch (tipo) {
+            case 'CENTRAL': return 'Central';
+            case 'CENTRAL_GIRADO': return 'Central girado';
+            case 'LADO_LARGO': return 'Lado largo';
+            case 'LADO_CORTO': return 'Lado corto';
+            case 'ESQUINA': return 'Esquina';
+            default: return 'Sin tipo';
+        }
     }
 
     isGrupoCompletado(grupo: GrupoBastidor): boolean {
