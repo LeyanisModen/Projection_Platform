@@ -197,35 +197,29 @@ export class ProyectoDetailComponent implements OnInit {
         this.isDraggingBastidor = false;
     }
 
-    /** Comparador natural (A01 < A2 < A10) usado para resortear localmente. */
-    private _naturalCompare(a: string, b: string): number {
-        return (a || '').localeCompare(b || '', undefined, { numeric: true, sensitivity: 'base' });
-    }
-
-    /** Drop de un modulo en otro bastidor existente. */
+    /** Drop de un modulo en otro bastidor existente (o en el mismo para reordenar). */
     onModuloDropInBastidor(event: CdkDragDrop<GrupoBastidor>): void {
         const modulo = event.item.data as GrupoBastidorModulo;
         const destino = event.container.data as GrupoBastidor;
         const origen = event.previousContainer.data as GrupoBastidor;
-
-        if (event.previousContainer === event.container) {
-            // Intra-bastidor: el orden interno siempre se normaliza por nombre
-            // (lo que usa la cola operativa). No persistimos posicion manual.
-            return;
-        }
+        const indexDestino = event.currentIndex;
 
         if (!this.isModuloMovible(modulo)) {
             alert(`No se puede mover "${modulo.nombre}": estado ${modulo.estado}.`);
             return;
         }
 
-        // Update optimista: transfer + resort por nombre natural para que
-        // el modulo "salte" inmediatamente a su posicion final y no parezca
-        // que se va al final del todo cuando el backend devuelve la lista.
-        transferArrayItem(origen.modulos, destino.modulos, event.previousIndex, event.currentIndex);
-        destino.modulos.sort((a, b) => this._naturalCompare(a.nombre, b.nombre));
+        const sameGroup = event.previousContainer === event.container;
+        if (sameGroup) {
+            // Intra-bastidor: solo persiste si cambio realmente de posicion.
+            if (event.previousIndex === event.currentIndex) return;
+            moveItemInArray(destino.modulos, event.previousIndex, event.currentIndex);
+        } else {
+            transferArrayItem(origen.modulos, destino.modulos, event.previousIndex, event.currentIndex);
+        }
+
         this.movingModulo = true;
-        this.api.moveModuloEntreBastidores(modulo.id, destino.id).subscribe({
+        this.api.moveModuloEntreBastidores(modulo.id, destino.id, indexDestino).subscribe({
             next: (grupos) => {
                 this.grupos = grupos.sort((a, b) => a.indice - b.indice);
                 this.movingModulo = false;
@@ -249,7 +243,7 @@ export class ProyectoDetailComponent implements OnInit {
             return;
         }
         this.movingModulo = true;
-        this.api.moveModuloEntreBastidores(modulo.id, null).subscribe({
+        this.api.moveModuloEntreBastidores(modulo.id, null, 0).subscribe({
             next: (grupos) => {
                 this.grupos = grupos.sort((a, b) => a.indice - b.indice);
                 this.movingModulo = false;

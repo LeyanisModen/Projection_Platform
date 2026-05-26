@@ -565,10 +565,18 @@ export class ApiService {
         );
     }
 
-    moveModuloEntreBastidores(moduloId: number, grupoDestinoId: number | null): Observable<GrupoBastidor[]> {
+    moveModuloEntreBastidores(
+        moduloId: number,
+        grupoDestinoId: number | null,
+        indexDestino: number | null = null,
+    ): Observable<GrupoBastidor[]> {
         return this.http.post<GrupoBastidor[]>(
             `${this.baseUrl}/grupos-bastidor/move-modulo/`,
-            { modulo_id: moduloId, grupo_destino_id: grupoDestinoId },
+            {
+                modulo_id: moduloId,
+                grupo_destino_id: grupoDestinoId,
+                index_destino: indexDestino,
+            },
             { headers: this.getHeaders() }
         );
     }

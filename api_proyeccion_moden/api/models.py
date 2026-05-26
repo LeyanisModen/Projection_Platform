@@ -190,6 +190,14 @@ class Modulo(models.Model):
         related_name='modulos',
         help_text='Grupo de bastidor al que pertenece el modulo. Se asigna al calcular los grupos.'
     )
+    orden_intra = models.PositiveIntegerField(
+        default=0,
+        help_text=(
+            'Posicion del modulo dentro de su GrupoBastidor (1..N). '
+            'Se respeta tanto en la visualizacion del admin como en la cola '
+            'operativa. Se reindexa al mover/reordenar via drag-drop.'
+        ),
+    )
     
     # Estado por fase
     inferior_hecho = models.BooleanField(default=False)

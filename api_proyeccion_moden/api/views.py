@@ -11,7 +11,7 @@ from django.contrib.auth.models import User
 from decimal import Decimal, InvalidOperation
 
 from django.db import IntegrityError, transaction
-from django.db.models import Count, Q
+from django.db.models import Count, Max, Q
 from rest_framework import permissions, viewsets, status
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
@@ -755,8 +755,13 @@ def _persist_bastidor_groups(proyecto):
             nombre=f'Grupo {indice}',
         )
         created_groups += 1
-        modulo_ids = [m.id for m in modulos_in_group]
-        proyecto.modulos.filter(id__in=modulo_ids).update(grupo_bastidor=grupo)
+        # Asigna grupo + orden_intra 1..N en el orden devuelto por
+        # _build_bastidor_groups (orden natural por nombre dentro del grupo).
+        for orden, m in enumerate(modulos_in_group, start=1):
+            proyecto.modulos.filter(id=m.id).update(
+                grupo_bastidor=grupo,
+                orden_intra=orden,
+            )
 
     return created_groups
 
@@ -796,6 +801,10 @@ def _assign_modulo_to_group_on_create(modulo):
 
     if suma_actual + modulo_width <= bastidor_longitud:
         modulo.grupo_bastidor = ultimo_grupo
+        max_orden = ultimo_grupo.modulos.aggregate(
+            mx=Max('orden_intra')
+        )['mx'] or 0
+        modulo.orden_intra = max_orden + 1
     else:
         siguiente_indice = ultimo_grupo.indice + 1
         nuevo = GrupoBastidor.objects.create(
@@ -804,7 +813,8 @@ def _assign_modulo_to_group_on_create(modulo):
             nombre=f'Grupo {siguiente_indice}',
         )
         modulo.grupo_bastidor = nuevo
-    modulo.save(update_fields=['grupo_bastidor'])
+        modulo.orden_intra = 1
+    modulo.save(update_fields=['grupo_bastidor', 'orden_intra'])
 
 
 def _merge_inferior_sequences_for_superior(sequences):
@@ -1257,8 +1267,10 @@ class ProyectoViewSet(viewsets.ModelViewSet):
             grupo = GrupoBastidor.objects.create(
                 proyecto=proyecto, indice=indice, nombre=f'Grupo {indice}',
             )
-            ids = [m.id for m in modulos_in_group]
-            proyecto.modulos.filter(id__in=ids).update(grupo_bastidor=grupo)
+            for orden, m in enumerate(modulos_in_group, start=1):
+                proyecto.modulos.filter(id=m.id).update(
+                    grupo_bastidor=grupo, orden_intra=orden,
+                )
 
         # Replan colas operativas afectadas (mismo patron que import).
         grupos_mesas_afectados = list(
@@ -1786,21 +1798,40 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
                 g.save(update_fields=['indice'])
 
     @staticmethod
-    def _modulo_es_movible(modulo):
+    def _reindex_modulos_intra(grupo):
+        """Reasigna orden_intra 1..N a los modulos del grupo respetando su
+        orden actual (orden_intra existente; fallback a nombre natural)."""
+        modulos = sorted(
+            grupo.modulos.all(),
+            key=lambda m: (m.orden_intra or 0, _natural_sort_key(m.nombre)),
+        )
+        for i, m in enumerate(modulos, start=1):
+            if m.orden_intra != i:
+                m.orden_intra = i
+                m.save(update_fields=['orden_intra'])
+
+    @staticmethod
+    def _modulo_es_movible(modulo, *, cross_group):
         """Solo se mueven modulos en PENDIENTE. Cualquier otro estado bloquea
-        para no descalibrar la cola operativa (anclajes inferior_hecho/foto sup)."""
+        para no descalibrar la cola operativa.
+
+        Si es cross_group (cambia de bastidor), tambien bloqueamos si el
+        bastidor origen tiene fabricacion en curso (algun modulo con
+        inferior_hecho=True), porque la cola ancla items INFERIOR a su
+        grupo_bastidor_id. Para reorden intra-grupo no aplica: el ancla
+        sigue siendo el mismo grupo.
+        """
         if modulo.estado != 'PENDIENTE':
             return False, (
                 f'No se puede mover "{modulo.nombre}" porque su estado es '
                 f'{modulo.estado}. Solo se mueven modulos pendientes.'
             )
-        if modulo.grupo_bastidor_id is not None:
-            # Bastidor origen "en curso": al menos un modulo del bastidor con inferior_hecho
+        if cross_group and modulo.grupo_bastidor_id is not None:
             en_curso = modulo.grupo_bastidor.modulos.filter(inferior_hecho=True).exists()
             if en_curso:
                 return False, (
-                    f'No se puede mover "{modulo.nombre}": el bastidor de origen '
-                    f'ya tiene fabricacion en curso.'
+                    f'No se puede mover "{modulo.nombre}" a otro bastidor: '
+                    f'el bastidor de origen ya tiene fabricacion en curso.'
                 )
         return True, None
 
@@ -1812,10 +1843,18 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
 
         modulo_id = request.data.get('modulo_id')
         grupo_destino_id = request.data.get('grupo_destino_id')  # null => crear nuevo
+        index_destino = request.data.get('index_destino')  # 0-based; None => append
 
         if not modulo_id:
             return Response({'detail': 'modulo_id es obligatorio.'},
                             status=status.HTTP_400_BAD_REQUEST)
+
+        if index_destino is not None:
+            try:
+                index_destino = int(index_destino)
+            except (TypeError, ValueError):
+                return Response({'detail': 'index_destino debe ser un entero o null.'},
+                                status=status.HTTP_400_BAD_REQUEST)
 
         try:
             modulo = Modulo.objects.select_related('proyecto', 'grupo_bastidor').get(pk=modulo_id)
@@ -1823,15 +1862,21 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
             return Response({'detail': 'Modulo no encontrado.'},
                             status=status.HTTP_404_NOT_FOUND)
 
-        movible, error = self._modulo_es_movible(modulo)
-        if not movible:
-            return Response({'detail': error}, status=status.HTTP_409_CONFLICT)
-
         proyecto = modulo.proyecto
         grupo_origen = modulo.grupo_bastidor
 
+        # cross_group: cambia de bastidor (incluye crear uno nuevo).
+        cross_group = (
+            grupo_destino_id in [None, '', 'null']
+            or (grupo_origen and str(grupo_destino_id) != str(grupo_origen.id))
+            or grupo_origen is None
+        )
+        movible, error = self._modulo_es_movible(modulo, cross_group=cross_group)
+        if not movible:
+            return Response({'detail': error}, status=status.HTTP_409_CONFLICT)
+
+        # Resolver grupo destino (o crear uno nuevo).
         if grupo_destino_id in [None, '', 'null']:
-            # Crear bastidor nuevo al final
             ultimo = proyecto.grupos_bastidor.order_by('-indice').first()
             siguiente_indice = (ultimo.indice + 1) if ultimo else 1
             grupo_destino = GrupoBastidor.objects.create(
@@ -1839,30 +1884,53 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
                 indice=siguiente_indice,
                 nombre=f'Grupo {siguiente_indice}',
             )
+            grupo_destino_creado = True
         else:
             try:
                 grupo_destino = proyecto.grupos_bastidor.get(pk=grupo_destino_id)
             except GrupoBastidor.DoesNotExist:
                 return Response({'detail': 'Grupo destino no encontrado en este proyecto.'},
                                 status=status.HTTP_404_NOT_FOUND)
+            grupo_destino_creado = False
 
-        if grupo_origen and grupo_origen.id == grupo_destino.id:
-            # No-op: refrescamos por si el front lo necesita
-            self._reindex_grupos(proyecto)
-            grupos = (
-                proyecto.grupos_bastidor.prefetch_related('modulos')
-                .order_by('indice')
-            )
-            return Response(GrupoBastidorSerializer(grupos, many=True).data)
+        same_group = grupo_origen and grupo_origen.id == grupo_destino.id
 
-        modulo.grupo_bastidor = grupo_destino
-        modulo.save(update_fields=['grupo_bastidor'])
+        # Inserta `modulo` en la lista del grupo destino en la posicion
+        # index_destino (0-based) y reindexa orden_intra 1..N.
+        # Si same_group: remueve primero del orden actual y reinserta.
+        destino_modulos = sorted(
+            grupo_destino.modulos.all(),
+            key=lambda m: (m.orden_intra or 0, _natural_sort_key(m.nombre)),
+        )
+        if same_group:
+            destino_modulos = [m for m in destino_modulos if m.id != modulo.id]
 
-        # Borrar grupo origen si quedo vacio (libera asignado_a por SET_NULL).
-        if grupo_origen and not grupo_origen.modulos.exists():
-            grupo_origen.delete()
+        if index_destino is None or index_destino < 0:
+            insert_at = len(destino_modulos)
+        else:
+            insert_at = min(index_destino, len(destino_modulos))
 
-        # Reindexar indices 1..N para que no haya huecos.
+        destino_modulos.insert(insert_at, modulo)
+
+        # Persistir cambio de grupo si aplica.
+        if not same_group:
+            modulo.grupo_bastidor = grupo_destino
+            modulo.save(update_fields=['grupo_bastidor'])
+
+        # Reasignar orden_intra 1..N en destino.
+        for i, m in enumerate(destino_modulos, start=1):
+            if m.orden_intra != i:
+                m.orden_intra = i
+                m.save(update_fields=['orden_intra'])
+
+        # Limpiar y reindexar origen si cambio de grupo.
+        if not same_group and grupo_origen:
+            if not grupo_origen.modulos.exists():
+                grupo_origen.delete()
+            else:
+                self._reindex_modulos_intra(grupo_origen)
+
+        # Reindexar indices de grupos 1..N (puede haber borrado el origen).
         self._reindex_grupos(proyecto)
 
         grupos = (
@@ -2741,7 +2809,39 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
             and (modulo.id, 'SUPERIOR') not in excluded_phase_keys
         }
 
-        bastidor_groups = _build_bastidor_groups(proyecto, inferiors_pending)
+        # La cola operativa lee los GrupoBastidor PERSISTIDOS (lo que el
+        # admin ha agrupado/movido/reordenado via drag-drop) en vez de
+        # recalcular agrupaciones desde cero. Asi taller fabrica lo que
+        # admin ve. Se filtran solo los modulos inferior-pending y se
+        # preservan en su orden_intra.
+        pending_ids = {m.id for m in inferiors_pending}
+        bastidor_groups = []
+        if pending_ids:
+            grupos_persistidos = list(
+                proyecto.grupos_bastidor.prefetch_related('modulos').order_by('indice')
+            )
+            modulo_by_id = {m.id: m for m in modulos}
+            for grupo in grupos_persistidos:
+                # Modulos del grupo, pendientes inferior, en orden_intra.
+                in_grupo = sorted(
+                    [
+                        modulo_by_id[gm.id] for gm in grupo.modulos.all()
+                        if gm.id in pending_ids and gm.id in modulo_by_id
+                    ],
+                    key=lambda m: (m.orden_intra or 0, _natural_sort_key(m.nombre)),
+                )
+                if in_grupo:
+                    bastidor_groups.append(in_grupo)
+
+            # Modulos pendientes sin grupo persistido (caso raro): caen al final
+            # como un grupo "huerfano" para no perderlos en el plan.
+            ids_en_grupos = {m.id for g in bastidor_groups for m in g}
+            huerfanos = [m for m in inferiors_pending if m.id not in ids_en_grupos]
+            if huerfanos:
+                bastidor_groups.append(
+                    sorted(huerfanos, key=lambda m: _natural_sort_key(m.nombre))
+                )
+
         inferior_sequences = [[] for _ in range(num_inferiores)]
         group_summaries = []
         module_group_map = {}

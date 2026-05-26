@@ -232,7 +232,14 @@ class GrupoBastidorSerializer(serializers.ModelSerializer):
         return [int(p) if p.isdigit() else p for p in parts]
 
     def get_modulos(self, obj):
-        modulos = sorted(obj.modulos.all(), key=lambda m: self._natural_key(m.nombre))
+        # Orden manual (orden_intra) con nombre natural como desempate.
+        # Modulos sin orden_intra asignado (=0) caen al inicio en orden
+        # natural — solo deberian existir en bastidores antiguos previos
+        # al backfill o si la migracion fallo.
+        modulos = sorted(
+            obj.modulos.all(),
+            key=lambda m: (m.orden_intra or 0, self._natural_key(m.nombre)),
+        )
         return [
             {
                 "id": m.id,
