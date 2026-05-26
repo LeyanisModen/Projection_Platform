@@ -1437,10 +1437,20 @@
     color: #d35400;
     font-weight: 600;
     font-size: 0.85rem;
+    white-space: nowrap;
 }
 
 .grupo-bastidor-new-inner .fa-plus {
     font-size: 1rem;
+}
+
+/* Cuando el modulo arrastrado entra en la zona "Nuevo bastidor", CDK
+   inserta el placeholder (clon del item original con sus iconos). No
+   queremos verlo aqui: el unico feedback visual valido es el card
+   destacado en naranja + el preview flotante. */
+.grupo-bastidor-new-zone .cdk-drag-placeholder,
+.grupo-bastidor-new-zone .grupo-modulo-item {
+    display: none !important;
 }
 
 /* Chip pequeño con la tipologia del modulo */
