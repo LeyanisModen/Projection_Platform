@@ -1,7 +1,7 @@
 import { Component, OnInit, ChangeDetectorRef, HostListener } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ApiService, GrupoMesas, GrupoMesaResumen, MesaTipo, User } from '../../services/api.service';
+import { ApiService, GrupoMesas, GrupoMesaResumen, User } from '../../services/api.service';
 
 @Component({
   selector: 'app-ferrallas',
@@ -26,9 +26,6 @@ export class FerrallasComponent implements OnInit {
 
   editingGrupoId: number | null = null;
   editingGrupoName: string = '';
-
-  editingMesaId: number | null = null;
-  editingMesaName: string = '';
 
   showPairingModal = false;
   pairingMesa: GrupoMesaResumen | null = null;
@@ -178,37 +175,6 @@ export class FerrallasComponent implements OnInit {
     });
   }
 
-  startEditingMesa(mesa: GrupoMesaResumen, event?: Event) {
-    if (event) event.stopPropagation();
-    this.editingMesaId = mesa.id;
-    this.editingMesaName = mesa.nombre;
-  }
-
-  stopEditingMesa() {
-    this.editingMesaId = null;
-    this.editingMesaName = '';
-  }
-
-  updateMesaName(mesa: GrupoMesaResumen) {
-    if (this.editingMesaId !== mesa.id) return;
-    const newName = (this.editingMesaName || '').trim();
-    if (!newName || newName === mesa.nombre) {
-      this.stopEditingMesa();
-      return;
-    }
-    this.api.updateMesa(mesa.id, { nombre: newName }).subscribe({
-      next: (updated: any) => {
-        mesa.nombre = updated.nombre;
-        this.stopEditingMesa();
-      },
-      error: (err) => {
-        console.error('Error updating mesa name', err);
-        alert('No se pudo renombrar la mesa');
-        this.stopEditingMesa();
-      }
-    });
-  }
-
   confirmDeleteGrupo(grupo: GrupoMesas) {
     const numMesas = grupo.mesas?.length ?? 0;
     const mesasTxt = numMesas === 1 ? '1 mesa' : `${numMesas} mesas`;
@@ -217,9 +183,11 @@ export class FerrallasComponent implements OnInit {
     }
   }
 
-  addMesaToGrupo(grupo: GrupoMesas, tipo: MesaTipo) {
+  /** Anade una mesa nueva al grupo. Por defecto INFERIOR; el admin
+   * puede cambiar el tipo con el switch despues. */
+  addMesaToGrupo(grupo: GrupoMesas) {
     this.loadingMesas = true;
-    this.api.addMesaToGrupo(grupo.id, tipo).subscribe({
+    this.api.addMesaToGrupo(grupo.id, 'INFERIOR').subscribe({
       next: (mesa) => {
         grupo.mesas = [...(grupo.mesas || []), mesa];
         this.loadingMesas = false;
@@ -231,6 +199,42 @@ export class FerrallasComponent implements OnInit {
         alert(err?.error?.detail || 'Error creando mesa');
         this.cdr.detectChanges();
       }
+    });
+  }
+
+  /** Estado actual de la mesa: combina tipo+activa en uno de tres
+   * valores. Coincide con la logica del modal Gestionar del cliente. */
+  mesaEstadoActual(mesa: GrupoMesaResumen): 'INFERIOR' | 'SUPERIOR' | 'INACTIVA' {
+    if (!mesa.activa) return 'INACTIVA';
+    return mesa.tipo === 'SUPERIOR' ? 'SUPERIOR' : 'INFERIOR';
+  }
+
+  /** Cambia el estado de una mesa al instante: una llamada al
+   * endpoint actualizar-mesas con el cambio puntual. Replanifica las
+   * mesas del grupo (preserve-anchored) en el backend. */
+  setMesaEstado(grupo: GrupoMesas, mesa: GrupoMesaResumen, estado: 'INFERIOR' | 'SUPERIOR' | 'INACTIVA') {
+    if (this.mesaEstadoActual(mesa) === estado) return;
+    const cambio: { mesa_id: number; tipo?: 'INFERIOR' | 'SUPERIOR'; activa?: boolean } = {
+      mesa_id: mesa.id,
+    };
+    if (estado === 'INACTIVA') {
+      cambio.activa = false;
+    } else {
+      cambio.tipo = estado;
+      cambio.activa = true;
+    }
+    this.loadingMesas = true;
+    this.api.actualizarMesasGrupo(grupo.id, [cambio]).subscribe({
+      next: () => {
+        if (this.selectedUser) this.loadGruposMesas(this.selectedUser.id);
+        this.loadingMesas = false;
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.loadingMesas = false;
+        alert(err?.error?.detail || 'No se pudo cambiar el estado de la mesa.');
+        this.cdr.detectChanges();
+      },
     });
   }
 

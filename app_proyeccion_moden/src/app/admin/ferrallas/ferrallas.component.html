@@ -224,16 +224,10 @@
                                         </div>
                                         <div class="btn-group">
                                             <button class="btn btn-outline-secondary btn-sm"
-                                                (click)="addMesaToGrupo(grupo, 'INFERIOR')"
+                                                (click)="addMesaToGrupo(grupo)"
                                                 [disabled]="loadingMesas"
-                                                title="Anadir mesa inferior">
-                                                <i class="fa fa-plus"></i> INF
-                                            </button>
-                                            <button class="btn btn-outline-secondary btn-sm"
-                                                (click)="addMesaToGrupo(grupo, 'SUPERIOR')"
-                                                [disabled]="loadingMesas"
-                                                title="Anadir mesa superior">
-                                                <i class="fa fa-plus"></i> SUP
+                                                title="Anadir mesa">
+                                                <i class="fa fa-plus"></i> Mesa
                                             </button>
                                             <button class="btn btn-outline-danger btn-sm"
                                                 (click)="confirmDeleteGrupo(grupo)"
@@ -246,47 +240,57 @@
 
                                     <div class="list-group list-group-flush">
                                         <div class="list-group-item d-flex justify-content-between align-items-center px-2 py-2"
-                                            *ngFor="let mesa of grupo.mesas">
+                                            *ngFor="let mesa of grupo.mesas"
+                                            [class.mesa-row-inactiva]="!mesa.activa">
                                             <div>
                                                 <div class="d-flex align-items-center mesa-row-title">
                                                     <span class="mesa-role-pill">{{ getMesaRoleLabel(mesa) }}</span>
-                                                    <ng-container *ngIf="editingMesaId === mesa.id; else showMesaName">
-                                                        <input type="text"
-                                                            class="mesa-name-input small mr-2"
-                                                            [(ngModel)]="editingMesaName"
-                                                            (keydown.enter)="updateMesaName(mesa)"
-                                                            (keydown.escape)="stopEditingMesa()"
-                                                            (blur)="updateMesaName(mesa)"
-                                                            autofocus>
-                                                    </ng-container>
-                                                    <ng-template #showMesaName>
-                                                        <strong class="small mr-2">{{ mesa.nombre }}</strong>
-                                                        <button type="button"
-                                                            class="btn btn-link btn-sm p-0 mesa-edit-btn"
-                                                            (click)="startEditingMesa(mesa, $event)"
-                                                            title="Renombrar mesa">
-                                                            <i class="fa fa-pencil"></i>
-                                                        </button>
-                                                    </ng-template>
                                                     <span *ngIf="mesa.is_linked" class="badge badge-success badge-pill"
                                                         style="font-size: 0.6rem;">Linked</span>
                                                 </div>
                                             </div>
-                                            <div class="btn-group">
-                                                <button class="btn btn-sm btn-outline-info" *ngIf="!mesa.is_linked"
-                                                    (click)="openPairingModal(mesa)" title="Vincular Dispositivo">
-                                                    <i class="fa fa-link"></i>
-                                                </button>
-                                                <button class="btn btn-sm btn-outline-warning" *ngIf="mesa.is_linked"
-                                                    (click)="openUnbindModal(mesa)" title="Desvincular Dispositivo">
-                                                    <i class="fa fa-chain-broken"></i>
-                                                </button>
-                                                <button class="btn btn-sm btn-outline-danger"
-                                                    (click)="confirmDeleteMesa(grupo, mesa)"
-                                                    [disabled]="loadingMesas"
-                                                    title="Eliminar mesa">
-                                                    <i class="fa fa-trash-o"></i>
-                                                </button>
+                                            <div class="d-flex align-items-center" style="gap: 8px;">
+                                                <div class="mesa-estado-switch"
+                                                    role="group"
+                                                    [attr.aria-label]="'Estado de Mesa ' + mesa.indice">
+                                                    <button type="button"
+                                                        class="estado-opcion estado-inf"
+                                                        [class.active]="mesaEstadoActual(mesa) === 'INFERIOR'"
+                                                        [disabled]="loadingMesas"
+                                                        (click)="setMesaEstado(grupo, mesa, 'INFERIOR')">
+                                                        INF
+                                                    </button>
+                                                    <button type="button"
+                                                        class="estado-opcion estado-sup"
+                                                        [class.active]="mesaEstadoActual(mesa) === 'SUPERIOR'"
+                                                        [disabled]="loadingMesas"
+                                                        (click)="setMesaEstado(grupo, mesa, 'SUPERIOR')">
+                                                        SUP
+                                                    </button>
+                                                    <button type="button"
+                                                        class="estado-opcion estado-off"
+                                                        [class.active]="mesaEstadoActual(mesa) === 'INACTIVA'"
+                                                        [disabled]="loadingMesas"
+                                                        (click)="setMesaEstado(grupo, mesa, 'INACTIVA')">
+                                                        INACTIVA
+                                                    </button>
+                                                </div>
+                                                <div class="btn-group">
+                                                    <button class="btn btn-sm btn-outline-info" *ngIf="!mesa.is_linked"
+                                                        (click)="openPairingModal(mesa)" title="Vincular Dispositivo">
+                                                        <i class="fa fa-link"></i>
+                                                    </button>
+                                                    <button class="btn btn-sm btn-outline-warning" *ngIf="mesa.is_linked"
+                                                        (click)="openUnbindModal(mesa)" title="Desvincular Dispositivo">
+                                                        <i class="fa fa-chain-broken"></i>
+                                                    </button>
+                                                    <button class="btn btn-sm btn-outline-danger"
+                                                        (click)="confirmDeleteMesa(grupo, mesa)"
+                                                        [disabled]="loadingMesas"
+                                                        title="Eliminar mesa">
+                                                        <i class="fa fa-trash-o"></i>
+                                                    </button>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>

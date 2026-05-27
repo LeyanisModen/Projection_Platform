@@ -334,3 +334,56 @@
     font-size: 0.7rem;
     font-weight: 700;
 }
+
+/* ---- Switch ternario INF/SUP/INACTIVA en la lista de mesas ---- */
+.mesa-estado-switch {
+    display: inline-flex;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.mesa-estado-switch .estado-opcion {
+    padding: 3px 8px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    background: #fff;
+    color: #666;
+    border: 0;
+    border-right: 1px solid #ccc;
+    cursor: pointer;
+    letter-spacing: 0.04em;
+    transition: background 0.12s, color 0.12s;
+}
+
+.mesa-estado-switch .estado-opcion:last-child {
+    border-right: 0;
+}
+
+.mesa-estado-switch .estado-opcion:hover:not(:disabled):not(.active) {
+    background: #f3f3f3;
+}
+
+.mesa-estado-switch .estado-opcion:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.mesa-estado-switch .estado-opcion.estado-inf.active {
+    background: #fff1e8;
+    color: #d2691e;
+}
+
+.mesa-estado-switch .estado-opcion.estado-sup.active {
+    background: #e6f0ff;
+    color: #1d4e9b;
+}
+
+.mesa-estado-switch .estado-opcion.estado-off.active {
+    background: #ececec;
+    color: #555;
+}
+
+.mesa-row-inactiva {
+    opacity: 0.65;
+}
