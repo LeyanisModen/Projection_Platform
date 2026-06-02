@@ -50,7 +50,7 @@ export class VisorComponent implements OnInit, OnDestroy {
   // AnyDesk whether the kiosk is actually running the latest bundle
   // or a cached one. F12 is blocked in kiosk; this is the simplest
   // version probe we can offer the operator on screen.
-  readonly buildTag = '2026-06-02_1734Z';
+  readonly buildTag = '2026-06-02_1757Z';
   // Surfaces what's happening inside recoverTokenOrPair on the
   // LOADING screen so we can diagnose from AnyDesk without DevTools.
   loadingMessage: string = 'Conectando…';
@@ -369,11 +369,22 @@ export class VisorComponent implements OnInit, OnDestroy {
   }
 
   startPairingPolling(): void {
+    let pollCount = 0;
     this.pairingPollSub = interval(3000).pipe(
-      switchMap(() => this.http.get<StatusResponse>(`${this.apiUrl}status/?code=${this.pairingCode}`)),
-      catchError(err => of({ status: 'WAITING' } as StatusResponse))
+      switchMap(() => this.http.get<StatusResponse>(`${this.apiUrl}status/?code=${this.pairingCode}`).pipe(
+        catchError((err: any) => {
+          const code = err?.status ?? '?';
+          this.recoveryDebug = `Poll ${++pollCount}: ERROR HTTP ${code} ${err?.statusText || err?.message || ''}`;
+          this.cdr.detectChanges();
+          return of({ status: 'WAITING' } as StatusResponse);
+        })
+      )),
     ).subscribe({
       next: (res) => {
+        pollCount++;
+        const tokenPreview = res.device_token ? `${res.device_token.slice(0, 8)}…` : 'sin token';
+        this.recoveryDebug = `Poll ${pollCount}: status=${res.status} ${tokenPreview}`;
+        this.cdr.detectChanges();
         if (res.status === 'PAIRED' && res.device_token) {
           this.deviceToken = res.device_token;
           localStorage.setItem(this.getTokenKey(), res.device_token);
