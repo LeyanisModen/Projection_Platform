@@ -503,23 +503,41 @@ export class VisorComponent implements OnInit, OnDestroy {
     // a verification step.
     if (this.capturingPhoto && this.captureMode === 'check') return;
 
-    // After a successful auto check, advance TWO slides in one press:
-    // by convention the slide right after a _check is the manual
-    // visual-revision step, only relevant when the auto check failed.
-    // SPACE-cleared overlays (error / no_camera) advance just one,
-    // landing on that visual revision exactly when needed.
-    const step = this.checkOverlay === 'success' ? 2 : 1;
+    // Capture the overlay state BEFORE we clear it, so we know whether
+    // we should auto-skip the manual visual-revision slide.
+    const autoCheckPassed = this.checkOverlay === 'success';
 
-    if (this.currentIndex < this.images.length - step) {
-      // Clear any lingering overlay from the previous slide.
-      if (this.checkOverlay !== 'none') this.clearCheckOverlay();
-      this.currentIndex += step;
-      this.updateProjectedImage();
-      this.slideLockUntil = Date.now() + VisorComponent.SLIDE_LOCK_MS;
-      this.checkPhotoTrigger();
-    } else if (this.images.length > 0) {
-      this.finishActiveItem();
+    if (this.currentIndex >= this.images.length - 1) {
+      if (this.images.length > 0) this.finishActiveItem();
+      return;
     }
+
+    if (this.checkOverlay !== 'none') this.clearCheckOverlay();
+    this.currentIndex += 1;
+
+    // Auto-skip the manual visual-revision slide (its filename
+    // contains '_visual') only when the auto check passed -- failed
+    // / no_camera checks must land on it so the operator can verify
+    // by eye. We check the filename explicitly instead of jumping a
+    // fixed step, so we don't accidentally skip an unrelated slide
+    // if the team's convention changes.
+    if (autoCheckPassed
+        && this.currentIndex < this.images.length - 1
+        && this.isVisualSlide(this.currentIndex)) {
+      this.currentIndex += 1;
+    }
+
+    this.updateProjectedImage();
+    this.slideLockUntil = Date.now() + VisorComponent.SLIDE_LOCK_MS;
+    this.checkPhotoTrigger();
+  }
+
+  private isVisualSlide(index: number): boolean {
+    const img = this.images[index];
+    if (!img) return false;
+    const url: string = img.url || img.src || '';
+    const filename = (url.split('/').pop() || '').toLowerCase();
+    return filename.includes('_visual');
   }
 
   prevImage(): void {
