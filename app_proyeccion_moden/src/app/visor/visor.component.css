@@ -99,6 +99,15 @@
     opacity: 0.7;
 }
 
+.loading-screen .loading-debug {
+    margin-top: 24px;
+    font-size: 0.95rem;
+    opacity: 0.55;
+    font-family: 'Courier New', monospace;
+    max-width: 80vw;
+    word-break: break-word;
+}
+
 /* Pairing Screen */
 .pairing-screen {
     text-align: center;

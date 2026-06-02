@@ -50,7 +50,11 @@ export class VisorComponent implements OnInit, OnDestroy {
   // AnyDesk whether the kiosk is actually running the latest bundle
   // or a cached one. F12 is blocked in kiosk; this is the simplest
   // version probe we can offer the operator on screen.
-  readonly buildTag = '2026-06-02_1713Z';
+  readonly buildTag = '2026-06-02_1720Z';
+  // Surfaces what's happening inside recoverTokenOrPair on the
+  // LOADING screen so we can diagnose from AnyDesk without DevTools.
+  loadingMessage: string = 'Conectando…';
+  recoveryDebug: string | null = null;
   errorMessage: string = '';
   deviceToken: string | null = null;
   mesaState: MesaState | null = null;
@@ -205,36 +209,44 @@ export class VisorComponent implements OnInit, OnDestroy {
   private static readonly TOKEN_RECOVERY_RETRY_MS = 2000;
 
   private recoverTokenOrPair(attempt: number = 1): void {
+    this.loadingMessage = 'Recuperando sesión guardada…';
+    this.recoveryDebug = `Intento ${attempt}/${VisorComponent.TOKEN_RECOVERY_MAX_ATTEMPTS} → GET ${this.captureServiceUrl}/device_token`;
+    this.cdr.detectChanges();
+
+    let httpError: string | null = null;
     this.http.get<{ device_token: string }>(
       `${this.captureServiceUrl}/device_token`
-    ).pipe(catchError(() => of(null))).subscribe((res) => {
+    ).pipe(catchError((err: any) => {
+      const status = err?.status ?? '?';
+      const msg = err?.statusText || err?.message || 'unknown';
+      httpError = `${status} ${msg}`;
+      return of(null);
+    })).subscribe((res) => {
       const recovered = (res?.device_token || '').trim();
       if (recovered) {
-        console.log(
-          `[Visor] Recovered device token from capture service (attempt ${attempt})`,
-        );
+        this.recoveryDebug = `OK token=${recovered.slice(0, 8)}… (intento ${attempt})`;
+        this.cdr.detectChanges();
         this.deviceToken = recovered;
         localStorage.setItem(this.getTokenKey(), recovered);
-        this.enterProjectionMode();
+        // tiny delay so the success message is readable
+        setTimeout(() => this.enterProjectionMode(), 400);
         return;
       }
-      // Empty body or network failure (capture service still booting,
-      // file empty, etc.). Back off and retry a few times before
-      // giving up to the pairing flow -- start-player.bat starts
-      // Chrome and Python in parallel, so the first attempts after a
-      // cold boot usually hit a not-yet-bound port.
+      const reason = httpError
+        ? `error HTTP ${httpError}`
+        : (res === null ? 'sin conexión' : 'token vacío');
       if (attempt < VisorComponent.TOKEN_RECOVERY_MAX_ATTEMPTS) {
-        console.warn(
-          `[Visor] device_token recovery attempt ${attempt} empty/failed, retrying in ${VisorComponent.TOKEN_RECOVERY_RETRY_MS} ms`,
-        );
+        this.recoveryDebug = `Intento ${attempt}: ${reason}. Reintentando…`;
+        this.cdr.detectChanges();
         setTimeout(
           () => this.recoverTokenOrPair(attempt + 1),
           VisorComponent.TOKEN_RECOVERY_RETRY_MS,
         );
         return;
       }
-      console.warn('[Visor] device_token recovery exhausted, falling back to pairing');
-      this.requestPairingCode();
+      this.recoveryDebug = `Agotados ${VisorComponent.TOKEN_RECOVERY_MAX_ATTEMPTS} intentos (${reason}). Pidiendo vinculación.`;
+      this.cdr.detectChanges();
+      setTimeout(() => this.requestPairingCode(), 1500);
     });
   }
 
