@@ -4391,18 +4391,33 @@ class DeviceViewSet(viewsets.ViewSet):
         import hashlib
         auth_header = request.headers.get('Authorization')
         token = None
-        
+        token_source = None
+
         if auth_header and auth_header.startswith('Bearer '):
             token = auth_header.split(' ')[1]
+            token_source = 'bearer'
         elif request.query_params.get('token'):
             token = request.query_params.get('token')
-            
+            token_source = 'query'
+
         if not token or token.lower() in ['undefined', 'null', '']:
             return None
-            
+
         token_hash = hashlib.sha256(token.encode()).hexdigest()
-        
-        return Mesa.objects.filter(device_token_hash=token_hash).first()
+        mesa = Mesa.objects.filter(device_token_hash=token_hash).first()
+
+        # Temporary auth tracing for the recurring re-pair loop on the
+        # mini-PC. Logs only the first 8 chars of the token + the hash
+        # prefix so we can correlate with the BD without exposing
+        # credentials. Match=None means 'no Mesa has this hash' -> 401.
+        if mesa is None:
+            print(
+                f'[auth] MISS token={token[:8]}… hash={token_hash[:12]}… '
+                f'src={token_source} path={request.path}',
+                flush=True,
+            )
+
+        return mesa
 
 
 class MesaQueueItemViewSet(viewsets.ModelViewSet):
