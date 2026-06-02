@@ -130,6 +130,14 @@
     margin: 0 auto;
 }
 
+.pairing-version {
+    font-size: 0.85rem;
+    opacity: 0.35;
+    font-family: 'Courier New', monospace;
+    margin-top: 40px;
+    letter-spacing: 0.05em;
+}
+
 /* Error Screen */
 .error-screen {
     text-align: center;

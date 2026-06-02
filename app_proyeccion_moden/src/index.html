@@ -6,6 +6,13 @@
   <title>mod:en - Sistema de Gestión</title>
   <base href="/">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- The HTML must NEVER be cached. If Chrome serves a stale index.html
+       it keeps requesting the old chunk hashes and operators have to
+       wipe Chrome storage manually on every deploy. The chunks
+       themselves are hashed by Angular and can be cached freely. -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <link rel="icon" type="image/png" href="assets/FaviconME_32x32.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

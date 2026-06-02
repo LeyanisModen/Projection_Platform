@@ -45,6 +45,12 @@ export class VisorComponent implements OnInit, OnDestroy {
   // State
   mode: 'LOADING' | 'PAIRING' | 'PROJECTION' | 'ERROR' = 'LOADING';
   pairingCode: string = '';
+  // Hand-bumped on every push that touches the visor flow. The pairing
+  // screen prints it small at the bottom so we can confirm from
+  // AnyDesk whether the kiosk is actually running the latest bundle
+  // or a cached one. F12 is blocked in kiosk; this is the simplest
+  // version probe we can offer the operator on screen.
+  readonly buildTag = '2026-06-02_1700Z';
   errorMessage: string = '';
   deviceToken: string | null = null;
   mesaState: MesaState | null = null;
