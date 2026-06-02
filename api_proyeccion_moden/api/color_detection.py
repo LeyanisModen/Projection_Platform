@@ -50,8 +50,12 @@ import numpy as np
 # ---------------------------------------------------------------------------
 _COLOR_HSV_RANGES = {
     'orange': [((5, 120, 140),    (22, 255, 255))],
-    'yellow': [((23, 120, 150),   (33, 255, 255))],
-    'green':  [((35, 80, 90),     (85, 255, 255))],
+    # Yellow upper extended 33 -> 38 to absorb amber / slightly
+    # blue-tinted yellow tape (window film at Ferralia pushes the
+    # whole frame towards green-yellow). Green lower raised 35 -> 40
+    # so those same tinted yellows don't get counted as green.
+    'yellow': [((23, 120, 150),   (38, 255, 255))],
+    'green':  [((40, 80, 90),     (85, 255, 255))],
     'blue':   [((90, 180, 130),   (125, 255, 255))],
     'purple': [((125, 100, 100),  (145, 255, 255))],
     'pink':   [((140, 60, 150),   (179, 120, 255))],
