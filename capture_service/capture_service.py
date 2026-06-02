@@ -15,6 +15,14 @@ Listens on localhost:5555. Two jobs in one process:
                                   Used by the visor in COLOR_CHECK_DEBUG
                                   mode to mirror the annotated overlay
                                   to Drive.
+     GET  /device_token       -> { "device_token": "<stored>" }. Read
+                                  from device_token.txt next to the
+                                  script. Used by the visor to recover
+                                  the pairing token if Chrome's
+                                  localStorage was wiped.
+     POST /device_token       -> raw token body. Writes
+                                  device_token.txt so the token
+                                  survives a Chrome profile reset.
      GET  /health             -> { "status": "ok" }
      GET  /stats              -> { documentation / counters / local
                                   disk usage }
@@ -411,6 +419,33 @@ def documentation_loop():
 
 
 # ---------------------------------------------------------------------------
+# Device pairing token, persisted next to the script so it survives a
+# Chrome profile reset / Local Storage wipe. The visor reads it back
+# via GET /device_token when its localStorage is empty.
+# ---------------------------------------------------------------------------
+def _token_path() -> Path:
+    return Path(__file__).resolve().parent / 'device_token.txt'
+
+
+def _read_stored_token() -> str:
+    try:
+        p = _token_path()
+        if p.is_file():
+            return p.read_text(encoding='utf-8').strip()
+    except OSError:
+        pass
+    return ''
+
+
+def _write_stored_token(token: str) -> bool:
+    try:
+        _token_path().write_text(token, encoding='utf-8')
+        return True
+    except OSError:
+        return False
+
+
+# ---------------------------------------------------------------------------
 # HTTP handler
 # ---------------------------------------------------------------------------
 class CaptureHandler(BaseHTTPRequestHandler):
@@ -438,6 +473,8 @@ class CaptureHandler(BaseHTTPRequestHandler):
             payload['in_active_window'] = in_active_window()
             payload['output_dir'] = str(CONFIG.output_dir)
             self._respond_json(200, payload)
+        elif self.path == '/device_token':
+            self._respond_json(200, {'device_token': _read_stored_token()})
         else:
             self.send_error(404)
 
@@ -446,8 +483,31 @@ class CaptureHandler(BaseHTTPRequestHandler):
             self._handle_capture()
         elif self.path == '/save_debug_image':
             self._handle_save_debug_image()
+        elif self.path == '/device_token':
+            self._handle_store_device_token()
         else:
             self.send_error(404)
+
+    def _handle_store_device_token(self):
+        """Persist the device pairing token to disk so it survives a
+        Chrome profile reset / Local Storage wipe. Body is the raw
+        token as text/plain (a short opaque string).
+        """
+        try:
+            length = int(self.headers.get('Content-Length', '0'))
+        except ValueError:
+            length = 0
+        if length <= 0 or length > 4096:
+            self.send_error(400, 'Invalid token length')
+            return
+        token = self.rfile.read(length).decode('utf-8', errors='replace').strip()
+        if not token:
+            self.send_error(400, 'Empty token')
+            return
+        if _write_stored_token(token):
+            self._respond_json(200, {'status': 'ok'})
+        else:
+            self.send_error(500, 'Cannot persist token')
 
     def _handle_capture(self):
         with _camera_lock:
@@ -562,6 +622,8 @@ def main():
     print(f'[CaptureService] Listening on http://{CONFIG.host}:{CONFIG.port}')
     print('[CaptureService] POST /capture            -> take a 4K photo')
     print('[CaptureService] POST /save_debug_image   -> persist a debug image to Drive')
+    print('[CaptureService] GET  /device_token       -> read stored pairing token')
+    print('[CaptureService] POST /device_token       -> persist pairing token to disk')
     print('[CaptureService] GET  /health             -> health check')
     print('[CaptureService] GET  /stats              -> documentation stats')
     try:

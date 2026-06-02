@@ -160,9 +160,18 @@ export class VisorComponent implements OnInit, OnDestroy {
     if (this.mesaIdForPairing) {
       this.loadMesaDirectly(this.mesaIdForPairing);
     } else if (this.deviceToken) {
+      // Already paired according to localStorage. Mirror the token
+      // to the capture service so it has a fresh copy on disk -- this
+      // is the migration path for mini-PCs that were paired before
+      // the on-disk persistence existed.
+      this.persistTokenLocally(this.deviceToken);
       this.enterProjectionMode();
     } else {
-      this.requestPairingCode();
+      // localStorage was empty (fresh Chrome profile, cleared site
+      // data, etc.). Try to recover the pairing token from the local
+      // capture service before falling back to a pairing screen --
+      // the service persists the token on disk for exactly this case.
+      this.recoverTokenOrPair();
     }
 
     // The local capture service only exists on the mini-PC. In
@@ -172,6 +181,48 @@ export class VisorComponent implements OnInit, OnDestroy {
     if (!this.isSupervisor) {
       this.startCaptureHealthPolling();
     }
+  }
+
+  // Ask the local capture service for a previously persisted pairing
+  // token. If it has one, restore it; otherwise fall back to the
+  // pairing flow. Used when localStorage is empty (cleared Chrome
+  // profile, Storage Sense wiped site data, etc.) -- the token is
+  // physical on disk in C:\moden\capture_service\device_token.txt and
+  // shouldn't need to be re-paired manually.
+  private recoverTokenOrPair(): void {
+    this.http.get<{ device_token: string }>(
+      `${this.captureServiceUrl}/device_token`
+    ).pipe(catchError(() => of(null))).subscribe((res) => {
+      const recovered = (res?.device_token || '').trim();
+      if (recovered) {
+        console.log('[Visor] Recovered device token from capture service');
+        this.deviceToken = recovered;
+        localStorage.setItem(this.getTokenKey(), recovered);
+        this.enterProjectionMode();
+        return;
+      }
+      this.requestPairingCode();
+    });
+  }
+
+  // Mirror the pairing token to the local capture service so it
+  // survives a Chrome profile reset. Called whenever a fresh token is
+  // obtained (pairing flow). Best-effort: a failure here only means
+  // the token won't be recoverable from disk next time, not that the
+  // pairing itself failed.
+  private persistTokenLocally(token: string): void {
+    if (this.isSupervisor) return;
+    this.http.post(
+      `${this.captureServiceUrl}/device_token`,
+      token,
+      {
+        headers: new HttpHeaders({ 'Content-Type': 'text/plain' }),
+        responseType: 'text' as const,
+      }
+    ).subscribe({
+      next: () => console.log('[Visor] Pairing token persisted to capture service'),
+      error: (err) => console.warn('[Visor] Could not persist pairing token to capture service:', err),
+    });
   }
 
   private startCaptureHealthPolling(): void {
@@ -255,6 +306,9 @@ export class VisorComponent implements OnInit, OnDestroy {
         if (res.status === 'PAIRED' && res.device_token) {
           this.deviceToken = res.device_token;
           localStorage.setItem(this.getTokenKey(), res.device_token);
+          // Mirror the token to the capture service so it survives
+          // browser storage wipes.
+          this.persistTokenLocally(res.device_token);
           this.pairingPollSub?.unsubscribe();
           this.enterProjectionMode();
         } else if (res.status === 'EXPIRED') {
