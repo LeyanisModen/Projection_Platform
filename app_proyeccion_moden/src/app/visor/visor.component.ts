@@ -391,16 +391,17 @@ export class VisorComponent implements OnInit, OnDestroy {
 
     // A failed color check blocks navigation until the operator
     // acknowledges it with space. SPACE clears the red overlay AND
-    // advances to the next slide -- the operator should not have to
-    // press two keys to recover. Calibration toggles still work.
+    // advances to the next non-capture slide -- the operator should
+    // not have to press two keys to recover, and we don't want to
+    // immediately re-trigger another capture/check on the next slide
+    // (that would feel like the system is running the same check
+    // twice). Calibration toggles still work.
     if (this.checkBlock) {
       if (key === ' ' || key === 'spacebar' || key === 'space') {
         event.preventDefault();
         this.clearCheckOverlay();
-        // Bypass the 5 s read-lock: the operator already waited blocked
-        // on the failed check, no need to make them wait again.
         this.slideLockUntil = 0;
-        this.nextImage();
+        this.advanceSkippingCaptureSlides();
         return;
       }
       if (key === 'arrowright' || key === 'arrowleft') {
@@ -549,6 +550,27 @@ export class VisorComponent implements OnInit, OnDestroy {
     return filename.includes('_foto')
       || filename.includes('_photo')
       || filename.includes('_check');
+  }
+
+  // Used by SPACE recovery (failed check / no_camera): move forward
+  // past any capture slide so we don't immediately re-trigger another
+  // capture or check after the operator dismissed the previous one.
+  // No checkPhotoTrigger here for the same reason.
+  private advanceSkippingCaptureSlides(): void {
+    if (this.currentIndex < 0) return;
+    if (this.capturingPhoto && this.captureMode === 'check') return;
+
+    if (this.currentIndex < this.images.length - 1) {
+      let target = this.currentIndex + 1;
+      while (target < this.images.length - 1 && this.isCaptureSlide(target)) {
+        target++;
+      }
+      this.currentIndex = target;
+      this.updateProjectedImage();
+      this.slideLockUntil = Date.now() + VisorComponent.SLIDE_LOCK_MS;
+    } else if (this.images.length > 0) {
+      this.finishActiveItem();
+    }
   }
 
   updateProjectedImage(): void {
