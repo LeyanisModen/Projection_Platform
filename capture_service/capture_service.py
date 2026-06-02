@@ -491,18 +491,30 @@ class CaptureHandler(BaseHTTPRequestHandler):
     def _handle_store_device_token(self):
         """Persist the device pairing token to disk so it survives a
         Chrome profile reset / Local Storage wipe. Body is the raw
-        token as text/plain (a short opaque string).
+        token as text/plain (a short opaque string). An empty body
+        clears the file -- used by the visor when it gets a 401 so
+        the next cold boot doesn't restore the invalid token.
         """
         try:
             length = int(self.headers.get('Content-Length', '0'))
         except ValueError:
             length = 0
-        if length <= 0 or length > 4096:
-            self.send_error(400, 'Invalid token length')
+        if length > 4096:
+            self.send_error(413, 'Token too large')
             return
-        token = self.rfile.read(length).decode('utf-8', errors='replace').strip()
+        token = ''
+        if length > 0:
+            token = self.rfile.read(length).decode('utf-8', errors='replace').strip()
         if not token:
-            self.send_error(400, 'Empty token')
+            # Clear the persisted token.
+            try:
+                p = _token_path()
+                if p.is_file():
+                    p.unlink()
+            except OSError as exc:
+                self.send_error(500, f'Cannot clear token: {exc}')
+                return
+            self._respond_json(200, {'status': 'cleared'})
             return
         if _write_stored_token(token):
             self._respond_json(200, {'status': 'ok'})

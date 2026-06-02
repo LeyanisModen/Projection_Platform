@@ -50,7 +50,7 @@ export class VisorComponent implements OnInit, OnDestroy {
   // AnyDesk whether the kiosk is actually running the latest bundle
   // or a cached one. F12 is blocked in kiosk; this is the simplest
   // version probe we can offer the operator on screen.
-  readonly buildTag = '2026-06-02_1720Z';
+  readonly buildTag = '2026-06-02_1734Z';
   // Surfaces what's happening inside recoverTokenOrPair on the
   // LOADING screen so we can diagnose from AnyDesk without DevTools.
   loadingMessage: string = 'Conectando…';
@@ -168,19 +168,20 @@ export class VisorComponent implements OnInit, OnDestroy {
     this.deviceToken = localStorage.getItem(this.getTokenKey());
 
     if (this.mesaIdForPairing) {
+      this.recoveryDebug = `Modo supervisor (mesa=${this.mesaIdForPairing}).`;
       this.loadMesaDirectly(this.mesaIdForPairing);
     } else if (this.deviceToken) {
       // Already paired according to localStorage. Mirror the token
-      // to the capture service so it has a fresh copy on disk -- this
-      // is the migration path for mini-PCs that were paired before
-      // the on-disk persistence existed.
+      // to the capture service so it has a fresh copy on disk.
+      this.recoveryDebug = `Token en localStorage (${this.deviceToken.slice(0, 8)}…). Conectando con backend.`;
+      this.cdr.detectChanges();
       this.persistTokenLocally(this.deviceToken);
       this.enterProjectionMode();
     } else {
-      // localStorage was empty (fresh Chrome profile, cleared site
-      // data, etc.). Try to recover the pairing token from the local
-      // capture service before falling back to a pairing screen --
-      // the service persists the token on disk for exactly this case.
+      // localStorage was empty. Try to recover the pairing token from
+      // the local capture service before falling back to pairing.
+      this.recoveryDebug = `localStorage vacío. Intentando recuperar del capture service.`;
+      this.cdr.detectChanges();
       this.recoverTokenOrPair();
     }
 
@@ -252,10 +253,19 @@ export class VisorComponent implements OnInit, OnDestroy {
 
   // Mirror the pairing token to the local capture service so it
   // survives a Chrome profile reset. Called whenever a fresh token is
-  // obtained (pairing flow). Best-effort: a failure here only means
-  // the token won't be recoverable from disk next time, not that the
-  // pairing itself failed.
-  private persistTokenLocally(token: string): void {
+  // obtained (pairing flow) and again as the migration path when
+  // localStorage already has a value. An empty string clears the
+  // file (used after a 401 so the next cold boot doesn't restore an
+  // invalid token).
+  //
+  // We retry: just like recoverTokenOrPair, the capture service may
+  // still be booting when the request goes out, and silently dropping
+  // the token from disk is exactly the failure mode that pushed the
+  // operator into endless re-pairing loops.
+  private static readonly TOKEN_PERSIST_MAX_ATTEMPTS = 6;
+  private static readonly TOKEN_PERSIST_RETRY_MS = 2000;
+
+  private persistTokenLocally(token: string, attempt: number = 1): void {
     if (this.isSupervisor) return;
     this.http.post(
       `${this.captureServiceUrl}/device_token`,
@@ -265,8 +275,24 @@ export class VisorComponent implements OnInit, OnDestroy {
         responseType: 'text' as const,
       }
     ).subscribe({
-      next: () => console.log('[Visor] Pairing token persisted to capture service'),
-      error: (err) => console.warn('[Visor] Could not persist pairing token to capture service:', err),
+      next: () => {
+        const op = token ? 'persisted' : 'cleared';
+        console.log(`[Visor] Pairing token ${op} on capture service (attempt ${attempt})`);
+      },
+      error: (err) => {
+        console.warn(
+          `[Visor] persist token attempt ${attempt} failed:`,
+          err?.status, err?.message || err?.statusText,
+        );
+        if (attempt < VisorComponent.TOKEN_PERSIST_MAX_ATTEMPTS) {
+          setTimeout(
+            () => this.persistTokenLocally(token, attempt + 1),
+            VisorComponent.TOKEN_PERSIST_RETRY_MS,
+          );
+        } else {
+          console.error('[Visor] persist token exhausted retries; disk copy may be stale');
+        }
+      },
     });
   }
 
@@ -1267,12 +1293,21 @@ export class VisorComponent implements OnInit, OnDestroy {
     }
 
     console.warn(`[Visor] Unauthorized access detected from ${source}.`);
+    this.recoveryDebug = `401 desde ${source}. Borrando token (local + disco) y vinculando.`;
+    this.cdr.detectChanges();
 
     if (this.eventSource) {
       this.eventSource.close();
       this.eventSource = null;
     }
     localStorage.removeItem(this.getTokenKey());
+    // Also clear the on-disk copy in the capture service so the next
+    // cold boot doesn't restore the same invalid token we just got a
+    // 401 with. Without this we loop forever: recover stale token ->
+    // 401 -> drop localStorage -> pair -> reboot -> recover same
+    // stale token (since persist failed during the previous boot or
+    // ran against a not-yet-ready service) -> 401 again.
+    this.persistTokenLocally('');
     this.deviceToken = null;
     this.mesaState = null;
     this.statePollSub?.unsubscribe();

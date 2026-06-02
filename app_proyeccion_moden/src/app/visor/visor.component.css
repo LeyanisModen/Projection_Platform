@@ -147,6 +147,15 @@
     letter-spacing: 0.05em;
 }
 
+.pairing-debug {
+    font-size: 0.9rem;
+    opacity: 0.45;
+    font-family: 'Courier New', monospace;
+    margin-top: 24px;
+    max-width: 80vw;
+    word-break: break-word;
+}
+
 /* Error Screen */
 .error-screen {
     text-align: center;
