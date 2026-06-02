@@ -591,7 +591,10 @@ export class VisorComponent implements OnInit, OnDestroy {
     if (!img) return false;
     const url: string = img.url || img.src || '';
     const filename = (url.split('/').pop() || '').toLowerCase();
-    return filename.includes('_visual');
+    // The team's naming convention may use '_visual', 'visual',
+    // 'check visual', 'check_visual', etc. Detect the word with any
+    // surrounding separator so we don't miss new variants.
+    return /(^|[\s_\-.])visual([\s_\-.]|$)/i.test(filename);
   }
 
   prevImage(): void {
@@ -619,11 +622,12 @@ export class VisorComponent implements OnInit, OnDestroy {
     if (!img) return false;
     const url: string = img.url || img.src || '';
     const filename = (url.split('/').pop() || '').toLowerCase();
-    // _VISUAL is the manual revision step the team adds right after a
-    // _check. Even though its filename contains '_check' it is NOT a
-    // capture slide -- it just frames the cards for the operator to
-    // verify by eye when the automatic check failed.
-    if (filename.includes('_visual')) return false;
+    // Visual revision step ('CHECK VISUAL' / '_visual' / 'check-visual'
+    // etc.) is NOT a capture slide -- it only frames the cards for
+    // the operator to verify by eye. We match on the word 'visual'
+    // anywhere in the filename to tolerate however the team names it
+    // (the current convention uses a space, not an underscore).
+    if (this.isVisualSlide(index)) return false;
     return filename.includes('_foto')
       || filename.includes('_photo')
       || filename.includes('_check');
@@ -694,17 +698,20 @@ export class VisorComponent implements OnInit, OnDestroy {
     const imageUrl: string = currentImage.url || currentImage.src || '';
     const filename = (imageUrl.split('/').pop() || '').toLowerCase();
 
-    // _VISUAL is the manual revision step the team adds right after a
-    // _check. The filename contains '_check' but it must NOT trigger
-    // capture -- it just frames the cards for the operator to verify
-    // by eye.
-    if (filename.includes('_visual')) return;
+    // 'visual' (with any separator) is the manual revision step. Its
+    // filename may include 'check' but it must NOT trigger capture.
+    if (this.isVisualSlide(this.currentIndex)) {
+      console.log('[Visor] checkPhotoTrigger: skipping visual slide:', filename);
+      return;
+    }
 
     // '_check' triggers capture + color validation (blocks advance on
     // failure). '_foto' / '_photo' only capture evidence, no block.
     if (filename.includes('_check')) {
+      console.log('[Visor] checkPhotoTrigger: firing check on', filename);
       this.triggerPhotoCapture('check');
     } else if (filename.includes('_foto') || filename.includes('_photo')) {
+      console.log('[Visor] checkPhotoTrigger: firing foto on', filename);
       this.triggerPhotoCapture('foto');
     }
   }

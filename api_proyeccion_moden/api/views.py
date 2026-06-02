@@ -4130,6 +4130,15 @@ class DeviceViewSet(viewsets.ViewSet):
         imagen_id = request.data.get('imagen_id')
         run_check = str(request.data.get('check', '')).lower() in ('true', '1', 'yes')
 
+        # Trace incoming uploads so we can confirm whether the visor
+        # reached the endpoint at all (since F12 isn't usable in kiosk).
+        print(
+            f'[upload_foto] mesa={mesa.id if mesa else "?"} '
+            f'modulo_id={modulo_id} fase={fase} paso={paso} '
+            f'run_check={run_check}',
+            flush=True,
+        )
+
         if not all([modulo_id, fase, paso is not None]):
             return Response({'detail': 'modulo_id, fase, and paso are required'}, status=400)
 
