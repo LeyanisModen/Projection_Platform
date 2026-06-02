@@ -50,7 +50,7 @@ export class VisorComponent implements OnInit, OnDestroy {
   // AnyDesk whether the kiosk is actually running the latest bundle
   // or a cached one. F12 is blocked in kiosk; this is the simplest
   // version probe we can offer the operator on screen.
-  readonly buildTag = '2026-06-02_1700Z';
+  readonly buildTag = '2026-06-02_1713Z';
   errorMessage: string = '';
   deviceToken: string | null = null;
   mesaState: MesaState | null = null;
@@ -195,18 +195,45 @@ export class VisorComponent implements OnInit, OnDestroy {
   // profile, Storage Sense wiped site data, etc.) -- the token is
   // physical on disk in C:\moden\capture_service\device_token.txt and
   // shouldn't need to be re-paired manually.
-  private recoverTokenOrPair(): void {
+  //
+  // Retries are critical here because start-player.bat launches Chrome
+  // and the Python service in parallel. Chrome opens the page before
+  // OpenCV has finished importing and the HTTP server has bound 5555.
+  // Without the retries the first GET fails connection-refused and we
+  // fall to the pairing screen on every cold boot.
+  private static readonly TOKEN_RECOVERY_MAX_ATTEMPTS = 6;
+  private static readonly TOKEN_RECOVERY_RETRY_MS = 2000;
+
+  private recoverTokenOrPair(attempt: number = 1): void {
     this.http.get<{ device_token: string }>(
       `${this.captureServiceUrl}/device_token`
     ).pipe(catchError(() => of(null))).subscribe((res) => {
       const recovered = (res?.device_token || '').trim();
       if (recovered) {
-        console.log('[Visor] Recovered device token from capture service');
+        console.log(
+          `[Visor] Recovered device token from capture service (attempt ${attempt})`,
+        );
         this.deviceToken = recovered;
         localStorage.setItem(this.getTokenKey(), recovered);
         this.enterProjectionMode();
         return;
       }
+      // Empty body or network failure (capture service still booting,
+      // file empty, etc.). Back off and retry a few times before
+      // giving up to the pairing flow -- start-player.bat starts
+      // Chrome and Python in parallel, so the first attempts after a
+      // cold boot usually hit a not-yet-bound port.
+      if (attempt < VisorComponent.TOKEN_RECOVERY_MAX_ATTEMPTS) {
+        console.warn(
+          `[Visor] device_token recovery attempt ${attempt} empty/failed, retrying in ${VisorComponent.TOKEN_RECOVERY_RETRY_MS} ms`,
+        );
+        setTimeout(
+          () => this.recoverTokenOrPair(attempt + 1),
+          VisorComponent.TOKEN_RECOVERY_RETRY_MS,
+        );
+        return;
+      }
+      console.warn('[Visor] device_token recovery exhausted, falling back to pairing');
       this.requestPairingCode();
     });
   }
