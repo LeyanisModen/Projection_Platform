@@ -1,0 +1,6 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "deploy": {
+    "startCommand": "sh -lc 'python manage.py migrate --noinput && python manage.py collectstatic --noinput && gunicorn proyeccion_moden.wsgi --bind 0.0.0.0:${PORT:-8000} --workers=3 --threads=4 --timeout=120 --keep-alive=5 --log-file=-'"
+  }
+}

@@ -2837,13 +2837,15 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
                 if in_grupo:
                     bastidor_groups.append(in_grupo)
 
-            # Modulos pendientes sin grupo persistido (caso raro): caen al final
-            # como un grupo "huerfano" para no perderlos en el plan.
+            # Modulos pendientes sin grupo persistido: se recalculan con la
+            # misma logica dinamica de bastidor para no colapsar toda la cola
+            # en una sola mesa cuando el proyecto aun no tiene grupos
+            # materializados o ha quedado algun modulo fuera.
             ids_en_grupos = {m.id for g in bastidor_groups for m in g}
             huerfanos = [m for m in inferiors_pending if m.id not in ids_en_grupos]
             if huerfanos:
-                bastidor_groups.append(
-                    sorted(huerfanos, key=lambda m: _natural_sort_key(m.nombre))
+                bastidor_groups.extend(
+                    _build_bastidor_groups(proyecto, huerfanos)
                 )
 
         inferior_sequences = [[] for _ in range(num_inferiores)]

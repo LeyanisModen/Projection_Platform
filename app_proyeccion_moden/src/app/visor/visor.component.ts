@@ -50,7 +50,7 @@ export class VisorComponent implements OnInit, OnDestroy {
   // AnyDesk whether the kiosk is actually running the latest bundle
   // or a cached one. F12 is blocked in kiosk; this is the simplest
   // version probe we can offer the operator on screen.
-  readonly buildTag = '2026-06-02_1757Z';
+  readonly buildTag = '2026-06-05_1218Z';
   // Surfaces what's happening inside recoverTokenOrPair on the
   // LOADING screen so we can diagnose from AnyDesk without DevTools.
   loadingMessage: string = 'Conectando…';
@@ -123,6 +123,15 @@ export class VisorComponent implements OnInit, OnDestroy {
   // moving on (many consecutive slides only change the title text).
   private static readonly SLIDE_LOCK_MS = 5000;
   private slideLockUntil = 0;
+  // A single 401 is not enough evidence that the token is dead. On
+  // cold boots or backend rollouts we may see a transient auth miss;
+  // only after repeated 401s do we discard the persisted token and
+  // fall back to pairing.
+  private static readonly AUTH_REVALIDATION_MAX_401 = 3;
+  private static readonly AUTH_REVALIDATION_RETRY_MS = 5000;
+  private authRecoveryTimer: any = null;
+  private authRecovery401Count = 0;
+  private authRecoverySource: string | null = null;
 
   get isSupervisor(): boolean {
     return !!this.mesaIdForPairing;
@@ -348,6 +357,7 @@ export class VisorComponent implements OnInit, OnDestroy {
     this.heartbeatSub?.unsubscribe();
     this.itemPollSub?.unsubscribe();
     this.captureHealthSub?.unsubscribe();
+    this.clearAuthRecoveryTimer();
     if (this.eventSource) this.eventSource.close();
   }
 
@@ -403,6 +413,9 @@ export class VisorComponent implements OnInit, OnDestroy {
 
   enterProjectionMode(): void {
     this.ngZone.run(() => {
+      this.clearAuthRecoveryTimer();
+      this.authRecovery401Count = 0;
+      this.authRecoverySource = null;
       this.mode = 'PROJECTION';
       this.cdr.detectChanges();
       this.startStatePolling();
@@ -1243,7 +1256,8 @@ export class VisorComponent implements OnInit, OnDestroy {
     if (!this.activeItem) return;
     this.loadingImages = true;
     const url = `/api/imagenes/?modulo=${this.activeItem.modulo}&fase=${this.activeItem.fase}`;
-    this.http.get<any[]>(url, { headers: this.getUserAuthHeaders() }).subscribe({
+    const headers = this.isSupervisor ? this.getUserAuthHeaders() : this.getAuthHeaders();
+    this.http.get<any[]>(url, { headers }).subscribe({
       next: (imgs) => {
         this.images = Array.isArray(imgs) ? imgs : [];
         // Keep calibration mode (-1/-2) while images are refreshed.
@@ -1287,6 +1301,79 @@ export class VisorComponent implements OnInit, OnDestroy {
     ).subscribe();
   }
 
+  private clearAuthRecoveryTimer(): void {
+    if (this.authRecoveryTimer) {
+      clearTimeout(this.authRecoveryTimer);
+      this.authRecoveryTimer = null;
+    }
+  }
+
+  private retryExistingToken(): void {
+    if (this.isSupervisor) return;
+
+    const source = this.authRecoverySource || 'Unknown';
+    if (!this.deviceToken) {
+      this.invalidateTokenAndRequestPairing(source, 'sin token en memoria');
+      return;
+    }
+
+    const streak = this.authRecovery401Count;
+    this.loadingMessage = 'Reconectando…';
+    this.recoveryDebug = streak > 0
+      ? `401 desde ${source}. Revalidando token (${streak}/${VisorComponent.AUTH_REVALIDATION_MAX_401})…`
+      : `401 desde ${source}. Reintentando sin borrar token…`;
+    this.cdr.detectChanges();
+
+    this.http.get<MesaState>(`${this.apiUrl}state/`, { headers: this.getAuthHeaders() }).subscribe({
+      next: (state) => {
+        this.mesaState = state;
+        this.recoveryDebug = 'Token revalidado. Recuperando proyeccion.';
+        this.enterProjectionMode();
+      },
+      error: (err) => {
+        let message: string;
+        if (err?.status === 401) {
+          this.authRecovery401Count += 1;
+          if (this.authRecovery401Count >= VisorComponent.AUTH_REVALIDATION_MAX_401) {
+            this.invalidateTokenAndRequestPairing(
+              source,
+              `401 repetido ${this.authRecovery401Count} veces`,
+            );
+            return;
+          }
+          message = `401 persistente (${this.authRecovery401Count}/${VisorComponent.AUTH_REVALIDATION_MAX_401}). Reintentando sin borrar token…`;
+        } else {
+          this.authRecovery401Count = 0;
+          const status = err?.status ?? '?';
+          message = `Backend no disponible (${status}). Reintentando con el mismo token…`;
+        }
+
+        this.recoveryDebug = message;
+        this.cdr.detectChanges();
+        this.clearAuthRecoveryTimer();
+        this.authRecoveryTimer = setTimeout(
+          () => this.retryExistingToken(),
+          VisorComponent.AUTH_REVALIDATION_RETRY_MS,
+        );
+      },
+    });
+  }
+
+  private invalidateTokenAndRequestPairing(source: string, reason: string): void {
+    this.clearAuthRecoveryTimer();
+    this.authRecovery401Count = 0;
+    this.authRecoverySource = null;
+
+    this.recoveryDebug = `Token rechazado tras ${source} (${reason}). Borrando token y solicitando nueva vinculacion.`;
+    this.cdr.detectChanges();
+
+    localStorage.removeItem(this.getTokenKey());
+    this.persistTokenLocally('');
+    this.deviceToken = null;
+    this.mesaState = null;
+    this.requestPairingCode();
+  }
+
   handleUnauthorized(source: string = 'Unknown'): void {
     if (this.isSupervisor) {
       this.errorMessage = 'Sesion expirada. Vuelve a iniciar sesion en el dashboard.';
@@ -1295,36 +1382,29 @@ export class VisorComponent implements OnInit, OnDestroy {
       return;
     }
 
-    // Guard against re-entry: while we're already falling back to
-    // pairing mode, later 401s from in-flight polls must NOT trigger
-    // another requestPairingCode or the visor keeps minting new codes
-    // every couple of seconds.
-    if (this.mode === 'LOADING' || this.mode === 'PAIRING') {
+    // Guard against re-entry: while we're already recovering, later
+    // in-flight 401s must not spawn parallel retries or new pairing
+    // requests every couple of seconds.
+    if (this.authRecoverySource || this.mode === 'PAIRING') {
       return;
     }
 
     console.warn(`[Visor] Unauthorized access detected from ${source}.`);
-    this.recoveryDebug = `401 desde ${source}. Borrando token (local + disco) y vinculando.`;
+    this.authRecoverySource = source;
+    this.authRecovery401Count = 0;
+    this.mode = 'LOADING';
+    this.loadingMessage = 'Reconectando…';
+    this.recoveryDebug = `401 desde ${source}. Reintentando con el token guardado antes de desvincular.`;
     this.cdr.detectChanges();
 
     if (this.eventSource) {
       this.eventSource.close();
       this.eventSource = null;
     }
-    localStorage.removeItem(this.getTokenKey());
-    // Also clear the on-disk copy in the capture service so the next
-    // cold boot doesn't restore the same invalid token we just got a
-    // 401 with. Without this we loop forever: recover stale token ->
-    // 401 -> drop localStorage -> pair -> reboot -> recover same
-    // stale token (since persist failed during the previous boot or
-    // ran against a not-yet-ready service) -> 401 again.
-    this.persistTokenLocally('');
-    this.deviceToken = null;
-    this.mesaState = null;
     this.statePollSub?.unsubscribe();
     this.itemPollSub?.unsubscribe();
     this.heartbeatSub?.unsubscribe();
     this.pairingPollSub?.unsubscribe();
-    this.requestPairingCode();
+    this.retryExistingToken();
   }
 }
