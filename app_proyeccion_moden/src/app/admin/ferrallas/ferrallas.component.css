@@ -34,6 +34,14 @@
     padding: 1.5rem;
 }
 
+.ferralla-form-card .card-header {
+    padding: 0.75rem 1.5rem;
+}
+
+.ferralla-form-card .card-body {
+    padding: 1rem 1.5rem 1.25rem;
+}
+
 .mb-4 {
     margin-bottom: 1.5rem;
 }
@@ -80,15 +88,19 @@
     margin-bottom: 1rem;
 }
 
+.ferralla-form-card .form-group {
+    margin-bottom: 0.75rem;
+}
+
 .form-group label {
     display: block;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.35rem;
     font-weight: 500;
 }
 
 .form-control {
     width: 100%;
-    padding: 0.5rem;
+    padding: 0.42rem 0.5rem;
     border: 1px solid #ddd;
     border-radius: 4px;
     font-size: 1rem;
@@ -96,9 +108,9 @@
 
 .form-section {
     border: 1px solid #e6edf3;
-    border-radius: 10px;
-    padding: 1rem;
-    margin-bottom: 1rem;
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 0.75rem;
     background: #fbfdff;
 }
 
@@ -107,7 +119,7 @@
     justify-content: space-between;
     gap: 1rem;
     align-items: flex-start;
-    margin-bottom: 0.75rem;
+    margin-bottom: 0.5rem;
 }
 
 .section-header h3 {
@@ -119,31 +131,50 @@
 .section-header p {
     margin: 0;
     color: #6c757d;
-    font-size: 0.875rem;
+    font-size: 0.8rem;
 }
 
 .empty-section {
     border: 1px dashed #cbd5df;
     border-radius: 8px;
     color: #6c757d;
-    padding: 0.75rem;
+    padding: 0.5rem 0.75rem;
     text-align: center;
     background: white;
+    font-size: 0.85rem;
 }
 
 .repeat-card {
     background: white;
     border: 1px solid #dbe4ee;
-    border-radius: 8px;
-    padding: 0.85rem;
-    margin-top: 0.75rem;
+    border-radius: 7px;
+    padding: 0.65rem 0.85rem;
+    margin-top: 0.55rem;
 }
 
 .repeat-card-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 0.75rem;
+    margin-bottom: 0.45rem;
+}
+
+.compact-row {
+    row-gap: 0;
+}
+
+.repeat-card .form-group {
+    margin-bottom: 0.45rem;
+}
+
+.repeat-card label {
+    font-size: 0.86rem;
+    margin-bottom: 0.25rem;
+}
+
+.repeat-card .form-control {
+    min-height: 34px;
+    font-size: 0.92rem;
 }
 
 .detail-list {

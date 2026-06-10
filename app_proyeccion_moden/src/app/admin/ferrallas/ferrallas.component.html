@@ -6,7 +6,7 @@
         </button>
     </div>
 
-    <div class="card mb-4" *ngIf="showForm">
+    <div class="card mb-4 ferralla-form-card" *ngIf="showForm">
         <div class="card-header">
             <h2>{{ isEditing ? 'Editar Ferralla' : 'Nueva Ferralla' }}</h2>
         </div>
@@ -64,26 +64,26 @@
                                 <i class="fa fa-trash-o"></i>
                             </button>
                         </div>
-                        <div class="row">
-                            <div class="col-md-6 form-group">
+                        <div class="row compact-row">
+                            <div class="col-lg-3 col-md-6 form-group">
                                 <label [for]="'contacto_nombre_' + i">Nombre</label>
                                 <input type="text" class="form-control" [id]="'contacto_nombre_' + i"
                                     [name]="'contacto_nombre_' + i" [(ngModel)]="contacto.nombre"
                                     placeholder="Ej: Juan Garcia" autocomplete="off">
                             </div>
-                            <div class="col-md-6 form-group">
+                            <div class="col-lg-3 col-md-6 form-group">
                                 <label [for]="'contacto_cargo_' + i">Cargo</label>
                                 <input type="text" class="form-control" [id]="'contacto_cargo_' + i"
                                     [name]="'contacto_cargo_' + i" [(ngModel)]="contacto.cargo"
                                     placeholder="Ej: Produccion, Oficina, Calidad" autocomplete="off">
                             </div>
-                            <div class="col-md-6 form-group">
+                            <div class="col-lg-3 col-md-6 form-group">
                                 <label [for]="'contacto_telefono_' + i">Telefono</label>
                                 <input type="text" class="form-control" [id]="'contacto_telefono_' + i"
                                     [name]="'contacto_telefono_' + i" [(ngModel)]="contacto.telefono"
                                     placeholder="Ej: +34 600 000 000" autocomplete="new-password">
                             </div>
-                            <div class="col-md-6 form-group">
+                            <div class="col-lg-3 col-md-6 form-group">
                                 <label [for]="'contacto_email_' + i">Email</label>
                                 <input type="text" class="form-control" [id]="'contacto_email_' + i"
                                     [name]="'contacto_email_' + i" [(ngModel)]="contacto.email"
@@ -116,14 +116,14 @@
                                 <i class="fa fa-trash-o"></i>
                             </button>
                         </div>
-                        <div class="row">
-                            <div class="col-md-4 form-group">
+                        <div class="row compact-row">
+                            <div class="col-lg-3 col-md-4 form-group">
                                 <label [for]="'direccion_nombre_' + i">Nombre</label>
                                 <input type="text" class="form-control" [id]="'direccion_nombre_' + i"
                                     [name]="'direccion_nombre_' + i" [(ngModel)]="direccion.nombre"
                                     placeholder="Ej: Mesas de produccion" autocomplete="off">
                             </div>
-                            <div class="col-md-8 form-group">
+                            <div class="col-lg-9 col-md-8 form-group">
                                 <label [for]="'direccion_texto_' + i">Direccion</label>
                                 <input type="text" class="form-control" [id]="'direccion_texto_' + i"
                                     [name]="'direccion_texto_' + i" [(ngModel)]="direccion.direccion"
