@@ -1,7 +1,7 @@
 import { Component, OnInit, ChangeDetectorRef, HostListener } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ApiService, GrupoMesas, GrupoMesaResumen, User } from '../../services/api.service';
+import { ApiService, FerrallaContacto, FerrallaDireccion, GrupoMesas, GrupoMesaResumen, User } from '../../services/api.service';
 
 @Component({
   selector: 'app-ferrallas',
@@ -15,7 +15,7 @@ export class FerrallasComponent implements OnInit {
   loading = false;
   error = '';
   showForm = false;
-  newUser: any = { username: '', first_name: '', email: '', password: '', telefono: '', direccion: '', coordinador: '', capacidad_diaria_modulos: 12 };
+  newUser: any = this.getEmptyUserForm();
   isEditing = false;
   editingId: number | null = null;
   selectedUser: User | null = null;
@@ -81,9 +81,50 @@ export class FerrallasComponent implements OnInit {
   }
 
   resetForm() {
-    this.newUser = { username: '', first_name: '', email: '', password: '', telefono: '', direccion: '', coordinador: '', capacidad_diaria_modulos: 12 };
+    this.newUser = this.getEmptyUserForm();
     this.isEditing = false;
     this.editingId = null;
+  }
+
+  private getEmptyUserForm() {
+    return {
+      username: '',
+      first_name: '',
+      password: '',
+      contactos: [] as FerrallaContacto[],
+      direcciones: [] as FerrallaDireccion[],
+      capacidad_diaria_modulos: 12
+    };
+  }
+
+  addContacto(): void {
+    this.newUser.contactos = [
+      ...(this.newUser.contactos || []),
+      { nombre: '', cargo: '', telefono: '', email: '' }
+    ];
+  }
+
+  removeContacto(index: number): void {
+    this.newUser.contactos = (this.newUser.contactos || []).filter((_: FerrallaContacto, i: number) => i !== index);
+  }
+
+  addDireccion(): void {
+    this.newUser.direcciones = [
+      ...(this.newUser.direcciones || []),
+      { nombre: '', direccion: '' }
+    ];
+  }
+
+  removeDireccion(index: number): void {
+    this.newUser.direcciones = (this.newUser.direcciones || []).filter((_: FerrallaDireccion, i: number) => i !== index);
+  }
+
+  hasContactos(user: User | null): boolean {
+    return !!user?.contactos?.length;
+  }
+
+  hasDirecciones(user: User | null): boolean {
+    return !!user?.direcciones?.length;
   }
 
   selectUser(user: User) {
@@ -474,15 +515,92 @@ export class FerrallasComponent implements OnInit {
   }
 
   editUser(user: User) {
-    this.newUser = { ...user, password: '' };
+    this.newUser = {
+      ...user,
+      password: '',
+      contactos: this.getEditableContactos(user),
+      direcciones: this.getEditableDirecciones(user)
+    };
     this.isEditing = true;
     this.editingId = user.id;
     this.showForm = true;
   }
 
+  private getEditableContactos(user: User): FerrallaContacto[] {
+    if (user.contactos?.length) {
+      return user.contactos.map(contacto => ({ ...contacto }));
+    }
+
+    if (user.coordinador || user.telefono || user.email) {
+      return [{
+        nombre: user.coordinador || '',
+        cargo: '',
+        telefono: user.telefono || '',
+        email: user.email || ''
+      }];
+    }
+
+    return [];
+  }
+
+  private getEditableDirecciones(user: User): FerrallaDireccion[] {
+    if (user.direcciones?.length) {
+      return user.direcciones.map(direccion => ({ ...direccion }));
+    }
+
+    if (user.direccion) {
+      return [{
+        nombre: 'Principal',
+        direccion: user.direccion
+      }];
+    }
+
+    return [];
+  }
+
+  private buildUserPayload(): any {
+    const payload = {
+      ...this.newUser,
+      contactos: this.normalizeContactos(this.newUser.contactos || []),
+      direcciones: this.normalizeDirecciones(this.newUser.direcciones || [])
+    };
+
+    delete payload.id;
+    delete payload.url;
+    delete payload.email;
+    delete payload.groups;
+    delete payload.telefono;
+    delete payload.direccion;
+    delete payload.coordinador;
+
+    return payload;
+  }
+
+  private normalizeContactos(contactos: FerrallaContacto[]): FerrallaContacto[] {
+    return contactos
+      .map((contacto, index) => ({
+        nombre: (contacto.nombre || '').trim(),
+        cargo: (contacto.cargo || '').trim(),
+        telefono: (contacto.telefono || '').trim(),
+        email: (contacto.email || '').trim(),
+        orden: index
+      }))
+      .filter(contacto => contacto.nombre || contacto.cargo || contacto.telefono || contacto.email);
+  }
+
+  private normalizeDirecciones(direcciones: FerrallaDireccion[]): FerrallaDireccion[] {
+    return direcciones
+      .map((direccion, index) => ({
+        nombre: (direccion.nombre || '').trim(),
+        direccion: (direccion.direccion || '').trim(),
+        orden: index
+      }))
+      .filter(direccion => direccion.nombre || direccion.direccion);
+  }
+
   createUser() {
     this.loading = true;
-    const payload = { ...this.newUser };
+    const payload = this.buildUserPayload();
     if (payload.password && !payload.password_texto_plano) {
       payload.password_texto_plano = payload.password;
     }
@@ -505,7 +623,7 @@ export class FerrallasComponent implements OnInit {
 
   updateUser(id: number) {
     this.loading = true;
-    const payload = { ...this.newUser };
+    const payload = this.buildUserPayload();
     if (!payload.password) {
       delete payload.password;
       delete payload.password_texto_plano;
@@ -518,6 +636,9 @@ export class FerrallasComponent implements OnInit {
         const index = this.users.findIndex(u => u.id === id);
         if (index !== -1) {
           this.users[index] = updatedUser;
+        }
+        if (this.selectedUser?.id === id) {
+          this.selectedUser = updatedUser;
         }
         this.resetForm();
         this.showForm = false;

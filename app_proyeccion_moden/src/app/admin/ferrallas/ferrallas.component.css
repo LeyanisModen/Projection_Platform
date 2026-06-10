@@ -94,6 +94,70 @@
     font-size: 1rem;
 }
 
+.form-section {
+    border: 1px solid #e6edf3;
+    border-radius: 10px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    background: #fbfdff;
+}
+
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: flex-start;
+    margin-bottom: 0.75rem;
+}
+
+.section-header h3 {
+    margin: 0 0 0.2rem;
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+.section-header p {
+    margin: 0;
+    color: #6c757d;
+    font-size: 0.875rem;
+}
+
+.empty-section {
+    border: 1px dashed #cbd5df;
+    border-radius: 8px;
+    color: #6c757d;
+    padding: 0.75rem;
+    text-align: center;
+    background: white;
+}
+
+.repeat-card {
+    background: white;
+    border: 1px solid #dbe4ee;
+    border-radius: 8px;
+    padding: 0.85rem;
+    margin-top: 0.75rem;
+}
+
+.repeat-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+}
+
+.detail-list {
+    display: grid;
+    gap: 0.4rem;
+}
+
+.detail-block {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 0.75rem;
+    align-items: baseline;
+}
+
 .table {
     width: 100%;
     border-collapse: collapse;

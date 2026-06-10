@@ -937,7 +937,7 @@ class UserViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        queryset = User.objects.all().order_by("-date_joined")
+        queryset = User.objects.select_related('profile').prefetch_related('contactos', 'direcciones').order_by("-date_joined")
         if not _is_admin(self.request.user):
             return queryset.filter(id=self.request.user.id)
         if self.action == 'list':

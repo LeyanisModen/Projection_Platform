@@ -27,6 +27,24 @@ export interface User {
     coordinador?: string;
     password_texto_plano?: string;
     capacidad_diaria_modulos?: number;
+    contactos?: FerrallaContacto[];
+    direcciones?: FerrallaDireccion[];
+}
+
+export interface FerrallaContacto {
+    id?: number;
+    nombre: string;
+    cargo?: string;
+    telefono?: string;
+    email?: string;
+    orden?: number;
+}
+
+export interface FerrallaDireccion {
+    id?: number;
+    nombre: string;
+    direccion: string;
+    orden?: number;
 }
 
 

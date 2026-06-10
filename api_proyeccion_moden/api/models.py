@@ -773,6 +773,36 @@ class UserProfile(models.Model):
         db_table = 'api_userprofile'
 
 
+class FerrallaContacto(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='contactos')
+    nombre = models.CharField(max_length=120, blank=True)
+    cargo = models.CharField(max_length=120, blank=True)
+    telefono = models.CharField(max_length=30, blank=True)
+    email = models.EmailField(blank=True)
+    orden = models.PositiveIntegerField(default=0)
+
+    def __str__(self):
+        return f"{self.nombre or 'Contacto'} - {self.user.username}"
+
+    class Meta:
+        db_table = 'api_ferralla_contacto'
+        ordering = ['orden', 'id']
+
+
+class FerrallaDireccion(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='direcciones')
+    nombre = models.CharField(max_length=120, blank=True)
+    direccion = models.TextField(blank=True)
+    orden = models.PositiveIntegerField(default=0)
+
+    def __str__(self):
+        return f"{self.nombre or 'Direccion'} - {self.user.username}"
+
+    class Meta:
+        db_table = 'api_ferralla_direccion'
+        ordering = ['orden', 'id']
+
+
 # =============================================================================
 # QUEUE MODELS
 # =============================================================================

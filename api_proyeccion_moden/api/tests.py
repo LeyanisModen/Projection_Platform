@@ -14,7 +14,8 @@ from rest_framework.test import APITestCase
 
 from api.models import (
     Imagen, Mesa, MesaQueueItem, Modulo, Planta, Proyecto,
-    DetalleModuloFase, GrupoMesas, FotoFabricacion
+    DetalleModuloFase, GrupoMesas, FotoFabricacion,
+    FerrallaContacto, FerrallaDireccion
 )
 
 
@@ -270,6 +271,96 @@ class MesaQueueItemBehaviorTests(APITestCase):
 
         self.mesa_a.refresh_from_db()
         self.assertEqual(self.mesa_a.current_image_index, 0)
+
+
+@override_settings(
+    REST_FRAMEWORK={
+        "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
+        "DEFAULT_AUTHENTICATION_CLASSES": ["rest_framework.authentication.TokenAuthentication"],
+        "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
+    }
+)
+class FerrallaContactosApiTests(APITestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(username="admin_ferrallas", password="admin123", is_staff=True)
+        self.token = Token.objects.create(user=self.admin)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
+
+    def test_admin_crea_ferralla_con_contactos_y_direcciones(self):
+        response = self.client.post(
+            "/api/users/",
+            {
+                "username": "ferralla_contactos",
+                "first_name": "Ferralla Contactos",
+                "password": "Moden1234",
+                "password_texto_plano": "Moden1234",
+                "contactos": [
+                    {
+                        "nombre": "Ana Oficina",
+                        "cargo": "Oficina",
+                        "telefono": "+34 600 000 001",
+                        "email": "ana@example.com",
+                    },
+                    {
+                        "nombre": "Luis Produccion",
+                        "cargo": "Produccion",
+                        "telefono": "+34 600 000 002",
+                        "email": "luis@example.com",
+                    },
+                ],
+                "direcciones": [
+                    {"nombre": "Oficinas", "direccion": "Calle Oficina 1"},
+                    {"nombre": "Mesas", "direccion": "Nave Produccion 2"},
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        user = User.objects.get(username="ferralla_contactos")
+        self.assertEqual(FerrallaContacto.objects.filter(user=user).count(), 2)
+        self.assertEqual(FerrallaDireccion.objects.filter(user=user).count(), 2)
+
+        user.refresh_from_db()
+        user.profile.refresh_from_db()
+        self.assertEqual(user.email, "ana@example.com")
+        self.assertEqual(user.profile.coordinador, "Ana Oficina")
+        self.assertEqual(user.profile.telefono, "+34 600 000 001")
+        self.assertEqual(user.profile.direccion, "Calle Oficina 1")
+        self.assertEqual(response.data["contactos"][0]["nombre"], "Ana Oficina")
+        self.assertEqual(response.data["direcciones"][1]["nombre"], "Mesas")
+
+    def test_admin_actualiza_listas_reemplazando_valores_anteriores(self):
+        create_response = self.client.post(
+            "/api/users/",
+            {
+                "username": "ferralla_update",
+                "first_name": "Ferralla Update",
+                "password": "Moden1234",
+                "contactos": [{"nombre": "Contacto Antiguo", "telefono": "111"}],
+                "direcciones": [{"nombre": "Vieja", "direccion": "Direccion vieja"}],
+            },
+            format="json",
+        )
+        self.assertEqual(create_response.status_code, 201)
+        user_id = create_response.data["id"]
+
+        response = self.client.patch(
+            f"/api/users/{user_id}/",
+            {
+                "contactos": [{"nombre": "Contacto Nuevo", "cargo": "Calidad", "email": "nuevo@example.com"}],
+                "direcciones": [{"nombre": "Mallazos", "direccion": "Nave Mallazos"}],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        user = User.objects.get(id=user_id)
+        self.assertEqual(list(user.contactos.values_list("nombre", flat=True)), ["Contacto Nuevo"])
+        self.assertEqual(list(user.direcciones.values_list("nombre", flat=True)), ["Mallazos"])
+        user.profile.refresh_from_db()
+        self.assertEqual(user.profile.coordinador, "Contacto Nuevo")
+        self.assertEqual(user.profile.direccion, "Nave Mallazos")
 
 
 @override_settings(

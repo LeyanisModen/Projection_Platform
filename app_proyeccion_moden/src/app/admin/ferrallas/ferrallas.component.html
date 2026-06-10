@@ -41,34 +41,96 @@
                     </div>
                 </div>
 
-                <div class="row">
-                    <div class="col-md-6 form-group">
-                        <label for="coordinador">Coordinador</label>
-                        <input type="text" id="coordinador" name="coordinador" class="form-control"
-                            [(ngModel)]="newUser.coordinador" placeholder="Ej: Juan Garcia" autocomplete="off">
+                <div class="form-section">
+                    <div class="section-header">
+                        <div>
+                            <h3>Contactos</h3>
+                            <p>Personas de referencia de la ferralla. Puedes dejarlo vacio y anadirlos despues.</p>
+                        </div>
+                        <button type="button" class="btn btn-outline-primary btn-sm" (click)="addContacto()">
+                            <i class="fa fa-plus"></i> Anadir contacto
+                        </button>
                     </div>
-                    <div class="col-md-6 form-group">
-                        <label for="telefono">Telefono</label>
-                        <input type="text" id="telefono" name="telefono" class="form-control"
-                            [(ngModel)]="newUser.telefono" placeholder="Ej: +34 600 000 000"
-                            autocomplete="new-password">
+
+                    <div class="empty-section" *ngIf="!newUser.contactos?.length">
+                        Sin contactos guardados por ahora.
+                    </div>
+
+                    <div class="repeat-card" *ngFor="let contacto of newUser.contactos; let i = index">
+                        <div class="repeat-card-header">
+                            <strong>Contacto {{ i + 1 }}</strong>
+                            <button type="button" class="btn btn-link btn-sm text-danger p-0"
+                                (click)="removeContacto(i)" title="Quitar contacto">
+                                <i class="fa fa-trash-o"></i>
+                            </button>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 form-group">
+                                <label [for]="'contacto_nombre_' + i">Nombre</label>
+                                <input type="text" class="form-control" [id]="'contacto_nombre_' + i"
+                                    [name]="'contacto_nombre_' + i" [(ngModel)]="contacto.nombre"
+                                    placeholder="Ej: Juan Garcia" autocomplete="off">
+                            </div>
+                            <div class="col-md-6 form-group">
+                                <label [for]="'contacto_cargo_' + i">Cargo</label>
+                                <input type="text" class="form-control" [id]="'contacto_cargo_' + i"
+                                    [name]="'contacto_cargo_' + i" [(ngModel)]="contacto.cargo"
+                                    placeholder="Ej: Produccion, Oficina, Calidad" autocomplete="off">
+                            </div>
+                            <div class="col-md-6 form-group">
+                                <label [for]="'contacto_telefono_' + i">Telefono</label>
+                                <input type="text" class="form-control" [id]="'contacto_telefono_' + i"
+                                    [name]="'contacto_telefono_' + i" [(ngModel)]="contacto.telefono"
+                                    placeholder="Ej: +34 600 000 000" autocomplete="new-password">
+                            </div>
+                            <div class="col-md-6 form-group">
+                                <label [for]="'contacto_email_' + i">Email</label>
+                                <input type="text" class="form-control" [id]="'contacto_email_' + i"
+                                    [name]="'contacto_email_' + i" [(ngModel)]="contacto.email"
+                                    placeholder="contacto@ferralla.com" autocomplete="new-password">
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                <div class="form-group">
-                    <label for="email">Email</label>
-                    <input style="display:none" type="text" name="fakeusernameremembered" />
-                    <input style="display:none" type="password" name="fakepasswordremembered" />
+                <div class="form-section">
+                    <div class="section-header">
+                        <div>
+                            <h3>Direcciones</h3>
+                            <p>Ubicaciones de referencia: produccion, oficinas, zunchos, mallazos, etc.</p>
+                        </div>
+                        <button type="button" class="btn btn-outline-primary btn-sm" (click)="addDireccion()">
+                            <i class="fa fa-plus"></i> Anadir direccion
+                        </button>
+                    </div>
 
-                    <input type="text" id="email" name="email" class="form-control" [(ngModel)]="newUser.email"
-                        placeholder="contacto@ferralla.com" autocomplete="new-password">
-                </div>
+                    <div class="empty-section" *ngIf="!newUser.direcciones?.length">
+                        Sin direcciones guardadas por ahora.
+                    </div>
 
-                <div class="form-group">
-                    <label for="direccion">Direccion</label>
-                    <input type="text" id="direccion" name="direccion" class="form-control"
-                        [(ngModel)]="newUser.direccion" placeholder="Ej: Calle Industrial 45, Poligono Norte"
-                        autocomplete="new-password">
+                    <div class="repeat-card" *ngFor="let direccion of newUser.direcciones; let i = index">
+                        <div class="repeat-card-header">
+                            <strong>Direccion {{ i + 1 }}</strong>
+                            <button type="button" class="btn btn-link btn-sm text-danger p-0"
+                                (click)="removeDireccion(i)" title="Quitar direccion">
+                                <i class="fa fa-trash-o"></i>
+                            </button>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-4 form-group">
+                                <label [for]="'direccion_nombre_' + i">Nombre</label>
+                                <input type="text" class="form-control" [id]="'direccion_nombre_' + i"
+                                    [name]="'direccion_nombre_' + i" [(ngModel)]="direccion.nombre"
+                                    placeholder="Ej: Mesas de produccion" autocomplete="off">
+                            </div>
+                            <div class="col-md-8 form-group">
+                                <label [for]="'direccion_texto_' + i">Direccion</label>
+                                <input type="text" class="form-control" [id]="'direccion_texto_' + i"
+                                    [name]="'direccion_texto_' + i" [(ngModel)]="direccion.direccion"
+                                    placeholder="Ej: Calle Industrial 45, Poligono Norte" autocomplete="new-password">
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="form-group">
@@ -141,20 +203,38 @@
                 <div class="card-header border-bottom py-3 px-3">
                     <h5 class="mb-2">{{ selectedUser.first_name || selectedUser.username }}</h5>
                     <div class="text-muted small">
-                        <div class="mb-1">
-                            <div class="row">
-                                <div class="col-sm-6" *ngIf="selectedUser.coordinador"><strong>Coordinador:</strong> {{
-                                    selectedUser.coordinador }}</div>
-                                <div class="col-sm-6" *ngIf="selectedUser.telefono"><strong>Tel:</strong> {{
-                                    selectedUser.telefono }}</div>
+                        <div class="detail-list" *ngIf="hasContactos(selectedUser); else legacyContactInfo">
+                            <div class="detail-block" *ngFor="let contacto of selectedUser.contactos">
+                                <strong>{{ contacto.nombre || 'Contacto' }}</strong>
+                                <span *ngIf="contacto.cargo">({{ contacto.cargo }})</span>
+                                <span *ngIf="contacto.telefono">Tel: {{ contacto.telefono }}</span>
+                                <span *ngIf="contacto.email">{{ contacto.email }}</span>
                             </div>
                         </div>
-                        <div class="mb-1" *ngIf="selectedUser.email">
-                            <strong>Email:</strong> {{ selectedUser.email }}
+                        <ng-template #legacyContactInfo>
+                            <div class="mb-1">
+                                <div class="row">
+                                    <div class="col-sm-6" *ngIf="selectedUser.coordinador"><strong>Coordinador:</strong>
+                                        {{ selectedUser.coordinador }}</div>
+                                    <div class="col-sm-6" *ngIf="selectedUser.telefono"><strong>Tel:</strong> {{
+                                        selectedUser.telefono }}</div>
+                                </div>
+                            </div>
+                            <div class="mb-1" *ngIf="selectedUser.email">
+                                <strong>Email:</strong> {{ selectedUser.email }}
+                            </div>
+                        </ng-template>
+                        <div class="detail-list mt-2" *ngIf="hasDirecciones(selectedUser); else legacyDireccionInfo">
+                            <div class="detail-block" *ngFor="let direccion of selectedUser.direcciones">
+                                <strong>{{ direccion.nombre || 'Direccion' }}:</strong>
+                                <span>{{ direccion.direccion }}</span>
+                            </div>
                         </div>
-                        <div class="mb-1" *ngIf="selectedUser.direccion">
-                            <strong>Direccion:</strong> {{ selectedUser.direccion }}
-                        </div>
+                        <ng-template #legacyDireccionInfo>
+                            <div class="mb-1" *ngIf="selectedUser.direccion">
+                                <strong>Direccion:</strong> {{ selectedUser.direccion }}
+                            </div>
+                        </ng-template>
                     </div>
                 </div>
                 <div class="card-body p-3">

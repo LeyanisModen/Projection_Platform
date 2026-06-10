@@ -5,8 +5,34 @@ from api.models import (
     Proyecto, Planta, Modulo, Imagen, Mesa,
     ModuloQueue, ModuloQueueItem, MesaQueueItem, UserProfile, MesaQueueStatus,
     FotoFabricacion, GrupoMesas, GrupoMesasProyecto,
-    DetalleModuloFase, GrupoBastidor
+    DetalleModuloFase, GrupoBastidor, FerrallaContacto, FerrallaDireccion
 )
+
+
+class FerrallaContactoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FerrallaContacto
+        fields = ["id", "nombre", "cargo", "telefono", "email", "orden"]
+        read_only_fields = ["id"]
+        extra_kwargs = {
+            "nombre": {"required": False, "allow_blank": True},
+            "cargo": {"required": False, "allow_blank": True},
+            "telefono": {"required": False, "allow_blank": True},
+            "email": {"required": False, "allow_blank": True},
+            "orden": {"required": False},
+        }
+
+
+class FerrallaDireccionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FerrallaDireccion
+        fields = ["id", "nombre", "direccion", "orden"]
+        read_only_fields = ["id"]
+        extra_kwargs = {
+            "nombre": {"required": False, "allow_blank": True},
+            "direccion": {"required": False, "allow_blank": True},
+            "orden": {"required": False},
+        }
 
 
 class UserSerializer(serializers.HyperlinkedModelSerializer):
@@ -25,13 +51,15 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
     capacidad_diaria_modulos = serializers.IntegerField(
         source='profile.capacidad_diaria_modulos', required=False, min_value=1
     )
+    contactos = FerrallaContactoSerializer(many=True, required=False)
+    direcciones = FerrallaDireccionSerializer(many=True, required=False)
 
     class Meta:
         model = User
         fields = [
             "id", "url", "username", "email", "password", "groups",
             "first_name", "last_name", "telefono", "direccion", "coordinador",
-            "password_texto_plano", "capacidad_diaria_modulos",
+            "password_texto_plano", "capacidad_diaria_modulos", "contactos", "direcciones",
         ]
 
     def _request_user_is_admin(self):
@@ -45,9 +73,49 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
             data['password_texto_plano'] = None
         return data
 
+    def _save_contactos(self, user, contactos_data):
+        FerrallaContacto.objects.filter(user=user).delete()
+        contactos = []
+        for index, contacto in enumerate(contactos_data):
+            contacto = dict(contacto)
+            if not any((contacto.get(field) or '').strip() for field in ('nombre', 'cargo', 'telefono', 'email')):
+                continue
+            contacto['orden'] = contacto.get('orden', index)
+            contactos.append(FerrallaContacto(user=user, **contacto))
+        FerrallaContacto.objects.bulk_create(contactos)
+
+    def _save_direcciones(self, user, direcciones_data):
+        FerrallaDireccion.objects.filter(user=user).delete()
+        direcciones = []
+        for index, direccion in enumerate(direcciones_data):
+            direccion = dict(direccion)
+            if not any((direccion.get(field) or '').strip() for field in ('nombre', 'direccion')):
+                continue
+            direccion['orden'] = direccion.get('orden', index)
+            direcciones.append(FerrallaDireccion(user=user, **direccion))
+        FerrallaDireccion.objects.bulk_create(direcciones)
+
+    def _sync_legacy_fields_from_lists(self, user):
+        first_contacto = user.contactos.order_by('orden', 'id').first()
+        first_direccion = user.direcciones.order_by('orden', 'id').first()
+
+        profile_defaults = {
+            'coordinador': first_contacto.nombre if first_contacto else '',
+            'telefono': first_contacto.telefono if first_contacto else '',
+            'direccion': first_direccion.direccion if first_direccion else '',
+        }
+        UserProfile.objects.update_or_create(user=user, defaults=profile_defaults)
+
+        first_email = first_contacto.email if first_contacto else ''
+        if user.email != first_email:
+            user.email = first_email
+            user.save(update_fields=['email'])
+
     def create(self, validated_data):
         password = validated_data.pop('password', None)
         profile_data = validated_data.pop('profile', {})
+        contactos_data = validated_data.pop('contactos', None)
+        direcciones_data = validated_data.pop('direcciones', None)
         telefono = profile_data.get('telefono')
         direccion = profile_data.get('direccion')
         coordinador = profile_data.get('coordinador')
@@ -73,11 +141,20 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
             profile_kwargs['capacidad_diaria_modulos'] = capacidad
         UserProfile.objects.create(user=user, **profile_kwargs)
 
+        if contactos_data is not None:
+            self._save_contactos(user, contactos_data)
+        if direcciones_data is not None:
+            self._save_direcciones(user, direcciones_data)
+        if contactos_data is not None or direcciones_data is not None:
+            self._sync_legacy_fields_from_lists(user)
+
         return user
 
     def update(self, instance, validated_data):
         password = validated_data.pop('password', None)
         profile_data = validated_data.pop('profile', {})
+        contactos_data = validated_data.pop('contactos', None)
+        direcciones_data = validated_data.pop('direcciones', None)
         telefono = profile_data.get('telefono')
         direccion = profile_data.get('direccion')
         coordinador = profile_data.get('coordinador')
@@ -114,6 +191,13 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
                 user=user,
                 defaults=profile_defaults
             )
+
+        if contactos_data is not None:
+            self._save_contactos(user, contactos_data)
+        if direcciones_data is not None:
+            self._save_direcciones(user, direcciones_data)
+        if contactos_data is not None or direcciones_data is not None:
+            self._sync_legacy_fields_from_lists(user)
 
         return user
 
