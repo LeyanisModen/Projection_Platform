@@ -1,61 +1,118 @@
-# 01. Distribución y Estructura del Sistema (Distribution)
+# 01. Distribucion y arquitectura
 
-## 1. Visión General
-Este documento define la estructura física y lógica de la plataforma **mod:en** para la gestión de ferrallas y proyección en construcción.
+Este documento resume la arquitectura actual de produccion de la plataforma
+Moden: dashboard web, backend API, player de proyeccion y mini-PCs en fabrica.
 
-## 2. Distribución Física (Hardware & Red)
-El sistema opera en un entorno industrial ("Zero Cables") dividido en dos nodos principales:
+## 1. Vision general
 
-### Nodo de Gestión (Supervisor - Jefe de Producción)
-- **Dispositivo**: Laptop Central.
-- **Ubicación**: Oficina técnica o punto de control en planta.
-- **Función**: Acceso al Dashboard para asignar "módulos pendientes" a las mesas.
+La plataforma se usa para planificar y proyectar la fabricacion de modulos de
+ferralla. El supervisor trabaja desde el dashboard web y cada mesa de fabrica
+tiene un mini-PC con Chrome en modo kiosk apuntando al player.
 
-### Nodos de Visualización (Mesas de Trabajo)
-Configuración por mesa:
-- **Montaje**: Poste de altura 3 metros con llegada de electricidad. Brazo articulado para movimiento vertical.
-- **Proyector**: Epson EB-L210SF.
-- **Mini PC**: MeLE Quieter 4C Fanless (N100, 8GB/128GB, USB-C PD 3.0, 2xHDMI).
-- **Conexión**: Cable HDMI corto entre Mini PC y Proyector (ambos en la cima del poste).
-- **Periférico de Control**: Botonera Wireless Programable de 3 botones (conectada al Mini PC).
-    - **Botón 1**: Siguiente (Navegar entre planos/imágenes).
-    - **Botón 2**: On/Off (Toggle de "Pantalla Negra" virtual, no apaga el proyector).
-    - **Botón 3**: Anterior(Navegar entre planos/imágenes).
-- **Conectividad**: Wi-Fi.
+Produccion:
 
-![Boceto del Setup](set-up.png)
+- Frontend y player: `https://moden.up.railway.app`
+- Backend: mismo dominio, bajo `/api/...`
+- Servicio local por mini-PC: `http://127.0.0.1:5555`
 
+## 2. Componentes
 
-## 3. Distribución Lógica (Arquitectura)
-El sistema sigue un modelo de microservicios:
+### Frontend Angular
 
-### A. Frontend (Angular 18+)
-Dos aplicaciones lógicas en una SPA:
-1.  **Dashboard (Dispatcher)**: Interfaz rica para gestionar proyectos y asignar recursos.
-2.  **Visor (Player)**: Interfaz ligera optimizada para proyección, con capacidades Offline-First y Mapper (calibración).
+Ruta principal de codigo: `app_proyeccion_moden`.
 
-### B. Backend (Django 5 DRF)
-- API REST que gestiona la persistencia y la lógica de negocio.
-- Endpoints principales para `Proyectos`, `Módulos`, `Imágenes` y `Mesas`.
+Incluye:
 
-### C. Base de Datos (PostgreSQL 15)
-- Almacenamiento relacional de metadatos y asignaciones.
+- Dashboard de cliente/ferralla.
+- Admin operativo para Moden.
+- Player de mesa en `/player`.
+- Supervisor/visor tecnico en `/visor/:id`.
+- Mapper/calibracion de proyector.
 
-## 4. Diagrama de Conexión (Conceptual)
+### Backend Django/DRF
 
-graph TD
-    subgraph "Oficina / Control"
-        Supervisor[PC Supervisor] -->|HTTPS| LoadBalancer[Nginx]
-    end
+Ruta principal de codigo: `api_proyeccion_moden`.
 
-    subgraph "Servidor Central (Docker)"
-        LoadBalancer -->|/api| API[Django Backend]
-        LoadBalancer -->|/| App[Angular App]
-        API --> DB[(PostgreSQL)]
-    end
+Responsabilidades:
 
-    subgraph "Planta / Taller"
-        Mesa1[Mesa 1: Mini PC + Proyector] -->|HTTPS / Visor| LoadBalancer
-        Mesa2[Mesa 2: Mini PC + Proyector] -->|HTTPS / Visor| LoadBalancer
-        MesaN[Mesa N: Mini PC + Proyector] -->|HTTPS / Visor| LoadBalancer
-    end
+- Usuarios/ferrallas/proyectos/modulos/mesas.
+- Planificacion por grupos de mesas.
+- Estado de colas y sincronizacion del indice proyectado.
+- Emparejamiento de dispositivos.
+- Fotos de fabricacion y validacion de colores.
+- Estadisticas y lista de materiales.
+
+### Capture service local
+
+Ruta principal de codigo: `capture_service`.
+
+Se instala en cada mini-PC en:
+
+```text
+C:\moden\capture_service
+```
+
+Responsabilidades:
+
+- Abrir la camara OBSBOT.
+- Exponer `/health`, `/stats`, `/capture` y `/device_token`.
+- Guardar fotos en Google Drive.
+- Persistir el token de dispositivo en `device_token.txt`.
+- Reportar heartbeat al backend con estado de camara.
+
+## 3. Mini-PCs de fabrica
+
+Cada mesa fisica usa:
+
+- Mini-PC Windows 11 Pro.
+- Chrome kiosk.
+- OBSBOT como camara.
+- Google Drive Desktop montado como `G:`.
+- Chrome Remote Desktop para soporte remoto.
+- Tarea programada `MODEN Player` al iniciar sesion del usuario `moden`.
+
+Convencion de nombres:
+
+| Equipo Windows | `mesa_id` |
+| --- | --- |
+| `FER-G1-MESA1` | `fer_g1_mesa1` |
+| `FER-G1-MESA2` | `fer_g1_mesa2` |
+| `FER-G2-MESA1` | `fer_g2_mesa1` |
+
+Ya no se usan nombres nuevos basados en roles fijos `INF` / `SUP`.
+
+## 4. Distribucion fisica
+
+Configuracion tipica por mesa:
+
+- Proyector sobre mesa de trabajo.
+- Mini-PC junto al proyector.
+- Camara OBSBOT apuntando a la zona de fabricacion.
+- Teclado/raton solo para puesta a punto o mantenimiento.
+- Wi-Fi de fabrica.
+
+Referencia visual actual:
+
+![Boceto del setup](set-up.png)
+
+## 5. Flujo de comunicacion
+
+```mermaid
+flowchart LR
+    Supervisor[Supervisor / Admin] -->|HTTPS| Frontend[Angular en Railway]
+    Frontend -->|/api| Backend[Django DRF en Railway]
+    Player[Chrome kiosk /player] -->|Bearer device token| Backend
+    Player -->|localhost:5555| CaptureService[capture_service]
+    CaptureService -->|Camara USB| Camera[OBSBOT]
+    CaptureService -->|JPEGs| Drive[Google Drive G:]
+    CaptureService -->|heartbeat| Backend
+```
+
+## 6. Operacion y soporte
+
+- Instalacion de mini-PCs: `docs/04_minipc_setup.md`.
+- Cheatsheet copy/paste: `capture_service/COMANDOS.txt`.
+- Puesta en marcha en fabrica: `capture_service/PUESTA_EN_MARCHA_FABRICA.txt`.
+- Branding del mini-PC: `capture_service/branding-wallpaper.jpg` y
+  `capture_service/branding-user.jpg`.
+
