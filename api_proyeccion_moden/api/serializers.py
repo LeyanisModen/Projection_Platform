@@ -16,6 +16,12 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
     telefono = serializers.CharField(source='profile.telefono', required=False, allow_blank=True, allow_null=True)
     direccion = serializers.CharField(source='profile.direccion', required=False, allow_blank=True, allow_null=True)
     coordinador = serializers.CharField(source='profile.coordinador', required=False, allow_blank=True, allow_null=True)
+    password_texto_plano = serializers.CharField(
+        source='profile.password_texto_plano',
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+    )
     capacidad_diaria_modulos = serializers.IntegerField(
         source='profile.capacidad_diaria_modulos', required=False, min_value=1
     )
@@ -25,9 +31,19 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
         fields = [
             "id", "url", "username", "email", "password", "groups",
             "first_name", "last_name", "telefono", "direccion", "coordinador",
-            "capacidad_diaria_modulos",
+            "password_texto_plano", "capacidad_diaria_modulos",
         ]
 
+    def _request_user_is_admin(self):
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        return bool(user and user.is_authenticated and (user.is_staff or user.is_superuser))
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if not self._request_user_is_admin():
+            data['password_texto_plano'] = None
+        return data
 
     def create(self, validated_data):
         password = validated_data.pop('password', None)
@@ -36,6 +52,7 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
         direccion = profile_data.get('direccion')
         coordinador = profile_data.get('coordinador')
         capacidad = profile_data.get('capacidad_diaria_modulos')
+        password_texto_plano = profile_data.get('password_texto_plano')
 
         user = super().create(validated_data)
 
@@ -48,6 +65,10 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
             'direccion': direccion or '',
             'coordinador': coordinador or '',
         }
+        if self._request_user_is_admin():
+            profile_kwargs['password_texto_plano'] = (
+                password_texto_plano if password_texto_plano is not None else (password or '')
+            )
         if capacidad is not None:
             profile_kwargs['capacidad_diaria_modulos'] = capacidad
         UserProfile.objects.create(user=user, **profile_kwargs)
@@ -61,6 +82,8 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
         direccion = profile_data.get('direccion')
         coordinador = profile_data.get('coordinador')
         capacidad = profile_data.get('capacidad_diaria_modulos')
+        password_texto_plano_provided = 'password_texto_plano' in profile_data
+        password_texto_plano = profile_data.get('password_texto_plano')
 
         user = super().update(instance, validated_data)
         
@@ -79,6 +102,12 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
         if password:
             user.set_password(password)
             user.save()
+
+        if self._request_user_is_admin():
+            if password_texto_plano_provided:
+                profile_defaults['password_texto_plano'] = password_texto_plano or ''
+            elif password:
+                profile_defaults['password_texto_plano'] = password
             
         if profile_defaults:
             UserProfile.objects.update_or_create(

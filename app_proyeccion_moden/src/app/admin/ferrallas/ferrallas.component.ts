@@ -40,6 +40,7 @@ export class FerrallasComponent implements OnInit {
 
   showCredentialsModal = false;
   credentialUser: User | null = null;
+  credentialStoredPasswordDraft = '';
   newCredentialPassword = '';
   credentialError = '';
   credentialSuccess = '';
@@ -378,6 +379,7 @@ export class FerrallasComponent implements OnInit {
 
   openCredentialsModal(user: User): void {
     this.credentialUser = user;
+    this.credentialStoredPasswordDraft = user.password_texto_plano || '';
     this.newCredentialPassword = '';
     this.credentialError = '';
     this.credentialSuccess = '';
@@ -389,6 +391,7 @@ export class FerrallasComponent implements OnInit {
   closeCredentialsModal(): void {
     this.showCredentialsModal = false;
     this.credentialUser = null;
+    this.credentialStoredPasswordDraft = '';
     this.newCredentialPassword = '';
     this.credentialError = '';
     this.credentialSuccess = '';
@@ -411,9 +414,11 @@ export class FerrallasComponent implements OnInit {
     const payload = { password: this.newCredentialPassword };
 
     this.api.updateUser(this.credentialUser.id, payload).subscribe({
-      next: () => {
+      next: (updatedUser: User) => {
         this.credentialLoading = false;
         this.credentialSuccess = 'Contrasena actualizada correctamente';
+        this.applyUpdatedCredentialUser(updatedUser);
+        this.credentialStoredPasswordDraft = updatedUser.password_texto_plano || '';
         this.newCredentialPassword = '';
         this.cdr.detectChanges();
       },
@@ -423,6 +428,41 @@ export class FerrallasComponent implements OnInit {
         this.cdr.detectChanges();
       }
     });
+  }
+
+  saveStoredCredentialOnly(): void {
+    if (!this.credentialUser) return;
+
+    this.credentialLoading = true;
+    this.credentialError = '';
+    this.credentialSuccess = '';
+    const payload = { password_texto_plano: this.credentialStoredPasswordDraft || '' };
+
+    this.api.updateUser(this.credentialUser.id, payload).subscribe({
+      next: (updatedUser: User) => {
+        this.credentialLoading = false;
+        this.credentialSuccess = 'Contrasena visible guardada sin cambiar el login';
+        this.applyUpdatedCredentialUser(updatedUser);
+        this.credentialStoredPasswordDraft = updatedUser.password_texto_plano || '';
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.credentialLoading = false;
+        this.credentialError = 'Error guardando la contrasena visible';
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  private applyUpdatedCredentialUser(updatedUser: User): void {
+    this.credentialUser = updatedUser;
+    const index = this.users.findIndex(u => u.id === updatedUser.id);
+    if (index !== -1) {
+      this.users[index] = updatedUser;
+    }
+    if (this.selectedUser?.id === updatedUser.id) {
+      this.selectedUser = updatedUser;
+    }
   }
 
   saveUser() {
@@ -442,7 +482,12 @@ export class FerrallasComponent implements OnInit {
 
   createUser() {
     this.loading = true;
-    this.api.createUser(this.newUser).subscribe({
+    const payload = { ...this.newUser };
+    if (payload.password && !payload.password_texto_plano) {
+      payload.password_texto_plano = payload.password;
+    }
+
+    this.api.createUser(payload).subscribe({
       next: (user: User) => {
         console.log('[Ferrallas] User created successfully:', user);
         this.resetForm();
@@ -463,6 +508,9 @@ export class FerrallasComponent implements OnInit {
     const payload = { ...this.newUser };
     if (!payload.password) {
       delete payload.password;
+      delete payload.password_texto_plano;
+    } else {
+      payload.password_texto_plano = payload.password;
     }
 
     this.api.updateUser(id, payload).subscribe({
