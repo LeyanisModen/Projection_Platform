@@ -12,20 +12,19 @@
         </div>
         <div class="card-body">
             <form (ngSubmit)="saveUser()" #userForm="ngForm" autocomplete="off">
-                <div class="form-group">
-                    <label for="first_name">Nombre de la Ferralla</label>
-                    <input type="text" id="first_name" name="first_name" class="form-control"
-                        [(ngModel)]="newUser.first_name" (input)="generateUsername($any($event.target).value)" required
-                        placeholder="Ej: Ferrallas del Norte S.L." autocomplete="off">
-                </div>
-
-                <div class="row">
-                    <div class="col-md-6 form-group">
+                <div class="row compact-row identity-row">
+                    <div class="col-lg-5 col-md-12 form-group">
+                        <label for="first_name">Nombre de la Ferralla</label>
+                        <input type="text" id="first_name" name="first_name" class="form-control"
+                            [(ngModel)]="newUser.first_name" (input)="generateUsername($any($event.target).value)"
+                            required placeholder="Ej: Ferrallas del Norte S.L." autocomplete="off">
+                    </div>
+                    <div class="col-lg-3 col-md-6 form-group">
                         <label for="username">Usuario (Login)</label>
                         <input type="text" id="username" name="username" class="form-control"
                             [(ngModel)]="newUser.username" required placeholder="Ej: ferrallasnorte" autocomplete="off">
                     </div>
-                    <div class="col-md-6 form-group">
+                    <div class="col-lg-4 col-md-6 form-group">
                         <label for="password">Contrasena</label>
                         <div class="input-group d-flex flex-nowrap">
                             <input type="text" id="password" name="password" class="form-control"
@@ -43,10 +42,7 @@
 
                 <div class="form-section">
                     <div class="section-header">
-                        <div>
-                            <h3>Contactos</h3>
-                            <p>Personas de referencia de la ferralla. Puedes dejarlo vacio y anadirlos despues.</p>
-                        </div>
+                        <h3>Contactos</h3>
                         <button type="button" class="btn btn-outline-primary btn-sm" (click)="addContacto()">
                             <i class="fa fa-plus"></i> Anadir contacto
                         </button>
@@ -56,49 +52,41 @@
                         Sin contactos guardados por ahora.
                     </div>
 
-                    <div class="repeat-card" *ngFor="let contacto of newUser.contactos; let i = index">
-                        <div class="repeat-card-header">
-                            <strong>Contacto {{ i + 1 }}</strong>
-                            <button type="button" class="btn btn-link btn-sm text-danger p-0"
-                                (click)="removeContacto(i)" title="Quitar contacto">
-                                <i class="fa fa-trash-o"></i>
-                            </button>
+                    <div class="repeat-row contact-row" *ngFor="let contacto of newUser.contactos; let i = index">
+                        <div class="inline-field field-name">
+                            <label [for]="'contacto_nombre_' + i">Nombre</label>
+                            <input type="text" class="form-control" [id]="'contacto_nombre_' + i"
+                                [name]="'contacto_nombre_' + i" [(ngModel)]="contacto.nombre"
+                                placeholder="Ej: Juan Garcia" autocomplete="off">
                         </div>
-                        <div class="row compact-row">
-                            <div class="col-lg-3 col-md-6 form-group">
-                                <label [for]="'contacto_nombre_' + i">Nombre</label>
-                                <input type="text" class="form-control" [id]="'contacto_nombre_' + i"
-                                    [name]="'contacto_nombre_' + i" [(ngModel)]="contacto.nombre"
-                                    placeholder="Ej: Juan Garcia" autocomplete="off">
-                            </div>
-                            <div class="col-lg-3 col-md-6 form-group">
-                                <label [for]="'contacto_cargo_' + i">Cargo</label>
-                                <input type="text" class="form-control" [id]="'contacto_cargo_' + i"
-                                    [name]="'contacto_cargo_' + i" [(ngModel)]="contacto.cargo"
-                                    placeholder="Ej: Produccion, Oficina, Calidad" autocomplete="off">
-                            </div>
-                            <div class="col-lg-3 col-md-6 form-group">
-                                <label [for]="'contacto_telefono_' + i">Telefono</label>
-                                <input type="text" class="form-control" [id]="'contacto_telefono_' + i"
-                                    [name]="'contacto_telefono_' + i" [(ngModel)]="contacto.telefono"
-                                    placeholder="Ej: +34 600 000 000" autocomplete="new-password">
-                            </div>
-                            <div class="col-lg-3 col-md-6 form-group">
-                                <label [for]="'contacto_email_' + i">Email</label>
-                                <input type="text" class="form-control" [id]="'contacto_email_' + i"
-                                    [name]="'contacto_email_' + i" [(ngModel)]="contacto.email"
-                                    placeholder="contacto@ferralla.com" autocomplete="new-password">
-                            </div>
+                        <div class="inline-field field-role">
+                            <label [for]="'contacto_cargo_' + i">Cargo</label>
+                            <input type="text" class="form-control" [id]="'contacto_cargo_' + i"
+                                [name]="'contacto_cargo_' + i" [(ngModel)]="contacto.cargo"
+                                placeholder="Ej: Produccion, Oficina, Calidad" autocomplete="off">
                         </div>
+                        <div class="inline-field field-phone">
+                            <label [for]="'contacto_telefono_' + i">Telefono</label>
+                            <input type="text" class="form-control" [id]="'contacto_telefono_' + i"
+                                [name]="'contacto_telefono_' + i" [(ngModel)]="contacto.telefono"
+                                placeholder="Ej: +34 600 000 000" autocomplete="new-password">
+                        </div>
+                        <div class="inline-field field-email">
+                            <label [for]="'contacto_email_' + i">Email</label>
+                            <input type="text" class="form-control" [id]="'contacto_email_' + i"
+                                [name]="'contacto_email_' + i" [(ngModel)]="contacto.email"
+                                placeholder="contacto@ferralla.com" autocomplete="new-password">
+                        </div>
+                        <button type="button" class="btn btn-link btn-sm text-danger p-0 repeat-remove"
+                            (click)="removeContacto(i)" title="Quitar contacto">
+                            <i class="fa fa-trash-o"></i>
+                        </button>
                     </div>
                 </div>
 
                 <div class="form-section">
                     <div class="section-header">
-                        <div>
-                            <h3>Direcciones</h3>
-                            <p>Ubicaciones de referencia: produccion, oficinas, zunchos, mallazos, etc.</p>
-                        </div>
+                        <h3>Direcciones</h3>
                         <button type="button" class="btn btn-outline-primary btn-sm" (click)="addDireccion()">
                             <i class="fa fa-plus"></i> Anadir direccion
                         </button>
@@ -108,37 +96,32 @@
                         Sin direcciones guardadas por ahora.
                     </div>
 
-                    <div class="repeat-card" *ngFor="let direccion of newUser.direcciones; let i = index">
-                        <div class="repeat-card-header">
-                            <strong>Direccion {{ i + 1 }}</strong>
-                            <button type="button" class="btn btn-link btn-sm text-danger p-0"
-                                (click)="removeDireccion(i)" title="Quitar direccion">
-                                <i class="fa fa-trash-o"></i>
-                            </button>
+                    <div class="repeat-row address-row" *ngFor="let direccion of newUser.direcciones; let i = index">
+                        <div class="inline-field field-address-name">
+                            <label [for]="'direccion_nombre_' + i">Nombre</label>
+                            <input type="text" class="form-control" [id]="'direccion_nombre_' + i"
+                                [name]="'direccion_nombre_' + i" [(ngModel)]="direccion.nombre"
+                                placeholder="Ej: Mesas de produccion" autocomplete="off">
                         </div>
-                        <div class="row compact-row">
-                            <div class="col-lg-3 col-md-4 form-group">
-                                <label [for]="'direccion_nombre_' + i">Nombre</label>
-                                <input type="text" class="form-control" [id]="'direccion_nombre_' + i"
-                                    [name]="'direccion_nombre_' + i" [(ngModel)]="direccion.nombre"
-                                    placeholder="Ej: Mesas de produccion" autocomplete="off">
-                            </div>
-                            <div class="col-lg-9 col-md-8 form-group">
-                                <label [for]="'direccion_texto_' + i">Direccion</label>
-                                <input type="text" class="form-control" [id]="'direccion_texto_' + i"
-                                    [name]="'direccion_texto_' + i" [(ngModel)]="direccion.direccion"
-                                    placeholder="Ej: Calle Industrial 45, Poligono Norte" autocomplete="new-password">
-                            </div>
+                        <div class="inline-field field-address">
+                            <label [for]="'direccion_texto_' + i">Direccion</label>
+                            <input type="text" class="form-control" [id]="'direccion_texto_' + i"
+                                [name]="'direccion_texto_' + i" [(ngModel)]="direccion.direccion"
+                                placeholder="Ej: Calle Industrial 45, Poligono Norte" autocomplete="new-password">
                         </div>
+                        <button type="button" class="btn btn-link btn-sm text-danger p-0 repeat-remove"
+                            (click)="removeDireccion(i)" title="Quitar direccion">
+                            <i class="fa fa-trash-o"></i>
+                        </button>
                     </div>
                 </div>
 
-                <div class="form-group">
-                    <label for="capacidad">Capacidad diaria (módulos/día)</label>
+                <div class="capacity-row">
+                    <label for="capacidad">Capacidad diaria (modulos/dia)</label>
                     <input type="number" id="capacidad" name="capacidad_diaria_modulos" class="form-control"
                         [(ngModel)]="newUser.capacidad_diaria_modulos" min="1" step="1" placeholder="12"
                         autocomplete="off">
-                    <small class="text-muted">Módulos fabricados por día por esta ferralla. Se reparte a partes iguales entre sus mesas inferiores.</small>
+                    <small class="text-muted">Modulos fabricados por dia por esta ferralla. Se reparte a partes iguales entre sus mesas inferiores.</small>
                 </div>
 
                 <div class="form-actions mt-3">

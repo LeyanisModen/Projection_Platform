@@ -8,7 +8,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 2rem;
+    margin-bottom: 1.5rem;
 }
 
 .card {
@@ -39,7 +39,7 @@
 }
 
 .ferralla-form-card .card-body {
-    padding: 1rem 1.5rem 1.25rem;
+    padding: 0.9rem 1.5rem 1rem;
 }
 
 .mb-4 {
@@ -109,8 +109,8 @@
 .form-section {
     border: 1px solid #e6edf3;
     border-radius: 8px;
-    padding: 0.75rem 1rem;
-    margin-bottom: 0.75rem;
+    padding: 0.6rem 1rem;
+    margin-bottom: 0.6rem;
     background: #fbfdff;
 }
 
@@ -118,12 +118,12 @@
     display: flex;
     justify-content: space-between;
     gap: 1rem;
-    align-items: flex-start;
-    margin-bottom: 0.5rem;
+    align-items: center;
+    margin-bottom: 0.4rem;
 }
 
 .section-header h3 {
-    margin: 0 0 0.2rem;
+    margin: 0;
     font-size: 1rem;
     font-weight: 700;
 }
@@ -175,6 +175,109 @@
 .repeat-card .form-control {
     min-height: 34px;
     font-size: 0.92rem;
+}
+
+.repeat-row {
+    display: grid;
+    align-items: center;
+    gap: 0.7rem;
+    background: white;
+    border: 1px solid #dbe4ee;
+    border-radius: 7px;
+    padding: 0.4rem 0.7rem;
+    margin-top: 0.45rem;
+}
+
+.contact-row {
+    grid-template-columns: minmax(210px, 1.1fr) minmax(230px, 1.35fr) minmax(220px, 1.15fr) minmax(220px, 1.1fr) 24px;
+}
+
+.address-row {
+    grid-template-columns: minmax(260px, 0.8fr) minmax(420px, 1.8fr) 24px;
+}
+
+.inline-field,
+.capacity-row {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    min-width: 0;
+}
+
+.inline-field label,
+.capacity-row label {
+    flex: 0 0 auto;
+    margin: 0;
+    font-size: 0.86rem;
+    font-weight: 700;
+}
+
+.inline-field .form-control,
+.capacity-row .form-control {
+    min-width: 0;
+    height: 34px;
+    font-size: 0.92rem;
+}
+
+.repeat-remove {
+    justify-self: center;
+    color: #dc3545 !important;
+}
+
+.capacity-row {
+    margin-top: 0.75rem;
+}
+
+.capacity-row .form-control {
+    flex: 0 0 7.5rem;
+}
+
+.capacity-row small {
+    margin-left: 0.4rem;
+}
+
+.form-actions {
+    display: flex;
+    justify-content: flex-end;
+}
+
+@media (max-width: 1199.98px) {
+    .contact-row,
+    .address-row {
+        grid-template-columns: 1fr 1fr 24px;
+    }
+
+    .field-email,
+    .field-address {
+        grid-column: span 2;
+    }
+}
+
+@media (max-width: 767.98px) {
+    .contact-row,
+    .address-row {
+        grid-template-columns: 1fr;
+    }
+
+    .field-email,
+    .field-address {
+        grid-column: auto;
+    }
+
+    .inline-field,
+    .capacity-row {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+    .repeat-remove {
+        justify-self: end;
+    }
+
+    .capacity-row .form-control {
+        flex: 1 1 auto;
+    }
 }
 
 .detail-list {
