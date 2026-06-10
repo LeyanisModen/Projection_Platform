@@ -1,0 +1,408 @@
+===========================================================
+COMANDOS MINI-PC MODEN -- INSTALACION INICIAL
+===========================================================
+
+Cheatsheet para copiar / pegar en el mini-PC durante la preparacion
+inicial. El runbook largo esta en:
+
+  docs/04_minipc_setup.md
+
+Este archivo viaja dentro de capture_service/ y se copia al mini-PC en:
+
+  C:\moden\capture_service\COMANDOS.txt
+
+
+===========================================================
+VALORES QUE CAMBIAN POR MINI-PC
+===========================================================
+
+Reemplaza "fer_g1_mesa1" por el mesa_id real del equipo.
+
+Formato actual:
+
+  <cli>_g<N>_mesa<M>
+
+Ejemplos:
+
+  fer_g1_mesa1
+  fer_g1_mesa2
+  fer_g1_mesa3
+  fer_g2_mesa1
+
+Nombre Windows equivalente:
+
+  fer_g1_mesa1  ->  FER-G1-MESA1
+  fer_g1_mesa2  ->  FER-G1-MESA2
+  fer_g2_mesa1  ->  FER-G2-MESA1
+
+Reemplaza "D:" por la letra real del pendrive.
+
+Todas las sesiones de PowerShell indicadas aqui son COMO ADMINISTRADOR,
+salvo que se diga lo contrario.
+
+
+===========================================================
+ANTES DE EMPEZAR -- COMPROBAR PENDRIVE
+===========================================================
+
+El pendrive debe tener:
+
+  D:\capture_service\install-minipc.ps1
+  D:\capture_service\start-player.bat
+  D:\capture_service\capture_service.py
+  D:\capture_service\config.ini.example
+  D:\capture_service\requirements.txt
+  D:\capture_service\COMANDOS.txt
+  D:\capture_service\PUESTA_EN_MARCHA_FABRICA.txt
+  D:\capture_service\branding-wallpaper.jpg
+  D:\capture_service\branding-user.jpg
+
+Las dos imagenes de branding son:
+
+  branding-wallpaper.jpg -> fondo de escritorio Moden
+  branding-user.jpg      -> imagen de usuario Windows
+
+El instalador las aplica automaticamente si estan en la carpeta.
+
+
+===========================================================
+PASO 0.5 -- CREAR CUENTA 'moden' SI EL MINI-PC TRAE 'Usuario'
+===========================================================
+
+Solo si el mini-PC ya arranca con un usuario preinstalado tipo
+"Usuario", "Dell", "Admin", etc.
+
+# --- En la sesion del usuario preinstalado, PowerShell admin ---
+
+$pw = Read-Host "Contrasena para moden" -AsSecureString
+New-LocalUser -Name 'moden' -Password $pw -FullName 'Moden' -Description 'Cuenta de produccion' -PasswordNeverExpires
+Add-LocalGroupMember -Group 'Administradores' -Member 'moden'
+
+# Si Windows esta en ingles, usa:
+# Add-LocalGroupMember -Group 'Administrators' -Member 'moden'
+
+# --- Cerrar sesion del usuario viejo e iniciar sesion como 'moden' ---
+
+net localgroup Administradores
+
+# Borra la cuenta vieja solo despues de entrar como 'moden'.
+# Cambia 'Usuario' por el nombre real si era otro.
+
+Remove-LocalUser -Name 'Usuario'
+Remove-Item 'C:\Users\Usuario' -Recurse -Force -ErrorAction SilentlyContinue
+
+
+===========================================================
+PASO 1 -- RENOMBRAR EL EQUIPO
+===========================================================
+
+Por interfaz:
+
+  Ajustes -> Sistema -> Acerca de -> Cambiar nombre
+
+Ejemplos:
+
+  FER-G1-MESA1
+  FER-G1-MESA2
+  FER-G1-MESA3
+
+Por comando, ejemplo para mesa 1:
+
+Rename-Computer -NewName 'FER-G1-MESA1' -Force
+Restart-Computer
+
+
+===========================================================
+PASO 2 -- LANZAR INSTALADOR AUTOMATICO
+===========================================================
+
+# --- PowerShell admin ---
+
+cd D:\capture_service
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\install-minipc.ps1 -MesaId fer_g1_mesa1 -ModenPassword "Moden1234"
+
+Que hace el instalador:
+
+  - Hardening de Windows.
+  - Python, Chrome, Google Drive y Chrome Remote Desktop host.
+  - Copia capture_service a C:\moden\capture_service.
+  - Crea venv e instala requirements.txt.
+  - Crea config.ini con el mesa_id.
+  - Aplica branding-wallpaper.jpg como fondo de escritorio.
+  - Aplica branding-user.jpg como imagen de usuario Windows.
+  - Crea la tarea programada "MODEN Player".
+  - Configura auto-login si pasaste -ModenPassword.
+
+Si no quieres auto-login:
+
+.\install-minipc.ps1 -MesaId fer_g1_mesa1
+
+
+===========================================================
+PASO 2A -- ACTUALIZAR UN MINI-PC QUE YA ESTABA CONFIGURADO
+===========================================================
+
+Usa esto para mini-PCs antiguos que ya funcionaban pero necesitan recibir
+el capture_service nuevo, start-player.bat nuevo, COMANDOS.txt nuevo, etc.
+
+No reinstala apps, no toca Google Drive, no borra el config.ini y no borra
+device_token.txt.
+
+IMPORTANTE:
+
+  - Si el mini-PC ya estaba vinculado y Chrome conserva localStorage, NO
+    deberia pedir vinculacion otra vez.
+  - Tras esta actualizacion, el player nuevo copiara su token al servicio
+    local y aparecera:
+
+      C:\moden\capture_service\device_token.txt
+
+  - Si localStorage ya se habia borrado ANTES de actualizar, tocara
+    vincular una vez mas desde admin. Despues de eso queda protegido.
+
+# --- PowerShell admin ---
+
+cd D:\capture_service
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+
+# Parar Chrome kiosko y servicio local antes de copiar.
+Get-Process -Name python, pythonw, chrome -ErrorAction SilentlyContinue | Stop-Process -Force
+
+# Copiar version nueva preservando datos locales del mini-PC.
+robocopy D:\capture_service C:\moden\capture_service /MIR /XD venv __pycache__ /XF config.ini device_token.txt
+if ($LASTEXITCODE -ge 8) { throw "robocopy fallo con codigo $LASTEXITCODE" }
+
+# Relanzar player.
+Start-Process 'C:\moden\capture_service\start-player.bat'
+
+# Comprobaciones.
+Start-Sleep -Seconds 10
+curl.exe http://127.0.0.1:5555/health
+Test-Path 'C:\moden\capture_service\device_token.txt'
+
+Si el ultimo comando devuelve False pero el player esta vinculado:
+
+  - pulsa R dentro del player para recargar la app
+  - espera 10 segundos
+  - vuelve a ejecutar:
+
+Test-Path 'C:\moden\capture_service\device_token.txt'
+
+Si sigue en False, revisa que el archivo copiado sea el capture_service.py
+nuevo y que el player cargue desde https://moden.up.railway.app/player.
+
+
+===========================================================
+PASO 2 BIS -- SI PYTHON NO QUEDA EN PATH
+===========================================================
+
+El instalador intenta resolver Python aunque winget no refresque PATH.
+Si aun asi falla, suele ser la alias falsa de Microsoft Store.
+
+Apaga las alias:
+
+  Ajustes -> Aplicaciones -> Configuracion avanzada de aplicaciones
+  -> Alias de ejecucion de aplicaciones -> apagar python.exe y python3.exe
+
+Luego abre una PowerShell admin nueva y valida:
+
+python --version
+where.exe python
+
+Relanza el instalador:
+
+cd D:\capture_service
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\install-minipc.ps1 -MesaId fer_g1_mesa1 -ModenPassword "Moden1234"
+
+
+===========================================================
+PASO 3 -- VERIFICAR BRANDING
+===========================================================
+
+El fondo debe verse tras aplicar el instalador o tras reiniciar.
+
+Comprobar que el fondo quedo copiado:
+
+Test-Path 'C:\moden\branding\wallpaper.jpg'
+
+Comprobar imagenes de usuario por defecto:
+
+Test-Path 'C:\ProgramData\Microsoft\User Account Pictures\user.jpg'
+Test-Path 'C:\ProgramData\Microsoft\User Account Pictures\user-192.png'
+
+Si devuelve True, los archivos estan aplicados.
+
+
+===========================================================
+PASO 4 -- VERIFICAR TAREA PROGRAMADA "MODEN Player"
+===========================================================
+
+Get-ScheduledTask -TaskName 'MODEN Player' | Format-List TaskName,State,Triggers
+
+Debe existir con trigger "At logon" / "Al iniciar sesion" para el
+usuario moden.
+
+Si no existe, recrearla:
+
+$bat = 'C:\moden\capture_service\start-player.bat'
+$action   = New-ScheduledTaskAction -Execute $bat
+$trigger  = New-ScheduledTaskTrigger -AtLogOn -User 'moden'
+$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
+Register-ScheduledTask -TaskName 'MODEN Player' -Action $action -Trigger $trigger -Settings $settings -RunLevel Limited -User 'moden' -Force
+Remove-Item (Join-Path ([Environment]::GetFolderPath('Startup')) 'Moden Player.lnk') -Force -ErrorAction SilentlyContinue
+
+
+===========================================================
+PASO 5 -- GOOGLE DRIVE
+===========================================================
+
+Google Drive se instala por winget, pero se configura a mano:
+
+  1. Abrir Google Drive.
+  2. Iniciar sesion con la cuenta corporativa.
+  3. Configurar "Transmitir archivos".
+  4. Dejar la unidad como G:.
+
+Comprobar carpeta:
+
+Test-Path 'G:\Mi unidad\capturas_moden'
+
+Debe devolver:
+
+True
+
+
+===========================================================
+PASO 6 -- CHROME REMOTE DESKTOP
+===========================================================
+
+Abrir Chrome e ir a:
+
+  https://remotedesktop.google.com/access
+
+Activar acceso remoto:
+
+  - Nombre del dispositivo = nombre Windows, por ejemplo FER-G1-MESA1.
+  - PIN = la acordada para la fabrica.
+
+Probar desde el portatil antes de entregar.
+
+
+===========================================================
+PASO 7 -- OBSBOT
+===========================================================
+
+Instalar OBSBOT WebCam desde el instalador del pendrive.
+
+En OBSBOT:
+
+  - Desactivar auto-sleep / sleep mode.
+  - Desactivar tracking / seguimiento.
+  - Mover camara al encuadre correcto.
+  - Guardar preset si la app lo permite.
+  - Cerrar OBSBOT completamente al terminar.
+
+Muy importante:
+
+  Mientras OBSBOT este abierto, Python no puede usar la camara.
+
+
+===========================================================
+PASO 8 -- PRUEBAS FINALES EN EL MINI-PC
+===========================================================
+
+# Health del servicio local:
+
+curl.exe http://127.0.0.1:5555/health
+
+# Debe responder:
+# {"status":"ok"}
+
+# Foto manual:
+
+curl.exe -X POST http://127.0.0.1:5555/capture -o test.jpg --max-time 15
+start test.jpg
+
+# Stats del servicio:
+
+(Invoke-WebRequest http://127.0.0.1:5555/stats -UseBasicParsing).Content
+
+# Drive montado y carpeta de mesa:
+
+Test-Path 'G:\Mi unidad\capturas_moden\fer_g1_mesa1'
+
+
+===========================================================
+EXTRA -- RELANZAR PLAYER MANUALMENTE
+===========================================================
+
+Start-Process 'C:\moden\capture_service\start-player.bat'
+
+
+===========================================================
+EXTRA -- ABRIR OBSBOT PARA MOVER LA CAMARA
+===========================================================
+
+# --- PowerShell admin ---
+
+Get-Process -Name python, pythonw, chrome -ErrorAction SilentlyContinue | Stop-Process -Force
+
+# Abrir OBSBOT, ajustar la camara y cerrar OBSBOT completamente.
+
+Start-Process 'C:\moden\capture_service\start-player.bat'
+
+
+===========================================================
+EXTRA -- CAMARA COLGADA U OBSBOT AGARRANDO EL USB
+===========================================================
+
+# --- PowerShell admin ---
+
+Get-Process -Name *obsbot* -ErrorAction SilentlyContinue | Stop-Process -Force
+Get-Process -Name python, pythonw, chrome -ErrorAction SilentlyContinue | Stop-Process -Force
+Start-Process 'C:\moden\capture_service\start-player.bat'
+
+Start-Sleep -Seconds 5
+curl.exe http://127.0.0.1:5555/health
+
+
+===========================================================
+EXTRA -- SI config.ini DA MissingSectionHeaderError
+===========================================================
+
+$p = 'C:\moden\capture_service\config.ini'
+$raw = Get-Content $p -Raw
+[IO.File]::WriteAllText($p, $raw, [Text.UTF8Encoding]::new($false))
+
+
+===========================================================
+EXTRA -- CAMBIAR mesa_id / NOMBRE DEL EQUIPO
+===========================================================
+
+# Ejemplo: cambiar a FER-G1-MESA4 / fer_g1_mesa4
+
+Get-Process -Name python, pythonw, chrome -ErrorAction SilentlyContinue | Stop-Process -Force
+Rename-Computer -NewName 'FER-G1-MESA4' -Force
+
+$cfg = 'C:\moden\capture_service\config.ini'
+$raw = (Get-Content $cfg -Raw) -replace '(?m)^\s*mesa_id\s*=\s*\S+\s*$', 'mesa_id = fer_g1_mesa4'
+[IO.File]::WriteAllText($cfg, $raw, [Text.UTF8Encoding]::new($false))
+Select-String -Path $cfg -Pattern 'mesa_id'
+
+Restart-Computer
+
+
+===========================================================
+EXTRA -- GUIA PARA PUESTA EN MARCHA EN FABRICA
+===========================================================
+
+Para una persona no tecnica que solo necesita conectar Wi-Fi, mover
+la camara y dejar el player funcionando, abrir:
+
+  C:\moden\capture_service\PUESTA_EN_MARCHA_FABRICA.txt
+
+La copia original viaja en el pendrive:
+
+  D:\capture_service\PUESTA_EN_MARCHA_FABRICA.txt

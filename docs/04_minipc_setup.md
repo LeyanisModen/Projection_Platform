@@ -8,7 +8,7 @@ disparar capturas de "foto fabricada" sin tocar el mini-PC.
 > Para la instalación automática (pasos 4 y 9) hay un script de PowerShell
 > en [`capture_service/install-minipc.ps1`](../capture_service/install-minipc.ps1)
 > que cubre el endurecimiento del sistema, winget installs, deploy del
-> capture service y shortcut de arranque. Este documento añade los pasos
+> capture service y arranque automático. Este documento añade los pasos
 > manuales (BIOS, Drive, OBSBOT, tarea programada, vinculación) y la guía
 > de entrega al cliente.
 
@@ -18,17 +18,21 @@ disparar capturas de "foto fabricada" sin tocar el mini-PC.
 
 En tu ordenador de oficina, copia al pendrive:
 
-```
+```text
 pendrive/
 ├── capture_service/                ← la carpeta tal cual del repo
 │   ├── capture_service.py
 │   ├── COMANDOS.txt                ← cheatsheet copy-paste para el mini-PC
+│   ├── PUESTA_EN_MARCHA_FABRICA.txt← guia corta para puesta a punto en cliente
+│   ├── branding-wallpaper.jpg      ← fondo escritorio Moden
+│   ├── branding-user.jpg           ← imagen usuario Windows
 │   ├── config.ini.example
 │   ├── install-minipc.ps1
 │   ├── requirements.txt
 │   ├── start-player.bat
 │   ├── README.md
-│   └── SETUP_MINIPC.md
+│   ├── SETUP_MINIPC.md
+│   └── 04_minipc_setup.pdf         ← runbook en PDF (regenerar antes)
 └── obsbot-webcam-setup.exe         ← descárgalo aparte, no está en winget
 ```
 
@@ -38,52 +42,96 @@ La carpeta `capture_service/` se obtiene del repositorio:
 **OBSBOT WebCam** se descarga desde:
 <https://www.obsbot.com/download/tiny-2-lite>
 
+El instalador deja también el branding visual del mini-PC:
+
+- `branding-wallpaper.jpg` — copia de `docs/logo/fondo pantalla moden 1920x1080.jpg`.
+- `branding-user.jpg` — copia de `docs/logo/Favicon GRANDE.jpg`.
+
+Si existen en `capture_service/`, `install-minipc.ps1` los aplica
+automáticamente. Si faltan, el instalador sigue sin fallar y salta ese
+paso.
+
+**Regenerar el PDF del runbook** justo antes de copiar al pendrive (el
+PDF no está en git, es un derivado del markdown):
+
+```powershell
+# Una sola vez por máquina, instalar herramientas:
+winget install --id JohnMacFarlane.Pandoc   --source winget
+winget install --id wkhtmltopdf.wkhtmltox   --source winget
+
+# En cada preparación de pendrive:
+.\scripts\build-pendrive.ps1
+```
+
 Llévate también un **teclado USB** (harás falta al menos una vez para salir
 del Chrome kiosk con `Alt + F4`) y anota las credenciales corporativas de la
 cuenta Google Drive de Moden.
 
 Tabla de valores por mini-PC. El nombre del equipo sigue el formato
-`(<CLI>-G<N>-<ROL>)` y el `mesa_id` es el mismo en minúsculas con
-guiones bajos (`<cli>_g<N>_<rol>`):
+`<CLI>-G<N>-MESA<M>` y el `mesa_id` es el mismo en minúsculas con
+guiones bajos (`<cli>_g<N>_mesa<M>`):
 
 - `<CLI>` — código corto del cliente (3-4 letras). Ferralia = `FER`.
 - `G<N>` — número de grupo operativo dentro de ese cliente
-  (`G1`, `G2`, …). Cada grupo agrupa 3 mini-PCs.
-- `<ROL>` — papel físico de la mesa: `INF1`, `INF2` o `SUP`.
+  (`G1`, `G2`, …). Un grupo agrupa N mini-PCs.
+- `MESA<M>` — número de mesa **dentro del grupo**, asignado de forma
+  serial (1, 2, 3, …). Las mesas ya no son dedicadas a un rol fijo:
+  cualquier mesa puede producir módulos inferiores o superiores.
 
 El `mesa_id` se usa como subcarpeta en Google Drive (y se muestra en el
-dashboard), así que la misma separación entre clientes / grupos impide
-que las capturas colisionen.
+dashboard), así que la misma separación entre clientes / grupos / mesas
+impide que las capturas colisionen.
 
-| Cliente    | Grupo | Mesa física | `mesa_id`     | Nombre del equipo |
-|------------|-------|-------------|---------------|-------------------|
-| Ferralia   | G1    | Inferior 1  | `fer_g1_inf1` | `FER-G1-INF1`     |
-| Ferralia   | G1    | Inferior 2  | `fer_g1_inf2` | `FER-G1-INF2`     |
-| Ferralia   | G1    | Superiores  | `fer_g1_sup`  | `FER-G1-SUP`      |
-| Ferralia   | G2    | Inferior 1  | `fer_g2_inf1` | `FER-G2-INF1`     |
-| Ferralia   | G2    | …           | …             | …                 |
+| Cliente    | Grupo | Mesa | `mesa_id`      | Nombre del equipo |
+|------------|-------|------|----------------|-------------------|
+| Ferralia   | G1    | 1    | `fer_g1_mesa1` | `FER-G1-MESA1`    |
+| Ferralia   | G1    | 2    | `fer_g1_mesa2` | `FER-G1-MESA2`    |
+| Ferralia   | G1    | 3    | `fer_g1_mesa3` | `FER-G1-MESA3`    |
+| Ferralia   | G2    | 1    | `fer_g2_mesa1` | `FER-G2-MESA1`    |
+| Ferralia   | G2    | …    | …              | …                 |
 
 El nombre del equipo cabe holgadamente en los 15 caracteres que
-permite NetBIOS, así que caben clientes con código de hasta 4 letras
-y hasta 9 grupos sin rozar el límite.
+permite NetBIOS — soporta clientes con código de hasta 4 letras y
+grupos / mesas de dos dígitos (`FER-G99-MESA99` = 14 chars).
 
 ---
 
 ## 0.1. Imprime etiquetas para identificar los equipos
 
-## 0.5. Si el mini-PC ya viene con Windows preinstalado (Mele fanless y similares)
+## 0.5. Si el mini-PC ya viene con un usuario preinstalado
 
-Los Mele fanless (y otros mini-PCs de marca blanca) llegan con Windows 11
-Pro ya configurado y una cuenta local administradora llamada `Usuario`
-(sin contraseña). No hay OOBE que completar; en su lugar, hay que crear
-`moden` y borrar `Usuario` antes de seguir.
+Algunos mini-PCs llegan con Windows 11 Pro ya configurado y una cuenta
+local administradora **distinta de `moden`** (sin contraseña). Casos
+típicos:
 
-> No intentes renombrar `Usuario` → `moden` desde `netplwiz` o
-> `lusrmgr.msc`. Eso cambia solo el display name y deja la carpeta de
-> perfil en `C:\Users\Usuario`, lo que rompe el `-User 'moden'` de la
-> tarea programada del paso 9 y el `-ModenPassword` del instalador.
+- **Mele fanless** (Quieter 4C, etc.): usuario `Usuario`, sin contraseña.
+- **Dell consumer / refurbished**: usuario `Dell` o el nombre del
+  empleado anterior si fue reacondicionado.
+- **Mini-PCs de marca blanca**: variable, suele ser `Admin` o `Usuario`.
 
-1. Inicia sesión como `Usuario` y abre **PowerShell como Administrador**.
+Si en tu mini-PC ya hay un usuario al arrancar (no se ve la pantalla de
+OOBE), aplica este paso. Si te pide configurar Windows desde cero
+(OOBE) **salta al paso 1**.
+
+En lo que sigue, sustituye `<usuario_factory>` por el nombre real de la
+cuenta que trae el equipo (`Usuario`, `Dell`, etc.).
+
+> No intentes renombrar `<usuario_factory>` → `moden` desde `netplwiz`
+> o `lusrmgr.msc`. Eso cambia solo el display name y deja la carpeta de
+> perfil en `C:\Users\<usuario_factory>`, lo que rompe el `-User 'moden'`
+> de la tarea programada del paso 9 y el `-ModenPassword` del instalador.
+
+Si Windows insiste en continuar con una cuenta Microsoft durante el alta
+inicial, abre una consola con `Shift + F10` y ejecuta:
+
+```powershell
+start ms-cxh:localonly
+```
+
+Esto fuerza el flujo de cuenta local.
+
+1. Inicia sesión como `<usuario_factory>` y abre **PowerShell como
+   Administrador**.
 2. Crea la cuenta `moden` como administrador:
 
    ```powershell
@@ -94,15 +142,17 @@ Pro ya configurado y una cuenta local administradora llamada `Usuario`
    # Si el Windows está en inglés: -Group 'Administrators'
    ```
 
-3. **Cierra sesión** de `Usuario` → **inicia sesión como `moden`**. La
-   primera vez Windows tarda 30-60 s creando `C:\Users\moden`.
+3. **Cierra sesión** de `<usuario_factory>` → **inicia sesión como
+   `moden`**. La primera vez Windows tarda 30-60 s creando
+   `C:\Users\moden`.
 4. Verifica que `moden` quedó en el grupo de administradores:
 
    ```powershell
    net localgroup Administradores    # o Administrators si está en inglés
    ```
 
-5. Desde la sesión de `moden`, borra la cuenta antigua y su perfil:
+5. Desde la sesión de `moden`, borra la cuenta antigua y su perfil
+   (sustituye `Usuario` por el nombre real del factory user):
 
    ```powershell
    Remove-LocalUser -Name 'Usuario'
@@ -128,33 +178,50 @@ continúa directamente en **1.3** (nombre del equipo).
    soporte remoto sea sencillo). Contraseña simple de producción — anótala.
 3. Conecta a la wifi de la oficina
 4. Nombre del equipo: Ajustes → Sistema → Acerca de → **Cambiar nombre**:
-   `FER-G1-INF1` (o el que toque según tabla arriba).
+   `FER-G1-MESA1` (o el que toque según tabla arriba).
 5. Reinicia y deja que termine la primera ronda de Windows Update.
 
 ---
 
 ## 2. BIOS: arranque automático al volver la luz
 
-Mode
+Objetivo: que cuando vuelva la corriente en la fábrica, el mini-PC se
+encienda solo sin que nadie tenga que pulsar el botón.
 
-1. Reinicia y entra al BIOS (normalmente `F7` o `Del` al arrancar presionando continuamente).
-2. Localiza la opción de encendido tras corte de corriente — según
-   modelo se llama `Restore on AC Power Loss`, `State After Power
-   Failure`, `Auto Power On` o similar.
+1. Reinicia y entra al BIOS. La tecla depende del fabricante:
 
-   **En los Mele Quieter 4C** (BIOS AMI Aptio v2.22.x) está oculta en
-   un menú OEM, no en los sitios habituales:
+   | Fabricante              | Tecla para entrar al BIOS |
+   |-------------------------|---------------------------|
+   | Dell (OptiPlex, etc.)   | **`F2`** al arrancar      |
+   | Mele Quieter            | **`F7`** o **`Del`**      |
+   | Genéricos AMI / Award   | **`Del`** o **`F2`**      |
+
+   Pulsa la tecla repetidamente desde que enciendes hasta que entres.
+
+2. Localiza la opción de encendido tras corte de corriente — el nombre
+   y la ruta varían por fabricante:
+
+   **Dell** (OptiPlex Micro, Inspiron, Latitude, etc.):
+
+   > `Power Management` → **`AC Recovery`** (también: `AC Power
+   > Recovery`)
+   > Opciones: `Power On` / `Last State` / `Power Off`.
+
+   **Mele Quieter 4C** (BIOS AMI Aptio v2.22.x):
 
    > `Advanced` → `Customer Exclusive Functions` → **`Auto Power On`**
 
-   El resto de ubicaciones habituales en AMI Aptio para otros modelos:
-   `Chipset → PCH-IO Configuration → State After G3`,
-   `Chipset → PCH-IO Configuration → State After G3`,
-   `Advanced → APM Configuration → Restore AC Power Loss`,
-   `Advanced → Power & Performance → AC Loss`.
+   **Otros AMI / Award genéricos**:
 
-3. Cámbialo a **Enabled** / **Power On** (no `Last State`).
-4. `F4` → Save & Exit → Yes.
+   > `Chipset → PCH-IO Configuration → State After G3`, o
+   > `Advanced → APM Configuration → Restore AC Power Loss`, o
+   > `Advanced → Power & Performance → AC Loss`.
+
+3. Cámbialo a **`Power On`** / **Enabled** (no `Last State`, no
+   `Off` — `Last State` no enciende si el equipo estaba apagado en el
+   momento del corte).
+4. Guarda y sal: en Dell `F10` → confirmar; en Mele/AMI `F4` → Save
+   & Exit → Yes.
 
 **Prueba**: desenchufa el cable 5 segundos y vuelve a enchufarlo sin
 tocar el botón. Debe arrancar solo.
@@ -179,11 +246,11 @@ En el mini-PC, con el pendrive conectado:
    Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
    ```
 
-4. Lanza el instalador (reemplaza `fer_g1_inf1` por el `mesa_id` que
+4. Lanza el instalador (reemplaza `fer_g1_mesa1` por el `mesa_id` que
    toque según la tabla del paso 0):
 
    ```powershell
-   .\install-minipc.ps1 -MesaId fer_g1_inf1 -ModenPassword "Moden1234"
+   .\install-minipc.ps1 -MesaId fer_g1_mesa1 -ModenPassword "Moden1234"
    ```
 
 - **Hardening**: apaga widgets, Copilot, news, Windows Update sin reinicio
@@ -198,7 +265,8 @@ En el mini-PC, con el pendrive conectado:
 - **Capture service**: `robocopy` a `C:\moden\capture_service\`, crea la
   venv, `pip install -r requirements.txt`, genera `config.ini` con el
   `mesa_id` correcto (sin BOM — importante, el BOM rompía configparser).
-- **Acceso directo** en `shell:startup` apuntando a `start-player.bat`.
+- **Auto-arranque**: registra la tarea `MODEN Player`, que lanza
+  `start-player.bat` al iniciar sesión.
 
 Al terminar imprime `Listo.` en verde y guarda un log en
 `%TEMP%\moden-minipc-setup-*.log`.
@@ -283,8 +351,8 @@ Drive, paso 5) para activar el acceso remoto.
 
 3. Sección **"Configurar el acceso remoto"** → click en **"Activar"**
    / *Turn on*.
-4. **Nombre del dispositivo**: pon el computer name (`FER-G1-INF1`,
-   `FER-G1-INF2`, `FER-G1-SUP`, …) para que en la lista de Moden
+4. **Nombre del dispositivo**: pon el computer name (`FER-G1-MESA1`,
+   `FER-G1-MESA2`, `FER-G1-MESA3`, …) para que en la lista de Moden
    aparezca cada mini-PC con su nombre real.
 5. **PIN de 6 dígitos**: misma PIN para los tres mini-PCs de cada
    ferralla (simplifica soporte), distinta entre ferrallas distintas.
@@ -353,6 +421,8 @@ Ajustes → Privacidad y seguridad → **Cámara**:
 ## 8. Limpiar el arranque de Windows
 
 ### Quitar el delay intencional de Startup (Win 11)
+
+El instalador ya lo aplica, pero conviene saber comprobarlo o rehacerlo:
 
 Por defecto Windows espera ~10-15 s antes de lanzar lo de `shell:startup`
 para que el escritorio "se sienta rápido". En un kiosko eso es un lastre:
@@ -423,7 +493,7 @@ Remove-Item (Join-Path ([Environment]::GetFolderPath('Startup')) 'Moden Player.l
    caracteres hexadecimales.
 2. Desde tu portátil, entra al dashboard de Moden.
 3. En el grupo operativo de la ferralla → botón **Gestionar**.
-4. Busca la mesa correspondiente (INF1 / INF2 / SUP) → pega el código.
+4. Busca la mesa correspondiente (mesa 1 / mesa 2 / …) → pega el código.
 5. El icono del monitor en la cabecera de la mesa pasa a verde — mesa
    vinculada.
 
@@ -431,6 +501,27 @@ Si el código caduca mientras lo tecleas (TTL 2 min), el visor genera uno
 nuevo automáticamente.
 
 ---
+
+## Actualizar nombre de miniPC
+# 1. Parar el servicio
+Get-Process -Name python, pythonw -ErrorAction SilentlyContinue | Stop-Process -Force
+
+# 2. Renombrar el equipo
+Rename-Computer -NewName 'FER-G1-MESA4' -Force
+
+# 3. Corregir mesa_id en config.ini
+$cfg = 'C:\moden\capture_service\config.ini'
+$raw = (Get-Content $cfg -Raw) -replace '(?m)^\s*mesa_id\s*=\s*\S+\s*$', 'mesa_id = fer_g1_mesa4'
+[IO.File]::WriteAllText($cfg, $raw, [Text.UTF8Encoding]::new($false))
+Select-String -Path $cfg -Pattern 'mesa_id'   # -> fer_g1_mesa4
+
+# 4. Borrar la carpeta de Drive vacia (si existe)
+Remove-Item 'G:\Mi unidad\capturas_moden\fer_g1_mesa1' -Recurse -Force -ErrorAction SilentlyContinue
+
+# 5. Reiniciar
+Restart-Computer
+
+
 
 ## 11. Pruebas finales antes de entrega
 
@@ -449,8 +540,8 @@ start test.jpg
 # captures_today incrementando cada segundo si estás dentro del horario.
 (Invoke-WebRequest http://127.0.0.1:5555/stats -UseBasicParsing).Content
 
-# Drive montado y escribiendo (reemplaza fer_g1_inf1 por el mesa_id que toque)
-Test-Path 'G:\Mi unidad\capturas_moden\fer_g1_inf1'
+# Drive montado y escribiendo (reemplaza fer_g1_mesa1 por el mesa_id que toque)
+Test-Path 'G:\Mi unidad\capturas_moden\fer_g1_mesa1'
 ```
 
 Y en el dashboard (desde tu laptop):
@@ -464,7 +555,7 @@ Y en el dashboard (desde tu laptop):
 
 Antes de empacar cada mini-PC:
 
-- [ ] Nombre del equipo = `<CLI>-G<N>-<ROL>` (según tabla, p.ej. `FER-G1-INF1`).
+- [ ] Nombre del equipo = `<CLI>-G<N>-MESA<M>` (según tabla, p.ej. `FER-G1-MESA1`).
 - [ ] Cuenta `moden` (con o sin contraseña documentada).
 - [ ] Chrome Remote Desktop: dispositivo emparejado con la cuenta Google
       de la ferralla, PIN configurada y probada desde el portátil
@@ -481,6 +572,10 @@ En el cliente, al conectarlo a su red:
 
 - [ ] `Alt + F4` para salir del kiosk (necesitas teclado externo una vez).
 - [ ] Conectar la Wi-Fi del cliente desde la bandeja.
+- [ ] Si hay que reencuadrar la camara, seguir
+      `C:\moden\capture_service\PUESTA_EN_MARCHA_FABRICA.txt`
+      (o la copia del pendrive) para cerrar player/servicio, abrir OBSBOT
+      y volver a lanzar el player.
 - [ ] Reiniciar — debe arrancar solo en el entorno del cliente.
 - [ ] Confirmar desde el dashboard (vía Chrome Remote Desktop si no
       tienes VPN) que la mesa sigue vinculada y las fotos suben a Drive.
@@ -498,9 +593,18 @@ la PIN. Casos habituales:
 - **Cambiar mesa_id / horarios / resolución**: edita
   `C:\moden\capture_service\config.ini` → mata el proceso Python y reinicia
   sesión o el equipo.
-- **Actualizar el capture service**: `robocopy` la carpeta nueva del repo
-  sobre `C:\moden\capture_service` excluyendo `venv` y `config.ini`, y
-  reinicia el proceso.
+- **Reencuadrar la OBSBOT**: mata `python/pythonw/chrome`, abre OBSBOT,
+  ajusta la cámara y luego vuelve a lanzar
+  `C:\moden\capture_service\start-player.bat` o reinicia el equipo.
+- **Actualizar el capture service**: para mini-PCs ya configurados, copia la
+  carpeta nueva preservando `venv`, `config.ini` y `device_token.txt`, y
+  reinicia el player:
+  ```powershell
+  Get-Process -Name python, pythonw, chrome -ErrorAction SilentlyContinue | Stop-Process -Force
+  robocopy D:\capture_service C:\moden\capture_service /MIR /XD venv __pycache__ /XF config.ini device_token.txt
+  if ($LASTEXITCODE -ge 8) { throw "robocopy fallo con codigo $LASTEXITCODE" }
+  Start-Process 'C:\moden\capture_service\start-player.bat'
+  ```
 - **Revisar por qué no sube una foto**:
   `(Invoke-WebRequest http://127.0.0.1:5555/stats -UseBasicParsing).Content`
   → mira `last_error`, `in_active_window`, `skipped_out_of_schedule`.

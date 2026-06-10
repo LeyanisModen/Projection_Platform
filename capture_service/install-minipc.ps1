@@ -12,23 +12,24 @@
     - Desplegar el capture_service en C:\moden\capture_service (robocopy,
       venv, pip install -r requirements.txt, config.ini con mesa_id).
     - Registrar la tarea programada 'MODEN Player' (at logon) que lanza
-      start-player.bat. También limpia un posible shortcut viejo en
-      shell:startup si una versión anterior lo dejó.
+      start-player.bat. Tambien limpia un posible shortcut viejo en
+      shell:startup si una version anterior lo dejo.
     - (Opcional) Auto-login para la cuenta 'moden'.
 
   Ejecuta este script desde la propia carpeta capture_service/ del repo
-  (misma carpeta que start-player.bat). Abre PowerShell COMO ADMINISTRADOR
-  y lanza:
+  (misma carpeta que start-player.bat). Abre PowerShell COMO
+  ADMINISTRADOR y lanza:
 
       Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-      .\install-minipc.ps1 -MesaId fer_g1_inf1
+      .\install-minipc.ps1 -MesaId fer_g1_mesa1
 
 .PARAMETER MesaId
-  Identificador de la mesa con formato <cliente>_g<N>_<rol>, donde
+  Identificador de la mesa con formato <cliente>_g<N>_mesa<M>, donde
   <cliente> es un código corto del cliente (fer = Ferralia, …), <N> es
-  el número de grupo operativo dentro de ese cliente y <rol> es inf1,
-  inf2 o sup. Ejemplos: fer_g1_inf1, fer_g1_sup, fer_g2_inf1. Va 1-a-1
-  con el nombre del equipo (FER-G1-INF1, FER-G1-SUP, FER-G2-INF1).
+  el número de grupo operativo dentro de ese cliente y <M> el número
+  de mesa dentro del grupo (1, 2, 3, …). Ejemplos: fer_g1_mesa1,
+  fer_g1_mesa2, fer_g2_mesa1. Va 1-a-1 con el nombre del equipo
+  (FER-G1-MESA1, FER-G1-MESA2, FER-G2-MESA1).
 
 .PARAMETER ModenPassword
   Contraseña de la cuenta local 'moden' para auto-login sin intervención.
@@ -42,24 +43,27 @@
   Omite los ajustes de registro / powercfg.
 
 .PARAMETER SkipCaptureService
-  Omite el despliegue del capture_service y el shortcut de inicio
+  Omite el despliegue del capture_service y la tarea de inicio
   (útil si solo quieres re-endurecer Windows).
+
+.PARAMETER SkipBranding
+  Omite aplicar el fondo de escritorio y la imagen de usuario.
 #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory=$true)]
-    # Formato <cliente>_g<N>_<rol>: código cliente (minúsculas + dígitos)
-    # + _g + número de grupo + _ + rol fijo (inf1, inf2, sup). Admite
-    # también formas sin _gN si algún cliente solo tiene un grupo.
-    # Ejemplos válidos: fer_g1_inf1, fer_g2_sup, xyz1_g10_inf2.
-    [ValidatePattern('^[a-z][a-z0-9_]*_(inf[12]|sup)$')]
+    # Formato actual: <cliente>_g<N>_mesa<M> — código cliente (minúsculas
+    # + dígitos) + _g + número de grupo + _mesa + número de mesa.
+    # Ejemplos válidos: fer_g1_mesa1, fer_g2_mesa3.
+    [ValidatePattern('^[a-z][a-z0-9_]*_mesa\d+$')]
     [string]$MesaId,
 
     [string]$ModenPassword = '',
 
     [switch]$SkipApps,
     [switch]$SkipHardening,
-    [switch]$SkipCaptureService
+    [switch]$SkipCaptureService,
+    [switch]$SkipBranding
 )
 
 $ErrorActionPreference = 'Stop'
@@ -130,9 +134,115 @@ function Get-RealPython {
     return $null
 }
 
+function Resolve-OptionalAsset([string[]]$Candidates) {
+    foreach ($candidate in $Candidates) {
+        if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+        if (Test-Path $candidate) {
+            return (Resolve-Path $candidate).Path
+        }
+    }
+    return $null
+}
+
+function Ensure-SystemParametersType {
+    if (-not ('Moden.NativeMethods' -as [type])) {
+        Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+
+namespace Moden {
+    public static class NativeMethods {
+        [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+        public static extern bool SystemParametersInfo(
+            int uiAction, int uiParam, string pvParam, int fWinIni
+        );
+    }
+}
+"@
+    }
+}
+
+function Set-DesktopWallpaper([string]$SourcePath) {
+    $brandingDir = 'C:\moden\branding'
+    if (-not (Test-Path $brandingDir)) {
+        New-Item -Path $brandingDir -ItemType Directory -Force | Out-Null
+    }
+    $destPath = Join-Path $brandingDir 'wallpaper.jpg'
+    Copy-Item $SourcePath $destPath -Force
+
+    Set-RegValue 'HKCU:\Control Panel\Desktop' 'Wallpaper' $destPath -Type String
+    Set-RegValue 'HKCU:\Control Panel\Desktop' 'WallpaperStyle' '10' -Type String
+    Set-RegValue 'HKCU:\Control Panel\Desktop' 'TileWallpaper' '0' -Type String
+
+    Ensure-SystemParametersType
+    $null = [Moden.NativeMethods]::SystemParametersInfo(20, 0, $destPath, 3)
+    Write-Host "  · fondo aplicado: $destPath"
+}
+
+function Resize-Image([System.Drawing.Image]$Image, [int]$Size, [string]$DestPath, [string]$FormatName) {
+    $bitmap = New-Object System.Drawing.Bitmap $Size, $Size
+    $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+    try {
+        $graphics.Clear([System.Drawing.Color]::Black)
+        $graphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+        $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
+        $graphics.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+        $graphics.DrawImage($Image, 0, 0, $Size, $Size)
+
+        $format = switch ($FormatName.ToLowerInvariant()) {
+            'bmp' { [System.Drawing.Imaging.ImageFormat]::Bmp }
+            'png' { [System.Drawing.Imaging.ImageFormat]::Png }
+            default { [System.Drawing.Imaging.ImageFormat]::Jpeg }
+        }
+        $bitmap.Save($DestPath, $format)
+    } finally {
+        $graphics.Dispose()
+        $bitmap.Dispose()
+    }
+}
+
+function Set-DefaultAccountPicture([string]$SourcePath) {
+    Add-Type -AssemblyName System.Drawing
+
+    $accountDir = Join-Path $env:ProgramData 'Microsoft\User Account Pictures'
+    if (-not (Test-Path $accountDir)) {
+        New-Item -Path $accountDir -ItemType Directory -Force | Out-Null
+    }
+
+    $image = [System.Drawing.Image]::FromFile($SourcePath)
+    try {
+        Resize-Image $image 448 (Join-Path $accountDir 'user.jpg') 'jpg'
+        Resize-Image $image 448 (Join-Path $accountDir 'user.png') 'png'
+        Resize-Image $image 448 (Join-Path $accountDir 'user.bmp') 'bmp'
+        Resize-Image $image 192 (Join-Path $accountDir 'user-192.png') 'png'
+        Resize-Image $image 48  (Join-Path $accountDir 'user-48.png') 'png'
+        Resize-Image $image 40  (Join-Path $accountDir 'user-40.png') 'png'
+        Resize-Image $image 32  (Join-Path $accountDir 'user-32.png') 'png'
+        Resize-Image $image 448 (Join-Path $accountDir 'guest.jpg') 'jpg'
+        Resize-Image $image 448 (Join-Path $accountDir 'guest.bmp') 'bmp'
+    } finally {
+        $image.Dispose()
+    }
+
+    Set-RegValue 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer' `
+        'UseDefaultTile' 1
+    Write-Host "  · imagen de usuario por defecto aplicada en $accountDir"
+}
+
 Require-Admin
 Write-Host "Mini-PC setup: mesa = $MesaId" -ForegroundColor Yellow
 Write-Host "Log: $logPath"
+
+$wallpaperAsset = Resolve-OptionalAsset @(
+    (Join-Path $PSScriptRoot 'branding-wallpaper.jpg'),
+    (Join-Path $PSScriptRoot 'branding-wallpaper.png'),
+    (Join-Path $PSScriptRoot '..\docs\logo\fondo pantalla moden 1920x1080.jpg')
+)
+$userTileAsset = Resolve-OptionalAsset @(
+    (Join-Path $PSScriptRoot 'branding-user.jpg'),
+    (Join-Path $PSScriptRoot 'branding-user.png'),
+    (Join-Path $PSScriptRoot '..\docs\logo\Favicon GRANDE.jpg')
+)
 
 # ------------------------------------------------------------------ 3. Hardening
 if (-not $SkipHardening) {
@@ -141,6 +251,15 @@ if (-not $SkipHardening) {
                      'standby-timeout-dc','monitor-timeout-dc','disk-timeout-dc')) {
         & powercfg /change $a 0 | Out-Null
     }
+
+    Step "Sin salvapantallas ni bloqueo por inactividad"
+    # El kiosko vive en alto (cámaras a 4+ m), no queremos que nadie tenga
+    # que subir a desbloquear si Windows decide bloquear sesión por
+    # inactividad. ScreenSaveActive=0 + ScreenSaverIsSecure=0 elimina
+    # cualquier ruta automática hacia la pantalla de bloqueo.
+    Set-RegValue "HKCU:\Control Panel\Desktop" "ScreenSaveActive"   "0" -Type String
+    Set-RegValue "HKCU:\Control Panel\Desktop" "ScreenSaverIsSecure" "0" -Type String
+    Set-RegValue "HKCU:\Control Panel\Desktop" "ScreenSaveTimeOut"  "0" -Type String
 
     Step "Quitar Widgets, Copilot, Newsfeed, Chat"
     Set-RegValue "HKCU:\Software\Policies\Microsoft\Dsh" "AllowNewsAndInterests" 0
@@ -168,6 +287,28 @@ if (-not $SkipHardening) {
     Set-RegValue $edge "HideFirstRunExperience" 1
     Set-RegValue $edge "StartupBoostEnabled" 0
     Set-RegValue $edge "BackgroundModeEnabled" 0
+
+    Step "Quitar delay artificial del inicio de sesion"
+    # Aunque el player principal ya no depende de shell:startup,
+    # seguimos quitando StartupDelay para que Drive y cualquier
+    # arranque de rescate reaccionen antes tras reinicio.
+    Set-RegValue "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Serialize" `
+        "StartupDelayInMSec" 0
+}
+
+if (-not $SkipBranding) {
+    Step "Branding visual"
+    if ($wallpaperAsset) {
+        Set-DesktopWallpaper $wallpaperAsset
+    } else {
+        Write-Host "  · sin wallpaper branding-wallpaper.jpg/png; no cambio el fondo" -ForegroundColor Yellow
+    }
+
+    if ($userTileAsset) {
+        Set-DefaultAccountPicture $userTileAsset
+    } else {
+        Write-Host "  · sin branding-user.jpg/png; no cambio la imagen de usuario" -ForegroundColor Yellow
+    }
 }
 
 # ------------------------------------------------------------------ 4. Apps
@@ -223,10 +364,12 @@ if (-not $SkipCaptureService) {
         New-Item -Path $root -ItemType Directory -Force | Out-Null
     }
 
-    # /MIR mantiene el árbol espejo pero excluye venv (se regenera) y
-    # config.ini (lo generamos con el mesa_id correcto más abajo).
+    # /MIR mantiene el arbol espejo pero excluye:
+    # - venv: se regenera/valida aparte.
+    # - config.ini: contiene ajustes locales de cada mini-PC.
+    # - device_token.txt: token emparejado del player; no debe perderse en actualizaciones.
     Write-Host "  · robocopy"
-    & robocopy $source $dest /MIR /XD venv __pycache__ /XF config.ini /NFL /NDL /NJH /NJS /NP | Out-Null
+    & robocopy $source $dest /MIR /XD venv __pycache__ /XF config.ini device_token.txt /NFL /NDL /NJH /NJS /NP | Out-Null
     if ($LASTEXITCODE -ge 8) {
         throw "robocopy falló con código $LASTEXITCODE"
     }
@@ -301,9 +444,9 @@ relanza el instalador (el PATH solo se refresca al crear el proceso).
     # Tarea programada "at logon" en lugar de shortcut en shell:startup.
     # shell:startup sufre el StartupDelayInMSec (~10-15 s) que Windows 11
     # aplica a todo lo que vive en esa carpeta; la tarea programada arranca
-    # sin ese retardo, que en un kiosko de producción se nota.
+    # sin ese retardo, que en un kiosko de produccion se nota.
     $batPath = Join-Path $dest 'start-player.bat'
-    $action   = New-ScheduledTaskAction  -Execute $batPath
+    $action   = New-ScheduledTaskAction -Execute $batPath
     $trigger  = New-ScheduledTaskTrigger -AtLogOn -User 'moden'
     $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries `
                   -DontStopIfGoingOnBatteries -StartWhenAvailable

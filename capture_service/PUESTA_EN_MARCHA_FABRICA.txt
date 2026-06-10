@@ -1,0 +1,178 @@
+===========================================================
+PUESTA EN MARCHA EN FABRICA -- GUIA CORTA Y COPY/PASTE
+===========================================================
+
+Archivo pensado para una persona NO tecnica que recibe el mini-PC ya
+configurado y solo tiene que:
+
+1. Cerrar el kiosko.
+2. Conectar el mini-PC a la Wi-Fi de la fabrica.
+3. Si hace falta, mover / reenfocar la camara OBSBOT.
+4. Dejar otra vez el player funcionando.
+
+Este archivo quedara tambien copiado dentro del mini-PC en:
+   C:\moden\capture_service\PUESTA_EN_MARCHA_FABRICA.txt
+
+
+===========================================================
+REGLA DE ORO
+===========================================================
+
+Si SOLO hay que conectar la Wi-Fi y NO tocar la camara:
+
+1. Conecta un teclado USB.
+2. Pulsa Alt + F4 para cerrar Chrome kiosko.
+3. Conecta la Wi-Fi del cliente desde la bandeja de Windows.
+4. Reinicia el equipo.
+
+Comando:
+
+Restart-Computer
+
+Tras reiniciar, el mini-PC debe volver solo al player.
+
+
+===========================================================
+CASO COMPLETO -- HAY QUE CONECTAR WI-FI Y MOVER LA CAMARA
+===========================================================
+
+PASO 1 -- Salir del kiosko
+-----------------------------------------
+1. Conecta un teclado USB.
+2. Pulsa Alt + F4.
+
+Si Chrome no se cierra al primer intento, pulsa Alt + F4 otra vez.
+
+
+PASO 2 -- Conectar la Wi-Fi del cliente
+-----------------------------------------
+1. Mira abajo a la derecha, en la barra de tareas.
+2. Haz click en el icono de red / Wi-Fi.
+3. Elige la red del cliente.
+4. Escribe la contrasena.
+5. Espera a que Windows diga "Conectado".
+
+Cuando la red este conectada, espera 30-60 s para que Google Drive y
+Chrome Remote Desktop tengan tiempo de arrancar por detras.
+
+
+PASO 3 -- Abrir PowerShell como administrador
+-----------------------------------------
+Forma rapida:
+
+1. Pulsa la tecla Windows.
+2. Escribe: powershell
+3. En "Windows PowerShell", click derecho.
+4. Pulsa: Ejecutar como administrador
+5. Si Windows pregunta, pulsa SI.
+
+
+PASO 4 -- Parar player y servicio local
+-----------------------------------------
+COPIA Y PEGA ESTE BLOQUE COMPLETO en la PowerShell admin:
+
+Get-Process -Name python, pythonw, chrome -ErrorAction SilentlyContinue | Stop-Process -Force
+
+Que hace esto:
+- Cierra Chrome kiosko.
+- Libera la camara para que OBSBOT pueda usarla.
+
+
+PASO 5 -- Abrir OBSBOT y mover la camara
+-----------------------------------------
+1. Pulsa la tecla Windows.
+2. Escribe: OBSBOT
+3. Abre "OBSBOT WebCam" u "OBSBOT Center".
+4. Mueve la camara hasta que apunte bien a la mesa.
+5. Si ves tracking / seguimiento, dejalo desactivado.
+6. Si la app permite guardar preset, guardalo.
+
+MUY IMPORTANTE AL TERMINAR:
+No dejes OBSBOT abierto.
+
+Cierra OBSBOT COMPLETAMENTE:
+1. Mira abajo a la derecha, junto al reloj.
+2. Busca el icono de OBSBOT.
+3. Click derecho.
+4. Pulsa Quit / Salir.
+
+
+PASO 6 -- Volver a arrancar el player
+-----------------------------------------
+COPIA Y PEGA ESTE BLOQUE COMPLETO en la PowerShell admin:
+
+Start-Process 'C:\moden\capture_service\start-player.bat'
+
+Que debe pasar:
+- Se vuelve a levantar el servicio local de camara.
+- Se vuelve a abrir Chrome en kiosko.
+
+Si no aparece al instante, espera unos segundos.
+
+
+PASO 7 -- Comprobacion rapida
+-----------------------------------------
+Si quieres comprobar que la parte local ha arrancado bien, copia y pega:
+
+curl.exe http://127.0.0.1:5555/health
+
+Debe responder algo parecido a:
+
+{"status":"ok"}
+
+Si ademas quieres ver si la carpeta de Drive existe:
+
+Test-Path 'G:\Mi unidad\capturas_moden'
+
+Debe devolver:
+
+True
+
+
+===========================================================
+COMANDOS DE RESCATE
+===========================================================
+
+RESCATE A -- Relanzar solo el player
+-----------------------------------------
+Start-Process 'C:\moden\capture_service\start-player.bat'
+
+
+RESCATE B -- Parar TODO y volver a abrir OBSBOT
+-----------------------------------------
+Get-Process -Name python, pythonw, chrome, *obsbot* -ErrorAction SilentlyContinue | Stop-Process -Force
+
+
+RESCATE C -- Reinicio completo
+-----------------------------------------
+Restart-Computer
+
+
+===========================================================
+SI ALGO SIGUE FALLANDO
+===========================================================
+
+1. Comprueba que OBSBOT esta COMPLETAMENTE cerrada.
+2. Reinicia el mini-PC:
+
+Restart-Computer
+
+3. Espera a que vuelva al kiosko.
+4. Si sigue fallando, llama a Moden y di exactamente:
+   - si la Wi-Fi conecta o no
+   - si OBSBOT se abre o no
+   - si sale Chrome en pantalla o no
+   - que responde este comando:
+
+curl.exe http://127.0.0.1:5555/health
+
+
+===========================================================
+ANTES DE IRTE
+===========================================================
+
+Asegurate de que Chrome kiosko haya vuelto a abrirse.
+
+Si no se ha abierto, ejecuta:
+
+Start-Process 'C:\moden\capture_service\start-player.bat'

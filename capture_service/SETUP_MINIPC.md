@@ -14,23 +14,33 @@ El detalle del servicio de captura está en el [`README.md`](README.md);
 este documento cubre **todo lo demás** (Windows, auto-arranque, apps,
 ajuste de cámara, entrega al cliente).
 
+Para la visita a fábrica por parte de alguien no técnico, usa el
+archivo [`PUESTA_EN_MARCHA_FABRICA.txt`](PUESTA_EN_MARCHA_FABRICA.txt):
+está pensado para copy/paste y deja resuelto el caso típico de
+cerrar kiosko, conectar Wi-Fi, mover OBSBOT y volver a arrancar.
+
+El instalador también aplica el branding visual si encuentra estos
+archivos en `capture_service/`: `branding-wallpaper.jpg` como fondo de
+escritorio y `branding-user.jpg` como imagen de usuario de Windows.
+
 ---
 
 ## 0. Material y valores por mesa
 
 Cada mini-PC es idéntico salvo por el `mesa_id` y la asignación física
-a una mesa. El nombre del equipo es `<CLI>-G<N>-<ROL>` (cliente +
-número de grupo + rol); el `mesa_id` es el mismo en minúscula con
-guiones bajos. Esa pareja se usa como carpeta de Drive y evita
+a una mesa. El nombre del equipo es `<CLI>-G<N>-MESA<M>` (cliente +
+número de grupo + número de mesa, asignado serialmente — ya no hay rol
+fijo de inferior / superior); el `mesa_id` es el mismo en minúscula
+con guiones bajos. Esa pareja se usa como carpeta de Drive y evita
 colisiones entre clientes / grupos distintos.
 
-| Cliente    | Grupo | Mesa física | `mesa_id`     | Nombre del equipo |
-|------------|-------|-------------|---------------|-------------------|
-| Ferralia   | G1    | Inferior 1  | `fer_g1_inf1` | `FER-G1-INF1`     |
-| Ferralia   | G1    | Inferior 2  | `fer_g1_inf2` | `FER-G1-INF2`     |
-| Ferralia   | G1    | Superiores  | `fer_g1_sup`  | `FER-G1-SUP`      |
-| Ferralia   | G2    | Inferior 1  | `fer_g2_inf1` | `FER-G2-INF1`     |
-| Ferralia   | G2    | …           | …             | …                 |
+| Cliente    | Grupo | Mesa | `mesa_id`      | Nombre del equipo |
+|------------|-------|------|----------------|-------------------|
+| Ferralia   | G1    | 1    | `fer_g1_mesa1` | `FER-G1-MESA1`    |
+| Ferralia   | G1    | 2    | `fer_g1_mesa2` | `FER-G1-MESA2`    |
+| Ferralia   | G1    | 3    | `fer_g1_mesa3` | `FER-G1-MESA3`    |
+| Ferralia   | G2    | 1    | `fer_g2_mesa1` | `FER-G2-MESA1`    |
+| Ferralia   | G2    | …    | …              | …                 |
 
 Anota también para cada mini-PC:
 - Nombre del dispositivo en Chrome Remote Desktop (= computer name) y
@@ -64,7 +74,7 @@ futura esté autocontenida.
    `moden` con contraseña estándar (la misma en los tres mini-PCs para
    simplificar el soporte remoto).
 2. **Nombre del equipo**: Ajustes → Sistema → Acerca de → *Cambiar nombre*.
-   Usa `MODEN-MESA-INF1` (o el que corresponda).
+   Usa `FER-G1-MESA1` (o el que corresponda según la tabla).
 3. **Actualizaciones**: deja que termine la primera tanda de Windows
    Update. Luego aplica las restricciones del paso 3.
 
@@ -79,11 +89,11 @@ del repo y lanza:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\install-minipc.ps1 -MesaId fer_g1_inf1 -ModenPassword "tu-clave"
+.\install-minipc.ps1 -MesaId fer_g1_mesa1 -ModenPassword "tu-clave"
 ```
 
-Cambia `fer_g1_inf1` por el `mesa_id` que toque según la tabla de
-arriba (formato `<cli>_g<N>_<rol>`). Omite `-ModenPassword` si prefieres
+Cambia `fer_g1_mesa1` por el `mesa_id` que toque según la tabla de
+arriba (formato `<cli>_g<N>_mesa<M>`). Omite `-ModenPassword` si prefieres
 configurar el auto-login después con `netplwiz`.
 
 El script es idempotente: lo puedes volver a ejecutar para
@@ -190,7 +200,7 @@ puede necesitar):
    - Abre Chrome (sesión iniciada con esa cuenta) →
      `https://remotedesktop.google.com/access` → *"Configurar el acceso
      remoto"* → **Activar**.
-   - Nombre del dispositivo = computer name (`FER-G1-INF1`, etc.).
+   - Nombre del dispositivo = computer name (`FER-G1-MESA1`, etc.).
    - PIN de 6 dígitos compartida entre los 3 mini-PCs de la ferralla.
    - Anota el nombre y la PIN.
 5. **OBSBOT Tiny 2 (WebCam)**:
@@ -222,7 +232,7 @@ notepad config.ini
 ```
 
 Ajusta en `config.ini`:
-- `mesa_id = fer_g1_inf1`  (formato `<cli>_g<N>_<rol>` — ver tabla arriba)
+- `mesa_id = fer_g1_mesa1`  (formato `<cli>_g<N>_mesa<M>` — ver tabla arriba)
 - `output_dir = G:\Mi unidad\capturas_moden`
 - Si el equipo tiene cámara integrada **además** de la OBSBOT revisa
   `camera_index` (0 = primera detectada — normalmente la OBSBOT si no
@@ -261,6 +271,10 @@ Reinicia: al iniciar sesión debe salir Chrome en kiosk apuntando a
 `https://moden.up.railway.app/`, con el capture service corriendo en
 segundo plano. `install-minipc.ps1` ya ejecuta este bloque; solo
 hazlo a mano si estás montando el servicio fuera del instalador.
+
+Si necesitas abrir OBSBOT para reencuadrar la cámara, mata `python`,
+`pythonw` y `chrome`, haz el ajuste y luego vuelve a lanzar
+`start-player.bat` a mano o reinicia el mini-PC.
 
 La **primera vez** que Chrome cargue el visor te pedirá permiso de
 cámara/micrófono → *Permitir siempre para este sitio*. Queda grabado

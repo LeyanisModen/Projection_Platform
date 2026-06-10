@@ -12,6 +12,12 @@ REM     por su cuenta — más rápido que un ping loop bloqueante.
 REM ---------------------------------------------------------------------------
 
 set ROOT=C:\moden\capture_service
+set "CHROME_EXE="
+
+if exist "%ProgramFiles%\Google\Chrome\Application\chrome.exe" set "CHROME_EXE=%ProgramFiles%\Google\Chrome\Application\chrome.exe"
+if not defined CHROME_EXE if exist "%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe" set "CHROME_EXE=%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"
+if not defined CHROME_EXE if exist "%LocalAppData%\Google\Chrome\Application\chrome.exe" set "CHROME_EXE=%LocalAppData%\Google\Chrome\Application\chrome.exe"
+if not defined CHROME_EXE set "CHROME_EXE=chrome.exe"
 
 REM 1. Capture service en background con pythonw.exe (sin consola).
 REM    Usando python.exe cada print del servicio hacía parpadear la
@@ -26,7 +32,7 @@ REM    --disable-background-networking → sin checks de sync al boot.
 REM    --disable-features=CalculateNativeWinOcclusion → el renderer no se
 REM       auto-pausa cuando Windows cree que la ventana está oculta
 REM       (esa era la razón de que al clicar "despertase").
-start "" chrome.exe ^
+start "" "%CHROME_EXE%" ^
   --kiosk ^
   --noerrdialogs ^
   --no-first-run ^

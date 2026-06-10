@@ -29,12 +29,12 @@ enabled = true
 output_dir = G:\Mi unidad\capturas_moden
 
 ; Unique id per mesa (subfolder inside output_dir). Format is
-; <cliente>_g<N>_<rol>, where <cliente> is a short client code
+; <cliente>_g<N>_mesa<M>, where <cliente> is a short client code
 ; (fer = Ferralia, …), <N> is the group number within that client
-; and <rol> is inf1, inf2 or sup. Mirrors the computer name 1-to-1
-; (FER-G1-INF1 ↔ fer_g1_inf1). Examples: fer_g1_inf1, fer_g1_sup,
-; fer_g2_inf2.
-mesa_id = fer_g1_inf1
+; and <M> is the mesa number inside that group. Mirrors
+; the computer name 1-to-1 (FER-G1-MESA1 ↔ fer_g1_mesa1). Examples:
+; fer_g1_mesa1, fer_g1_mesa2, fer_g2_mesa3.
+mesa_id = fer_g1_mesa1
 
 ; Seconds between captures. 3 s ~ 17k pictures per 14h shift (~8 GB/day
 ; at 350-500 KB/frame), which Drive syncs comfortably and still captures

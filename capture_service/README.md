@@ -20,6 +20,9 @@ to the Chrome kiosk. Single Python process:
    ```
 
 2. **Copy the `capture_service/` folder** to `C:\moden\capture_service\`.
+   The bundled `branding-wallpaper.jpg` and `branding-user.jpg` are
+   applied automatically by the installer as desktop wallpaper and
+   Windows account picture.
 
 3. **Virtualenv + deps**
    ```powershell
@@ -43,8 +46,8 @@ to the Chrome kiosk. Single Python process:
    notepad config.ini
    ```
    Edit **at least** these fields:
-   - `mesa_id = fer_g1_inf1` (format `<cli>_g<N>_<rol>`, e.g.
-     `fer_g1_inf2`, `fer_g2_sup`, …)
+   - `mesa_id = fer_g1_mesa1` (format `<cli>_g<N>_mesa<M>`, e.g.
+     `fer_g1_mesa2`, `fer_g2_mesa1`, …).
    - `output_dir = G:\Mi unidad\capturas_moden`
 
 6. **Auto-start** — register a scheduled task "at logon" for the
@@ -89,7 +92,7 @@ and that Google Drive Desktop shows them "uploaded".
 
 ```
 G:\Mi unidad\capturas_moden\
-└── fer_g1_inf1\
+└── fer_g1_mesa1\
     ├── 2026-04-20\
     │   ├── 05-00-00.jpg
     │   ├── 05-00-01.jpg
