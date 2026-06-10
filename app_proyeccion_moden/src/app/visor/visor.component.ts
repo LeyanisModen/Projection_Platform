@@ -42,6 +42,9 @@ interface StatusResponse {
   styleUrl: './visor.component.css'
 })
 export class VisorComponent implements OnInit, OnDestroy {
+  private static readonly CALIBRATION_GRID_INDEX = -1;
+  private static readonly CALIBRATION_GRID_WITH_X_INDEX = -2;
+  private static readonly COVERAGE_BACKGROUND_INDEX = -3;
   // State
   mode: 'LOADING' | 'PAIRING' | 'PROJECTION' | 'ERROR' = 'LOADING';
   pairingCode: string = '';
@@ -50,7 +53,7 @@ export class VisorComponent implements OnInit, OnDestroy {
   // AnyDesk whether the kiosk is actually running the latest bundle
   // or a cached one. F12 is blocked in kiosk; this is the simplest
   // version probe we can offer the operator on screen.
-  readonly buildTag = '2026-06-05_1218Z';
+  readonly buildTag = '2026-06-09_1346Z';
   // Surfaces what's happening inside recoverTokenOrPair on the
   // LOADING screen so we can diagnose from AnyDesk without DevTools.
   loadingMessage: string = 'Conectando…';
@@ -122,6 +125,10 @@ export class VisorComponent implements OnInit, OnDestroy {
   // 5-second lock between slides so the operator reads the caption before
   // moving on (many consecutive slides only change the title text).
   private static readonly SLIDE_LOCK_MS = 5000;
+  // After a local next/prev/calibration toggle we briefly treat the local
+  // index as authoritative so a poll already in flight can't paint the
+  // previous slide back on screen for a split second.
+  private static readonly INDEX_SYNC_GRACE_MS = 1500;
   private slideLockUntil = 0;
   // A single 401 is not enough evidence that the token is dead. On
   // cold boots or backend rollouts we may see a transient auth miss;
@@ -132,6 +139,7 @@ export class VisorComponent implements OnInit, OnDestroy {
   private authRecoveryTimer: any = null;
   private authRecovery401Count = 0;
   private authRecoverySource: string | null = null;
+  private pendingIndexSync: { index: number; expiresAt: number } | null = null;
 
   get isSupervisor(): boolean {
     return !!this.mesaIdForPairing;
@@ -334,6 +342,7 @@ export class VisorComponent implements OnInit, OnDestroy {
       next: (mesa) => {
         this.mesaState = mesa;
         if (typeof mesa.current_image_index === 'number') {
+          this.pendingIndexSync = null;
           this.currentIndex = mesa.current_image_index;
         }
         if (mesa.nombre) {
@@ -469,19 +478,20 @@ export class VisorComponent implements OnInit, OnDestroy {
       try {
         const payload = JSON.parse(event.data);
         if (payload.type === 'calibration') {
+          const syncedIndex = this.reconcileRemoteIndex(payload.data.current_image_index);
           if (this.mesaState) {
             this.mesaState = {
               ...this.mesaState,
               calibration_json: payload.data.corners ? { corners: payload.data.corners } : this.mesaState.calibration_json,
               mapper_enabled: payload.data.mapper_enabled,
-              current_image_index: payload.data.current_image_index
+              current_image_index: syncedIndex ?? this.mesaState.current_image_index
             };
           } else {
             this.mesaState = payload.data as any;
           }
 
-          if (payload.data.current_image_index !== undefined && payload.data.current_image_index !== this.currentIndex) {
-            this.currentIndex = payload.data.current_image_index;
+          if (syncedIndex !== null && syncedIndex !== this.currentIndex) {
+            this.currentIndex = syncedIndex;
           }
           this.cdr.detectChanges();
         }
@@ -501,8 +511,9 @@ export class VisorComponent implements OnInit, OnDestroy {
   }
 
   get projectedImage(): string | null {
-    if (this.currentIndex === -1) return `${this.assetBase}assets/calibration_grid.jpg`;
-    if (this.currentIndex === -2) return `${this.assetBase}assets/calibration_grid_with_x.jpg`;
+    if (this.currentIndex === VisorComponent.CALIBRATION_GRID_INDEX) return `${this.assetBase}assets/calibration_grid.jpg`;
+    if (this.currentIndex === VisorComponent.CALIBRATION_GRID_WITH_X_INDEX) return `${this.assetBase}assets/calibration_grid_with_x.jpg`;
+    if (this.currentIndex === VisorComponent.COVERAGE_BACKGROUND_INDEX) return `${this.assetBase}assets/projection_coverage_background.jpg`;
 
     // Color-check states: project a dedicated slide through the same
     // perspective transform as the blueprint, so the operator at the
@@ -530,13 +541,92 @@ export class VisorComponent implements OnInit, OnDestroy {
   }
 
   get isCalibrationActive(): boolean {
-    return this.isSupervisor && this.currentIndex < 0;
+    return this.isSupervisor && (
+      this.currentIndex === VisorComponent.CALIBRATION_GRID_INDEX
+      || this.currentIndex === VisorComponent.CALIBRATION_GRID_WITH_X_INDEX
+    );
+  }
+
+  get isCoverageBackgroundActive(): boolean {
+    return this.currentIndex === VisorComponent.COVERAGE_BACKGROUND_INDEX;
+  }
+
+  get calibrationShortcutHint(): string {
+    return this.isCalibrationActive ? 'Para cerrar calibración' : 'Para calibrar';
+  }
+
+  get coverageShortcutHint(): string {
+    return this.isCoverageBackgroundActive ? 'Para quitar fondo de cobertura' : 'Para mostrar fondo de cobertura';
+  }
+
+  private shouldApplySlideLock(): boolean {
+    return !this.isSupervisor;
+  }
+
+  private async forceAppReload(): Promise<void> {
+    if (!this.isBrowser) return;
+
+    try {
+      if ('caches' in window) {
+        const cacheKeys = await caches.keys();
+        await Promise.all(cacheKeys.map((key) => caches.delete(key)));
+      }
+
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map((reg) => reg.unregister()));
+      }
+    } catch (err) {
+      console.warn('[Visor] Force reload cleanup failed:', err);
+    }
+
+    const url = new URL(window.location.href);
+    url.searchParams.set('_reload', Date.now().toString());
+    window.location.replace(url.toString());
+  }
+
+  private markPendingIndexSync(index: number): void {
+    this.pendingIndexSync = {
+      index,
+      expiresAt: Date.now() + VisorComponent.INDEX_SYNC_GRACE_MS,
+    };
+    if (this.mesaState) {
+      this.mesaState = {
+        ...this.mesaState,
+        current_image_index: index,
+      };
+    }
+  }
+
+  private reconcileRemoteIndex(remoteIndex: unknown): number | null {
+    if (typeof remoteIndex !== 'number') return null;
+
+    const guard = this.pendingIndexSync;
+    if (!guard) return remoteIndex;
+
+    if (remoteIndex === guard.index) {
+      this.pendingIndexSync = null;
+      return remoteIndex;
+    }
+
+    if (Date.now() <= guard.expiresAt) {
+      return this.currentIndex;
+    }
+
+    this.pendingIndexSync = null;
+    return remoteIndex;
   }
 
   @HostListener('window:keydown', ['$event'])
   handleKeyboardEvent(event: KeyboardEvent) {
     if (this.mode !== 'PROJECTION') return;
     const key = event.key.toLowerCase();
+
+    if (key === 'r') {
+      event.preventDefault();
+      this.forceAppReload();
+      return;
+    }
 
     // A failed color check blocks navigation until the operator
     // acknowledges it with space. SPACE clears the red overlay AND
@@ -559,9 +649,11 @@ export class VisorComponent implements OnInit, OnDestroy {
     }
 
     if (key === 'c') {
-      this.toggleCalibration(-1);
+      this.toggleCalibration(VisorComponent.CALIBRATION_GRID_INDEX);
     } else if (key === 'g') {
-      this.toggleCalibration(-2);
+      this.toggleCalibration(VisorComponent.CALIBRATION_GRID_WITH_X_INDEX);
+    } else if (key === 'b') {
+      this.toggleCoverageBackground();
     } else if (key === 'arrowright') {
       // Don't navigate if in calibration mode (index < 0)
       if (this.currentIndex >= 0) {
@@ -643,9 +735,19 @@ export class VisorComponent implements OnInit, OnDestroy {
     this.updateProjectedImage();
   }
 
+  toggleCoverageBackground(): void {
+    if (this.currentIndex === VisorComponent.COVERAGE_BACKGROUND_INDEX) {
+      this.currentIndex = this.previousIndex;
+    } else {
+      this.previousIndex = this.currentIndex;
+      this.currentIndex = VisorComponent.COVERAGE_BACKGROUND_INDEX;
+    }
+    this.updateProjectedImage();
+  }
+
   nextImage(): void {
     if (this.currentIndex < 0) return;
-    if (Date.now() < this.slideLockUntil) return;
+    if (this.shouldApplySlideLock() && Date.now() < this.slideLockUntil) return;
     // While a _check capture is in flight, freeze the navigation: the
     // 5 s read-lock can run out before the round-trip
     // camera + backend finishes, and we must not let the operator skip
@@ -677,7 +779,11 @@ export class VisorComponent implements OnInit, OnDestroy {
     }
 
     this.updateProjectedImage();
-    this.slideLockUntil = Date.now() + VisorComponent.SLIDE_LOCK_MS;
+    if (this.shouldApplySlideLock()) {
+      this.slideLockUntil = Date.now() + VisorComponent.SLIDE_LOCK_MS;
+    } else {
+      this.slideLockUntil = 0;
+    }
     this.checkPhotoTrigger();
   }
 
@@ -729,13 +835,18 @@ export class VisorComponent implements OnInit, OnDestroy {
   }
 
   updateProjectedImage(): void {
+    this.markPendingIndexSync(this.currentIndex);
+
     if (this.isSupervisor) {
       const mesaId = this.mesaIdForPairing || this.mesaState?.id;
       if (!mesaId) return;
       this.http.post(`/api/mesas/${mesaId}/set_index/`, { index: this.currentIndex }, { headers: this.getUserAuthHeaders() })
         .subscribe({
           next: () => this.cdr.detectChanges(),
-          error: (err) => console.error('[Visor] Error syncing index (supervisor):', err)
+          error: (err) => {
+            this.pendingIndexSync = null;
+            console.error('[Visor] Error syncing index (supervisor):', err);
+          }
         });
       return;
     }
@@ -746,7 +857,10 @@ export class VisorComponent implements OnInit, OnDestroy {
     this.http.post(`${this.apiUrl}set_index/`, { mesa_id: mesaId, index: this.currentIndex }, { headers: this.getAuthHeaders() })
       .subscribe({
         next: () => this.cdr.detectChanges(),
-        error: (err) => console.error('[Visor] Error syncing index:', err)
+        error: (err) => {
+          this.pendingIndexSync = null;
+          console.error('[Visor] Error syncing index:', err);
+        }
       });
   }
 
@@ -1139,12 +1253,16 @@ export class VisorComponent implements OnInit, OnDestroy {
       })
     ).subscribe((state: MesaState | null) => {
       if (!state) return;
-      this.mesaState = state;
+      const syncedIndex = this.reconcileRemoteIndex(state.current_image_index);
+      this.mesaState = {
+        ...state,
+        current_image_index: syncedIndex ?? state.current_image_index,
+      };
       if (state.nombre) {
         this.titleService.setTitle(`Visor - ${state.nombre}`);
       }
-      if (typeof state.current_image_index === 'number') {
-        this.currentIndex = state.current_image_index;
+      if (syncedIndex !== null) {
+        this.currentIndex = syncedIndex;
       }
       // In supervisor mode the camera lives on the mini-PC, not on
       // localhost, so we mirror what the mini-PC last reported.
@@ -1227,12 +1345,14 @@ export class VisorComponent implements OnInit, OnDestroy {
       if (this.activeItem) {
         this.activeItem = null;
         this.images = [];
+        this.pendingIndexSync = null;
         this.cdr.detectChanges();
       }
       return;
     }
 
     if (!this.activeItem || this.activeItem.id !== item.id) {
+      this.pendingIndexSync = null;
       this.activeItem = item;
       // New module/phase started: restart local counter (UI shows currentIndex + 1 => starts at 1).
       if (this.currentIndex >= 0) {
