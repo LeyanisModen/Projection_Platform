@@ -1,4 +1,5 @@
 ﻿import { Component, OnInit, ChangeDetectorRef, HostListener } from '@angular/core';
+import { ElementRef, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterModule } from '@angular/router';
@@ -60,6 +61,10 @@ export class ProyectoDetailComponent implements OnInit {
     plantaFileExists = { plano: false, corte: false };
     dropdownOpen = false;
     savingProjectConfig = false;
+    editingProjectName = false;
+    projectNameDraft = '';
+    savingProjectName = false;
+    @ViewChild('projectNameInput') projectNameInput?: ElementRef<HTMLInputElement>;
     technicalImporting = false;
     technicalImportStats: TechnicalImportStats | null = null;
 
@@ -143,6 +148,62 @@ export class ProyectoDetailComponent implements OnInit {
             error: (err: any) => {
                 console.error('Error loading project', err);
                 this.loading = false;
+                this.cdr.detectChanges();
+            }
+        });
+    }
+
+    startProjectNameEdit(): void {
+        if (!this.proyecto) return;
+        this.projectNameDraft = this.proyecto.nombre;
+        this.editingProjectName = true;
+        this.cdr.detectChanges();
+        this.focusProjectNameInput();
+    }
+
+    private focusProjectNameInput(): void {
+        setTimeout(() => {
+            const input = this.projectNameInput?.nativeElement;
+            if (!input) return;
+            input.focus();
+            input.select();
+        });
+    }
+
+    cancelProjectNameEdit(): void {
+        if (this.savingProjectName) return;
+        this.editingProjectName = false;
+        this.projectNameDraft = '';
+        this.cdr.detectChanges();
+    }
+
+    saveProjectName(): void {
+        if (!this.proyectoId || !this.proyecto) return;
+
+        const target = this.projectNameDraft.trim();
+        if (!target) {
+            alert('El nombre del proyecto no puede estar vacio.');
+            return;
+        }
+
+        if (target === this.proyecto.nombre) {
+            this.cancelProjectNameEdit();
+            return;
+        }
+
+        this.savingProjectName = true;
+        this.api.updateProyecto(this.proyectoId, { nombre: target }).subscribe({
+            next: (proyecto: Proyecto) => {
+                this.proyecto = proyecto;
+                this.projectNameDraft = '';
+                this.editingProjectName = false;
+                this.savingProjectName = false;
+                this.cdr.detectChanges();
+            },
+            error: (err: any) => {
+                console.error('Error updating project name', err);
+                this.savingProjectName = false;
+                alert('No se pudo guardar el nombre del proyecto.');
                 this.cdr.detectChanges();
             }
         });

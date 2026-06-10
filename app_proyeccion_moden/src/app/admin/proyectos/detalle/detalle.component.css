@@ -660,6 +660,82 @@
     color: #212529;
 }
 
+.project-title-wrap,
+.project-title-edit-form {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    min-width: 0;
+}
+
+.project-title-edit-btn,
+.project-title-confirm-btn,
+.project-title-cancel-btn {
+    width: 30px;
+    height: 30px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: 7px;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+}
+
+.project-title-edit-btn {
+    background: transparent;
+    color: #94a3b8;
+}
+
+.project-title-edit-btn:hover {
+    color: #fd7e14;
+    background: rgba(253, 126, 20, 0.08);
+}
+
+.project-title-input {
+    width: min(520px, 46vw);
+    height: 38px;
+    padding: 0 0.75rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    color: #111827;
+    font-size: 1.05rem;
+    font-weight: 600;
+    background: #fff;
+}
+
+.project-title-input:focus {
+    outline: none;
+    border-color: #fd7e14;
+    box-shadow: 0 0 0 3px rgba(253, 126, 20, 0.12);
+}
+
+.project-title-confirm-btn {
+    background: transparent;
+    color: #16a34a;
+}
+
+.project-title-cancel-btn {
+    background: transparent;
+    color: #64748b;
+}
+
+.project-title-confirm-btn:hover:not(:disabled) {
+    color: #15803d;
+    background: #e2e8f0;
+}
+
+.project-title-cancel-btn:hover:not(:disabled) {
+    color: #334155;
+    background: #e2e8f0;
+}
+
+.project-title-confirm-btn:disabled,
+.project-title-cancel-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
 .grupos-wrapper {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));

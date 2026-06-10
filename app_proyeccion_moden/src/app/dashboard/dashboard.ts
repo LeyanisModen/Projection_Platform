@@ -6,7 +6,7 @@ import { DragDropModule, CdkDragDrop, moveItemInArray, transferArrayItem } from 
 
 import {
   ApiService,
-  Proyecto, Planta, Modulo, Mesa, ModuloQueueItem, MesaQueueItem, Imagen,
+  Proyecto, Planta, Modulo, Mesa, ModuloQueueItem, MesaQueueItem, Imagen, FotoFabricacion,
   GrupoMesas, GrupoMesasProyectoEntry, ProductionStatsResponse
 } from '../services/api.service';
 import {
@@ -114,6 +114,12 @@ export class Dashboard implements OnInit, OnDestroy {
   planModalModulos: Modulo[] = [];
   private planModalPlantas = new Map<number, string>();
   loadingPlanModal = false;
+  showPlanFotosModal = false;
+  planFotosTarget: { id: number; nombre: string } | null = null;
+  planFotos: FotoFabricacion[] = [];
+  loadingPlanFotos = false;
+  selectedPlanFotoIndex = 0;
+  downloadingPlanFotosZip = false;
 
   // Materiales-list Modal State (per-project)
   showMaterialesModal = false;
@@ -200,7 +206,112 @@ export class Dashboard implements OnInit, OnDestroy {
     this.planModalProyecto = null;
     this.planModalModulos = [];
     this.planModalPlantas.clear();
+    this.closePlanFotosModal();
     this.cdr.detectChanges();
+  }
+
+  openPlanFotosModal(modulo: Modulo, event?: Event): void {
+    event?.stopPropagation();
+    if (!this.moduloHasFotos(modulo)) return;
+
+    this.planFotosTarget = { id: modulo.id, nombre: modulo.nombre };
+    this.planFotos = [];
+    this.selectedPlanFotoIndex = 0;
+    this.showPlanFotosModal = true;
+    this.loadingPlanFotos = true;
+    this.cdr.detectChanges();
+
+    this.api.getFotos({ modulo: modulo.id })
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (fotos) => {
+          this.planFotos = fotos;
+          this.loadingPlanFotos = false;
+          this.cdr.detectChanges();
+        },
+        error: (err) => {
+          console.error('Error loading fotos', err);
+          this.loadingPlanFotos = false;
+          this.cdr.detectChanges();
+        }
+      });
+  }
+
+  closePlanFotosModal(): void {
+    this.showPlanFotosModal = false;
+    this.planFotosTarget = null;
+    this.planFotos = [];
+    this.loadingPlanFotos = false;
+    this.selectedPlanFotoIndex = 0;
+    this.downloadingPlanFotosZip = false;
+  }
+
+  prevPlanFoto(): void {
+    if (this.selectedPlanFotoIndex > 0) this.selectedPlanFotoIndex--;
+  }
+
+  nextPlanFoto(): void {
+    if (this.selectedPlanFotoIndex < this.planFotos.length - 1) this.selectedPlanFotoIndex++;
+  }
+
+  getPlanFotoUrl(foto: FotoFabricacion): string {
+    return this.resolveUrl(foto.url);
+  }
+
+  moduloHasFotos(modulo: Modulo): boolean {
+    return (modulo.fotos_count || 0) > 0;
+  }
+
+  planModalFotosTotal(): number {
+    return this.planModalModulos.reduce((total, modulo) => total + (modulo.fotos_count || 0), 0);
+  }
+
+  downloadPlanFotosZip(scope: 'modulo' | 'proyecto', modulo?: Modulo, event?: Event): void {
+    event?.stopPropagation();
+    const params: { modulo?: number; proyecto?: number } = {};
+    let targetName = 'fotos';
+
+    if (scope === 'modulo') {
+      if (modulo) {
+        if (!this.moduloHasFotos(modulo)) return;
+        params.modulo = modulo.id;
+        targetName = modulo.nombre || 'modulo';
+      } else {
+        if (!this.planFotosTarget || this.planFotos.length === 0) return;
+        params.modulo = this.planFotosTarget.id;
+        targetName = this.planFotosTarget.nombre || 'modulo';
+      }
+    } else {
+      if (!this.planModalProyecto || this.planModalFotosTotal() === 0) return;
+      params.proyecto = this.planModalProyecto.id;
+      targetName = this.planModalProyecto.nombre || 'proyecto';
+    }
+
+    this.downloadingPlanFotosZip = true;
+    this.api.downloadFotosZip(params)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (blob) => {
+          this.triggerZipDownload(blob, `fotos_${targetName}.zip`);
+          this.downloadingPlanFotosZip = false;
+          this.cdr.detectChanges();
+        },
+        error: (err) => {
+          console.error('Error downloading ZIP', err);
+          this.downloadingPlanFotosZip = false;
+          alert('Error descargando fotos');
+          this.cdr.detectChanges();
+        }
+      });
+  }
+
+  private triggerZipDownload(blob: Blob, filename: string): void {
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    window.URL.revokeObjectURL(url);
   }
 
   // --- Lista de materiales: por proyecto ---
@@ -735,6 +846,36 @@ export class Dashboard implements OnInit, OnDestroy {
   ) { }
 
   username: string = '';
+
+  scrollToSection(sectionId: string): void {
+    const section = document.getElementById(sectionId) as HTMLElement | null;
+    if (!section) return;
+
+    const container = this.getScrollContainer(section);
+    if (container) {
+      const containerRect = container.getBoundingClientRect();
+      const sectionRect = section.getBoundingClientRect();
+      const targetTop = sectionRect.top - containerRect.top + container.scrollTop - 16;
+      container.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' });
+      return;
+    }
+
+    const targetTop = section.getBoundingClientRect().top + window.scrollY - 16;
+    window.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' });
+  }
+
+  private getScrollContainer(element: HTMLElement): HTMLElement | null {
+    let current = element.parentElement;
+    while (current) {
+      const { overflowY } = window.getComputedStyle(current);
+      const canScroll = /(auto|scroll)/.test(overflowY);
+      if (canScroll && current.scrollHeight > current.clientHeight) {
+        return current;
+      }
+      current = current.parentElement;
+    }
+    return null;
+  }
 
   ngOnInit(): void {
     // Check auth

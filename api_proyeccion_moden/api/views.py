@@ -1492,6 +1492,34 @@ _GRUPO_ELEMENTOS = 'elementos'
 # 1 spray can covers ~20 modules (rough estimate, may be tuned later).
 _MODULOS_PER_SPRAY = 20
 
+_MALLAZO_TIPO_MAP = {
+    'CENTRAL': {
+        Fase.INFERIOR: '1',
+        Fase.SUPERIOR: '1',
+    },
+    'CENTRAL_GIRADO': {
+        Fase.INFERIOR: '1',
+        Fase.SUPERIOR: '1',
+    },
+    'LADO_LARGO': {
+        Fase.INFERIOR: '2',
+        Fase.SUPERIOR: '6',
+    },
+    'LADO_CORTO': {
+        Fase.INFERIOR: '1',
+        Fase.SUPERIOR: '7',
+    },
+    'ESQUINA': {
+        Fase.INFERIOR: '2',
+        Fase.SUPERIOR: '7',
+    },
+}
+
+
+def _get_mallazo_tipo(modulo, fase):
+    tipo_modulo = _normalize_tipo_modulo(getattr(modulo, 'tipo_modulo', ''))
+    return _MALLAZO_TIPO_MAP.get(tipo_modulo, {}).get(fase)
+
 
 def _compute_lista_materiales_proyecto(proyecto):
     """Aggregate one project's MaterialPieza rows + constants (mallazo,
@@ -1508,12 +1536,22 @@ def _compute_lista_materiales_proyecto(proyecto):
     modulos = list(
         proyecto.modulos.all().only(
             'id', 'nombre', 'inferior_hecho', 'superior_hecho', 'codigos_color',
+            'tipo_modulo',
         )
     )
 
-    pieces = MaterialPieza.objects.filter(
-        proyecto=proyecto, modulo__isnull=False,
-    ).select_related('modulo')
+    pieces = list(
+        MaterialPieza.objects.filter(
+            proyecto=proyecto, modulo__isnull=False,
+        ).select_related('modulo')
+    )
+    detalles_fase = []
+    if not pieces:
+        detalles_fase = list(
+            DetalleModuloFase.objects.filter(
+                modulo__proyecto=proyecto,
+            ).select_related('modulo')
+        )
 
     informados = {
         mi.clave_material: mi
@@ -1571,11 +1609,117 @@ def _compute_lista_materiales_proyecto(proyecto):
                 'm', long_total, long_pendiente, False, _GRUPO_ELEMENTOS,
             )
 
+    if not pieces:
+        # Compatibilidad con la fuente historica: muchos .db solo traen la
+        # tabla `resumen`, que ya queda persistida en DetalleModuloFase pero
+        # no permite reconstruir piezas/subtipos exactos. En ese caso
+        # mostramos renglones genericos por tipo para no dejar la lista vacia.
+        for detalle in detalles_fase:
+            modulo = detalle.modulo
+            fase = detalle.fase
+            fase_hecha = (
+                modulo.inferior_hecho
+                if fase == Fase.INFERIOR
+                else modulo.superior_hecho
+            )
+
+            def _meters(value):
+                if value in [None, '']:
+                    return 0.0
+                try:
+                    return float(value)
+                except (TypeError, ValueError):
+                    return 0.0
+
+            metros_ref = _meters(detalle.metros_refuerzos)
+            if metros_ref > 0:
+                etiqueta = (
+                    'Refuerzo inferior'
+                    if fase == Fase.INFERIOR
+                    else 'Refuerzo superior'
+                )
+                clave = (
+                    'refuerzo_resumen_inf'
+                    if fase == Fase.INFERIOR
+                    else 'refuerzo_resumen_sup'
+                )
+                _add(
+                    clave,
+                    etiqueta,
+                    'm',
+                    metros_ref,
+                    0.0 if fase_hecha else metros_ref,
+                    False,
+                    _GRUPO_BARRAS,
+                )
+
+            if fase == Fase.INFERIOR:
+                metros_zun = _meters(detalle.metros_zunchos)
+                if metros_zun > 0:
+                    _add(
+                        'zuncho_resumen',
+                        'Zuncho',
+                        'm',
+                        metros_zun,
+                        0.0 if fase_hecha else metros_zun,
+                        False,
+                        _GRUPO_ELEMENTOS,
+                    )
+
+                metros_sep = _meters(detalle.metros_separadores)
+                if metros_sep > 0:
+                    _add(
+                        'separador_resumen',
+                        'Separador',
+                        'm',
+                        metros_sep,
+                        0.0 if fase_hecha else metros_sep,
+                        False,
+                        _GRUPO_ELEMENTOS,
+                    )
+
+                metros_pun = _meters(detalle.metros_punzos)
+                if metros_pun > 0:
+                    _add(
+                        'punzo_resumen',
+                        'Punzonamiento',
+                        'm',
+                        metros_pun,
+                        0.0 if fase_hecha else metros_pun,
+                        False,
+                        _GRUPO_ELEMENTOS,
+                    )
+
     for m in modulos:
-        _add('mallazo_inf', 'Mallazo inferior', 'ud',
-             1, 0 if m.inferior_hecho else 1, True, _GRUPO_BARRAS)
-        _add('mallazo_sup', 'Mallazo superior', 'ud',
-             1, 0 if m.superior_hecho else 1, True, _GRUPO_BARRAS)
+        tipo_inf = _get_mallazo_tipo(m, Fase.INFERIOR)
+        if tipo_inf:
+            _add(
+                f'mallazo_tipo_{tipo_inf}',
+                f'Mallazo TIPO {tipo_inf}',
+                'ud',
+                1,
+                0 if m.inferior_hecho else 1,
+                True,
+                _GRUPO_BARRAS,
+            )
+        else:
+            _add('mallazo_inf', 'Mallazo inferior', 'ud',
+                 1, 0 if m.inferior_hecho else 1, True, _GRUPO_BARRAS)
+
+        tipo_sup = _get_mallazo_tipo(m, Fase.SUPERIOR)
+        if tipo_sup:
+            _add(
+                f'mallazo_tipo_{tipo_sup}',
+                f'Mallazo TIPO {tipo_sup}',
+                'ud',
+                1,
+                0 if m.superior_hecho else 1,
+                True,
+                _GRUPO_BARRAS,
+            )
+        else:
+            _add('mallazo_sup', 'Mallazo superior', 'ud',
+                 1, 0 if m.superior_hecho else 1, True, _GRUPO_BARRAS)
         _add('pieza_bastidor_inf', 'Pieza bastidor inferior', 'ud',
              4, 0 if m.inferior_hecho else 4, True, _GRUPO_CONSUMIBLES)
         _add('pieza_bastidor_sup', 'Pieza bastidor superior', 'ud',
@@ -2798,7 +2942,7 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         superior_only_pending = [
             modulo for modulo in modulos
             if not modulo.cerrado
-            and modulo.inferior_hecho
+            and (modulo.inferior_hecho or num_inferiores == 0)
             and not modulo.superior_hecho
             and (modulo.id, 'SUPERIOR') not in excluded_phase_keys
         ]

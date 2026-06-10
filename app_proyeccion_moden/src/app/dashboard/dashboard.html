@@ -2,10 +2,10 @@
     <header class="dashboard-header">
         <img src="assets/logo-moden.jpg" alt="MOD:EN Logo" class="header-logo">
         <span class="subtitle">Sistema de Gestion de Proyeccion</span>
-        <nav class="header-nav">
-            <a href="#grupos-section" class="nav-link">Grupos</a>
-            <a href="#estadisticas-section" class="nav-link">Estadísticas</a>
-            <a href="#proyectos-section" class="nav-link">Proyectos</a>
+        <nav class="header-nav" aria-label="Secciones del dashboard">
+            <button type="button" class="nav-link" (click)="scrollToSection('grupos-section')">Grupos</button>
+            <button type="button" class="nav-link" (click)="scrollToSection('estadisticas-section')">Estadísticas</button>
+            <button type="button" class="nav-link" (click)="scrollToSection('proyectos-section')">Proyectos</button>
         </nav>
         <div class="header-right">
             <span class="user-display">
@@ -191,7 +191,6 @@
                             </label>
                         </div>
                     </div>
-
                     @if (loadingStats) {
                         <div class="stats-loading">Cargando…</div>
                     } @else if (!statsData || statsData.totals.fases_completadas === 0) {
@@ -434,7 +433,17 @@
                             </span>
                         }
                     </div>
-                    <button type="button" class="plan-modal-close" (click)="closePlanModal()" title="Cerrar">×</button>
+                    <div class="plan-modal-header-actions">
+                        <button type="button"
+                            class="plan-modal-download"
+                            [disabled]="downloadingPlanFotosZip || planModalFotosTotal() === 0"
+                            (click)="downloadPlanFotosZip('proyecto')"
+                            title="Descargar todas las fotos del proyecto">
+                            <i class="fa fa-download" aria-hidden="true"></i>
+                            Fotos proyecto
+                        </button>
+                        <button type="button" class="plan-modal-close" (click)="closePlanModal()" title="Cerrar">×</button>
+                    </div>
                 </div>
 
                 @if (loadingPlanModal) {
@@ -457,12 +466,81 @@
                                             [class.pending]="moduloEstadoClass(m) === 'pending'">
                                             <span class="plan-modulo-dot"></span>
                                             <span class="plan-modulo-nombre">{{ m.nombre }}</span>
-                                            <span class="plan-modulo-estado">{{ moduloEstadoLabel(m) }}</span>
+                                            <div class="plan-modulo-actions">
+                                                @if (moduloHasFotos(m)) {
+                                                    <button type="button"
+                                                        class="plan-modulo-action"
+                                                        (click)="openPlanFotosModal(m, $event)"
+                                                        title="Ver fotos del módulo">
+                                                        <i class="fa fa-image" aria-hidden="true"></i>
+                                                        <span>{{ m.fotos_count }}</span>
+                                                    </button>
+                                                    <button type="button"
+                                                        class="plan-modulo-action"
+                                                        [disabled]="downloadingPlanFotosZip"
+                                                        (click)="downloadPlanFotosZip('modulo', m, $event)"
+                                                        title="Descargar fotos del módulo">
+                                                        <i class="fa fa-download" aria-hidden="true"></i>
+                                                    </button>
+                                                }
+                                                <span class="plan-modulo-estado">{{ moduloEstadoLabel(m) }}</span>
+                                            </div>
                                         </li>
                                     }
                                 </ul>
                             </div>
                         }
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    @if (showPlanFotosModal) {
+        <div class="modal-overlay" (click)="closePlanFotosModal()">
+            <div class="modal-content plan-fotos-modal" (click)="$event.stopPropagation()">
+                <div class="plan-modal-header">
+                    <div>
+                        <h3>Fotos de {{ planFotosTarget?.nombre }}</h3>
+                        @if (planFotos.length > 0) {
+                            <span class="plan-modal-subtitle">
+                                {{ selectedPlanFotoIndex + 1 }} / {{ planFotos.length }}
+                            </span>
+                        }
+                    </div>
+                    <div class="plan-modal-header-actions">
+                        <button type="button"
+                            class="plan-modal-download"
+                            [disabled]="downloadingPlanFotosZip || planFotos.length === 0"
+                            (click)="downloadPlanFotosZip('modulo')"
+                            title="Descargar ZIP del módulo">
+                            <i class="fa fa-download" aria-hidden="true"></i>
+                            ZIP
+                        </button>
+                        <button type="button" class="plan-modal-close" (click)="closePlanFotosModal()" title="Cerrar">×</button>
+                    </div>
+                </div>
+
+                @if (loadingPlanFotos) {
+                    <div class="plan-modal-loading">Cargando fotos…</div>
+                } @else if (planFotos.length === 0) {
+                    <div class="plan-modal-loading">Este módulo no tiene fotos disponibles.</div>
+                } @else {
+                    <div class="plan-fotos-body">
+                        <div class="plan-fotos-stage">
+                            <button type="button" class="plan-fotos-nav" (click)="prevPlanFoto()" [disabled]="selectedPlanFotoIndex === 0" aria-label="Foto anterior">‹</button>
+                            <div class="plan-fotos-image-wrap">
+                                <img [src]="getPlanFotoUrl(planFotos[selectedPlanFotoIndex])" [alt]="'Foto de ' + (planFotosTarget?.nombre || 'módulo')">
+                            </div>
+                            <button type="button" class="plan-fotos-nav" (click)="nextPlanFoto()" [disabled]="selectedPlanFotoIndex >= planFotos.length - 1" aria-label="Foto siguiente">›</button>
+                        </div>
+                        <div class="plan-fotos-meta">
+                            <span>{{ planFotos[selectedPlanFotoIndex].fase_label }}</span>
+                            <span>Paso {{ planFotos[selectedPlanFotoIndex].paso }}</span>
+                            @if (planFotos[selectedPlanFotoIndex].capturada_at) {
+                                <span>{{ planFotos[selectedPlanFotoIndex].capturada_at | date:'dd/MM/yyyy HH:mm' }}</span>
+                            }
+                        </div>
                     </div>
                 }
             </div>

@@ -589,6 +589,15 @@ class PlanningFoundationTests(APITestCase):
             ).count(),
             0,
         )
+        # Pero la mesa SUP restante si debe recibir la fase superior:
+        # permite operar una prueba o lote con una sola mesa configurada
+        # como superior.
+        self.assertEqual(
+            MesaQueueItem.objects.filter(
+                mesa__grupo=grupo, fase="SUPERIOR",
+            ).count(),
+            1,
+        )
 
     # =========================================================================
     # CAMBIAR TIPOS (switch INF <-> SUP en mesas existentes)
@@ -1055,6 +1064,64 @@ class PlanningFoundationTests(APITestCase):
         finally:
             if temp_path and os.path.exists(temp_path):
                 os.unlink(temp_path)
+
+    def test_lista_materiales_usa_tipos_de_mallazo_segun_tipo_modulo_y_fase(self):
+        self.modulo.tipo_modulo = "CENTRAL"
+        self.modulo.save(update_fields=["tipo_modulo"])
+
+        modulo_largo = Modulo.objects.create(
+            nombre="M-02",
+            proyecto=self.project,
+            planta=self.planta,
+            tipo_modulo="LADO_LARGO",
+        )
+        modulo_corto = Modulo.objects.create(
+            nombre="M-03",
+            proyecto=self.project,
+            planta=self.planta,
+            tipo_modulo="LADO_CORTO",
+        )
+        modulo_esquina = Modulo.objects.create(
+            nombre="M-04",
+            proyecto=self.project,
+            planta=self.planta,
+            tipo_modulo="ESQUINA",
+        )
+        modulo_girado = Modulo.objects.create(
+            nombre="M-05",
+            proyecto=self.project,
+            planta=self.planta,
+            tipo_modulo="CENTRAL_GIRADO",
+        )
+
+        response = self.client.get(
+            f"/api/proyectos/{self.project.id}/lista-materiales/"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        rows = {
+            row["clave"]: row
+            for row in response.data["renglones"]
+        }
+
+        self.assertEqual(rows["mallazo_tipo_1"]["etiqueta"], "Mallazo TIPO 1")
+        self.assertEqual(rows["mallazo_tipo_1"]["total"], 5.0)
+        self.assertEqual(rows["mallazo_tipo_1"]["pendiente"], 5.0)
+
+        self.assertEqual(rows["mallazo_tipo_2"]["etiqueta"], "Mallazo TIPO 2")
+        self.assertEqual(rows["mallazo_tipo_2"]["total"], 2.0)
+        self.assertEqual(rows["mallazo_tipo_2"]["pendiente"], 2.0)
+
+        self.assertEqual(rows["mallazo_tipo_6"]["etiqueta"], "Mallazo TIPO 6")
+        self.assertEqual(rows["mallazo_tipo_6"]["total"], 1.0)
+        self.assertEqual(rows["mallazo_tipo_6"]["pendiente"], 1.0)
+
+        self.assertEqual(rows["mallazo_tipo_7"]["etiqueta"], "Mallazo TIPO 7")
+        self.assertEqual(rows["mallazo_tipo_7"]["total"], 2.0)
+        self.assertEqual(rows["mallazo_tipo_7"]["pendiente"], 2.0)
+
+        self.assertNotIn("mallazo_inf", rows)
+        self.assertNotIn("mallazo_sup", rows)
 
     def test_planificar_grupo_crea_colas_automaticas(self):
         self.project.bastidor_longitud_cm = 20
