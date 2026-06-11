@@ -4081,20 +4081,6 @@ class DeviceViewSet(viewsets.ViewSet):
 
         return Response({'status': 'ok'})
 
-
-    @action(detail=False, methods=['post'])
-    def toggle_mapper(self, request):
-        """
-        Toggles the mapper_enabled state for the mesa.
-        """
-        mesa = self._authenticate_device(request)
-        if not mesa:
-            return Response({'detail': 'Unauthorized'}, status=401)
-            
-        mesa.mapper_enabled = not mesa.mapper_enabled
-        mesa.save(update_fields=['mapper_enabled'])
-        return Response({'status': 'ok', 'mapper_enabled': mesa.mapper_enabled})
-
     @action(detail=False, methods=['post'])
     def set_index(self, request):
         """

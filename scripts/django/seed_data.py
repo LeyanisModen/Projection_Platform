@@ -1,6 +1,6 @@
 """
 Script de poblado de datos de ejemplo para MOD:EN.
-Ejecutar con: docker-compose exec backend python manage.py shell < seed_data.py
+Ejecutar desde api_proyeccion_moden/ con: python manage.py shell < ..\scripts\django\seed_data.py
 O importando y llamando a seed() desde el shell.
 """
 from django.contrib.auth.models import User

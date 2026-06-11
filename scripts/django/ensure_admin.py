@@ -2,8 +2,8 @@ import os
 import django
 import sys
 
-# Setup Django environment
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# Setup Django environment (este script vive en scripts/django/; el proyecto, en api_proyeccion_moden/)
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "api_proyeccion_moden")))
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "proyeccion_moden.settings")
 django.setup()
 

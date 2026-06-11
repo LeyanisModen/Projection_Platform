@@ -1,7 +1,6 @@
 """
 Seed script para poblar la base de datos con datos de ejemplo.
-Ejecutar con: python manage.py shell < populate_data.py
-O: docker exec -i proyeccion_backend python manage.py shell < populate_data.py
+Ejecutar desde api_proyeccion_moden/ con: python manage.py shell < ..\scripts\django\populate_data.py
 """
 import os
 import django

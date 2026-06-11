@@ -693,9 +693,6 @@ class MesaQueueItemSerializer(serializers.ModelSerializer):
 class DeviceInitSerializer(serializers.Serializer):
     mesa_id = serializers.IntegerField(required=False)
 
-class DeviceStatusSerializer(serializers.Serializer):
-    code = serializers.CharField(required=True)
-
 class DevicePairSerializer(serializers.Serializer):
     mesa_id = serializers.IntegerField(required=True)
     pairing_code = serializers.CharField(required=True)
