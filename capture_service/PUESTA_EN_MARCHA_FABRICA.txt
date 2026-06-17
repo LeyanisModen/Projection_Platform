@@ -84,7 +84,7 @@ PASO 5 -- Abrir OBSBOT y mover la camara
 2. Escribe: OBSBOT
 3. Abre "OBSBOT WebCam" u "OBSBOT Center".
 4. Mueve la camara hasta que apunte bien a la mesa.
-5. Si ves tracking / seguimiento, dejalo desactivado.
+5. Si ves tracking / seguimiento, dejalo desactivado. Desactivar la suspención automática importante
 6. Si la app permite guardar preset, guardalo.
 
 MUY IMPORTANTE AL TERMINAR:
