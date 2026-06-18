@@ -52,6 +52,8 @@ El pendrive debe tener:
   D:\capture_service\capture_service.py
   D:\capture_service\config.ini.example
   D:\capture_service\requirements.txt
+  D:\capture_service\VERSION
+  D:\capture_service\update-capture-service.ps1
   D:\capture_service\COMANDOS.txt
   D:\capture_service\PUESTA_EN_MARCHA_FABRICA.txt
   D:\capture_service\branding-wallpaper.jpg
@@ -132,6 +134,7 @@ Que hace el instalador:
   - Aplica branding-wallpaper.jpg como fondo de escritorio.
   - Aplica branding-user.jpg como imagen de usuario Windows.
   - Crea la tarea programada "MODEN Player".
+  - Crea la tarea programada "MODEN Auto Update" diaria a las 04:15.
   - Configura auto-login si pasaste -ModenPassword.
 
 Si no quieres auto-login:
@@ -143,8 +146,9 @@ Si no quieres auto-login:
 PASO 2A -- ACTUALIZAR UN MINI-PC QUE YA ESTABA CONFIGURADO
 ===========================================================
 
-Usa esto para mini-PCs antiguos que ya funcionaban pero necesitan recibir
-el capture_service nuevo, start-player.bat nuevo, COMANDOS.txt nuevo, etc.
+Usa esto UNA VEZ para mini-PCs antiguos que ya funcionaban pero necesitan
+recibir el capture_service nuevo, start-player.bat nuevo, COMANDOS.txt nuevo
+y la tarea programada de auto-actualizacion.
 
 No reinstala apps, no toca Google Drive, no borra el config.ini y no borra
 device_token.txt.
@@ -160,26 +164,38 @@ IMPORTANTE:
 
   - Si localStorage ya se habia borrado ANTES de actualizar, tocara
     vincular una vez mas desde admin. Despues de eso queda protegido.
+  - Despues de instalar esta version, futuras actualizaciones se revisan
+    solas desde:
+
+      G:\Mi unidad\MODEN_UPDATE\capture_service
+
+    Solo tienes que reemplazar ahi la carpeta capture_service de la ferralla.
 
 # --- PowerShell admin ---
 
-cd D:\capture_service
+# Cambia esta ruta si estas actualizando desde pendrive:
+# $src = 'D:\capture_service'
+$src = 'G:\Mi unidad\MODEN_UPDATE\capture_service'
+
+$mesaId = (
+  Select-String -Path 'C:\moden\capture_service\config.ini' -Pattern '^\s*mesa_id\s*=' |
+  Select-Object -First 1
+).Line -replace '^\s*mesa_id\s*=\s*', ''
+
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
-# Parar Chrome kiosko y servicio local antes de copiar.
 Get-Process -Name python, pythonw, chrome -ErrorAction SilentlyContinue | Stop-Process -Force
 
-# Copiar version nueva preservando datos locales del mini-PC.
-robocopy D:\capture_service C:\moden\capture_service /MIR /XD venv __pycache__ /XF config.ini device_token.txt
-if ($LASTEXITCODE -ge 8) { throw "robocopy fallo con codigo $LASTEXITCODE" }
+cd $src
+.\install-minipc.ps1 -MesaId $mesaId -SkipApps -SkipHardening
 
-# Relanzar player.
 Start-Process 'C:\moden\capture_service\start-player.bat'
 
 # Comprobaciones.
 Start-Sleep -Seconds 10
 curl.exe http://127.0.0.1:5555/health
 Test-Path 'C:\moden\capture_service\device_token.txt'
+Get-ScheduledTask -TaskName 'MODEN Auto Update' | Format-List TaskName,State,Triggers
 
 Si el ultimo comando devuelve False pero el player esta vinculado:
 
@@ -191,6 +207,10 @@ Test-Path 'C:\moden\capture_service\device_token.txt'
 
 Si sigue en False, revisa que el archivo copiado sea el capture_service.py
 nuevo y que el player cargue desde https://moden.up.railway.app/player.
+
+Forzar una revision de actualizacion desde Drive sin esperar a la noche:
+
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File 'C:\moden\capture_service\update-capture-service.ps1' -Force
 
 
 ===========================================================

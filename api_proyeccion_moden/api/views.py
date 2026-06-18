@@ -3925,17 +3925,16 @@ class DeviceViewSet(viewsets.ViewSet):
         # Option A: Check Mesa with this code
         mesa = Mesa.objects.filter(pairing_code=code).first()
         if mesa:
-            if mesa.pairing_code_expires_at and mesa.pairing_code_expires_at < timezone.now():
-                return Response({'status': 'EXPIRED'})
-            
-            # Check if paired (pending token in last_error)
+            # If the admin already paired this code, keep returning the
+            # token until the mini-PC proves it received it by making an
+            # authenticated request. Bad Wi-Fi can lose the first status
+            # response; clearing here would strand the device in pairing.
             if mesa.last_error and mesa.last_error.startswith("PENDING_TOKEN:"):
                 token = mesa.last_error.split(":", 1)[1]
-                mesa.last_error = None
-                mesa.pairing_code = None
-                mesa.pairing_code_expires_at = None
-                mesa.save(update_fields=['last_error', 'pairing_code', 'pairing_code_expires_at'])
                 return Response({'status': 'PAIRED', 'device_token': token, 'mesa_id': mesa.id})
+
+            if mesa.pairing_code_expires_at and mesa.pairing_code_expires_at < timezone.now():
+                return Response({'status': 'EXPIRED'})
                 
             return Response({'status': 'WAITING', 'mode': 'mesa'})
         
@@ -3945,23 +3944,22 @@ class DeviceViewSet(viewsets.ViewSet):
         except PairingSession.DoesNotExist:
             return Response({'status': 'EXPIRED'})
         
-        if session.expires_at < timezone.now():
-            return Response({'status': 'EXPIRED'})
-        
         # Check if session has been linked to a mesa and has a token
         if session.device_token_hash and session.mesa:
-            # Token was generated - return it once
-            # We need to store it temporarily somewhere. Use mesa.last_error for consistency.
+            # Token was generated. Return it idempotently until the
+            # device authenticates successfully; then _authenticate_device
+            # clears the temporary raw token from mesa.last_error.
             if session.mesa.last_error and session.mesa.last_error.startswith("PENDING_TOKEN:"):
                 token = session.mesa.last_error.split(":", 1)[1]
-                session.mesa.last_error = None
-                session.mesa.save(update_fields=['last_error'])
-                # Also copy the token hash to mesa for future auth
-                session.mesa.device_token_hash = session.device_token_hash
-                session.mesa.save(update_fields=['device_token_hash'])
+                if session.mesa.device_token_hash != session.device_token_hash:
+                    session.mesa.device_token_hash = session.device_token_hash
+                    session.mesa.save(update_fields=['device_token_hash'])
                 return Response({'status': 'PAIRED', 'device_token': token, 'mesa_id': session.mesa.id})
             
             return Response({'status': 'PAIRED', 'mesa_id': session.mesa.id})  # Token already retrieved
+
+        if session.expires_at < timezone.now():
+            return Response({'status': 'EXPIRED'})
         
         return Response({'status': 'WAITING', 'mode': 'session'})
 
@@ -3993,7 +3991,9 @@ class DeviceViewSet(viewsets.ViewSet):
             return Response({'detail': 'Forbidden'}, status=403)
 
         # Check if code matches Mesa (Option A)
+        using_mesa_code = False
         if mesa.pairing_code == code:
+            using_mesa_code = True
             from django.utils import timezone
             if not mesa.pairing_code_expires_at or mesa.pairing_code_expires_at < timezone.now():
                 return Response({'detail': 'Pairing code expired'}, status=400)
@@ -4017,9 +4017,12 @@ class DeviceViewSet(viewsets.ViewSet):
         mesa.device_token_hash = token_hash
         # Store raw token temporarily for retrieval by device (via status endpoint)
         mesa.last_error = f"PENDING_TOKEN:{raw_token}"
-        mesa.pairing_code = None
-        mesa.pairing_code_expires_at = None
-        mesa.save(update_fields=['device_token_hash', 'last_error', 'pairing_code', 'pairing_code_expires_at'])
+        update_fields = ['device_token_hash', 'last_error']
+        if not using_mesa_code:
+            mesa.pairing_code = None
+            mesa.pairing_code_expires_at = None
+            update_fields.extend(['pairing_code', 'pairing_code_expires_at'])
+        mesa.save(update_fields=update_fields)
         
         # If using session, save token hash there too so status check knows it's done
         if 'session' in locals() and session:
@@ -4548,6 +4551,16 @@ class DeviceViewSet(viewsets.ViewSet):
                 f'src={token_source} path={request.path}',
                 flush=True,
             )
+
+        if mesa is not None and mesa.last_error and mesa.last_error.startswith("PENDING_TOKEN:"):
+            # The device has now authenticated with the pending token, so
+            # it is safe to remove the temporary raw token and any pairing
+            # code. Until this point /device/status remains idempotent for
+            # poor network links where the first token response is lost.
+            mesa.last_error = None
+            mesa.pairing_code = None
+            mesa.pairing_code_expires_at = None
+            mesa.save(update_fields=['last_error', 'pairing_code', 'pairing_code_expires_at'])
 
         return mesa
 

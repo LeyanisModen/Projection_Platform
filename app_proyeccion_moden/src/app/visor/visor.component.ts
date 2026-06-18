@@ -53,13 +53,16 @@ export class VisorComponent implements OnInit, OnDestroy {
   // AnyDesk whether the kiosk is actually running the latest bundle
   // or a cached one. F12 is blocked in kiosk; this is the simplest
   // version probe we can offer the operator on screen.
-  readonly buildTag = '2026-06-09_1346Z';
+  readonly buildTag = '2026-06-18_1505+02';
   // Surfaces what's happening inside recoverTokenOrPair on the
   // LOADING screen so we can diagnose from AnyDesk without DevTools.
   loadingMessage: string = 'Conectando…';
   recoveryDebug: string | null = null;
   errorMessage: string = '';
   deviceToken: string | null = null;
+  private diskTokenSyncedFor: string | null = null;
+  private diskTokenPersistInFlightFor: string | null = null;
+  private diskTokenPersistGeneration = 0;
   mesaState: MesaState | null = null;
   mesaIdForPairing: number | null = null;
 
@@ -130,6 +133,9 @@ export class VisorComponent implements OnInit, OnDestroy {
   // previous slide back on screen for a split second.
   private static readonly INDEX_SYNC_GRACE_MS = 1500;
   private slideLockUntil = 0;
+  slideLockRemainingMs = 0;
+  readonly slideLockDots = [0, 1, 2, 3, 4];
+  private slideLockTimer: any = null;
   // A single 401 is not enough evidence that the token is dead. On
   // cold boots or backend rollouts we may see a transient auth miss;
   // only after repeated 401s do we discard the persisted token and
@@ -182,24 +188,21 @@ export class VisorComponent implements OnInit, OnDestroy {
       this.mesaIdForPairing = parseInt(idParam, 10);
     }
 
-    this.deviceToken = localStorage.getItem(this.getTokenKey());
+    const browserToken = localStorage.getItem(this.getTokenKey());
+    this.deviceToken = browserToken;
 
     if (this.mesaIdForPairing) {
       this.recoveryDebug = `Modo supervisor (mesa=${this.mesaIdForPairing}).`;
       this.loadMesaDirectly(this.mesaIdForPairing);
-    } else if (this.deviceToken) {
-      // Already paired according to localStorage. Mirror the token
-      // to the capture service so it has a fresh copy on disk.
-      this.recoveryDebug = `Token en localStorage (${this.deviceToken.slice(0, 8)}…). Conectando con backend.`;
-      this.cdr.detectChanges();
-      this.persistTokenLocally(this.deviceToken);
-      this.enterProjectionMode();
     } else {
-      // localStorage was empty. Try to recover the pairing token from
-      // the local capture service before falling back to pairing.
-      this.recoveryDebug = `localStorage vacío. Intentando recuperar del capture service.`;
+      // Always prefer the disk token kept by the local capture service.
+      // Chrome localStorage can survive with an old token and must never
+      // overwrite C:\moden\capture_service\device_token.txt on boot.
+      this.recoveryDebug = browserToken
+        ? `Token en Chrome (${browserToken.slice(0, 8)}...). Comprobando token local del mini-PC.`
+        : `Chrome sin token. Intentando recuperar del capture service.`;
       this.cdr.detectChanges();
-      this.recoverTokenOrPair();
+      this.recoverTokenOrPair(1, browserToken);
     }
 
     // The local capture service only exists on the mini-PC. In
@@ -223,12 +226,12 @@ export class VisorComponent implements OnInit, OnDestroy {
   // OpenCV has finished importing and the HTTP server has bound 5555.
   // Without the retries the first GET fails connection-refused and we
   // fall to the pairing screen on every cold boot.
-  private static readonly TOKEN_RECOVERY_MAX_ATTEMPTS = 6;
+  private static readonly TOKEN_RECOVERY_MAX_ATTEMPTS = 15;
   private static readonly TOKEN_RECOVERY_RETRY_MS = 2000;
 
-  private recoverTokenOrPair(attempt: number = 1): void {
-    this.loadingMessage = 'Recuperando sesión guardada…';
-    this.recoveryDebug = `Intento ${attempt}/${VisorComponent.TOKEN_RECOVERY_MAX_ATTEMPTS} → GET ${this.captureServiceUrl}/device_token`;
+  private recoverTokenOrPair(attempt: number = 1, browserFallbackToken: string | null = null): void {
+    this.loadingMessage = 'Recuperando sesion guardada...';
+    this.recoveryDebug = `Intento ${attempt}/${VisorComponent.TOKEN_RECOVERY_MAX_ATTEMPTS} -> GET ${this.captureServiceUrl}/device_token`;
     this.cdr.detectChanges();
 
     let httpError: string | null = null;
@@ -242,9 +245,10 @@ export class VisorComponent implements OnInit, OnDestroy {
     })).subscribe((res) => {
       const recovered = (res?.device_token || '').trim();
       if (recovered) {
-        this.recoveryDebug = `OK token=${recovered.slice(0, 8)}… (intento ${attempt})`;
+        this.recoveryDebug = `OK token local=${recovered.slice(0, 8)}... (intento ${attempt})`;
         this.cdr.detectChanges();
         this.deviceToken = recovered;
+        this.diskTokenSyncedFor = recovered;
         localStorage.setItem(this.getTokenKey(), recovered);
         // tiny delay so the success message is readable
         setTimeout(() => this.enterProjectionMode(), 400);
@@ -252,17 +256,26 @@ export class VisorComponent implements OnInit, OnDestroy {
       }
       const reason = httpError
         ? `error HTTP ${httpError}`
-        : (res === null ? 'sin conexión' : 'token vacío');
+        : (res === null ? 'sin conexion' : 'token vacio');
       if (attempt < VisorComponent.TOKEN_RECOVERY_MAX_ATTEMPTS) {
-        this.recoveryDebug = `Intento ${attempt}: ${reason}. Reintentando…`;
+        this.recoveryDebug = `Intento ${attempt}: ${reason}. Reintentando...`;
         this.cdr.detectChanges();
         setTimeout(
-          () => this.recoverTokenOrPair(attempt + 1),
+          () => this.recoverTokenOrPair(attempt + 1, browserFallbackToken),
           VisorComponent.TOKEN_RECOVERY_RETRY_MS,
         );
         return;
       }
-      this.recoveryDebug = `Agotados ${VisorComponent.TOKEN_RECOVERY_MAX_ATTEMPTS} intentos (${reason}). Pidiendo vinculación.`;
+      const fallback = (browserFallbackToken || '').trim();
+      if (fallback) {
+        this.recoveryDebug = `Sin token local tras ${VisorComponent.TOKEN_RECOVERY_MAX_ATTEMPTS} intentos (${reason}). Probando token de Chrome sin escribirlo en disco.`;
+        this.cdr.detectChanges();
+        this.deviceToken = fallback;
+        localStorage.setItem(this.getTokenKey(), fallback);
+        setTimeout(() => this.enterProjectionMode(), 400);
+        return;
+      }
+      this.recoveryDebug = `Agotados ${VisorComponent.TOKEN_RECOVERY_MAX_ATTEMPTS} intentos (${reason}). Pidiendo vinculacion.`;
       this.cdr.detectChanges();
       setTimeout(() => this.requestPairingCode(), 1500);
     });
@@ -270,8 +283,8 @@ export class VisorComponent implements OnInit, OnDestroy {
 
   // Mirror the pairing token to the local capture service so it
   // survives a Chrome profile reset. Called whenever a fresh token is
-  // obtained (pairing flow) and again as the migration path when
-  // localStorage already has a value. An empty string clears the
+  // obtained (pairing flow) and after the backend accepts a browser
+  // fallback token. An empty string clears the
   // file (used after a 401 so the next cold boot doesn't restore an
   // invalid token).
   //
@@ -279,11 +292,24 @@ export class VisorComponent implements OnInit, OnDestroy {
   // still be booting when the request goes out, and silently dropping
   // the token from disk is exactly the failure mode that pushed the
   // operator into endless re-pairing loops.
-  private static readonly TOKEN_PERSIST_MAX_ATTEMPTS = 6;
+  private static readonly TOKEN_PERSIST_MAX_ATTEMPTS = 15;
   private static readonly TOKEN_PERSIST_RETRY_MS = 2000;
 
-  private persistTokenLocally(token: string, attempt: number = 1): void {
+  private persistTokenLocally(token: string, attempt: number = 1, generation?: number): void {
     if (this.isSupervisor) return;
+    const marker = token || '__clear__';
+    if (attempt === 1) {
+      if (this.diskTokenPersistInFlightFor === marker) return;
+      this.diskTokenPersistInFlightFor = marker;
+      generation = ++this.diskTokenPersistGeneration;
+    } else if (
+      generation !== this.diskTokenPersistGeneration ||
+      this.diskTokenPersistInFlightFor !== marker
+    ) {
+      return;
+    }
+
+    const requestGeneration = generation ?? this.diskTokenPersistGeneration;
     this.http.post(
       `${this.captureServiceUrl}/device_token`,
       token,
@@ -293,20 +319,25 @@ export class VisorComponent implements OnInit, OnDestroy {
       }
     ).subscribe({
       next: () => {
+        if (requestGeneration !== this.diskTokenPersistGeneration) return;
         const op = token ? 'persisted' : 'cleared';
+        this.diskTokenSyncedFor = token || null;
+        this.diskTokenPersistInFlightFor = null;
         console.log(`[Visor] Pairing token ${op} on capture service (attempt ${attempt})`);
       },
       error: (err) => {
+        if (requestGeneration !== this.diskTokenPersistGeneration) return;
         console.warn(
           `[Visor] persist token attempt ${attempt} failed:`,
           err?.status, err?.message || err?.statusText,
         );
         if (attempt < VisorComponent.TOKEN_PERSIST_MAX_ATTEMPTS) {
           setTimeout(
-            () => this.persistTokenLocally(token, attempt + 1),
+            () => this.persistTokenLocally(token, attempt + 1, requestGeneration),
             VisorComponent.TOKEN_PERSIST_RETRY_MS,
           );
         } else {
+          this.diskTokenPersistInFlightFor = null;
           console.error('[Visor] persist token exhausted retries; disk copy may be stale');
         }
       },
@@ -326,10 +357,13 @@ export class VisorComponent implements OnInit, OnDestroy {
       if (stats === null) {
         this.captureServiceOnline = false;
       } else {
-        this.captureServiceOnline = true;
+        this.captureServiceOnline = stats?.camera_available === false ? false : true;
         const status = stats?.sharpness_status;
         if (status === 'ok' || status === 'warning' || status === 'blurry' || status === 'unknown') {
           this.cameraSharpness = status;
+        }
+        if (stats?.camera_available === false) {
+          this.cameraSharpness = 'unknown';
         }
       }
       this.cdr.detectChanges();
@@ -367,6 +401,7 @@ export class VisorComponent implements OnInit, OnDestroy {
     this.itemPollSub?.unsubscribe();
     this.captureHealthSub?.unsubscribe();
     this.clearAuthRecoveryTimer();
+    this.clearSlideLockIndicator();
     if (this.eventSource) this.eventSource.close();
   }
 
@@ -559,8 +594,45 @@ export class VisorComponent implements OnInit, OnDestroy {
     return this.isCoverageBackgroundActive ? 'Para quitar fondo de cobertura' : 'Para mostrar fondo de cobertura';
   }
 
+  get showSlideLockIndicator(): boolean {
+    return this.shouldApplySlideLock() && this.slideLockRemainingMs > 0;
+  }
+
+  get slideLockDotsRemaining(): number {
+    return Math.ceil(this.slideLockRemainingMs / 1000);
+  }
+
   private shouldApplySlideLock(): boolean {
     return !this.isSupervisor;
+  }
+
+  private updateSlideLockIndicator(): void {
+    const remaining = Math.max(0, this.slideLockUntil - Date.now());
+    this.slideLockRemainingMs = remaining;
+
+    if (remaining <= 0) {
+      this.clearSlideLockIndicator();
+      return;
+    }
+
+    this.cdr.detectChanges();
+  }
+
+  private startSlideLockIndicator(): void {
+    this.clearSlideLockIndicator();
+    this.updateSlideLockIndicator();
+    this.slideLockTimer = setInterval(() => this.updateSlideLockIndicator(), 200);
+  }
+
+  private clearSlideLockIndicator(): void {
+    if (this.slideLockTimer) {
+      clearInterval(this.slideLockTimer);
+      this.slideLockTimer = null;
+    }
+    if (this.slideLockRemainingMs !== 0) {
+      this.slideLockRemainingMs = 0;
+      this.cdr.detectChanges();
+    }
   }
 
   private async forceAppReload(): Promise<void> {
@@ -721,6 +793,8 @@ export class VisorComponent implements OnInit, OnDestroy {
   }
 
   toggleCalibration(targetIndex: number): void {
+    this.slideLockUntil = 0;
+    this.clearSlideLockIndicator();
     if (this.currentIndex >= 0) {
       // Enter calibration from normal mode
       this.previousIndex = this.currentIndex;
@@ -736,6 +810,8 @@ export class VisorComponent implements OnInit, OnDestroy {
   }
 
   toggleCoverageBackground(): void {
+    this.slideLockUntil = 0;
+    this.clearSlideLockIndicator();
     if (this.currentIndex === VisorComponent.COVERAGE_BACKGROUND_INDEX) {
       this.currentIndex = this.previousIndex;
     } else {
@@ -747,7 +823,10 @@ export class VisorComponent implements OnInit, OnDestroy {
 
   nextImage(): void {
     if (this.currentIndex < 0) return;
-    if (this.shouldApplySlideLock() && Date.now() < this.slideLockUntil) return;
+    if (this.shouldApplySlideLock() && Date.now() < this.slideLockUntil) {
+      this.updateSlideLockIndicator();
+      return;
+    }
     // While a _check capture is in flight, freeze the navigation: the
     // 5 s read-lock can run out before the round-trip
     // camera + backend finishes, and we must not let the operator skip
@@ -781,8 +860,10 @@ export class VisorComponent implements OnInit, OnDestroy {
     this.updateProjectedImage();
     if (this.shouldApplySlideLock()) {
       this.slideLockUntil = Date.now() + VisorComponent.SLIDE_LOCK_MS;
+      this.startSlideLockIndicator();
     } else {
       this.slideLockUntil = 0;
+      this.clearSlideLockIndicator();
     }
     this.checkPhotoTrigger();
   }
@@ -814,6 +895,8 @@ export class VisorComponent implements OnInit, OnDestroy {
         target--;
       }
       this.currentIndex = target;
+      this.slideLockUntil = 0;
+      this.clearSlideLockIndicator();
       this.updateProjectedImage();
     }
   }
@@ -1253,6 +1336,9 @@ export class VisorComponent implements OnInit, OnDestroy {
       })
     ).subscribe((state: MesaState | null) => {
       if (!state) return;
+      if (!this.isSupervisor && this.deviceToken && this.diskTokenSyncedFor !== this.deviceToken) {
+        this.persistTokenLocally(this.deviceToken);
+      }
       const syncedIndex = this.reconcileRemoteIndex(state.current_image_index);
       this.mesaState = {
         ...state,
@@ -1488,6 +1574,7 @@ export class VisorComponent implements OnInit, OnDestroy {
     this.cdr.detectChanges();
 
     localStorage.removeItem(this.getTokenKey());
+    this.diskTokenSyncedFor = null;
     this.persistTokenLocally('');
     this.deviceToken = null;
     this.mesaState = null;

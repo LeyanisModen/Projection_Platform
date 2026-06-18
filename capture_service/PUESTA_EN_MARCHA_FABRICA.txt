@@ -176,3 +176,45 @@ Asegurate de que Chrome kiosko haya vuelto a abrirse.
 Si no se ha abierto, ejecuta:
 
 Start-Process 'C:\moden\capture_service\start-player.bat'
+
+
+
+===========================================================
+UPDATE MINI PCs DESPLEGADOS -- PRIMERA VEZ
+===========================================================
+Este bloque se ejecuta UNA VEZ en mini-PCs ya desplegados para instalar la
+tarea programada "MODEN Auto Update".
+
+Despues de esto, las siguientes versiones se revisan solas cada noche a las
+04:15 desde:
+
+  G:\Mi unidad\MODEN_UPDATE\capture_service
+
+Tu trabajo sera reemplazar esa carpeta en el Drive de cada ferralla cuando
+quieras publicar una version nueva del capture_service.
+
+$src = 'G:\Mi unidad\MODEN_UPDATE\capture_service'
+
+$mesaId = (
+  Select-String -Path 'C:\moden\capture_service\config.ini' -Pattern '^\s*mesa_id\s*=' |
+  Select-Object -First 1
+).Line -replace '^\s*mesa_id\s*=\s*', ''
+
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+
+Get-Process -Name python, pythonw, chrome -ErrorAction SilentlyContinue | Stop-Process -Force
+
+cd $src
+.\install-minipc.ps1 -MesaId $mesaId -SkipApps -SkipHardening
+
+Start-Process 'C:\moden\capture_service\start-player.bat'
+
+Start-Sleep -Seconds 10
+curl.exe http://127.0.0.1:5555/health
+Test-Path 'C:\moden\capture_service\device_token.txt'
+Get-ScheduledTask -TaskName 'MODEN Auto Update' | Format-List TaskName,State,Triggers
+
+
+FORZAR UPDATE MANUAL DESDE DRIVE
+-----------------------------------------
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File 'C:\moden\capture_service\update-capture-service.ps1' -Force

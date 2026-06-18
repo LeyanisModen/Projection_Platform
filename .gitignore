@@ -29,6 +29,7 @@ yarn-error.log*
 Thumbs.db
 .vscode/
 .idea/
+.playwright-mcp/
 *.swp
 *.bak
 

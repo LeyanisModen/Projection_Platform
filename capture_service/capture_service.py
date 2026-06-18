@@ -87,8 +87,11 @@ class Config:
         # Daily sharpness check (uses variance of Laplacian on the first
         # frame of the day; low variance = blurry / dirty lens).
         self.sharpness_enabled = True
-        self.sharpness_threshold_blurry = 50.0
-        self.sharpness_threshold_warning = 150.0
+        # Keep the visible "clean lens" warning conservative. New OBSBOT
+        # units can produce low first-frame Laplacian values while exposure
+        # settles, so only very soft images are marked as blurry.
+        self.sharpness_threshold_blurry = 20.0
+        self.sharpness_threshold_warning = 80.0
 
         if path.exists():
             self._load(path)
@@ -180,10 +183,18 @@ def get_camera():
 def capture_frame():
     """Fresh frame from the camera. Caller must hold _camera_lock."""
     cam = get_camera()
+    if cam is None or not cam.isOpened():
+        _set_camera_health(False, 'camera open failed')
+        return False, None
     # Discard a few buffered frames so we get a fresh one.
     for _ in range(3):
         cam.read()
-    return cam.read()
+    ret, frame = cam.read()
+    if ret and frame is not None:
+        _set_camera_health(True)
+    else:
+        _set_camera_health(False, 'camera read failed')
+    return ret, frame
 
 
 # ---------------------------------------------------------------------------
@@ -198,6 +209,9 @@ _stats = {
     'captures_today_date': None,  # ISO date
     'local_disk_bytes': 0,
     'last_error': None,
+    'camera_available': None,
+    'last_camera_ok_at': None,
+    'last_camera_error_at': None,
     'skipped_out_of_schedule': 0,
     # Sharpness check (runs once per day on the first active tick)
     'sharpness_status': 'unknown',  # unknown | ok | warning | blurry
@@ -220,6 +234,18 @@ def _update_stats_after_save():
 def _set_last_error(msg: str):
     with _stats_lock:
         _stats['last_error'] = msg
+
+
+def _set_camera_health(available, error=None):
+    now_iso = datetime.now().isoformat(timespec='seconds')
+    with _stats_lock:
+        _stats['camera_available'] = bool(available)
+        if available:
+            _stats['last_camera_ok_at'] = now_iso
+            return
+        _stats['last_camera_error_at'] = now_iso
+        _stats['last_error'] = error or 'camera unavailable'
+        _stats['sharpness_status'] = 'unknown'
 
 
 # ---------------------------------------------------------------------------

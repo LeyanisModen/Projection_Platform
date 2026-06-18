@@ -268,6 +268,9 @@ En el mini-PC, con el pendrive conectado:
 - **Auto-arranque**: registra la tarea `MODEN Player`, que lanza
   `start-player.bat` al iniciar sesión.
 
+Tambien registra `MODEN Auto Update`, que revisa cada noche a las 04:15 si
+hay una version nueva en `G:\Mi unidad\MODEN_UPDATE\capture_service`.
+
 Al terminar imprime `Listo.` en verde y guarda un log en
 `%TEMP%\moden-minipc-setup-*.log`.
 
@@ -596,14 +599,27 @@ la PIN. Casos habituales:
 - **Reencuadrar la OBSBOT**: mata `python/pythonw/chrome`, abre OBSBOT,
   ajusta la cámara y luego vuelve a lanzar
   `C:\moden\capture_service\start-player.bat` o reinicia el equipo.
-- **Actualizar el capture service**: para mini-PCs ya configurados, copia la
-  carpeta nueva preservando `venv`, `config.ini` y `device_token.txt`, y
-  reinicia el player:
+- **Actualizar el capture service por primera vez en mini-PCs ya desplegados**:
+  ejecuta el instalador desde Drive para copiar la version nueva, preservar
+  `venv`, `config.ini` y `device_token.txt`, y registrar `MODEN Auto Update`.
+  En futuras versiones bastara con reemplazar la carpeta
+  `G:\Mi unidad\MODEN_UPDATE\capture_service` de cada ferralla:
   ```powershell
+  $src = 'G:\Mi unidad\MODEN_UPDATE\capture_service'
+  $mesaId = (
+    Select-String -Path 'C:\moden\capture_service\config.ini' -Pattern '^\s*mesa_id\s*=' |
+    Select-Object -First 1
+  ).Line -replace '^\s*mesa_id\s*=\s*', ''
+  Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
   Get-Process -Name python, pythonw, chrome -ErrorAction SilentlyContinue | Stop-Process -Force
-  robocopy D:\capture_service C:\moden\capture_service /MIR /XD venv __pycache__ /XF config.ini device_token.txt
-  if ($LASTEXITCODE -ge 8) { throw "robocopy fallo con codigo $LASTEXITCODE" }
+  cd $src
+  .\install-minipc.ps1 -MesaId $mesaId -SkipApps -SkipHardening
   Start-Process 'C:\moden\capture_service\start-player.bat'
+  Get-ScheduledTask -TaskName 'MODEN Auto Update' | Format-List TaskName,State,Triggers
+  ```
+  Para forzar una revision manual desde Drive:
+  ```powershell
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -File 'C:\moden\capture_service\update-capture-service.ps1' -Force
   ```
 - **Revisar por qué no sube una foto**:
   `(Invoke-WebRequest http://127.0.0.1:5555/stats -UseBasicParsing).Content`

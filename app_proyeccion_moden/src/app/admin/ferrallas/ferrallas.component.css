@@ -533,6 +533,47 @@
     font-weight: 700;
 }
 
+.mesa-health-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2.4rem;
+    padding: 0.12rem 0.4rem;
+    border-radius: 999px;
+    font-size: 0.62rem;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+
+.mesa-health-pill.offline {
+    background: #fee2e2;
+    color: #b91c1c;
+}
+
+.mesa-health-pill.no-signal {
+    background: #111827;
+    color: #f9fafb;
+}
+
+.mesa-health-pill.dirty {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.mesa-visor-btn {
+    color: #415167;
+    border-color: #cfd6df;
+    background: #f8fafc;
+}
+
+.mesa-visor-btn:hover,
+.mesa-visor-btn:focus {
+    color: #0f4c81;
+    border-color: #9bb7d4;
+    background: #eef6ff;
+}
+
 /* ---- Switch ternario INF/SUP/INACTIVA en la lista de mesas ---- */
 .mesa-estado-switch {
     display: inline-flex;

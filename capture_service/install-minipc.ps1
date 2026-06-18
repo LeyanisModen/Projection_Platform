@@ -83,6 +83,55 @@ function Step([string]$name) {
     Write-Host ("=== {0} ===" -f $name) -ForegroundColor Cyan
 }
 
+function Set-IniValue([string]$Path, [string]$Section, [string]$Key, [string]$Value) {
+    $lines = [System.Collections.Generic.List[string]]::new()
+    if (Test-Path $Path) {
+        foreach ($line in Get-Content $Path) {
+            [void]$lines.Add($line)
+        }
+    }
+
+    $sectionIndex = -1
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i].Trim().ToLowerInvariant() -eq "[$($Section.ToLowerInvariant())]") {
+            $sectionIndex = $i
+            break
+        }
+    }
+
+    if ($sectionIndex -lt 0) {
+        if ($lines.Count -gt 0 -and $lines[$lines.Count - 1].Trim() -ne '') {
+            [void]$lines.Add('')
+        }
+        [void]$lines.Add("[$Section]")
+        [void]$lines.Add("$Key = $Value")
+    } else {
+        $insertIndex = $sectionIndex + 1
+        $keyIndex = -1
+        for ($i = $sectionIndex + 1; $i -lt $lines.Count; $i++) {
+            if ($lines[$i].TrimStart().StartsWith('[')) {
+                break
+            }
+            $insertIndex = $i + 1
+            if ($lines[$i] -match "^\s*$([regex]::Escape($Key))\s*=") {
+                $keyIndex = $i
+                break
+            }
+        }
+
+        if ($keyIndex -ge 0) {
+            $lines[$keyIndex] = "$Key = $Value"
+        } else {
+            $lines.Insert($insertIndex, "$Key = $Value")
+        }
+    }
+
+    [System.IO.File]::WriteAllText(
+        $Path, ($lines -join [Environment]::NewLine) + [Environment]::NewLine,
+        [System.Text.UTF8Encoding]::new($false)
+    )
+}
+
 function Set-RegValue([string]$Path, [string]$Name, $Value, [string]$Type = 'DWord') {
     # Windows 11 protects some registry paths (taskbar, explorer,
     # policies propagated by the enterprise). If a single key fails we
@@ -440,6 +489,12 @@ relanza el instalador (el PATH solo se refresca al crear el proceso).
         Write-Warning "No encontré config.ini.example; crea el config.ini a mano."
     }
 
+    if (Test-Path $configPath) {
+        Set-IniValue $configPath 'sharpness' 'threshold_blurry' '20'
+        Set-IniValue $configPath 'sharpness' 'threshold_warning' '80'
+        Write-Host "  Â· sharpness: threshold_blurry=20, threshold_warning=80"
+    }
+
     Step "Auto-arranque (tarea programada 'MODEN Player')"
     # Tarea programada "at logon" en lugar de shortcut en shell:startup.
     # shell:startup sufre el StartupDelayInMSec (~10-15 s) que Windows 11
@@ -453,6 +508,31 @@ relanza el instalador (el PATH solo se refresca al crear el proceso).
     Register-ScheduledTask -TaskName 'MODEN Player' `
         -Action $action -Trigger $trigger -Settings $settings `
         -RunLevel Limited -User 'moden' -Force | Out-Null
+
+    Step "Auto-actualizacion nocturna (tarea programada 'MODEN Auto Update')"
+    $updateScript = Join-Path $dest 'update-capture-service.ps1'
+    if (Test-Path $updateScript) {
+        $updateAction = New-ScheduledTaskAction `
+            -Execute 'powershell.exe' `
+            -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$updateScript`""
+        $updateTrigger = New-ScheduledTaskTrigger -Daily -At '4:15am'
+        $updateSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries `
+                          -DontStopIfGoingOnBatteries -StartWhenAvailable
+        $updatePrincipal = New-ScheduledTaskPrincipal `
+            -UserId 'moden' `
+            -LogonType Interactive `
+            -RunLevel Highest
+
+        Register-ScheduledTask -TaskName 'MODEN Auto Update' `
+            -Action $updateAction `
+            -Trigger $updateTrigger `
+            -Settings $updateSettings `
+            -Principal $updatePrincipal `
+            -Force | Out-Null
+        Write-Host "  Â· tarea 'MODEN Auto Update' registrada (diaria 04:15)"
+    } else {
+        Write-Warning "No encontre update-capture-service.ps1; no registro auto-update."
+    }
     Write-Host "  · tarea 'MODEN Player' registrada (trigger: at logon de 'moden')"
 
     # Si una versión anterior del instalador dejó un shortcut en

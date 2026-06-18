@@ -15,7 +15,7 @@ from rest_framework.test import APITestCase
 from api.models import (
     Imagen, Mesa, MesaQueueItem, Modulo, Planta, Proyecto,
     DetalleModuloFase, GrupoMesas, FotoFabricacion,
-    FerrallaContacto, FerrallaDireccion
+    FerrallaContacto, FerrallaDireccion, PairingSession
 )
 
 
@@ -87,6 +87,83 @@ class PermissionAndDeviceAuthTests(APITestCase):
         )
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data["detail"], "Pairing code expired")
+
+    def test_paired_session_token_survives_expired_code_until_device_authenticates(self):
+        session = PairingSession.objects.create(
+            pairing_code="BADNET",
+            expires_at=timezone.now() + timedelta(minutes=1),
+        )
+
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.user_a_token.key}")
+        pair_response = self.client.post(
+            "/api/device/pair/",
+            {"mesa_id": self.mesa_a.id, "pairing_code": "BADNET"},
+            format="json",
+        )
+        self.assertEqual(pair_response.status_code, 200)
+
+        session.expires_at = timezone.now() - timedelta(minutes=1)
+        session.save(update_fields=["expires_at"])
+        self.client.credentials()
+
+        first_status = self.client.get("/api/device/status/?code=BADNET")
+        self.assertEqual(first_status.status_code, 200)
+        self.assertEqual(first_status.data["status"], "PAIRED")
+        token = first_status.data["device_token"]
+        self.assertTrue(token)
+
+        second_status = self.client.get("/api/device/status/?code=BADNET")
+        self.assertEqual(second_status.status_code, 200)
+        self.assertEqual(second_status.data["device_token"], token)
+
+        self.mesa_a.refresh_from_db()
+        self.assertTrue(self.mesa_a.last_error.startswith("PENDING_TOKEN:"))
+
+        heartbeat = self.client.post(
+            "/api/device/heartbeat/",
+            {},
+            format="json",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+        )
+        self.assertEqual(heartbeat.status_code, 200)
+
+        self.mesa_a.refresh_from_db()
+        self.assertIsNone(self.mesa_a.last_error)
+
+    def test_direct_mesa_pairing_keeps_token_retrievable_until_device_authenticates(self):
+        self.mesa_a.pairing_code = "MESA03"
+        self.mesa_a.pairing_code_expires_at = timezone.now() + timedelta(minutes=1)
+        self.mesa_a.save(update_fields=["pairing_code", "pairing_code_expires_at"])
+
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.user_a_token.key}")
+        pair_response = self.client.post(
+            "/api/device/pair/",
+            {"mesa_id": self.mesa_a.id, "pairing_code": "MESA03"},
+            format="json",
+        )
+        self.assertEqual(pair_response.status_code, 200)
+
+        self.mesa_a.pairing_code_expires_at = timezone.now() - timedelta(minutes=1)
+        self.mesa_a.save(update_fields=["pairing_code_expires_at"])
+        self.client.credentials()
+
+        status_response = self.client.get("/api/device/status/?code=MESA03")
+        self.assertEqual(status_response.status_code, 200)
+        self.assertEqual(status_response.data["status"], "PAIRED")
+        token = status_response.data["device_token"]
+        self.assertTrue(token)
+
+        heartbeat = self.client.post(
+            "/api/device/heartbeat/",
+            {},
+            format="json",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+        )
+        self.assertEqual(heartbeat.status_code, 200)
+
+        self.mesa_a.refresh_from_db()
+        self.assertIsNone(self.mesa_a.last_error)
+        self.assertIsNone(self.mesa_a.pairing_code)
 
 
 @override_settings(
@@ -451,6 +528,20 @@ class PlanningFoundationTests(APITestCase):
         )
         self.assertEqual(response.status_code, 201)
         return GrupoMesas.objects.get(id=response.data["id"])
+
+    def test_grupo_mesas_summary_includes_last_seen(self):
+        grupo = self._crear_grupo("Grupo Last Seen")
+        mesa = grupo.mesas.first()
+        seen_at = timezone.now() - timedelta(minutes=3)
+        mesa.last_seen = seen_at
+        mesa.save(update_fields=["last_seen"])
+
+        response = self.client.get(f"/api/grupos-mesas/{grupo.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        mesa_payload = response.data["mesas"][0]
+        self.assertIn("last_seen", mesa_payload)
+        self.assertIsNotNone(mesa_payload["last_seen"])
 
     def test_add_mesa_inferior_asigna_siguiente_indice_libre(self):
         """El indice ahora es global por grupo: tras 3 mesas default, la

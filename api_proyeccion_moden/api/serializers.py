@@ -504,7 +504,7 @@ class MesaResumenGrupoSerializer(serializers.ModelSerializer):
         model = Mesa
         fields = [
             "id", "nombre", "tipo", "indice", "activa", "is_linked",
-            "capture_service_online", "camera_sharpness",
+            "last_seen", "capture_service_online", "camera_sharpness",
         ]
 
     def get_is_linked(self, obj):

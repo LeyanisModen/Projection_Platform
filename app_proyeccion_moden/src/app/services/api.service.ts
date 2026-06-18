@@ -256,6 +256,7 @@ export interface GrupoMesaResumen {
     indice: number;
     activa: boolean;
     is_linked: boolean;
+    last_seen?: string | null;
     capture_service_online?: boolean | null;
     camera_sharpness?: 'ok' | 'warning' | 'blurry' | 'unknown' | null;
 }

@@ -70,5 +70,8 @@ enabled = true
 ;   > threshold_warning      -> status 'ok'
 ;   >= threshold_blurry      -> status 'warning' (borderline)
 ;   < threshold_blurry       -> status 'blurry' (likely dirty lens)
-threshold_blurry = 50
-threshold_warning = 150
+; Lower values are more tolerant. Keep these conservative because a
+; perfectly clean camera can see low edge variance on plain projected
+; backgrounds while exposure settles.
+threshold_blurry = 20
+threshold_warning = 80

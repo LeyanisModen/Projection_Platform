@@ -1,4 +1,4 @@
-import { Component, OnInit, ChangeDetectorRef, HostListener } from '@angular/core';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef, HostListener } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService, FerrallaContacto, FerrallaDireccion, GrupoMesas, GrupoMesaResumen, User } from '../../services/api.service';
@@ -10,7 +10,10 @@ import { ApiService, FerrallaContacto, FerrallaDireccion, GrupoMesas, GrupoMesaR
   templateUrl: './ferrallas.component.html',
   styleUrls: ['./ferrallas.component.css']
 })
-export class FerrallasComponent implements OnInit {
+export class FerrallasComponent implements OnInit, OnDestroy {
+  private static readonly MESA_OFFLINE_AFTER_MS = 2 * 60 * 1000;
+  private static readonly MESA_REFRESH_MS = 30 * 1000;
+
   users: User[] = [];
   loading = false;
   error = '';
@@ -40,11 +43,7 @@ export class FerrallasComponent implements OnInit {
 
   showCredentialsModal = false;
   credentialUser: User | null = null;
-  credentialStoredPasswordDraft = '';
-  newCredentialPassword = '';
-  credentialError = '';
-  credentialSuccess = '';
-  credentialLoading = false;
+  private mesaRefreshTimer: any = null;
 
   constructor(
     private api: ApiService,
@@ -53,6 +52,10 @@ export class FerrallasComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadUsers();
+  }
+
+  ngOnDestroy(): void {
+    this.clearMesaAutoRefresh();
   }
 
   loadUsers() {
@@ -134,25 +137,53 @@ export class FerrallasComponent implements OnInit {
 
     if (this.selectedUser) {
       this.loadGruposMesas(this.selectedUser.id);
+      this.startMesaAutoRefresh();
     } else {
       this.gruposMesas = [];
+      this.clearMesaAutoRefresh();
     }
   }
 
-  loadGruposMesas(userId: number) {
-    this.loadingMesas = true;
+  loadGruposMesas(userId: number, silent = false) {
+    if (!silent) this.loadingMesas = true;
     this.api.getGruposMesas(userId).subscribe({
       next: (data) => {
-        this.gruposMesas = data;
-        this.loadingMesas = false;
+        this.gruposMesas = data.map(grupo => ({
+          ...grupo,
+          mesas: this.sortMesasByName(grupo.mesas),
+        }));
+        if (!silent) this.loadingMesas = false;
         this.cdr.detectChanges();
       },
       error: (err) => {
         console.error('Error loading grupos de mesas', err);
-        this.loadingMesas = false;
+        if (!silent) this.loadingMesas = false;
         this.cdr.detectChanges();
       }
     });
+  }
+
+  private startMesaAutoRefresh(): void {
+    this.clearMesaAutoRefresh();
+    this.mesaRefreshTimer = setInterval(() => {
+      if (!this.selectedUser || this.loadingMesas || this.showPairingModal || this.showUnbindModal) return;
+      this.loadGruposMesas(this.selectedUser.id, true);
+    }, FerrallasComponent.MESA_REFRESH_MS);
+  }
+
+  private clearMesaAutoRefresh(): void {
+    if (!this.mesaRefreshTimer) return;
+    clearInterval(this.mesaRefreshTimer);
+    this.mesaRefreshTimer = null;
+  }
+
+  private sortMesasByName(mesas: GrupoMesaResumen[] = []): GrupoMesaResumen[] {
+    return [...mesas].sort((a, b) =>
+      (a.nombre || '').localeCompare(b.nombre || '', 'es', {
+        numeric: true,
+        sensitivity: 'base',
+      })
+    );
   }
 
   toggleAddMesaForm() {
@@ -231,7 +262,7 @@ export class FerrallasComponent implements OnInit {
     this.loadingMesas = true;
     this.api.addMesaToGrupo(grupo.id, 'INFERIOR').subscribe({
       next: (mesa) => {
-        grupo.mesas = [...(grupo.mesas || []), mesa];
+        grupo.mesas = this.sortMesasByName([...(grupo.mesas || []), mesa]);
         this.loadingMesas = false;
         this.cdr.detectChanges();
       },
@@ -343,6 +374,10 @@ export class FerrallasComponent implements OnInit {
     this.cdr.detectChanges();
   }
 
+  openMesaVisor(mesa: GrupoMesaResumen): void {
+    window.open(`/visor/${mesa.id}`, '_blank', 'noopener');
+  }
+
   closePairingModal(): void {
     this.showPairingModal = false;
     this.pairingMesa = null;
@@ -420,11 +455,6 @@ export class FerrallasComponent implements OnInit {
 
   openCredentialsModal(user: User): void {
     this.credentialUser = user;
-    this.credentialStoredPasswordDraft = user.password_texto_plano || '';
-    this.newCredentialPassword = '';
-    this.credentialError = '';
-    this.credentialSuccess = '';
-    this.credentialLoading = false;
     this.showCredentialsModal = true;
     this.cdr.detectChanges();
   }
@@ -432,78 +462,11 @@ export class FerrallasComponent implements OnInit {
   closeCredentialsModal(): void {
     this.showCredentialsModal = false;
     this.credentialUser = null;
-    this.credentialStoredPasswordDraft = '';
-    this.newCredentialPassword = '';
-    this.credentialError = '';
-    this.credentialSuccess = '';
     this.cdr.detectChanges();
-  }
-
-  generatePassword(): void {
-    this.newCredentialPassword = Math.random().toString(36).slice(-8);
   }
 
   generateFormPassword(): void {
     this.newUser.password = Math.random().toString(36).slice(-8);
-  }
-
-  updateCredentials(): void {
-    if (!this.credentialUser || !this.newCredentialPassword) return;
-
-    this.credentialLoading = true;
-    this.credentialError = '';
-    const payload = { password: this.newCredentialPassword };
-
-    this.api.updateUser(this.credentialUser.id, payload).subscribe({
-      next: (updatedUser: User) => {
-        this.credentialLoading = false;
-        this.credentialSuccess = 'Contrasena actualizada correctamente';
-        this.applyUpdatedCredentialUser(updatedUser);
-        this.credentialStoredPasswordDraft = updatedUser.password_texto_plano || '';
-        this.newCredentialPassword = '';
-        this.cdr.detectChanges();
-      },
-      error: () => {
-        this.credentialLoading = false;
-        this.credentialError = 'Error actualizando contrasena';
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  saveStoredCredentialOnly(): void {
-    if (!this.credentialUser) return;
-
-    this.credentialLoading = true;
-    this.credentialError = '';
-    this.credentialSuccess = '';
-    const payload = { password_texto_plano: this.credentialStoredPasswordDraft || '' };
-
-    this.api.updateUser(this.credentialUser.id, payload).subscribe({
-      next: (updatedUser: User) => {
-        this.credentialLoading = false;
-        this.credentialSuccess = 'Contrasena visible guardada sin cambiar el login';
-        this.applyUpdatedCredentialUser(updatedUser);
-        this.credentialStoredPasswordDraft = updatedUser.password_texto_plano || '';
-        this.cdr.detectChanges();
-      },
-      error: () => {
-        this.credentialLoading = false;
-        this.credentialError = 'Error guardando la contrasena visible';
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  private applyUpdatedCredentialUser(updatedUser: User): void {
-    this.credentialUser = updatedUser;
-    const index = this.users.findIndex(u => u.id === updatedUser.id);
-    if (index !== -1) {
-      this.users[index] = updatedUser;
-    }
-    if (this.selectedUser?.id === updatedUser.id) {
-      this.selectedUser = updatedUser;
-    }
   }
 
   saveUser() {
@@ -714,11 +677,29 @@ export class FerrallasComponent implements OnInit {
   }
 
   getMesaRoleLabel(mesa: GrupoMesaResumen): string {
-    return `Mesa ${mesa.indice}`;
+    return mesa.nombre || `Mesa ${mesa.indice}`;
   }
 
   getMesaTipoLabel(mesa: GrupoMesaResumen): string {
     return mesa.tipo === 'INFERIOR' ? 'INF' : 'SUP';
+  }
+
+  isMesaPlayerOffline(mesa: GrupoMesaResumen): boolean {
+    if (!mesa.is_linked) return false;
+    if (!mesa.last_seen) return true;
+    const lastSeen = new Date(mesa.last_seen).getTime();
+    if (!Number.isFinite(lastSeen)) return true;
+    return Date.now() - lastSeen > FerrallasComponent.MESA_OFFLINE_AFTER_MS;
+  }
+
+  getMesaLastSeenLabel(mesa: GrupoMesaResumen): string {
+    if (!mesa.last_seen) return 'Sin heartbeat recibido';
+    const lastSeen = new Date(mesa.last_seen).getTime();
+    if (!Number.isFinite(lastSeen)) return 'Ultima señal desconocida';
+    const seconds = Math.max(0, Math.round((Date.now() - lastSeen) / 1000));
+    if (seconds < 60) return `Ultima señal hace ${seconds}s`;
+    const minutes = Math.round(seconds / 60);
+    return `Ultima señal hace ${minutes} min`;
   }
 
   getGrupoSubtitulo(grupo: GrupoMesas): string {

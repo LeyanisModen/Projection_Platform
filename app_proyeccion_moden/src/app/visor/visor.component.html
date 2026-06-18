@@ -99,8 +99,16 @@
         </div>
         }
 
-        <!-- Overlays only in the supervisor view. The mini-PC projects
-             a clean image: anything else would show up on the mesa. -->
+        @if (showSlideLockIndicator) {
+        <div class="slide-lock-indicator" aria-hidden="true">
+            @for (dot of slideLockDots; track dot) {
+            <span class="slide-lock-dot" [class.visible]="dot < slideLockDotsRemaining"></span>
+            }
+        </div>
+        }
+
+        <!-- Supervisor-only overlays. The player only keeps the tiny
+             slide-lock indicator above for operator feedback. -->
         @if (isSupervisor) {
             @if (showOverlay) {
             <div class="active-item-info">
@@ -123,10 +131,12 @@
                     <span class="visor-shortcuts-key">C</span>
                     <span class="visor-shortcuts-text">{{ calibrationShortcutHint }}</span>
                 </span>
+                @if (!isCalibrationActive) {
                 <span class="visor-shortcuts-chip" [class.active]="isCoverageBackgroundActive">
                     <span class="visor-shortcuts-key">B</span>
                     <span class="visor-shortcuts-text">{{ coverageShortcutHint }}</span>
                 </span>
+                }
             </div>
 
             @if (captureStatus !== 'idle') {
@@ -142,7 +152,7 @@
             </div>
             }
 
-            <div class="mesa-watermark">
+            <div class="mesa-watermark" [class.calibration-active]="isCalibrationActive">
                 {{ mesaState?.nombre || 'Mesa ID: ' + mesaState?.id }}
             </div>
         }

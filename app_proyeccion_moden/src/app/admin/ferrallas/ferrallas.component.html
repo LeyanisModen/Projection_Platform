@@ -310,6 +310,21 @@
                                                     <span class="mesa-role-pill">{{ getMesaRoleLabel(mesa) }}</span>
                                                     <span *ngIf="mesa.is_linked" class="badge badge-success badge-pill"
                                                         style="font-size: 0.6rem;">Linked</span>
+                                                    <span *ngIf="isMesaPlayerOffline(mesa)"
+                                                        class="mesa-health-pill no-signal"
+                                                        [title]="getMesaLastSeenLabel(mesa)">
+                                                        Sin señal
+                                                    </span>
+                                                    <span *ngIf="mesa.is_linked && !isMesaPlayerOffline(mesa) && mesa.capture_service_online === false"
+                                                        class="mesa-health-pill offline"
+                                                        title="Camara o servicio local no disponible">
+                                                        Cam
+                                                    </span>
+                                                    <span *ngIf="mesa.is_linked && !isMesaPlayerOffline(mesa) && mesa.capture_service_online !== false && mesa.camera_sharpness === 'blurry'"
+                                                        class="mesa-health-pill dirty"
+                                                        title="Camara sucia: limpiar objetivo">
+                                                        Lente
+                                                    </span>
                                                 </div>
                                             </div>
                                             <div class="d-flex align-items-center" style="gap: 8px;">
@@ -339,6 +354,13 @@
                                                     </button>
                                                 </div>
                                                 <div class="btn-group">
+                                                    <button class="btn btn-sm btn-outline-secondary mesa-visor-btn"
+                                                        type="button"
+                                                        (click)="openMesaVisor(mesa)"
+                                                        [attr.aria-label]="'Abrir visor de ' + mesa.nombre"
+                                                        title="Abrir visor">
+                                                        <i class="fa fa-desktop"></i>
+                                                    </button>
                                                     <button class="btn btn-sm btn-outline-info" *ngIf="!mesa.is_linked"
                                                         (click)="openPairingModal(mesa)" title="Vincular Dispositivo">
                                                         <i class="fa fa-link"></i>
@@ -422,55 +444,16 @@
                 <strong>Usuario:</strong> <span class="ml-2">{{ credentialUser.username }}</span>
             </div>
             <div class="mb-3">
-                <strong>Contrasena guardada:</strong>
+                <strong>Contrasena:</strong>
                 <code class="ml-2" *ngIf="credentialUser.password_texto_plano">{{ credentialUser.password_texto_plano
                     }}</code>
                 <span class="ml-2 text-muted" *ngIf="!credentialUser.password_texto_plano">
                     <em>(no disponible)</em>
                 </span>
             </div>
-
-            <div class="form-group">
-                <label>Guardar texto visible sin cambiar el login</label>
-                <input type="text" class="form-control" [(ngModel)]="credentialStoredPasswordDraft"
-                    placeholder="Pega aqui la contrasena actual si ya la conoces" autocomplete="off"
-                    [disabled]="credentialLoading">
-                <small class="text-muted">
-                    Util para mover una contrasena que se habia apuntado en Direccion. No cambia la contrasena real.
-                </small>
-            </div>
-
-            <div class="form-group border-top pt-3 mt-3">
-                <label>Nueva contrasena de acceso</label>
-                <div class="input-group d-flex flex-nowrap">
-                    <input type="text" class="form-control" [(ngModel)]="newCredentialPassword"
-                        placeholder="Nueva contrasena real" autocomplete="off" [disabled]="credentialLoading">
-                    <div class="input-group-append">
-                        <button type="button" class="btn btn-outline-secondary text-nowrap"
-                            (click)="generatePassword()" [disabled]="credentialLoading"
-                            title="Generar contrasena">
-                            <i class="fa fa-refresh"></i>
-                        </button>
-                    </div>
-                </div>
-                <small class="text-muted">
-                    Esto si cambia el login real de la ferralla y actualiza la contrasena guardada.
-                </small>
-            </div>
-
-            <div *ngIf="credentialError" class="alert alert-danger">{{ credentialError }}</div>
-            <div *ngIf="credentialSuccess" class="alert alert-success">{{ credentialSuccess }}</div>
         </div>
         <div class="modal-footer">
             <button type="button" class="btn btn-secondary" (click)="closeCredentialsModal()">Cerrar</button>
-            <button type="button" class="btn btn-outline-primary" (click)="saveStoredCredentialOnly()"
-                [disabled]="credentialLoading">
-                Guardar texto
-            </button>
-            <button type="button" class="btn btn-warning" (click)="updateCredentials()"
-                [disabled]="credentialLoading || !newCredentialPassword">
-                Cambiar login
-            </button>
         </div>
     </div>
 </div>

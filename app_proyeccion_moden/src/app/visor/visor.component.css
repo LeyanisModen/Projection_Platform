@@ -237,6 +237,12 @@
     z-index: 9999;
     pointer-events: none;
     border: 1px solid rgba(255, 152, 0, 0.3);
+    transition: opacity 0.18s ease, background-color 0.18s ease;
+}
+
+.mesa-watermark.calibration-active {
+    opacity: 0.34;
+    background: rgba(0, 0, 0, 0.28);
 }
 
 /* Active Item Info Overlay */
@@ -280,6 +286,39 @@
     height: 100%;
     object-fit: cover;
     display: block;
+}
+
+.slide-lock-indicator {
+    position: fixed;
+    left: 50%;
+    bottom: 26px;
+    transform: translateX(-50%);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: rgba(7, 12, 22, 0.28);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+    z-index: 9000;
+    pointer-events: none;
+}
+
+.slide-lock-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.95);
+    opacity: 0.16;
+    transform: scale(0.72);
+    transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.slide-lock-dot.visible {
+    opacity: 0.88;
+    transform: scale(1);
 }
 
 .visor-shortcuts-hint {
