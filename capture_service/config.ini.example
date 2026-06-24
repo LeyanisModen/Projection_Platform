@@ -18,6 +18,11 @@ capture_width = 1920
 capture_height = 1080
 jpeg_quality = 95
 
+; Orientation applied to every frame before saving/uploading.
+; Factory cameras mounted on vertical posts need 180 so the table appears
+; upright in Drive/backend evidence. Use 0 for bench/testing setups.
+image_rotation = 180
+
 
 [documentation]
 ; Set enabled = false to turn the periodic capture loop off entirely.

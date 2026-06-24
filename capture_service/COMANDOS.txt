@@ -194,6 +194,7 @@ Start-Process 'C:\moden\capture_service\start-player.bat'
 # Comprobaciones.
 Start-Sleep -Seconds 10
 curl.exe http://127.0.0.1:5555/health
+curl.exe http://127.0.0.1:5555/stats
 Test-Path 'C:\moden\capture_service\device_token.txt'
 Get-ScheduledTask -TaskName 'MODEN Auto Update' | Format-List TaskName,State,Triggers
 

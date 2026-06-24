@@ -64,6 +64,10 @@ class Config:
         self.capture_width = 3840
         self.capture_height = 2160
         self.jpeg_quality = 95
+        # Factory cameras are mounted on vertical posts and deliver the UVC
+        # frame upside-down for our table reference. Keep this configurable so
+        # a bench setup can opt out with image_rotation = 0.
+        self.image_rotation = 180
         self.host = '127.0.0.1'
         self.port = 5555
         self.camera_index = 0
@@ -113,6 +117,10 @@ class Config:
             self.capture_width = s.getint('capture_width', self.capture_width)
             self.capture_height = s.getint('capture_height', self.capture_height)
             self.jpeg_quality = s.getint('jpeg_quality', self.jpeg_quality)
+            self.image_rotation = self._parse_image_rotation(
+                s.get('image_rotation', str(self.image_rotation)),
+                self.image_rotation,
+            )
 
         if cp.has_section('documentation'):
             d = cp['documentation']
@@ -142,6 +150,18 @@ class Config:
             self.sharpness_threshold_warning = s.getfloat(
                 'threshold_warning', self.sharpness_threshold_warning
             )
+
+    @staticmethod
+    def _parse_image_rotation(value, default):
+        try:
+            rotation = int(value) % 360
+        except (TypeError, ValueError):
+            print(f'[CaptureService] Invalid image_rotation={value!r}; using {default}.')
+            return default
+        if rotation not in (0, 90, 180, 270):
+            print(f'[CaptureService] Unsupported image_rotation={rotation}; using {default}.')
+            return default
+        return rotation
 
 
 CONFIG = Config(CONFIG_PATH)
@@ -191,10 +211,22 @@ def capture_frame():
         cam.read()
     ret, frame = cam.read()
     if ret and frame is not None:
+        frame = _apply_image_rotation(frame)
         _set_camera_health(True)
     else:
         _set_camera_health(False, 'camera read failed')
     return ret, frame
+
+
+def _apply_image_rotation(frame):
+    rotation = CONFIG.image_rotation
+    if rotation == 90:
+        return cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+    if rotation == 180:
+        return cv2.rotate(frame, cv2.ROTATE_180)
+    if rotation == 270:
+        return cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+    return frame
 
 
 # ---------------------------------------------------------------------------
@@ -498,6 +530,7 @@ class CaptureHandler(BaseHTTPRequestHandler):
                 payload = dict(_stats)
             payload['in_active_window'] = in_active_window()
             payload['output_dir'] = str(CONFIG.output_dir)
+            payload['image_rotation'] = CONFIG.image_rotation
             self._respond_json(200, payload)
         elif self.path == '/device_token':
             self._respond_json(200, {'device_token': _read_stored_token()})
