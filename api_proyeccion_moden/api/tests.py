@@ -1412,11 +1412,78 @@ class PlanningFoundationTests(APITestCase):
             MesaQueueItem.objects.filter(mesa=mesa_inf_2).order_by("position").values_list("modulo__nombre", flat=True)
         )
 
-        # Bastidor grande (M-02 + M-03, ancho total 20) entra primero al
-        # planner (orden -len, indice) y va a INF1 por ser la menos
-        # cargada; el bastidor pequeno (M-01) cae a INF2.
-        self.assertEqual(inf_1_queue, ["M-03", "M-02"])
-        self.assertEqual(inf_2_queue, ["M-01"])
+        # Se respeta el orden natural de bastidores: M-01 entra primero,
+        # y el bastidor M-02 + M-03 mantiene su unidad en la otra mesa.
+        self.assertEqual(inf_1_queue, ["M-01"])
+        self.assertEqual(inf_2_queue, ["M-03", "M-02"])
+
+    def test_planificar_grupo_respeta_orden_manual_de_bastidores(self):
+        from api.models import GrupoBastidor
+
+        self.project.bastidor_longitud_cm = 20
+        self.project.save(update_fields=["bastidor_longitud_cm"])
+
+        # Aislamos este caso del modulo base del setUp para que solo entren
+        # los bastidores persistidos que simulan el orden visual del admin.
+        self.modulo.cerrado = True
+        self.modulo.save(update_fields=["cerrado"])
+
+        grupo_1 = GrupoBastidor.objects.create(
+            proyecto=self.project, indice=1, nombre="MOD Central",
+        )
+        grupo_2 = GrupoBastidor.objects.create(
+            proyecto=self.project, indice=2, nombre="MOD Pilar",
+        )
+        grupo_3 = GrupoBastidor.objects.create(
+            proyecto=self.project, indice=3, nombre="Grupo grande",
+        )
+
+        specs = [
+            ("A05", grupo_1, 1),
+            ("A01", grupo_2, 1),
+            ("A02", grupo_3, 1),
+            ("A03", grupo_3, 2),
+            ("A04", grupo_3, 3),
+        ]
+        for nombre, grupo_bastidor, orden in specs:
+            modulo = Modulo.objects.create(
+                nombre=nombre,
+                proyecto=self.project,
+                planta=self.planta,
+                ancho_cm="10.00",
+                grupo_bastidor=grupo_bastidor,
+                orden_intra=orden,
+            )
+            DetalleModuloFase.objects.create(
+                modulo=modulo,
+                fase="INFERIOR",
+                espesor_cm="10.00",
+            )
+
+        grupo = self._crear_grupo("Grupo Orden Manual")
+        plan_response = self.client.post(
+            f"/api/grupos-mesas/{grupo.id}/planificar/",
+            {"proyecto_id": self.project.id},
+            format="json",
+        )
+        self.assertEqual(plan_response.status_code, 200)
+
+        mesa_inf_1 = grupo.mesas.get(tipo="INFERIOR", indice=1)
+        mesa_inf_2 = grupo.mesas.get(tipo="INFERIOR", indice=2)
+
+        inf_1_queue = list(
+            MesaQueueItem.objects.filter(mesa=mesa_inf_1)
+            .order_by("position")
+            .values_list("modulo__nombre", flat=True)
+        )
+        inf_2_queue = list(
+            MesaQueueItem.objects.filter(mesa=mesa_inf_2)
+            .order_by("position")
+            .values_list("modulo__nombre", flat=True)
+        )
+
+        self.assertEqual(inf_1_queue, ["A05", "A04", "A03", "A02"])
+        self.assertEqual(inf_2_queue, ["A01"])
 
     def test_planificar_grupo_conserva_grupo_iniciado_y_reemplaza_lo_pendiente(self):
         self.project.bastidor_longitud_cm = 20

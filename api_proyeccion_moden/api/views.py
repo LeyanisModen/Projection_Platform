@@ -2996,13 +2996,11 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         group_summaries = []
         module_group_map = {}
 
-        # Longest-Processing-Time heuristic: process the biggest
-        # bastidores first so the smaller ones absorb the residual
-        # imbalance. Keeps each bastidor whole on a single mesa.
-        ordered_bastidores = sorted(
-            enumerate(bastidor_groups, start=1),
-            key=lambda pair: (-len(pair[1]), pair[0]),
-        )
+        # El admin ordena los cards por criterio de fabricacion
+        # (tipo/dificultad), asi que la cola operativa debe respetar ese
+        # orden. El balanceo solo decide a que mesa va cada bastidor entero,
+        # pero no puede adelantar bastidores grandes.
+        ordered_bastidores = enumerate(bastidor_groups, start=1)
 
         loads = list(initial_loads_inf)
 
