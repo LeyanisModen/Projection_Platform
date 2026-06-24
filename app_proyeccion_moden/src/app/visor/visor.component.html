@@ -99,7 +99,16 @@
         </div>
         }
 
-        @if (showSlideLockIndicator) {
+        @if (showCaptureLockIndicator) {
+        <div class="capture-lock-indicator" role="status" aria-live="polite">
+            <span class="capture-lock-text">{{ captureLockLabel }}</span>
+            <span class="capture-lock-dots" aria-hidden="true">
+                @for (dot of slideLockDots; track dot) {
+                <span class="capture-lock-dot" [style.animation-delay.ms]="dot * 130"></span>
+                }
+            </span>
+        </div>
+        } @else if (showSlideLockIndicator) {
         <div class="slide-lock-indicator" aria-hidden="true">
             @for (dot of slideLockDots; track dot) {
             <span class="slide-lock-dot" [class.visible]="dot < slideLockDotsRemaining"></span>

@@ -590,6 +590,17 @@ export class VisorComponent implements OnInit, OnDestroy {
     return this.currentIndex === VisorComponent.COVERAGE_BACKGROUND_INDEX;
   }
 
+  get showCaptureLockIndicator(): boolean {
+    return this.captureMode === 'check'
+      && (this.capturingPhoto || this.captureStatus === 'capturing' || this.captureStatus === 'uploading');
+  }
+
+  get captureLockLabel(): string {
+    if (this.cameraRetrying) return 'Esperando cámara';
+    if (this.captureStatus === 'uploading') return 'Comprobando colores';
+    return 'Accediendo a cámara';
+  }
+
   get calibrationShortcutHint(): string {
     return this.isCalibrationActive ? 'Para cerrar calibración' : 'Para calibrar';
   }
