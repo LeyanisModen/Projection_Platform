@@ -53,7 +53,7 @@ export class VisorComponent implements OnInit, OnDestroy {
   // AnyDesk whether the kiosk is actually running the latest bundle
   // or a cached one. F12 is blocked in kiosk; this is the simplest
   // version probe we can offer the operator on screen.
-  readonly buildTag = '2026-06-24_1329+02';
+  readonly buildTag = '2026-06-24_1702+02';
   // Surfaces what's happening inside recoverTokenOrPair on the
   // LOADING screen so we can diagnose from AnyDesk without DevTools.
   loadingMessage: string = 'Conectando…';
@@ -932,6 +932,18 @@ export class VisorComponent implements OnInit, OnDestroy {
       || this.hasFilenameToken(filename, 'check');
   }
 
+  private isSimplePhotoSlide(index: number): boolean {
+    const img = this.images[index];
+    if (!img || this.isVisualSlide(index)) return false;
+    const url: string = img.url || img.src || '';
+    const filename = (url.split('/').pop() || '').toLowerCase();
+    return !this.hasFilenameToken(filename, 'check')
+      && (
+        this.hasFilenameToken(filename, 'foto')
+        || this.hasFilenameToken(filename, 'photo')
+      );
+  }
+
   private hasFilenameToken(filename: string, token: 'foto' | 'photo' | 'check' | 'visual'): boolean {
     return new RegExp(`(^|[\\s_\\-.])${token}([\\s_\\-.]|$)`, 'i').test(filename);
   }
@@ -1022,7 +1034,7 @@ export class VisorComponent implements OnInit, OnDestroy {
     if (this.hasFilenameToken(filename, 'check')) {
       console.log('[Visor] checkPhotoTrigger: firing check on', filename);
       this.triggerPhotoCapture('check');
-    } else if (this.hasFilenameToken(filename, 'foto') || this.hasFilenameToken(filename, 'photo')) {
+    } else if (this.isSimplePhotoSlide(this.currentIndex)) {
       console.log('[Visor] checkPhotoTrigger: firing foto on', filename);
       this.triggerPhotoCapture('foto');
     }
@@ -1157,6 +1169,8 @@ export class VisorComponent implements OnInit, OnDestroy {
 
   private uploadPhoto(blob: Blob): void {
     const mode = this.captureMode;
+    const capturedIndex = this.currentIndex;
+    const activeItemId = this.activeItem?.id ?? null;
     const formData = new FormData();
     formData.append('foto', blob, 'capture.jpg');
     formData.append('modulo_id', String(this.activeItem.modulo));
@@ -1219,6 +1233,8 @@ export class VisorComponent implements OnInit, OnDestroy {
               res.annotated_filename,
             );
           }
+        } else {
+          this.autoAdvanceAfterSimplePhoto(capturedIndex, activeItemId);
         }
         this.cdr.detectChanges();
         setTimeout(() => {
@@ -1242,6 +1258,19 @@ export class VisorComponent implements OnInit, OnDestroy {
         }, 3000);
       }
     });
+  }
+
+  private autoAdvanceAfterSimplePhoto(capturedIndex: number, activeItemId: number | string | null): void {
+    if (this.isSupervisor) return;
+    if (!this.activeItem || this.activeItem.id !== activeItemId) return;
+    if (this.currentIndex !== capturedIndex) return;
+    if (!this.isSimplePhotoSlide(capturedIndex)) return;
+
+    // The capture itself proves the operator waited for this slide; do not
+    // let the normal 5 s read-lock hold the flow after the photo is saved.
+    this.slideLockUntil = 0;
+    this.clearSlideLockIndicator();
+    this.nextImage();
   }
 
   private applyCheckResult(
