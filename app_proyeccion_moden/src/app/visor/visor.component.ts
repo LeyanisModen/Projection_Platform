@@ -53,7 +53,7 @@ export class VisorComponent implements OnInit, OnDestroy {
   // AnyDesk whether the kiosk is actually running the latest bundle
   // or a cached one. F12 is blocked in kiosk; this is the simplest
   // version probe we can offer the operator on screen.
-  readonly buildTag = '2026-06-18_1505+02';
+  readonly buildTag = '2026-06-24_1329+02';
   // Surfaces what's happening inside recoverTokenOrPair on the
   // LOADING screen so we can diagnose from AnyDesk without DevTools.
   loadingMessage: string = 'Conectando…';
@@ -525,10 +525,14 @@ export class VisorComponent implements OnInit, OnDestroy {
             this.mesaState = payload.data as any;
           }
 
+          const previousIndex = this.currentIndex;
           if (syncedIndex !== null && syncedIndex !== this.currentIndex) {
             this.currentIndex = syncedIndex;
           }
           this.cdr.detectChanges();
+          if (!this.isSupervisor && syncedIndex !== null && syncedIndex !== previousIndex) {
+            this.checkPhotoTrigger();
+          }
         }
       } catch (e) {
         console.error('[Visor] SSE Parse Error:', e);
@@ -876,7 +880,7 @@ export class VisorComponent implements OnInit, OnDestroy {
     // The team's naming convention may use '_visual', 'visual',
     // 'check visual', 'check_visual', etc. Detect the word with any
     // surrounding separator so we don't miss new variants.
-    return /(^|[\s_\-.])visual([\s_\-.]|$)/i.test(filename);
+    return this.hasFilenameToken(filename, 'visual');
   }
 
   prevImage(): void {
@@ -912,9 +916,13 @@ export class VisorComponent implements OnInit, OnDestroy {
     // anywhere in the filename to tolerate however the team names it
     // (the current convention uses a space, not an underscore).
     if (this.isVisualSlide(index)) return false;
-    return filename.includes('_foto')
-      || filename.includes('_photo')
-      || filename.includes('_check');
+    return this.hasFilenameToken(filename, 'foto')
+      || this.hasFilenameToken(filename, 'photo')
+      || this.hasFilenameToken(filename, 'check');
+  }
+
+  private hasFilenameToken(filename: string, token: 'foto' | 'photo' | 'check' | 'visual'): boolean {
+    return new RegExp(`(^|[\\s_\\-.])${token}([\\s_\\-.]|$)`, 'i').test(filename);
   }
 
   updateProjectedImage(): void {
@@ -997,12 +1005,13 @@ export class VisorComponent implements OnInit, OnDestroy {
       return;
     }
 
-    // '_check' triggers capture + color validation (blocks advance on
-    // failure). '_foto' / '_photo' only capture evidence, no block.
-    if (filename.includes('_check')) {
+    // 'check' as a filename token triggers capture + color validation
+    // (blocks advance on failure). The visual slide has already been
+    // filtered out above, even when it is named 'check visual'.
+    if (this.hasFilenameToken(filename, 'check')) {
       console.log('[Visor] checkPhotoTrigger: firing check on', filename);
       this.triggerPhotoCapture('check');
-    } else if (filename.includes('_foto') || filename.includes('_photo')) {
+    } else if (this.hasFilenameToken(filename, 'foto') || this.hasFilenameToken(filename, 'photo')) {
       console.log('[Visor] checkPhotoTrigger: firing foto on', filename);
       this.triggerPhotoCapture('foto');
     }
@@ -1347,6 +1356,7 @@ export class VisorComponent implements OnInit, OnDestroy {
       if (state.nombre) {
         this.titleService.setTitle(`Visor - ${state.nombre}`);
       }
+      const previousIndex = this.currentIndex;
       if (syncedIndex !== null) {
         this.currentIndex = syncedIndex;
       }
@@ -1381,6 +1391,9 @@ export class VisorComponent implements OnInit, OnDestroy {
         }
       }
       this.cdr.detectChanges();
+      if (!this.isSupervisor && syncedIndex !== null && syncedIndex !== previousIndex) {
+        this.checkPhotoTrigger();
+      }
     });
 
     if (!this.isSupervisor && environment.enableDeviceSSE) {
