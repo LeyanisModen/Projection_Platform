@@ -15,7 +15,8 @@ from rest_framework.test import APITestCase
 from api.models import (
     Imagen, Mesa, MesaQueueItem, Modulo, Planta, Proyecto,
     DetalleModuloFase, GrupoMesas, FotoFabricacion,
-    FerrallaContacto, FerrallaDireccion, PairingSession
+    FerrallaContacto, FerrallaDireccion, PairingSession,
+    MesaQueueStatus, ModuloEstado
 )
 
 
@@ -528,6 +529,70 @@ class PlanningFoundationTests(APITestCase):
         )
         self.assertEqual(response.status_code, 201)
         return GrupoMesas.objects.get(id=response.data["id"])
+
+    def test_reiniciar_modulo_limpia_colas_historicas_duplicadas(self):
+        grupo = self._crear_grupo("Grupo Reinicio")
+        mesa_inf = grupo.mesas.get(tipo="INFERIOR", indice=1)
+        mesa_sup = grupo.mesas.get(tipo="SUPERIOR", indice=3)
+        imagen_inf = Imagen.objects.create(
+            modulo=self.modulo,
+            fase="INFERIOR",
+            orden=1,
+            url="/imagenes/m-01-inf.png",
+        )
+        imagen_sup = Imagen.objects.create(
+            modulo=self.modulo,
+            fase="SUPERIOR",
+            orden=1,
+            url="/imagenes/m-01-sup.png",
+        )
+
+        self.modulo.estado = ModuloEstado.COMPLETADO
+        self.modulo.save()
+        MesaQueueItem.objects.create(
+            mesa=mesa_inf,
+            modulo=self.modulo,
+            fase="INFERIOR",
+            imagen=imagen_inf,
+            status=MesaQueueStatus.HECHO,
+            position=0,
+            done_at=timezone.now(),
+        )
+        MesaQueueItem.objects.create(
+            mesa=mesa_sup,
+            modulo=self.modulo,
+            fase="SUPERIOR",
+            imagen=imagen_sup,
+            status=MesaQueueStatus.HECHO,
+            position=0,
+            done_at=timezone.now(),
+        )
+        MesaQueueItem.objects.create(
+            mesa=mesa_sup,
+            modulo=self.modulo,
+            fase="SUPERIOR",
+            imagen=imagen_sup,
+            status=MesaQueueStatus.HECHO,
+            position=1,
+            done_at=timezone.now(),
+        )
+        mesa_sup.imagen_actual = imagen_sup
+        mesa_sup.current_image_index = 2
+        mesa_sup.save(update_fields=["imagen_actual", "current_image_index"])
+
+        response = self.client.post(f"/api/modulos/{self.modulo.id}/reiniciar/")
+
+        self.assertEqual(response.status_code, 200)
+        self.modulo.refresh_from_db()
+        mesa_sup.refresh_from_db()
+        self.assertFalse(self.modulo.inferior_hecho)
+        self.assertFalse(self.modulo.superior_hecho)
+        self.assertFalse(self.modulo.cerrado)
+        self.assertEqual(self.modulo.estado, ModuloEstado.PENDIENTE)
+        self.assertIsNone(self.modulo.completado_at)
+        self.assertFalse(MesaQueueItem.objects.filter(modulo=self.modulo).exists())
+        self.assertIsNone(mesa_sup.imagen_actual)
+        self.assertEqual(mesa_sup.current_image_index, 0)
 
     def test_grupo_mesas_summary_includes_last_seen(self):
         grupo = self._crear_grupo("Grupo Last Seen")

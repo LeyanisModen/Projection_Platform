@@ -2224,24 +2224,52 @@ class ModuloViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def reiniciar(self, request, pk=None):
-        """Reset module to PENDIENTE keeping its grupo_bastidor.
-        Also reverts linked MesaQueueItems back to EN_COLA so they
-        reappear in mesa queues.
-        """
-        modulo = self.get_object()
-        modulo.inferior_hecho = False
-        modulo.superior_hecho = False
-        modulo.cerrado = False
-        modulo.cerrado_at = None
-        modulo.cerrado_by = None
-        modulo.estado = 'PENDIENTE'
-        modulo.save()
+        """Reset module to PENDIENTE and clear stale mesa assignments.
 
-        MesaQueueItem.objects.filter(modulo=modulo, status=MesaQueueStatus.HECHO).update(
-            status=MesaQueueStatus.EN_COLA,
-            done_at=None,
-            done_by=None,
-        )
+        Replanning creates fresh MesaQueueItem rows. Deleting instead of
+        reactivating historical HECHO rows avoids duplicate active assignments
+        when a module was completed/replanned more than once.
+        """
+        with transaction.atomic():
+            modulo = self.get_object()
+            affected_mesa_ids = list(
+                MesaQueueItem.objects.filter(modulo=modulo)
+                .values_list('mesa_id', flat=True)
+                .distinct()
+            )
+
+            modulo.inferior_hecho = False
+            modulo.superior_hecho = False
+            modulo.cerrado = False
+            modulo.cerrado_at = None
+            modulo.cerrado_by = None
+            modulo.estado = ModuloEstado.PENDIENTE
+            modulo.completado_at = None
+            modulo.save(update_fields=[
+                'inferior_hecho',
+                'superior_hecho',
+                'cerrado',
+                'cerrado_at',
+                'cerrado_by',
+                'estado',
+                'completado_at',
+            ])
+
+            MesaQueueItem.objects.filter(modulo=modulo).delete()
+
+            for mesa in Mesa.objects.filter(id__in=affected_mesa_ids):
+                current_item = (
+                    mesa.queue_items.filter(status=MesaQueueStatus.MOSTRANDO)
+                    .order_by('position')
+                    .first()
+                )
+                mesa.imagen_actual = current_item.imagen if current_item else None
+                mesa.current_image_index = 0
+                mesa.save(update_fields=[
+                    'imagen_actual',
+                    'current_image_index',
+                    'ultima_actualizacion',
+                ])
 
         serializer = self.get_serializer(modulo)
         return Response(serializer.data)
