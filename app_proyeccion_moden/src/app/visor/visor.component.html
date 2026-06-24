@@ -157,7 +157,7 @@
                 @if (captureStatus === 'capturing') { Capturando foto... }
                 @else if (captureStatus === 'uploading') { Subiendo foto... }
                 @else if (captureStatus === 'done') { Foto guardada }
-                @else if (captureStatus === 'error') { Error en captura }
+                @else if (captureStatus === 'error') { {{ captureErrorMessage || 'Error en captura' }} }
             </div>
             }
 

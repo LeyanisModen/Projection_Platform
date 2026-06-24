@@ -456,6 +456,8 @@
     border-radius: 8px;
     font-size: 1rem;
     font-weight: bold;
+    max-width: min(520px, calc(100vw - 40px));
+    line-height: 1.35;
     z-index: 10000;
     pointer-events: none;
     animation: fadeIn 0.2s ease;

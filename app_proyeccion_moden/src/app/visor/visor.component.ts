@@ -53,7 +53,7 @@ export class VisorComponent implements OnInit, OnDestroy {
   // AnyDesk whether the kiosk is actually running the latest bundle
   // or a cached one. F12 is blocked in kiosk; this is the simplest
   // version probe we can offer the operator on screen.
-  readonly buildTag = '2026-06-24_1702+02';
+  readonly buildTag = '2026-06-24_1711+02';
   // Surfaces what's happening inside recoverTokenOrPair on the
   // LOADING screen so we can diagnose from AnyDesk without DevTools.
   loadingMessage: string = 'Conectando…';
@@ -76,7 +76,10 @@ export class VisorComponent implements OnInit, OnDestroy {
   private captureServiceUrl = 'http://127.0.0.1:5555';
   private capturingPhoto = false;
   private captureMode: 'foto' | 'check' = 'foto';
+  private captureTargetIndex: number | null = null;
+  private captureTargetItemId: number | string | null = null;
   captureStatus: 'idle' | 'capturing' | 'uploading' | 'done' | 'error' = 'idle';
+  captureErrorMessage: string | null = null;
 
   // Local capture-service health (null = unknown, true = ok, false = down)
   captureServiceOnline: boolean | null = null;
@@ -838,7 +841,11 @@ export class VisorComponent implements OnInit, OnDestroy {
 
   nextImage(): void {
     if (this.currentIndex < 0) return;
-    if (this.shouldApplySlideLock() && Date.now() < this.slideLockUntil) {
+    const continuingAfterPhotoError = this.hasSimplePhotoCaptureError();
+    if (continuingAfterPhotoError) {
+      this.clearSimplePhotoCaptureError();
+    }
+    if (!continuingAfterPhotoError && this.shouldApplySlideLock() && Date.now() < this.slideLockUntil) {
       this.updateSlideLockIndicator();
       return;
     }
@@ -897,6 +904,9 @@ export class VisorComponent implements OnInit, OnDestroy {
   prevImage(): void {
     if (this.currentIndex < 0) return;
     if (this.capturingPhoto && this.captureMode === 'check') return;
+    if (this.hasSimplePhotoCaptureError()) {
+      this.clearSimplePhotoCaptureError();
+    }
     // Going backwards is a review pass: no 5 s read-lock and no
     // capture/check retriggering. The operator is scrubbing back to
     // inspect something. Skip past _foto / _check slides on the way
@@ -1044,7 +1054,10 @@ export class VisorComponent implements OnInit, OnDestroy {
     if (this.capturingPhoto || !this.activeItem) return;
     this.capturingPhoto = true;
     this.captureMode = mode;
+    this.captureTargetIndex = this.currentIndex;
+    this.captureTargetItemId = this.activeItem?.id ?? null;
     this.captureStatus = 'capturing';
+    this.captureErrorMessage = null;
     this.cdr.detectChanges();
 
     // Wait ~500 ms for the projector to actually show the current
@@ -1068,6 +1081,7 @@ export class VisorComponent implements OnInit, OnDestroy {
       next: (blob: Blob) => {
         this.cameraRetrying = false;
         this.captureStatus = 'uploading';
+        this.captureErrorMessage = null;
         // A successful capture means the service is alive right now.
         this.captureServiceOnline = true;
         this.cdr.detectChanges();
@@ -1091,7 +1105,6 @@ export class VisorComponent implements OnInit, OnDestroy {
         this.captureStatus = 'error';
         this.capturingPhoto = false;
         this.captureServiceOnline = false;
-        this.cdr.detectChanges();
         if (this.captureMode === 'check') {
           // No photo means we cannot validate -- block the operator
           // with a 'camera unavailable' message instead of letting
@@ -1099,11 +1112,21 @@ export class VisorComponent implements OnInit, OnDestroy {
           // backend so the supervisor visor sees the same block.
           this.applyCheckResult(false, 'no_camera');
           this.notifyNoCamera();
-        }
-        setTimeout(() => {
-          this.captureStatus = 'idle';
           this.cdr.detectChanges();
-        }, 3000);
+          setTimeout(() => {
+            this.captureStatus = 'idle';
+            this.cdr.detectChanges();
+          }, 3000);
+        } else {
+          if (!this.isCurrentCaptureTarget(this.captureTargetIndex, this.captureTargetItemId)) {
+            this.captureStatus = 'idle';
+            this.captureErrorMessage = null;
+            this.cdr.detectChanges();
+            return;
+          }
+          this.captureErrorMessage = 'Falló la comunicación con la cámara. Puedes continuar sin capturar esta foto o pulsar P para reintentar.';
+          this.cdr.detectChanges();
+        }
       }
     });
   }
@@ -1211,6 +1234,7 @@ export class VisorComponent implements OnInit, OnDestroy {
     ).subscribe({
       next: (res: any) => {
         this.captureStatus = 'done';
+        this.captureErrorMessage = null;
         this.capturingPhoto = false;
         if (mode === 'check') {
           const detail = res?.check_detail;
@@ -1250,14 +1274,44 @@ export class VisorComponent implements OnInit, OnDestroy {
           // Treat upload failure on a check step as a failed check: we
           // don't want the operator to blow past a missing validation.
           this.applyCheckResult(false);
-        }
-        this.cdr.detectChanges();
-        setTimeout(() => {
-          this.captureStatus = 'idle';
           this.cdr.detectChanges();
-        }, 3000);
+          setTimeout(() => {
+            this.captureStatus = 'idle';
+            this.cdr.detectChanges();
+          }, 3000);
+        } else {
+          if (!this.isCurrentCaptureTarget(capturedIndex, activeItemId)) {
+            this.captureStatus = 'idle';
+            this.captureErrorMessage = null;
+            this.cdr.detectChanges();
+            return;
+          }
+          this.captureErrorMessage = 'La foto se tomó, pero no se pudo guardar. Puedes continuar sin capturar esta foto o pulsar P para reintentar.';
+          this.cdr.detectChanges();
+        }
       }
     });
+  }
+
+  private hasSimplePhotoCaptureError(): boolean {
+    return this.captureMode === 'foto'
+      && this.captureStatus === 'error'
+      && !!this.captureErrorMessage;
+  }
+
+  private isCurrentCaptureTarget(index: number | null, activeItemId: number | string | null): boolean {
+    return index !== null
+      && this.currentIndex === index
+      && !!this.activeItem
+      && this.activeItem.id === activeItemId;
+  }
+
+  private clearSimplePhotoCaptureError(): void {
+    if (!this.hasSimplePhotoCaptureError()) return;
+    this.captureStatus = 'idle';
+    this.captureErrorMessage = null;
+    this.slideLockUntil = 0;
+    this.clearSlideLockIndicator();
   }
 
   private autoAdvanceAfterSimplePhoto(capturedIndex: number, activeItemId: number | string | null): void {
@@ -1485,12 +1539,14 @@ export class VisorComponent implements OnInit, OnDestroy {
         this.activeItem = null;
         this.images = [];
         this.pendingIndexSync = null;
+        this.clearSimplePhotoCaptureError();
         this.cdr.detectChanges();
       }
       return;
     }
 
     if (!this.activeItem || this.activeItem.id !== item.id) {
+      this.clearSimplePhotoCaptureError();
       this.pendingIndexSync = null;
       this.activeItem = item;
       // New module/phase started: restart local counter (UI shows currentIndex + 1 => starts at 1).
