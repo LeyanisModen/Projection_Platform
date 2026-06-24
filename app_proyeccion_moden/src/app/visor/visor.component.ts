@@ -53,7 +53,7 @@ export class VisorComponent implements OnInit, OnDestroy {
   // AnyDesk whether the kiosk is actually running the latest bundle
   // or a cached one. F12 is blocked in kiosk; this is the simplest
   // version probe we can offer the operator on screen.
-  readonly buildTag = '2026-06-24_1329+02';
+  readonly buildTag = '2026-06-24_1359+02';
   // Surfaces what's happening inside recoverTokenOrPair on the
   // LOADING screen so we can diagnose from AnyDesk without DevTools.
   loadingMessage: string = 'Conectando…';
@@ -156,6 +156,10 @@ export class VisorComponent implements OnInit, OnDestroy {
   private statePollSub: Subscription | null = null;
   private heartbeatSub: Subscription | null = null;
   private itemPollSub: Subscription | null = null;
+  private updateCheckSub: Subscription | null = null;
+  private pendingFrontendReload = false;
+
+  private static readonly FRONTEND_UPDATE_CHECK_MS = 5 * 60 * 1000;
 
   private apiUrl = `${environment.apiUrl}/device/`;
   private isBrowser: boolean;
@@ -182,6 +186,7 @@ export class VisorComponent implements OnInit, OnDestroy {
 
     const baseHref = (document.querySelector('base')?.getAttribute('href') || '/').trim();
     this.assetBase = baseHref.endsWith('/') ? baseHref : `${baseHref}/`;
+    this.startFrontendUpdatePolling();
 
     const idParam = this.route.snapshot.paramMap.get('id');
     if (idParam) {
@@ -400,9 +405,79 @@ export class VisorComponent implements OnInit, OnDestroy {
     this.heartbeatSub?.unsubscribe();
     this.itemPollSub?.unsubscribe();
     this.captureHealthSub?.unsubscribe();
+    this.updateCheckSub?.unsubscribe();
     this.clearAuthRecoveryTimer();
     this.clearSlideLockIndicator();
     if (this.eventSource) this.eventSource.close();
+  }
+
+  private startFrontendUpdatePolling(): void {
+    this.updateCheckSub?.unsubscribe();
+    this.updateCheckSub = interval(VisorComponent.FRONTEND_UPDATE_CHECK_MS).pipe(
+      startWith(0),
+      exhaustMap(() => {
+        const cacheBuster = Date.now();
+        return this.http.get(
+          `${this.assetBase}index.html?moden_update=${cacheBuster}`,
+          {
+            responseType: 'text',
+            headers: new HttpHeaders({
+              'Cache-Control': 'no-cache',
+              Pragma: 'no-cache',
+            }),
+          },
+        ).pipe(
+          catchError((err) => {
+            console.warn('[Visor] Frontend update check failed:', err);
+            return of(null);
+          }),
+        );
+      }),
+    ).subscribe((html) => {
+      if (typeof html === 'string') {
+        this.handleFrontendIndexForUpdate(html);
+      }
+    });
+  }
+
+  private handleFrontendIndexForUpdate(html: string): void {
+    const serverMain = this.extractMainBundleName(html);
+    const loadedMain = this.getLoadedMainBundleName();
+    if (!serverMain || !loadedMain || serverMain === loadedMain) return;
+
+    console.info(`[Visor] New frontend bundle detected: ${loadedMain} -> ${serverMain}`);
+    this.pendingFrontendReload = true;
+    this.tryApplyPendingFrontendReload();
+  }
+
+  private extractMainBundleName(html: string): string | null {
+    const match = html.match(/(?:src|href)="[^"]*\/?(main-[^"]+\.js)"/i);
+    return match?.[1] ?? null;
+  }
+
+  private getLoadedMainBundleName(): string | null {
+    for (const script of Array.from(document.scripts)) {
+      const src = script.getAttribute('src') || script.src || '';
+      const filename = src.split('?')[0].split('/').pop() || '';
+      if (/^main-[\w-]+\.js$/i.test(filename)) return filename;
+    }
+    return null;
+  }
+
+  private isSafeToAutoReload(): boolean {
+    return !this.capturingPhoto
+      && this.captureStatus === 'idle'
+      && !this.cameraRetrying
+      && !this.checkBlock
+      && !this.clearingOverlay;
+  }
+
+  private tryApplyPendingFrontendReload(): void {
+    if (!this.pendingFrontendReload || !this.isBrowser) return;
+    if (!this.isSafeToAutoReload()) return;
+
+    console.info('[Visor] Reloading to apply latest Railway frontend.');
+    window.location.reload();
   }
 
   requestPairingCode(): void {
@@ -777,10 +852,14 @@ export class VisorComponent implements OnInit, OnDestroy {
     const url = `${this.apiUrl}clear_check_overlay/`;
     const { headers, body } = this.deviceOrSupervisorRequest();
     this.http.post(url, body, { headers }).subscribe({
-      next: () => { this.clearingOverlay = false; },
+      next: () => {
+        this.clearingOverlay = false;
+        this.tryApplyPendingFrontendReload();
+      },
       error: (err) => {
         console.error('[Visor] clear_check_overlay failed:', err);
         this.clearingOverlay = false;
+        this.tryApplyPendingFrontendReload();
       }
     });
   }
@@ -1091,6 +1170,7 @@ export class VisorComponent implements OnInit, OnDestroy {
         setTimeout(() => {
           this.captureStatus = 'idle';
           this.cdr.detectChanges();
+          this.tryApplyPendingFrontendReload();
         }, 3000);
       }
     });
@@ -1224,6 +1304,7 @@ export class VisorComponent implements OnInit, OnDestroy {
         setTimeout(() => {
           this.captureStatus = 'idle';
           this.cdr.detectChanges();
+          this.tryApplyPendingFrontendReload();
         }, 2000);
       },
       error: (err) => {
@@ -1239,6 +1320,7 @@ export class VisorComponent implements OnInit, OnDestroy {
         setTimeout(() => {
           this.captureStatus = 'idle';
           this.cdr.detectChanges();
+          this.tryApplyPendingFrontendReload();
         }, 3000);
       }
     });
@@ -1402,6 +1484,7 @@ export class VisorComponent implements OnInit, OnDestroy {
         }
       }
       this.cdr.detectChanges();
+      this.tryApplyPendingFrontendReload();
       if (!this.isSupervisor && syncedIndex !== null && syncedIndex !== previousIndex) {
         this.checkPhotoTrigger();
       }
