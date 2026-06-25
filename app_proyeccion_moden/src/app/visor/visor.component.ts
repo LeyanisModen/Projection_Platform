@@ -53,7 +53,7 @@ export class VisorComponent implements OnInit, OnDestroy {
   // AnyDesk whether the kiosk is actually running the latest bundle
   // or a cached one. F12 is blocked in kiosk; this is the simplest
   // version probe we can offer the operator on screen.
-  readonly buildTag = '2026-06-24_1711+02';
+  readonly buildTag = '2026-06-25_1017+02';
   // Surfaces what's happening inside recoverTokenOrPair on the
   // LOADING screen so we can diagnose from AnyDesk without DevTools.
   loadingMessage: string = 'Conectando…';
@@ -149,6 +149,9 @@ export class VisorComponent implements OnInit, OnDestroy {
   private authRecovery401Count = 0;
   private authRecoverySource: string | null = null;
   private pendingIndexSync: { index: number; expiresAt: number } | null = null;
+  browserCloseStatus: 'confirm' | 'closing' | 'error' | null = null;
+  private browserCloseConfirmUntil = 0;
+  private browserCloseStatusTimer: any = null;
 
   get isSupervisor(): boolean {
     return !!this.mesaIdForPairing;
@@ -405,6 +408,7 @@ export class VisorComponent implements OnInit, OnDestroy {
     this.captureHealthSub?.unsubscribe();
     this.clearAuthRecoveryTimer();
     this.clearSlideLockIndicator();
+    this.clearBrowserCloseStatus();
     if (this.eventSource) this.eventSource.close();
   }
 
@@ -717,6 +721,11 @@ export class VisorComponent implements OnInit, OnDestroy {
       this.forceAppReload();
       return;
     }
+    if (key === 'q') {
+      event.preventDefault();
+      this.requestBrowserClose();
+      return;
+    }
 
     // A failed color check blocks navigation until the operator
     // acknowledges it with space. SPACE clears the red overlay AND
@@ -761,6 +770,67 @@ export class VisorComponent implements OnInit, OnDestroy {
       this.whiteScreen = !this.whiteScreen;
       this.cdr.detectChanges();
     }
+  }
+
+  private requestBrowserClose(): void {
+    const now = Date.now();
+    if (now < this.browserCloseConfirmUntil) {
+      this.closeBrowserFromMiniPc();
+      return;
+    }
+
+    this.browserCloseConfirmUntil = now + 3000;
+    this.browserCloseStatus = 'confirm';
+    this.cdr.detectChanges();
+    this.scheduleBrowserCloseStatusClear(3000);
+  }
+
+  private closeBrowserFromMiniPc(): void {
+    this.browserCloseConfirmUntil = 0;
+    this.browserCloseStatus = 'closing';
+    this.cdr.detectChanges();
+
+    const headers = new HttpHeaders({ 'X-Moden-Action': 'close-browser' });
+    this.http.post(
+      `${this.captureServiceUrl}/close_browser`,
+      {},
+      { headers },
+    ).subscribe({
+      next: () => {
+        // The local service closes Chrome after sending the response.
+        this.browserCloseStatus = 'closing';
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        console.error('[Visor] close_browser failed:', err);
+        this.browserCloseStatus = 'error';
+        this.cdr.detectChanges();
+        this.scheduleBrowserCloseStatusClear(4000);
+      },
+    });
+  }
+
+  private scheduleBrowserCloseStatusClear(delayMs: number): void {
+    this.clearBrowserCloseStatusTimer();
+    this.browserCloseStatusTimer = setTimeout(() => {
+      if (this.browserCloseStatus === 'closing') return;
+      this.browserCloseStatus = null;
+      this.browserCloseConfirmUntil = 0;
+      this.cdr.detectChanges();
+    }, delayMs);
+  }
+
+  private clearBrowserCloseStatusTimer(): void {
+    if (this.browserCloseStatusTimer) {
+      clearTimeout(this.browserCloseStatusTimer);
+      this.browserCloseStatusTimer = null;
+    }
+  }
+
+  private clearBrowserCloseStatus(): void {
+    this.clearBrowserCloseStatusTimer();
+    this.browserCloseStatus = null;
+    this.browserCloseConfirmUntil = 0;
   }
 
   private clearCheckOverlay(): void {

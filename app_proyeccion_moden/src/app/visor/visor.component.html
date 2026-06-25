@@ -161,6 +161,17 @@
             </div>
             }
 
+            @if (browserCloseStatus) {
+            <div class="browser-close-status"
+                [class.confirm]="browserCloseStatus === 'confirm'"
+                [class.closing]="browserCloseStatus === 'closing'"
+                [class.error]="browserCloseStatus === 'error'">
+                @if (browserCloseStatus === 'confirm') { Pulsa Q otra vez para cerrar el navegador }
+                @else if (browserCloseStatus === 'closing') { Cerrando navegador... }
+                @else if (browserCloseStatus === 'error') { No se pudo cerrar el navegador desde el player }
+            </div>
+            }
+
             <div class="mesa-watermark" [class.calibration-active]="isCalibrationActive">
                 {{ mesaState?.nombre || 'Mesa ID: ' + mesaState?.id }}
             </div>

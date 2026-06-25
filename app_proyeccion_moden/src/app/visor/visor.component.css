@@ -483,9 +483,46 @@
     color: #fff;
 }
 
+.browser-close-status {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 10px 20px;
+    border-radius: 999px;
+    font-size: 1rem;
+    font-weight: 800;
+    max-width: min(560px, calc(100vw - 40px));
+    line-height: 1.25;
+    z-index: 10001;
+    pointer-events: none;
+    animation: fadeInCloseStatus 0.2s ease;
+}
+
+.browser-close-status.confirm {
+    background: rgba(15, 23, 42, 0.9);
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.28);
+}
+
+.browser-close-status.closing {
+    background: rgba(33, 150, 243, 0.9);
+    color: #fff;
+}
+
+.browser-close-status.error {
+    background: rgba(244, 67, 54, 0.9);
+    color: #fff;
+}
+
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(-10px); }
     to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeInCloseStatus {
+    from { opacity: 0; transform: translate(-50%, -10px); }
+    to { opacity: 1; transform: translate(-50%, 0); }
 }
 
 /* Debug panel for the colour-check overlay (only shown when the

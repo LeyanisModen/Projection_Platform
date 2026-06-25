@@ -23,6 +23,7 @@ Listens on localhost:5555. Two jobs in one process:
      POST /device_token       -> raw token body. Writes
                                   device_token.txt so the token
                                   survives a Chrome profile reset.
+     POST /close_browser      -> close Chrome kiosk on this mini-PC.
      GET  /health             -> { "status": "ok" }
      GET  /stats              -> { documentation / counters / local
                                   disk usage }
@@ -41,6 +42,7 @@ import configparser
 import json
 import os
 import shutil
+import subprocess
 import threading
 import time
 from datetime import datetime, time as dtime
@@ -56,6 +58,14 @@ CONFIG_PATH = Path(__file__).with_name('config.ini')
 
 DAY_NAME_TO_INDEX = {
     'MON': 0, 'TUE': 1, 'WED': 2, 'THU': 3, 'FRI': 4, 'SAT': 5, 'SUN': 6,
+}
+
+CONTROL_ALLOWED_ORIGINS = {
+    'https://moden.up.railway.app',
+    'http://localhost:4200',
+    'http://127.0.0.1:4200',
+    'http://localhost',
+    'http://127.0.0.1',
 }
 
 
@@ -503,6 +513,30 @@ def _write_stored_token(token: str) -> bool:
         return False
 
 
+def _close_chrome_processes():
+    """Close the kiosk browser without touching the capture service."""
+    try:
+        if os.name == 'nt':
+            result = subprocess.run(
+                ['taskkill', '/IM', 'chrome.exe', '/F'],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        else:
+            result = subprocess.run(
+                ['pkill', '-f', 'chrome'],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        if result.returncode != 0:
+            message = (result.stderr or result.stdout or '').strip()
+            _set_last_error(f'close browser failed: {message or result.returncode}')
+    except Exception as exc:
+        _set_last_error(f'close browser failed: {exc}')
+
+
 # ---------------------------------------------------------------------------
 # HTTP handler
 # ---------------------------------------------------------------------------
@@ -515,7 +549,7 @@ class CaptureHandler(BaseHTTPRequestHandler):
         # isn't whitelisted here Chrome rejects the preflight and the
         # POST is never made (visor sees an HTTP error 0 with no
         # status code).
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type, X-Filename')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type, X-Filename, X-Moden-Action')
 
     def do_OPTIONS(self):
         self.send_response(200)
@@ -544,6 +578,8 @@ class CaptureHandler(BaseHTTPRequestHandler):
             self._handle_save_debug_image()
         elif self.path == '/device_token':
             self._handle_store_device_token()
+        elif self.path == '/close_browser':
+            self._handle_close_browser()
         else:
             self.send_error(404)
 
@@ -579,6 +615,23 @@ class CaptureHandler(BaseHTTPRequestHandler):
             self._respond_json(200, {'status': 'ok'})
         else:
             self.send_error(500, 'Cannot persist token')
+
+    def _is_control_request_allowed(self, expected_action: str) -> bool:
+        origin = self.headers.get('Origin', '')
+        action = self.headers.get('X-Moden-Action', '')
+        if origin and origin not in CONTROL_ALLOWED_ORIGINS:
+            return False
+        return action == expected_action
+
+    def _handle_close_browser(self):
+        if not self._is_control_request_allowed('close-browser'):
+            self.send_error(403, 'Forbidden')
+            return
+
+        self._respond_json(200, {'status': 'closing'})
+        timer = threading.Timer(0.35, _close_chrome_processes)
+        timer.daemon = True
+        timer.start()
 
     def _handle_capture(self):
         with _camera_lock:
@@ -695,6 +748,7 @@ def main():
     print('[CaptureService] POST /save_debug_image   -> persist a debug image to Drive')
     print('[CaptureService] GET  /device_token       -> read stored pairing token')
     print('[CaptureService] POST /device_token       -> persist pairing token to disk')
+    print('[CaptureService] POST /close_browser      -> close Chrome kiosk')
     print('[CaptureService] GET  /health             -> health check')
     print('[CaptureService] GET  /stats              -> documentation stats')
     try:

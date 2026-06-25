@@ -13,6 +13,16 @@ Este archivo viaja dentro de capture_service/ y se copia al mini-PC en:
 
 
 ===========================================================
+TECLAS UTILES EN EL PLAYER
+===========================================================
+
+Q dos veces  -> cerrar Chrome kiosko desde el player actualizado.
+R            -> recargar la app sin cache.
+C            -> abrir / cerrar calibracion.
+B            -> mostrar / ocultar fondo de cobertura.
+
+
+===========================================================
 VALORES QUE CAMBIAN POR MINI-PC
 ===========================================================
 

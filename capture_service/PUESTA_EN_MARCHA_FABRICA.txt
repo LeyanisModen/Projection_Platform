@@ -21,7 +21,8 @@ REGLA DE ORO
 Si SOLO hay que conectar la Wi-Fi y NO tocar la camara:
 
 1. Conecta un teclado USB.
-2. Pulsa Alt + F4 para cerrar Chrome kiosko.
+2. En el player actualizado, pulsa Q dos veces para cerrar Chrome kiosko.
+   Si aun no responde, pulsa Alt + F4.
 3. Conecta la Wi-Fi del cliente desde la bandeja de Windows.
 4. Reinicia el equipo.
 
@@ -39,7 +40,8 @@ CASO COMPLETO -- HAY QUE CONECTAR WI-FI Y MOVER LA CAMARA
 PASO 1 -- Salir del kiosko
 -----------------------------------------
 1. Conecta un teclado USB.
-2. Pulsa Alt + F4.
+2. En el player actualizado, pulsa Q dos veces para cerrar Chrome kiosko.
+   Si aun no responde, pulsa Alt + F4.
 
 Si Chrome no se cierra al primer intento, pulsa Alt + F4 otra vez.
 
