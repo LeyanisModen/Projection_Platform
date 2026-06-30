@@ -74,6 +74,8 @@ Atajos actuales:
 | `C` | Entrar/salir de calibracion |
 | `G` | Calibracion con grid alternativa |
 | `B` | Mostrar/quitar fondo de cobertura del proyector |
+| `V` | Mostrar/quitar cama de 15 |
+| `W` | Mostrar/quitar cama de 20 |
 | `R` | Recarga fuerte de la app (limpia caches/SW y cambia querystring) |
 | `ArrowRight` | Siguiente paso |
 | `ArrowLeft` | Paso anterior |
@@ -131,4 +133,3 @@ La guia copy/paste para una persona no tecnica esta en:
 ```text
 capture_service/PUESTA_EN_MARCHA_FABRICA.txt
 ```
-

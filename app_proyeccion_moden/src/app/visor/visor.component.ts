@@ -45,6 +45,8 @@ export class VisorComponent implements OnInit, OnDestroy {
   private static readonly CALIBRATION_GRID_INDEX = -1;
   private static readonly CALIBRATION_GRID_WITH_X_INDEX = -2;
   private static readonly COVERAGE_BACKGROUND_INDEX = -3;
+  private static readonly BED_15_INDEX = -4;
+  private static readonly BED_20_INDEX = -5;
   // State
   mode: 'LOADING' | 'PAIRING' | 'PROJECTION' | 'ERROR' = 'LOADING';
   pairingCode: string = '';
@@ -53,7 +55,7 @@ export class VisorComponent implements OnInit, OnDestroy {
   // AnyDesk whether the kiosk is actually running the latest bundle
   // or a cached one. F12 is blocked in kiosk; this is the simplest
   // version probe we can offer the operator on screen.
-  readonly buildTag = '2026-06-25_1017+02';
+  readonly buildTag = '2026-06-30_visor-beds';
   // Surfaces what's happening inside recoverTokenOrPair on the
   // LOADING screen so we can diagnose from AnyDesk without DevTools.
   loadingMessage: string = 'Conectando…';
@@ -560,6 +562,9 @@ export class VisorComponent implements OnInit, OnDestroy {
     if (this.currentIndex === VisorComponent.CALIBRATION_GRID_INDEX) return `${this.assetBase}assets/calibration_grid.jpg`;
     if (this.currentIndex === VisorComponent.CALIBRATION_GRID_WITH_X_INDEX) return `${this.assetBase}assets/calibration_grid_with_x.jpg`;
     if (this.currentIndex === VisorComponent.COVERAGE_BACKGROUND_INDEX) return `${this.assetBase}assets/projection_coverage_background.jpg`;
+    // Placeholder until the final bed images are provided.
+    if (this.currentIndex === VisorComponent.BED_15_INDEX) return `${this.assetBase}assets/projection_coverage_background.jpg`;
+    if (this.currentIndex === VisorComponent.BED_20_INDEX) return `${this.assetBase}assets/projection_coverage_background.jpg`;
 
     // Color-check states: project a dedicated slide through the same
     // perspective transform as the blueprint, so the operator at the
@@ -597,6 +602,14 @@ export class VisorComponent implements OnInit, OnDestroy {
     return this.currentIndex === VisorComponent.COVERAGE_BACKGROUND_INDEX;
   }
 
+  get isBed15Active(): boolean {
+    return this.currentIndex === VisorComponent.BED_15_INDEX;
+  }
+
+  get isBed20Active(): boolean {
+    return this.currentIndex === VisorComponent.BED_20_INDEX;
+  }
+
   get showCaptureLockIndicator(): boolean {
     return this.captureMode === 'check'
       && (this.capturingPhoto || this.captureStatus === 'capturing' || this.captureStatus === 'uploading');
@@ -614,6 +627,14 @@ export class VisorComponent implements OnInit, OnDestroy {
 
   get coverageShortcutHint(): string {
     return this.isCoverageBackgroundActive ? 'Para quitar fondo de cobertura' : 'Para mostrar fondo de cobertura';
+  }
+
+  get bed15ShortcutHint(): string {
+    return this.isBed15Active ? 'Para quitar cama de 15' : 'Para mostrar cama de 15';
+  }
+
+  get bed20ShortcutHint(): string {
+    return this.isBed20Active ? 'Para quitar cama de 20' : 'Para mostrar cama de 20';
   }
 
   get showSlideLockIndicator(): boolean {
@@ -753,6 +774,10 @@ export class VisorComponent implements OnInit, OnDestroy {
       this.toggleCalibration(VisorComponent.CALIBRATION_GRID_WITH_X_INDEX);
     } else if (key === 'b') {
       this.toggleCoverageBackground();
+    } else if (key === 'v') {
+      this.toggleAuxiliaryProjection(VisorComponent.BED_15_INDEX);
+    } else if (key === 'w') {
+      this.toggleAuxiliaryProjection(VisorComponent.BED_20_INDEX);
     } else if (key === 'arrowright') {
       // Don't navigate if in calibration mode (index < 0)
       if (this.currentIndex >= 0) {
@@ -765,10 +790,6 @@ export class VisorComponent implements OnInit, OnDestroy {
     } else if (key === 'p') {
       // Manual photo capture trigger (for testing)
       this.triggerPhotoCapture('foto');
-    } else if (key === 'w') {
-      // Toggle white screen (manual pause)
-      this.whiteScreen = !this.whiteScreen;
-      this.cdr.detectChanges();
     }
   }
 
@@ -898,13 +919,19 @@ export class VisorComponent implements OnInit, OnDestroy {
   }
 
   toggleCoverageBackground(): void {
+    this.toggleAuxiliaryProjection(VisorComponent.COVERAGE_BACKGROUND_INDEX);
+  }
+
+  private toggleAuxiliaryProjection(targetIndex: number): void {
     this.slideLockUntil = 0;
     this.clearSlideLockIndicator();
-    if (this.currentIndex === VisorComponent.COVERAGE_BACKGROUND_INDEX) {
+    if (this.currentIndex === targetIndex) {
       this.currentIndex = this.previousIndex;
     } else {
-      this.previousIndex = this.currentIndex;
-      this.currentIndex = VisorComponent.COVERAGE_BACKGROUND_INDEX;
+      if (this.currentIndex >= 0) {
+        this.previousIndex = this.currentIndex;
+      }
+      this.currentIndex = targetIndex;
     }
     this.updateProjectedImage();
   }
