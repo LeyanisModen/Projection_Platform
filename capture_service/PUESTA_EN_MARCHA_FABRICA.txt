@@ -221,3 +221,13 @@ Get-ScheduledTask -TaskName 'MODEN Auto Update' | Format-List TaskName,State,Tri
 FORZAR UPDATE MANUAL DESDE DRIVE
 -----------------------------------------
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File 'C:\moden\capture_service\update-capture-service.ps1' -Force
+
+NOTA INTERNET / GOOGLE DRIVE
+-----------------------------------------
+Desde la version 2026-06-30.1 las capturas periodicas se guardan durante el
+dia en C:\moden\capture_buffer y se copian a Google Drive solo en la ventana
+nocturna configurada (por defecto 01:00-05:00).
+
+Comprobar estado:
+
+curl.exe http://127.0.0.1:5555/stats

@@ -28,9 +28,12 @@ image_rotation = 180
 ; Set enabled = false to turn the periodic capture loop off entirely.
 enabled = true
 
-; Root folder that Google Drive Desktop is syncing. Each mini-PC should
-; point to the same Google Drive mounted letter so everything lands in
-; the shared corporate drive.
+; Local high-frequency buffer. Documentation photos are written here during
+; production so Google Drive does not upload a new image every few seconds.
+local_buffer_dir = C:\moden\capture_buffer
+
+; Root folder that Google Drive Desktop is syncing. The service copies buffered
+; photos here only during the nightly sync window.
 output_dir = G:\Mi unidad\capturas_moden
 
 ; Unique id per mesa (subfolder inside output_dir). Format is
@@ -53,9 +56,19 @@ height = 1080
 jpeg_quality = 88
 
 ; Local disk cap for the documentation buffer. When the size of
-; output_dir/<mesa_id> goes above this number, the oldest YYYY-MM-DD
+; local_buffer_dir/<mesa_id> goes above this number, the oldest YYYY-MM-DD
 ; folders are dropped (today is never touched).
 max_local_gb = 30
+
+; Nightly Drive publishing. Outside this window, captures remain local only.
+sync_enabled = true
+sync_start_hour = 1
+sync_end_hour = 5
+sync_interval_seconds = 60
+
+; Delete local buffered day folders only when they already exist in Drive and
+; are at least this many days old. Use -1 to keep local copies until max_local_gb.
+local_retention_days = 7
 
 ; Working window. Outside of it the loop sleeps and nothing is written.
 active_days = MON,TUE,WED,THU,FRI

@@ -29,11 +29,13 @@ Listens on localhost:5555. Two jobs in one process:
                                   disk usage }
 
   2. Documentation thread (periodic, configurable)
-     Every `interval_seconds` saves a resized JPEG into
-       <output_dir>/<mesa_id>/YYYY-MM-DD/HH-MM-SS.jpg
-     so Google Drive Desktop (pointing at output_dir) syncs it to the
-     cloud. Runs only inside the configured working window (days + hours)
-     and prunes the oldest day folders when the local footprint exceeds
+     Every `interval_seconds` saves a resized JPEG into a local buffer:
+       <local_buffer_dir>/<mesa_id>/YYYY-MM-DD/HH-MM-SS.jpg
+     A second thread copies buffered files to the Google Drive folder
+     (`output_dir`) only during the configured nightly sync window, so
+     daytime captures do not saturate the factory internet connection.
+     Local buffered folders are pruned once copied and older than the
+     configured retention, or when the local footprint exceeds
      `max_local_gb`.
 
 All settings come from `config.ini` next to this script.
@@ -87,6 +89,7 @@ class Config:
 
         # documentation defaults (disabled until the .ini turns it on)
         self.doc_enabled = False
+        self.local_buffer_dir = Path('C:/moden/capture_buffer')
         self.output_dir = Path('C:/moden/capturas')
         self.mesa_id = 'mesa_unknown'
         self.interval_seconds = 1.0
@@ -94,6 +97,11 @@ class Config:
         self.doc_height = 1080
         self.doc_jpeg_quality = 88
         self.max_local_gb = 30.0
+        self.sync_enabled = True
+        self.sync_start_hour = 1
+        self.sync_end_hour = 5
+        self.sync_interval_seconds = 60.0
+        self.local_retention_days = 7
         self.active_days = {0, 1, 2, 3, 4}  # MON..FRI
         self.active_start_hour = 5
         self.active_end_hour = 19
@@ -135,6 +143,7 @@ class Config:
         if cp.has_section('documentation'):
             d = cp['documentation']
             self.doc_enabled = d.getboolean('enabled', self.doc_enabled)
+            self.local_buffer_dir = Path(d.get('local_buffer_dir', str(self.local_buffer_dir)))
             self.output_dir = Path(d.get('output_dir', str(self.output_dir)))
             self.mesa_id = d.get('mesa_id', self.mesa_id)
             self.interval_seconds = d.getfloat('interval_seconds', self.interval_seconds)
@@ -142,6 +151,14 @@ class Config:
             self.doc_height = d.getint('height', self.doc_height)
             self.doc_jpeg_quality = d.getint('jpeg_quality', self.doc_jpeg_quality)
             self.max_local_gb = d.getfloat('max_local_gb', self.max_local_gb)
+            self.sync_enabled = d.getboolean('sync_enabled', self.sync_enabled)
+            self.sync_start_hour = d.getint('sync_start_hour', self.sync_start_hour)
+            self.sync_end_hour = d.getint('sync_end_hour', self.sync_end_hour)
+            self.sync_interval_seconds = d.getfloat(
+                'sync_interval_seconds',
+                self.sync_interval_seconds,
+            )
+            self.local_retention_days = d.getint('local_retention_days', self.local_retention_days)
             days_raw = d.get('active_days', 'MON,TUE,WED,THU,FRI')
             self.active_days = {
                 DAY_NAME_TO_INDEX[x.strip().upper()]
@@ -250,6 +267,11 @@ _stats = {
     'captures_today': 0,
     'captures_today_date': None,  # ISO date
     'local_disk_bytes': 0,
+    'pending_sync_bytes': 0,
+    'last_sync_at': None,
+    'last_sync_files': 0,
+    'last_sync_bytes': 0,
+    'last_sync_error': None,
     'last_error': None,
     'camera_available': None,
     'last_camera_ok_at': None,
@@ -349,11 +371,31 @@ def in_active_window(now: datetime = None) -> bool:
     return start <= current < end
 
 
+def in_sync_window(now: datetime = None) -> bool:
+    if not CONFIG.sync_enabled:
+        return False
+    now = now or datetime.now()
+    start = dtime(CONFIG.sync_start_hour, 0)
+    end = dtime(CONFIG.sync_end_hour, 0)
+    current = now.time()
+    if start < end:
+        return start <= current < end
+    if start > end:
+        return current >= start or current < end
+    return True
+
+
 # ---------------------------------------------------------------------------
-# Disk usage + purge (only inside output_dir/mesa_id)
+# Disk usage + purge
 # ---------------------------------------------------------------------------
 def _mesa_root() -> Path:
+    """Google Drive destination root for files that are ready to sync."""
     return CONFIG.output_dir / CONFIG.mesa_id
+
+
+def _docs_buffer_root() -> Path:
+    """Local high-frequency capture buffer, not watched by Google Drive."""
+    return CONFIG.local_buffer_dir / CONFIG.mesa_id
 
 
 def _dir_size_bytes(path: Path) -> int:
@@ -368,9 +410,23 @@ def _dir_size_bytes(path: Path) -> int:
     return total
 
 
+def _dir_file_count_and_bytes(path: Path):
+    count = 0
+    total = 0
+    for root, _, files in os.walk(path):
+        for filename in files:
+            fp = Path(root) / filename
+            try:
+                total += fp.stat().st_size
+                count += 1
+            except OSError:
+                pass
+    return count, total
+
+
 def _prune_if_needed():
     """Drop the oldest day folders until we're back under max_local_gb."""
-    root = _mesa_root()
+    root = _docs_buffer_root()
     if not root.exists():
         return
     max_bytes = int(CONFIG.max_local_gb * (1024 ** 3))
@@ -403,6 +459,118 @@ def _prune_if_needed():
         _stats['local_disk_bytes'] = used
 
 
+def _purge_old_synced_local_days():
+    """Delete buffered day folders only after they exist in the Drive folder."""
+    if CONFIG.local_retention_days < 0:
+        return
+
+    buffer_root = _docs_buffer_root()
+    drive_root = _mesa_root()
+    if not buffer_root.exists() or not drive_root.exists():
+        return
+
+    today = datetime.now().date()
+    for day_dir in sorted([p for p in buffer_root.iterdir() if p.is_dir()], key=lambda p: p.name):
+        try:
+            day_date = datetime.strptime(day_dir.name, '%Y-%m-%d').date()
+        except ValueError:
+            continue
+        if (today - day_date).days < CONFIG.local_retention_days:
+            continue
+
+        dest_dir = drive_root / day_dir.name
+        if not dest_dir.exists():
+            continue
+
+        src_count, src_bytes = _dir_file_count_and_bytes(day_dir)
+        dest_count, dest_bytes = _dir_file_count_and_bytes(dest_dir)
+        if src_count > 0 and dest_count >= src_count and dest_bytes >= src_bytes:
+            shutil.rmtree(day_dir, ignore_errors=True)
+
+
+def _copy_buffered_files_to_drive_once():
+    """Copy stable buffered documentation files to Drive during sync window."""
+    if not CONFIG.sync_enabled:
+        return
+
+    buffer_root = _docs_buffer_root()
+    if not buffer_root.exists():
+        return
+
+    drive_root = _mesa_root()
+    try:
+        drive_root.mkdir(parents=True, exist_ok=True)
+    except Exception as exc:
+        with _stats_lock:
+            _stats['last_sync_error'] = f'output_dir pending: {exc}'
+        return
+
+    now = time.time()
+    copied_files = 0
+    copied_bytes = 0
+    try:
+        for day_dir in sorted([p for p in buffer_root.iterdir() if p.is_dir()], key=lambda p: p.name):
+            dest_day_dir = drive_root / day_dir.name
+            dest_day_dir.mkdir(parents=True, exist_ok=True)
+
+            for src in day_dir.rglob('*'):
+                if not src.is_file():
+                    continue
+                try:
+                    src_stat = src.stat()
+                except OSError:
+                    continue
+                # Avoid copying a JPEG that may still be being written.
+                if now - src_stat.st_mtime < 30:
+                    continue
+
+                rel = src.relative_to(day_dir)
+                dest = dest_day_dir / rel
+                try:
+                    if dest.exists() and dest.stat().st_size == src_stat.st_size:
+                        continue
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src, dest)
+                    copied_files += 1
+                    copied_bytes += src_stat.st_size
+                except OSError as exc:
+                    with _stats_lock:
+                        _stats['last_sync_error'] = f'copy {src.name}: {exc}'
+                    return
+
+        _purge_old_synced_local_days()
+        pending_bytes = _dir_size_bytes(buffer_root)
+        with _stats_lock:
+            _stats['pending_sync_bytes'] = pending_bytes
+            _stats['last_sync_at'] = datetime.now().isoformat(timespec='seconds')
+            _stats['last_sync_files'] = copied_files
+            _stats['last_sync_bytes'] = copied_bytes
+            _stats['last_sync_error'] = None
+    except Exception as exc:
+        with _stats_lock:
+            _stats['last_sync_error'] = str(exc)
+
+
+def documentation_sync_loop():
+    if not CONFIG.doc_enabled or not CONFIG.sync_enabled:
+        return
+
+    print(
+        f'[DocsSync] Enabled. output={CONFIG.output_dir} '
+        f'window={CONFIG.sync_start_hour:02d}:00-{CONFIG.sync_end_hour:02d}:00 '
+        f'every={CONFIG.sync_interval_seconds}s'
+    )
+    while True:
+        if in_sync_window():
+            _copy_buffered_files_to_drive_once()
+        else:
+            root = _docs_buffer_root()
+            if root.exists():
+                with _stats_lock:
+                    _stats['pending_sync_bytes'] = _dir_size_bytes(root)
+        time.sleep(max(10.0, CONFIG.sync_interval_seconds))
+
+
 # ---------------------------------------------------------------------------
 # Documentation thread
 # ---------------------------------------------------------------------------
@@ -412,19 +580,19 @@ def documentation_loop():
         return
 
     try:
-        CONFIG.output_dir.mkdir(parents=True, exist_ok=True)
+        CONFIG.local_buffer_dir.mkdir(parents=True, exist_ok=True)
     except Exception as exc:
-        # Most common cause on boot: Google Drive Desktop hasn't
-        # finished mounting G:\ yet. Don't kill the loop — each tick
-        # re-tries creating its day_dir, and as soon as Drive comes up
-        # captures start flowing.
-        _set_last_error(f'output_dir pending: {exc}')
-        print(f'[Docs] output_dir not ready ({exc}); will keep retrying each tick.')
+        # Keep the loop alive even if the local buffer is temporarily
+        # unavailable. Each tick retries and captures start as soon as
+        # Windows exposes the path again.
+        _set_last_error(f'local_buffer_dir pending: {exc}')
+        print(f'[Docs] local_buffer_dir not ready ({exc}); will keep retrying each tick.')
 
     print(f'[Docs] Enabled. mesa_id={CONFIG.mesa_id!r} '
           f'interval={CONFIG.interval_seconds}s '
           f'size={CONFIG.doc_width}x{CONFIG.doc_height}@q{CONFIG.doc_jpeg_quality}')
-    print(f'[Docs] output={CONFIG.output_dir}')
+    print(f'[Docs] buffer={CONFIG.local_buffer_dir}')
+    print(f'[Docs] drive_output={CONFIG.output_dir}')
     print(f'[Docs] schedule={sorted(CONFIG.active_days)} '
           f'{CONFIG.active_start_hour:02d}:00-{CONFIG.active_end_hour:02d}:00')
 
@@ -456,7 +624,7 @@ def documentation_loop():
                     interpolation=cv2.INTER_AREA,
                 )
 
-                day_dir = _mesa_root() / now.strftime('%Y-%m-%d')
+                day_dir = _docs_buffer_root() / now.strftime('%Y-%m-%d')
                 day_dir.mkdir(parents=True, exist_ok=True)
                 filename = now.strftime('%H-%M-%S.jpg')
                 out_path = day_dir / filename
@@ -563,7 +731,12 @@ class CaptureHandler(BaseHTTPRequestHandler):
             with _stats_lock:
                 payload = dict(_stats)
             payload['in_active_window'] = in_active_window()
+            payload['sync_window_active'] = in_sync_window()
+            payload['local_buffer_dir'] = str(CONFIG.local_buffer_dir)
             payload['output_dir'] = str(CONFIG.output_dir)
+            payload['sync_enabled'] = CONFIG.sync_enabled
+            payload['sync_window'] = f'{CONFIG.sync_start_hour:02d}:00-{CONFIG.sync_end_hour:02d}:00'
+            payload['local_retention_days'] = CONFIG.local_retention_days
             payload['image_rotation'] = CONFIG.image_rotation
             self._respond_json(200, payload)
         elif self.path == '/device_token':
@@ -741,6 +914,11 @@ def main():
         target=documentation_loop, name='DocumentationLoop', daemon=True
     )
     doc_thread.start()
+
+    sync_thread = threading.Thread(
+        target=documentation_sync_loop, name='DocumentationSyncLoop', daemon=True
+    )
+    sync_thread.start()
 
     server = HTTPServer((CONFIG.host, CONFIG.port), CaptureHandler)
     print(f'[CaptureService] Listening on http://{CONFIG.host}:{CONFIG.port}')

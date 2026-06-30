@@ -23,6 +23,29 @@ B            -> mostrar / ocultar fondo de cobertura.
 
 
 ===========================================================
+DOCUMENTACION SIN SATURAR INTERNET
+===========================================================
+
+Desde la version 2026-06-30.1 las fotos periodicas se guardan primero en:
+
+  C:\moden\capture_buffer
+
+Y solo se copian a Google Drive durante la ventana nocturna configurada
+en config.ini (por defecto 01:00-05:00). Para comprobarlo:
+
+curl.exe http://127.0.0.1:5555/stats
+
+Campos utiles:
+
+  local_buffer_dir      -> carpeta local donde se captura durante el dia
+  output_dir            -> carpeta de Drive donde se publica por la noche
+  sync_window_active    -> true solo dentro de la ventana nocturna
+  pending_sync_bytes    -> volumen local pendiente / retenido
+  last_sync_at          -> ultima copia a Drive
+  last_sync_error       -> error si Drive no estaba disponible
+
+
+===========================================================
 VALORES QUE CAMBIAN POR MINI-PC
 ===========================================================
 
