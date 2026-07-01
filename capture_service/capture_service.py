@@ -109,11 +109,13 @@ class Config:
         # Daily sharpness check (uses variance of Laplacian on the first
         # frame of the day; low variance = blurry / dirty lens).
         self.sharpness_enabled = True
-        # Keep the visible "clean lens" warning conservative. New OBSBOT
-        # units can produce low first-frame Laplacian values while exposure
-        # settles, so only very soft images are marked as blurry.
-        self.sharpness_threshold_blurry = 20.0
-        self.sharpness_threshold_warning = 80.0
+        # Keep the visible "clean lens" warning very conservative. The
+        # projected table can be dark/plain at 05:00, so low Laplacian is
+        # not enough evidence by itself.
+        self.sharpness_threshold_blurry = 2.0
+        self.sharpness_threshold_warning = 10.0
+        self.sharpness_min_brightness = 18.0
+        self.sharpness_min_contrast = 8.0
 
         if path.exists():
             self._load(path)
@@ -176,6 +178,12 @@ class Config:
             )
             self.sharpness_threshold_warning = s.getfloat(
                 'threshold_warning', self.sharpness_threshold_warning
+            )
+            self.sharpness_min_brightness = s.getfloat(
+                'min_brightness', self.sharpness_min_brightness
+            )
+            self.sharpness_min_contrast = s.getfloat(
+                'min_contrast', self.sharpness_min_contrast
             )
 
     @staticmethod
@@ -322,6 +330,11 @@ def _laplacian_variance(frame) -> float:
     return float(cv2.Laplacian(gray, cv2.CV_64F).var())
 
 
+def _sharpness_context(frame):
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    return float(gray.mean()), float(gray.std())
+
+
 def _sharpness_status_for(score: float) -> str:
     if score < CONFIG.sharpness_threshold_blurry:
         return 'blurry'
@@ -346,14 +359,25 @@ def _ensure_sharpness_checked_today():
         if not ret or frame is None:
             return
         score = _laplacian_variance(frame)
-        status = _sharpness_status_for(score)
+        brightness, contrast = _sharpness_context(frame)
+        if (
+            brightness < CONFIG.sharpness_min_brightness
+            or contrast < CONFIG.sharpness_min_contrast
+        ):
+            status = 'unknown'
+        else:
+            status = _sharpness_status_for(score)
         now_iso = datetime.now().isoformat(timespec='seconds')
         with _stats_lock:
             _stats['sharpness_score'] = round(score, 2)
             _stats['sharpness_status'] = status
             _stats['sharpness_checked_at'] = now_iso
             _stats['sharpness_checked_date'] = today_iso
-        print(f'[Sharpness] {status} (score={score:.1f}) for {CONFIG.mesa_id}')
+        print(
+            f'[Sharpness] {status} '
+            f'(score={score:.1f}, brightness={brightness:.1f}, contrast={contrast:.1f}) '
+            f'for {CONFIG.mesa_id}'
+        )
     except Exception as exc:
         _set_last_error(f'sharpness: {exc}')
 

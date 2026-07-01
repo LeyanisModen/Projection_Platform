@@ -218,8 +218,10 @@ try {
 
     $configPath = Join-Path $LocalDir 'config.ini'
     if (Test-Path $configPath) {
-        Set-IniValue $configPath 'sharpness' 'threshold_blurry' '20'
-        Set-IniValue $configPath 'sharpness' 'threshold_warning' '80'
+        Set-IniValue $configPath 'sharpness' 'threshold_blurry' '2'
+        Set-IniValue $configPath 'sharpness' 'threshold_warning' '10'
+        Set-IniValue $configPath 'sharpness' 'min_brightness' '18'
+        Set-IniValue $configPath 'sharpness' 'min_contrast' '8'
     }
 
     [System.IO.File]::WriteAllText(
