@@ -562,9 +562,8 @@ export class VisorComponent implements OnInit, OnDestroy {
     if (this.currentIndex === VisorComponent.CALIBRATION_GRID_INDEX) return `${this.assetBase}assets/calibration_grid.jpg`;
     if (this.currentIndex === VisorComponent.CALIBRATION_GRID_WITH_X_INDEX) return `${this.assetBase}assets/calibration_grid_with_x.jpg`;
     if (this.currentIndex === VisorComponent.COVERAGE_BACKGROUND_INDEX) return `${this.assetBase}assets/projection_coverage_background.jpg`;
-    // Placeholder until the final bed images are provided.
-    if (this.currentIndex === VisorComponent.BED_15_INDEX) return `${this.assetBase}assets/projection_coverage_background.jpg`;
-    if (this.currentIndex === VisorComponent.BED_20_INDEX) return `${this.assetBase}assets/projection_coverage_background.jpg`;
+    if (this.currentIndex === VisorComponent.BED_15_INDEX) return `${this.assetBase}assets/projection_bed_15.jpg`;
+    if (this.currentIndex === VisorComponent.BED_20_INDEX) return `${this.assetBase}assets/projection_bed_20.jpg`;
 
     // Color-check states: project a dedicated slide through the same
     // perspective transform as the blueprint, so the operator at the
