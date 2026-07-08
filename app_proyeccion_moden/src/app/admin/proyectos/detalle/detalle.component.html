@@ -455,7 +455,7 @@
                         [disabled]="grupoFotosCount(grupo) === 0"
                         (change)="toggleDownloadGrupo(grupo, $event)">
 
-                    <span class="bastidor-download-main">
+                    <div class="bastidor-download-main">
 
                         <strong>{{ grupoDownloadName(grupo) }}</strong>
 
@@ -463,28 +463,28 @@
                             {{ grupo.modulos.length }} mod. · {{ grupoFotosCount(grupo) }} fotos
                         </span>
 
-                    </span>
+                        <div class="bastidor-download-modulo-list" *ngIf="grupo.modulos.length > 0">
+
+                            <label class="bastidor-download-modulo-row"
+                                *ngFor="let modulo of grupo.modulos"
+                                [class.is-disabled]="!modulo.fotos_count">
+
+                                <input type="checkbox"
+                                    [checked]="isDownloadModuloSelected(modulo)"
+                                    [disabled]="!modulo.fotos_count"
+                                    (change)="toggleDownloadModulo(modulo, $event)">
+
+                                <span class="bastidor-download-modulo-name">{{ modulo.nombre }}</span>
+
+                                <span class="bastidor-download-modulo-count">{{ modulo.fotos_count || 0 }} fotos</span>
+
+                            </label>
+
+                        </div>
+
+                    </div>
 
                     <span class="bastidor-download-status" *ngIf="isGrupoCompletado(grupo)">Terminado</span>
-
-                </div>
-
-                <div class="bastidor-download-modulo-list" *ngIf="grupo.modulos.length > 0">
-
-                    <label class="bastidor-download-modulo-row"
-                        *ngFor="let modulo of grupo.modulos"
-                        [class.is-disabled]="!modulo.fotos_count">
-
-                        <input type="checkbox"
-                            [checked]="isDownloadModuloSelected(modulo)"
-                            [disabled]="!modulo.fotos_count"
-                            (change)="toggleDownloadModulo(modulo, $event)">
-
-                        <span class="bastidor-download-modulo-name">{{ modulo.nombre }}</span>
-
-                        <span class="bastidor-download-modulo-count">{{ modulo.fotos_count || 0 }} fotos</span>
-
-                    </label>
 
                 </div>
 
