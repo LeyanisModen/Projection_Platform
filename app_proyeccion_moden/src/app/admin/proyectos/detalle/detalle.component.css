@@ -1411,6 +1411,50 @@
     white-space: nowrap;
 }
 
+.bastidor-download-modules-table {
+    width: 100%;
+    border-collapse: collapse;
+    border-top: 1px solid #e2e8f0;
+    background: #fff;
+}
+
+.bastidor-download-modules-table tr {
+    min-height: 34px;
+}
+
+.bastidor-download-modules-table tr:hover:not(.is-disabled) {
+    background: #f8fafc;
+}
+
+.bastidor-download-modules-table tr.is-disabled {
+    color: #94a3b8;
+}
+
+.bastidor-download-modules-table td {
+    padding: 0.38rem 0.65rem;
+    vertical-align: middle;
+}
+
+.bastidor-download-modules-table .module-check-cell {
+    width: 32px;
+    padding-left: 2rem;
+    padding-right: 0;
+}
+
+.bastidor-download-modules-table .module-name-cell {
+    font-size: 0.84rem;
+    font-weight: 600;
+    color: #1f2937;
+}
+
+.bastidor-download-modules-table .module-count-cell {
+    width: 90px;
+    color: #64748b;
+    font-size: 0.76rem;
+    text-align: right;
+    white-space: nowrap;
+}
+
 .bastidor-download-footer {
     display: flex;
     justify-content: flex-end;

@@ -463,30 +463,27 @@
                             {{ grupo.modulos.length }} mod. · {{ grupoFotosCount(grupo) }} fotos
                         </span>
 
-                        <div class="bastidor-download-modulo-list" *ngIf="grupo.modulos.length > 0">
-
-                            <label class="bastidor-download-modulo-row"
-                                *ngFor="let modulo of grupo.modulos"
-                                [class.is-disabled]="!modulo.fotos_count">
-
-                                <input type="checkbox"
-                                    [checked]="isDownloadModuloSelected(modulo)"
-                                    [disabled]="!modulo.fotos_count"
-                                    (change)="toggleDownloadModulo(modulo, $event)">
-
-                                <span class="bastidor-download-modulo-name">{{ modulo.nombre }}</span>
-
-                                <span class="bastidor-download-modulo-count">{{ modulo.fotos_count || 0 }} fotos</span>
-
-                            </label>
-
-                        </div>
-
                     </div>
 
                     <span class="bastidor-download-status" *ngIf="isGrupoCompletado(grupo)">Terminado</span>
 
                 </div>
+
+                <table class="bastidor-download-modules-table" *ngIf="grupo.modulos.length > 0">
+                    <tbody>
+                        <tr *ngFor="let modulo of grupo.modulos"
+                            [class.is-disabled]="!modulo.fotos_count">
+                            <td class="module-check-cell">
+                                <input type="checkbox"
+                                    [checked]="isDownloadModuloSelected(modulo)"
+                                    [disabled]="!modulo.fotos_count"
+                                    (change)="toggleDownloadModulo(modulo, $event)">
+                            </td>
+                            <td class="module-name-cell">{{ modulo.nombre }}</td>
+                            <td class="module-count-cell">{{ modulo.fotos_count || 0 }} fotos</td>
+                        </tr>
+                    </tbody>
+                </table>
 
             </div>
 
