@@ -4870,6 +4870,9 @@ class FotoFabricacionViewSet(viewsets.ReadOnlyModelViewSet):
     def _get_grupo_bastidor_ids(self, request):
         return self._parse_id_list(request.query_params.getlist('grupo_bastidor'))
 
+    def _get_modulo_ids(self, request):
+        return self._parse_id_list(request.query_params.getlist('modulo'))
+
     def get_queryset(self):
         queryset = FotoFabricacion.objects.select_related(
             'modulo', 'modulo__proyecto', 'modulo__planta', 'modulo__planta__proyecto',
@@ -4879,14 +4882,14 @@ class FotoFabricacionViewSet(viewsets.ReadOnlyModelViewSet):
         if not _is_admin(self.request.user):
             queryset = queryset.filter(modulo__proyecto__usuario=self.request.user)
 
-        modulo_id = self.request.query_params.get('modulo')
+        modulo_ids = self._get_modulo_ids(self.request)
         planta_id = self.request.query_params.get('planta')
         proyecto_id = self.request.query_params.get('proyecto')
         grupo_bastidor_ids = self._get_grupo_bastidor_ids(self.request)
         fase = self.request.query_params.get('fase')
 
-        if modulo_id:
-            queryset = queryset.filter(modulo_id=modulo_id)
+        if modulo_ids:
+            queryset = queryset.filter(modulo_id__in=modulo_ids)
         if planta_id:
             queryset = queryset.filter(modulo__planta_id=planta_id)
         if proyecto_id:
@@ -4896,7 +4899,7 @@ class FotoFabricacionViewSet(viewsets.ReadOnlyModelViewSet):
         if fase:
             queryset = queryset.filter(fase=fase)
 
-        if grupo_bastidor_ids:
+        if grupo_bastidor_ids or modulo_ids:
             return queryset.order_by(
                 'modulo__grupo_bastidor__indice',
                 'modulo__orden_intra',
@@ -4924,7 +4927,7 @@ class FotoFabricacionViewSet(viewsets.ReadOnlyModelViewSet):
 
         proyecto_id = request.query_params.get('proyecto')
         planta_id = request.query_params.get('planta')
-        modulo_id = request.query_params.get('modulo')
+        modulo_ids = self._get_modulo_ids(request)
         grupo_bastidor_ids = self._get_grupo_bastidor_ids(request)
 
         fotos = self.get_queryset()
@@ -4950,16 +4953,16 @@ class FotoFabricacionViewSet(viewsets.ReadOnlyModelViewSet):
                 # The top-level entity name becomes the ZIP filename
                 # (Windows "Extract All" creates a folder from the ZIP name).
                 if grupo_bastidor_ids:
-                    archive_path = f"{grupo_nombre}/{modulo_nombre}/{filename}"
+                    archive_path = f"{modulo_nombre}/{filename}"
                     if not zip_entity_name:
                         if len(grupo_bastidor_ids) == 1:
                             zip_entity_name = grupo_nombre
                         else:
-                            zip_entity_name = f"{proyecto_nombre}_bastidores"
-                elif modulo_id:
-                    archive_path = filename
+                            zip_entity_name = f"{proyecto_nombre}_modulos"
+                elif modulo_ids:
+                    archive_path = filename if len(modulo_ids) == 1 else f"{modulo_nombre}/{filename}"
                     if not zip_entity_name:
-                        zip_entity_name = modulo_nombre
+                        zip_entity_name = modulo_nombre if len(modulo_ids) == 1 else f"{proyecto_nombre}_modulos"
                 elif planta_id:
                     archive_path = f"{modulo_nombre}/{filename}"
                     if not zip_entity_name:

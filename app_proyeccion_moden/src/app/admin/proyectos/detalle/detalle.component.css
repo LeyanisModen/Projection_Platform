@@ -1298,10 +1298,22 @@
 .bastidor-download-list {
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    gap: 0.65rem;
     max-height: 52vh;
     overflow-y: auto;
     padding-right: 0.25rem;
+}
+
+.bastidor-download-group {
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    background: #fff;
+    overflow: hidden;
+}
+
+.bastidor-download-group.is-disabled {
+    color: #94a3b8;
+    background: #f8fafc;
 }
 
 .bastidor-download-row {
@@ -1311,27 +1323,14 @@
     gap: 0.65rem;
     min-height: 48px;
     padding: 0.55rem 0.65rem;
-    border: 1px solid #e2e8f0;
-    border-radius: 6px;
-    background: #fff;
-    cursor: pointer;
+    background: #f8fafc;
     margin: 0;
-}
-
-.bastidor-download-row:hover:not(.is-disabled) {
-    background: #f8fafc;
-    border-color: #cbd5e1;
-}
-
-.bastidor-download-row.is-disabled {
-    color: #94a3b8;
-    background: #f8fafc;
-    cursor: not-allowed;
 }
 
 .bastidor-download-row input {
     width: 16px;
     height: 16px;
+    cursor: pointer;
 }
 
 .bastidor-download-main {
@@ -1360,6 +1359,53 @@
     font-weight: 700;
     color: #166534;
     background: #dcfce7;
+    white-space: nowrap;
+}
+
+.bastidor-download-modulo-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding: 0.2rem 0;
+}
+
+.bastidor-download-modulo-row {
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.55rem;
+    min-height: 34px;
+    padding: 0.3rem 0.65rem 0.3rem 2rem;
+    margin: 0;
+    cursor: pointer;
+}
+
+.bastidor-download-modulo-row:hover:not(.is-disabled) {
+    background: #f8fafc;
+}
+
+.bastidor-download-modulo-row.is-disabled {
+    color: #94a3b8;
+    cursor: not-allowed;
+}
+
+.bastidor-download-modulo-row input {
+    width: 15px;
+    height: 15px;
+}
+
+.bastidor-download-modulo-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.84rem;
+    font-weight: 600;
+}
+
+.bastidor-download-modulo-count {
+    color: #64748b;
+    font-size: 0.76rem;
     white-space: nowrap;
 }
 

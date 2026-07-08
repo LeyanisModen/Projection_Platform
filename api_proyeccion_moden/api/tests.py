@@ -217,7 +217,7 @@ class FotoFabricacionDownloadTests(APITestCase):
             file_size=8,
         )
 
-    def test_fotos_y_zip_se_filtran_por_bastidor(self):
+    def test_fotos_y_zip_se_filtran_por_bastidor_sin_carpeta_de_bastidor(self):
         with tempfile.TemporaryDirectory() as media_root:
             self.media_root = media_root
             with override_settings(MEDIA_ROOT=media_root):
@@ -238,8 +238,34 @@ class FotoFabricacionDownloadTests(APITestCase):
 
                 archive = zipfile.ZipFile(io.BytesIO(zip_response.content))
                 names = archive.namelist()
-                self.assertIn("Bastidor 01/M-01/m1.jpg", names)
-                self.assertNotIn("Bastidor 02/M-02/m2.jpg", names)
+                self.assertIn("M-01/m1.jpg", names)
+                self.assertNotIn("Bastidor 01/M-01/m1.jpg", names)
+                self.assertNotIn("M-02/m2.jpg", names)
+
+    def test_fotos_y_zip_se_filtran_por_modulos_concretos(self):
+        with tempfile.TemporaryDirectory() as media_root:
+            self.media_root = media_root
+            with override_settings(MEDIA_ROOT=media_root):
+                self._crear_foto(self.modulo_1, os.path.join(media_root, "fotos", "m1.jpg"))
+                self._crear_foto(self.modulo_2, os.path.join(media_root, "fotos", "m2.jpg"))
+
+                list_response = self.client.get(
+                    f"/api/fotos/?proyecto={self.proyecto.id}&modulo={self.modulo_1.id}"
+                )
+                self.assertEqual(list_response.status_code, 200)
+                self.assertEqual(len(list_response.data), 1)
+                self.assertEqual(list_response.data[0]["modulo"], self.modulo_1.id)
+
+                zip_response = self.client.get(
+                    f"/api/fotos/download_zip/?proyecto={self.proyecto.id}&modulo={self.modulo_1.id}"
+                )
+                self.assertEqual(zip_response.status_code, 200)
+
+                archive = zipfile.ZipFile(io.BytesIO(zip_response.content))
+                names = archive.namelist()
+                self.assertIn("m1.jpg", names)
+                self.assertNotIn("M-02/m2.jpg", names)
+                self.assertNotIn("m2.jpg", names)
 
 
 @override_settings(

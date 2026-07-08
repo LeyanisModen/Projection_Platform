@@ -817,10 +817,13 @@ export class ApiService {
     // =========================================================================
     // FOTOS FABRICACION
     // =========================================================================
-    getFotos(params: { modulo?: number; planta?: number; proyecto?: number; grupo_bastidor?: number | number[] }): Observable<FotoFabricacion[]> {
+    getFotos(params: { modulo?: number | number[]; planta?: number; proyecto?: number; grupo_bastidor?: number | number[] }): Observable<FotoFabricacion[]> {
         let url = `${this.baseUrl}/fotos/`;
         const queryParts: string[] = [];
-        if (params.modulo) queryParts.push(`modulo=${params.modulo}`);
+        if (params.modulo) {
+            const ids = Array.isArray(params.modulo) ? params.modulo : [params.modulo];
+            if (ids.length) queryParts.push(`modulo=${ids.join(',')}`);
+        }
         if (params.planta) queryParts.push(`planta=${params.planta}`);
         if (params.proyecto) queryParts.push(`proyecto=${params.proyecto}`);
         if (params.grupo_bastidor) {
@@ -831,10 +834,13 @@ export class ApiService {
         return this.http.get<FotoFabricacion[]>(url, { headers: this.getHeaders() });
     }
 
-    downloadFotosZip(params: { modulo?: number; planta?: number; proyecto?: number; grupo_bastidor?: number | number[] }): Observable<Blob> {
+    downloadFotosZip(params: { modulo?: number | number[]; planta?: number; proyecto?: number; grupo_bastidor?: number | number[] }): Observable<Blob> {
         let url = `${this.baseUrl}/fotos/download_zip/`;
         const queryParts: string[] = [];
-        if (params.modulo) queryParts.push(`modulo=${params.modulo}`);
+        if (params.modulo) {
+            const ids = Array.isArray(params.modulo) ? params.modulo : [params.modulo];
+            if (ids.length) queryParts.push(`modulo=${ids.join(',')}`);
+        }
         if (params.planta) queryParts.push(`planta=${params.planta}`);
         if (params.proyecto) queryParts.push(`proyecto=${params.proyecto}`);
         if (params.grupo_bastidor) {

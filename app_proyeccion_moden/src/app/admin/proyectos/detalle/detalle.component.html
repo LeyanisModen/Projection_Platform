@@ -414,7 +414,7 @@
 
                 <small class="text-muted">
 
-                    {{ selectedDownloadGruposCount() }} bastidores seleccionados · {{ selectedDownloadFotosCount() }} fotos
+                    {{ selectedDownloadGruposCount() }} bastidores · {{ selectedDownloadModulosCount() }} módulos · {{ selectedDownloadFotosCount() }} fotos
 
                 </small>
 
@@ -442,29 +442,53 @@
 
         <div class="bastidor-download-list">
 
-            <label class="bastidor-download-row"
+            <div class="bastidor-download-group"
                 *ngFor="let grupo of grupos"
                 [class.is-disabled]="grupoFotosCount(grupo) === 0"
                 [class.is-completed]="isGrupoCompletado(grupo)">
 
-                <input type="checkbox"
-                    [checked]="isDownloadGrupoSelected(grupo)"
-                    [disabled]="grupoFotosCount(grupo) === 0"
-                    (change)="toggleDownloadGrupo(grupo, $event)">
+                <div class="bastidor-download-row">
 
-                <span class="bastidor-download-main">
+                    <input type="checkbox"
+                        [checked]="isDownloadGrupoSelected(grupo)"
+                        [indeterminate]="isDownloadGrupoIndeterminate(grupo)"
+                        [disabled]="grupoFotosCount(grupo) === 0"
+                        (change)="toggleDownloadGrupo(grupo, $event)">
 
-                    <strong>{{ grupoDownloadName(grupo) }}</strong>
+                    <span class="bastidor-download-main">
 
-                    <span class="bastidor-download-modulos">
-                        {{ grupo.modulos.length }} mod. · {{ grupoFotosCount(grupo) }} fotos
+                        <strong>{{ grupoDownloadName(grupo) }}</strong>
+
+                        <span class="bastidor-download-modulos">
+                            {{ grupo.modulos.length }} mod. · {{ grupoFotosCount(grupo) }} fotos
+                        </span>
+
                     </span>
 
-                </span>
+                    <span class="bastidor-download-status" *ngIf="isGrupoCompletado(grupo)">Terminado</span>
 
-                <span class="bastidor-download-status" *ngIf="isGrupoCompletado(grupo)">Terminado</span>
+                </div>
 
-            </label>
+                <div class="bastidor-download-modulo-list" *ngIf="grupo.modulos.length > 0">
+
+                    <label class="bastidor-download-modulo-row"
+                        *ngFor="let modulo of grupo.modulos"
+                        [class.is-disabled]="!modulo.fotos_count">
+
+                        <input type="checkbox"
+                            [checked]="isDownloadModuloSelected(modulo)"
+                            [disabled]="!modulo.fotos_count"
+                            (change)="toggleDownloadModulo(modulo, $event)">
+
+                        <span class="bastidor-download-modulo-name">{{ modulo.nombre }}</span>
+
+                        <span class="bastidor-download-modulo-count">{{ modulo.fotos_count || 0 }} fotos</span>
+
+                    </label>
+
+                </div>
+
+            </div>
 
         </div>
 
@@ -472,7 +496,7 @@
 
             <button type="button" class="btn btn-sm btn-download-fotos"
                 (click)="downloadSelectedBastidores()"
-                [disabled]="downloadingZip || selectedDownloadGrupoIds.length === 0">
+                [disabled]="downloadingZip || selectedDownloadModuloIds.length === 0">
 
                 <i class="fa fa-download" aria-hidden="true"></i>
                 {{ downloadingZip ? 'Preparando...' : 'Descargar ZIP' }}

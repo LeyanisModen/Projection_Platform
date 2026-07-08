@@ -76,7 +76,7 @@ export class ProyectoDetailComponent implements OnInit {
     downloadingZip = false;
     selectedFotoIndex = 0;
     showBastidorDownloadModal = false;
-    selectedDownloadGrupoIds: number[] = [];
+    selectedDownloadModuloIds: number[] = [];
 
     constructor(
         private route: ActivatedRoute,
@@ -451,6 +451,12 @@ export class ProyectoDetailComponent implements OnInit {
 
     grupoDownloadName(grupo: GrupoBastidor): string {
         return grupo.nombre || `Bastidor ${grupo.indice}`;
+    }
+
+    grupoDownloadModuloIds(grupo: GrupoBastidor): number[] {
+        return grupo.modulos
+            .filter(modulo => (modulo.fotos_count || 0) > 0)
+            .map(modulo => modulo.id);
     }
 
     // Inline rename state for GrupoBastidor alias.
@@ -1182,7 +1188,7 @@ export class ProyectoDetailComponent implements OnInit {
         const terminadosConFotos = gruposConFotos.filter(grupo => this.isGrupoCompletado(grupo));
         const preselected = terminadosConFotos.length ? terminadosConFotos : gruposConFotos;
 
-        this.selectedDownloadGrupoIds = preselected.map(grupo => grupo.id);
+        this.selectedDownloadModuloIds = preselected.flatMap(grupo => this.grupoDownloadModuloIds(grupo));
         this.showBastidorDownloadModal = true;
         this.cdr.detectChanges();
     }
@@ -1190,28 +1196,56 @@ export class ProyectoDetailComponent implements OnInit {
     closeBastidorDownloadModal(): void {
         if (this.downloadingZip) return;
         this.showBastidorDownloadModal = false;
-        this.selectedDownloadGrupoIds = [];
+        this.selectedDownloadModuloIds = [];
         this.cdr.detectChanges();
     }
 
     isDownloadGrupoSelected(grupo: GrupoBastidor): boolean {
-        return this.selectedDownloadGrupoIds.includes(grupo.id);
+        const moduloIds = this.grupoDownloadModuloIds(grupo);
+        return moduloIds.length > 0
+            && moduloIds.every(id => this.selectedDownloadModuloIds.includes(id));
+    }
+
+    isDownloadGrupoIndeterminate(grupo: GrupoBastidor): boolean {
+        const moduloIds = this.grupoDownloadModuloIds(grupo);
+        if (moduloIds.length === 0) return false;
+        const selectedCount = moduloIds.filter(id => this.selectedDownloadModuloIds.includes(id)).length;
+        return selectedCount > 0 && selectedCount < moduloIds.length;
     }
 
     toggleDownloadGrupo(grupo: GrupoBastidor, event: Event): void {
         const checked = (event.target as HTMLInputElement).checked;
+        const moduloIds = this.grupoDownloadModuloIds(grupo);
         if (checked) {
-            if (!this.selectedDownloadGrupoIds.includes(grupo.id)) {
-                this.selectedDownloadGrupoIds = [...this.selectedDownloadGrupoIds, grupo.id];
+            this.selectedDownloadModuloIds = Array.from(new Set([
+                ...this.selectedDownloadModuloIds,
+                ...moduloIds,
+            ]));
+        } else {
+            this.selectedDownloadModuloIds = this.selectedDownloadModuloIds
+                .filter(id => !moduloIds.includes(id));
+        }
+    }
+
+    isDownloadModuloSelected(modulo: GrupoBastidorModulo): boolean {
+        return this.selectedDownloadModuloIds.includes(modulo.id);
+    }
+
+    toggleDownloadModulo(modulo: GrupoBastidorModulo, event: Event): void {
+        const checked = (event.target as HTMLInputElement).checked;
+        if (checked) {
+            if (!this.selectedDownloadModuloIds.includes(modulo.id)) {
+                this.selectedDownloadModuloIds = [...this.selectedDownloadModuloIds, modulo.id];
             }
         } else {
-            this.selectedDownloadGrupoIds = this.selectedDownloadGrupoIds.filter(id => id !== grupo.id);
+            this.selectedDownloadModuloIds = this.selectedDownloadModuloIds
+                .filter(id => id !== modulo.id);
         }
     }
 
     selectDownloadGrupos(mode: 'terminados' | 'conFotos' | 'none'): void {
         if (mode === 'none') {
-            this.selectedDownloadGrupoIds = [];
+            this.selectedDownloadModuloIds = [];
             return;
         }
 
@@ -1221,17 +1255,25 @@ export class ProyectoDetailComponent implements OnInit {
                 ? hasFotos
                 : hasFotos && this.isGrupoCompletado(grupo);
         });
-        this.selectedDownloadGrupoIds = grupos.map(grupo => grupo.id);
+        this.selectedDownloadModuloIds = grupos.flatMap(grupo => this.grupoDownloadModuloIds(grupo));
     }
 
     selectedDownloadGruposCount(): number {
-        return this.selectedDownloadGrupoIds.length;
+        return this.grupos.filter(grupo => {
+            const moduloIds = this.grupoDownloadModuloIds(grupo);
+            return moduloIds.some(id => this.selectedDownloadModuloIds.includes(id));
+        }).length;
+    }
+
+    selectedDownloadModulosCount(): number {
+        return this.selectedDownloadModuloIds.length;
     }
 
     selectedDownloadFotosCount(): number {
         return this.grupos
-            .filter(grupo => this.selectedDownloadGrupoIds.includes(grupo.id))
-            .reduce((total, grupo) => total + this.grupoFotosCount(grupo), 0);
+            .flatMap(grupo => grupo.modulos)
+            .filter(modulo => this.selectedDownloadModuloIds.includes(modulo.id))
+            .reduce((total, modulo) => total + (modulo.fotos_count || 0), 0);
     }
 
     openFotosModal(modulo: { id: number; nombre: string }, event?: Event): void {
@@ -1301,28 +1343,28 @@ export class ProyectoDetailComponent implements OnInit {
     }
 
     downloadSelectedBastidores(): void {
-        if (!this.proyectoId || this.selectedDownloadGrupoIds.length === 0) {
-            alert('Selecciona al menos un bastidor con fotos.');
+        if (!this.proyectoId || this.selectedDownloadModuloIds.length === 0) {
+            alert('Selecciona al menos un modulo con fotos.');
             return;
         }
 
         this.downloadingZip = true;
-        const grupoIds = [...this.selectedDownloadGrupoIds];
+        const moduloIds = [...this.selectedDownloadModuloIds];
 
         this.api.downloadFotosZip({
             proyecto: this.proyectoId,
-            grupo_bastidor: grupoIds
+            modulo: moduloIds
         }).subscribe({
             next: (blob) => {
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = grupoIds.length === 1 ? 'fotos_bastidor.zip' : 'fotos_bastidores.zip';
+                a.download = moduloIds.length === 1 ? 'fotos_modulo.zip' : 'fotos_modulos.zip';
                 a.click();
                 window.URL.revokeObjectURL(url);
                 this.downloadingZip = false;
                 this.showBastidorDownloadModal = false;
-                this.selectedDownloadGrupoIds = [];
+                this.selectedDownloadModuloIds = [];
                 this.cdr.detectChanges();
             },
             error: (err) => {
