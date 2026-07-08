@@ -86,8 +86,18 @@ PASO 5 -- Abrir OBSBOT y mover la camara
 2. Escribe: OBSBOT
 3. Abre "OBSBOT WebCam" u "OBSBOT Center".
 4. Mueve la camara hasta que apunte bien a la mesa.
-5. Si ves tracking / seguimiento, dejalo desactivado. Desactivar la suspención automática importante
-6. Si la app permite guardar preset, guardalo.
+5. Si ves tracking / seguimiento, dejalo desactivado.
+6. Desactiva tambien Sleep Mode / Auto Sleep / suspension automatica.
+7. Guarda el encuadre en el preset 1:
+   - Pulsa el boton 1 de presets.
+   - Si aparece "Agregar" / "Guardar", guarda esa posicion.
+8. MUY IMPORTANTE: fija esa vista como vista inicial:
+   - Abre el menu del preset o de PTZ.
+   - Pulsa "Como Estado inicial".
+   - Si aparece confirmacion, acepta.
+
+Esto hace que, si la camara se reinicia o vuelve a su punto inicial,
+vuelva al encuadre bueno de la mesa.
 
 MUY IMPORTANTE AL TERMINAR:
 No dejes OBSBOT abierto.
