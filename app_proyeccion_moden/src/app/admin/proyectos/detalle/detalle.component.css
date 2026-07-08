@@ -1278,6 +1278,97 @@
     cursor: not-allowed;
 }
 
+.bastidor-download-modal {
+    width: min(640px, 95vw);
+    max-height: 85vh;
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.24);
+    padding: 1.25rem;
+    overflow-y: auto;
+}
+
+.bastidor-download-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 0.9rem;
+}
+
+.bastidor-download-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    max-height: 52vh;
+    overflow-y: auto;
+    padding-right: 0.25rem;
+}
+
+.bastidor-download-row {
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.65rem;
+    min-height: 48px;
+    padding: 0.55rem 0.65rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    background: #fff;
+    cursor: pointer;
+    margin: 0;
+}
+
+.bastidor-download-row:hover:not(.is-disabled) {
+    background: #f8fafc;
+    border-color: #cbd5e1;
+}
+
+.bastidor-download-row.is-disabled {
+    color: #94a3b8;
+    background: #f8fafc;
+    cursor: not-allowed;
+}
+
+.bastidor-download-row input {
+    width: 16px;
+    height: 16px;
+}
+
+.bastidor-download-main {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.bastidor-download-main strong {
+    font-size: 0.92rem;
+    color: #1f2937;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.bastidor-download-modulos {
+    font-size: 0.78rem;
+    color: #64748b;
+}
+
+.bastidor-download-status {
+    padding: 0.15rem 0.45rem;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: #166534;
+    background: #dcfce7;
+    white-space: nowrap;
+}
+
+.bastidor-download-footer {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 1rem;
+}
+
 /* Photo Gallery Modal */
 .foto-modal-backdrop {
     position: fixed;

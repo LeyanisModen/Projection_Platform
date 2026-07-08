@@ -4841,19 +4841,40 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
 class FotoFabricacionViewSet(viewsets.ReadOnlyModelViewSet):
     """
     API endpoint to list/retrieve fabrication photos.
-    Filterable by modulo, planta, proyecto, fase.
+    Filterable by modulo, planta, proyecto, grupo_bastidor, fase.
     """
     queryset = FotoFabricacion.objects.select_related(
-        'modulo', 'modulo__planta', 'modulo__planta__proyecto', 'mesa', 'imagen_referencia'
+        'modulo', 'modulo__proyecto', 'modulo__planta', 'modulo__planta__proyecto',
+        'modulo__grupo_bastidor', 'mesa', 'imagen_referencia'
     ).all()
     serializer_class = FotoFabricacionSerializer
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = None
 
+    @staticmethod
+    def _parse_id_list(values):
+        ids = []
+        for value in values:
+            if value in [None, '']:
+                continue
+            for part in str(value).split(','):
+                part = part.strip()
+                if not part:
+                    continue
+                try:
+                    ids.append(int(part))
+                except (TypeError, ValueError):
+                    continue
+        return ids
+
+    def _get_grupo_bastidor_ids(self, request):
+        return self._parse_id_list(request.query_params.getlist('grupo_bastidor'))
+
     def get_queryset(self):
         queryset = FotoFabricacion.objects.select_related(
-            'modulo', 'modulo__planta', 'modulo__planta__proyecto', 'mesa'
-        ).all().order_by('-capturada_at')
+            'modulo', 'modulo__proyecto', 'modulo__planta', 'modulo__planta__proyecto',
+            'modulo__grupo_bastidor', 'mesa'
+        ).all()
 
         if not _is_admin(self.request.user):
             queryset = queryset.filter(modulo__proyecto__usuario=self.request.user)
@@ -4861,6 +4882,7 @@ class FotoFabricacionViewSet(viewsets.ReadOnlyModelViewSet):
         modulo_id = self.request.query_params.get('modulo')
         planta_id = self.request.query_params.get('planta')
         proyecto_id = self.request.query_params.get('proyecto')
+        grupo_bastidor_ids = self._get_grupo_bastidor_ids(self.request)
         fase = self.request.query_params.get('fase')
 
         if modulo_id:
@@ -4869,16 +4891,28 @@ class FotoFabricacionViewSet(viewsets.ReadOnlyModelViewSet):
             queryset = queryset.filter(modulo__planta_id=planta_id)
         if proyecto_id:
             queryset = queryset.filter(modulo__proyecto_id=proyecto_id)
+        if grupo_bastidor_ids:
+            queryset = queryset.filter(modulo__grupo_bastidor_id__in=grupo_bastidor_ids)
         if fase:
             queryset = queryset.filter(fase=fase)
 
-        return queryset
+        if grupo_bastidor_ids:
+            return queryset.order_by(
+                'modulo__grupo_bastidor__indice',
+                'modulo__orden_intra',
+                'modulo__nombre',
+                'fase',
+                'paso',
+                'capturada_at',
+            )
+        return queryset.order_by('-capturada_at')
 
     @action(detail=False, methods=['get'])
     def download_zip(self, request):
         """
         Download photos as ZIP file.
-        Query params: ?proyecto=ID or ?planta=ID or ?modulo=ID
+        Query params: ?proyecto=ID or ?planta=ID or ?modulo=ID.
+        Optional: ?grupo_bastidor=ID or ?grupo_bastidor=ID,ID.
         ZIP name uses the entity name; internal structure excludes the
         top-level folder (Windows "Extract All" creates it from the ZIP name).
         """
@@ -4891,6 +4925,7 @@ class FotoFabricacionViewSet(viewsets.ReadOnlyModelViewSet):
         proyecto_id = request.query_params.get('proyecto')
         planta_id = request.query_params.get('planta')
         modulo_id = request.query_params.get('modulo')
+        grupo_bastidor_ids = self._get_grupo_bastidor_ids(request)
 
         fotos = self.get_queryset()
 
@@ -4904,12 +4939,24 @@ class FotoFabricacionViewSet(viewsets.ReadOnlyModelViewSet):
                 proyecto_nombre = foto.modulo.proyecto.nombre if foto.modulo.proyecto else 'sin_proyecto'
                 planta_nombre = foto.modulo.planta.nombre if foto.modulo.planta else 'sin_planta'
                 modulo_nombre = foto.modulo.nombre
+                grupo_bastidor = foto.modulo.grupo_bastidor
+                if grupo_bastidor:
+                    grupo_nombre = grupo_bastidor.nombre or f'Bastidor {grupo_bastidor.indice:02d}'
+                else:
+                    grupo_nombre = 'sin_bastidor'
                 filename = os.path.basename(foto.url)
 
                 # Adapt folder structure to download scope.
                 # The top-level entity name becomes the ZIP filename
                 # (Windows "Extract All" creates a folder from the ZIP name).
-                if modulo_id:
+                if grupo_bastidor_ids:
+                    archive_path = f"{grupo_nombre}/{modulo_nombre}/{filename}"
+                    if not zip_entity_name:
+                        if len(grupo_bastidor_ids) == 1:
+                            zip_entity_name = grupo_nombre
+                        else:
+                            zip_entity_name = f"{proyecto_nombre}_bastidores"
+                elif modulo_id:
                     archive_path = filename
                     if not zip_entity_name:
                         zip_entity_name = modulo_nombre

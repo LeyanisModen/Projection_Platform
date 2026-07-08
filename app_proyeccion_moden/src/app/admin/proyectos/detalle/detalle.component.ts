@@ -75,6 +75,8 @@ export class ProyectoDetailComponent implements OnInit {
     loadingFotos = false;
     downloadingZip = false;
     selectedFotoIndex = 0;
+    showBastidorDownloadModal = false;
+    selectedDownloadGrupoIds: number[] = [];
 
     constructor(
         private route: ActivatedRoute,
@@ -437,6 +439,18 @@ export class ProyectoDetailComponent implements OnInit {
     isGrupoCompletado(grupo: GrupoBastidor): boolean {
         if (!grupo.modulos.length) return false;
         return grupo.modulos.every(m => m.estado === 'COMPLETADO' || m.estado === 'CERRADO');
+    }
+
+    grupoFotosCount(grupo: GrupoBastidor): number {
+        return grupo.modulos.reduce((total, modulo) => total + (modulo.fotos_count || 0), 0);
+    }
+
+    hasAnyGrupoFotos(): boolean {
+        return this.grupos.some(grupo => this.grupoFotosCount(grupo) > 0);
+    }
+
+    grupoDownloadName(grupo: GrupoBastidor): string {
+        return grupo.nombre || `Bastidor ${grupo.indice}`;
     }
 
     // Inline rename state for GrupoBastidor alias.
@@ -1162,6 +1176,64 @@ export class ProyectoDetailComponent implements OnInit {
     // =========================================================================
     // PHOTO GALLERY
     // =========================================================================
+    openBastidorDownloadModal(event?: Event): void {
+        event?.stopPropagation();
+        const gruposConFotos = this.grupos.filter(grupo => this.grupoFotosCount(grupo) > 0);
+        const terminadosConFotos = gruposConFotos.filter(grupo => this.isGrupoCompletado(grupo));
+        const preselected = terminadosConFotos.length ? terminadosConFotos : gruposConFotos;
+
+        this.selectedDownloadGrupoIds = preselected.map(grupo => grupo.id);
+        this.showBastidorDownloadModal = true;
+        this.cdr.detectChanges();
+    }
+
+    closeBastidorDownloadModal(): void {
+        if (this.downloadingZip) return;
+        this.showBastidorDownloadModal = false;
+        this.selectedDownloadGrupoIds = [];
+        this.cdr.detectChanges();
+    }
+
+    isDownloadGrupoSelected(grupo: GrupoBastidor): boolean {
+        return this.selectedDownloadGrupoIds.includes(grupo.id);
+    }
+
+    toggleDownloadGrupo(grupo: GrupoBastidor, event: Event): void {
+        const checked = (event.target as HTMLInputElement).checked;
+        if (checked) {
+            if (!this.selectedDownloadGrupoIds.includes(grupo.id)) {
+                this.selectedDownloadGrupoIds = [...this.selectedDownloadGrupoIds, grupo.id];
+            }
+        } else {
+            this.selectedDownloadGrupoIds = this.selectedDownloadGrupoIds.filter(id => id !== grupo.id);
+        }
+    }
+
+    selectDownloadGrupos(mode: 'terminados' | 'conFotos' | 'none'): void {
+        if (mode === 'none') {
+            this.selectedDownloadGrupoIds = [];
+            return;
+        }
+
+        const grupos = this.grupos.filter(grupo => {
+            const hasFotos = this.grupoFotosCount(grupo) > 0;
+            return mode === 'conFotos'
+                ? hasFotos
+                : hasFotos && this.isGrupoCompletado(grupo);
+        });
+        this.selectedDownloadGrupoIds = grupos.map(grupo => grupo.id);
+    }
+
+    selectedDownloadGruposCount(): number {
+        return this.selectedDownloadGrupoIds.length;
+    }
+
+    selectedDownloadFotosCount(): number {
+        return this.grupos
+            .filter(grupo => this.selectedDownloadGrupoIds.includes(grupo.id))
+            .reduce((total, grupo) => total + this.grupoFotosCount(grupo), 0);
+    }
+
     openFotosModal(modulo: { id: number; nombre: string }, event?: Event): void {
         if (event) event.stopPropagation();
         this.fotosTarget = { id: modulo.id, nombre: modulo.nombre };
@@ -1226,6 +1298,40 @@ export class ProyectoDetailComponent implements OnInit {
 
     getFotoUrl(foto: FotoFabricacion): string {
         return this.toAbsoluteFileUrl(foto.url) || '';
+    }
+
+    downloadSelectedBastidores(): void {
+        if (!this.proyectoId || this.selectedDownloadGrupoIds.length === 0) {
+            alert('Selecciona al menos un bastidor con fotos.');
+            return;
+        }
+
+        this.downloadingZip = true;
+        const grupoIds = [...this.selectedDownloadGrupoIds];
+
+        this.api.downloadFotosZip({
+            proyecto: this.proyectoId,
+            grupo_bastidor: grupoIds
+        }).subscribe({
+            next: (blob) => {
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = grupoIds.length === 1 ? 'fotos_bastidor.zip' : 'fotos_bastidores.zip';
+                a.click();
+                window.URL.revokeObjectURL(url);
+                this.downloadingZip = false;
+                this.showBastidorDownloadModal = false;
+                this.selectedDownloadGrupoIds = [];
+                this.cdr.detectChanges();
+            },
+            error: (err) => {
+                console.error('Error downloading ZIP', err);
+                this.downloadingZip = false;
+                alert('Error descargando fotos');
+                this.cdr.detectChanges();
+            }
+        });
     }
 
     downloadFotosZip(scope: 'modulo' | 'planta' | 'proyecto'): void {

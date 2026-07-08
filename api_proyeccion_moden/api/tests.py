@@ -1,8 +1,10 @@
 import hashlib
+import io
 import json
 import os
 import sqlite3
 import tempfile
+import zipfile
 from datetime import timedelta
 
 from django.contrib.auth.models import User
@@ -16,7 +18,7 @@ from api.models import (
     Imagen, Mesa, MesaQueueItem, Modulo, Planta, Proyecto,
     DetalleModuloFase, GrupoMesas, FotoFabricacion,
     FerrallaContacto, FerrallaDireccion, PairingSession,
-    MesaQueueStatus, ModuloEstado
+    MesaQueueStatus, ModuloEstado, GrupoBastidor
 )
 
 
@@ -165,6 +167,79 @@ class PermissionAndDeviceAuthTests(APITestCase):
         self.mesa_a.refresh_from_db()
         self.assertIsNone(self.mesa_a.last_error)
         self.assertIsNone(self.mesa_a.pairing_code)
+
+
+@override_settings(
+    REST_FRAMEWORK={
+        "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
+        "DEFAULT_AUTHENTICATION_CLASSES": ["rest_framework.authentication.TokenAuthentication"],
+        "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
+    }
+)
+class FotoFabricacionDownloadTests(APITestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(username="admin_fotos", password="admin123", is_staff=True)
+        self.token = Token.objects.create(user=self.admin)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
+
+        self.user = User.objects.create_user(username="ferralla_fotos", password="pass123")
+        self.proyecto = Proyecto.objects.create(nombre="Proyecto Fotos", usuario=self.user)
+        self.planta = Planta.objects.create(nombre="P1", proyecto=self.proyecto, orden=1)
+        self.grupo_1 = GrupoBastidor.objects.create(proyecto=self.proyecto, indice=1)
+        self.grupo_2 = GrupoBastidor.objects.create(proyecto=self.proyecto, indice=2)
+        self.modulo_1 = Modulo.objects.create(
+            nombre="M-01",
+            planta=self.planta,
+            proyecto=self.proyecto,
+            grupo_bastidor=self.grupo_1,
+            orden_intra=1,
+        )
+        self.modulo_2 = Modulo.objects.create(
+            nombre="M-02",
+            planta=self.planta,
+            proyecto=self.proyecto,
+            grupo_bastidor=self.grupo_2,
+            orden_intra=1,
+        )
+
+    def _crear_foto(self, modulo, relative_path):
+        os.makedirs(os.path.dirname(relative_path), exist_ok=True)
+        with open(relative_path, "wb") as fh:
+            fh.write(b"fake-jpeg")
+
+        media_relative = os.path.relpath(relative_path, start=self.media_root).replace("\\", "/")
+        return FotoFabricacion.objects.create(
+            modulo=modulo,
+            fase="INFERIOR",
+            paso=0,
+            url=f"/media/{media_relative}",
+            filename_original=os.path.basename(relative_path),
+            file_size=8,
+        )
+
+    def test_fotos_y_zip_se_filtran_por_bastidor(self):
+        with tempfile.TemporaryDirectory() as media_root:
+            self.media_root = media_root
+            with override_settings(MEDIA_ROOT=media_root):
+                self._crear_foto(self.modulo_1, os.path.join(media_root, "fotos", "m1.jpg"))
+                self._crear_foto(self.modulo_2, os.path.join(media_root, "fotos", "m2.jpg"))
+
+                list_response = self.client.get(
+                    f"/api/fotos/?proyecto={self.proyecto.id}&grupo_bastidor={self.grupo_1.id}"
+                )
+                self.assertEqual(list_response.status_code, 200)
+                self.assertEqual(len(list_response.data), 1)
+                self.assertEqual(list_response.data[0]["modulo"], self.modulo_1.id)
+
+                zip_response = self.client.get(
+                    f"/api/fotos/download_zip/?proyecto={self.proyecto.id}&grupo_bastidor={self.grupo_1.id}"
+                )
+                self.assertEqual(zip_response.status_code, 200)
+
+                archive = zipfile.ZipFile(io.BytesIO(zip_response.content))
+                names = archive.namelist()
+                self.assertIn("Bastidor 01/M-01/m1.jpg", names)
+                self.assertNotIn("Bastidor 02/M-02/m2.jpg", names)
 
 
 @override_settings(

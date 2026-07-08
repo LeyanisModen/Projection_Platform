@@ -817,22 +817,30 @@ export class ApiService {
     // =========================================================================
     // FOTOS FABRICACION
     // =========================================================================
-    getFotos(params: { modulo?: number; planta?: number; proyecto?: number }): Observable<FotoFabricacion[]> {
+    getFotos(params: { modulo?: number; planta?: number; proyecto?: number; grupo_bastidor?: number | number[] }): Observable<FotoFabricacion[]> {
         let url = `${this.baseUrl}/fotos/`;
         const queryParts: string[] = [];
         if (params.modulo) queryParts.push(`modulo=${params.modulo}`);
         if (params.planta) queryParts.push(`planta=${params.planta}`);
         if (params.proyecto) queryParts.push(`proyecto=${params.proyecto}`);
+        if (params.grupo_bastidor) {
+            const ids = Array.isArray(params.grupo_bastidor) ? params.grupo_bastidor : [params.grupo_bastidor];
+            if (ids.length) queryParts.push(`grupo_bastidor=${ids.join(',')}`);
+        }
         if (queryParts.length) url += '?' + queryParts.join('&');
         return this.http.get<FotoFabricacion[]>(url, { headers: this.getHeaders() });
     }
 
-    downloadFotosZip(params: { modulo?: number; planta?: number; proyecto?: number }): Observable<Blob> {
+    downloadFotosZip(params: { modulo?: number; planta?: number; proyecto?: number; grupo_bastidor?: number | number[] }): Observable<Blob> {
         let url = `${this.baseUrl}/fotos/download_zip/`;
         const queryParts: string[] = [];
         if (params.modulo) queryParts.push(`modulo=${params.modulo}`);
         if (params.planta) queryParts.push(`planta=${params.planta}`);
         if (params.proyecto) queryParts.push(`proyecto=${params.proyecto}`);
+        if (params.grupo_bastidor) {
+            const ids = Array.isArray(params.grupo_bastidor) ? params.grupo_bastidor : [params.grupo_bastidor];
+            if (ids.length) queryParts.push(`grupo_bastidor=${ids.join(',')}`);
+        }
         if (queryParts.length) url += '?' + queryParts.join('&');
         return this.http.get(url, {
             headers: this.getAuthHeaders(),

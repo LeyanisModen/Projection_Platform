@@ -45,9 +45,9 @@
             </ng-template>
         </div>
         <button type="button" class="icon-action-btn-borderless"
-            (click)="downloadFotosZip('proyecto')"
-            [disabled]="downloadingZip"
-            title="Descargar todas las fotos del proyecto">
+            (click)="openBastidorDownloadModal($event)"
+            [disabled]="downloadingZip || !hasAnyGrupoFotos()"
+            title="Descargar fotos por bastidor">
             <i class="fa fa-download" aria-hidden="true"></i>
         </button>
     </div>
@@ -391,6 +391,93 @@
                     <p>Importa la carpeta del proyecto usando el botón "Importar nuevos Módulos" de la izquierda.</p>
                 </div>
             </ng-template>
+
+        </div>
+
+    </div>
+
+</div>
+
+
+
+<!-- Bastidor photo download modal -->
+
+<div class="foto-modal-backdrop" *ngIf="showBastidorDownloadModal" (click)="closeBastidorDownloadModal()">
+
+    <div class="bastidor-download-modal" (click)="$event.stopPropagation()">
+
+        <div class="foto-modal-header">
+
+            <div>
+
+                <h4>Descargar fotos por bastidor</h4>
+
+                <small class="text-muted">
+
+                    {{ selectedDownloadGruposCount() }} bastidores seleccionados · {{ selectedDownloadFotosCount() }} fotos
+
+                </small>
+
+            </div>
+
+            <button class="btn btn-sm btn-outline-secondary" (click)="closeBastidorDownloadModal()" [disabled]="downloadingZip">Cerrar</button>
+
+        </div>
+
+        <div class="bastidor-download-actions">
+
+            <button type="button" class="btn btn-sm btn-outline-dark" (click)="selectDownloadGrupos('terminados')">
+                Terminados
+            </button>
+
+            <button type="button" class="btn btn-sm btn-outline-dark" (click)="selectDownloadGrupos('conFotos')">
+                Con fotos
+            </button>
+
+            <button type="button" class="btn btn-sm btn-outline-secondary" (click)="selectDownloadGrupos('none')">
+                Limpiar
+            </button>
+
+        </div>
+
+        <div class="bastidor-download-list">
+
+            <label class="bastidor-download-row"
+                *ngFor="let grupo of grupos"
+                [class.is-disabled]="grupoFotosCount(grupo) === 0"
+                [class.is-completed]="isGrupoCompletado(grupo)">
+
+                <input type="checkbox"
+                    [checked]="isDownloadGrupoSelected(grupo)"
+                    [disabled]="grupoFotosCount(grupo) === 0"
+                    (change)="toggleDownloadGrupo(grupo, $event)">
+
+                <span class="bastidor-download-main">
+
+                    <strong>{{ grupoDownloadName(grupo) }}</strong>
+
+                    <span class="bastidor-download-modulos">
+                        {{ grupo.modulos.length }} mod. · {{ grupoFotosCount(grupo) }} fotos
+                    </span>
+
+                </span>
+
+                <span class="bastidor-download-status" *ngIf="isGrupoCompletado(grupo)">Terminado</span>
+
+            </label>
+
+        </div>
+
+        <div class="bastidor-download-footer">
+
+            <button type="button" class="btn btn-sm btn-download-fotos"
+                (click)="downloadSelectedBastidores()"
+                [disabled]="downloadingZip || selectedDownloadGrupoIds.length === 0">
+
+                <i class="fa fa-download" aria-hidden="true"></i>
+                {{ downloadingZip ? 'Preparando...' : 'Descargar ZIP' }}
+
+            </button>
 
         </div>
 
