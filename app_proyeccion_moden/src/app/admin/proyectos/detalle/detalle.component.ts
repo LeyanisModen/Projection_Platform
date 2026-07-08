@@ -454,9 +454,13 @@ export class ProyectoDetailComponent implements OnInit {
     }
 
     grupoDownloadModuloIds(grupo: GrupoBastidor): number[] {
+        return this.grupoDownloadModulos(grupo)
+            .map(modulo => modulo.id);
+    }
+
+    grupoDownloadModulos(grupo: GrupoBastidor): GrupoBastidorModulo[] {
         return grupo.modulos
             .filter(modulo => (modulo.fotos_count || 0) > 0)
-            .map(modulo => modulo.id);
     }
 
     // Inline rename state for GrupoBastidor alias.

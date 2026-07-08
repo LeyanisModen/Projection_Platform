@@ -1353,6 +1353,51 @@
     color: #64748b;
 }
 
+.bastidor-download-module-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin-top: 0.5rem;
+}
+
+.bastidor-download-module-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-height: 28px;
+    padding: 0.22rem 0.5rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 999px;
+    background: #fff;
+    color: #1f2937;
+    cursor: pointer;
+    margin: 0;
+    max-width: 100%;
+}
+
+.bastidor-download-module-pill:hover {
+    background: #eef2f7;
+}
+
+.bastidor-download-module-pill input {
+    width: 14px;
+    height: 14px;
+    margin: 0;
+}
+
+.bastidor-download-module-pill span {
+    font-size: 0.82rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.bastidor-download-module-pill small {
+    color: #64748b;
+    font-size: 0.72rem;
+    line-height: 1;
+    white-space: nowrap;
+}
+
 .bastidor-download-status {
     padding: 0.15rem 0.45rem;
     border-radius: 999px;
