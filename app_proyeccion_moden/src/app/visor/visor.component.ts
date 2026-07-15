@@ -564,6 +564,7 @@ export class VisorComponent implements OnInit, OnDestroy {
     if (this.currentIndex === VisorComponent.COVERAGE_BACKGROUND_INDEX) return `${this.assetBase}assets/projection_coverage_background.jpg`;
     if (this.currentIndex === VisorComponent.BED_15_INDEX) return `${this.assetBase}assets/projection_bed_15.jpg`;
     if (this.currentIndex === VisorComponent.BED_20_INDEX) return `${this.assetBase}assets/projection_bed_20.jpg`;
+    if (this.isWarningSlideActive) return `${this.assetBase}assets/warning_projection.webp`;
 
     // Color-check states: project a dedicated slide through the same
     // perspective transform as the blueprint, so the operator at the
@@ -607,6 +608,10 @@ export class VisorComponent implements OnInit, OnDestroy {
 
   get isBed20Active(): boolean {
     return this.currentIndex === VisorComponent.BED_20_INDEX;
+  }
+
+  get isWarningSlideActive(): boolean {
+    return this.currentIndex >= 0 && this.isWarningSlide(this.currentIndex);
   }
 
   get showCaptureLockIndicator(): boolean {
@@ -995,6 +1000,16 @@ export class VisorComponent implements OnInit, OnDestroy {
     // 'check visual', 'check_visual', etc. Detect the word with any
     // surrounding separator so we don't miss new variants.
     return this.hasFilenameToken(filename, 'visual');
+  }
+
+  private isWarningSlide(index: number): boolean {
+    const img = this.images[index];
+    if (!img) return false;
+
+    const url: string = img.url || img.src || '';
+    const filename = (url.split(/[?#]/)[0].split('/').pop() || '').toLowerCase();
+    // Use a substring so names such as "warningGIRADAS" also trigger it.
+    return filename.includes('warning');
   }
 
   prevImage(): void {
