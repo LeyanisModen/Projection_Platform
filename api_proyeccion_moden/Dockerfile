@@ -27,9 +27,9 @@ EXPOSE 8000
 CMD python manage.py migrate --noinput && \
     python manage.py collectstatic --noinput && \
     gunicorn proyeccion_moden.wsgi \
-        --bind 0.0.0.0:${PORT:-8000} \
-        --workers=3 \
-        --threads=4 \
+        --bind [::]:${PORT:-8000} \
+        --workers=${WEB_CONCURRENCY:-2} \
+        --threads=${GUNICORN_THREADS:-4} \
         --timeout=120 \
         --keep-alive=5 \
         --log-file=-

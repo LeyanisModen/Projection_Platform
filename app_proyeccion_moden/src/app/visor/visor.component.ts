@@ -1503,7 +1503,11 @@ export class VisorComponent implements OnInit, OnDestroy {
   startStatePolling(): void {
     this.statePollSub?.unsubscribe();
     this.itemPollSub?.unsubscribe();
-    this.statePollSub = interval(1000).pipe(
+    // Supervisor needs near-real-time feedback while calibrating. The player
+    // can poll a little slower because local keyboard actions are immediate
+    // and backend changes tolerate a short delay.
+    const statePollMs = this.isSupervisor ? 1000 : 2000;
+    this.statePollSub = interval(statePollMs).pipe(
       startWith(0),
       exhaustMap(() => {
         if (this.isSupervisor) {
@@ -1590,7 +1594,7 @@ export class VisorComponent implements OnInit, OnDestroy {
       this.connectToSSE();
     }
 
-    const itemPollMs = 2000;
+    const itemPollMs = this.isSupervisor ? 2000 : 5000;
     this.itemPollSub = interval(itemPollMs).pipe(
       startWith(0),
       exhaustMap(() => {
