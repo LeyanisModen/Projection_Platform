@@ -39,6 +39,9 @@ services:
       - "80:80"
     environment:
       - PORT=80
+      - BACKEND_ORIGIN=http://backend:8000
+      - BACKEND_HOST=backend
+      - NGINX_RESOLVER=127.0.0.11
     depends_on:
       - backend
 
