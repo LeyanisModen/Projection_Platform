@@ -39,7 +39,6 @@ services:
       - "80:80"
     environment:
       - PORT=80
-      - BACKEND_ORIGIN=http://backend:8000
     depends_on:
       - backend
 
