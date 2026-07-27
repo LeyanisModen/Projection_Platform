@@ -555,6 +555,43 @@ export class ProyectoDetailComponent implements OnInit {
         });
     }
 
+    completarFaseModulo(
+        modulo: GrupoBastidorModulo,
+        fase: ModuloFase,
+        event?: Event
+    ): void {
+        event?.stopPropagation();
+        const faseLabel = fase === 'INFERIOR' ? 'INF' : 'SUP';
+
+        this.api.completarFaseModulo(modulo.id, fase).subscribe({
+            next: () => {
+                this.loadData();
+            },
+            error: (err: any) => {
+                console.error(`Error completando fase ${fase}`, err);
+                alert(`Error al completar la fase ${faseLabel}`);
+                this.cdr.detectChanges();
+            }
+        });
+    }
+
+    toggleFaseModulo(
+        modulo: GrupoBastidorModulo,
+        fase: ModuloFase,
+        event: Event
+    ): void {
+        event.stopPropagation();
+        const completada = fase === 'INFERIOR'
+            ? modulo.inferior_hecho
+            : modulo.superior_hecho;
+
+        if (completada) {
+            this.reiniciarFaseModulo(modulo, fase);
+            return;
+        }
+        this.completarFaseModulo(modulo, fase);
+    }
+
     completarModulo(moduloId: number, event?: Event): void {
         if (event) event.stopPropagation();
         this.api.completarModulo(moduloId).subscribe({

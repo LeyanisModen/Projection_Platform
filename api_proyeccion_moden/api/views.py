@@ -23,7 +23,7 @@ from api.serializers import (
     ImagenSerializer, MesaSerializer, MesaResumenGrupoSerializer,
     ModuloQueueSerializer, ModuloQueueItemSerializer, MesaQueueItemSerializer,
     FotoFabricacionSerializer, GrupoMesasSerializer, DetalleModuloFaseSerializer,
-    GrupoBastidorSerializer, ReiniciarFaseModuloSerializer
+    GrupoBastidorSerializer, FaseModuloSerializer
 )
 from api.models import (
     Modulo, Proyecto, Planta, Imagen, Mesa,
@@ -2226,6 +2226,26 @@ class ModuloViewSet(viewsets.ModelViewSet):
                 'ultima_actualizacion',
             ])
 
+    @staticmethod
+    def _completar_fases(modulo, fases, user):
+        if Fase.INFERIOR in fases:
+            modulo.inferior_hecho = True
+        if Fase.SUPERIOR in fases:
+            modulo.superior_hecho = True
+        modulo.actualizar_estado()
+
+        now = timezone.now()
+        pending_items = (
+            MesaQueueItem.objects.filter(modulo=modulo, fase__in=fases)
+            .exclude(status=MesaQueueStatus.HECHO)
+        )
+        for item in pending_items:
+            item.status = MesaQueueStatus.HECHO
+            if item.done_at is None:
+                item.done_at = now
+            item.done_by = user
+            item.save(update_fields=['status', 'done_at', 'done_by'])
+
     @action(detail=True, methods=['get'])
     def imagenes(self, request, pk=None):
         """Get all images for a module."""
@@ -2257,22 +2277,29 @@ class ModuloViewSet(viewsets.ModelViewSet):
         Also marks any linked MesaQueueItems as HECHO so the module
         disappears from mesa queues and shows up in production stats.
         """
-        from django.utils import timezone
-        modulo = self.get_object()
-        modulo.inferior_hecho = True
-        modulo.superior_hecho = True
-        modulo.estado = 'COMPLETADO'
-        modulo.save()
-
-        now = timezone.now()
         user = request.user if request.user.is_authenticated else None
-        pending_items = MesaQueueItem.objects.filter(modulo=modulo).exclude(status=MesaQueueStatus.HECHO)
-        for item in pending_items:
-            item.status = MesaQueueStatus.HECHO
-            if item.done_at is None:
-                item.done_at = now
-            item.done_by = user
-            item.save(update_fields=['status', 'done_at', 'done_by'])
+        with transaction.atomic():
+            modulo = self.get_object()
+            self._completar_fases(
+                modulo,
+                {Fase.INFERIOR, Fase.SUPERIOR},
+                user,
+            )
+
+        serializer = self.get_serializer(modulo)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'], url_path='completar-fase')
+    def completar_fase(self, request, pk=None):
+        """Complete one phase while preserving the state of the other."""
+        input_serializer = FaseModuloSerializer(data=request.data)
+        input_serializer.is_valid(raise_exception=True)
+        fase = input_serializer.validated_data['fase']
+        user = request.user if request.user.is_authenticated else None
+
+        with transaction.atomic():
+            modulo = self.get_object()
+            self._completar_fases(modulo, {fase}, user)
 
         serializer = self.get_serializer(modulo)
         return Response(serializer.data)
@@ -2298,7 +2325,7 @@ class ModuloViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='reiniciar-fase')
     def reiniciar_fase(self, request, pk=None):
         """Reset one phase while preserving the other phase and its queue."""
-        input_serializer = ReiniciarFaseModuloSerializer(data=request.data)
+        input_serializer = FaseModuloSerializer(data=request.data)
         input_serializer.is_valid(raise_exception=True)
         fase = input_serializer.validated_data['fase']
 

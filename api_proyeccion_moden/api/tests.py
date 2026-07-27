@@ -695,6 +695,87 @@ class PlanningFoundationTests(APITestCase):
         self.assertIsNone(mesa_sup.imagen_actual)
         self.assertEqual(mesa_sup.current_image_index, 0)
 
+    def test_completar_fase_inferior_conserva_superior_pendiente(self):
+        grupo = self._crear_grupo("Grupo Completar INF")
+        mesa_inf = grupo.mesas.get(tipo="INFERIOR", indice=1)
+        mesa_sup = grupo.mesas.get(tipo="SUPERIOR", indice=3)
+        imagen_inf = Imagen.objects.create(
+            modulo=self.modulo,
+            fase="INFERIOR",
+            orden=1,
+            url="/imagenes/m-01-inf.png",
+        )
+        imagen_sup = Imagen.objects.create(
+            modulo=self.modulo,
+            fase="SUPERIOR",
+            orden=1,
+            url="/imagenes/m-01-sup.png",
+        )
+        item_inf = MesaQueueItem.objects.create(
+            mesa=mesa_inf,
+            modulo=self.modulo,
+            fase="INFERIOR",
+            imagen=imagen_inf,
+            status=MesaQueueStatus.EN_COLA,
+            position=0,
+        )
+        item_sup = MesaQueueItem.objects.create(
+            mesa=mesa_sup,
+            modulo=self.modulo,
+            fase="SUPERIOR",
+            imagen=imagen_sup,
+            status=MesaQueueStatus.EN_COLA,
+            position=0,
+        )
+
+        response = self.client.post(
+            f"/api/modulos/{self.modulo.id}/completar-fase/",
+            {"fase": "INFERIOR"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.modulo.refresh_from_db()
+        item_inf.refresh_from_db()
+        item_sup.refresh_from_db()
+        self.assertTrue(self.modulo.inferior_hecho)
+        self.assertFalse(self.modulo.superior_hecho)
+        self.assertEqual(self.modulo.estado, ModuloEstado.EN_PROGRESO)
+        self.assertEqual(item_inf.status, MesaQueueStatus.HECHO)
+        self.assertEqual(item_inf.done_by_id, self.user.id)
+        self.assertEqual(item_sup.status, MesaQueueStatus.EN_COLA)
+
+    def test_completar_fase_superior_finaliza_modulo_con_inferior_hecho(self):
+        self.modulo.inferior_hecho = True
+        self.modulo.estado = ModuloEstado.EN_PROGRESO
+        self.modulo.save(update_fields=["inferior_hecho", "estado"])
+
+        response = self.client.post(
+            f"/api/modulos/{self.modulo.id}/completar-fase/",
+            {"fase": "SUPERIOR"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.modulo.refresh_from_db()
+        self.assertTrue(self.modulo.inferior_hecho)
+        self.assertTrue(self.modulo.superior_hecho)
+        self.assertEqual(self.modulo.estado, ModuloEstado.COMPLETADO)
+        self.assertIsNotNone(self.modulo.completado_at)
+
+    def test_completar_fase_rechaza_fase_desconocida(self):
+        response = self.client.post(
+            f"/api/modulos/{self.modulo.id}/completar-fase/",
+            {"fase": "SD_D"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.modulo.refresh_from_db()
+        self.assertFalse(self.modulo.inferior_hecho)
+        self.assertFalse(self.modulo.superior_hecho)
+        self.assertEqual(self.modulo.estado, ModuloEstado.PENDIENTE)
+
     def test_reiniciar_fase_inferior_conserva_superior_y_su_cola(self):
         grupo = self._crear_grupo("Grupo Reinicio INF")
         mesa_inf = grupo.mesas.get(tipo="INFERIOR", indice=1)

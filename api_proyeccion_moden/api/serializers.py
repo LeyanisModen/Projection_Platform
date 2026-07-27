@@ -325,7 +325,7 @@ class ModuloSerializer(serializers.ModelSerializer):
         return DetalleModuloFaseSerializer(detalles, many=True).data
 
 
-class ReiniciarFaseModuloSerializer(serializers.Serializer):
+class FaseModuloSerializer(serializers.Serializer):
     fase = serializers.ChoiceField(choices=Fase.choices)
 
 

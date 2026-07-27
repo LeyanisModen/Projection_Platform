@@ -309,59 +309,73 @@
                                     [class.is-completado]="modulo.estado === 'COMPLETADO' || modulo.estado === 'CERRADO'"
                                     [class.is-progreso]="modulo.estado === 'EN_PROGRESO'"
                                     [class.is-not-movable]="!isModuloMovible(modulo)">
-                                    <span class="grupo-modulo-nombre">
-                                        {{ modulo.nombre }}
-                                        <span *ngIf="modulo.tipo_modulo"
-                                            class="grupo-modulo-tipo-chip"
-                                            [class.tipo-girado]="modulo.tipo_modulo === 'CENTRAL_GIRADO'"
-                                            [title]="tipoModuloFullLabel(modulo.tipo_modulo)">
-                                            {{ tipoModuloLabel(modulo.tipo_modulo) }}
+                                    <div class="grupo-modulo-main">
+                                        <span class="grupo-modulo-nombre">
+                                            {{ modulo.nombre }}
+                                            <span *ngIf="modulo.tipo_modulo"
+                                                class="grupo-modulo-tipo-chip"
+                                                [class.tipo-girado]="modulo.tipo_modulo === 'CENTRAL_GIRADO'"
+                                                [title]="tipoModuloFullLabel(modulo.tipo_modulo)">
+                                                {{ tipoModuloLabel(modulo.tipo_modulo) }}
+                                            </span>
                                         </span>
-                                    </span>
-                                    <span class="grupo-modulo-actions">
+                                        <span class="grupo-modulo-actions">
+                                            <button type="button"
+                                                class="grupo-modulo-camera"
+                                                [class.has-fotos]="modulo.fotos_count > 0"
+                                                [class.no-fotos]="!modulo.fotos_count"
+                                                [disabled]="!modulo.fotos_count"
+                                                (click)="openFotosModal(modulo, $event)"
+                                                [title]="modulo.fotos_count ? 'Ver fotos (' + modulo.fotos_count + ')' : 'Sin fotos'">
+                                                <i class="fa fa-camera" aria-hidden="true"></i>
+                                            </button>
+                                            <button type="button"
+                                                class="grupo-modulo-done"
+                                                *ngIf="modulo.estado !== 'COMPLETADO' && modulo.estado !== 'CERRADO'"
+                                                (click)="completarModulo(modulo.id, $event)"
+                                                title="Marcar modulo completo como terminado"
+                                                [attr.aria-label]="'Completar las dos fases de ' + modulo.nombre">
+                                                <i class="fa fa-check" aria-hidden="true"></i>
+                                            </button>
+                                            <button type="button"
+                                                class="grupo-modulo-reset"
+                                                *ngIf="modulo.estado !== 'PENDIENTE'"
+                                                (click)="reiniciarModulo(modulo.id, $event)"
+                                                title="Reiniciar modulo completo (INF y SUP)"
+                                                [attr.aria-label]="'Reiniciar modulo completo ' + modulo.nombre">
+                                                <i class="fa fa-undo" aria-hidden="true"></i>
+                                            </button>
+                                        </span>
+                                    </div>
+                                    <div class="grupo-modulo-phases"
+                                        [attr.aria-label]="'Fases de ' + modulo.nombre">
                                         <button type="button"
-                                            class="grupo-modulo-phase-reset"
-                                            *ngIf="modulo.inferior_hecho"
-                                            (click)="reiniciarFaseModulo(modulo, 'INFERIOR', $event)"
-                                            title="Reiniciar solo la fase inferior"
-                                            [attr.aria-label]="'Reiniciar fase inferior de ' + modulo.nombre">
+                                            class="grupo-modulo-phase"
+                                            [class.is-completa]="modulo.inferior_hecho"
+                                            (click)="toggleFaseModulo(modulo, 'INFERIOR', $event)"
+                                            [attr.aria-pressed]="modulo.inferior_hecho"
+                                            [title]="modulo.inferior_hecho ? 'Fase inferior terminada. Clic para reiniciar' : 'Fase inferior pendiente. Clic para completar'"
+                                            [attr.aria-label]="(modulo.inferior_hecho ? 'Reiniciar' : 'Completar') + ' fase inferior de ' + modulo.nombre">
                                             <span>INF</span>
-                                            <i class="fa fa-undo" aria-hidden="true"></i>
+                                            <span class="grupo-modulo-phase-icon" aria-hidden="true">
+                                                <i class="fa fa-check phase-check"></i>
+                                                <i *ngIf="modulo.inferior_hecho" class="fa fa-undo phase-undo"></i>
+                                            </span>
                                         </button>
                                         <button type="button"
-                                            class="grupo-modulo-phase-reset"
-                                            *ngIf="modulo.superior_hecho"
-                                            (click)="reiniciarFaseModulo(modulo, 'SUPERIOR', $event)"
-                                            title="Reiniciar fase superior, incluidos SD_S y SD_D"
-                                            [attr.aria-label]="'Reiniciar fase superior de ' + modulo.nombre">
+                                            class="grupo-modulo-phase"
+                                            [class.is-completa]="modulo.superior_hecho"
+                                            (click)="toggleFaseModulo(modulo, 'SUPERIOR', $event)"
+                                            [attr.aria-pressed]="modulo.superior_hecho"
+                                            [title]="modulo.superior_hecho ? 'Fase superior terminada. Clic para reiniciar, incluidos SD_S y SD_D' : 'Fase superior pendiente. Clic para completar'"
+                                            [attr.aria-label]="(modulo.superior_hecho ? 'Reiniciar' : 'Completar') + ' fase superior de ' + modulo.nombre">
                                             <span>SUP</span>
-                                            <i class="fa fa-undo" aria-hidden="true"></i>
+                                            <span class="grupo-modulo-phase-icon" aria-hidden="true">
+                                                <i class="fa fa-check phase-check"></i>
+                                                <i *ngIf="modulo.superior_hecho" class="fa fa-undo phase-undo"></i>
+                                            </span>
                                         </button>
-                                        <button type="button"
-                                            class="grupo-modulo-camera"
-                                            [class.has-fotos]="modulo.fotos_count > 0"
-                                            [class.no-fotos]="!modulo.fotos_count"
-                                            [disabled]="!modulo.fotos_count"
-                                            (click)="openFotosModal(modulo, $event)"
-                                            [title]="modulo.fotos_count ? 'Ver fotos (' + modulo.fotos_count + ')' : 'Sin fotos'">
-                                            <i class="fa fa-camera" aria-hidden="true"></i>
-                                        </button>
-                                        <button type="button"
-                                            class="grupo-modulo-done"
-                                            *ngIf="modulo.estado !== 'COMPLETADO' && modulo.estado !== 'CERRADO'"
-                                            (click)="completarModulo(modulo.id, $event)"
-                                            title="Marcar módulo como terminado">
-                                            <i class="fa fa-check" aria-hidden="true"></i>
-                                        </button>
-                                        <button type="button"
-                                            class="grupo-modulo-reset"
-                                            *ngIf="modulo.estado !== 'PENDIENTE'"
-                                            (click)="reiniciarModulo(modulo.id, $event)"
-                                            title="Reiniciar modulo completo (INF y SUP)"
-                                            [attr.aria-label]="'Reiniciar modulo completo ' + modulo.nombre">
-                                            <i class="fa fa-undo" aria-hidden="true"></i>
-                                        </button>
-                                    </span>
+                                    </div>
 
                                     <!-- Preview minimalista durante el drag (sin botones). -->
                                     <div *cdkDragPreview class="grupo-modulo-drag-preview">

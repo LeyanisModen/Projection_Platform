@@ -582,6 +582,14 @@ export class ApiService {
         );
     }
 
+    completarFaseModulo(id: number, fase: ModuloFase): Observable<Modulo> {
+        return this.http.post<Modulo>(
+            `${this.baseUrl}/modulos/${id}/completar-fase/`,
+            { fase },
+            { headers: this.getHeaders() }
+        );
+    }
+
     completarModulo(id: number): Observable<Modulo> {
         return this.http.post<Modulo>(`${this.baseUrl}/modulos/${id}/completar/`, {}, { headers: this.getHeaders() });
     }

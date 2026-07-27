@@ -867,14 +867,12 @@
 }
 
 .grupo-modulo-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.15rem 0.25rem;
+    display: block;
+    padding: 0.22rem 0.25rem 0.28rem;
     font-size: 0.9rem;
     font-weight: 500;
     color: #212529;
-    border-radius: 3px;
+    border-radius: 5px;
 }
 
 .grupo-modulo-item:hover {
@@ -882,50 +880,111 @@
 }
 
 .grupo-modulo-item.is-completado {
-    color: #adb5bd;
-    text-decoration: line-through;
+    background-color: rgba(40, 167, 69, 0.05);
 }
 
-.grupo-modulo-item.is-progreso {
+.grupo-modulo-item.is-completado .grupo-modulo-nombre {
+    color: #6c757d;
+}
+
+.grupo-modulo-item.is-progreso .grupo-modulo-nombre {
     color: #856404;
+}
+
+.grupo-modulo-main {
+    display: flex;
+    align-items: center;
+    min-width: 0;
 }
 
 .grupo-modulo-nombre {
     flex: 1;
+    min-width: 0;
 }
 
 .grupo-modulo-actions {
     display: inline-flex;
     align-items: center;
     gap: 0.15rem;
+    flex: 0 0 auto;
 }
 
-.grupo-modulo-phase-reset {
+.grupo-modulo-phases {
+    display: flex;
+    gap: 0.22rem;
+    margin-top: 0.18rem;
+}
+
+.grupo-modulo-phase {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
+    flex: 1 1 0;
     gap: 0.2rem;
-    border: 1px solid #f3c68e;
-    border-radius: 8px;
-    background: #fffaf3;
-    color: #c8680e;
+    min-width: 0;
+    border: 1px solid #d7dce1;
+    border-radius: 5px;
+    background: #f8f9fa;
+    color: #6c757d;
     cursor: pointer;
-    padding: 0.08rem 0.3rem;
-    font-size: 0.58rem;
+    padding: 0.1rem 0.25rem;
+    font-size: 0.6rem;
     font-weight: 700;
-    line-height: 1.1;
-    text-decoration: none;
+    line-height: 1.2;
     transition: background-color 0.15s, border-color 0.15s, color 0.15s;
 }
 
-.grupo-modulo-phase-reset:hover {
-    background: #fff0dc;
-    border-color: #e89b43;
-    color: #a84f00;
+.grupo-modulo-phase:hover {
+    background: #eef8f0;
+    border-color: #8fcca0;
+    color: #218838;
 }
 
-.grupo-modulo-phase-reset:focus-visible {
-    outline: 2px solid #fd7e14;
+.grupo-modulo-phase.is-completa {
+    background: #edf8f0;
+    border-color: #9fd0ab;
+    color: #218838;
+}
+
+.grupo-modulo-phase.is-completa:hover {
+    background: #fff4e5;
+    border-color: #f0b66d;
+    color: #bd5c00;
+}
+
+.grupo-modulo-phase:focus-visible {
+    outline: 2px solid currentColor;
     outline-offset: 1px;
+}
+
+.grupo-modulo-phase-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 0.7rem;
+}
+
+.grupo-modulo-phase:not(.is-completa) .phase-check {
+    opacity: 0.45;
+}
+
+.grupo-modulo-phase:not(.is-completa):hover .phase-check,
+.grupo-modulo-phase:not(.is-completa):focus-visible .phase-check {
+    opacity: 1;
+}
+
+.grupo-modulo-phase .phase-undo {
+    display: none;
+}
+
+.grupo-modulo-phase.is-completa:hover .phase-check,
+.grupo-modulo-phase.is-completa:focus-visible .phase-check {
+    display: none;
+}
+
+.grupo-modulo-phase.is-completa:hover .phase-undo,
+.grupo-modulo-phase.is-completa:focus-visible .phase-undo {
+    display: inline-block;
 }
 
 .grupo-modulo-reset,
