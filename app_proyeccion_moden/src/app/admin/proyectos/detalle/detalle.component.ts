@@ -870,15 +870,28 @@ export class ProyectoDetailComponent implements OnInit {
                         imagenes: []
                     };
 
-                    // Check for INF and SUP subfolders
+                    const phaseFolders = new Map<string, { name: string; handle: any }>();
                     for await (const [faseName, faseHandle] of moduloHandle.entries()) {
                         if (faseHandle.kind !== 'directory') continue;
+                        const normalizedName = faseName.toUpperCase();
+                        if (!['INF', 'SD_S', 'SD_D', 'SUP'].includes(normalizedName)) continue;
+                        phaseFolders.set(normalizedName, { name: faseName, handle: faseHandle });
+                    }
 
-                        const faseNormalizada = faseName.toUpperCase();
-                        if (faseNormalizada !== 'INF' && faseNormalizada !== 'SUP') continue;
+                    const phaseOrder = ['INF', 'SD_S', 'SD_D', 'SUP'];
+                    const nextImageOrder: Record<'INFERIOR' | 'SUPERIOR', number> = {
+                        INFERIOR: 1,
+                        SUPERIOR: 1
+                    };
 
-                        const fase = faseNormalizada === 'INF' ? 'INFERIOR' : 'SUPERIOR';
-                        let ordenImg = 1;
+                    for (const phaseFolderName of phaseOrder) {
+                        const phaseFolder = phaseFolders.get(phaseFolderName);
+                        if (!phaseFolder) continue;
+
+                        const faseName = phaseFolder.name;
+                        const faseHandle = phaseFolder.handle;
+                        const fase: 'INFERIOR' | 'SUPERIOR' =
+                            phaseFolderName === 'INF' ? 'INFERIOR' : 'SUPERIOR';
 
                         // Collect image files first, then sort alphabetically
                         const imgFiles: Array<[string, any]> = [];
@@ -898,7 +911,7 @@ export class ProyectoDetailComponent implements OnInit {
                             moduloData.imagenes.push({
                                 filename: formFileKey,
                                 fase: fase,
-                                orden: ordenImg++
+                                orden: nextImageOrder[fase]++
                             });
                         }
                     }

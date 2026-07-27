@@ -214,15 +214,28 @@ export class ProyectosComponent implements OnInit {
             imagenes: []
           };
 
-          // Check for INF and SUP inside Module
+          const phaseFolders = new Map<string, { name: string; handle: any }>();
           for await (const [faseName, faseHandle] of childHandle.entries()) {
             if (faseHandle.kind !== 'directory') continue;
+            const normalizedName = faseName.toUpperCase();
+            if (!['INF', 'SD_S', 'SD_D', 'SUP'].includes(normalizedName)) continue;
+            phaseFolders.set(normalizedName, { name: faseName, handle: faseHandle });
+          }
 
-            const faseNormalizada = faseName.toUpperCase();
-            if (faseNormalizada !== 'INF' && faseNormalizada !== 'SUP') continue;
+          const phaseOrder = ['INF', 'SD_S', 'SD_D', 'SUP'];
+          const nextImageOrder: Record<'INFERIOR' | 'SUPERIOR', number> = {
+            INFERIOR: 1,
+            SUPERIOR: 1
+          };
 
-            const fase = faseNormalizada === 'INF' ? 'INFERIOR' : 'SUPERIOR';
-            let orden = 1;
+          for (const phaseFolderName of phaseOrder) {
+            const phaseFolder = phaseFolders.get(phaseFolderName);
+            if (!phaseFolder) continue;
+
+            const faseName = phaseFolder.name;
+            const faseHandle = phaseFolder.handle;
+            const fase: 'INFERIOR' | 'SUPERIOR' =
+              phaseFolderName === 'INF' ? 'INFERIOR' : 'SUPERIOR';
 
             // Collect image files first, then sort alphabetically
             const imageFiles: Array<[string, any]> = [];
@@ -244,7 +257,7 @@ export class ProyectosComponent implements OnInit {
 
               moduloData.imagenes.push({
                 fase: fase,
-                orden: orden++,
+                orden: nextImageOrder[fase]++,
                 filename: uniqueFilename
               });
             }
@@ -283,7 +296,8 @@ export class ProyectosComponent implements OnInit {
       if (plantaUnicaData.modulos.length === 0) {
         const proceed = confirm(
           'No se detectó ningún módulo válido en la carpeta seleccionada.\n\n' +
-          'Se esperaba una estructura tipo: MiProyecto/MODULO_A01/INF/*.jpg\n\n' +
+          'Estructura esperada: MODULO_A01/INF/*.jpg y SUP/*.jpg. ' +
+          'SD_S y SD_D son carpetas opcionales que se integran antes de SUP.\n\n' +
           '¿Quieres crear el proyecto vacío igualmente?'
         );
         if (!proceed) {
