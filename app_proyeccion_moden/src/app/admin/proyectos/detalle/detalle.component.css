@@ -900,6 +900,34 @@
     gap: 0.15rem;
 }
 
+.grupo-modulo-phase-reset {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    border: 1px solid #f3c68e;
+    border-radius: 8px;
+    background: #fffaf3;
+    color: #c8680e;
+    cursor: pointer;
+    padding: 0.08rem 0.3rem;
+    font-size: 0.58rem;
+    font-weight: 700;
+    line-height: 1.1;
+    text-decoration: none;
+    transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.grupo-modulo-phase-reset:hover {
+    background: #fff0dc;
+    border-color: #e89b43;
+    color: #a84f00;
+}
+
+.grupo-modulo-phase-reset:focus-visible {
+    outline: 2px solid #fd7e14;
+    outline-offset: 1px;
+}
+
 .grupo-modulo-reset,
 .grupo-modulo-camera {
     background: none;

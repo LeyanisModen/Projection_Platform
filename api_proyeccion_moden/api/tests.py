@@ -695,6 +695,154 @@ class PlanningFoundationTests(APITestCase):
         self.assertIsNone(mesa_sup.imagen_actual)
         self.assertEqual(mesa_sup.current_image_index, 0)
 
+    def test_reiniciar_fase_inferior_conserva_superior_y_su_cola(self):
+        grupo = self._crear_grupo("Grupo Reinicio INF")
+        mesa_inf = grupo.mesas.get(tipo="INFERIOR", indice=1)
+        mesa_sup = grupo.mesas.get(tipo="SUPERIOR", indice=3)
+        imagen_inf = Imagen.objects.create(
+            modulo=self.modulo,
+            fase="INFERIOR",
+            orden=1,
+            url="/imagenes/m-01-inf.png",
+        )
+        imagen_sup = Imagen.objects.create(
+            modulo=self.modulo,
+            fase="SUPERIOR",
+            orden=1,
+            url="/imagenes/m-01-sup.png",
+        )
+
+        self.modulo.estado = ModuloEstado.COMPLETADO
+        self.modulo.save()
+        item_inf = MesaQueueItem.objects.create(
+            mesa=mesa_inf,
+            modulo=self.modulo,
+            fase="INFERIOR",
+            imagen=imagen_inf,
+            status=MesaQueueStatus.HECHO,
+            position=0,
+            done_at=timezone.now(),
+        )
+        item_sup = MesaQueueItem.objects.create(
+            mesa=mesa_sup,
+            modulo=self.modulo,
+            fase="SUPERIOR",
+            imagen=imagen_sup,
+            status=MesaQueueStatus.HECHO,
+            position=0,
+            done_at=timezone.now(),
+        )
+        otro_modulo = Modulo.objects.create(
+            nombre="M-02",
+            proyecto=self.project,
+            planta=self.planta,
+        )
+        otra_imagen_inf = Imagen.objects.create(
+            modulo=otro_modulo,
+            fase="INFERIOR",
+            orden=1,
+            url="/imagenes/m-02-inf.png",
+        )
+        otro_item_inf = MesaQueueItem.objects.create(
+            mesa=mesa_inf,
+            modulo=otro_modulo,
+            fase="INFERIOR",
+            imagen=otra_imagen_inf,
+            status=MesaQueueStatus.MOSTRANDO,
+            position=1,
+        )
+        mesa_inf.imagen_actual = otra_imagen_inf
+        mesa_inf.current_image_index = 4
+        mesa_inf.save(update_fields=["imagen_actual", "current_image_index"])
+
+        response = self.client.post(
+            f"/api/modulos/{self.modulo.id}/reiniciar-fase/",
+            {"fase": "INFERIOR"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.modulo.refresh_from_db()
+        self.assertFalse(self.modulo.inferior_hecho)
+        self.assertTrue(self.modulo.superior_hecho)
+        self.assertEqual(self.modulo.estado, ModuloEstado.EN_PROGRESO)
+        self.assertIsNone(self.modulo.completado_at)
+        self.assertFalse(MesaQueueItem.objects.filter(id=item_inf.id).exists())
+        self.assertTrue(MesaQueueItem.objects.filter(id=item_sup.id).exists())
+        self.assertTrue(MesaQueueItem.objects.filter(id=otro_item_inf.id).exists())
+        mesa_inf.refresh_from_db()
+        self.assertEqual(mesa_inf.imagen_actual_id, otra_imagen_inf.id)
+        self.assertEqual(mesa_inf.current_image_index, 4)
+
+    def test_reiniciar_fase_superior_conserva_inferior_y_su_cola(self):
+        grupo = self._crear_grupo("Grupo Reinicio SUP")
+        mesa_inf = grupo.mesas.get(tipo="INFERIOR", indice=1)
+        mesa_sup = grupo.mesas.get(tipo="SUPERIOR", indice=3)
+        imagen_inf = Imagen.objects.create(
+            modulo=self.modulo,
+            fase="INFERIOR",
+            orden=1,
+            url="/imagenes/m-01-inf.png",
+        )
+        imagen_sup = Imagen.objects.create(
+            modulo=self.modulo,
+            fase="SUPERIOR",
+            orden=1,
+            url="/imagenes/m-01-sup.png",
+        )
+
+        self.modulo.estado = ModuloEstado.COMPLETADO
+        self.modulo.save()
+        item_inf = MesaQueueItem.objects.create(
+            mesa=mesa_inf,
+            modulo=self.modulo,
+            fase="INFERIOR",
+            imagen=imagen_inf,
+            status=MesaQueueStatus.HECHO,
+            position=0,
+            done_at=timezone.now(),
+        )
+        item_sup = MesaQueueItem.objects.create(
+            mesa=mesa_sup,
+            modulo=self.modulo,
+            fase="SUPERIOR",
+            imagen=imagen_sup,
+            status=MesaQueueStatus.HECHO,
+            position=0,
+            done_at=timezone.now(),
+        )
+
+        response = self.client.post(
+            f"/api/modulos/{self.modulo.id}/reiniciar-fase/",
+            {"fase": "SUPERIOR"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.modulo.refresh_from_db()
+        self.assertTrue(self.modulo.inferior_hecho)
+        self.assertFalse(self.modulo.superior_hecho)
+        self.assertEqual(self.modulo.estado, ModuloEstado.EN_PROGRESO)
+        self.assertIsNone(self.modulo.completado_at)
+        self.assertTrue(MesaQueueItem.objects.filter(id=item_inf.id).exists())
+        self.assertFalse(MesaQueueItem.objects.filter(id=item_sup.id).exists())
+
+    def test_reiniciar_fase_rechaza_fase_desconocida(self):
+        self.modulo.estado = ModuloEstado.COMPLETADO
+        self.modulo.save()
+
+        response = self.client.post(
+            f"/api/modulos/{self.modulo.id}/reiniciar-fase/",
+            {"fase": "SD_S"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.modulo.refresh_from_db()
+        self.assertTrue(self.modulo.inferior_hecho)
+        self.assertTrue(self.modulo.superior_hecho)
+        self.assertEqual(self.modulo.estado, ModuloEstado.COMPLETADO)
+
     def test_grupo_mesas_summary_includes_last_seen(self):
         grupo = self._crear_grupo("Grupo Last Seen")
         mesa = grupo.mesas.first()

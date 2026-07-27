@@ -12,7 +12,7 @@ import {
 import {
     ApiService, Proyecto, Planta, Modulo, User, FotoFabricacion,
     DetalleModuloFase, TechnicalImportStats, GrupoBastidor, GrupoBastidorModulo,
-    EstrategiaBastidor
+    EstrategiaBastidor, ModuloFase
 } from '../../../services/api.service';
 import { switchMap, forkJoin, of } from 'rxjs';
 import { environment } from '../../../../environments/environment';
@@ -521,6 +521,35 @@ export class ProyectoDetailComponent implements OnInit {
             error: (err: any) => {
                 console.error('Error reiniciando modulo', err);
                 alert('Error al reiniciar el modulo');
+                this.cdr.detectChanges();
+            }
+        });
+    }
+
+    reiniciarFaseModulo(
+        modulo: GrupoBastidorModulo,
+        fase: ModuloFase,
+        event?: Event
+    ): void {
+        event?.stopPropagation();
+
+        const faseLabel = fase === 'INFERIOR' ? 'INF' : 'SUP';
+        const detalleSd = fase === 'SUPERIOR'
+            ? ' Tambien se repetiran SD_S y SD_D si existen.'
+            : '';
+        const confirmed = confirm(
+            `Reiniciar solo la fase ${faseLabel} de ${modulo.nombre}?${detalleSd} ` +
+            'La otra fase se conservara y tendras que volver a planificar.'
+        );
+        if (!confirmed) return;
+
+        this.api.reiniciarFaseModulo(modulo.id, fase).subscribe({
+            next: () => {
+                this.loadData();
+            },
+            error: (err: any) => {
+                console.error(`Error reiniciando fase ${fase}`, err);
+                alert(`Error al reiniciar la fase ${faseLabel}`);
                 this.cdr.detectChanges();
             }
         });

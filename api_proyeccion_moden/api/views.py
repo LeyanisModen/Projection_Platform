@@ -23,7 +23,7 @@ from api.serializers import (
     ImagenSerializer, MesaSerializer, MesaResumenGrupoSerializer,
     ModuloQueueSerializer, ModuloQueueItemSerializer, MesaQueueItemSerializer,
     FotoFabricacionSerializer, GrupoMesasSerializer, DetalleModuloFaseSerializer,
-    GrupoBastidorSerializer
+    GrupoBastidorSerializer, ReiniciarFaseModuloSerializer
 )
 from api.models import (
     Modulo, Proyecto, Planta, Imagen, Mesa,
@@ -2171,6 +2171,61 @@ class ModuloViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(proyecto_id=proyecto_id)
         return queryset
 
+    @staticmethod
+    def _reiniciar_fases(modulo, fases):
+        queue_items = MesaQueueItem.objects.filter(
+            modulo=modulo,
+            fase__in=fases,
+        )
+        affected_mesa_ids = list(
+            queue_items.values_list('mesa_id', flat=True).distinct()
+        )
+
+        if Fase.INFERIOR in fases:
+            modulo.inferior_hecho = False
+        if Fase.SUPERIOR in fases:
+            modulo.superior_hecho = False
+
+        modulo.cerrado = False
+        modulo.cerrado_at = None
+        modulo.cerrado_by = None
+        modulo.estado = (
+            ModuloEstado.EN_PROGRESO
+            if modulo.inferior_hecho or modulo.superior_hecho
+            else ModuloEstado.PENDIENTE
+        )
+        modulo.completado_at = None
+        modulo.save(update_fields=[
+            'inferior_hecho',
+            'superior_hecho',
+            'cerrado',
+            'cerrado_at',
+            'cerrado_by',
+            'estado',
+            'completado_at',
+        ])
+
+        queue_items.delete()
+
+        for mesa in Mesa.objects.filter(id__in=affected_mesa_ids):
+            current_item = (
+                mesa.queue_items.filter(status=MesaQueueStatus.MOSTRANDO)
+                .order_by('position')
+                .first()
+            )
+            current_image = current_item.imagen if current_item else None
+            current_image_id = current_image.id if current_image else None
+            if mesa.imagen_actual_id == current_image_id:
+                continue
+
+            mesa.imagen_actual = current_image
+            mesa.current_image_index = 0
+            mesa.save(update_fields=[
+                'imagen_actual',
+                'current_image_index',
+                'ultima_actualizacion',
+            ])
+
     @action(detail=True, methods=['get'])
     def imagenes(self, request, pk=None):
         """Get all images for a module."""
@@ -2232,44 +2287,24 @@ class ModuloViewSet(viewsets.ModelViewSet):
         """
         with transaction.atomic():
             modulo = self.get_object()
-            affected_mesa_ids = list(
-                MesaQueueItem.objects.filter(modulo=modulo)
-                .values_list('mesa_id', flat=True)
-                .distinct()
+            self._reiniciar_fases(
+                modulo,
+                {Fase.INFERIOR, Fase.SUPERIOR},
             )
 
-            modulo.inferior_hecho = False
-            modulo.superior_hecho = False
-            modulo.cerrado = False
-            modulo.cerrado_at = None
-            modulo.cerrado_by = None
-            modulo.estado = ModuloEstado.PENDIENTE
-            modulo.completado_at = None
-            modulo.save(update_fields=[
-                'inferior_hecho',
-                'superior_hecho',
-                'cerrado',
-                'cerrado_at',
-                'cerrado_by',
-                'estado',
-                'completado_at',
-            ])
+        serializer = self.get_serializer(modulo)
+        return Response(serializer.data)
 
-            MesaQueueItem.objects.filter(modulo=modulo).delete()
+    @action(detail=True, methods=['post'], url_path='reiniciar-fase')
+    def reiniciar_fase(self, request, pk=None):
+        """Reset one phase while preserving the other phase and its queue."""
+        input_serializer = ReiniciarFaseModuloSerializer(data=request.data)
+        input_serializer.is_valid(raise_exception=True)
+        fase = input_serializer.validated_data['fase']
 
-            for mesa in Mesa.objects.filter(id__in=affected_mesa_ids):
-                current_item = (
-                    mesa.queue_items.filter(status=MesaQueueStatus.MOSTRANDO)
-                    .order_by('position')
-                    .first()
-                )
-                mesa.imagen_actual = current_item.imagen if current_item else None
-                mesa.current_image_index = 0
-                mesa.save(update_fields=[
-                    'imagen_actual',
-                    'current_image_index',
-                    'ultima_actualizacion',
-                ])
+        with transaction.atomic():
+            modulo = self.get_object()
+            self._reiniciar_fases(modulo, {fase})
 
         serializer = self.get_serializer(modulo)
         return Response(serializer.data)

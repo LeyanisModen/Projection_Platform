@@ -5,7 +5,7 @@ from api.models import (
     Proyecto, Planta, Modulo, Imagen, Mesa,
     ModuloQueue, ModuloQueueItem, MesaQueueItem, UserProfile, MesaQueueStatus,
     FotoFabricacion, GrupoMesas, GrupoMesasProyecto,
-    DetalleModuloFase, GrupoBastidor, FerrallaContacto, FerrallaDireccion
+    DetalleModuloFase, GrupoBastidor, FerrallaContacto, FerrallaDireccion, Fase
 )
 
 
@@ -323,6 +323,10 @@ class ModuloSerializer(serializers.ModelSerializer):
         if detalles is None:
             detalles = obj.detalles_fase.all()
         return DetalleModuloFaseSerializer(detalles, many=True).data
+
+
+class ReiniciarFaseModuloSerializer(serializers.Serializer):
+    fase = serializers.ChoiceField(choices=Fase.choices)
 
 
 class GrupoBastidorSerializer(serializers.ModelSerializer):

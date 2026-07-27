@@ -320,6 +320,24 @@
                                     </span>
                                     <span class="grupo-modulo-actions">
                                         <button type="button"
+                                            class="grupo-modulo-phase-reset"
+                                            *ngIf="modulo.inferior_hecho"
+                                            (click)="reiniciarFaseModulo(modulo, 'INFERIOR', $event)"
+                                            title="Reiniciar solo la fase inferior"
+                                            [attr.aria-label]="'Reiniciar fase inferior de ' + modulo.nombre">
+                                            <span>INF</span>
+                                            <i class="fa fa-undo" aria-hidden="true"></i>
+                                        </button>
+                                        <button type="button"
+                                            class="grupo-modulo-phase-reset"
+                                            *ngIf="modulo.superior_hecho"
+                                            (click)="reiniciarFaseModulo(modulo, 'SUPERIOR', $event)"
+                                            title="Reiniciar fase superior, incluidos SD_S y SD_D"
+                                            [attr.aria-label]="'Reiniciar fase superior de ' + modulo.nombre">
+                                            <span>SUP</span>
+                                            <i class="fa fa-undo" aria-hidden="true"></i>
+                                        </button>
+                                        <button type="button"
                                             class="grupo-modulo-camera"
                                             [class.has-fotos]="modulo.fotos_count > 0"
                                             [class.no-fotos]="!modulo.fotos_count"
@@ -339,7 +357,8 @@
                                             class="grupo-modulo-reset"
                                             *ngIf="modulo.estado !== 'PENDIENTE'"
                                             (click)="reiniciarModulo(modulo.id, $event)"
-                                            title="Reiniciar módulo">
+                                            title="Reiniciar modulo completo (INF y SUP)"
+                                            [attr.aria-label]="'Reiniciar modulo completo ' + modulo.nombre">
                                             <i class="fa fa-undo" aria-hidden="true"></i>
                                         </button>
                                     </span>

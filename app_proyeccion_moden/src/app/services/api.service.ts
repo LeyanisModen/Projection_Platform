@@ -50,6 +50,7 @@ export interface FerrallaDireccion {
 
 export type EstrategiaBastidor = 'SECUENCIAL' | 'AISLAR_CENTRAL_GIRADO';
 export type TipoModulo = '' | 'CENTRAL' | 'CENTRAL_GIRADO' | 'LADO_LARGO' | 'LADO_CORTO' | 'ESQUINA';
+export type ModuloFase = 'INFERIOR' | 'SUPERIOR';
 
 export interface Proyecto {
     id: number;
@@ -571,6 +572,14 @@ export class ApiService {
 
     reiniciarModulo(id: number): Observable<Modulo> {
         return this.http.post<Modulo>(`${this.baseUrl}/modulos/${id}/reiniciar/`, {}, { headers: this.getHeaders() });
+    }
+
+    reiniciarFaseModulo(id: number, fase: ModuloFase): Observable<Modulo> {
+        return this.http.post<Modulo>(
+            `${this.baseUrl}/modulos/${id}/reiniciar-fase/`,
+            { fase },
+            { headers: this.getHeaders() }
+        );
     }
 
     completarModulo(id: number): Observable<Modulo> {
