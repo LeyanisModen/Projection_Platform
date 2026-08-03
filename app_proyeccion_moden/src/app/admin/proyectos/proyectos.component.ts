@@ -398,6 +398,16 @@ export class ProyectosComponent implements OnInit {
     this.router.navigate(['/admin-dashboard/proyectos', project.id]);
   }
 
+  onProjectRowKeydown(event: KeyboardEvent, project: Proyecto): void {
+    if (event.target !== event.currentTarget) {
+      return;
+    }
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      this.manageProject(project);
+    }
+  }
+
   confirmDelete(project: Proyecto) {
     if (confirm(`¿Eliminar proyecto ${project.nombre}?`)) {
       this.deleteProyecto(project.id);

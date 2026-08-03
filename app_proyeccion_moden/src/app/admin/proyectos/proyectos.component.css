@@ -9,6 +9,23 @@
     color: #212529;
 }
 
+.project-row {
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+}
+
+.project-row:hover {
+    background-color: #fff8f3;
+}
+
+.project-row:focus-visible {
+    position: relative;
+    z-index: 1;
+    outline: 2px solid var(--moden-primary, #f0640f);
+    outline-offset: -2px;
+    background-color: #fff8f3;
+}
+
 .project-stats {
     display: flex;
     flex-wrap: wrap;

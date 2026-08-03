@@ -162,7 +162,13 @@
             <div class="card-body p-0" *ngIf="!group.collapsed">
                 <table class="table mb-0" *ngIf="group.projects.length > 0">
                     <tbody>
-                        <tr *ngFor="let project of group.projects">
+                        <tr *ngFor="let project of group.projects"
+                            class="project-row"
+                            role="link"
+                            tabindex="0"
+                            [attr.aria-label]="'Gestionar proyecto ' + project.nombre"
+                            (click)="manageProject(project)"
+                            (keydown)="onProjectRowKeydown($event, project)">
                             <td>
                                 <div class="project-name">{{ project.nombre }}</div>
                                 <div class="project-stats">
@@ -186,12 +192,12 @@
                             </td>
                             <td class="text-right">
                                 <button class="btn-icon-action btn-manage mr-2"
-                                    (click)="manageProject(project)"
+                                    (click)="$event.stopPropagation(); manageProject(project)"
                                     title="Gestionar proyecto">
                                     <i class="fa fa-folder-open" aria-hidden="true"></i>
                                 </button>
                                 <button class="btn-icon-action btn-delete"
-                                    (click)="confirmDelete(project)"
+                                    (click)="$event.stopPropagation(); confirmDelete(project)"
                                     title="Eliminar proyecto">
                                     <i class="fa fa-trash" aria-hidden="true"></i>
                                 </button>
