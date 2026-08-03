@@ -697,6 +697,17 @@ class PlanningFoundationTests(APITestCase):
         self.planta = Planta.objects.create(nombre="P1", proyecto=self.project, orden=1)
         self.modulo = Modulo.objects.create(nombre="M-01", proyecto=self.project, planta=self.planta)
 
+    def test_nombre_repetido_sigue_resolviendo_datos_tecnicos_originales(self):
+        from api.views import _resolve_modulo_for_record
+
+        self.modulo.nombre = "M-01-R"
+        self.modulo.save(update_fields=["nombre"])
+
+        modulo, error = _resolve_modulo_for_record(self.project, "M-01", "P1")
+
+        self.assertIsNone(error)
+        self.assertEqual(modulo, self.modulo)
+
     def test_detalle_modulo_fase_calcula_capacidad_bastidor(self):
         detalle = DetalleModuloFase.objects.create(
             modulo=self.modulo,
@@ -826,12 +837,18 @@ class PlanningFoundationTests(APITestCase):
         mesa_sup.refresh_from_db()
         self.assertFalse(self.modulo.inferior_hecho)
         self.assertFalse(self.modulo.superior_hecho)
+        self.assertEqual(self.modulo.nombre, "M-01-R")
         self.assertFalse(self.modulo.cerrado)
         self.assertEqual(self.modulo.estado, ModuloEstado.PENDIENTE)
         self.assertIsNone(self.modulo.completado_at)
         self.assertFalse(MesaQueueItem.objects.filter(modulo=self.modulo).exists())
         self.assertIsNone(mesa_sup.imagen_actual)
         self.assertEqual(mesa_sup.current_image_index, 0)
+
+        second_response = self.client.post(f"/api/modulos/{self.modulo.id}/reiniciar/")
+        self.assertEqual(second_response.status_code, 200)
+        self.modulo.refresh_from_db()
+        self.assertEqual(self.modulo.nombre, "M-01-R")
 
     def test_completar_fase_inferior_conserva_superior_pendiente(self):
         grupo = self._crear_grupo("Grupo Completar INF")
@@ -984,6 +1001,7 @@ class PlanningFoundationTests(APITestCase):
         self.modulo.refresh_from_db()
         self.assertFalse(self.modulo.inferior_hecho)
         self.assertTrue(self.modulo.superior_hecho)
+        self.assertEqual(self.modulo.nombre, "M-01-R")
         self.assertEqual(self.modulo.estado, ModuloEstado.EN_PROGRESO)
         self.assertIsNone(self.modulo.completado_at)
         self.assertFalse(MesaQueueItem.objects.filter(id=item_inf.id).exists())
@@ -1041,6 +1059,7 @@ class PlanningFoundationTests(APITestCase):
         self.modulo.refresh_from_db()
         self.assertTrue(self.modulo.inferior_hecho)
         self.assertFalse(self.modulo.superior_hecho)
+        self.assertEqual(self.modulo.nombre, "M-01-R")
         self.assertEqual(self.modulo.estado, ModuloEstado.EN_PROGRESO)
         self.assertIsNone(self.modulo.completado_at)
         self.assertTrue(MesaQueueItem.objects.filter(id=item_inf.id).exists())

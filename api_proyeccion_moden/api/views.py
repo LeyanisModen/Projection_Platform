@@ -557,6 +557,18 @@ def _load_technical_records_from_upload(uploaded_file):
     raise ValidationError('Formato no soportado. Usa un archivo JSON, CSV o SQLite (.db).')
 
 
+def _module_name_without_repeat_suffix(value):
+    name = str(value or '').rstrip()
+    if name.upper().endswith('-R'):
+        return name[:-2]
+    return name
+
+
+def _module_repeat_name(value):
+    base_name = _module_name_without_repeat_suffix(value)
+    return f'{base_name[:198]}-R'
+
+
 def _persist_materiales_pieces(proyecto, pieces):
     """Replace the project's MaterialPieza rows with the imported batch.
 
@@ -570,14 +582,23 @@ def _persist_materiales_pieces(proyecto, pieces):
     if not pieces:
         return stats
 
-    modulo_by_name = {m.nombre: m for m in proyecto.modulos.all()}
+    modulos = list(proyecto.modulos.all())
+    modulo_by_name = {m.nombre: m for m in modulos}
+    for modulo in modulos:
+        modulo_by_name.setdefault(
+            _module_name_without_repeat_suffix(modulo.nombre),
+            modulo,
+        )
 
     with transaction.atomic():
         MaterialPieza.objects.filter(proyecto=proyecto).delete()
 
         batch = []
         for p in pieces:
-            modulo = modulo_by_name.get(p['modulo'])
+            modulo = (
+                modulo_by_name.get(p['modulo'])
+                or modulo_by_name.get(_module_name_without_repeat_suffix(p['modulo']))
+            )
             if modulo is None:
                 stats['orphan'] += 1
             batch.append(MaterialPieza(
@@ -614,6 +635,12 @@ def _resolve_modulo_for_record(proyecto, modulo_nombre, planta_nombre=None):
     # Intentar con prefijo (ej: A01 -> MOD_A01, MODULO_A01)
     for prefix in ('MOD_', 'MODULO_'):
         candidates.add(f'{prefix}{target}')
+
+    repeat_candidates = set()
+    for candidate in candidates:
+        base_candidate = _module_name_without_repeat_suffix(candidate)
+        repeat_candidates.update({candidate, base_candidate, f'{base_candidate}-R'})
+    candidates = repeat_candidates
 
     name_filter = Q()
     for cand in candidates:
@@ -2196,6 +2223,9 @@ class ModuloViewSet(viewsets.ModelViewSet):
         if Fase.SUPERIOR in fases:
             modulo.superior_hecho = False
 
+        repeated_name = _module_repeat_name(modulo.nombre)
+        name_changed = repeated_name != modulo.nombre
+        modulo.nombre = repeated_name
         modulo.cerrado = False
         modulo.cerrado_at = None
         modulo.cerrado_by = None
@@ -2205,7 +2235,7 @@ class ModuloViewSet(viewsets.ModelViewSet):
             else ModuloEstado.PENDIENTE
         )
         modulo.completado_at = None
-        modulo.save(update_fields=[
+        update_fields = [
             'inferior_hecho',
             'superior_hecho',
             'cerrado',
@@ -2213,7 +2243,10 @@ class ModuloViewSet(viewsets.ModelViewSet):
             'cerrado_by',
             'estado',
             'completado_at',
-        ])
+        ]
+        if name_changed:
+            update_fields.append('nombre')
+        modulo.save(update_fields=update_fields)
 
         queue_items.delete()
 
