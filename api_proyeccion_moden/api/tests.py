@@ -534,6 +534,17 @@ class MesaQueueItemBehaviorTests(APITestCase):
         self.assertEqual(response.data["current_image_index"], 1)
         self.assertEqual(response.data["imagenes_total"], 2)
 
+        grupo = GrupoMesas.objects.create(nombre="Grupo Progreso", usuario=self.user)
+        self.mesa_a.grupo = grupo
+        self.mesa_a.indice = 1
+        self.mesa_a.save(update_fields=["grupo", "indice"])
+        mesa_queue_response = self.client.get(
+            f"/api/mesas/{self.mesa_a.id}/queue_items/"
+        )
+        self.assertEqual(mesa_queue_response.status_code, 200)
+        self.assertEqual(mesa_queue_response.data[0]["current_image_index"], 1)
+        self.assertEqual(mesa_queue_response.data[0]["imagenes_total"], 2)
+
     def test_create_allows_new_active_item_when_previous_is_hecho(self):
         MesaQueueItem.objects.create(
             mesa=self.mesa_a,

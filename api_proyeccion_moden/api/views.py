@@ -2481,7 +2481,16 @@ class MesaViewSet(viewsets.ModelViewSet):
         items = (
             mesa.queue_items
             .select_related('mesa', 'modulo', 'imagen')
-            .prefetch_related('modulo__detalles_fase')
+            .prefetch_related(
+                'modulo__detalles_fase',
+                Prefetch(
+                    'modulo__imagenes',
+                    queryset=Imagen.objects.filter(activo=True).only(
+                        'id', 'modulo_id', 'fase'
+                    ),
+                    to_attr='queue_active_images',
+                ),
+            )
             .all()
             .order_by('position')
         )
@@ -2496,7 +2505,24 @@ class MesaViewSet(viewsets.ModelViewSet):
         """Get the current item being shown on a desk."""
         mesa = self.get_object()
         from api.models import MesaQueueStatus
-        item = mesa.queue_items.select_related('modulo', 'imagen', 'mesa', 'modulo__planta', 'modulo__planta__proyecto').filter(status=MesaQueueStatus.MOSTRANDO).first()
+        item = (
+            mesa.queue_items
+            .select_related(
+                'modulo', 'imagen', 'mesa',
+                'modulo__planta', 'modulo__planta__proyecto',
+            )
+            .prefetch_related(
+                Prefetch(
+                    'modulo__imagenes',
+                    queryset=Imagen.objects.filter(activo=True).only(
+                        'id', 'modulo_id', 'fase'
+                    ),
+                    to_attr='queue_active_images',
+                )
+            )
+            .filter(status=MesaQueueStatus.MOSTRANDO)
+            .first()
+        )
         if item:
             serializer = MesaQueueItemSerializer(item, context={'request': request})
             return Response(serializer.data)
@@ -4338,12 +4364,13 @@ class DeviceViewSet(viewsets.ViewSet):
         if not item:
             return Response(None)
 
-        item_data = MesaQueueItemSerializer(item, context={'request': request}).data
-        images = Imagen.objects.filter(
+        images = list(Imagen.objects.filter(
             modulo_id=item.modulo_id,
             fase=item.fase,
             activo=True
-        ).order_by('orden')
+        ).order_by('orden'))
+        item.modulo.queue_active_images = images
+        item_data = MesaQueueItemSerializer(item, context={'request': request}).data
         item_data['images'] = ImagenSerializer(images, many=True, context={'request': request}).data
         return Response(item_data)
 
