@@ -207,7 +207,38 @@ def _insert_phase(modulo, fase, mesa, plan_group_index, assigned_by, prioritize,
             if item.modulo.proyecto_id == modulo.proyecto_id
             and item.modulo.grupo_bastidor_id == modulo.grupo_bastidor_id
         ]
-        insert_at = (max(peer_indexes) + 1) if peer_indexes else len(active_items)
+        insert_at = len(active_items)
+        if peer_indexes:
+            insert_at = max(peer_indexes) + 1
+            if fase == Fase.INFERIOR:
+                for peer_index in peer_indexes:
+                    peer_order = active_items[peer_index].modulo.orden_intra or 0
+                    if peer_order < (modulo.orden_intra or 0):
+                        insert_at = peer_index
+                        break
+
+                current_index = next(
+                    (
+                        index
+                        for index, queued in enumerate(active_items)
+                        if current and queued.id == current.id
+                    ),
+                    None,
+                )
+                current_is_peer = bool(
+                    current
+                    and current.modulo.grupo_bastidor_id == modulo.grupo_bastidor_id
+                    and current.fase == fase
+                )
+                if (
+                    current_is_peer
+                    and current_index is not None
+                    and insert_at <= current_index
+                ):
+                    if mesa.current_image_index <= EARLY_IMAGE_INDEX_LIMIT:
+                        should_preempt = True
+                    else:
+                        insert_at = max(peer_indexes) + 1
 
     item = MesaQueueItem.objects.create(
         mesa=mesa,
@@ -300,12 +331,15 @@ def sync_new_module(modulo, assigned_by=None):
         pending_fases.add(Fase.INFERIOR)
     if not modulo.superior_hecho:
         pending_fases.add(Fase.SUPERIOR)
-    return sync_module_phases(
+    created = sync_module_phases(
         modulo,
         pending_fases,
         assigned_by=assigned_by,
         prioritize=False,
     )
+    with transaction.atomic():
+        _reposition_superior_by_inferior(modulo)
+    return created
 
 
 def _persist_active_order(mesa, items, current):
@@ -355,6 +389,119 @@ def _persist_active_order(mesa, items, current):
                 "ultima_actualizacion",
             ]
         )
+
+
+def _reposition_superior_by_inferior(modulo):
+    """Keep a module's superior close to its live inferior dependency.
+
+    The relative order already chosen for other superior work is preserved.
+    Only this module moves between the superior items that correspond to
+    modules before and after it on the same inferior mesa.
+    """
+    inferior_items = list(
+        MesaQueueItem.objects.select_related("mesa")
+        .filter(
+            modulo=modulo,
+            fase=Fase.INFERIOR,
+            status__in=ACTIVE_QUEUE_STATUSES,
+        )
+        .order_by("id")
+    )
+    superior_items = list(
+        MesaQueueItem.objects.select_related("mesa")
+        .filter(
+            modulo=modulo,
+            fase=Fase.SUPERIOR,
+            status__in=ACTIVE_QUEUE_STATUSES,
+        )
+        .order_by("id")
+    )
+    if not inferior_items or not superior_items:
+        return None
+
+    inferior_item = max(
+        inferior_items,
+        key=lambda item: (
+            item.status == MesaQueueStatus.MOSTRANDO,
+            item.id,
+        ),
+    )
+    superior_item = max(
+        superior_items,
+        key=lambda item: (
+            item.status == MesaQueueStatus.MOSTRANDO,
+            item.id,
+        ),
+    )
+    if superior_item.status == MesaQueueStatus.MOSTRANDO:
+        return superior_item
+
+    inferior_queue = list(
+        MesaQueueItem.objects.select_for_update()
+        .select_related("modulo")
+        .filter(
+            mesa=inferior_item.mesa,
+            fase=Fase.INFERIOR,
+            status__in=ACTIVE_QUEUE_STATUSES,
+        )
+        .order_by("position", "id")
+    )
+    inferior_index = next(
+        (
+            index
+            for index, item in enumerate(inferior_queue)
+            if item.modulo_id == modulo.id
+        ),
+        None,
+    )
+    if inferior_index is None:
+        return None
+
+    ahead_ids = {
+        item.modulo_id for item in inferior_queue[:inferior_index]
+    }
+    after_ids = {
+        item.modulo_id for item in inferior_queue[inferior_index + 1:]
+    }
+
+    superior_mesa = Mesa.objects.select_for_update().get(id=superior_item.mesa_id)
+    superior_queue, current = _ordered_active_items(superior_mesa)
+    superior_queue = [
+        item for item in superior_queue if item.id != superior_item.id
+    ]
+    ahead_indexes = [
+        index
+        for index, item in enumerate(superior_queue)
+        if item.modulo_id in ahead_ids
+    ]
+    after_indexes = [
+        index
+        for index, item in enumerate(superior_queue)
+        if item.modulo_id in after_ids
+    ]
+
+    if ahead_indexes:
+        insert_at = max(ahead_indexes) + 1
+    elif after_indexes:
+        insert_at = min(after_indexes)
+    else:
+        insert_at = 1 if current else 0
+
+    current_index = next(
+        (
+            index
+            for index, item in enumerate(superior_queue)
+            if current and item.id == current.id
+        ),
+        None,
+    )
+    if current_index is not None:
+        insert_at = max(insert_at, current_index + 1)
+    insert_at = min(insert_at, len(superior_queue))
+
+    superior_queue.insert(insert_at, superior_item)
+    _persist_active_order(superior_mesa, superior_queue, current)
+    return superior_item
 
 
 def reconcile_module_queue_after_bastidor_move(modulo):
@@ -440,9 +587,15 @@ def reconcile_module_queue_after_bastidor_move(modulo):
     for item_id, source_mesa_id, target_mesa_id, plan_group_index in relocations:
         item = MesaQueueItem.objects.select_for_update().get(id=item_id)
         same_mesa = source_mesa_id == target_mesa_id
-        if same_mesa and (
-            item.status == MesaQueueStatus.MOSTRANDO
-            or item.fase != Fase.INFERIOR
+        if same_mesa and item.fase != Fase.INFERIOR:
+            if item.plan_group_index != plan_group_index:
+                item.plan_group_index = plan_group_index
+                item.save(update_fields=["plan_group_index"])
+            continue
+        if (
+            same_mesa
+            and item.status == MesaQueueStatus.MOSTRANDO
+            and item.mesa.current_image_index > EARLY_IMAGE_INDEX_LIMIT
         ):
             if item.plan_group_index != plan_group_index:
                 item.plan_group_index = plan_group_index
@@ -502,6 +655,11 @@ def reconcile_module_queue_after_bastidor_move(modulo):
                 and target_current.modulo.grupo_bastidor_id == bastidor.id
                 and target_current.fase == item.fase
             )
+            if target_current and target_current.id == item.id:
+                # El modulo que se estaba mostrando se ha recolocado desde
+                # el card dentro del margen inicial. El primero del nuevo
+                # orden pasa a ser el actual, aunque ya no sea este item.
+                target_current = None
             if (
                 current_is_same_bastidor
                 and current_index is not None
@@ -518,4 +676,7 @@ def reconcile_module_queue_after_bastidor_move(modulo):
         _persist_active_order(target_mesa, target_items, target_current)
         moved_items.append(item)
 
+    superior_item = _reposition_superior_by_inferior(modulo)
+    if superior_item and all(item.id != superior_item.id for item in moved_items):
+        moved_items.append(superior_item)
     return moved_items

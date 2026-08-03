@@ -1415,7 +1415,12 @@ class PlanningFoundationTests(APITestCase):
         self.assertEqual(nuevo_items.count(), 2)
         self.assertEqual(nuevo_items.get(fase="INFERIOR").mesa_id, mesa_inf.id)
         self.assertEqual(nuevo_items.get(fase="SUPERIOR").mesa_id, mesa_sup.id)
-        self.assertEqual(nuevo_items.get(fase="INFERIOR").position, 1)
+        self.assertEqual(nuevo_items.get(fase="INFERIOR").position, 0)
+        self.assertEqual(
+            nuevo_items.get(fase="INFERIOR").status,
+            MesaQueueStatus.MOSTRANDO,
+        )
+        self.assertEqual(nuevo_items.get(fase="SUPERIOR").position, 1)
 
         duplicate_response = self.client.post(
             f"/api/proyectos/{self.project.id}/import-structure/",
@@ -1525,8 +1530,32 @@ class PlanningFoundationTests(APITestCase):
             modulo=self.modulo,
             fase="SUPERIOR",
             status=MesaQueueStatus.EN_COLA,
-            position=1,
+            position=4,
             plan_group_index=1,
+        )
+        MesaQueueItem.objects.create(
+            mesa=mesa_sup,
+            modulo=peer_1,
+            fase="SUPERIOR",
+            status=MesaQueueStatus.EN_COLA,
+            position=1,
+            plan_group_index=2,
+        )
+        MesaQueueItem.objects.create(
+            mesa=mesa_sup,
+            modulo=peer_2,
+            fase="SUPERIOR",
+            status=MesaQueueStatus.EN_COLA,
+            position=2,
+            plan_group_index=2,
+        )
+        MesaQueueItem.objects.create(
+            mesa=mesa_sup,
+            modulo=peer_3,
+            fase="SUPERIOR",
+            status=MesaQueueStatus.EN_COLA,
+            position=3,
+            plan_group_index=2,
         )
         current_peer_item = MesaQueueItem.objects.create(
             mesa=mesa_2,
@@ -1640,6 +1669,43 @@ class PlanningFoundationTests(APITestCase):
         self.assertEqual(moved_item.mesa_id, mesa_2.id)
         self.assertEqual(moved_item.position, 0)
         self.assertEqual(moved_item.status, MesaQueueStatus.MOSTRANDO)
+
+        # Si el actual sigue en la primera imagen, moverlo dentro del card
+        # aplica el nuevo orden inverso y da paso al nuevo primero.
+        reorder_showing_response = self.client.post(
+            "/api/grupos-bastidor/move-modulo/",
+            {
+                "modulo_id": self.modulo.id,
+                "grupo_destino_id": destino.id,
+                "index_destino": 1,
+            },
+            format="json",
+        )
+        self.assertEqual(reorder_showing_response.status_code, 200)
+        moved_item.refresh_from_db()
+        current_peer_item.refresh_from_db()
+        self.assertEqual(moved_item.position, 2)
+        self.assertEqual(moved_item.status, MesaQueueStatus.EN_COLA)
+        self.assertEqual(current_peer_item.position, 0)
+        self.assertEqual(current_peer_item.status, MesaQueueStatus.MOSTRANDO)
+        self.assertEqual(
+            list(
+                mesa_2.queue_items.filter(status__in=["MOSTRANDO", "EN_COLA"])
+                .order_by("position")
+                .values_list("modulo__nombre", flat=True)
+            ),
+            ["G2-01", "G2-02", "M-01", "G2-03"],
+        )
+        moved_sup_item.refresh_from_db()
+        self.assertEqual(moved_sup_item.position, 3)
+        self.assertEqual(
+            list(
+                mesa_sup.queue_items.filter(status__in=["MOSTRANDO", "EN_COLA"])
+                .order_by("position")
+                .values_list("modulo__nombre", flat=True)
+            ),
+            ["G1-ACTUAL", "G2-01", "G2-02", "M-01", "G2-03"],
+        )
 
     def test_no_mueve_de_mesa_un_modulo_que_ya_se_esta_mostrando(self):
         admin = User.objects.create_user(
