@@ -372,6 +372,10 @@ class MesaQueueItemBehaviorTests(APITestCase):
     def setUp(self):
         self.user = User.objects.create_user(username="queue_user", password="pass123")
         self.token = Token.objects.create(user=self.user)
+        self.admin = User.objects.create_user(
+            username="queue_admin", password="admin123", is_staff=True
+        )
+        self.admin_token = Token.objects.create(user=self.admin)
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
 
         self.project = Proyecto.objects.create(nombre="Proyecto Cola", usuario=self.user)
@@ -396,7 +400,7 @@ class MesaQueueItemBehaviorTests(APITestCase):
             format="json",
         )
 
-    def test_en_cola_item_can_move_between_mesas(self):
+    def test_regular_user_cannot_move_item_between_mesas(self):
         self._create_item(self.mesa_a.id, self.modulo_a.id, position=0)
         second_response = self._create_item(self.mesa_a.id, self.modulo_b.id, position=1)
         self.assertEqual(second_response.status_code, 201)
@@ -408,14 +412,17 @@ class MesaQueueItemBehaviorTests(APITestCase):
             format="json",
         )
 
-        self.assertEqual(move_response.status_code, 200)
-        self.assertEqual(move_response.data["mesa"], self.mesa_b.id)
+        self.assertEqual(move_response.status_code, 403)
+        item = MesaQueueItem.objects.get(id=item_id)
+        self.assertEqual(item.mesa_id, self.mesa_a.id)
+        self.assertEqual(item.position, 1)
 
     def test_mostrando_item_cannot_move_between_mesas(self):
         create_response = self._create_item(self.mesa_a.id, self.modulo_a.id, position=0)
         self.assertEqual(create_response.status_code, 201)
 
         item_id = create_response.data["id"]
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.admin_token.key}")
         move_response = self.client.patch(
             f"/api/mesa-queue-items/{item_id}/",
             {"mesa": self.mesa_b.id},
@@ -435,7 +442,7 @@ class MesaQueueItemBehaviorTests(APITestCase):
         self.assertEqual(delete_response.status_code, 204)
         self.assertFalse(MesaQueueItem.objects.filter(id=item_id).exists())
 
-    def test_queue_can_be_reordered(self):
+    def test_regular_user_cannot_reorder_queue(self):
         first = self._create_item(self.mesa_a.id, self.modulo_a.id, position=0)
         second = self._create_item(self.mesa_a.id, self.modulo_b.id, position=1)
         third = self._create_item(self.mesa_a.id, self.modulo_c.id, position=2)
@@ -455,7 +462,29 @@ class MesaQueueItemBehaviorTests(APITestCase):
             format="json",
         )
 
-        self.assertEqual(reorder_response.status_code, 200)
+        self.assertEqual(reorder_response.status_code, 403)
+        self.assertEqual(MesaQueueItem.objects.get(id=third.data["id"]).position, 2)
+        self.assertEqual(MesaQueueItem.objects.get(id=second.data["id"]).position, 1)
+
+    def test_admin_can_reorder_queue(self):
+        first = self._create_item(self.mesa_a.id, self.modulo_a.id, position=0)
+        second = self._create_item(self.mesa_a.id, self.modulo_b.id, position=1)
+        third = self._create_item(self.mesa_a.id, self.modulo_c.id, position=2)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.admin_token.key}")
+
+        response = self.client.post(
+            "/api/mesa-queue-items/reorder/",
+            {
+                "items": [
+                    {"id": first.data["id"], "position": 0},
+                    {"id": third.data["id"], "position": 1},
+                    {"id": second.data["id"], "position": 2},
+                ]
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
         self.assertEqual(MesaQueueItem.objects.get(id=third.data["id"]).position, 1)
         self.assertEqual(MesaQueueItem.objects.get(id=second.data["id"]).position, 2)
 
@@ -485,6 +514,7 @@ class MesaQueueItemBehaviorTests(APITestCase):
         )
         MesaQueueItem.objects.filter(id=second_response.data["id"]).update(imagen_id=legacy_image.id)
 
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.admin_token.key}")
         move_response = self.client.patch(
             f"/api/mesa-queue-items/{second_response.data['id']}/",
             {"mesa": self.mesa_b.id, "position": 0},
@@ -492,7 +522,7 @@ class MesaQueueItemBehaviorTests(APITestCase):
         )
         self.assertEqual(move_response.status_code, 200)
 
-    def test_move_action_moves_item_between_mesas(self):
+    def test_regular_user_cannot_use_move_action(self):
         self._create_item(self.mesa_a.id, self.modulo_a.id, position=0)
         second_response = self._create_item(self.mesa_a.id, self.modulo_b.id, position=1)
         self.assertEqual(second_response.status_code, 201)
@@ -502,6 +532,21 @@ class MesaQueueItemBehaviorTests(APITestCase):
             {"mesa": self.mesa_b.id, "position": 0},
             format="json",
         )
+        self.assertEqual(move_response.status_code, 403)
+        item = MesaQueueItem.objects.get(id=second_response.data["id"])
+        self.assertEqual(item.mesa_id, self.mesa_a.id)
+
+    def test_admin_move_action_moves_item_between_mesas(self):
+        self._create_item(self.mesa_a.id, self.modulo_a.id, position=0)
+        second_response = self._create_item(self.mesa_a.id, self.modulo_b.id, position=1)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.admin_token.key}")
+
+        move_response = self.client.post(
+            f"/api/mesa-queue-items/{second_response.data['id']}/move/",
+            {"mesa": self.mesa_b.id, "position": 0},
+            format="json",
+        )
+
         self.assertEqual(move_response.status_code, 200)
         self.assertEqual(move_response.data["mesa"], self.mesa_b.id)
 

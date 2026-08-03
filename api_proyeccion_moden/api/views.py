@@ -4752,6 +4752,11 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
             item.mesa.save(update_fields=['imagen_actual', 'current_image_index'])
 
     def perform_update(self, serializer):
+        if not _is_admin(self.request.user) and any(
+            field in serializer.validated_data for field in ('mesa', 'position')
+        ):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('Solo admin puede mover o reordenar modulos entre mesas')
         mesa = serializer.validated_data.get('mesa')
         if mesa and (not _is_admin(self.request.user)) and mesa.usuario_id != self.request.user.id:
             from rest_framework.exceptions import PermissionDenied
@@ -4845,6 +4850,12 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
         """Move an item to another mesa with explicit business rules."""
         from api.models import Mesa, MesaQueueStatus
 
+        if not _is_admin(request.user):
+            return Response(
+                {'detail': 'Solo admin puede mover modulos entre mesas.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         item = self.get_object()
         target_mesa_id = request.data.get('mesa')
         target_position = request.data.get('position', item.position)
@@ -4897,6 +4908,11 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'])
     def reorder(self, request):
         """Reorder items in the mesa queue. Expects: {items: [{id: X, position: Y}, ...]}"""
+        if not _is_admin(request.user):
+            return Response(
+                {'detail': 'Solo admin puede reordenar modulos en las mesas.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         items_data = request.data.get('items', [])
         for item_data in items_data:
             try:
