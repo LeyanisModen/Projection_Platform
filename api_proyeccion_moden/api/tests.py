@@ -19,7 +19,7 @@ from api.models import (
     Imagen, Mesa, MesaQueueItem, Modulo, Planta, Proyecto,
     DetalleModuloFase, GrupoMesas, FotoFabricacion,
     FerrallaContacto, FerrallaDireccion, PairingSession,
-    MesaQueueStatus, ModuloEstado, GrupoBastidor
+    MesaQueueStatus, ModuloEstado, GrupoBastidor, GrupoMesasProyecto
 )
 
 
@@ -841,7 +841,28 @@ class PlanningFoundationTests(APITestCase):
         self.assertFalse(self.modulo.cerrado)
         self.assertEqual(self.modulo.estado, ModuloEstado.PENDIENTE)
         self.assertIsNone(self.modulo.completado_at)
-        self.assertFalse(MesaQueueItem.objects.filter(modulo=self.modulo).exists())
+        active_items = MesaQueueItem.objects.filter(
+            modulo=self.modulo,
+            status__in=[MesaQueueStatus.EN_COLA, MesaQueueStatus.MOSTRANDO],
+        )
+        self.assertEqual(active_items.count(), 2)
+        self.assertEqual(
+            active_items.get(fase="INFERIOR").mesa_id,
+            mesa_inf.id,
+        )
+        self.assertEqual(
+            active_items.get(fase="SUPERIOR").mesa_id,
+            mesa_sup.id,
+        )
+        self.assertEqual(
+            active_items.get(fase="SUPERIOR").status,
+            MesaQueueStatus.MOSTRANDO,
+        )
+        self.assertTrue(
+            GrupoMesasProyecto.objects.filter(
+                grupo_mesas=grupo, proyecto=self.project
+            ).exists()
+        )
         self.assertIsNone(mesa_sup.imagen_actual)
         self.assertEqual(mesa_sup.current_image_index, 0)
 
@@ -849,6 +870,13 @@ class PlanningFoundationTests(APITestCase):
         self.assertEqual(second_response.status_code, 200)
         self.modulo.refresh_from_db()
         self.assertEqual(self.modulo.nombre, "M-01-R")
+        self.assertEqual(
+            MesaQueueItem.objects.filter(
+                modulo=self.modulo,
+                status__in=[MesaQueueStatus.EN_COLA, MesaQueueStatus.MOSTRANDO],
+            ).count(),
+            2,
+        )
 
     def test_completar_fase_inferior_conserva_superior_pendiente(self):
         grupo = self._crear_grupo("Grupo Completar INF")
@@ -1007,6 +1035,14 @@ class PlanningFoundationTests(APITestCase):
         self.assertFalse(MesaQueueItem.objects.filter(id=item_inf.id).exists())
         self.assertTrue(MesaQueueItem.objects.filter(id=item_sup.id).exists())
         self.assertTrue(MesaQueueItem.objects.filter(id=otro_item_inf.id).exists())
+        repeated_item = MesaQueueItem.objects.get(
+            modulo=self.modulo,
+            fase="INFERIOR",
+            status__in=[MesaQueueStatus.EN_COLA, MesaQueueStatus.MOSTRANDO],
+        )
+        self.assertEqual(repeated_item.mesa_id, mesa_inf.id)
+        self.assertEqual(repeated_item.status, MesaQueueStatus.EN_COLA)
+        self.assertEqual(repeated_item.position, 1)
         mesa_inf.refresh_from_db()
         self.assertEqual(mesa_inf.imagen_actual_id, otra_imagen_inf.id)
         self.assertEqual(mesa_inf.current_image_index, 4)
@@ -1064,6 +1100,265 @@ class PlanningFoundationTests(APITestCase):
         self.assertIsNone(self.modulo.completado_at)
         self.assertTrue(MesaQueueItem.objects.filter(id=item_inf.id).exists())
         self.assertFalse(MesaQueueItem.objects.filter(id=item_sup.id).exists())
+        repeated_item = MesaQueueItem.objects.get(
+            modulo=self.modulo,
+            fase="SUPERIOR",
+            status__in=[MesaQueueStatus.EN_COLA, MesaQueueStatus.MOSTRANDO],
+        )
+        self.assertEqual(repeated_item.mesa_id, mesa_sup.id)
+        self.assertEqual(repeated_item.status, MesaQueueStatus.MOSTRANDO)
+
+    def test_reiniciar_fase_en_imagen_dos_pone_repeticion_primera(self):
+        grupo = self._crear_grupo("Grupo Reinicio Prioritario")
+        mesa_inf = grupo.mesas.get(tipo="INFERIOR", indice=1)
+        grupo_repetido = GrupoBastidor.objects.create(
+            proyecto=self.project,
+            indice=3,
+            nombre="Grupo 3",
+            asignado_a=grupo,
+        )
+        grupo_actual = GrupoBastidor.objects.create(
+            proyecto=self.project,
+            indice=5,
+            nombre="Grupo 5",
+            asignado_a=grupo,
+        )
+        self.modulo.grupo_bastidor = grupo_repetido
+        self.modulo.orden_intra = 1
+        self.modulo.inferior_hecho = True
+        self.modulo.superior_hecho = True
+        self.modulo.save()
+
+        modulo_actual = Modulo.objects.create(
+            nombre="M-05-A",
+            proyecto=self.project,
+            planta=self.planta,
+            grupo_bastidor=grupo_actual,
+            orden_intra=1,
+        )
+        modulo_siguiente = Modulo.objects.create(
+            nombre="M-05-B",
+            proyecto=self.project,
+            planta=self.planta,
+            grupo_bastidor=grupo_actual,
+            orden_intra=2,
+        )
+        MesaQueueItem.objects.create(
+            mesa=mesa_inf,
+            modulo=modulo_actual,
+            fase="INFERIOR",
+            status=MesaQueueStatus.MOSTRANDO,
+            position=0,
+            plan_group_index=5,
+        )
+        MesaQueueItem.objects.create(
+            mesa=mesa_inf,
+            modulo=modulo_siguiente,
+            fase="INFERIOR",
+            status=MesaQueueStatus.EN_COLA,
+            position=1,
+            plan_group_index=5,
+        )
+        MesaQueueItem.objects.create(
+            mesa=mesa_inf,
+            modulo=self.modulo,
+            fase="INFERIOR",
+            status=MesaQueueStatus.HECHO,
+            position=2,
+            plan_group_index=3,
+        )
+        mesa_inf.current_image_index = 1
+        mesa_inf.save(update_fields=["current_image_index"])
+
+        response = self.client.post(
+            f"/api/modulos/{self.modulo.id}/reiniciar-fase/",
+            {"fase": "INFERIOR"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        active = list(
+            mesa_inf.queue_items.filter(status__in=["MOSTRANDO", "EN_COLA"])
+            .select_related("modulo")
+            .order_by("position")
+        )
+        self.assertEqual(
+            [item.modulo.nombre for item in active],
+            ["M-01-R", "M-05-A", "M-05-B"],
+        )
+        self.assertEqual(
+            [item.plan_group_index for item in active],
+            [3, 5, 5],
+        )
+        self.assertEqual(active[0].status, MesaQueueStatus.MOSTRANDO)
+        self.assertEqual(active[1].status, MesaQueueStatus.EN_COLA)
+        mesa_inf.refresh_from_db()
+        self.assertEqual(mesa_inf.current_image_index, 0)
+
+    def test_reiniciar_fase_avanzada_la_inserta_segunda_sin_perder_progreso(self):
+        grupo = self._crear_grupo("Grupo Reinicio Tras Actual")
+        mesa_inf = grupo.mesas.get(tipo="INFERIOR", indice=1)
+        grupo_repetido = GrupoBastidor.objects.create(
+            proyecto=self.project,
+            indice=3,
+            nombre="Grupo 3",
+            asignado_a=grupo,
+        )
+        grupo_actual = GrupoBastidor.objects.create(
+            proyecto=self.project,
+            indice=5,
+            nombre="Grupo 5",
+            asignado_a=grupo,
+        )
+        self.modulo.grupo_bastidor = grupo_repetido
+        self.modulo.orden_intra = 1
+        self.modulo.inferior_hecho = True
+        self.modulo.superior_hecho = True
+        self.modulo.save()
+
+        modulo_actual = Modulo.objects.create(
+            nombre="M-05-A",
+            proyecto=self.project,
+            planta=self.planta,
+            grupo_bastidor=grupo_actual,
+            orden_intra=1,
+        )
+        modulo_siguiente = Modulo.objects.create(
+            nombre="M-05-B",
+            proyecto=self.project,
+            planta=self.planta,
+            grupo_bastidor=grupo_actual,
+            orden_intra=2,
+        )
+        MesaQueueItem.objects.create(
+            mesa=mesa_inf,
+            modulo=modulo_actual,
+            fase="INFERIOR",
+            status=MesaQueueStatus.MOSTRANDO,
+            position=0,
+            plan_group_index=5,
+        )
+        MesaQueueItem.objects.create(
+            mesa=mesa_inf,
+            modulo=modulo_siguiente,
+            fase="INFERIOR",
+            status=MesaQueueStatus.EN_COLA,
+            position=1,
+            plan_group_index=5,
+        )
+        MesaQueueItem.objects.create(
+            mesa=mesa_inf,
+            modulo=self.modulo,
+            fase="INFERIOR",
+            status=MesaQueueStatus.HECHO,
+            position=2,
+            plan_group_index=3,
+        )
+        mesa_inf.current_image_index = 2
+        mesa_inf.save(update_fields=["current_image_index"])
+
+        response = self.client.post(
+            f"/api/modulos/{self.modulo.id}/reiniciar-fase/",
+            {"fase": "INFERIOR"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        active = list(
+            mesa_inf.queue_items.filter(status__in=["MOSTRANDO", "EN_COLA"])
+            .select_related("modulo")
+            .order_by("position")
+        )
+        self.assertEqual(
+            [item.modulo.nombre for item in active],
+            ["M-05-A", "M-01-R", "M-05-B"],
+        )
+        self.assertEqual(
+            [item.plan_group_index for item in active],
+            [5, 3, 5],
+        )
+        self.assertEqual(active[0].status, MesaQueueStatus.MOSTRANDO)
+        self.assertEqual(active[1].status, MesaQueueStatus.EN_COLA)
+        mesa_inf.refresh_from_db()
+        self.assertEqual(mesa_inf.current_image_index, 2)
+
+    def test_importar_modulo_nuevo_lo_anade_a_colas_sin_replanificar(self):
+        grupo = self._crear_grupo("Grupo Modulo Nuevo")
+        mesa_inf = grupo.mesas.get(tipo="INFERIOR", indice=1)
+        mesa_sup = grupo.mesas.get(tipo="SUPERIOR", indice=3)
+        GrupoMesasProyecto.objects.create(
+            grupo_mesas=grupo,
+            proyecto=self.project,
+            orden=0,
+        )
+        self.project.datos_tecnicos_importados = True
+        self.project.save(update_fields=["datos_tecnicos_importados"])
+        bastidor = GrupoBastidor.objects.create(
+            proyecto=self.project,
+            indice=1,
+            nombre="Grupo 1",
+            asignado_a=grupo,
+        )
+        self.modulo.ancho_cm = "10.00"
+        self.modulo.grupo_bastidor = bastidor
+        self.modulo.orden_intra = 1
+        self.modulo.save(update_fields=["ancho_cm", "grupo_bastidor", "orden_intra"])
+        MesaQueueItem.objects.create(
+            mesa=mesa_inf,
+            modulo=self.modulo,
+            fase="INFERIOR",
+            status=MesaQueueStatus.MOSTRANDO,
+            position=0,
+            plan_group_index=1,
+        )
+        MesaQueueItem.objects.create(
+            mesa=mesa_sup,
+            modulo=self.modulo,
+            fase="SUPERIOR",
+            status=MesaQueueStatus.MOSTRANDO,
+            position=0,
+            plan_group_index=1,
+        )
+        general = Planta.objects.create(
+            nombre="General",
+            proyecto=self.project,
+            orden=2,
+        )
+
+        response = self.client.post(
+            f"/api/proyectos/{self.project.id}/import-structure/",
+            {
+                "plantas": json.dumps(
+                    [{
+                        "nombre": "General",
+                        "orden": 2,
+                        "modulos": [{
+                            "nombre": "M-02",
+                            "ancho_cm": "10.00",
+                            "imagenes": [],
+                        }],
+                    }]
+                )
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            Planta.objects.filter(proyecto=self.project, nombre="General").count(),
+            1,
+        )
+        nuevo = Modulo.objects.get(proyecto=self.project, nombre="M-02")
+        self.assertEqual(nuevo.planta_id, general.id)
+        self.assertEqual(nuevo.grupo_bastidor_id, bastidor.id)
+        nuevo_items = MesaQueueItem.objects.filter(
+            modulo=nuevo,
+            status__in=[MesaQueueStatus.MOSTRANDO, MesaQueueStatus.EN_COLA],
+        )
+        self.assertEqual(nuevo_items.count(), 2)
+        self.assertEqual(nuevo_items.get(fase="INFERIOR").mesa_id, mesa_inf.id)
+        self.assertEqual(nuevo_items.get(fase="SUPERIOR").mesa_id, mesa_sup.id)
+        self.assertEqual(nuevo_items.get(fase="INFERIOR").position, 1)
 
     def test_reiniciar_fase_rechaza_fase_desconocida(self):
         self.modulo.estado = ModuloEstado.COMPLETADO

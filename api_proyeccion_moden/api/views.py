@@ -34,6 +34,11 @@ from api.models import (
     MaterialTipo, MesaTipo,
 )
 from api.project_media import collect_project_media, delete_project_media
+from api.queue_sync import (
+    capture_phase_assignment_hints,
+    sync_module_phases,
+    sync_new_module,
+)
 from django.utils import timezone
 from rest_framework.authtoken.views import ObtainAuthToken
 from rest_framework.authtoken.models import Token
@@ -1139,16 +1144,18 @@ class ProyectoViewSet(viewsets.ModelViewSet):
             'plantas': 0, 'modulos': 0, 'imagenes': 0, 'detalles_fase': 0,
             'plano_cargado': False, 'planilla_cargada': False, 'errors': []
         }
+        created_modulos = []
 
         for planta_data in plantas_data:
             try:
-                # Create Planta
-                planta = Planta.objects.create(
+                # Reuse the virtual "General" floor when importing extra modules.
+                planta, planta_created = Planta.objects.get_or_create(
                     nombre=planta_data.get('nombre', 'Sin nombre'),
                     proyecto=proyecto,
-                    orden=planta_data.get('orden', 0)
+                    defaults={'orden': planta_data.get('orden', 0)},
                 )
-                stats['plantas'] += 1
+                if planta_created:
+                    stats['plantas'] += 1
 
                 # Check for Plant Files (Plano and Corte)
                 plano_filename = planta_data.get('plano_filename')
@@ -1177,6 +1184,8 @@ class ProyectoViewSet(viewsets.ModelViewSet):
                             estado='PENDIENTE',
                             codigos_color=(modulo_data.get('codigos_color') or 'xxxxxxxx').ljust(8, 'x')[:8]
                         )
+                        _assign_modulo_to_group_on_create(modulo)
+                        created_modulos.append(modulo)
                         stats['modulos'] += 1
                         
                         imagenes_data = modulo_data.get('imagenes', [])
@@ -1238,6 +1247,11 @@ class ProyectoViewSet(viewsets.ModelViewSet):
                         stats['errors'].append(f"Error creating modulo: {str(e)}")
             except Exception as e:
                 stats['errors'].append(f"Error creating planta: {str(e)}")
+
+        # Existing mesa queues discover imported modules automatically.
+        # This is incremental and never rebuilds work already in progress.
+        for modulo in created_modulos:
+            sync_new_module(modulo, assigned_by=request.user)
         
         return Response({
             'status': 'ok',
@@ -2209,11 +2223,12 @@ class ModuloViewSet(viewsets.ModelViewSet):
         return queryset
 
     @staticmethod
-    def _reiniciar_fases(modulo, fases):
+    def _reiniciar_fases(modulo, fases, user=None):
         queue_items = MesaQueueItem.objects.filter(
             modulo=modulo,
             fase__in=fases,
         )
+        assignment_hints = capture_phase_assignment_hints(modulo, fases)
         affected_mesa_ids = list(
             queue_items.values_list('mesa_id', flat=True).distinct()
         )
@@ -2249,6 +2264,13 @@ class ModuloViewSet(viewsets.ModelViewSet):
         modulo.save(update_fields=update_fields)
 
         queue_items.delete()
+        sync_module_phases(
+            modulo,
+            fases,
+            assigned_by=user,
+            hints=assignment_hints,
+            prioritize=True,
+        )
 
         for mesa in Mesa.objects.filter(id__in=affected_mesa_ids):
             current_item = (
@@ -2360,6 +2382,7 @@ class ModuloViewSet(viewsets.ModelViewSet):
             self._reiniciar_fases(
                 modulo,
                 {Fase.INFERIOR, Fase.SUPERIOR},
+                request.user,
             )
 
         serializer = self.get_serializer(modulo)
@@ -2374,7 +2397,7 @@ class ModuloViewSet(viewsets.ModelViewSet):
 
         with transaction.atomic():
             modulo = self.get_object()
-            self._reiniciar_fases(modulo, {fase})
+            self._reiniciar_fases(modulo, {fase}, request.user)
 
         serializer = self.get_serializer(modulo)
         return Response(serializer.data)
@@ -2382,6 +2405,7 @@ class ModuloViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         modulo = serializer.save()
         _assign_modulo_to_group_on_create(modulo)
+        sync_new_module(modulo, assigned_by=self.request.user)
 
 
 class ImagenViewSet(viewsets.ModelViewSet):
