@@ -11,7 +11,7 @@ from django.contrib.auth.models import User
 from decimal import Decimal, InvalidOperation
 
 from django.db import IntegrityError, transaction
-from django.db.models import Count, Max, Q
+from django.db.models import Count, Max, Prefetch, Q
 from rest_framework import permissions, viewsets, status
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
@@ -4732,7 +4732,16 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
         queryset = (
             MesaQueueItem.objects
             .select_related('mesa', 'modulo', 'imagen', 'modulo__planta', 'modulo__planta__proyecto')
-            .prefetch_related('modulo__detalles_fase')
+            .prefetch_related(
+                'modulo__detalles_fase',
+                Prefetch(
+                    'modulo__imagenes',
+                    queryset=Imagen.objects.filter(activo=True).only(
+                        'id', 'modulo_id', 'fase'
+                    ),
+                    to_attr='queue_active_images',
+                ),
+            )
             .all()
             .order_by('position')
         )

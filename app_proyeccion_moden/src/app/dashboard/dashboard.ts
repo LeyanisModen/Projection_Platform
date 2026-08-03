@@ -2263,6 +2263,15 @@ export class Dashboard implements OnInit, OnDestroy {
     return (this.mesaQueueItems.get(mesaId) || []).filter(i => i.status !== 'HECHO');
   }
 
+  getItemImageProgress(item: MesaQueueItem): string | null {
+    if (item.status !== 'MOSTRANDO' || item.imagenes_total < 1) return null;
+    const current = Math.min(
+      Math.max((item.current_image_index ?? 0) + 1, 1),
+      item.imagenes_total
+    );
+    return `${current} / ${item.imagenes_total}`;
+  }
+
   getMesaRoleLabel(mesa: { indice: number }): string {
     return `Mesa ${mesa.indice}`;
   }

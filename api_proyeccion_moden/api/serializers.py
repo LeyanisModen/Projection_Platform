@@ -577,6 +577,10 @@ class MesaQueueItemSerializer(serializers.ModelSerializer):
         source='modulo.grupo_bastidor.nombre', read_only=True, default=''
     )
     dificultad = serializers.SerializerMethodField()
+    current_image_index = serializers.IntegerField(
+        source='mesa.current_image_index', read_only=True
+    )
+    imagenes_total = serializers.SerializerMethodField()
 
     class Meta:
         model = MesaQueueItem
@@ -587,7 +591,7 @@ class MesaQueueItemSerializer(serializers.ModelSerializer):
             "fase", "imagen", "imagen_url",
             "position", "plan_group_index",
             "grupo_bastidor_indice", "grupo_bastidor_nombre",
-            "status", "dificultad",
+            "status", "dificultad", "current_image_index", "imagenes_total",
             "assigned_by", "assigned_at",
             "done_by", "done_at"
         ]
@@ -612,6 +616,12 @@ class MesaQueueItemSerializer(serializers.ModelSerializer):
         raw = _compute_dificultad(detalle)
         scale = self.context.get('dificultad_scale', 1.0)
         return round(raw * scale, 1)
+
+    def get_imagenes_total(self, obj):
+        cached = getattr(obj.modulo, 'queue_active_images', None)
+        if cached is not None:
+            return sum(1 for imagen in cached if imagen.fase == obj.fase)
+        return obj.modulo.imagenes.filter(fase=obj.fase, activo=True).count()
 
     def validate(self, data):
         """

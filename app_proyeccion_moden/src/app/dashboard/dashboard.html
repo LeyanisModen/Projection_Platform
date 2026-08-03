@@ -136,6 +136,10 @@
                                             <div class="queue-item" [class]="getItemStatusClass(item.status)">
                                                 <div class="queue-item-info">
                                                     <span class="queue-item-nombre">{{ item.modulo_nombre }}</span>
+                                                    @if (getItemImageProgress(item); as progress) {
+                                                        <span class="queue-item-progress"
+                                                            title="Imagen proyectada del total">{{ progress }}</span>
+                                                    }
                                                     <span class="queue-item-status">{{ item.status }}</span>
                                                     <span class="queue-item-dif-dot"
     *ngIf="item.dificultad != null"

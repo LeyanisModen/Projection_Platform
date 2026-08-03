@@ -242,6 +242,8 @@ export interface MesaQueueItem {
     grupo_bastidor_nombre?: string | null;
     status: 'EN_COLA' | 'MOSTRANDO' | 'HECHO';
     dificultad?: number | null;
+    current_image_index: number;
+    imagenes_total: number;
     assigned_by: string | null;
     assigned_at: string;
     done_by: string | null;

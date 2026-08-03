@@ -2982,6 +2982,18 @@
   cursor: pointer;
   transition: color 0.2s;
 }
+
+.queue-item-progress {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #d84a16;
+  background: #fff0e9;
+  border: 1px solid #ffd2c2;
+  padding: 2px 7px;
+  border-radius: 999px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
 .header-nav .nav-link:hover {
   color: var(--accent-orange);
 }

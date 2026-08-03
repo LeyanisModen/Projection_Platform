@@ -488,6 +488,52 @@ class MesaQueueItemBehaviorTests(APITestCase):
         self.assertEqual(MesaQueueItem.objects.get(id=third.data["id"]).position, 1)
         self.assertEqual(MesaQueueItem.objects.get(id=second.data["id"]).position, 2)
 
+    def test_queue_item_incluye_progreso_de_imagenes_activas_de_su_fase(self):
+        Imagen.objects.create(
+            modulo=self.modulo_a,
+            fase="INFERIOR",
+            orden=1,
+            url="/imagenes/m-a-inf-1.png",
+            activo=True,
+        )
+        Imagen.objects.create(
+            modulo=self.modulo_a,
+            fase="INFERIOR",
+            orden=2,
+            url="/imagenes/m-a-inf-2.png",
+            activo=True,
+        )
+        Imagen.objects.create(
+            modulo=self.modulo_a,
+            fase="INFERIOR",
+            orden=3,
+            url="/imagenes/m-a-inf-inactiva.png",
+            activo=False,
+        )
+        Imagen.objects.create(
+            modulo=self.modulo_a,
+            fase="SUPERIOR",
+            orden=1,
+            url="/imagenes/m-a-sup.png",
+            activo=True,
+        )
+        create_response = self._create_item(
+            self.mesa_a.id,
+            self.modulo_a.id,
+            fase="INFERIOR",
+        )
+        self.assertEqual(create_response.status_code, 201)
+        self.mesa_a.current_image_index = 1
+        self.mesa_a.save(update_fields=["current_image_index"])
+
+        response = self.client.get(
+            f"/api/mesa-queue-items/{create_response.data['id']}/"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["current_image_index"], 1)
+        self.assertEqual(response.data["imagenes_total"], 2)
+
     def test_create_allows_new_active_item_when_previous_is_hecho(self):
         MesaQueueItem.objects.create(
             mesa=self.mesa_a,
