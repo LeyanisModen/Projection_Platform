@@ -6,6 +6,7 @@ import sqlite3
 import tempfile
 import zipfile
 from datetime import timedelta
+from pathlib import Path
 
 from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -64,6 +65,98 @@ class PermissionAndDeviceAuthTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["count"], 2)
         self.assertEqual(len(response.data["results"]), 2)
+
+    def test_delete_project_removes_its_media_without_touching_other_projects(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.admin_token.key}")
+
+        with tempfile.TemporaryDirectory() as media_root:
+            with override_settings(MEDIA_ROOT=media_root):
+                planta = Planta.objects.create(
+                    nombre="Planta a borrar", proyecto=self.project_a, orden=1
+                )
+                modulo = Modulo.objects.create(
+                    nombre="A01", planta=planta, proyecto=self.project_a
+                )
+                planta.plano_imagen.save(
+                    "plano-a.pdf", SimpleUploadedFile("plano-a.pdf", b"plano")
+                )
+                planta.fichero_corte.save(
+                    "corte-a.zip", SimpleUploadedFile("corte-a.zip", b"corte")
+                )
+
+                project_image = (
+                    Path(media_root)
+                    / "imagenes"
+                    / str(self.project_a.id)
+                    / str(planta.id)
+                    / str(modulo.id)
+                    / "paso.png"
+                )
+                project_image.parent.mkdir(parents=True)
+                project_image.write_bytes(b"imagen")
+                Imagen.objects.create(
+                    modulo=modulo,
+                    fase="INFERIOR",
+                    orden=1,
+                    activo=True,
+                    url=(
+                        f"/media/imagenes/{self.project_a.id}/"
+                        f"{planta.id}/{modulo.id}/paso.png"
+                    ),
+                )
+                legacy_image = Imagen.objects.create(
+                    modulo=modulo,
+                    fase="INFERIOR",
+                    orden=2,
+                    activo=True,
+                    archivo=SimpleUploadedFile("legacy.png", b"legacy"),
+                )
+
+                project_photo = (
+                    Path(media_root)
+                    / "fotos"
+                    / str(self.project_a.id)
+                    / str(planta.id)
+                    / str(modulo.id)
+                    / "captura.jpg"
+                )
+                project_photo.parent.mkdir(parents=True)
+                project_photo.write_bytes(b"foto")
+                FotoFabricacion.objects.create(
+                    modulo=modulo,
+                    fase="INFERIOR",
+                    paso=0,
+                    url=(
+                        f"/media/fotos/{self.project_a.id}/"
+                        f"{planta.id}/{modulo.id}/captura.jpg"
+                    ),
+                )
+
+                other_project_file = (
+                    Path(media_root)
+                    / "imagenes"
+                    / str(self.project_b.id)
+                    / "keep.png"
+                )
+                other_project_file.parent.mkdir(parents=True)
+                other_project_file.write_bytes(b"keep")
+
+                plano_path = Path(planta.plano_imagen.path)
+                corte_path = Path(planta.fichero_corte.path)
+                legacy_image_path = Path(legacy_image.archivo.path)
+                with self.captureOnCommitCallbacks(execute=True):
+                    response = self.client.delete(
+                        f"/api/proyectos/{self.project_a.id}/"
+                    )
+
+                self.assertEqual(response.status_code, 204)
+                self.assertFalse(Proyecto.objects.filter(id=self.project_a.id).exists())
+                self.assertFalse(project_image.exists())
+                self.assertFalse(project_photo.exists())
+                self.assertFalse(plano_path.exists())
+                self.assertFalse(corte_path.exists())
+                self.assertFalse(legacy_image_path.exists())
+                self.assertTrue(other_project_file.exists())
 
     def test_device_heartbeat_requires_valid_device_token(self):
         response = self.client.post("/api/device/heartbeat/", {}, format="json")

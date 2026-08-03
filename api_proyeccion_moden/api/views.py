@@ -33,6 +33,7 @@ from api.models import (
     GrupoBastidor, MaterialPieza, MaterialInformado, MaterialOrigenCheck,
     MaterialTipo, MesaTipo,
 )
+from api.project_media import collect_project_media, delete_project_media
 from django.utils import timezone
 from rest_framework.authtoken.views import ObtainAuthToken
 from rest_framework.authtoken.models import Token
@@ -988,6 +989,15 @@ class ProyectoViewSet(viewsets.ModelViewSet):
             serializer.save(usuario=self.request.user)
         else:
             serializer.save()
+
+    def perform_destroy(self, instance):
+        media_snapshot = collect_project_media(instance)
+        with transaction.atomic():
+            instance.delete()
+            transaction.on_commit(
+                lambda: delete_project_media(media_snapshot),
+                robust=True,
+            )
 
     def _upsert_modulo_phase_detail(self, modulo, fase, fields):
         existing = DetalleModuloFase.objects.filter(modulo=modulo, fase=fase).first()
