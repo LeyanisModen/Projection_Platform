@@ -1441,6 +1441,200 @@ class PlanningFoundationTests(APITestCase):
             1,
         )
 
+    def test_mover_modulo_a_otro_bastidor_lo_traslada_a_su_mesa_inferior(self):
+        admin = User.objects.create_user(
+            username="move_module_admin",
+            password="pass123",
+            is_staff=True,
+        )
+        admin_token = Token.objects.create(user=admin)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {admin_token.key}")
+        grupo = self._crear_grupo("Grupo Mover Modulo")
+        mesa_1 = grupo.mesas.get(tipo="INFERIOR", indice=1)
+        mesa_2 = grupo.mesas.get(tipo="INFERIOR", indice=2)
+        origen = GrupoBastidor.objects.create(
+            proyecto=self.project,
+            indice=1,
+            nombre="Grupo 1",
+            asignado_a=grupo,
+        )
+        destino = GrupoBastidor.objects.create(
+            proyecto=self.project,
+            indice=2,
+            nombre="Grupo 2",
+            asignado_a=grupo,
+        )
+        self.modulo.grupo_bastidor = origen
+        self.modulo.orden_intra = 1
+        self.modulo.save(update_fields=["grupo_bastidor", "orden_intra"])
+        modulo_actual = Modulo.objects.create(
+            nombre="G1-ACTUAL",
+            proyecto=self.project,
+            planta=self.planta,
+            grupo_bastidor=origen,
+            orden_intra=2,
+        )
+        peer_1 = Modulo.objects.create(
+            nombre="G2-01",
+            proyecto=self.project,
+            planta=self.planta,
+            grupo_bastidor=destino,
+            orden_intra=1,
+        )
+        peer_2 = Modulo.objects.create(
+            nombre="G2-02",
+            proyecto=self.project,
+            planta=self.planta,
+            grupo_bastidor=destino,
+            orden_intra=2,
+        )
+        MesaQueueItem.objects.create(
+            mesa=mesa_1,
+            modulo=modulo_actual,
+            fase="INFERIOR",
+            status=MesaQueueStatus.MOSTRANDO,
+            position=0,
+            plan_group_index=1,
+        )
+        moved_item = MesaQueueItem.objects.create(
+            mesa=mesa_1,
+            modulo=self.modulo,
+            fase="INFERIOR",
+            status=MesaQueueStatus.EN_COLA,
+            position=1,
+            plan_group_index=1,
+        )
+        MesaQueueItem.objects.create(
+            mesa=mesa_2,
+            modulo=peer_1,
+            fase="INFERIOR",
+            status=MesaQueueStatus.MOSTRANDO,
+            position=0,
+            plan_group_index=2,
+        )
+        MesaQueueItem.objects.create(
+            mesa=mesa_2,
+            modulo=peer_2,
+            fase="INFERIOR",
+            status=MesaQueueStatus.EN_COLA,
+            position=1,
+            plan_group_index=2,
+        )
+        mesa_1.current_image_index = 4
+        mesa_1.save(update_fields=["current_image_index"])
+
+        response = self.client.post(
+            "/api/grupos-bastidor/move-modulo/",
+            {
+                "modulo_id": self.modulo.id,
+                "grupo_destino_id": destino.id,
+                "index_destino": 2,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.modulo.refresh_from_db()
+        moved_item.refresh_from_db()
+        mesa_1.refresh_from_db()
+        self.assertEqual(self.modulo.grupo_bastidor_id, destino.id)
+        self.assertEqual(moved_item.mesa_id, mesa_2.id)
+        self.assertEqual(moved_item.status, MesaQueueStatus.EN_COLA)
+        self.assertEqual(moved_item.plan_group_index, 2)
+        self.assertEqual(mesa_1.current_image_index, 4)
+        self.assertEqual(
+            list(
+                mesa_2.queue_items.filter(status__in=["MOSTRANDO", "EN_COLA"])
+                .order_by("position")
+                .values_list("modulo__nombre", flat=True)
+            ),
+            ["G2-01", "G2-02", "M-01"],
+        )
+
+        # Tambien repara datos creados por la version anterior: el modulo
+        # ya dice Grupo 2, pero su item todavia permanece en Mesa 1.
+        moved_item.mesa = mesa_1
+        moved_item.position = 1
+        moved_item.save(update_fields=["mesa", "position"])
+        repair_response = self.client.post(
+            "/api/grupos-bastidor/move-modulo/",
+            {
+                "modulo_id": self.modulo.id,
+                "grupo_destino_id": destino.id,
+                "index_destino": 2,
+            },
+            format="json",
+        )
+        self.assertEqual(repair_response.status_code, 200)
+        moved_item.refresh_from_db()
+        self.assertEqual(moved_item.mesa_id, mesa_2.id)
+
+    def test_no_mueve_de_mesa_un_modulo_que_ya_se_esta_mostrando(self):
+        admin = User.objects.create_user(
+            username="move_showing_module_admin",
+            password="pass123",
+            is_staff=True,
+        )
+        admin_token = Token.objects.create(user=admin)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {admin_token.key}")
+        grupo = self._crear_grupo("Grupo Mover Mostrando")
+        mesa_1 = grupo.mesas.get(tipo="INFERIOR", indice=1)
+        mesa_2 = grupo.mesas.get(tipo="INFERIOR", indice=2)
+        origen = GrupoBastidor.objects.create(
+            proyecto=self.project,
+            indice=1,
+            nombre="Grupo 1",
+            asignado_a=grupo,
+        )
+        destino = GrupoBastidor.objects.create(
+            proyecto=self.project,
+            indice=2,
+            nombre="Grupo 2",
+            asignado_a=grupo,
+        )
+        self.modulo.grupo_bastidor = origen
+        self.modulo.orden_intra = 1
+        self.modulo.save(update_fields=["grupo_bastidor", "orden_intra"])
+        peer = Modulo.objects.create(
+            nombre="G2-01",
+            proyecto=self.project,
+            planta=self.planta,
+            grupo_bastidor=destino,
+            orden_intra=1,
+        )
+        showing_item = MesaQueueItem.objects.create(
+            mesa=mesa_1,
+            modulo=self.modulo,
+            fase="INFERIOR",
+            status=MesaQueueStatus.MOSTRANDO,
+            position=0,
+            plan_group_index=1,
+        )
+        MesaQueueItem.objects.create(
+            mesa=mesa_2,
+            modulo=peer,
+            fase="INFERIOR",
+            status=MesaQueueStatus.MOSTRANDO,
+            position=0,
+            plan_group_index=2,
+        )
+
+        response = self.client.post(
+            "/api/grupos-bastidor/move-modulo/",
+            {
+                "modulo_id": self.modulo.id,
+                "grupo_destino_id": destino.id,
+                "index_destino": 1,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.modulo.refresh_from_db()
+        showing_item.refresh_from_db()
+        self.assertEqual(self.modulo.grupo_bastidor_id, origen.id)
+        self.assertEqual(showing_item.mesa_id, mesa_1.id)
+
     def test_solo_admin_puede_eliminar_modulo(self):
         response = self.client.delete(f"/api/modulos/{self.modulo.id}/")
 

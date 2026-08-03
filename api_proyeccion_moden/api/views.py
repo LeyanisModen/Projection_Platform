@@ -41,7 +41,9 @@ from api.project_media import (
 )
 from api.queue_sync import (
     EARLY_IMAGE_INDEX_LIMIT,
+    QueueRelocationError,
     capture_phase_assignment_hints,
+    reconcile_module_queue_after_bastidor_move,
     sync_module_phases,
     sync_new_module,
 )
@@ -2045,6 +2047,7 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
         return True, None
 
     @action(detail=False, methods=['post'], url_path='move-modulo')
+    @transaction.atomic
     def move_modulo(self, request):
         if not _is_admin(request.user):
             return Response({'detail': 'Solo admin puede mover modulos entre bastidores.'},
@@ -2152,6 +2155,19 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
 
         # Reindexar indices de grupos 1..N (puede haber borrado el origen).
         self._reindex_grupos(proyecto)
+
+        # El grupo del modulo y su cola operativa son una sola decision:
+        # al cambiar o reordenar el bastidor, corrige tambien asignaciones
+        # antiguas que hubieran quedado en otra mesa.
+        modulo.refresh_from_db(fields=['grupo_bastidor'])
+        try:
+            reconcile_module_queue_after_bastidor_move(modulo)
+        except QueueRelocationError as exc:
+            transaction.set_rollback(True)
+            return Response(
+                {'detail': str(exc)},
+                status=status.HTTP_409_CONFLICT,
+            )
 
         grupos = (
             proyecto.grupos_bastidor.prefetch_related('modulos')

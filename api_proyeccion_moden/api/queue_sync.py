@@ -16,6 +16,10 @@ ACTIVE_QUEUE_STATUSES = [MesaQueueStatus.EN_COLA, MesaQueueStatus.MOSTRANDO]
 EARLY_IMAGE_INDEX_LIMIT = 1
 
 
+class QueueRelocationError(Exception):
+    """Raised when a bastidor change would move work already on screen."""
+
+
 def capture_phase_assignment_hints(modulo, fases):
     """Remember the latest operational assignment before reset deletes it."""
     items = list(
@@ -302,3 +306,164 @@ def sync_new_module(modulo, assigned_by=None):
         assigned_by=assigned_by,
         prioritize=False,
     )
+
+
+def _persist_active_order(mesa, items, current):
+    current_id = current.id if current else None
+    if current_id is not None and all(item.id != current_id for item in items):
+        current_id = None
+
+    promoted = current_id is None and bool(items)
+    if promoted:
+        current_id = items[0].id
+
+    for position, item in enumerate(items):
+        desired_status = (
+            MesaQueueStatus.MOSTRANDO
+            if item.id == current_id
+            else MesaQueueStatus.EN_COLA
+        )
+        updates = []
+        if item.position != position:
+            item.position = position
+            updates.append("position")
+        if item.status != desired_status:
+            item.status = desired_status
+            updates.append("status")
+        if updates:
+            item.save(update_fields=updates)
+
+    if promoted or not items:
+        current_item = next(
+            (item for item in items if item.id == current_id),
+            None,
+        )
+        mesa.imagen_actual = current_item.imagen if current_item else None
+        mesa.current_image_index = 0
+        mesa.save(
+            update_fields=[
+                "imagen_actual",
+                "current_image_index",
+                "ultima_actualizacion",
+            ]
+        )
+
+
+def reconcile_module_queue_after_bastidor_move(modulo):
+    """Keep queued work aligned after an admin moves a module.
+
+    Inferior work follows the mesa already used by the destination bastidor.
+    Superior work keeps its current mesa while it remains in the same
+    operational group, because superior queues are intentionally distributed.
+    """
+    bastidor = getattr(modulo, "grupo_bastidor", None)
+    if not bastidor:
+        return []
+
+    active_items = list(
+        MesaQueueItem.objects.select_for_update()
+        .select_related("mesa", "mesa__grupo")
+        .filter(modulo=modulo, status__in=ACTIVE_QUEUE_STATUSES)
+        .order_by("id")
+    )
+    if not active_items:
+        return []
+
+    group = None
+    if bastidor.asignado_a_id:
+        group = GrupoMesas.objects.filter(
+            id=bastidor.asignado_a_id,
+            activa=True,
+        ).first()
+    else:
+        active_group_ids = {
+            item.mesa.grupo_id
+            for item in active_items
+            if item.mesa.grupo_id is not None
+        }
+        if len(active_group_ids) == 1:
+            group = GrupoMesas.objects.filter(
+                id=next(iter(active_group_ids)),
+                activa=True,
+            ).first()
+            if group:
+                bastidor.asignado_a = group
+                bastidor.save(update_fields=["asignado_a"])
+
+    if group is None:
+        group = _group_for_module(modulo, {})
+    if group is None:
+        return []
+
+    relocations = []
+    for item in active_items:
+        peer = (
+            _peer_assignment(modulo, item.fase, group)
+            if item.fase == Fase.INFERIOR
+            else None
+        )
+        if peer and peer.mesa.activa and peer.mesa.tipo == item.mesa.tipo:
+            target_mesa = peer.mesa
+            plan_group_index = peer.plan_group_index
+        elif item.mesa.grupo_id == group.id:
+            target_mesa = item.mesa
+            plan_group_index = bastidor.indice
+        else:
+            target_mesa, plan_group_index = _resolve_target(
+                modulo,
+                item.fase,
+                group,
+                {},
+            )
+
+        if target_mesa is None:
+            continue
+        if plan_group_index is None:
+            plan_group_index = bastidor.indice
+
+        if item.mesa_id != target_mesa.id and item.status == MesaQueueStatus.MOSTRANDO:
+            raise QueueRelocationError(
+                f'No se puede mover "{modulo.nombre}" al {bastidor.nombre}: '
+                f'ya se esta mostrando en {item.mesa.nombre}.'
+            )
+        relocations.append((item.id, item.mesa_id, target_mesa.id, plan_group_index))
+
+    moved_items = []
+    for item_id, source_mesa_id, target_mesa_id, plan_group_index in relocations:
+        item = MesaQueueItem.objects.select_for_update().get(id=item_id)
+        if source_mesa_id == target_mesa_id:
+            if item.plan_group_index != plan_group_index:
+                item.plan_group_index = plan_group_index
+                item.save(update_fields=["plan_group_index"])
+            continue
+
+        locked_mesas = {
+            mesa.id: mesa
+            for mesa in Mesa.objects.select_for_update().filter(
+                id__in=sorted({source_mesa_id, target_mesa_id})
+            )
+        }
+        source_mesa = locked_mesas[source_mesa_id]
+        target_mesa = locked_mesas[target_mesa_id]
+
+        item.mesa = target_mesa
+        item.plan_group_index = plan_group_index
+        item.save(update_fields=["mesa", "plan_group_index"])
+
+        source_items, source_current = _ordered_active_items(source_mesa)
+        _persist_active_order(source_mesa, source_items, source_current)
+
+        target_items, target_current = _ordered_active_items(target_mesa)
+        target_items = [queued for queued in target_items if queued.id != item.id]
+        peer_indexes = [
+            index
+            for index, queued in enumerate(target_items)
+            if queued.modulo.grupo_bastidor_id == bastidor.id
+            and queued.fase == item.fase
+        ]
+        insert_at = (max(peer_indexes) + 1) if peer_indexes else len(target_items)
+        target_items.insert(insert_at, item)
+        _persist_active_order(target_mesa, target_items, target_current)
+        moved_items.append(item)
+
+    return moved_items
