@@ -362,7 +362,7 @@ def reconcile_module_queue_after_bastidor_move(modulo):
 
     active_items = list(
         MesaQueueItem.objects.select_for_update()
-        .select_related("mesa", "mesa__grupo")
+        .select_related("mesa")
         .filter(modulo=modulo, status__in=ACTIVE_QUEUE_STATUSES)
         .order_by("id")
     )
