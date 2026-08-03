@@ -309,13 +309,21 @@ def sync_new_module(modulo, assigned_by=None):
 
 
 def _persist_active_order(mesa, items, current):
+    previous_current_id = next(
+        (
+            item.id
+            for item in items
+            if item.status == MesaQueueStatus.MOSTRANDO
+        ),
+        None,
+    )
     current_id = current.id if current else None
     if current_id is not None and all(item.id != current_id for item in items):
         current_id = None
 
-    promoted = current_id is None and bool(items)
-    if promoted:
+    if current_id is None and items:
         current_id = items[0].id
+    current_changed = previous_current_id != current_id
 
     for position, item in enumerate(items):
         desired_status = (
@@ -333,7 +341,7 @@ def _persist_active_order(mesa, items, current):
         if updates:
             item.save(update_fields=updates)
 
-    if promoted or not items:
+    if current_changed or not items:
         current_item = next(
             (item for item in items if item.id == current_id),
             None,
@@ -431,7 +439,11 @@ def reconcile_module_queue_after_bastidor_move(modulo):
     moved_items = []
     for item_id, source_mesa_id, target_mesa_id, plan_group_index in relocations:
         item = MesaQueueItem.objects.select_for_update().get(id=item_id)
-        if source_mesa_id == target_mesa_id:
+        same_mesa = source_mesa_id == target_mesa_id
+        if same_mesa and (
+            item.status == MesaQueueStatus.MOSTRANDO
+            or item.fase != Fase.INFERIOR
+        ):
             if item.plan_group_index != plan_group_index:
                 item.plan_group_index = plan_group_index
                 item.save(update_fields=["plan_group_index"])
@@ -446,12 +458,17 @@ def reconcile_module_queue_after_bastidor_move(modulo):
         source_mesa = locked_mesas[source_mesa_id]
         target_mesa = locked_mesas[target_mesa_id]
 
-        item.mesa = target_mesa
+        update_fields = []
+        if not same_mesa:
+            item.mesa = target_mesa
+            update_fields.append("mesa")
         item.plan_group_index = plan_group_index
-        item.save(update_fields=["mesa", "plan_group_index"])
+        update_fields.append("plan_group_index")
+        item.save(update_fields=update_fields)
 
-        source_items, source_current = _ordered_active_items(source_mesa)
-        _persist_active_order(source_mesa, source_items, source_current)
+        if not same_mesa:
+            source_items, source_current = _ordered_active_items(source_mesa)
+            _persist_active_order(source_mesa, source_items, source_current)
 
         target_items, target_current = _ordered_active_items(target_mesa)
         target_items = [queued for queued in target_items if queued.id != item.id]
@@ -461,7 +478,42 @@ def reconcile_module_queue_after_bastidor_move(modulo):
             if queued.modulo.grupo_bastidor_id == bastidor.id
             and queued.fase == item.fase
         ]
-        insert_at = (max(peer_indexes) + 1) if peer_indexes else len(target_items)
+        insert_at = len(target_items)
+        if peer_indexes:
+            insert_at = max(peer_indexes) + 1
+            # La cola inferior fabrica cada bastidor en orden inverso al
+            # card: el ultimo modulo colocado es el primero en salir.
+            for peer_index in peer_indexes:
+                peer_order = target_items[peer_index].modulo.orden_intra or 0
+                if peer_order < (modulo.orden_intra or 0):
+                    insert_at = peer_index
+                    break
+
+            current_index = next(
+                (
+                    index
+                    for index, queued in enumerate(target_items)
+                    if target_current and queued.id == target_current.id
+                ),
+                None,
+            )
+            current_is_same_bastidor = bool(
+                target_current
+                and target_current.modulo.grupo_bastidor_id == bastidor.id
+                and target_current.fase == item.fase
+            )
+            if (
+                current_is_same_bastidor
+                and current_index is not None
+                and insert_at <= current_index
+            ):
+                if target_mesa.current_image_index <= EARLY_IMAGE_INDEX_LIMIT:
+                    target_current = item
+                else:
+                    # No se interrumpe un modulo que ya paso del margen
+                    # inicial, aunque el card haya cambiado de orden.
+                    insert_at = max(peer_indexes) + 1
+
         target_items.insert(insert_at, item)
         _persist_active_order(target_mesa, target_items, target_current)
         moved_items.append(item)

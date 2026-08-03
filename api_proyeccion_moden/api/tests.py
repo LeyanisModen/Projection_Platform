@@ -1452,6 +1452,7 @@ class PlanningFoundationTests(APITestCase):
         grupo = self._crear_grupo("Grupo Mover Modulo")
         mesa_1 = grupo.mesas.get(tipo="INFERIOR", indice=1)
         mesa_2 = grupo.mesas.get(tipo="INFERIOR", indice=2)
+        mesa_sup = grupo.mesas.get(tipo="SUPERIOR", indice=3)
         origen = GrupoBastidor.objects.create(
             proyecto=self.project,
             indice=1,
@@ -1479,7 +1480,7 @@ class PlanningFoundationTests(APITestCase):
             proyecto=self.project,
             planta=self.planta,
             grupo_bastidor=destino,
-            orden_intra=1,
+            orden_intra=3,
         )
         peer_2 = Modulo.objects.create(
             nombre="G2-02",
@@ -1487,6 +1488,13 @@ class PlanningFoundationTests(APITestCase):
             planta=self.planta,
             grupo_bastidor=destino,
             orden_intra=2,
+        )
+        peer_3 = Modulo.objects.create(
+            nombre="G2-03",
+            proyecto=self.project,
+            planta=self.planta,
+            grupo_bastidor=destino,
+            orden_intra=1,
         )
         MesaQueueItem.objects.create(
             mesa=mesa_1,
@@ -1505,6 +1513,22 @@ class PlanningFoundationTests(APITestCase):
             plan_group_index=1,
         )
         MesaQueueItem.objects.create(
+            mesa=mesa_sup,
+            modulo=modulo_actual,
+            fase="SUPERIOR",
+            status=MesaQueueStatus.MOSTRANDO,
+            position=0,
+            plan_group_index=1,
+        )
+        moved_sup_item = MesaQueueItem.objects.create(
+            mesa=mesa_sup,
+            modulo=self.modulo,
+            fase="SUPERIOR",
+            status=MesaQueueStatus.EN_COLA,
+            position=1,
+            plan_group_index=1,
+        )
+        current_peer_item = MesaQueueItem.objects.create(
             mesa=mesa_2,
             modulo=peer_1,
             fase="INFERIOR",
@@ -1512,12 +1536,20 @@ class PlanningFoundationTests(APITestCase):
             position=0,
             plan_group_index=2,
         )
-        MesaQueueItem.objects.create(
+        second_peer_item = MesaQueueItem.objects.create(
             mesa=mesa_2,
             modulo=peer_2,
             fase="INFERIOR",
             status=MesaQueueStatus.EN_COLA,
             position=1,
+            plan_group_index=2,
+        )
+        first_peer_item = MesaQueueItem.objects.create(
+            mesa=mesa_2,
+            modulo=peer_3,
+            fase="INFERIOR",
+            status=MesaQueueStatus.EN_COLA,
+            position=2,
             plan_group_index=2,
         )
         mesa_1.current_image_index = 4
@@ -1528,7 +1560,7 @@ class PlanningFoundationTests(APITestCase):
             {
                 "modulo_id": self.modulo.id,
                 "grupo_destino_id": destino.id,
-                "index_destino": 2,
+                "index_destino": 3,
             },
             format="json",
         )
@@ -1539,8 +1571,12 @@ class PlanningFoundationTests(APITestCase):
         mesa_1.refresh_from_db()
         self.assertEqual(self.modulo.grupo_bastidor_id, destino.id)
         self.assertEqual(moved_item.mesa_id, mesa_2.id)
-        self.assertEqual(moved_item.status, MesaQueueStatus.EN_COLA)
+        self.assertEqual(moved_item.status, MesaQueueStatus.MOSTRANDO)
         self.assertEqual(moved_item.plan_group_index, 2)
+        moved_sup_item.refresh_from_db()
+        self.assertEqual(moved_sup_item.mesa_id, mesa_sup.id)
+        self.assertEqual(moved_sup_item.position, 1)
+        self.assertEqual(moved_sup_item.status, MesaQueueStatus.EN_COLA)
         self.assertEqual(mesa_1.current_image_index, 4)
         self.assertEqual(
             list(
@@ -1548,26 +1584,62 @@ class PlanningFoundationTests(APITestCase):
                 .order_by("position")
                 .values_list("modulo__nombre", flat=True)
             ),
-            ["G2-01", "G2-02", "M-01"],
+            ["M-01", "G2-01", "G2-02", "G2-03"],
         )
 
         # Tambien repara datos creados por la version anterior: el modulo
         # ya dice Grupo 2, pero su item todavia permanece en Mesa 1.
         moved_item.mesa = mesa_1
         moved_item.position = 1
-        moved_item.save(update_fields=["mesa", "position"])
+        moved_item.status = MesaQueueStatus.EN_COLA
+        moved_item.save(update_fields=["mesa", "position", "status"])
+        first_peer_item.status = MesaQueueStatus.MOSTRANDO
+        first_peer_item.save(update_fields=["status"])
         repair_response = self.client.post(
             "/api/grupos-bastidor/move-modulo/",
             {
                 "modulo_id": self.modulo.id,
                 "grupo_destino_id": destino.id,
-                "index_destino": 2,
+                "index_destino": 3,
             },
             format="json",
         )
         self.assertEqual(repair_response.status_code, 200)
         moved_item.refresh_from_db()
         self.assertEqual(moved_item.mesa_id, mesa_2.id)
+        self.assertEqual(moved_item.status, MesaQueueStatus.MOSTRANDO)
+
+        # Y reordena la cola aunque el modulo ya estuviera en la mesa
+        # correcta, que es el caso observado con A01 en staging.
+        moved_item.position = 3
+        moved_item.status = MesaQueueStatus.EN_COLA
+        moved_item.save(update_fields=["position", "status"])
+        current_peer_item.position = 0
+        current_peer_item.status = MesaQueueStatus.MOSTRANDO
+        current_peer_item.save(update_fields=["position", "status"])
+        second_peer_item.position = 1
+        second_peer_item.status = MesaQueueStatus.EN_COLA
+        second_peer_item.save(update_fields=["position", "status"])
+        first_peer_item.position = 2
+        first_peer_item.status = MesaQueueStatus.EN_COLA
+        first_peer_item.save(update_fields=["position", "status"])
+        mesa_2.current_image_index = 0
+        mesa_2.save(update_fields=["current_image_index"])
+
+        same_mesa_response = self.client.post(
+            "/api/grupos-bastidor/move-modulo/",
+            {
+                "modulo_id": self.modulo.id,
+                "grupo_destino_id": destino.id,
+                "index_destino": 3,
+            },
+            format="json",
+        )
+        self.assertEqual(same_mesa_response.status_code, 200)
+        moved_item.refresh_from_db()
+        self.assertEqual(moved_item.mesa_id, mesa_2.id)
+        self.assertEqual(moved_item.position, 0)
+        self.assertEqual(moved_item.status, MesaQueueStatus.MOSTRANDO)
 
     def test_no_mueve_de_mesa_un_modulo_que_ya_se_esta_mostrando(self):
         admin = User.objects.create_user(
