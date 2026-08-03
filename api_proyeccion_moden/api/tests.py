@@ -1417,6 +1417,142 @@ class PlanningFoundationTests(APITestCase):
         self.assertEqual(nuevo_items.get(fase="SUPERIOR").mesa_id, mesa_sup.id)
         self.assertEqual(nuevo_items.get(fase="INFERIOR").position, 1)
 
+        duplicate_response = self.client.post(
+            f"/api/proyectos/{self.project.id}/import-structure/",
+            {
+                "plantas": json.dumps(
+                    [{
+                        "nombre": "General",
+                        "orden": 2,
+                        "modulos": [{
+                            "nombre": "M-02",
+                            "ancho_cm": "10.00",
+                            "imagenes": [],
+                        }],
+                    }]
+                )
+            },
+            format="multipart",
+        )
+        self.assertEqual(duplicate_response.status_code, 200)
+        self.assertEqual(duplicate_response.data["stats"]["modulos"], 0)
+        self.assertEqual(
+            Modulo.objects.filter(proyecto=self.project, nombre="M-02").count(),
+            1,
+        )
+
+    def test_solo_admin_puede_eliminar_modulo(self):
+        response = self.client.delete(f"/api/modulos/{self.modulo.id}/")
+
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(Modulo.objects.filter(id=self.modulo.id).exists())
+
+    def test_eliminar_modulo_pendiente_limpia_media_y_promueve_siguiente(self):
+        admin = User.objects.create_user(
+            username="module_delete_admin",
+            password="pass123",
+            is_staff=True,
+        )
+        admin_token = Token.objects.create(user=admin)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {admin_token.key}")
+        grupo = self._crear_grupo("Grupo Eliminar Modulo")
+        mesa_inf = grupo.mesas.get(tipo="INFERIOR", indice=1)
+        bastidor = GrupoBastidor.objects.create(
+            proyecto=self.project,
+            indice=1,
+            nombre="Grupo 1",
+            asignado_a=grupo,
+        )
+        self.modulo.grupo_bastidor = bastidor
+        self.modulo.orden_intra = 1
+        self.modulo.save(update_fields=["grupo_bastidor", "orden_intra"])
+        siguiente = Modulo.objects.create(
+            nombre="M-SIG",
+            proyecto=self.project,
+            planta=self.planta,
+        )
+
+        with tempfile.TemporaryDirectory() as media_root:
+            with override_settings(MEDIA_ROOT=media_root):
+                image_path = (
+                    Path(media_root)
+                    / "imagenes"
+                    / str(self.project.id)
+                    / str(self.planta.id)
+                    / str(self.modulo.id)
+                    / "paso.png"
+                )
+                image_path.parent.mkdir(parents=True)
+                image_path.write_bytes(b"imagen")
+                imagen = Imagen.objects.create(
+                    modulo=self.modulo,
+                    fase="INFERIOR",
+                    orden=1,
+                    activo=True,
+                    url=(
+                        f"/media/imagenes/{self.project.id}/"
+                        f"{self.planta.id}/{self.modulo.id}/paso.png"
+                    ),
+                )
+                MesaQueueItem.objects.create(
+                    mesa=mesa_inf,
+                    modulo=self.modulo,
+                    fase="INFERIOR",
+                    imagen=imagen,
+                    status=MesaQueueStatus.MOSTRANDO,
+                    position=0,
+                )
+                next_item = MesaQueueItem.objects.create(
+                    mesa=mesa_inf,
+                    modulo=siguiente,
+                    fase="INFERIOR",
+                    status=MesaQueueStatus.EN_COLA,
+                    position=1,
+                )
+                mesa_inf.imagen_actual = imagen
+                mesa_inf.current_image_index = 1
+                mesa_inf.save(update_fields=["imagen_actual", "current_image_index"])
+
+                with self.captureOnCommitCallbacks(execute=True):
+                    response = self.client.delete(
+                        f"/api/modulos/{self.modulo.id}/"
+                    )
+
+                self.assertEqual(response.status_code, 204)
+                self.assertFalse(Modulo.objects.filter(id=self.modulo.id).exists())
+                self.assertFalse(GrupoBastidor.objects.filter(id=bastidor.id).exists())
+                self.assertFalse(image_path.exists())
+                next_item.refresh_from_db()
+                mesa_inf.refresh_from_db()
+                self.assertEqual(next_item.status, MesaQueueStatus.MOSTRANDO)
+                self.assertEqual(next_item.position, 0)
+                self.assertEqual(mesa_inf.current_image_index, 0)
+
+    def test_no_elimina_modulo_que_ya_avanza_en_fabricacion(self):
+        admin = User.objects.create_user(
+            username="module_delete_guard_admin",
+            password="pass123",
+            is_staff=True,
+        )
+        admin_token = Token.objects.create(user=admin)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {admin_token.key}")
+        grupo = self._crear_grupo("Grupo Eliminar Bloqueado")
+        mesa_inf = grupo.mesas.get(tipo="INFERIOR", indice=1)
+        MesaQueueItem.objects.create(
+            mesa=mesa_inf,
+            modulo=self.modulo,
+            fase="INFERIOR",
+            status=MesaQueueStatus.MOSTRANDO,
+            position=0,
+        )
+        mesa_inf.current_image_index = 2
+        mesa_inf.save(update_fields=["current_image_index"])
+
+        response = self.client.delete(f"/api/modulos/{self.modulo.id}/")
+
+        self.assertEqual(response.status_code, 409)
+        self.assertTrue(Modulo.objects.filter(id=self.modulo.id).exists())
+
     def test_reiniciar_fase_rechaza_fase_desconocida(self):
         self.modulo.estado = ModuloEstado.COMPLETADO
         self.modulo.save()

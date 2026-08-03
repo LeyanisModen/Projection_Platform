@@ -988,7 +988,8 @@
 }
 
 .grupo-modulo-reset,
-.grupo-modulo-camera {
+.grupo-modulo-camera,
+.grupo-modulo-delete {
     background: none;
     border: none;
     cursor: pointer;
@@ -1363,6 +1364,15 @@
 .btn-download-fotos:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+}
+
+.grupo-modulo-delete {
+    color: #b94138;
+}
+
+.grupo-modulo-delete:hover {
+    background-color: #fdeceb;
+    color: #8f211a;
 }
 
 .bastidor-download-modal {

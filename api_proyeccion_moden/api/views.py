@@ -33,8 +33,14 @@ from api.models import (
     GrupoBastidor, MaterialPieza, MaterialInformado, MaterialOrigenCheck,
     MaterialTipo, MesaTipo,
 )
-from api.project_media import collect_project_media, delete_project_media
+from api.project_media import (
+    collect_module_media,
+    collect_project_media,
+    delete_module_media,
+    delete_project_media,
+)
 from api.queue_sync import (
+    EARLY_IMAGE_INDEX_LIMIT,
     capture_phase_assignment_hints,
     sync_module_phases,
     sync_new_module,
@@ -1145,6 +1151,10 @@ class ProyectoViewSet(viewsets.ModelViewSet):
             'plano_cargado': False, 'planilla_cargada': False, 'errors': []
         }
         created_modulos = []
+        existing_module_names = {
+            _module_name_without_repeat_suffix(name).casefold()
+            for name in proyecto.modulos.values_list('nombre', flat=True)
+        }
 
         for planta_data in plantas_data:
             try:
@@ -1175,9 +1185,19 @@ class ProyectoViewSet(viewsets.ModelViewSet):
                 modulos_data = planta_data.get('modulos', [])
                 for modulo_data in modulos_data:
                     try:
+                        modulo_name = modulo_data.get('nombre', 'Sin nombre').strip()
+                        canonical_name = _module_name_without_repeat_suffix(
+                            modulo_name
+                        ).casefold()
+                        if canonical_name in existing_module_names:
+                            stats['errors'].append(
+                                f'El modulo {modulo_name} ya existe y se omitio.'
+                            )
+                            continue
+
                         # Create Modulo
                         modulo = Modulo.objects.create(
-                            nombre=modulo_data.get('nombre', 'Sin nombre'),
+                            nombre=modulo_name,
                             ancho_cm=_extract_module_fields(_row_to_canonical_dict(modulo_data)).get('ancho_cm'),
                             planta=planta,
                             proyecto=proyecto,
@@ -1186,6 +1206,7 @@ class ProyectoViewSet(viewsets.ModelViewSet):
                         )
                         _assign_modulo_to_group_on_create(modulo)
                         created_modulos.append(modulo)
+                        existing_module_names.add(canonical_name)
                         stats['modulos'] += 1
                         
                         imagenes_data = modulo_data.get('imagenes', [])
@@ -2221,6 +2242,127 @@ class ModuloViewSet(viewsets.ModelViewSet):
         elif proyecto_id is not None:
             queryset = queryset.filter(proyecto_id=proyecto_id)
         return queryset
+
+    def destroy(self, request, *args, **kwargs):
+        if not _is_admin(request.user):
+            return Response(
+                {'detail': 'Solo admin puede eliminar modulos.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        modulo = self.get_object()
+        has_done_queue = modulo.mesa_queue_items.filter(
+            status=MesaQueueStatus.HECHO
+        ).exists()
+        if (
+            modulo.estado != ModuloEstado.PENDIENTE
+            or modulo.inferior_hecho
+            or modulo.superior_hecho
+            or modulo.cerrado
+            or modulo.fotos_fabricacion.exists()
+            or has_done_queue
+        ):
+            return Response(
+                {
+                    'detail': (
+                        'No se puede eliminar: el modulo ya tiene fabricacion, '
+                        'fases terminadas o fotos.'
+                    )
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        showing_items = list(
+            modulo.mesa_queue_items.select_related('mesa').filter(
+                status=MesaQueueStatus.MOSTRANDO
+            )
+        )
+        advanced_mesas = [
+            item.mesa.nombre
+            for item in showing_items
+            if item.mesa.current_image_index > EARLY_IMAGE_INDEX_LIMIT
+        ]
+        if advanced_mesas:
+            return Response(
+                {
+                    'detail': (
+                        'No se puede eliminar mientras se fabrica en: '
+                        f'{", ".join(advanced_mesas)}.'
+                    )
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        media_snapshot = collect_module_media(modulo)
+        affected_mesa_ids = list(
+            modulo.mesa_queue_items.values_list('mesa_id', flat=True).distinct()
+        )
+        showing_mesa_ids = {item.mesa_id for item in showing_items}
+        bastidor = modulo.grupo_bastidor
+
+        with transaction.atomic():
+            modulo.delete()
+
+            if bastidor:
+                remaining_modules = list(
+                    bastidor.modulos.order_by('orden_intra', 'id')
+                )
+                if not remaining_modules:
+                    bastidor.delete()
+                else:
+                    for index, remaining in enumerate(remaining_modules, start=1):
+                        if remaining.orden_intra != index:
+                            remaining.orden_intra = index
+                            remaining.save(update_fields=['orden_intra'])
+
+            for mesa in Mesa.objects.select_for_update().filter(
+                id__in=affected_mesa_ids
+            ):
+                active_items = list(
+                    mesa.queue_items.filter(status__in=ACTIVE_QUEUE_STATUSES)
+                    .order_by('position', 'id')
+                )
+                current = next(
+                    (
+                        item for item in active_items
+                        if item.status == MesaQueueStatus.MOSTRANDO
+                    ),
+                    None,
+                )
+                if current is None and active_items:
+                    current = active_items[0]
+
+                for position, item in enumerate(active_items):
+                    desired_status = (
+                        MesaQueueStatus.MOSTRANDO
+                        if current and item.id == current.id
+                        else MesaQueueStatus.EN_COLA
+                    )
+                    updates = []
+                    if item.position != position:
+                        item.position = position
+                        updates.append('position')
+                    if item.status != desired_status:
+                        item.status = desired_status
+                        updates.append('status')
+                    if updates:
+                        item.save(update_fields=updates)
+
+                if mesa.id in showing_mesa_ids:
+                    mesa.imagen_actual = current.imagen if current else None
+                    mesa.current_image_index = 0
+                    mesa.save(update_fields=[
+                        'imagen_actual',
+                        'current_image_index',
+                        'ultima_actualizacion',
+                    ])
+
+            transaction.on_commit(
+                lambda: delete_module_media(media_snapshot),
+                robust=True,
+            )
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @staticmethod
     def _reiniciar_fases(modulo, fases, user=None):

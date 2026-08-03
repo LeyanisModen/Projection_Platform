@@ -345,6 +345,14 @@
                                                 [attr.aria-label]="'Reiniciar modulo completo ' + modulo.nombre">
                                                 <i class="fa fa-undo" aria-hidden="true"></i>
                                             </button>
+                                            <button type="button"
+                                                class="grupo-modulo-delete"
+                                                *ngIf="modulo.estado === 'PENDIENTE' && modulo.fotos_count === 0"
+                                                (click)="eliminarModulo(modulo, $event)"
+                                                title="Eliminar modulo pendiente"
+                                                [attr.aria-label]="'Eliminar modulo ' + modulo.nombre">
+                                                <i class="fa fa-trash" aria-hidden="true"></i>
+                                            </button>
                                         </span>
                                     </div>
                                     <div class="grupo-modulo-phases"

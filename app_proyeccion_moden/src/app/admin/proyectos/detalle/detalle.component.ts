@@ -899,90 +899,102 @@ export class ProyectoDetailComponent implements OnInit {
                 modulos: []
             };
 
-            // Iterate modules (direct children of project folder)
-            for await (const [childName, childHandle] of (projectHandle as any).entries()) {
-                if (childHandle.kind === 'file') {
-                    const fileName = childName;
-                    const ext = fileName.toLowerCase().substring(fileName.lastIndexOf('.'));
-                    if (['.db', '.sqlite', '.sqlite3'].includes(ext)) {
-                        technicalDbFile = await (childHandle as any).getFile();
-                    }
-                    continue;
+            const rootEntries: Array<[string, any]> = [];
+            for await (const entry of (projectHandle as any).entries()) {
+                rootEntries.push(entry);
+            }
+
+            for (const [entryName, entryHandle] of rootEntries) {
+                if (entryHandle.kind !== 'file') continue;
+                const ext = entryName.toLowerCase().substring(entryName.lastIndexOf('.'));
+                if (['.db', '.sqlite', '.sqlite3'].includes(ext)) {
+                    technicalDbFile = await entryHandle.getFile();
                 }
-                if (childHandle.kind === 'directory') {
-                    const moduloName = childName;
-                    const moduloHandle = childHandle;
+            }
 
-                    this.importProgress = `Procesando modulo: ${moduloName}...`;
-                    this.cdr.detectChanges();
+            const phaseOrder = ['INF', 'SD_S', 'SD_D', 'SUP'];
+            const phaseNames = new Set(phaseOrder);
+            const rootDirectories = rootEntries.filter(([, handle]) => handle.kind === 'directory');
+            const selectedFolderIsModule = rootDirectories.some(
+                ([name]) => phaseNames.has(name.toUpperCase())
+            );
+            const moduleDirectories: Array<[string, any]> = selectedFolderIsModule
+                ? [[projectHandle.name, projectHandle]]
+                : rootDirectories.filter(([name]) => !phaseNames.has(name.toUpperCase()));
 
-                    // Parse color code from folder name (e.g. "A01_ymgc" -> name="A01", code="ymgc")
-                    const parts = moduloName.split('_');
-                    let colorCode = 'xxxx';
-                    let cleanName = moduloName;
-                    if (parts.length > 1) {
-                        const lastPart = parts[parts.length - 1].toLowerCase();
-                        if (lastPart.length === 4 && /^[ygcvmox]+$/.test(lastPart)) {
-                            colorCode = lastPart;
-                            cleanName = parts.slice(0, -1).join('_');
-                        }
-                    }
-                    // Strip common prefixes (MODULO_, MOD_, MODULO-, MOD-) so names match DB records
-                    cleanName = cleanName.replace(/^(MODULO|MOD)[_-]/i, '');
+            for (const [moduloName, moduloHandle] of moduleDirectories) {
+                this.importProgress = `Procesando modulo: ${moduloName}...`;
+                this.cdr.detectChanges();
 
-                    const moduloData: any = {
-                        nombre: cleanName,
-                        codigos_color: colorCode,
-                        imagenes: []
-                    };
-
-                    const phaseFolders = new Map<string, { name: string; handle: any }>();
-                    for await (const [faseName, faseHandle] of moduloHandle.entries()) {
-                        if (faseHandle.kind !== 'directory') continue;
-                        const normalizedName = faseName.toUpperCase();
-                        if (!['INF', 'SD_S', 'SD_D', 'SUP'].includes(normalizedName)) continue;
-                        phaseFolders.set(normalizedName, { name: faseName, handle: faseHandle });
-                    }
-
-                    const phaseOrder = ['INF', 'SD_S', 'SD_D', 'SUP'];
-                    const nextImageOrder: Record<'INFERIOR' | 'SUPERIOR', number> = {
-                        INFERIOR: 1,
-                        SUPERIOR: 1
-                    };
-
-                    for (const phaseFolderName of phaseOrder) {
-                        const phaseFolder = phaseFolders.get(phaseFolderName);
-                        if (!phaseFolder) continue;
-
-                        const faseName = phaseFolder.name;
-                        const faseHandle = phaseFolder.handle;
-                        const fase: 'INFERIOR' | 'SUPERIOR' =
-                            phaseFolderName === 'INF' ? 'INFERIOR' : 'SUPERIOR';
-
-                        // Collect image files first, then sort alphabetically
-                        const imgFiles: Array<[string, any]> = [];
-                        for await (const [fileName, fileHandle] of faseHandle.entries()) {
-                            if (fileHandle.kind !== 'file') continue;
-                            const ext = fileName.toLowerCase().substring(fileName.lastIndexOf('.'));
-                            if (!validExtensions.includes(ext)) continue;
-                            imgFiles.push([fileName, fileHandle]);
-                        }
-                        imgFiles.sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }));
-
-                        for (const [fileName, fileHandle] of imgFiles) {
-                            const file = await fileHandle.getFile();
-                            const formFileKey = `MOD_${moduloName}_${faseName}_${fileName}`;
-                            formData.append(formFileKey, file);
-
-                            moduloData.imagenes.push({
-                                filename: formFileKey,
-                                fase: fase,
-                                orden: nextImageOrder[fase]++
-                            });
-                        }
-                    }
-                    plantaUnicaData.modulos.push(moduloData);
+                const phaseFolders = new Map<string, { name: string; handle: any }>();
+                for await (const [faseName, faseHandle] of moduloHandle.entries()) {
+                    if (faseHandle.kind !== 'directory') continue;
+                    const normalizedName = faseName.toUpperCase();
+                    if (!phaseNames.has(normalizedName)) continue;
+                    phaseFolders.set(normalizedName, { name: faseName, handle: faseHandle });
                 }
+                if (phaseFolders.size === 0) continue;
+
+                // Parse color code from folder name (e.g. "A01_ymgc" -> name="A01", code="ymgc")
+                const parts = moduloName.split('_');
+                let colorCode = 'xxxx';
+                let cleanName = moduloName;
+                if (parts.length > 1) {
+                    const lastPart = parts[parts.length - 1].toLowerCase();
+                    if (lastPart.length === 4 && /^[ygcvmox]+$/.test(lastPart)) {
+                        colorCode = lastPart;
+                        cleanName = parts.slice(0, -1).join('_');
+                    }
+                }
+                cleanName = cleanName.replace(/^(MODULO|MOD)[_-]/i, '');
+
+                const moduloData: any = {
+                    nombre: cleanName,
+                    codigos_color: colorCode,
+                    imagenes: []
+                };
+                const nextImageOrder: Record<'INFERIOR' | 'SUPERIOR', number> = {
+                    INFERIOR: 1,
+                    SUPERIOR: 1
+                };
+
+                for (const phaseFolderName of phaseOrder) {
+                    const phaseFolder = phaseFolders.get(phaseFolderName);
+                    if (!phaseFolder) continue;
+
+                    const fase: 'INFERIOR' | 'SUPERIOR' =
+                        phaseFolderName === 'INF' ? 'INFERIOR' : 'SUPERIOR';
+                    const imgFiles: Array<[string, any]> = [];
+                    for await (const [fileName, fileHandle] of phaseFolder.handle.entries()) {
+                        if (fileHandle.kind !== 'file') continue;
+                        const ext = fileName.toLowerCase().substring(fileName.lastIndexOf('.'));
+                        if (!validExtensions.includes(ext)) continue;
+                        imgFiles.push([fileName, fileHandle]);
+                    }
+                    imgFiles.sort((a, b) =>
+                        a[0].localeCompare(b[0], undefined, { numeric: true })
+                    );
+
+                    for (const [fileName, fileHandle] of imgFiles) {
+                        const file = await fileHandle.getFile();
+                        const formFileKey = `MOD_${moduloName}_${phaseFolder.name}_${fileName}`;
+                        formData.append(formFileKey, file);
+                        moduloData.imagenes.push({
+                            filename: formFileKey,
+                            fase,
+                            orden: nextImageOrder[fase]++
+                        });
+                    }
+                }
+                plantaUnicaData.modulos.push(moduloData);
+            }
+
+            if (plantaUnicaData.modulos.length === 0) {
+                this.importing = false;
+                this.importProgress = '';
+                alert('No se encontraron modulos con carpetas INF, SUP, SD_S o SD_D.');
+                this.cdr.detectChanges();
+                return;
             }
 
             this.importProgress = 'Subiendo datos...';
@@ -1454,6 +1466,24 @@ export class ProyectoDetailComponent implements OnInit {
                 console.error('Error downloading ZIP', err);
                 this.downloadingZip = false;
                 alert('Error descargando fotos');
+                this.cdr.detectChanges();
+            }
+        });
+    }
+
+    eliminarModulo(modulo: GrupoBastidorModulo, event?: Event): void {
+        event?.stopPropagation();
+        const confirmed = confirm(
+            `Eliminar definitivamente ${modulo.nombre}? ` +
+            'Se quitaran sus imagenes y sus asignaciones pendientes de las mesas.'
+        );
+        if (!confirmed) return;
+
+        this.api.deleteModulo(modulo.id).subscribe({
+            next: () => this.loadData(),
+            error: (err: any) => {
+                console.error('Error eliminando modulo', err);
+                alert(err?.error?.detail || 'No se pudo eliminar el modulo.');
                 this.cdr.detectChanges();
             }
         });

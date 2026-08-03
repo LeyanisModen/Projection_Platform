@@ -596,6 +596,13 @@ export class ApiService {
         return this.http.post<Modulo>(`${this.baseUrl}/modulos/${id}/completar/`, {}, { headers: this.getHeaders() });
     }
 
+    deleteModulo(id: number): Observable<void> {
+        return this.http.delete<void>(
+            `${this.baseUrl}/modulos/${id}/`,
+            { headers: this.getHeaders() }
+        );
+    }
+
     getGruposBastidor(proyectoId: number): Observable<GrupoBastidor[]> {
         return this.http.get<GrupoBastidor[]>(
             `${this.baseUrl}/grupos-bastidor/?proyecto=${proyectoId}`,

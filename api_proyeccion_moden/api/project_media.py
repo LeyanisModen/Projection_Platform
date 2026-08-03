@@ -21,6 +21,15 @@ class ProjectMediaSnapshot:
     media_urls: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class ModuleMediaSnapshot:
+    project_id: int
+    plant_id: int
+    module_id: int
+    storage_files: tuple[str, ...]
+    media_urls: tuple[str, ...]
+
+
 def collect_project_media(project):
     """Collect file references before the project's cascade delete runs."""
     plant_files = Planta.objects.filter(proyecto=project).values_list(
@@ -49,6 +58,28 @@ def collect_project_media(project):
     return ProjectMediaSnapshot(
         project_id=project.pk,
         storage_files=tuple(sorted(storage_files)),
+        media_urls=tuple(sorted(set(image_urls).union(photo_urls))),
+    )
+
+
+def collect_module_media(module):
+    storage_files = tuple(sorted(
+        Imagen.objects.filter(modulo=module)
+        .exclude(archivo='')
+        .exclude(archivo__isnull=True)
+        .values_list('archivo', flat=True)
+    ))
+    image_urls = Imagen.objects.filter(modulo=module).exclude(
+        url=''
+    ).exclude(url__isnull=True).values_list('url', flat=True)
+    photo_urls = FotoFabricacion.objects.filter(modulo=module).exclude(
+        url=''
+    ).values_list('url', flat=True)
+    return ModuleMediaSnapshot(
+        project_id=module.proyecto_id,
+        plant_id=module.planta_id or 0,
+        module_id=module.pk,
+        storage_files=storage_files,
         media_urls=tuple(sorted(set(image_urls).union(photo_urls))),
     )
 
@@ -141,4 +172,39 @@ def delete_project_media(snapshot):
         # successful and leave an actionable error for operational cleanup.
         logger.exception(
             'Could not fully delete media for project %s', snapshot.project_id
+        )
+
+
+def delete_module_media(snapshot):
+    """Delete only the unreferenced files and directories of one module."""
+    try:
+        for file_name in snapshot.storage_files:
+            if not _storage_file_is_referenced(file_name):
+                default_storage.delete(file_name)
+
+        for url in snapshot.media_urls:
+            if _media_url_is_referenced(url):
+                continue
+            relative_path = _relative_media_path(url)
+            local_path = _safe_local_path(relative_path)
+            if local_path and local_path.is_file():
+                local_path.unlink()
+
+        for category in ('imagenes', 'fotos'):
+            relative_directory = (
+                f'{category}/{snapshot.project_id}/'
+                f'{snapshot.plant_id}/{snapshot.module_id}'
+            )
+            if _directory_has_references(relative_directory):
+                logger.warning(
+                    'Keeping module media directory with active references: %s',
+                    relative_directory,
+                )
+                continue
+            local_directory = _safe_local_path(relative_directory)
+            if local_directory and local_directory.is_dir():
+                shutil.rmtree(local_directory)
+    except Exception:
+        logger.exception(
+            'Could not fully delete media for module %s', snapshot.module_id
         )
