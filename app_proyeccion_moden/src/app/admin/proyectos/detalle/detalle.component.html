@@ -311,7 +311,8 @@
                                     [class.is-not-movable]="!isModuloMovible(modulo)">
                                     <div class="grupo-modulo-main">
                                         <span class="grupo-modulo-nombre">
-                                            {{ modulo.nombre }}
+                                            <span class="grupo-modulo-nombre-texto"
+                                                [title]="modulo.nombre">{{ modulo.nombre }}</span>
                                             <span *ngIf="modulo.tipo_modulo"
                                                 class="grupo-modulo-tipo-chip"
                                                 [class.tipo-girado]="modulo.tipo_modulo === 'CENTRAL_GIRADO'"
