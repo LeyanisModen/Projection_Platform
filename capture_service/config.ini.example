@@ -93,6 +93,10 @@ enabled = true
 threshold_blurry = 2
 threshold_warning = 10
 
+; A low or inconclusive first frame is not final. Retry during the active
+; window so the warning can recover once the camera sees a detailed image.
+retry_minutes = 15
+
 ; If the first frame of the day is too dark or too flat, the service
 ; reports 'unknown' instead of a false dirty-lens warning.
 min_brightness = 18

@@ -106,8 +106,9 @@ class Config:
         self.active_start_hour = 5
         self.active_end_hour = 19
 
-        # Daily sharpness check (uses variance of Laplacian on the first
-        # frame of the day; low variance = blurry / dirty lens).
+        # Sharpness check starts on the first active frame of the day.
+        # Doubtful results are retried because an arbitrary projected scene
+        # is not reliable enough to diagnose a dirty lens from one sample.
         self.sharpness_enabled = True
         # Keep the visible "clean lens" warning very conservative. The
         # projected table can be dark/plain at 05:00, so low Laplacian is
@@ -116,6 +117,7 @@ class Config:
         self.sharpness_threshold_warning = 10.0
         self.sharpness_min_brightness = 18.0
         self.sharpness_min_contrast = 8.0
+        self.sharpness_retry_minutes = 15.0
 
         if path.exists():
             self._load(path)
@@ -184,6 +186,9 @@ class Config:
             )
             self.sharpness_min_contrast = s.getfloat(
                 'min_contrast', self.sharpness_min_contrast
+            )
+            self.sharpness_retry_minutes = s.getfloat(
+                'retry_minutes', self.sharpness_retry_minutes
             )
 
     @staticmethod
@@ -285,11 +290,13 @@ _stats = {
     'last_camera_ok_at': None,
     'last_camera_error_at': None,
     'skipped_out_of_schedule': 0,
-    # Sharpness check (runs once per day on the first active tick)
+    # Sharpness check starts on the first active tick. Low-confidence
+    # results are retried during the day so an early dark frame is not final.
     'sharpness_status': 'unknown',  # unknown | ok | warning | blurry
     'sharpness_score': None,
     'sharpness_checked_at': None,
     'sharpness_checked_date': None,
+    'sharpness_blurry_streak': 0,
 }
 
 
@@ -343,16 +350,46 @@ def _sharpness_status_for(score: float) -> str:
     return 'ok'
 
 
+def _confirmed_sharpness_status(score: float, blurry_streak: int):
+    """Require two very-low readings before reporting a dirty lens."""
+    raw_status = _sharpness_status_for(score)
+    if raw_status == 'blurry':
+        next_streak = blurry_streak + 1
+        if next_streak < 2:
+            return 'warning', next_streak
+        return 'blurry', next_streak
+    return raw_status, 0
+
+
+def _sharpness_check_due(now=None) -> bool:
+    now = now or datetime.now()
+    today_iso = now.date().isoformat()
+    with _stats_lock:
+        checked_date = _stats['sharpness_checked_date']
+        checked_at = _stats['sharpness_checked_at']
+        status = _stats['sharpness_status']
+        blurry_streak = _stats['sharpness_blurry_streak']
+
+    if checked_date != today_iso:
+        return True
+    if status not in {'unknown', 'blurry'} and blurry_streak == 0:
+        return False
+    if not checked_at:
+        return True
+    try:
+        checked_datetime = datetime.fromisoformat(checked_at)
+    except (TypeError, ValueError):
+        return True
+    retry_seconds = max(60.0, CONFIG.sharpness_retry_minutes * 60.0)
+    return (now - checked_datetime).total_seconds() >= retry_seconds
+
+
 def _ensure_sharpness_checked_today():
-    """Runs the sharpness analysis once per active day. Needs _camera_lock
-    on entry. No-op if already checked today, disabled, or we already
-    have a fresh capture in flight."""
+    """Run the daily analysis and retry doubtful results during the day."""
     if not CONFIG.sharpness_enabled:
         return
-    today_iso = datetime.now().date().isoformat()
-    with _stats_lock:
-        if _stats['sharpness_checked_date'] == today_iso:
-            return
+    if not _sharpness_check_due():
+        return
     try:
         with _camera_lock:
             ret, frame = capture_frame()
@@ -365,18 +402,26 @@ def _ensure_sharpness_checked_today():
             or contrast < CONFIG.sharpness_min_contrast
         ):
             status = 'unknown'
+            blurry_streak = 0
         else:
-            status = _sharpness_status_for(score)
-        now_iso = datetime.now().isoformat(timespec='seconds')
+            with _stats_lock:
+                previous_streak = _stats['sharpness_blurry_streak']
+            status, blurry_streak = _confirmed_sharpness_status(
+                score,
+                previous_streak,
+            )
+        checked_now = datetime.now()
+        now_iso = checked_now.isoformat(timespec='seconds')
         with _stats_lock:
             _stats['sharpness_score'] = round(score, 2)
             _stats['sharpness_status'] = status
             _stats['sharpness_checked_at'] = now_iso
-            _stats['sharpness_checked_date'] = today_iso
+            _stats['sharpness_checked_date'] = checked_now.date().isoformat()
+            _stats['sharpness_blurry_streak'] = blurry_streak
         print(
             f'[Sharpness] {status} '
             f'(score={score:.1f}, brightness={brightness:.1f}, contrast={contrast:.1f}) '
-            f'for {CONFIG.mesa_id}'
+            f'for {CONFIG.mesa_id}; blurry_streak={blurry_streak}'
         )
     except Exception as exc:
         _set_last_error(f'sharpness: {exc}')
@@ -631,8 +676,7 @@ def documentation_loop():
             time.sleep(min(30.0, max(CONFIG.interval_seconds, 10.0)))
             continue
 
-        # First active tick of the day: run the sharpness self-test so
-        # the operator is warned early if the lens is dirty.
+        # Start the daily self-test and retry any doubtful result later.
         _ensure_sharpness_checked_today()
 
         try:

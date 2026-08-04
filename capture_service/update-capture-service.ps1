@@ -222,6 +222,7 @@ try {
         Set-IniValue $configPath 'sharpness' 'threshold_warning' '10'
         Set-IniValue $configPath 'sharpness' 'min_brightness' '18'
         Set-IniValue $configPath 'sharpness' 'min_contrast' '8'
+        Set-IniValue $configPath 'sharpness' 'retry_minutes' '15'
     }
 
     [System.IO.File]::WriteAllText(

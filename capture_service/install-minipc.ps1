@@ -494,7 +494,8 @@ relanza el instalador (el PATH solo se refresca al crear el proceso).
         Set-IniValue $configPath 'sharpness' 'threshold_warning' '10'
         Set-IniValue $configPath 'sharpness' 'min_brightness' '18'
         Set-IniValue $configPath 'sharpness' 'min_contrast' '8'
-        Write-Host "  Â· sharpness: threshold_blurry=2, threshold_warning=10"
+        Set-IniValue $configPath 'sharpness' 'retry_minutes' '15'
+        Write-Host "  Â· sharpness: threshold_blurry=2, retry_minutes=15"
     }
 
     Step "Auto-arranque (tarea programada 'MODEN Player')"
