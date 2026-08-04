@@ -102,6 +102,14 @@ class Config:
         self.sync_end_hour = 5
         self.sync_interval_seconds = 60.0
         self.local_retention_days = 7
+        # Google Drive Desktop must not display dialogs over the production
+        # kiosk. Keep the process alive only around the nightly sync/update.
+        self.drive_guard_enabled = True
+        self.drive_start_hour = 0
+        self.drive_start_minute = 45
+        self.drive_stop_hour = 6
+        self.drive_stop_minute = 35
+        self.drive_guard_interval_seconds = 30.0
         self.active_days = {0, 1, 2, 3, 4}  # MON..FRI
         self.active_start_hour = 6
         self.active_start_minute = 50
@@ -165,6 +173,21 @@ class Config:
                 self.sync_interval_seconds,
             )
             self.local_retention_days = d.getint('local_retention_days', self.local_retention_days)
+            self.drive_guard_enabled = d.getboolean(
+                'drive_guard_enabled', self.drive_guard_enabled
+            )
+            self.drive_start_hour = d.getint('drive_start_hour', self.drive_start_hour)
+            self.drive_start_minute = d.getint(
+                'drive_start_minute', self.drive_start_minute
+            )
+            self.drive_stop_hour = d.getint('drive_stop_hour', self.drive_stop_hour)
+            self.drive_stop_minute = d.getint(
+                'drive_stop_minute', self.drive_stop_minute
+            )
+            self.drive_guard_interval_seconds = d.getfloat(
+                'drive_guard_interval_seconds',
+                self.drive_guard_interval_seconds,
+            )
             days_raw = d.get('active_days', 'MON,TUE,WED,THU,FRI')
             self.active_days = {
                 DAY_NAME_TO_INDEX[x.strip().upper()]
@@ -293,6 +316,9 @@ _stats = {
     'last_sync_files': 0,
     'last_sync_bytes': 0,
     'last_sync_error': None,
+    'drive_process_running': None,
+    'drive_process_last_action': None,
+    'drive_process_error': None,
     'last_error': None,
     'camera_available': None,
     'last_camera_ok_at': None,
@@ -460,6 +486,209 @@ def in_sync_window(now: datetime = None) -> bool:
     if start > end:
         return current >= start or current < end
     return True
+
+
+def in_drive_process_window(now: datetime = None) -> bool:
+    if not CONFIG.drive_guard_enabled:
+        return False
+    now = now or datetime.now()
+    start = dtime(CONFIG.drive_start_hour, CONFIG.drive_start_minute)
+    stop = dtime(CONFIG.drive_stop_hour, CONFIG.drive_stop_minute)
+    current = now.time()
+    if start < stop:
+        return start <= current < stop
+    if start > stop:
+        return current >= start or current < stop
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Google Drive process guard
+# ---------------------------------------------------------------------------
+def _drive_maintenance_path() -> Path:
+    return Path(__file__).resolve().parent / '.drive_maintenance'
+
+
+def _drive_maintenance_requested() -> bool:
+    path = _drive_maintenance_path()
+    try:
+        if not path.is_file():
+            return False
+        # The updater normally removes this marker. Expiry prevents a failed
+        # manual update from leaving Drive active during production forever.
+        if time.time() - path.stat().st_mtime <= 30 * 60:
+            return True
+        path.unlink(missing_ok=True)
+    except OSError:
+        return False
+    return False
+
+
+def _hidden_process_flags(detached=False):
+    if os.name != 'nt':
+        return 0
+    flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+    if detached:
+        flags |= getattr(subprocess, 'DETACHED_PROCESS', 0)
+        flags |= getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0)
+    return flags
+
+
+def _google_drive_is_running() -> bool:
+    if os.name != 'nt':
+        return False
+    result = subprocess.run(
+        ['tasklist.exe', '/FI', 'IMAGENAME eq GoogleDriveFS.exe', '/NH'],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        creationflags=_hidden_process_flags(),
+    )
+    return result.returncode == 0 and 'googledrivefs.exe' in result.stdout.lower()
+
+
+def _find_google_drive_executable():
+    if os.name != 'nt':
+        return None
+
+    candidates = []
+    program_files = os.environ.get('PROGRAMFILES')
+    local_app_data = os.environ.get('LOCALAPPDATA')
+    if program_files:
+        root = Path(program_files) / 'Google' / 'Drive File Stream'
+        candidates.append(root / 'GoogleDriveFS.exe')
+        if root.exists():
+            candidates.extend(root.glob('*/GoogleDriveFS.exe'))
+    if local_app_data:
+        root = Path(local_app_data) / 'Google' / 'DriveFS'
+        candidates.append(root / 'GoogleDriveFS.exe')
+        if root.exists():
+            candidates.extend(root.glob('*/GoogleDriveFS.exe'))
+
+    existing = []
+    for candidate in candidates:
+        try:
+            if candidate.is_file():
+                existing.append(candidate)
+        except OSError:
+            continue
+    if not existing:
+        return None
+    return max(existing, key=lambda path: path.stat().st_mtime)
+
+
+def _disable_google_drive_autostart():
+    if os.name != 'nt':
+        return
+    try:
+        import winreg
+
+        key_path = r'Software\Microsoft\Windows\CurrentVersion\Run'
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            key_path,
+            0,
+            winreg.KEY_READ | winreg.KEY_SET_VALUE,
+        ) as key:
+            drive_values = []
+            index = 0
+            while True:
+                try:
+                    name, value, _ = winreg.EnumValue(key, index)
+                except OSError:
+                    break
+                if 'googledrivefs' in f'{name} {value}'.lower():
+                    drive_values.append(name)
+                index += 1
+            for name in drive_values:
+                winreg.DeleteValue(key, name)
+                print(f'[DriveGuard] Disabled Google Drive autostart value: {name}')
+    except (ImportError, OSError) as exc:
+        print(f'[DriveGuard] Could not change Google Drive autostart: {exc}')
+
+
+def _start_google_drive():
+    executable = _find_google_drive_executable()
+    if executable is None:
+        raise FileNotFoundError('GoogleDriveFS.exe not found')
+    subprocess.Popen(
+        [str(executable)],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        close_fds=True,
+        creationflags=_hidden_process_flags(detached=True),
+    )
+
+
+def _stop_google_drive():
+    if os.name != 'nt':
+        return
+    subprocess.run(
+        ['taskkill.exe', '/IM', 'GoogleDriveFS.exe', '/T'],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        creationflags=_hidden_process_flags(),
+    )
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        if not _google_drive_is_running():
+            return
+        time.sleep(0.5)
+    subprocess.run(
+        ['taskkill.exe', '/IM', 'GoogleDriveFS.exe', '/T', '/F'],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        creationflags=_hidden_process_flags(),
+    )
+
+
+def _apply_google_drive_process_policy(now: datetime = None):
+    if not CONFIG.drive_guard_enabled or os.name != 'nt':
+        return
+
+    action = None
+    error = None
+    try:
+        running = _google_drive_is_running()
+        if in_drive_process_window(now) or _drive_maintenance_requested():
+            if not running:
+                _start_google_drive()
+                action = 'started'
+                print('[DriveGuard] Google Drive started for the nightly window.')
+        elif running:
+            _stop_google_drive()
+            action = 'stopped'
+            print('[DriveGuard] Google Drive stopped to protect the production kiosk.')
+        running = _google_drive_is_running()
+    except Exception as exc:
+        running = None
+        error = str(exc)
+        print(f'[DriveGuard] Error: {exc}')
+
+    with _stats_lock:
+        _stats['drive_process_running'] = running
+        _stats['drive_process_error'] = error
+        if action:
+            _stats['drive_process_last_action'] = (
+                f'{action} {datetime.now().isoformat(timespec="seconds")}'
+            )
+
+
+def google_drive_process_guard_loop():
+    if not CONFIG.drive_guard_enabled or os.name != 'nt':
+        return
+    _disable_google_drive_autostart()
+    print(
+        '[DriveGuard] Enabled. Drive process window='
+        f'{CONFIG.drive_start_hour:02d}:{CONFIG.drive_start_minute:02d}-'
+        f'{CONFIG.drive_stop_hour:02d}:{CONFIG.drive_stop_minute:02d}'
+    )
+    while True:
+        _apply_google_drive_process_policy()
+        time.sleep(max(15.0, CONFIG.drive_guard_interval_seconds))
 
 
 # ---------------------------------------------------------------------------
@@ -813,6 +1042,12 @@ class CaptureHandler(BaseHTTPRequestHandler):
             payload['output_dir'] = str(CONFIG.output_dir)
             payload['sync_enabled'] = CONFIG.sync_enabled
             payload['sync_window'] = f'{CONFIG.sync_start_hour:02d}:00-{CONFIG.sync_end_hour:02d}:00'
+            payload['drive_process_window_active'] = in_drive_process_window()
+            payload['drive_maintenance_active'] = _drive_maintenance_requested()
+            payload['drive_process_window'] = (
+                f'{CONFIG.drive_start_hour:02d}:{CONFIG.drive_start_minute:02d}-'
+                f'{CONFIG.drive_stop_hour:02d}:{CONFIG.drive_stop_minute:02d}'
+            )
             payload['local_retention_days'] = CONFIG.local_retention_days
             payload['image_rotation'] = CONFIG.image_rotation
             self._respond_json(200, payload)
@@ -986,6 +1221,13 @@ class CaptureHandler(BaseHTTPRequestHandler):
 # Main
 # ---------------------------------------------------------------------------
 def main():
+    drive_guard_thread = threading.Thread(
+        target=google_drive_process_guard_loop,
+        name='GoogleDriveProcessGuard',
+        daemon=True,
+    )
+    drive_guard_thread.start()
+
     # Start the documentation thread (no-op if disabled in config)
     doc_thread = threading.Thread(
         target=documentation_loop, name='DocumentationLoop', daemon=True

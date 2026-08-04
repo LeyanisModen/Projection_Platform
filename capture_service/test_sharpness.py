@@ -2,6 +2,7 @@ import importlib.util
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 
 MODULE_PATH = Path(__file__).with_name('capture_service.py')
@@ -114,6 +115,118 @@ class ActiveWindowTests(unittest.TestCase):
         self.assertFalse(
             CAPTURE_SERVICE.in_active_window(datetime(2026, 8, 2, 10, 0))
         )
+
+
+class DriveProcessWindowTests(unittest.TestCase):
+    def setUp(self):
+        self.original_values = (
+            CAPTURE_SERVICE.CONFIG.drive_guard_enabled,
+            CAPTURE_SERVICE.CONFIG.drive_start_hour,
+            CAPTURE_SERVICE.CONFIG.drive_start_minute,
+            CAPTURE_SERVICE.CONFIG.drive_stop_hour,
+            CAPTURE_SERVICE.CONFIG.drive_stop_minute,
+        )
+        self.original_stats = dict(CAPTURE_SERVICE._stats)
+        CAPTURE_SERVICE.CONFIG.drive_guard_enabled = True
+        CAPTURE_SERVICE.CONFIG.drive_start_hour = 0
+        CAPTURE_SERVICE.CONFIG.drive_start_minute = 45
+        CAPTURE_SERVICE.CONFIG.drive_stop_hour = 6
+        CAPTURE_SERVICE.CONFIG.drive_stop_minute = 35
+
+    def tearDown(self):
+        (
+            CAPTURE_SERVICE.CONFIG.drive_guard_enabled,
+            CAPTURE_SERVICE.CONFIG.drive_start_hour,
+            CAPTURE_SERVICE.CONFIG.drive_start_minute,
+            CAPTURE_SERVICE.CONFIG.drive_stop_hour,
+            CAPTURE_SERVICE.CONFIG.drive_stop_minute,
+        ) = self.original_values
+        with CAPTURE_SERVICE._stats_lock:
+            CAPTURE_SERVICE._stats.clear()
+            CAPTURE_SERVICE._stats.update(self.original_stats)
+
+    def test_window_boundaries(self):
+        self.assertFalse(
+            CAPTURE_SERVICE.in_drive_process_window(datetime(2026, 8, 4, 0, 44))
+        )
+        self.assertTrue(
+            CAPTURE_SERVICE.in_drive_process_window(datetime(2026, 8, 4, 0, 45))
+        )
+        self.assertTrue(
+            CAPTURE_SERVICE.in_drive_process_window(datetime(2026, 8, 4, 6, 34))
+        )
+        self.assertFalse(
+            CAPTURE_SERVICE.in_drive_process_window(datetime(2026, 8, 4, 6, 35))
+        )
+
+    @unittest.skipUnless(CAPTURE_SERVICE.os.name == 'nt', 'Windows-only guard')
+    def test_policy_starts_drive_during_nightly_window(self):
+        with (
+            patch.object(
+                CAPTURE_SERVICE,
+                '_google_drive_is_running',
+                side_effect=[False, True],
+            ),
+            patch.object(CAPTURE_SERVICE, '_start_google_drive') as start_drive,
+            patch.object(CAPTURE_SERVICE, '_stop_google_drive') as stop_drive,
+            patch.object(
+                CAPTURE_SERVICE,
+                '_drive_maintenance_requested',
+                return_value=False,
+            ),
+        ):
+            CAPTURE_SERVICE._apply_google_drive_process_policy(
+                datetime(2026, 8, 4, 4, 15)
+            )
+
+        start_drive.assert_called_once_with()
+        stop_drive.assert_not_called()
+
+    @unittest.skipUnless(CAPTURE_SERVICE.os.name == 'nt', 'Windows-only guard')
+    def test_policy_stops_drive_during_production(self):
+        with (
+            patch.object(
+                CAPTURE_SERVICE,
+                '_google_drive_is_running',
+                side_effect=[True, False],
+            ),
+            patch.object(CAPTURE_SERVICE, '_start_google_drive') as start_drive,
+            patch.object(CAPTURE_SERVICE, '_stop_google_drive') as stop_drive,
+            patch.object(
+                CAPTURE_SERVICE,
+                '_drive_maintenance_requested',
+                return_value=False,
+            ),
+        ):
+            CAPTURE_SERVICE._apply_google_drive_process_policy(
+                datetime(2026, 8, 4, 9, 0)
+            )
+
+        start_drive.assert_not_called()
+        stop_drive.assert_called_once_with()
+
+    @unittest.skipUnless(CAPTURE_SERVICE.os.name == 'nt', 'Windows-only guard')
+    def test_manual_update_keeps_drive_available_outside_window(self):
+        with (
+            patch.object(
+                CAPTURE_SERVICE,
+                '_google_drive_is_running',
+                side_effect=[False, True],
+            ),
+            patch.object(CAPTURE_SERVICE, '_start_google_drive') as start_drive,
+            patch.object(CAPTURE_SERVICE, '_stop_google_drive') as stop_drive,
+            patch.object(
+                CAPTURE_SERVICE,
+                '_drive_maintenance_requested',
+                return_value=True,
+            ),
+        ):
+            CAPTURE_SERVICE._apply_google_drive_process_policy(
+                datetime(2026, 8, 4, 9, 0)
+            )
+
+        start_drive.assert_called_once_with()
+        stop_drive.assert_not_called()
 
 
 if __name__ == '__main__':

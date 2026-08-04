@@ -65,6 +65,15 @@ sync_start_hour = 1
 sync_end_hour = 5
 sync_interval_seconds = 60
 
+; Drive Desktop is deliberately closed during production so its error dialogs
+; cannot cover Chrome kiosk. It is opened around nightly sync and auto-update.
+drive_guard_enabled = true
+drive_start_hour = 0
+drive_start_minute = 45
+drive_stop_hour = 6
+drive_stop_minute = 35
+drive_guard_interval_seconds = 30
+
 ; Delete local buffered day folders only when they already exist in Drive and
 ; are at least this many days old. Use -1 to keep local copies until max_local_gb.
 local_retention_days = 7

@@ -8,9 +8,12 @@ to the Chrome kiosk. Single Python process:
 - `GET  http://127.0.0.1:5555/health` — 200 OK while running.
 - `GET  http://127.0.0.1:5555/stats` — documentation counters, last
   capture timestamp, local disk usage, error details.
-- Background thread that saves one FullHD JPEG every second into a
-  Google-Drive-synced folder, so Marketing + QA have a record of the
-  whole shift without touching the server.
+- Background thread that saves one FullHD JPEG every 20 seconds into a
+  local buffer, so Marketing + QA have a record of the whole shift without
+  competing with production for internet bandwidth.
+- Google Drive Desktop process guard: Drive runs only from 00:45 to 06:35.
+  Outside that window it is closed so no sync-error dialog can cover Chrome
+  kiosk. Buffered photos remain safe in `C:\moden\capture_buffer`.
 
 ## One-time install on a mini-PC
 
@@ -84,9 +87,9 @@ curl http://127.0.0.1:5555/stats
 #   -> counters, output_dir, last_capture_at, in_active_window, etc.
 ```
 
-Also check that new files start appearing under
-`G:\Mi unidad\capturas_moden\<mesa_id>\<YYYY-MM-DD>\HH-MM-SS.jpg`
-and that Google Drive Desktop shows them "uploaded".
+During production, check that new files appear under
+`C:\moden\capture_buffer\<mesa_id>\<YYYY-MM-DD>\HH-MM-SS.jpg`. They are copied
+to `G:\Mi unidad\capturas_moden\...` during the 01:00-05:00 sync window.
 
 ## What the documentation loop writes
 
@@ -122,9 +125,11 @@ G:\Mi unidad\capturas_moden\
   - Windows Privacy → Camera → make sure Python is allowed.
 
 - **Google Drive desync**
-  - Drive Desktop keeps a queue; until it uploads, files pile up in
-    the local mirror. The service won't write beyond `max_local_gb`
-    so you're safe against runaway disk usage.
+  - Drive is intentionally closed from 06:35 until 00:45. A daytime Drive
+    error cannot interrupt projection; pending files stay in the local buffer.
+  - The automatic updater runs at 04:15, inside the Drive window. A manual
+    update with `-Force` opens Drive temporarily and keeps it available until
+    the update finishes; no extra preparation is needed.
 
 - **Change working hours / mesa id / resolution**
   - Edit `config.ini` and restart the service (easiest: log off +

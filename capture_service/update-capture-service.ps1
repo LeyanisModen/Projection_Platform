@@ -57,7 +57,7 @@ function Test-IncludedUpdateFile([string]$RelativePath) {
     }
 
     $name = Split-Path $RelativePath -Leaf
-    if ($name -in @('config.ini', 'device_token.txt', '.last_update_source.txt')) {
+    if ($name -in @('config.ini', 'device_token.txt', '.last_update_source.txt', '.drive_maintenance')) {
         return $false
     }
 
@@ -100,6 +100,29 @@ function Test-AllowedWindow {
         return ($hour -ge $AllowedStartHour -and $hour -lt $AllowedEndHour)
     }
     return ($hour -ge $AllowedStartHour -or $hour -lt $AllowedEndHour)
+}
+
+function Start-GoogleDriveForMaintenance {
+    if (Get-Process -Name GoogleDriveFS -ErrorAction SilentlyContinue) {
+        return
+    }
+
+    $candidates = [System.Collections.Generic.List[System.IO.FileInfo]]::new()
+    foreach ($root in @(
+        (Join-Path $env:ProgramFiles 'Google\Drive File Stream'),
+        (Join-Path $env:LOCALAPPDATA 'Google\DriveFS')
+    )) {
+        if (-not [string]::IsNullOrWhiteSpace($root) -and (Test-Path $root)) {
+            Get-ChildItem -Path $root -Filter 'GoogleDriveFS.exe' -File -Recurse `
+                -ErrorAction SilentlyContinue | ForEach-Object { [void]$candidates.Add($_) }
+        }
+    }
+
+    $executable = $candidates | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+    if ($null -eq $executable) {
+        throw 'GoogleDriveFS.exe not found; cannot access the daytime update source.'
+    }
+    Start-Process -FilePath $executable.FullName -WindowStyle Hidden
 }
 
 function Set-IniValue([string]$Path, [string]$Section, [string]$Key, [string]$Value) {
@@ -152,7 +175,24 @@ function Set-IniValue([string]$Path, [string]$Section, [string]$Key, [string]$Va
     )
 }
 
+$driveMaintenanceMarker = Join-Path $LocalDir '.drive_maintenance'
+$maintenanceRequested = $false
+
 try {
+    if ($Force) {
+        if (-not (Test-Path $LocalDir)) {
+            New-Item -Path $LocalDir -ItemType Directory -Force | Out-Null
+        }
+        Set-Content -Path $driveMaintenanceMarker -Value (Get-Date -Format o) -Encoding ASCII
+        $maintenanceRequested = $true
+        Start-GoogleDriveForMaintenance
+
+        $driveDeadline = (Get-Date).AddSeconds(90)
+        while (-not (Test-Path $UpdateSource) -and (Get-Date) -lt $driveDeadline) {
+            Start-Sleep -Seconds 2
+        }
+    }
+
     Write-UpdateLog "Checking updates from '$UpdateSource'"
 
     if (-not (Test-Path $UpdateSource)) {
@@ -200,7 +240,7 @@ try {
     Get-Process -Name python, pythonw, chrome -ErrorAction SilentlyContinue |
         Stop-Process -Force -ErrorAction SilentlyContinue
 
-    & robocopy $UpdateSource $LocalDir /MIR /XD venv __pycache__ logs /XF config.ini device_token.txt /NFL /NDL /NJH /NJS /NP | Out-Null
+    & robocopy $UpdateSource $LocalDir /MIR /XD venv __pycache__ logs /XF config.ini device_token.txt .drive_maintenance /NFL /NDL /NJH /NJS /NP | Out-Null
     if ($LASTEXITCODE -ge 8) {
         throw "robocopy failed with code $LASTEXITCODE"
     }
@@ -223,6 +263,12 @@ try {
         Set-IniValue $configPath 'documentation' 'active_start_minute' '50'
         Set-IniValue $configPath 'documentation' 'active_end_hour' '15'
         Set-IniValue $configPath 'documentation' 'active_end_minute' '0'
+        Set-IniValue $configPath 'documentation' 'drive_guard_enabled' 'true'
+        Set-IniValue $configPath 'documentation' 'drive_start_hour' '0'
+        Set-IniValue $configPath 'documentation' 'drive_start_minute' '45'
+        Set-IniValue $configPath 'documentation' 'drive_stop_hour' '6'
+        Set-IniValue $configPath 'documentation' 'drive_stop_minute' '35'
+        Set-IniValue $configPath 'documentation' 'drive_guard_interval_seconds' '30'
         Set-IniValue $configPath 'sharpness' 'threshold_blurry' '2'
         Set-IniValue $configPath 'sharpness' 'threshold_warning' '10'
         Set-IniValue $configPath 'sharpness' 'min_brightness' '18'
@@ -245,4 +291,8 @@ try {
 } catch {
     Write-UpdateLog "ERROR: $($_.Exception.Message)"
     exit 1
+} finally {
+    if ($maintenanceRequested) {
+        Remove-Item -LiteralPath $driveMaintenanceMarker -Force -ErrorAction SilentlyContinue
+    }
 }

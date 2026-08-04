@@ -238,6 +238,15 @@ Desde la version 2026-06-30.1 las capturas periodicas se guardan durante el
 dia en C:\moden\capture_buffer y se copian a Google Drive solo en la ventana
 nocturna configurada (por defecto 01:00-05:00).
 
+Desde la version 2026-08-04.3 Google Drive Desktop solo permanece abierto de
+00:45 a 06:35. El capture service lo cierra durante produccion para impedir
+que una ventana de error se coloque encima del kiosko. Las fotos siguen
+guardandose localmente aunque Drive este cerrado.
+
+La actualizacion automatica de las 04:15 sigue funcionando porque ocurre
+dentro de esa ventana. El comando manual con -Force abre Drive temporalmente
+y lo mantiene disponible hasta que termina; no hay que prepararlo a mano.
+
 Comprobar estado:
 
 curl.exe http://127.0.0.1:5555/stats
