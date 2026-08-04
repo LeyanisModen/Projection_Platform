@@ -490,11 +490,17 @@ relanza el instalador (el PATH solo se refresca al crear el proceso).
     }
 
     if (Test-Path $configPath) {
+        Set-IniValue $configPath 'documentation' 'interval_seconds' '20'
+        Set-IniValue $configPath 'documentation' 'active_start_hour' '6'
+        Set-IniValue $configPath 'documentation' 'active_start_minute' '50'
+        Set-IniValue $configPath 'documentation' 'active_end_hour' '15'
+        Set-IniValue $configPath 'documentation' 'active_end_minute' '0'
         Set-IniValue $configPath 'sharpness' 'threshold_blurry' '2'
         Set-IniValue $configPath 'sharpness' 'threshold_warning' '10'
         Set-IniValue $configPath 'sharpness' 'min_brightness' '18'
         Set-IniValue $configPath 'sharpness' 'min_contrast' '8'
         Set-IniValue $configPath 'sharpness' 'retry_minutes' '15'
+        Write-Host "  Â· capturas: 06:50-15:00, cada 20 segundos"
         Write-Host "  Â· sharpness: threshold_blurry=2, retry_minutes=15"
     }
 

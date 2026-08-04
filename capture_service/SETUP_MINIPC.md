@@ -7,7 +7,8 @@ para producción. Cada mini-PC hace tres cosas:
    apuntando a `https://moden.up.railway.app/`).
 2. **Captura fotos** con la cámara OBSBOT Tiny 2 cuando el operario
    selecciona ciertos ficheros (`*_foto*.jpg`, `*_check*.jpg`).
-3. **Documenta la producción** cada segundo guardando un JPEG en Google
+3. **Documenta la producción** cada 20 segundos guardando un JPEG en el
+   búfer local para su sincronización nocturna con Google
    Drive corporativo.
 
 El detalle del servicio de captura está en el [`README.md`](README.md);

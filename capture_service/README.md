@@ -103,7 +103,7 @@ G:\Mi unidad\capturas_moden\
 
 - JPEG FullHD (1920x1080) @ quality 88 → ~350-500 KB per frame.
 - Outside the configured working window the loop sleeps and writes
-  nothing (default window: Mon-Fri, 05:00–19:00 local time).
+  nothing (default window: Mon-Fri, 06:50-15:00 local time).
 - When the local footprint of `<output_dir>/<mesa_id>` exceeds
   `max_local_gb`, the **oldest day folders are removed**. Today's
   folder is never touched.

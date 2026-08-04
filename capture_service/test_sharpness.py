@@ -70,5 +70,51 @@ class SharpnessStatusTests(unittest.TestCase):
         self.assertFalse(CAPTURE_SERVICE._sharpness_check_due(now))
 
 
+class ActiveWindowTests(unittest.TestCase):
+    def setUp(self):
+        self.original_values = (
+            CAPTURE_SERVICE.CONFIG.active_days,
+            CAPTURE_SERVICE.CONFIG.active_start_hour,
+            CAPTURE_SERVICE.CONFIG.active_start_minute,
+            CAPTURE_SERVICE.CONFIG.active_end_hour,
+            CAPTURE_SERVICE.CONFIG.active_end_minute,
+        )
+        CAPTURE_SERVICE.CONFIG.active_days = {0, 1, 2, 3, 4}
+        CAPTURE_SERVICE.CONFIG.active_start_hour = 6
+        CAPTURE_SERVICE.CONFIG.active_start_minute = 50
+        CAPTURE_SERVICE.CONFIG.active_end_hour = 15
+        CAPTURE_SERVICE.CONFIG.active_end_minute = 0
+
+    def tearDown(self):
+        (
+            CAPTURE_SERVICE.CONFIG.active_days,
+            CAPTURE_SERVICE.CONFIG.active_start_hour,
+            CAPTURE_SERVICE.CONFIG.active_start_minute,
+            CAPTURE_SERVICE.CONFIG.active_end_hour,
+            CAPTURE_SERVICE.CONFIG.active_end_minute,
+        ) = self.original_values
+
+    def test_window_starts_exactly_at_0650(self):
+        self.assertFalse(
+            CAPTURE_SERVICE.in_active_window(datetime(2026, 8, 3, 6, 49))
+        )
+        self.assertTrue(
+            CAPTURE_SERVICE.in_active_window(datetime(2026, 8, 3, 6, 50))
+        )
+
+    def test_window_ends_exactly_at_1500(self):
+        self.assertTrue(
+            CAPTURE_SERVICE.in_active_window(datetime(2026, 8, 3, 14, 59))
+        )
+        self.assertFalse(
+            CAPTURE_SERVICE.in_active_window(datetime(2026, 8, 3, 15, 0))
+        )
+
+    def test_weekends_remain_inactive(self):
+        self.assertFalse(
+            CAPTURE_SERVICE.in_active_window(datetime(2026, 8, 2, 10, 0))
+        )
+
+
 if __name__ == '__main__':
     unittest.main()

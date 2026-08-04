@@ -44,10 +44,9 @@ output_dir = G:\Mi unidad\capturas_moden
 ; fer_g1_mesa1, fer_g1_mesa2, fer_g2_mesa3.
 mesa_id = fer_g1_mesa1
 
-; Seconds between captures. 3 s ~ 17k pictures per 14h shift (~8 GB/day
-; at 350-500 KB/frame), which Drive syncs comfortably and still captures
-; enough movement for documentation/marketing.
-interval_seconds = 3
+; Seconds between captures. 20 s during the 06:50-15:00 window produces
+; about 1,470 pictures per table and working day.
+interval_seconds = 20
 
 ; Resolution + quality for the documentation images. FullHD at q=88
 ; comes out around 350-500 KB per frame.
@@ -72,8 +71,10 @@ local_retention_days = 7
 
 ; Working window. Outside of it the loop sleeps and nothing is written.
 active_days = MON,TUE,WED,THU,FRI
-active_start_hour = 5
-active_end_hour = 19
+active_start_hour = 6
+active_start_minute = 50
+active_end_hour = 15
+active_end_minute = 0
 
 
 [sharpness]

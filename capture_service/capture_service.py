@@ -92,7 +92,7 @@ class Config:
         self.local_buffer_dir = Path('C:/moden/capture_buffer')
         self.output_dir = Path('C:/moden/capturas')
         self.mesa_id = 'mesa_unknown'
-        self.interval_seconds = 1.0
+        self.interval_seconds = 20.0
         self.doc_width = 1920
         self.doc_height = 1080
         self.doc_jpeg_quality = 88
@@ -103,15 +103,17 @@ class Config:
         self.sync_interval_seconds = 60.0
         self.local_retention_days = 7
         self.active_days = {0, 1, 2, 3, 4}  # MON..FRI
-        self.active_start_hour = 5
-        self.active_end_hour = 19
+        self.active_start_hour = 6
+        self.active_start_minute = 50
+        self.active_end_hour = 15
+        self.active_end_minute = 0
 
         # Sharpness check starts on the first active frame of the day.
         # Doubtful results are retried because an arbitrary projected scene
         # is not reliable enough to diagnose a dirty lens from one sample.
         self.sharpness_enabled = True
         # Keep the visible "clean lens" warning very conservative. The
-        # projected table can be dark/plain at 05:00, so low Laplacian is
+        # projected table can be dark/plain at 06:50, so low Laplacian is
         # not enough evidence by itself.
         self.sharpness_threshold_blurry = 2.0
         self.sharpness_threshold_warning = 10.0
@@ -170,7 +172,13 @@ class Config:
                 if x.strip().upper() in DAY_NAME_TO_INDEX
             }
             self.active_start_hour = d.getint('active_start_hour', self.active_start_hour)
+            self.active_start_minute = d.getint(
+                'active_start_minute', self.active_start_minute
+            )
             self.active_end_hour = d.getint('active_end_hour', self.active_end_hour)
+            self.active_end_minute = d.getint(
+                'active_end_minute', self.active_end_minute
+            )
 
         if cp.has_section('sharpness'):
             s = cp['sharpness']
@@ -434,8 +442,8 @@ def in_active_window(now: datetime = None) -> bool:
     now = now or datetime.now()
     if now.weekday() not in CONFIG.active_days:
         return False
-    start = dtime(CONFIG.active_start_hour, 0)
-    end = dtime(CONFIG.active_end_hour, 0)
+    start = dtime(CONFIG.active_start_hour, CONFIG.active_start_minute)
+    end = dtime(CONFIG.active_end_hour, CONFIG.active_end_minute)
     current = now.time()
     return start <= current < end
 
@@ -663,7 +671,8 @@ def documentation_loop():
     print(f'[Docs] buffer={CONFIG.local_buffer_dir}')
     print(f'[Docs] drive_output={CONFIG.output_dir}')
     print(f'[Docs] schedule={sorted(CONFIG.active_days)} '
-          f'{CONFIG.active_start_hour:02d}:00-{CONFIG.active_end_hour:02d}:00')
+          f'{CONFIG.active_start_hour:02d}:{CONFIG.active_start_minute:02d}-'
+          f'{CONFIG.active_end_hour:02d}:{CONFIG.active_end_minute:02d}')
 
     prune_counter = 0
     while True:

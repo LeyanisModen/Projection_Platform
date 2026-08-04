@@ -540,7 +540,7 @@ curl.exe -X POST http://127.0.0.1:5555/capture -o test.jpg --max-time 15
 start test.jpg
 
 # Stats: in_active_window=true, last_capture_at con fecha de hoy,
-# captures_today incrementando cada segundo si estás dentro del horario.
+# captures_today incrementando cada 20 segundos si estás dentro del horario.
 (Invoke-WebRequest http://127.0.0.1:5555/stats -UseBasicParsing).Content
 
 # Drive montado y escribiendo (reemplaza fer_g1_mesa1 por el mesa_id que toque)
@@ -638,7 +638,7 @@ la PIN. Casos habituales:
 | El visor queda "dormido" hasta clicar | `CalculateNativeWinOcclusion` | Ya incluido en los flags de `start-player.bat` |
 | `/capture` tarda 30s sin responder | MSMF hang / OBSBOT Center ocupada | `CAP_DSHOW` (ya en el .py) + matar `*obsbot*` |
 | `MissingSectionHeaderError` en el capture service | BOM en `config.ini` por PowerShell | Reescribir sin BOM (one-liner al final) |
-| `last_error: null` pero `captures_today: 0` | Fuera del `active_start_hour`-`active_end_hour` | Ajustar en `config.ini` y reiniciar |
+| `last_error: null` pero `captures_today: 0` | Fuera de la ventana activa | Revisar `active_start_hour/minute` y `active_end_hour/minute` en `config.ini` |
 | Código de vinculación cambia cada pocos segundos | Ya resuelto en el backend; refresca el visor | — |
 
 **Arreglo del BOM en `config.ini`** (si pasa, one-liner):
