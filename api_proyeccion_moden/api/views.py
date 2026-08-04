@@ -2267,6 +2267,9 @@ class ModuloViewSet(viewsets.ModelViewSet):
             )
 
         modulo = self.get_object()
+        force = str(request.query_params.get('force', '')).lower() in (
+            'true', '1', 'yes'
+        )
         has_done_queue = modulo.mesa_queue_items.filter(
             status=MesaQueueStatus.HECHO
         ).exists()
@@ -2275,15 +2278,27 @@ class ModuloViewSet(viewsets.ModelViewSet):
             or modulo.inferior_hecho
             or modulo.superior_hecho
             or modulo.cerrado
-            or modulo.fotos_fabricacion.exists()
-            or has_done_queue
         ):
             return Response(
                 {
                     'detail': (
                         'No se puede eliminar: el modulo ya tiene fabricacion, '
-                        'fases terminadas o fotos.'
+                        'fases terminadas o esta cerrado.'
                     )
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        has_photos = modulo.fotos_fabricacion.exists()
+        if (has_photos or has_done_queue) and not force:
+            return Response(
+                {
+                    'detail': (
+                        'El modulo pendiente tiene fotos o historial de cola. '
+                        'Reintenta con ?force=true para confirmar el borrado.'
+                    ),
+                    'fotos': has_photos,
+                    'cola_finalizada': has_done_queue,
                 },
                 status=status.HTTP_409_CONFLICT,
             )
@@ -2298,7 +2313,7 @@ class ModuloViewSet(viewsets.ModelViewSet):
             for item in showing_items
             if item.mesa.current_image_index > EARLY_IMAGE_INDEX_LIMIT
         ]
-        if advanced_mesas:
+        if advanced_mesas and not force:
             return Response(
                 {
                     'detail': (

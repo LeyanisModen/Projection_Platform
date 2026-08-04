@@ -1887,6 +1887,56 @@ class PlanningFoundationTests(APITestCase):
                 self.assertEqual(next_item.position, 0)
                 self.assertEqual(mesa_inf.current_image_index, 0)
 
+    def test_eliminar_modulo_pendiente_con_foto_exige_force_y_limpia_foto(self):
+        admin = User.objects.create_user(
+            username="module_delete_photo_admin",
+            password="pass123",
+            is_staff=True,
+        )
+        admin_token = Token.objects.create(user=admin)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {admin_token.key}")
+
+        with tempfile.TemporaryDirectory() as media_root:
+            with override_settings(MEDIA_ROOT=media_root):
+                photo_path = (
+                    Path(media_root)
+                    / "fotos"
+                    / str(self.project.id)
+                    / str(self.planta.id)
+                    / str(self.modulo.id)
+                    / "prueba.jpg"
+                )
+                photo_path.parent.mkdir(parents=True)
+                photo_path.write_bytes(b"foto-prueba")
+                FotoFabricacion.objects.create(
+                    modulo=self.modulo,
+                    fase="INFERIOR",
+                    paso=0,
+                    url=(
+                        f"/media/fotos/{self.project.id}/"
+                        f"{self.planta.id}/{self.modulo.id}/prueba.jpg"
+                    ),
+                )
+
+                response = self.client.delete(
+                    f"/api/modulos/{self.modulo.id}/"
+                )
+                self.assertEqual(response.status_code, 409)
+                self.assertTrue(
+                    Modulo.objects.filter(id=self.modulo.id).exists()
+                )
+
+                with self.captureOnCommitCallbacks(execute=True):
+                    response = self.client.delete(
+                        f"/api/modulos/{self.modulo.id}/?force=true"
+                    )
+
+                self.assertEqual(response.status_code, 204)
+                self.assertFalse(
+                    Modulo.objects.filter(id=self.modulo.id).exists()
+                )
+                self.assertFalse(photo_path.exists())
+
     def test_no_elimina_modulo_que_ya_avanza_en_fabricacion(self):
         admin = User.objects.create_user(
             username="module_delete_guard_admin",

@@ -1601,13 +1601,18 @@ export class ProyectoDetailComponent implements OnInit {
 
     eliminarModulo(modulo: GrupoBastidorModulo, event?: Event): void {
         event?.stopPropagation();
+        const fotosCount = modulo.fotos_count || 0;
+        const fotosWarning = fotosCount > 0
+            ? ` Tambien se eliminaran ${fotosCount} foto${fotosCount === 1 ? '' : 's'} asociada${fotosCount === 1 ? '' : 's'}.`
+            : '';
         const confirmed = confirm(
             `Eliminar definitivamente ${modulo.nombre}? ` +
-            'Se quitaran sus imagenes y sus asignaciones pendientes de las mesas.'
+            'Se quitaran sus imagenes y sus asignaciones de las mesas.' +
+            fotosWarning + ' Esta accion no se puede deshacer.'
         );
         if (!confirmed) return;
 
-        this.api.deleteModulo(modulo.id).subscribe({
+        this.api.deleteModulo(modulo.id, true).subscribe({
             next: () => this.loadData(),
             error: (err: any) => {
                 console.error('Error eliminando modulo', err);

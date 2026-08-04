@@ -599,10 +599,13 @@ export class ApiService {
         return this.http.post<Modulo>(`${this.baseUrl}/modulos/${id}/completar/`, {}, { headers: this.getHeaders() });
     }
 
-    deleteModulo(id: number): Observable<void> {
+    deleteModulo(id: number, force = false): Observable<void> {
         return this.http.delete<void>(
             `${this.baseUrl}/modulos/${id}/`,
-            { headers: this.getHeaders() }
+            {
+                headers: this.getHeaders(),
+                params: force ? { force: 'true' } : {}
+            }
         );
     }
 

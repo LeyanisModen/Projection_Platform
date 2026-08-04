@@ -355,9 +355,11 @@
                                             </button>
                                             <button type="button"
                                                 class="grupo-modulo-delete"
-                                                *ngIf="modulo.estado === 'PENDIENTE' && modulo.fotos_count === 0"
+                                                *ngIf="modulo.estado === 'PENDIENTE'"
                                                 (click)="eliminarModulo(modulo, $event)"
-                                                title="Eliminar modulo pendiente"
+                                                [title]="modulo.fotos_count
+                                                    ? 'Eliminar modulo pendiente y sus fotos asociadas'
+                                                    : 'Eliminar modulo pendiente'"
                                                 [attr.aria-label]="'Eliminar modulo ' + modulo.nombre">
                                                 <i class="fa fa-trash" aria-hidden="true"></i>
                                             </button>
