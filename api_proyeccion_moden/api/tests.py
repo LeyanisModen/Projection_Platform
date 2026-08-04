@@ -1473,6 +1473,56 @@ class PlanningFoundationTests(APITestCase):
             1,
         )
 
+    def test_importar_imagenes_homonimas_conserva_archivo_de_cada_fase(self):
+        inf_key = "MOD_M-02_INF_01_malla.jpg"
+        sup_key = "MOD_M-02_SUP_01_malla.jpg"
+        structure = [{
+            "nombre": "General",
+            "orden": 2,
+            "modulos": [{
+                "nombre": "M-02",
+                "imagenes": [
+                    {"filename": inf_key, "fase": "INFERIOR", "orden": 1},
+                    {"filename": sup_key, "fase": "SUPERIOR", "orden": 1},
+                ],
+            }],
+        }]
+
+        with tempfile.TemporaryDirectory() as media_root:
+            with override_settings(MEDIA_ROOT=media_root):
+                response = self.client.post(
+                    f"/api/proyectos/{self.project.id}/import-structure/",
+                    {
+                        "plantas": json.dumps(structure),
+                        inf_key: SimpleUploadedFile(
+                            "01_malla.jpg", b"imagen-inferior", "image/jpeg"
+                        ),
+                        sup_key: SimpleUploadedFile(
+                            "01_malla.jpg", b"imagen-superior", "image/jpeg"
+                        ),
+                    },
+                    format="multipart",
+                )
+
+                self.assertEqual(response.status_code, 200)
+                modulo = Modulo.objects.get(
+                    proyecto=self.project,
+                    nombre="M-02",
+                )
+                inferior = modulo.imagenes.get(fase="INFERIOR", orden=1)
+                superior = modulo.imagenes.get(fase="SUPERIOR", orden=1)
+
+                self.assertNotEqual(inferior.url, superior.url)
+                self.assertIn("_INF_", inferior.url)
+                self.assertIn("_SUP_", superior.url)
+
+                def uploaded_bytes(image):
+                    relative = image.url.removeprefix("/media/")
+                    return (Path(media_root) / Path(relative)).read_bytes()
+
+                self.assertEqual(uploaded_bytes(inferior), b"imagen-inferior")
+                self.assertEqual(uploaded_bytes(superior), b"imagen-superior")
+
     def test_mover_modulo_a_otro_bastidor_lo_traslada_a_su_mesa_inferior(self):
         admin = User.objects.create_user(
             username="move_module_admin",

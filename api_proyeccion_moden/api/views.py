@@ -8,6 +8,7 @@ import tempfile
 import unicodedata
 
 from django.contrib.auth.models import User
+from django.utils.text import get_valid_filename
 from decimal import Decimal, InvalidOperation
 
 from django.db import IntegrityError, transaction
@@ -1221,18 +1222,25 @@ class ProyectoViewSet(viewsets.ModelViewSet):
                                 # Check if file was uploaded
                                 uploaded_file = files.get(filename)
                                 if uploaded_file:
+                                    # The multipart key includes module, source
+                                    # folder (INF/SUP/SD_*) and original name.
+                                    # Using uploaded_file.name caused equal names
+                                    # from different phases to overwrite each other.
+                                    stored_filename = get_valid_filename(
+                                        os.path.basename(str(filename))
+                                    )
                                     # Save file to media folder
                                     media_path = os.path.join('imagenes', str(proyecto.id), str(planta.id), str(modulo.id))
                                     full_path = os.path.join(django_settings.MEDIA_ROOT, media_path)
                                     os.makedirs(full_path, exist_ok=True)
                                     
-                                    file_path = os.path.join(full_path, uploaded_file.name)
+                                    file_path = os.path.join(full_path, stored_filename)
                                     with open(file_path, 'wb+') as destination:
                                         for chunk in uploaded_file.chunks():
                                             destination.write(chunk)
                                     
                                     # Create Imagen record
-                                    url = f'/media/{media_path}/{uploaded_file.name}'
+                                    url = f'/media/{media_path}/{stored_filename}'
                                     Imagen.objects.create(
                                         url=url,
                                         modulo=modulo,
