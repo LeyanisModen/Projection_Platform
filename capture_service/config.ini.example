@@ -33,7 +33,7 @@ enabled = true
 local_buffer_dir = C:\moden\capture_buffer
 
 ; Root folder that Google Drive Desktop is syncing. The service copies buffered
-; photos here only during the nightly sync window.
+; photos here only during the weekend sync window.
 output_dir = G:\Mi unidad\capturas_moden
 
 ; Unique id per mesa (subfolder inside output_dir). Format is
@@ -54,24 +54,40 @@ width = 1920
 height = 1080
 jpeg_quality = 88
 
-; Local disk cap for the documentation buffer. When the size of
-; local_buffer_dir/<mesa_id> goes above this number, the oldest YYYY-MM-DD
-; folders are dropped (today is never touched).
+; Periodic documentation pauses instead of deleting a unique copy when either
+; limit is reached. Week-old days with a complete copy in G: are purged first.
 max_local_gb = 30
+min_free_gb = 5
 
-; Nightly Drive publishing. Outside this window, captures remain local only.
+; Weekend publishing. Captures stay local during the working week, then copy
+; to G: from Friday after production until early Monday.
 sync_enabled = true
 sync_start_hour = 1
 sync_end_hour = 5
-sync_interval_seconds = 60
+sync_interval_seconds = 1800
+sync_weekly_enabled = true
+sync_weekly_start_day = FRI
+sync_weekly_start_hour = 15
+sync_weekly_start_minute = 30
+sync_weekly_end_day = MON
+sync_weekly_end_hour = 5
+sync_weekly_end_minute = 0
 
 ; Drive Desktop is deliberately closed during production so its error dialogs
-; cannot cover Chrome kiosk. It is opened around nightly sync and auto-update.
+; cannot cover Chrome kiosk. The short daily window is only for the 04:15
+; updater; the extended weekend window uploads the weekly photo batch.
 drive_guard_enabled = true
-drive_start_hour = 0
+drive_start_hour = 3
 drive_start_minute = 45
-drive_stop_hour = 6
-drive_stop_minute = 35
+drive_stop_hour = 4
+drive_stop_minute = 45
+drive_weekend_enabled = true
+drive_weekend_start_day = FRI
+drive_weekend_start_hour = 15
+drive_weekend_start_minute = 15
+drive_weekend_end_day = MON
+drive_weekend_end_hour = 6
+drive_weekend_end_minute = 35
 drive_guard_interval_seconds = 30
 
 ; Delete local buffered day folders only when they already exist in Drive and

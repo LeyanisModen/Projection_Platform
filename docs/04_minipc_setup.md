@@ -328,8 +328,9 @@ Lo instaló winget, pero hay que configurarlo a mano:
 
    Debe salir `True` después de que Drive termine la primera sincronización.
 
-Google Drive debe quedarse **activo al inicio** — es quien monta `G:\` y
-sincroniza las capturas al cloud. No lo desactives en la limpieza del paso 8.
+El capture service gestiona Google Drive automáticamente: lo abre para la
+actualización de las 04:15 y durante la sincronización del fin de semana, y lo
+cierra antes de producción para que ningún aviso cubra el kiosko.
 
 ---
 
@@ -440,7 +441,8 @@ reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Serialize" /v S
 
 Ajustes → Aplicaciones → **Inicio**. Apaga todo salvo:
 
-- ✅ **Google Drive** — monta `G:\`, necesario.
+- **Google Drive** puede quedar desactivado en Inicio; el capture service lo
+  abre únicamente en sus ventanas programadas.
 
 Apaga sin problema: OneDrive, Teams personal, Edge, Cortana, Widgets,
 Centro de Opiniones, etc. **Moden Player** y **Chrome Remote Desktop**

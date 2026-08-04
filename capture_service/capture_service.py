@@ -32,8 +32,8 @@ Listens on localhost:5555. Two jobs in one process:
      Every `interval_seconds` saves a resized JPEG into a local buffer:
        <local_buffer_dir>/<mesa_id>/YYYY-MM-DD/HH-MM-SS.jpg
      A second thread copies buffered files to the Google Drive folder
-     (`output_dir`) only during the configured nightly sync window, so
-     daytime captures do not saturate the factory internet connection.
+     (`output_dir`) only during the configured weekend sync window, so
+     weekday captures do not saturate the factory internet connection.
      Local buffered folders are pruned once copied and older than the
      configured retention, or when the local footprint exceeds
      `max_local_gb`.
@@ -61,6 +61,7 @@ CONFIG_PATH = Path(__file__).with_name('config.ini')
 DAY_NAME_TO_INDEX = {
     'MON': 0, 'TUE': 1, 'WED': 2, 'THU': 3, 'FRI': 4, 'SAT': 5, 'SUN': 6,
 }
+DAY_INDEX_TO_NAME = {value: key for key, value in DAY_NAME_TO_INDEX.items()}
 
 CONTROL_ALLOWED_ORIGINS = {
     'https://moden.up.railway.app',
@@ -97,18 +98,35 @@ class Config:
         self.doc_height = 1080
         self.doc_jpeg_quality = 88
         self.max_local_gb = 30.0
+        self.min_free_gb = 5.0
         self.sync_enabled = True
         self.sync_start_hour = 1
         self.sync_end_hour = 5
-        self.sync_interval_seconds = 60.0
+        self.sync_interval_seconds = 1800.0
+        self.sync_weekly_enabled = True
+        self.sync_weekly_start_day = DAY_NAME_TO_INDEX['FRI']
+        self.sync_weekly_start_hour = 15
+        self.sync_weekly_start_minute = 30
+        self.sync_weekly_end_day = DAY_NAME_TO_INDEX['MON']
+        self.sync_weekly_end_hour = 5
+        self.sync_weekly_end_minute = 0
         self.local_retention_days = 7
         # Google Drive Desktop must not display dialogs over the production
-        # kiosk. Keep the process alive only around the nightly sync/update.
+        # kiosk. Keep the process alive only around scheduled sync/update.
         self.drive_guard_enabled = True
-        self.drive_start_hour = 0
+        # Short daily window keeps the 04:15 updater working. The extended
+        # weekend window gives Drive time to upload the weekly photo batch.
+        self.drive_start_hour = 3
         self.drive_start_minute = 45
-        self.drive_stop_hour = 6
-        self.drive_stop_minute = 35
+        self.drive_stop_hour = 4
+        self.drive_stop_minute = 45
+        self.drive_weekend_enabled = True
+        self.drive_weekend_start_day = DAY_NAME_TO_INDEX['FRI']
+        self.drive_weekend_start_hour = 15
+        self.drive_weekend_start_minute = 15
+        self.drive_weekend_end_day = DAY_NAME_TO_INDEX['MON']
+        self.drive_weekend_end_hour = 6
+        self.drive_weekend_end_minute = 35
         self.drive_guard_interval_seconds = 30.0
         self.active_days = {0, 1, 2, 3, 4}  # MON..FRI
         self.active_start_hour = 6
@@ -165,12 +183,36 @@ class Config:
             self.doc_height = d.getint('height', self.doc_height)
             self.doc_jpeg_quality = d.getint('jpeg_quality', self.doc_jpeg_quality)
             self.max_local_gb = d.getfloat('max_local_gb', self.max_local_gb)
+            self.min_free_gb = d.getfloat('min_free_gb', self.min_free_gb)
             self.sync_enabled = d.getboolean('sync_enabled', self.sync_enabled)
             self.sync_start_hour = d.getint('sync_start_hour', self.sync_start_hour)
             self.sync_end_hour = d.getint('sync_end_hour', self.sync_end_hour)
             self.sync_interval_seconds = d.getfloat(
                 'sync_interval_seconds',
                 self.sync_interval_seconds,
+            )
+            self.sync_weekly_enabled = d.getboolean(
+                'sync_weekly_enabled', self.sync_weekly_enabled
+            )
+            self.sync_weekly_start_day = self._parse_day_index(
+                d.get('sync_weekly_start_day', 'FRI'),
+                self.sync_weekly_start_day,
+            )
+            self.sync_weekly_start_hour = d.getint(
+                'sync_weekly_start_hour', self.sync_weekly_start_hour
+            )
+            self.sync_weekly_start_minute = d.getint(
+                'sync_weekly_start_minute', self.sync_weekly_start_minute
+            )
+            self.sync_weekly_end_day = self._parse_day_index(
+                d.get('sync_weekly_end_day', 'MON'),
+                self.sync_weekly_end_day,
+            )
+            self.sync_weekly_end_hour = d.getint(
+                'sync_weekly_end_hour', self.sync_weekly_end_hour
+            )
+            self.sync_weekly_end_minute = d.getint(
+                'sync_weekly_end_minute', self.sync_weekly_end_minute
             )
             self.local_retention_days = d.getint('local_retention_days', self.local_retention_days)
             self.drive_guard_enabled = d.getboolean(
@@ -183,6 +225,29 @@ class Config:
             self.drive_stop_hour = d.getint('drive_stop_hour', self.drive_stop_hour)
             self.drive_stop_minute = d.getint(
                 'drive_stop_minute', self.drive_stop_minute
+            )
+            self.drive_weekend_enabled = d.getboolean(
+                'drive_weekend_enabled', self.drive_weekend_enabled
+            )
+            self.drive_weekend_start_day = self._parse_day_index(
+                d.get('drive_weekend_start_day', 'FRI'),
+                self.drive_weekend_start_day,
+            )
+            self.drive_weekend_start_hour = d.getint(
+                'drive_weekend_start_hour', self.drive_weekend_start_hour
+            )
+            self.drive_weekend_start_minute = d.getint(
+                'drive_weekend_start_minute', self.drive_weekend_start_minute
+            )
+            self.drive_weekend_end_day = self._parse_day_index(
+                d.get('drive_weekend_end_day', 'MON'),
+                self.drive_weekend_end_day,
+            )
+            self.drive_weekend_end_hour = d.getint(
+                'drive_weekend_end_hour', self.drive_weekend_end_hour
+            )
+            self.drive_weekend_end_minute = d.getint(
+                'drive_weekend_end_minute', self.drive_weekend_end_minute
             )
             self.drive_guard_interval_seconds = d.getfloat(
                 'drive_guard_interval_seconds',
@@ -233,6 +298,17 @@ class Config:
             print(f'[CaptureService] Unsupported image_rotation={rotation}; using {default}.')
             return default
         return rotation
+
+    @staticmethod
+    def _parse_day_index(value, default):
+        normalized = str(value).strip().upper()
+        if normalized in DAY_NAME_TO_INDEX:
+            return DAY_NAME_TO_INDEX[normalized]
+        try:
+            day_index = int(normalized)
+        except (TypeError, ValueError):
+            return default
+        return day_index if 0 <= day_index <= 6 else default
 
 
 CONFIG = Config(CONFIG_PATH)
@@ -311,6 +387,11 @@ _stats = {
     'captures_today': 0,
     'captures_today_date': None,  # ISO date
     'local_disk_bytes': 0,
+    'free_disk_bytes': None,
+    'documentation_paused_reason': None,
+    'skipped_storage_pressure': 0,
+    'last_local_purge_at': None,
+    'last_local_purge_bytes': 0,
     'pending_sync_bytes': 0,
     'last_sync_at': None,
     'last_sync_files': 0,
@@ -474,12 +555,9 @@ def in_active_window(now: datetime = None) -> bool:
     return start <= current < end
 
 
-def in_sync_window(now: datetime = None) -> bool:
-    if not CONFIG.sync_enabled:
-        return False
-    now = now or datetime.now()
-    start = dtime(CONFIG.sync_start_hour, 0)
-    end = dtime(CONFIG.sync_end_hour, 0)
+def _in_daily_window(now, start_hour, start_minute, end_hour, end_minute):
+    start = dtime(start_hour, start_minute)
+    end = dtime(end_hour, end_minute)
     current = now.time()
     if start < end:
         return start <= current < end
@@ -488,18 +566,107 @@ def in_sync_window(now: datetime = None) -> bool:
     return True
 
 
+def _in_weekly_window(
+    now,
+    start_day,
+    start_hour,
+    start_minute,
+    end_day,
+    end_hour,
+    end_minute,
+):
+    current = now.weekday() * 24 * 60 + now.hour * 60 + now.minute
+    start = start_day * 24 * 60 + start_hour * 60 + start_minute
+    end = end_day * 24 * 60 + end_hour * 60 + end_minute
+    if start < end:
+        return start <= current < end
+    if start > end:
+        return current >= start or current < end
+    return True
+
+
+def _format_weekly_window(start_day, start_hour, start_minute, end_day, end_hour, end_minute):
+    return (
+        f'{DAY_INDEX_TO_NAME[start_day]} {start_hour:02d}:{start_minute:02d}-'
+        f'{DAY_INDEX_TO_NAME[end_day]} {end_hour:02d}:{end_minute:02d}'
+    )
+
+
+def sync_window_label():
+    if CONFIG.sync_weekly_enabled:
+        return _format_weekly_window(
+            CONFIG.sync_weekly_start_day,
+            CONFIG.sync_weekly_start_hour,
+            CONFIG.sync_weekly_start_minute,
+            CONFIG.sync_weekly_end_day,
+            CONFIG.sync_weekly_end_hour,
+            CONFIG.sync_weekly_end_minute,
+        )
+    return f'daily {CONFIG.sync_start_hour:02d}:00-{CONFIG.sync_end_hour:02d}:00'
+
+
+def in_sync_window(now: datetime = None) -> bool:
+    if not CONFIG.sync_enabled:
+        return False
+    now = now or datetime.now()
+    if CONFIG.sync_weekly_enabled:
+        return _in_weekly_window(
+            now,
+            CONFIG.sync_weekly_start_day,
+            CONFIG.sync_weekly_start_hour,
+            CONFIG.sync_weekly_start_minute,
+            CONFIG.sync_weekly_end_day,
+            CONFIG.sync_weekly_end_hour,
+            CONFIG.sync_weekly_end_minute,
+        )
+    return _in_daily_window(
+        now,
+        CONFIG.sync_start_hour,
+        0,
+        CONFIG.sync_end_hour,
+        0,
+    )
+
+
+def drive_process_window_label():
+    daily = (
+        f'daily {CONFIG.drive_start_hour:02d}:{CONFIG.drive_start_minute:02d}-'
+        f'{CONFIG.drive_stop_hour:02d}:{CONFIG.drive_stop_minute:02d}'
+    )
+    if not CONFIG.drive_weekend_enabled:
+        return daily
+    weekend = _format_weekly_window(
+        CONFIG.drive_weekend_start_day,
+        CONFIG.drive_weekend_start_hour,
+        CONFIG.drive_weekend_start_minute,
+        CONFIG.drive_weekend_end_day,
+        CONFIG.drive_weekend_end_hour,
+        CONFIG.drive_weekend_end_minute,
+    )
+    return f'{daily}; weekend {weekend}'
+
+
 def in_drive_process_window(now: datetime = None) -> bool:
     if not CONFIG.drive_guard_enabled:
         return False
     now = now or datetime.now()
-    start = dtime(CONFIG.drive_start_hour, CONFIG.drive_start_minute)
-    stop = dtime(CONFIG.drive_stop_hour, CONFIG.drive_stop_minute)
-    current = now.time()
-    if start < stop:
-        return start <= current < stop
-    if start > stop:
-        return current >= start or current < stop
-    return True
+    if _in_daily_window(
+        now,
+        CONFIG.drive_start_hour,
+        CONFIG.drive_start_minute,
+        CONFIG.drive_stop_hour,
+        CONFIG.drive_stop_minute,
+    ):
+        return True
+    return CONFIG.drive_weekend_enabled and _in_weekly_window(
+        now,
+        CONFIG.drive_weekend_start_day,
+        CONFIG.drive_weekend_start_hour,
+        CONFIG.drive_weekend_start_minute,
+        CONFIG.drive_weekend_end_day,
+        CONFIG.drive_weekend_end_hour,
+        CONFIG.drive_weekend_end_minute,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -657,7 +824,7 @@ def _apply_google_drive_process_policy(now: datetime = None):
             if not running:
                 _start_google_drive()
                 action = 'started'
-                print('[DriveGuard] Google Drive started for the nightly window.')
+                print('[DriveGuard] Google Drive started for a scheduled window.')
         elif running:
             _stop_google_drive()
             action = 'stopped'
@@ -682,9 +849,7 @@ def google_drive_process_guard_loop():
         return
     _disable_google_drive_autostart()
     print(
-        '[DriveGuard] Enabled. Drive process window='
-        f'{CONFIG.drive_start_hour:02d}:{CONFIG.drive_start_minute:02d}-'
-        f'{CONFIG.drive_stop_hour:02d}:{CONFIG.drive_stop_minute:02d}'
+        f'[DriveGuard] Enabled. Drive process windows={drive_process_window_label()}'
     )
     while True:
         _apply_google_drive_process_policy()
@@ -716,82 +881,92 @@ def _dir_size_bytes(path: Path) -> int:
     return total
 
 
-def _dir_file_count_and_bytes(path: Path):
-    count = 0
-    total = 0
-    for root, _, files in os.walk(path):
-        for filename in files:
-            fp = Path(root) / filename
-            try:
-                total += fp.stat().st_size
-                count += 1
-            except OSError:
-                pass
-    return count, total
+def _free_disk_bytes():
+    try:
+        return shutil.disk_usage(CONFIG.local_buffer_dir).free
+    except OSError as exc:
+        _set_last_error(f'disk usage: {exc}')
+        return None
 
 
-def _prune_if_needed():
-    """Drop the oldest day folders until we're back under max_local_gb."""
+def _local_day_has_complete_drive_copy(day_dir: Path) -> bool:
+    dest_dir = _mesa_root() / day_dir.name
+    if not dest_dir.is_dir():
+        return False
+
+    found_file = False
+    for src in day_dir.rglob('*'):
+        if not src.is_file():
+            continue
+        found_file = True
+        dest = dest_dir / src.relative_to(day_dir)
+        try:
+            if not dest.is_file() or dest.stat().st_size != src.stat().st_size:
+                return False
+        except OSError:
+            return False
+    return found_file
+
+
+def _purge_old_synced_local_days():
+    """Delete week-old local days only after a complete copy exists in G:."""
+    if CONFIG.local_retention_days < 0:
+        return 0
+
     root = _docs_buffer_root()
-    if not root.exists():
-        return
-    max_bytes = int(CONFIG.max_local_gb * (1024 ** 3))
-    used = _dir_size_bytes(root)
-    with _stats_lock:
-        _stats['local_disk_bytes'] = used
-    if used <= max_bytes:
-        return
+    if not root.exists() or not _mesa_root().exists():
+        return 0
 
-    # Day folders are YYYY-MM-DD so alphabetical == chronological.
+    today = datetime.now().date()
+    purged_bytes = 0
     day_dirs = sorted(
         [p for p in root.iterdir() if p.is_dir()],
         key=lambda p: p.name,
     )
-    today = datetime.now().date().isoformat()
     for day_dir in day_dirs:
-        if used <= max_bytes:
-            break
-        if day_dir.name == today:
-            break  # never touch today's folder
-        try:
-            freed = _dir_size_bytes(day_dir)
-            shutil.rmtree(day_dir, ignore_errors=True)
-            used = max(0, used - freed)
-        except Exception as exc:
-            _set_last_error(f'prune: {exc}')
-            break
-
-    with _stats_lock:
-        _stats['local_disk_bytes'] = used
-
-
-def _purge_old_synced_local_days():
-    """Delete buffered day folders only after they exist in the Drive folder."""
-    if CONFIG.local_retention_days < 0:
-        return
-
-    buffer_root = _docs_buffer_root()
-    drive_root = _mesa_root()
-    if not buffer_root.exists() or not drive_root.exists():
-        return
-
-    today = datetime.now().date()
-    for day_dir in sorted([p for p in buffer_root.iterdir() if p.is_dir()], key=lambda p: p.name):
         try:
             day_date = datetime.strptime(day_dir.name, '%Y-%m-%d').date()
         except ValueError:
             continue
         if (today - day_date).days < CONFIG.local_retention_days:
             continue
-
-        dest_dir = drive_root / day_dir.name
-        if not dest_dir.exists():
+        if not _local_day_has_complete_drive_copy(day_dir):
             continue
+        try:
+            day_bytes = _dir_size_bytes(day_dir)
+            shutil.rmtree(day_dir)
+            purged_bytes += day_bytes
+        except OSError as exc:
+            _set_last_error(f'purge {day_dir.name}: {exc}')
 
-        src_count, src_bytes = _dir_file_count_and_bytes(day_dir)
-        dest_count, dest_bytes = _dir_file_count_and_bytes(dest_dir)
-        if src_count > 0 and dest_count >= src_count and dest_bytes >= src_bytes:
-            shutil.rmtree(day_dir, ignore_errors=True)
+    if purged_bytes:
+        with _stats_lock:
+            _stats['last_local_purge_at'] = datetime.now().isoformat(timespec='seconds')
+            _stats['last_local_purge_bytes'] = purged_bytes
+    return purged_bytes
+
+
+def _storage_ready_for_periodic_capture() -> bool:
+    """Protect free disk without deleting the only copy of a capture."""
+    _purge_old_synced_local_days()
+    buffer_root = _docs_buffer_root()
+    used = _dir_size_bytes(buffer_root) if buffer_root.exists() else 0
+    max_bytes = int(CONFIG.max_local_gb * (1024 ** 3))
+
+    free_bytes = _free_disk_bytes()
+
+    reason = None
+    if CONFIG.max_local_gb >= 0 and used >= max_bytes:
+        reason = 'local_buffer_limit'
+    min_free_bytes = int(CONFIG.min_free_gb * (1024 ** 3))
+    if free_bytes is not None and free_bytes < min_free_bytes:
+        reason = 'low_free_disk'
+
+    with _stats_lock:
+        _stats['local_disk_bytes'] = used
+        _stats['free_disk_bytes'] = free_bytes
+        _stats['documentation_paused_reason'] = reason
+    return reason is None
 
 
 def _copy_buffered_files_to_drive_once():
@@ -810,6 +985,10 @@ def _copy_buffered_files_to_drive_once():
         with _stats_lock:
             _stats['last_sync_error'] = f'output_dir pending: {exc}'
         return
+
+    # Reclaim any safe week-old duplicates before staging a new batch into
+    # DriveFS. This matters on machines carrying a large legacy backlog.
+    _purge_old_synced_local_days()
 
     now = time.time()
     copied_files = 0
@@ -835,6 +1014,13 @@ def _copy_buffered_files_to_drive_once():
                 try:
                     if dest.exists() and dest.stat().st_size == src_stat.st_size:
                         continue
+                    free_bytes = _free_disk_bytes()
+                    min_free_bytes = int(CONFIG.min_free_gb * (1024 ** 3))
+                    if free_bytes is not None and free_bytes < min_free_bytes:
+                        with _stats_lock:
+                            _stats['free_disk_bytes'] = free_bytes
+                            _stats['last_sync_error'] = 'sync paused: low free disk'
+                        return
                     dest.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(src, dest)
                     copied_files += 1
@@ -863,7 +1049,7 @@ def documentation_sync_loop():
 
     print(
         f'[DocsSync] Enabled. output={CONFIG.output_dir} '
-        f'window={CONFIG.sync_start_hour:02d}:00-{CONFIG.sync_end_hour:02d}:00 '
+        f'window={sync_window_label()} '
         f'every={CONFIG.sync_interval_seconds}s'
     )
     while True:
@@ -903,7 +1089,8 @@ def documentation_loop():
           f'{CONFIG.active_start_hour:02d}:{CONFIG.active_start_minute:02d}-'
           f'{CONFIG.active_end_hour:02d}:{CONFIG.active_end_minute:02d}')
 
-    prune_counter = 0
+    storage_ready = _storage_ready_for_periodic_capture()
+    last_storage_check = time.monotonic()
     while True:
         started = time.monotonic()
         now = datetime.now()
@@ -912,6 +1099,15 @@ def documentation_loop():
                 _stats['skipped_out_of_schedule'] += 1
             # sleep a little longer when out of hours to avoid burning cpu
             time.sleep(min(30.0, max(CONFIG.interval_seconds, 10.0)))
+            continue
+
+        if time.monotonic() - last_storage_check >= 300:
+            storage_ready = _storage_ready_for_periodic_capture()
+            last_storage_check = time.monotonic()
+        if not storage_ready:
+            with _stats_lock:
+                _stats['skipped_storage_pressure'] += 1
+            time.sleep(max(CONFIG.interval_seconds, 10.0))
             continue
 
         # Start the daily self-test and retry any doubtful result later.
@@ -945,12 +1141,6 @@ def documentation_loop():
                 else:
                     _set_last_error('jpeg encode failed')
 
-            # Prune disk usage once every ~60 captures (i.e. ~once per minute
-            # at 1s interval) so we don't stat the whole tree on every tick.
-            prune_counter += 1
-            if prune_counter >= 60:
-                _prune_if_needed()
-                prune_counter = 0
         except Exception as exc:
             _set_last_error(str(exc))
             print(f'[Docs] tick error: {exc}')
@@ -1041,13 +1231,10 @@ class CaptureHandler(BaseHTTPRequestHandler):
             payload['local_buffer_dir'] = str(CONFIG.local_buffer_dir)
             payload['output_dir'] = str(CONFIG.output_dir)
             payload['sync_enabled'] = CONFIG.sync_enabled
-            payload['sync_window'] = f'{CONFIG.sync_start_hour:02d}:00-{CONFIG.sync_end_hour:02d}:00'
+            payload['sync_window'] = sync_window_label()
             payload['drive_process_window_active'] = in_drive_process_window()
             payload['drive_maintenance_active'] = _drive_maintenance_requested()
-            payload['drive_process_window'] = (
-                f'{CONFIG.drive_start_hour:02d}:{CONFIG.drive_start_minute:02d}-'
-                f'{CONFIG.drive_stop_hour:02d}:{CONFIG.drive_stop_minute:02d}'
-            )
+            payload['drive_process_window'] = drive_process_window_label()
             payload['local_retention_days'] = CONFIG.local_retention_days
             payload['image_rotation'] = CONFIG.image_rotation
             self._respond_json(200, payload)

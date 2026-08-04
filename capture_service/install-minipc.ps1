@@ -495,11 +495,29 @@ relanza el instalador (el PATH solo se refresca al crear el proceso).
         Set-IniValue $configPath 'documentation' 'active_start_minute' '50'
         Set-IniValue $configPath 'documentation' 'active_end_hour' '15'
         Set-IniValue $configPath 'documentation' 'active_end_minute' '0'
+        Set-IniValue $configPath 'documentation' 'max_local_gb' '30'
+        Set-IniValue $configPath 'documentation' 'min_free_gb' '5'
+        Set-IniValue $configPath 'documentation' 'local_retention_days' '7'
+        Set-IniValue $configPath 'documentation' 'sync_interval_seconds' '1800'
+        Set-IniValue $configPath 'documentation' 'sync_weekly_enabled' 'true'
+        Set-IniValue $configPath 'documentation' 'sync_weekly_start_day' 'FRI'
+        Set-IniValue $configPath 'documentation' 'sync_weekly_start_hour' '15'
+        Set-IniValue $configPath 'documentation' 'sync_weekly_start_minute' '30'
+        Set-IniValue $configPath 'documentation' 'sync_weekly_end_day' 'MON'
+        Set-IniValue $configPath 'documentation' 'sync_weekly_end_hour' '5'
+        Set-IniValue $configPath 'documentation' 'sync_weekly_end_minute' '0'
         Set-IniValue $configPath 'documentation' 'drive_guard_enabled' 'true'
-        Set-IniValue $configPath 'documentation' 'drive_start_hour' '0'
+        Set-IniValue $configPath 'documentation' 'drive_start_hour' '3'
         Set-IniValue $configPath 'documentation' 'drive_start_minute' '45'
-        Set-IniValue $configPath 'documentation' 'drive_stop_hour' '6'
-        Set-IniValue $configPath 'documentation' 'drive_stop_minute' '35'
+        Set-IniValue $configPath 'documentation' 'drive_stop_hour' '4'
+        Set-IniValue $configPath 'documentation' 'drive_stop_minute' '45'
+        Set-IniValue $configPath 'documentation' 'drive_weekend_enabled' 'true'
+        Set-IniValue $configPath 'documentation' 'drive_weekend_start_day' 'FRI'
+        Set-IniValue $configPath 'documentation' 'drive_weekend_start_hour' '15'
+        Set-IniValue $configPath 'documentation' 'drive_weekend_start_minute' '15'
+        Set-IniValue $configPath 'documentation' 'drive_weekend_end_day' 'MON'
+        Set-IniValue $configPath 'documentation' 'drive_weekend_end_hour' '6'
+        Set-IniValue $configPath 'documentation' 'drive_weekend_end_minute' '35'
         Set-IniValue $configPath 'documentation' 'drive_guard_interval_seconds' '30'
         Set-IniValue $configPath 'sharpness' 'threshold_blurry' '2'
         Set-IniValue $configPath 'sharpness' 'threshold_warning' '10'
@@ -507,7 +525,8 @@ relanza el instalador (el PATH solo se refresca al crear el proceso).
         Set-IniValue $configPath 'sharpness' 'min_contrast' '8'
         Set-IniValue $configPath 'sharpness' 'retry_minutes' '15'
         Write-Host "  Â· capturas: 06:50-15:00, cada 20 segundos"
-        Write-Host "  Â· Google Drive: activo 00:45-06:35; cerrado durante produccion"
+        Write-Host "  Â· Drive diario 03:45-04:45 y fin de semana VIE 15:15-LUN 06:35"
+        Write-Host "  Â· copia de fotos a G: VIE 15:30-LUN 05:00; retencion local 7 dias"
         Write-Host "  Â· sharpness: threshold_blurry=2, retry_minutes=15"
     }
 

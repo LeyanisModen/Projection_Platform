@@ -11,9 +11,9 @@ to the Chrome kiosk. Single Python process:
 - Background thread that saves one FullHD JPEG every 20 seconds into a
   local buffer, so Marketing + QA have a record of the whole shift without
   competing with production for internet bandwidth.
-- Google Drive Desktop process guard: Drive runs only from 00:45 to 06:35.
-  Outside that window it is closed so no sync-error dialog can cover Chrome
-  kiosk. Buffered photos remain safe in `C:\moden\capture_buffer`.
+- Google Drive Desktop process guard: Drive runs Friday 15:15 through Monday
+  06:35 for photo sync, plus 03:45-04:45 daily for the updater. Outside those
+  windows it is closed so no error dialog can cover Chrome kiosk.
 
 ## One-time install on a mini-PC
 
@@ -89,7 +89,7 @@ curl http://127.0.0.1:5555/stats
 
 During production, check that new files appear under
 `C:\moden\capture_buffer\<mesa_id>\<YYYY-MM-DD>\HH-MM-SS.jpg`. They are copied
-to `G:\Mi unidad\capturas_moden\...` during the 01:00-05:00 sync window.
+to `G:\Mi unidad\capturas_moden\...` from Friday 15:30 through Monday 05:00.
 
 ## What the documentation loop writes
 
@@ -107,9 +107,10 @@ G:\Mi unidad\capturas_moden\
 - JPEG FullHD (1920x1080) @ quality 88 → ~350-500 KB per frame.
 - Outside the configured working window the loop sleeps and writes
   nothing (default window: Mon-Fri, 06:50-15:00 local time).
-- When the local footprint of `<output_dir>/<mesa_id>` exceeds
-  `max_local_gb`, the **oldest day folders are removed**. Today's
-  folder is never touched.
+- Local folders are retained for seven days and removed only when every file
+  has a matching path and size in `G:`. If the buffer reaches `max_local_gb`
+  or the disk falls below `min_free_gb`, periodic documentation pauses rather
+  than deleting a unique copy. Player and required flow captures continue.
 
 ## Troubleshooting
 
@@ -125,8 +126,10 @@ G:\Mi unidad\capturas_moden\
   - Windows Privacy → Camera → make sure Python is allowed.
 
 - **Google Drive desync**
-  - Drive is intentionally closed from 06:35 until 00:45. A daytime Drive
+  - Drive is intentionally closed throughout production. A weekday Drive
     error cannot interrupt projection; pending files stay in the local buffer.
+  - The weekly photo batch is staged into `G:` during the weekend and retried
+    every 30 minutes. Drive remains open until Monday 06:35 for cloud upload.
   - The automatic updater runs at 04:15, inside the Drive window. A manual
     update with `-Force` opens Drive temporarily and keeps it available until
     the update finishes; no extra preparation is needed.

@@ -307,8 +307,8 @@ Al llegar al sitio:
 - [ ] Volver a lanzar `start-player.bat` — o reiniciar, auto-arranca.
 - [ ] Abrir el dashboard desde otro equipo y confirmar que la mesa
       aparece **vinculada**.
-- [ ] Comprobar que Google Drive Desktop muestra "Sincronizado" (icono
-      verde) — si no, revisar Wi-Fi y credenciales.
+- [ ] Comprobar el fin de semana que Google Drive Desktop muestra
+      "Sincronizado"; durante producción estará cerrado deliberadamente.
 - [ ] Probar una captura manual con un `_foto` y verificar que aparece
       tanto en el dashboard como en la carpeta de Drive.
 - [ ] Anotar en la hoja de entrega: nombre del equipo, mesa asignada,

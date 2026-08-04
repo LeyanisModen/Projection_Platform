@@ -28,23 +28,26 @@ W            -> mostrar / ocultar cama de 20.
 DOCUMENTACION SIN SATURAR INTERNET
 ===========================================================
 
-Desde la version 2026-06-30.1 las fotos periodicas se guardan primero en:
+Las fotos periodicas se guardan primero en:
 
   C:\moden\capture_buffer
 
-Y solo se copian a Google Drive durante la ventana nocturna configurada
-en config.ini (por defecto 01:00-05:00). Para comprobarlo:
+Se copian a Google Drive desde el viernes 15:30 hasta el lunes 05:00. Drive
+permanece cerrado durante produccion y solo abre 03:45-04:45 entre semana para
+la actualizacion automatica. Para comprobarlo:
 
 curl.exe http://127.0.0.1:5555/stats
 
 Campos utiles:
 
   local_buffer_dir      -> carpeta local donde se captura durante el dia
-  output_dir            -> carpeta de Drive donde se publica por la noche
-  sync_window_active    -> true solo dentro de la ventana nocturna
+  output_dir            -> carpeta de Drive donde se publica el fin de semana
+  sync_window_active    -> true solo dentro de la ventana semanal
   pending_sync_bytes    -> volumen local pendiente / retenido
   last_sync_at          -> ultima copia a Drive
   last_sync_error       -> error si Drive no estaba disponible
+  free_disk_bytes       -> espacio libre actual del disco
+  documentation_paused_reason -> pausa segura por falta de espacio
 
 
 ===========================================================

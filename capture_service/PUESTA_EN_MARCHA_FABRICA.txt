@@ -54,8 +54,9 @@ PASO 2 -- Conectar la Wi-Fi del cliente
 4. Escribe la contrasena.
 5. Espera a que Windows diga "Conectado".
 
-Cuando la red este conectada, espera 30-60 s para que Google Drive y
-Chrome Remote Desktop tengan tiempo de arrancar por detras.
+Cuando la red este conectada, espera 30-60 s para que Chrome Remote Desktop
+tenga tiempo de arrancar. Google Drive lo gestiona el capture service segun
+el horario programado.
 
 
 PASO 3 -- Abrir PowerShell como administrador
@@ -234,18 +235,25 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File 'C:\moden\capture_servic
 
 NOTA INTERNET / GOOGLE DRIVE
 -----------------------------------------
-Desde la version 2026-06-30.1 las capturas periodicas se guardan durante el
-dia en C:\moden\capture_buffer y se copian a Google Drive solo en la ventana
-nocturna configurada (por defecto 01:00-05:00).
+Las capturas periodicas se guardan durante la semana en:
 
-Desde la version 2026-08-04.3 Google Drive Desktop solo permanece abierto de
-00:45 a 06:35. El capture service lo cierra durante produccion para impedir
-que una ventana de error se coloque encima del kiosko. Las fotos siguen
-guardandose localmente aunque Drive este cerrado.
+  C:\moden\capture_buffer
 
-La actualizacion automatica de las 04:15 sigue funcionando porque ocurre
-dentro de esa ventana. El comando manual con -Force abre Drive temporalmente
-y lo mantiene disponible hasta que termina; no hay que prepararlo a mano.
+Desde la version 2026-08-04.4 Google Drive Desktop permanece abierto de viernes
+15:15 a lunes 06:35 para sincronizar fotos. Entre semana solo abre de
+03:45 a 04:45 para la actualizacion automatica. El capture service lo cierra
+antes de produccion para impedir que una ventana de error tape el kiosko.
+
+Las capturas se copian del buffer a G: entre viernes 15:30 y lunes 05:00, con
+reintentos cada 30 minutos. La copia local se conserva 7 dias y solo se borra
+si todos los ficheros tienen una copia equivalente en G:.
+
+Si quedan menos de 5 GB libres, se pausan solo las capturas periodicas. El
+player y las fotos obligatorias de los modulos siguen funcionando.
+
+La actualizacion automatica de las 04:15 sigue funcionando. El comando manual
+con -Force abre Drive temporalmente y lo mantiene disponible hasta que termina;
+no hay que prepararlo a mano.
 
 Comprobar estado:
 
