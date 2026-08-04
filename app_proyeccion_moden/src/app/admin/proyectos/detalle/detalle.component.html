@@ -321,6 +321,13 @@
                                         </span>
                                         <span class="grupo-modulo-actions">
                                             <button type="button"
+                                                class="grupo-modulo-preview"
+                                                (click)="openSecuenciaModal(modulo, $event)"
+                                                title="Revisar secuencia de imagenes importada"
+                                                [attr.aria-label]="'Revisar imagenes importadas de ' + modulo.nombre">
+                                                <i class="fa fa-picture-o" aria-hidden="true"></i>
+                                            </button>
+                                            <button type="button"
                                                 class="grupo-modulo-camera"
                                                 [class.has-fotos]="modulo.fotos_count > 0"
                                                 [class.no-fotos]="!modulo.fotos_count"
@@ -662,6 +669,146 @@
 
     </div>
 
+</div>
+
+
+
+<!-- Imported image sequence preview. Read-only: it never changes production state. -->
+<div class="secuencia-modal-backdrop" *ngIf="showSecuenciaModal" (click)="closeSecuenciaModal()">
+    <section class="secuencia-modal" role="dialog" aria-modal="true"
+        [attr.aria-label]="'Revision de imagenes de ' + secuenciaTarget?.nombre"
+        (click)="$event.stopPropagation()">
+        <header class="secuencia-modal-header">
+            <div>
+                <span class="secuencia-eyebrow">CONTROL DE IMPORTACION</span>
+                <h4>Secuencia de {{ secuenciaTarget?.nombre }}</h4>
+                <p>Vista de solo lectura. No modifica mesas, colas ni avances de fabricacion.</p>
+            </div>
+            <button type="button" class="secuencia-close" (click)="closeSecuenciaModal()"
+                aria-label="Cerrar visor de secuencia">
+                <i class="fa fa-times" aria-hidden="true"></i>
+            </button>
+        </header>
+
+        <div *ngIf="loadingSecuencia" class="secuencia-loading">
+            <div class="spinner spinner-sm"></div>
+            <span>Cargando imagenes importadas...</span>
+        </div>
+
+        <ng-container *ngIf="!loadingSecuencia">
+            <div class="secuencia-summary">
+                <div class="secuencia-stat">
+                    <strong>{{ secuenciaImagenes.length }}</strong>
+                    <span>Total</span>
+                </div>
+                <div class="secuencia-stat" [class.is-missing]="secuenciaFaseCount('INFERIOR') === 0">
+                    <strong>{{ secuenciaFaseCount('INFERIOR') }}</strong>
+                    <span>Inferior</span>
+                </div>
+                <div class="secuencia-stat" [class.is-missing]="secuenciaFaseCount('SUPERIOR') === 0">
+                    <strong>{{ secuenciaFaseCount('SUPERIOR') }}</strong>
+                    <span>Superior + SD</span>
+                </div>
+                <div class="secuencia-stat is-key">
+                    <strong>{{ secuenciaMarcadoresCount() }}</strong>
+                    <span>Pasos clave</span>
+                </div>
+            </div>
+
+            <div *ngIf="secuenciaImagenes.length === 0" class="secuencia-empty is-critical">
+                <i class="fa fa-exclamation-triangle" aria-hidden="true"></i>
+                <div>
+                    <strong>Este modulo no tiene imagenes activas.</strong>
+                    <span>Revisa la carpeta seleccionada durante la importacion.</span>
+                </div>
+            </div>
+
+            <ng-container *ngIf="secuenciaImagenes.length > 0">
+                <nav class="secuencia-tabs" aria-label="Fase de la secuencia">
+                    <button type="button" [class.active]="secuenciaFase === 'INFERIOR'"
+                        [class.is-missing]="secuenciaFaseCount('INFERIOR') === 0"
+                        (click)="selectSecuenciaFase('INFERIOR')">
+                        INF <span>{{ secuenciaFaseCount('INFERIOR') }}</span>
+                    </button>
+                    <button type="button" [class.active]="secuenciaFase === 'SUPERIOR'"
+                        [class.is-missing]="secuenciaFaseCount('SUPERIOR') === 0"
+                        (click)="selectSecuenciaFase('SUPERIOR')">
+                        SUP + SD <span>{{ secuenciaFaseCount('SUPERIOR') }}</span>
+                    </button>
+                </nav>
+
+                <div *ngIf="secuenciaImagenesFase.length === 0" class="secuencia-empty">
+                    <i class="fa fa-folder-open-o" aria-hidden="true"></i>
+                    <div>
+                        <strong>No se cargo ninguna imagen para esta fase.</strong>
+                        <span>La otra fase puede revisarse desde las pestanas superiores.</span>
+                    </div>
+                </div>
+
+                <div class="secuencia-viewer" *ngIf="secuenciaImagenActual as imagen">
+                    <div class="secuencia-stage-row">
+                        <button type="button" class="secuencia-nav prev" (click)="prevSecuenciaImagen()"
+                            [disabled]="selectedSecuenciaIndex === 0" aria-label="Imagen anterior">
+                            <i class="fa fa-chevron-left" aria-hidden="true"></i>
+                        </button>
+
+                        <div class="secuencia-stage">
+                            <img *ngIf="!secuenciaImageErrors.has(imagen.id)"
+                                [src]="getSecuenciaImagenUrl(imagen)"
+                                [alt]="getSecuenciaArchivoNombre(imagen)"
+                                (error)="onSecuenciaImageError(imagen)">
+                            <div class="secuencia-broken" *ngIf="secuenciaImageErrors.has(imagen.id)">
+                                <i class="fa fa-chain-broken" aria-hidden="true"></i>
+                                <strong>El archivo no se puede abrir</strong>
+                                <span>La referencia existe en la base de datos, pero el fichero no esta disponible.</span>
+                            </div>
+                            <span class="secuencia-marker"
+                                *ngIf="getSecuenciaMarker(imagen) as marker"
+                                [class.marker-warning]="marker === 'WARNING'"
+                                [class.marker-check]="marker === 'CHECK'"
+                                [class.marker-foto]="marker === 'FOTO'">
+                                {{ marker === 'CHECK' ? 'COMPROBACION' : marker }}
+                            </span>
+                        </div>
+
+                        <button type="button" class="secuencia-nav next" (click)="nextSecuenciaImagen()"
+                            [disabled]="selectedSecuenciaIndex >= secuenciaImagenesFase.length - 1"
+                            aria-label="Imagen siguiente">
+                            <i class="fa fa-chevron-right" aria-hidden="true"></i>
+                        </button>
+                    </div>
+
+                    <div class="secuencia-meta">
+                        <div class="secuencia-file">
+                            <strong>{{ getSecuenciaArchivoNombre(imagen) }}</strong>
+                            <span>{{ secuenciaFase === 'INFERIOR' ? 'Inferior' : 'Superior + SD' }}</span>
+                        </div>
+                        <div class="secuencia-position">
+                            <strong>{{ selectedSecuenciaIndex + 1 }} / {{ secuenciaImagenesFase.length }}</strong>
+                            <span>Orden {{ imagen.orden }} · Version {{ imagen.version }}</span>
+                        </div>
+                    </div>
+
+                    <div class="secuencia-thumbnails" aria-label="Imagenes de la fase">
+                        <button type="button" *ngFor="let item of secuenciaImagenesFase; let index = index"
+                            [class.active]="index === selectedSecuenciaIndex"
+                            [class.has-error]="secuenciaImageErrors.has(item.id)"
+                            (click)="selectSecuenciaImagen(index)"
+                            [title]="getSecuenciaArchivoNombre(item)">
+                            <span class="thumb-number">{{ index + 1 }}</span>
+                            <img *ngIf="!secuenciaImageErrors.has(item.id)"
+                                [src]="getSecuenciaImagenUrl(item)" alt=""
+                                (error)="onSecuenciaImageError(item)">
+                            <i *ngIf="secuenciaImageErrors.has(item.id)" class="fa fa-chain-broken" aria-hidden="true"></i>
+                            <span class="thumb-marker" *ngIf="getSecuenciaMarker(item) as marker">
+                                {{ marker === 'CHECK' ? 'CHK' : marker }}
+                            </span>
+                        </button>
+                    </div>
+                </div>
+            </ng-container>
+        </ng-container>
+    </section>
 </div>
 
 

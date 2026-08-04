@@ -66,6 +66,33 @@ class PermissionAndDeviceAuthTests(APITestCase):
         self.assertEqual(response.data["count"], 2)
         self.assertEqual(len(response.data["results"]), 2)
 
+    def test_module_image_preview_is_read_only_and_scoped_to_project_owner(self):
+        module_a = Modulo.objects.create(nombre="A01", proyecto=self.project_a)
+        image = Imagen.objects.create(
+            modulo=module_a,
+            fase="SUPERIOR",
+            orden=3,
+            version=2,
+            status="PUBLISHED",
+            activo=True,
+            url="/media/imagenes/1/2/3/13_CHECK_VISUAL.png",
+        )
+        module_b = Modulo.objects.create(nombre="B01", proyecto=self.project_b)
+
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.user_a_token.key}")
+        before_count = Imagen.objects.count()
+        response = self.client.get(f"/api/modulos/{module_a.id}/imagenes/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Imagen.objects.count(), before_count)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["id"], image.id)
+        self.assertEqual(response.data[0]["archivo_nombre"], "13_CHECK_VISUAL.png")
+        self.assertEqual(response.data[0]["status"], "PUBLISHED")
+
+        forbidden_response = self.client.get(f"/api/modulos/{module_b.id}/imagenes/")
+        self.assertEqual(forbidden_response.status_code, 404)
+
     def test_delete_project_removes_its_media_without_touching_other_projects(self):
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.admin_token.key}")
 

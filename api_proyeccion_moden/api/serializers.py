@@ -1,3 +1,5 @@
+import os
+
 from django.contrib.auth.models import User
 from rest_framework import serializers
 
@@ -421,12 +423,13 @@ class DetalleModuloFaseSerializer(serializers.ModelSerializer):
 class ImagenSerializer(serializers.HyperlinkedModelSerializer):
     src = serializers.CharField(source='url', read_only=True)
     nombre = serializers.SerializerMethodField()
+    archivo_nombre = serializers.SerializerMethodField()
     
     class Meta:
         model = Imagen
         fields = [
-            "id", "url", "src", "nombre", "modulo",
-            "fase", "orden", "version", "activo", "checksum"
+            "id", "url", "src", "nombre", "archivo_nombre", "modulo",
+            "fase", "orden", "version", "status", "activo", "checksum"
         ]
 
     def get_nombre(self, obj):
@@ -434,6 +437,9 @@ class ImagenSerializer(serializers.HyperlinkedModelSerializer):
         fase_pref = "INF" if obj.fase == "INFERIOR" else "SUP"
         modulo_nombre = obj.modulo.nombre if obj.modulo else "UNKNOWN"
         return f"{fase_pref}-{obj.orden:03d}-{modulo_nombre}"
+
+    def get_archivo_nombre(self, obj):
+        return os.path.basename(obj.url or '')
 
 
 class FotoFabricacionSerializer(serializers.ModelSerializer):

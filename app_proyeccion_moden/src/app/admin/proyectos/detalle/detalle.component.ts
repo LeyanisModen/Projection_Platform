@@ -10,7 +10,7 @@ import {
     transferArrayItem,
 } from '@angular/cdk/drag-drop';
 import {
-    ApiService, Proyecto, Planta, Modulo, User, FotoFabricacion,
+    ApiService, Proyecto, Planta, Modulo, User, FotoFabricacion, Imagen,
     DetalleModuloFase, TechnicalImportStats, GrupoBastidor, GrupoBastidorModulo,
     EstrategiaBastidor, ModuloFase
 } from '../../../services/api.service';
@@ -78,6 +78,15 @@ export class ProyectoDetailComponent implements OnInit {
     showBastidorDownloadModal = false;
     selectedDownloadModuloIds: number[] = [];
 
+    // Imported image sequence preview. This is read-only and never touches production state.
+    showSecuenciaModal = false;
+    secuenciaTarget: { id: number; nombre: string } | null = null;
+    secuenciaImagenes: Imagen[] = [];
+    secuenciaFase: ModuloFase = 'INFERIOR';
+    selectedSecuenciaIndex = 0;
+    loadingSecuencia = false;
+    secuenciaImageErrors = new Set<number>();
+
     constructor(
         private route: ActivatedRoute,
         private api: ApiService,
@@ -90,6 +99,21 @@ export class ProyectoDetailComponent implements OnInit {
         if (!target.closest('.custom-dropdown')) {
             this.dropdownOpen = false;
         }
+    }
+
+    @HostListener('document:keydown', ['$event'])
+    onDocumentKeydown(event: KeyboardEvent): void {
+        if (!this.showSecuenciaModal) return;
+        if (event.key === 'Escape') {
+            this.closeSecuenciaModal();
+        } else if (event.key === 'ArrowLeft') {
+            this.prevSecuenciaImagen();
+        } else if (event.key === 'ArrowRight') {
+            this.nextSecuenciaImagen();
+        } else {
+            return;
+        }
+        event.preventDefault();
     }
 
     ngOnInit(): void {
@@ -1272,6 +1296,110 @@ export class ProyectoDetailComponent implements OnInit {
             return apiOrigin ? `${apiOrigin}${url}` : url;
         }
         return apiOrigin ? `${apiOrigin}/${url}` : `/${url}`;
+    }
+
+    // =========================================================================
+    // IMPORTED IMAGE SEQUENCE PREVIEW (READ-ONLY)
+    // =========================================================================
+    openSecuenciaModal(modulo: { id: number; nombre: string }, event?: Event): void {
+        event?.stopPropagation();
+        this.secuenciaTarget = { id: modulo.id, nombre: modulo.nombre };
+        this.showSecuenciaModal = true;
+        this.secuenciaImagenes = [];
+        this.secuenciaFase = 'INFERIOR';
+        this.selectedSecuenciaIndex = 0;
+        this.secuenciaImageErrors.clear();
+        this.loadingSecuencia = true;
+
+        this.api.getModuloImagenes(modulo.id).subscribe({
+            next: (imagenes) => {
+                this.secuenciaImagenes = [...imagenes].sort((a, b) =>
+                    a.fase.localeCompare(b.fase) || a.orden - b.orden || a.version - b.version
+                );
+                if (!this.secuenciaImagenes.some(imagen => imagen.fase === 'INFERIOR')) {
+                    this.secuenciaFase = 'SUPERIOR';
+                }
+                this.selectedSecuenciaIndex = 0;
+                this.loadingSecuencia = false;
+                this.cdr.detectChanges();
+            },
+            error: (err) => {
+                console.error('Error loading imported image sequence', err);
+                this.loadingSecuencia = false;
+                this.cdr.detectChanges();
+            }
+        });
+    }
+
+    closeSecuenciaModal(): void {
+        this.showSecuenciaModal = false;
+        this.secuenciaTarget = null;
+        this.secuenciaImagenes = [];
+        this.selectedSecuenciaIndex = 0;
+        this.secuenciaImageErrors.clear();
+    }
+
+    get secuenciaImagenesFase(): Imagen[] {
+        return this.secuenciaImagenes.filter(imagen => imagen.fase === this.secuenciaFase);
+    }
+
+    get secuenciaImagenActual(): Imagen | null {
+        return this.secuenciaImagenesFase[this.selectedSecuenciaIndex] || null;
+    }
+
+    secuenciaFaseCount(fase: ModuloFase): number {
+        return this.secuenciaImagenes.filter(imagen => imagen.fase === fase).length;
+    }
+
+    secuenciaMarcadoresCount(): number {
+        return this.secuenciaImagenes.filter(imagen => !!this.getSecuenciaMarker(imagen)).length;
+    }
+
+    selectSecuenciaFase(fase: ModuloFase): void {
+        this.secuenciaFase = fase;
+        this.selectedSecuenciaIndex = 0;
+    }
+
+    selectSecuenciaImagen(index: number): void {
+        if (index < 0 || index >= this.secuenciaImagenesFase.length) return;
+        this.selectedSecuenciaIndex = index;
+    }
+
+    prevSecuenciaImagen(): void {
+        if (this.selectedSecuenciaIndex > 0) this.selectedSecuenciaIndex--;
+    }
+
+    nextSecuenciaImagen(): void {
+        if (this.selectedSecuenciaIndex < this.secuenciaImagenesFase.length - 1) {
+            this.selectedSecuenciaIndex++;
+        }
+    }
+
+    getSecuenciaImagenUrl(imagen: Imagen): string {
+        return this.toAbsoluteFileUrl(imagen.src || imagen.url) || '';
+    }
+
+    getSecuenciaArchivoNombre(imagen: Imagen): string {
+        if (imagen.archivo_nombre) return imagen.archivo_nombre;
+        const rawName = (imagen.url || '').split('/').pop() || imagen.nombre;
+        try {
+            return decodeURIComponent(rawName);
+        } catch {
+            return rawName;
+        }
+    }
+
+    getSecuenciaMarker(imagen: Imagen): 'WARNING' | 'CHECK' | 'FOTO' | null {
+        const fileName = this.getSecuenciaArchivoNombre(imagen).toUpperCase();
+        if (fileName.includes('WARNING')) return 'WARNING';
+        if (/(CHECK|CHCK|COMPROB)/.test(fileName)) return 'CHECK';
+        if (fileName.includes('FOTO')) return 'FOTO';
+        return null;
+    }
+
+    onSecuenciaImageError(imagen: Imagen): void {
+        this.secuenciaImageErrors.add(imagen.id);
+        this.cdr.detectChanges();
     }
 
     // =========================================================================

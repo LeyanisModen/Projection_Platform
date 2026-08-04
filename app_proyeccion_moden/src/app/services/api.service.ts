@@ -178,11 +178,14 @@ export interface Imagen {
     url: string;
     src: string;
     nombre: string;
+    archivo_nombre: string;
     modulo: string;
     fase: 'INFERIOR' | 'SUPERIOR';
     orden: number;
     version: number;
+    status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
     activo: boolean;
+    checksum?: string | null;
 }
 
 export interface Mesa {
