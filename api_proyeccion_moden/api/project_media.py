@@ -41,6 +41,8 @@ def collect_project_media(project):
         for file_name in row
         if file_name
     }
+    if project.fichero_datos_tecnicos:
+        storage_files.add(project.fichero_datos_tecnicos.name)
     storage_files.update(
         Imagen.objects.filter(modulo__proyecto=project)
         .exclude(archivo='')

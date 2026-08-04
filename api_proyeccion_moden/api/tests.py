@@ -110,6 +110,10 @@ class PermissionAndDeviceAuthTests(APITestCase):
                 planta.fichero_corte.save(
                     "corte-a.zip", SimpleUploadedFile("corte-a.zip", b"corte")
                 )
+                self.project_a.fichero_datos_tecnicos.save(
+                    "datos-a.db",
+                    SimpleUploadedFile("datos-a.db", b"datos-tecnicos"),
+                )
 
                 project_image = (
                     Path(media_root)
@@ -170,6 +174,9 @@ class PermissionAndDeviceAuthTests(APITestCase):
 
                 plano_path = Path(planta.plano_imagen.path)
                 corte_path = Path(planta.fichero_corte.path)
+                technical_path = Path(
+                    self.project_a.fichero_datos_tecnicos.path
+                )
                 legacy_image_path = Path(legacy_image.archivo.path)
                 with self.captureOnCommitCallbacks(execute=True):
                     response = self.client.delete(
@@ -182,6 +189,7 @@ class PermissionAndDeviceAuthTests(APITestCase):
                 self.assertFalse(project_photo.exists())
                 self.assertFalse(plano_path.exists())
                 self.assertFalse(corte_path.exists())
+                self.assertFalse(technical_path.exists())
                 self.assertFalse(legacy_image_path.exists())
                 self.assertTrue(other_project_file.exists())
 
@@ -773,6 +781,14 @@ class FerrallaContactosApiTests(APITestCase):
 )
 class PlanningFoundationTests(APITestCase):
     def setUp(self):
+        self._media_temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._media_temp.cleanup)
+        self._media_override = override_settings(
+            MEDIA_ROOT=self._media_temp.name
+        )
+        self._media_override.enable()
+        self.addCleanup(self._media_override.disable)
+
         self.user = User.objects.create_user(username="planning_user", password="pass123")
         self.token = Token.objects.create(user=self.user)
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
@@ -780,6 +796,65 @@ class PlanningFoundationTests(APITestCase):
         self.project = Proyecto.objects.create(nombre="Proyecto Plan", usuario=self.user)
         self.planta = Planta.objects.create(nombre="P1", proyecto=self.project, orden=1)
         self.modulo = Modulo.objects.create(nombre="M-01", proyecto=self.project, planta=self.planta)
+
+    def _technical_db_file(self, filename, rows):
+        temp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as temp_file:
+                temp_path = temp_file.name
+            connection = sqlite3.connect(temp_path)
+            connection.execute(
+                """
+                CREATE TABLE resumen (
+                    id INTEGER PRIMARY KEY,
+                    nombre_modulo TEXT,
+                    ancho_cm REAL,
+                    tipo_modulo TEXT,
+                    numero_cortes_mallazo_inf INTEGER,
+                    numero_cortes_mallazo_sup INTEGER,
+                    cantidad_refuerzos_inf INTEGER,
+                    cantidad_refuerzos_sup INTEGER,
+                    peso_mallazo_recortado_inf REAL,
+                    peso_mallazo_recortado_sup REAL
+                )
+                """
+            )
+            for index, row in enumerate(rows, start=1):
+                connection.execute(
+                    """
+                    INSERT INTO resumen (
+                        id, nombre_modulo, ancho_cm, tipo_modulo,
+                        numero_cortes_mallazo_inf,
+                        numero_cortes_mallazo_sup,
+                        cantidad_refuerzos_inf,
+                        cantidad_refuerzos_sup,
+                        peso_mallazo_recortado_inf,
+                        peso_mallazo_recortado_sup
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        index,
+                        row["nombre"],
+                        row.get("ancho", 17),
+                        row.get("tipo", "CENTRAL"),
+                        row.get("cortes_inf", 0),
+                        row.get("cortes_sup", 0),
+                        row.get("refuerzos_inf", 0),
+                        row.get("refuerzos_sup", 0),
+                        row.get("peso_inf", 10),
+                        row.get("peso_sup", 10),
+                    ),
+                )
+            connection.commit()
+            connection.close()
+            return SimpleUploadedFile(
+                filename,
+                Path(temp_path).read_bytes(),
+                content_type="application/octet-stream",
+            )
+        finally:
+            if temp_path and os.path.exists(temp_path):
+                os.unlink(temp_path)
 
     def test_nombre_repetido_sigue_resolviendo_datos_tecnicos_originales(self):
         from api.views import _resolve_modulo_for_record
@@ -2628,6 +2703,169 @@ class PlanningFoundationTests(APITestCase):
         self.modulo.refresh_from_db()
         self.assertEqual(str(self.modulo.ancho_cm), "18.00")
         self.assertEqual(DetalleModuloFase.objects.filter(modulo=self.modulo).count(), 2)
+
+    def test_base_tecnica_adelantada_se_aplica_al_importar_modulo(self):
+        technical_file = self._technical_db_file(
+            "base_completa.db",
+            [
+                {
+                    "nombre": "M-01",
+                    "ancho": 18,
+                    "cortes_inf": 2,
+                    "cortes_sup": 1,
+                },
+                {
+                    "nombre": "M-02",
+                    "ancho": 21,
+                    "tipo": "LADO LARGO",
+                    "cortes_inf": 8,
+                    "cortes_sup": 4,
+                    "refuerzos_inf": 3,
+                    "refuerzos_sup": 2,
+                },
+            ],
+        )
+        technical_response = self.client.post(
+            f"/api/proyectos/{self.project.id}/import-technical-data/",
+            {"technical_file": technical_file},
+            format="multipart",
+        )
+
+        self.assertEqual(technical_response.status_code, 200)
+        self.project.refresh_from_db()
+        self.assertTrue(self.project.fichero_datos_tecnicos)
+
+        import_response = self.client.post(
+            f"/api/proyectos/{self.project.id}/import-structure/",
+            {
+                "plantas": json.dumps([{
+                    "nombre": "General",
+                    "orden": 2,
+                    "modulos": [{"nombre": "M-02", "imagenes": []}],
+                }]),
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(import_response.status_code, 200)
+        self.assertEqual(import_response.data["stats"]["detalles_fase"], 2)
+        nuevo = Modulo.objects.get(proyecto=self.project, nombre="M-02")
+        self.assertEqual(str(nuevo.ancho_cm), "21.00")
+        self.assertEqual(nuevo.tipo_modulo, "LADO_LARGO")
+        self.assertEqual(nuevo.detalles_fase.count(), 2)
+        inferior = nuevo.detalles_fase.get(fase="INFERIOR")
+        self.assertEqual(inferior.cantidad_cortes, 8)
+        self.assertGreater(inferior.dificultad_calculada, 0)
+        self.assertIsNotNone(nuevo.grupo_bastidor_id)
+
+    def test_nueva_base_actualiza_datos_sin_reconstruir_bastidores(self):
+        first_response = self.client.post(
+            f"/api/proyectos/{self.project.id}/import-technical-data/",
+            {
+                "technical_file": self._technical_db_file(
+                    "base_v1.db",
+                    [{"nombre": "M-01", "ancho": 18, "cortes_inf": 2}],
+                ),
+            },
+            format="multipart",
+        )
+        self.assertEqual(first_response.status_code, 200)
+        self.modulo.refresh_from_db()
+        original_group_id = self.modulo.grupo_bastidor_id
+        original_group_count = self.project.grupos_bastidor.count()
+        self.project.refresh_from_db()
+        original_source_path = Path(
+            self.project.fichero_datos_tecnicos.path
+        )
+
+        with self.captureOnCommitCallbacks(execute=True):
+            update_response = self.client.post(
+                f"/api/proyectos/{self.project.id}/import-technical-data/",
+                {
+                    "technical_file": self._technical_db_file(
+                        "base_v2.db",
+                        [{
+                            "nombre": "M-01",
+                            "ancho": 23,
+                            "cortes_inf": 9,
+                            "refuerzos_inf": 4,
+                        }],
+                    ),
+                },
+                format="multipart",
+            )
+
+        self.assertEqual(update_response.status_code, 200)
+        self.assertEqual(update_response.data["stats"]["grupos_bastidor"], 0)
+        self.assertTrue(update_response.data["stats"]["base_actualizada"])
+        self.modulo.refresh_from_db()
+        self.project.refresh_from_db()
+        inferior = self.modulo.detalles_fase.get(fase="INFERIOR")
+        self.assertEqual(str(self.modulo.ancho_cm), "23.00")
+        self.assertEqual(inferior.cantidad_cortes, 9)
+        self.assertEqual(self.modulo.grupo_bastidor_id, original_group_id)
+        self.assertEqual(
+            self.project.grupos_bastidor.count(),
+            original_group_count,
+        )
+        self.assertFalse(original_source_path.exists())
+        self.assertTrue(Path(self.project.fichero_datos_tecnicos.path).exists())
+
+    def test_importacion_con_base_nueva_usa_la_nueva_version(self):
+        first_response = self.client.post(
+            f"/api/proyectos/{self.project.id}/import-technical-data/",
+            {
+                "technical_file": self._technical_db_file(
+                    "base_anterior.db",
+                    [
+                        {"nombre": "M-01", "ancho": 18},
+                        {"nombre": "M-02", "ancho": 11},
+                    ],
+                ),
+            },
+            format="multipart",
+        )
+        self.assertEqual(first_response.status_code, 200)
+
+        import_response = self.client.post(
+            f"/api/proyectos/{self.project.id}/import-structure/",
+            {
+                "plantas": json.dumps([{
+                    "nombre": "General",
+                    "orden": 2,
+                    "modulos": [{"nombre": "M-02", "imagenes": []}],
+                }]),
+                "technical_file": self._technical_db_file(
+                    "base_nueva.db",
+                    [
+                        {"nombre": "M-01", "ancho": 18},
+                        {
+                            "nombre": "M-02",
+                            "ancho": 27,
+                            "cortes_inf": 7,
+                            "cortes_sup": 5,
+                        },
+                    ],
+                ),
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(import_response.status_code, 200)
+        self.assertTrue(
+            import_response.data["stats"]["base_tecnica_actualizada"]
+        )
+        nuevo = Modulo.objects.get(proyecto=self.project, nombre="M-02")
+        self.assertEqual(str(nuevo.ancho_cm), "27.00")
+        self.assertEqual(
+            nuevo.detalles_fase.get(fase="INFERIOR").cantidad_cortes,
+            7,
+        )
+        self.project.refresh_from_db()
+        self.assertEqual(
+            os.path.basename(self.project.fichero_datos_tecnicos.name),
+            "base_nueva.db",
+        )
 
     def test_import_technical_data_from_csv_prefixed_columns(self):
         csv_content = (

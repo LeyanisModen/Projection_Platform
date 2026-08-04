@@ -65,6 +65,16 @@ class Proyecto(models.Model):
         default=False,
         help_text='Indica si ya se importo el fichero de datos tecnicos y se calcularon los grupos.'
     )
+    fichero_datos_tecnicos = models.FileField(
+        upload_to='datos_tecnicos/',
+        blank=True,
+        null=True,
+        help_text='Ultima fuente tecnica valida importada para el proyecto.',
+    )
+    datos_tecnicos_actualizados_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
     estrategia_bastidor = models.CharField(
         max_length=32,
         choices=EstrategiaBastidor.choices,

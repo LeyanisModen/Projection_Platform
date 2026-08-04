@@ -1026,11 +1026,14 @@ export class ProyectoDetailComponent implements OnInit {
 
             // Add structure to FormData
             formData.append('plantas', JSON.stringify([plantaUnicaData]));
+            if (technicalDbFile) {
+                formData.append('technical_file', technicalDbFile);
+            }
 
             // Upload
             this.api.importProjectStructure(this.proyectoId, formData).subscribe({
                 next: (res) => {
-                    const finish = (techResult?: any) => {
+                    const finish = () => {
                         this.importing = false;
                         this.importProgress = '';
                         const s = res.stats;
@@ -1041,12 +1044,12 @@ export class ProyectoDetailComponent implements OnInit {
                         lines.push(`• Imágenes cargadas: ${s.imagenes || 0}`);
                         lines.push(`• Plano de referencia: ${s.plano_cargado ? 'sí' : 'no'}`);
                         lines.push(`• Planilla (corte): ${s.planilla_cargada ? 'sí' : 'no'}`);
-                        if (techResult?.stats) {
-                            const t = techResult.stats;
-                            lines.push(`• Base de datos técnica: importada (procesados ${t.processed || 0}, omitidos ${t.skipped || 0})`);
-                            lines.push(`• Grupos de bastidor calculados: ${t.grupos_bastidor || 0}`);
-                        } else if (technicalDbFile) {
-                            lines.push(`• Base de datos técnica: no se pudo importar`);
+                        if (technicalDbFile) {
+                            lines.push(s.base_tecnica_actualizada
+                                ? `• Base de datos técnica: guardada y aplicada (${s.detalles_fase || 0} fases)`
+                                : `• Base de datos técnica: no se pudo importar`);
+                        } else if (s.detalles_fase) {
+                            lines.push(`• Datos técnicos recuperados de la base guardada: ${s.detalles_fase} fases`);
                         }
                         if (s.errors && s.errors.length) {
                             lines.push('');
@@ -1056,22 +1059,7 @@ export class ProyectoDetailComponent implements OnInit {
                         this.loadData();
                     };
 
-                    // Auto-import technical data if .db was found in the folder
-                    if (technicalDbFile && this.proyectoId) {
-                        this.importProgress = 'Importando datos técnicos...';
-                        this.cdr.detectChanges();
-                        const techForm = new FormData();
-                        techForm.append('technical_file', technicalDbFile);
-                        this.api.importProjectTechnicalData(this.proyectoId, techForm).subscribe({
-                            next: (techResult) => finish(techResult),
-                            error: (err) => {
-                                console.warn('Auto technical import failed:', err);
-                                finish();
-                            }
-                        });
-                    } else {
-                        finish();
-                    }
+                    finish();
                 },
                 error: (err) => {
                     console.error('Error uploading modules', err);
@@ -1108,8 +1096,9 @@ export class ProyectoDetailComponent implements OnInit {
         if (!file) return;
 
         const lowerName = file.name.toLowerCase();
-        if (!lowerName.endsWith('.json') && !lowerName.endsWith('.csv') && !lowerName.endsWith('.db')) {
-            alert('El fichero técnico debe ser JSON o CSV.');
+        const validExtensions = ['.json', '.csv', '.db', '.sqlite', '.sqlite3'];
+        if (!validExtensions.some(extension => lowerName.endsWith(extension))) {
+            alert('El fichero técnico debe ser JSON, CSV o SQLite.');
             return;
         }
 

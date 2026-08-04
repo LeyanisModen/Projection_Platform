@@ -105,16 +105,25 @@
                             <i *ngIf="proyecto.datos_tecnicos_importados" class="fa fa-check-circle text-success ml-1" title="Datos técnicos importados"></i>
                         </label>
                         <small class="text-muted" *ngIf="!proyecto.datos_tecnicos_importados">Importa un JSON, CSV o SQLite (.db) con ancho de módulo, espesores, pesos y dificultad. Al importar se calcularán los grupos de bastidor.</small>
+                        <small class="text-muted d-block" *ngIf="proyecto.datos_tecnicos_importados">
+                            La base guardada se aplicará automáticamente a los módulos que importes después.
+                        </small>
+                        <small class="text-muted d-block mt-1" *ngIf="proyecto.datos_tecnicos_archivo">
+                            Base vigente: {{ proyecto.datos_tecnicos_archivo }}
+                            <ng-container *ngIf="proyecto.datos_tecnicos_actualizados_at">
+                                · {{ proyecto.datos_tecnicos_actualizados_at | date:'dd/MM/yyyy HH:mm' }}
+                            </ng-container>
+                        </small>
                     </div>
                 </div>
-                <div class="project-config-controls" *ngIf="!proyecto.datos_tecnicos_importados">
-                    <input #technicalDataInput type="file" accept=".json,.csv,.db" hidden (change)="onTechnicalDataSelected($event)">
+                <div class="project-config-controls">
+                    <input #technicalDataInput type="file" accept=".json,.csv,.db,.sqlite,.sqlite3" hidden (change)="onTechnicalDataSelected($event)">
                     <button
                         type="button"
                         class="btn btn-sm btn-import-planta"
                         (click)="triggerTechnicalDataUpload(technicalDataInput)"
                         [disabled]="technicalImporting">
-                        {{ technicalImporting ? 'Importando...' : 'Importar datos técnicos' }}
+                        {{ technicalImporting ? 'Importando...' : (proyecto.datos_tecnicos_importados ? 'Actualizar base técnica' : 'Importar datos técnicos') }}
                     </button>
                 </div>
                 <div class="technical-import-summary" *ngIf="technicalImportStats">

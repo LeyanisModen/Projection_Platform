@@ -310,6 +310,9 @@ export class ProyectosComponent implements OnInit {
 
       // Add the single planta to formData
       formData.append('plantas', JSON.stringify([plantaUnicaData]));
+      if (technicalDbFile) {
+        formData.append('technical_file', technicalDbFile);
+      }
 
       this.importProgress = 'Subiendo archivos al servidor...';
 
@@ -319,7 +322,7 @@ export class ProyectosComponent implements OnInit {
           this.importStats = result.stats;
           console.log('Import complete:', result);
 
-          const showSummary = (techResult?: any) => {
+          const showSummary = () => {
             const s = result.stats;
             const lines: string[] = [];
             lines.push(`Proyecto "${this.newProject.nombre}" creado correctamente.`);
@@ -328,12 +331,12 @@ export class ProyectosComponent implements OnInit {
             lines.push(`• Imágenes cargadas: ${s.imagenes || 0}`);
             lines.push(`• Plano de referencia: ${s.plano_cargado ? 'sí' : 'no'}`);
             lines.push(`• Planilla (corte): ${s.planilla_cargada ? 'sí' : 'no'}`);
-            if (techResult?.stats) {
-              const t = techResult.stats;
-              lines.push(`• Base de datos técnica: importada (procesados ${t.processed || 0}, omitidos ${t.skipped || 0})`);
-              lines.push(`• Grupos de bastidor calculados: ${t.grupos_bastidor || 0}`);
-            } else if (technicalDbFile) {
-              lines.push(`• Base de datos técnica: no se pudo importar`);
+            if (technicalDbFile) {
+              lines.push(s.base_tecnica_actualizada
+                ? `• Base de datos técnica: guardada y aplicada (${s.detalles_fase || 0} fases)`
+                : `• Base de datos técnica: no se pudo importar`);
+            } else if (s.detalles_fase) {
+              lines.push(`• Datos técnicos recuperados de la base guardada: ${s.detalles_fase} fases`);
             } else {
               lines.push(`• Base de datos técnica: no incluida en la carpeta`);
             }
@@ -344,10 +347,10 @@ export class ProyectosComponent implements OnInit {
             alert(lines.join('\n'));
           };
 
-          const finishImport = (techResult?: any) => {
+          const finishImport = () => {
             this.importing = false;
             this.importProgress = '';
-            showSummary(techResult);
+            showSummary();
             if (result.stats.errors.length > 0) {
               this.error = `Importacion completada con ${result.stats.errors.length} errores`;
             } else {
@@ -360,22 +363,7 @@ export class ProyectosComponent implements OnInit {
             this.cdr.detectChanges();
           };
 
-          // If a .db/.sqlite was found, auto-import technical data
-          if (technicalDbFile) {
-            this.importProgress = 'Importando datos técnicos...';
-            this.cdr.detectChanges();
-            const techForm = new FormData();
-            techForm.append('technical_file', technicalDbFile);
-            this.api.importProjectTechnicalData(proyectoId, techForm).subscribe({
-              next: (techResult) => finishImport(techResult),
-              error: (err) => {
-                console.warn('Auto technical import failed:', err);
-                finishImport();
-              }
-            });
-          } else {
-            finishImport();
-          }
+          finishImport();
         },
         error: (err) => {
           console.error('Error importing structure:', err);

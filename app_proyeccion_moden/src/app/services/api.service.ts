@@ -59,6 +59,8 @@ export interface Proyecto {
     usuario: string;
     bastidor_longitud_cm: number;
     datos_tecnicos_importados: boolean;
+    datos_tecnicos_archivo?: string | null;
+    datos_tecnicos_actualizados_at?: string | null;
     estrategia_bastidor: EstrategiaBastidor;
     capacidad_diaria_usuario?: number;
     grupos_count?: number;
@@ -170,6 +172,7 @@ export interface TechnicalImportStats {
     updated: number;
     skipped: number;
     grupos_bastidor?: number;
+    base_actualizada?: boolean;
     errors: string[];
 }
 
@@ -466,6 +469,7 @@ export class ApiService {
             detalles_fase: number;
             plano_cargado?: boolean;
             planilla_cargada?: boolean;
+            base_tecnica_actualizada?: boolean;
             errors: string[];
         };
     }> {

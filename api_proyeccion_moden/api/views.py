@@ -571,6 +571,43 @@ def _load_technical_records_from_upload(uploaded_file):
     raise ValidationError('Formato no soportado. Usa un archivo JSON, CSV o SQLite (.db).')
 
 
+def _load_project_technical_source(proyecto):
+    source = proyecto.fichero_datos_tecnicos
+    if not source:
+        return [], []
+    source.open('rb')
+    try:
+        return _load_technical_records_from_upload(source)
+    finally:
+        source.close()
+
+
+def _replace_project_technical_source(proyecto, uploaded_file):
+    old_name = (
+        proyecto.fichero_datos_tecnicos.name
+        if proyecto.fichero_datos_tecnicos
+        else None
+    )
+    storage = proyecto.fichero_datos_tecnicos.storage
+    uploaded_file.seek(0)
+    proyecto.fichero_datos_tecnicos.save(
+        os.path.basename(uploaded_file.name),
+        uploaded_file,
+        save=False,
+    )
+    proyecto.datos_tecnicos_actualizados_at = timezone.now()
+    proyecto.save(update_fields=[
+        'fichero_datos_tecnicos',
+        'datos_tecnicos_actualizados_at',
+    ])
+    new_name = proyecto.fichero_datos_tecnicos.name
+    if old_name and old_name != new_name:
+        transaction.on_commit(
+            lambda: storage.delete(old_name),
+            robust=True,
+        )
+
+
 def _module_name_without_repeat_suffix(value):
     name = str(value or '').rstrip()
     if name.upper().endswith('-R'):
@@ -1086,6 +1123,68 @@ class ProyectoViewSet(viewsets.ModelViewSet):
             return True
         return False
 
+    def _apply_technical_records(
+        self,
+        proyecto,
+        normalized_records,
+        target_module_ids=None,
+    ):
+        stats = {
+            'processed': 0,
+            'created': 0,
+            'updated': 0,
+            'skipped': 0,
+            'errors': [],
+        }
+        target_ids = set(target_module_ids or [])
+
+        for record in normalized_records:
+            modulo, error = _resolve_modulo_for_record(
+                proyecto,
+                record['modulo_nombre'],
+                record.get('planta_nombre'),
+            )
+            if error:
+                stats['errors'].append(error)
+                continue
+            if modulo is None:
+                if not target_ids:
+                    stats['skipped'] += 1
+                continue
+            if target_ids and modulo.id not in target_ids:
+                continue
+
+            module_updated = self._apply_module_fields(
+                modulo,
+                record.get('module_fields', {}),
+            )
+            if not record['fields'] or not record['fase']:
+                if module_updated:
+                    stats['processed'] += 1
+                    stats['updated'] += 1
+                else:
+                    stats['skipped'] += 1
+                continue
+
+            try:
+                created = self._upsert_modulo_phase_detail(
+                    modulo,
+                    record['fase'],
+                    record['fields'],
+                )
+                stats['processed'] += 1
+                if created:
+                    stats['created'] += 1
+                else:
+                    stats['updated'] += 1
+            except Exception as exc:
+                stats['errors'].append(
+                    f'Error importando {modulo.nombre} '
+                    f'{record["fase"]}: {str(exc)}'
+                )
+
+        return stats
+
     @action(detail=True, methods=['get'])
     def modulos(self, request, pk=None):
         """Get all modules for a project."""
@@ -1151,9 +1250,46 @@ class ProyectoViewSet(viewsets.ModelViewSet):
 
         stats = {
             'plantas': 0, 'modulos': 0, 'imagenes': 0, 'detalles_fase': 0,
-            'plano_cargado': False, 'planilla_cargada': False, 'errors': []
+            'plano_cargado': False, 'planilla_cargada': False,
+            'base_tecnica_actualizada': False, 'errors': []
         }
         created_modulos = []
+        stored_technical_records = []
+        stored_material_pieces = []
+        incoming_technical_file = files.get('technical_file')
+        incoming_technical_source_valid = False
+        if incoming_technical_file:
+            try:
+                raw_records, stored_material_pieces = (
+                    _load_technical_records_from_upload(
+                        incoming_technical_file
+                    )
+                )
+                stored_technical_records = _normalize_technical_records(
+                    raw_records
+                )
+                if stored_technical_records:
+                    incoming_technical_source_valid = True
+                else:
+                    stats['errors'].append(
+                        'No se encontraron registros validos en la base tecnica'
+                    )
+            except Exception as exc:
+                stats['errors'].append(
+                    f'No se pudo leer la nueva base tecnica: {str(exc)}'
+                )
+        elif proyecto.fichero_datos_tecnicos:
+            try:
+                raw_records, stored_material_pieces = (
+                    _load_project_technical_source(proyecto)
+                )
+                stored_technical_records = _normalize_technical_records(
+                    raw_records
+                )
+            except Exception as exc:
+                stats['errors'].append(
+                    f'No se pudo reutilizar la base tecnica guardada: {str(exc)}'
+                )
         existing_module_names = {
             _module_name_without_repeat_suffix(name).casefold()
             for name in proyecto.modulos.values_list('nombre', flat=True)
@@ -1207,7 +1343,6 @@ class ProyectoViewSet(viewsets.ModelViewSet):
                             estado='PENDIENTE',
                             codigos_color=(modulo_data.get('codigos_color') or 'xxxxxxxx').ljust(8, 'x')[:8]
                         )
-                        _assign_modulo_to_group_on_create(modulo)
                         created_modulos.append(modulo)
                         existing_module_names.add(canonical_name)
                         stats['modulos'] += 1
@@ -1278,6 +1413,41 @@ class ProyectoViewSet(viewsets.ModelViewSet):
                         stats['errors'].append(f"Error creating modulo: {str(e)}")
             except Exception as e:
                 stats['errors'].append(f"Error creating planta: {str(e)}")
+
+        technical_stats = self._apply_technical_records(
+            proyecto,
+            stored_technical_records,
+            target_module_ids=[modulo.id for modulo in created_modulos],
+        )
+        stats['detalles_fase'] += technical_stats['processed']
+        stats['errors'].extend(technical_stats['errors'])
+
+        if (
+            incoming_technical_source_valid
+            and not technical_stats['errors']
+        ):
+            _replace_project_technical_source(
+                proyecto,
+                incoming_technical_file,
+            )
+            stats['base_tecnica_actualizada'] = True
+
+        if stored_material_pieces and created_modulos:
+            _persist_materiales_pieces(proyecto, stored_material_pieces)
+
+        if (
+            created_modulos
+            and not proyecto.datos_tecnicos_importados
+            and technical_stats['processed'] > 0
+            and not technical_stats['errors']
+        ):
+            grupos_creados = _persist_bastidor_groups(proyecto)
+            if grupos_creados > 0:
+                proyecto.datos_tecnicos_importados = True
+                proyecto.save(update_fields=['datos_tecnicos_importados'])
+        else:
+            for modulo in created_modulos:
+                _assign_modulo_to_group_on_create(modulo)
 
         # Existing mesa queues discover imported modules automatically.
         # This is incremental and never rebuilds work already in progress.
@@ -1397,12 +1567,7 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         - una base SQLite con tabla resumen por modulo
         """
         proyecto = self.get_object()
-
-        if proyecto.datos_tecnicos_importados:
-            raise ValidationError(
-                'Este proyecto ya tiene datos tecnicos importados y grupos de bastidor calculados. '
-                'Para cambiarlos, elimina el proyecto y vuelve a crearlo.'
-            )
+        initial_import = not proyecto.datos_tecnicos_importados
 
         technical_file = request.FILES.get('technical_file')
         raw_records = request.data.get('records')
@@ -1421,57 +1586,19 @@ class ProyectoViewSet(viewsets.ModelViewSet):
             raise ValidationError(f'JSON invalido: {str(exc)}')
 
         normalized_records = _normalize_technical_records(records)
-        stats = {
-            'processed': 0,
-            'created': 0,
-            'updated': 0,
-            'skipped': 0,
-            'errors': [],
-        }
-
-        for record in normalized_records:
-            modulo, error = _resolve_modulo_for_record(
-                proyecto,
-                record['modulo_nombre'],
-                record.get('planta_nombre'),
-            )
-            if error:
-                stats['errors'].append(error)
-                continue
-            if modulo is None:
-                # Registro tecnico sin contraparte en el proyecto: se omite
-                stats['skipped'] += 1
-                continue
-
-            module_updated = self._apply_module_fields(modulo, record.get('module_fields', {}))
-
-            if not record['fields'] or not record['fase']:
-                if module_updated:
-                    stats['processed'] += 1
-                    stats['updated'] += 1
-                else:
-                    stats['skipped'] += 1
-                continue
-
-            try:
-                created = self._upsert_modulo_phase_detail(modulo, record['fase'], record['fields'])
-                stats['processed'] += 1
-                if created:
-                    stats['created'] += 1
-                else:
-                    stats['updated'] += 1
-            except Exception as exc:
-                stats['errors'].append(
-                    f'Error importando {modulo.nombre} {record["fase"]}: {str(exc)}'
-                )
+        stats = self._apply_technical_records(proyecto, normalized_records)
 
         if not normalized_records:
             stats['errors'].append('No se encontraron registros validos para importar')
 
         stats['materiales'] = _persist_materiales_pieces(proyecto, materiales_pieces)
+        source_updated = False
+        if technical_file and not stats['errors']:
+            _replace_project_technical_source(proyecto, technical_file)
+            source_updated = True
 
         grupos_creados = 0
-        if stats['processed'] > 0 and not stats['errors']:
+        if initial_import and stats['processed'] > 0 and not stats['errors']:
             grupos_creados = _persist_bastidor_groups(proyecto)
             if grupos_creados > 0:
                 proyecto.datos_tecnicos_importados = True
@@ -1505,6 +1632,7 @@ class ProyectoViewSet(viewsets.ModelViewSet):
                     grupo_vs._sync_proyecto_actual(grupo_m)
 
         stats['grupos_bastidor'] = grupos_creados
+        stats['base_actualizada'] = source_updated
 
         return Response({
             'status': 'ok',

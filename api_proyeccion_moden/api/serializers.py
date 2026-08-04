@@ -215,26 +215,33 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
     modulos_count = serializers.SerializerMethodField()
     modulos_completados = serializers.SerializerMethodField()
     modulos_completados_hoy = serializers.SerializerMethodField()
+    datos_tecnicos_archivo = serializers.SerializerMethodField()
 
     class Meta:
         model = Proyecto
         fields = [
             "id", "url", "nombre", "usuario", "usuario_nombre", "num_plantas",
             "bastidor_longitud_cm", "datos_tecnicos_importados",
+            "datos_tecnicos_archivo", "datos_tecnicos_actualizados_at",
             "estrategia_bastidor",
             "capacidad_diaria_usuario",
             "grupos_count", "modulos_count", "modulos_completados",
             "modulos_completados_hoy",
         ]
+        extra_kwargs = {
+            'usuario': {'required': False, 'allow_null': True},
+            'datos_tecnicos_importados': {'read_only': True},
+        }
+
+    def get_datos_tecnicos_archivo(self, obj):
+        if not obj.fichero_datos_tecnicos:
+            return None
+        return os.path.basename(obj.fichero_datos_tecnicos.name)
 
     def get_capacidad_diaria_usuario(self, obj):
         if obj.usuario and hasattr(obj.usuario, 'profile'):
             return obj.usuario.profile.capacidad_diaria_modulos
         return 12
-        extra_kwargs = {
-            'usuario': {'required': False, 'allow_null': True},
-            'datos_tecnicos_importados': {'read_only': True},
-        }
 
     def get_grupos_count(self, obj):
         return getattr(obj, '_grupos_count', None) or obj.grupos_bastidor.count()
