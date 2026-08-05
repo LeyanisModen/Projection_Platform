@@ -23,6 +23,7 @@ Si SOLO hay que conectar la Wi-Fi y NO tocar la camara:
 1. Conecta un teclado USB.
 2. En el player actualizado, pulsa Q dos veces para cerrar Chrome kiosko.
    Si aun no responde, pulsa Alt + F4.
+   El cierre con Q dura 30 minutos; lanzar start-player.bat lo cancela antes.
 3. Conecta la Wi-Fi del cliente desde la bandeja de Windows.
 4. Reinicia el equipo.
 
@@ -232,6 +233,19 @@ Get-ScheduledTask -TaskName 'MODEN Auto Update' | Format-List TaskName,State,Tri
 FORZAR UPDATE MANUAL DESDE DRIVE
 -----------------------------------------
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File 'C:\moden\capture_service\update-capture-service.ps1' -Force
+
+VERIFICAR RECUPERACION AUTOMATICA DEL PLAYER
+-----------------------------------------
+Desde la version 2026-08-05.1, la tarea MODEN Player comprueba cada 30
+segundos el capture service y Chrome kiosk. Usa un perfil tecnico separado,
+sin las cuentas personales de Chrome ni el selector de perfiles.
+
+Get-ScheduledTask -TaskName 'MODEN Player' | Format-List TaskName,State
+Get-Content 'C:\moden\capture_service\logs\player-watchdog.log' -Tail 30
+
+Para relanzar inmediatamente sin crear procesos duplicados:
+
+Start-Process 'C:\moden\capture_service\start-player.bat'
 
 NOTA INTERNET / GOOGLE DRIVE
 -----------------------------------------

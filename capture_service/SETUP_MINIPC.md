@@ -253,24 +253,31 @@ Y que aparezcan JPEGs nuevos bajo `G:\Mi unidad\capturas_moden\<mesa_id>\<fecha>
 
 ## 6. Auto-arranque al iniciar sesión
 
-Registramos una tarea programada *at logon* (en lugar de un shortcut
-en `shell:startup`, que sufre el delay de ~10-15 s de Windows 11).
+Registramos el supervisor persistente como tarea *at logon* (en lugar de un
+shortcut en `shell:startup`, que sufre el delay de ~10-15 s de Windows 11).
 Desde PowerShell admin:
 
 ```powershell
-$bat = 'C:\moden\capture_service\start-player.bat'
-$action   = New-ScheduledTaskAction  -Execute $bat
+$watchdog = 'C:\moden\capture_service\player-watchdog.ps1'
+$action = New-ScheduledTaskAction -Execute 'powershell.exe' `
+    -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$watchdog`""
 $trigger  = New-ScheduledTaskTrigger -AtLogOn -User 'moden'
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries `
-              -DontStopIfGoingOnBatteries -StartWhenAvailable
+    -DontStopIfGoingOnBatteries -StartWhenAvailable `
+    -MultipleInstances IgnoreNew -RestartCount 5 `
+    -RestartInterval (New-TimeSpan -Minutes 1) `
+    -ExecutionTimeLimit ([TimeSpan]::Zero)
 Register-ScheduledTask -TaskName 'MODEN Player' `
     -Action $action -Trigger $trigger -Settings $settings `
     -RunLevel Limited -User 'moden' -Force
+Start-ScheduledTask -TaskName 'MODEN Player'
 ```
 
 Reinicia: al iniciar sesión debe salir Chrome en kiosk apuntando a
 `https://moden.up.railway.app/`, con el capture service corriendo en
-segundo plano. `install-minipc.ps1` ya ejecuta este bloque; solo
+segundo plano. El supervisor comprueba ambos procesos cada 30 segundos y usa
+un perfil de Chrome exclusivo, sin cuentas personales. `install-minipc.ps1`
+ya ejecuta este bloque; solo
 hazlo a mano si estás montando el servicio fuera del instalador.
 
 Si necesitas abrir OBSBOT para reencuadrar la cámara, mata `python`,

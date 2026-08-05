@@ -57,7 +57,14 @@ function Test-IncludedUpdateFile([string]$RelativePath) {
     }
 
     $name = Split-Path $RelativePath -Leaf
-    if ($name -in @('config.ini', 'device_token.txt', '.last_update_source.txt', '.drive_maintenance')) {
+    if ($name -in @(
+        'config.ini',
+        'device_token.txt',
+        '.last_update_source.txt',
+        '.drive_maintenance',
+        '.player_maintenance',
+        '.player_pause'
+    )) {
         return $false
     }
 
@@ -175,8 +182,48 @@ function Set-IniValue([string]$Path, [string]$Section, [string]$Key, [string]$Va
     )
 }
 
+function Register-PlayerWatchdogTask {
+    $watchdog = Join-Path $LocalDir 'player-watchdog.ps1'
+    if (-not (Test-Path $watchdog)) {
+        throw 'player-watchdog.ps1 is missing; cannot register MODEN Player.'
+    }
+
+    $action = New-ScheduledTaskAction `
+        -Execute 'powershell.exe' `
+        -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$watchdog`""
+    $trigger = New-ScheduledTaskTrigger -AtLogOn -User 'moden'
+    $settings = New-ScheduledTaskSettingsSet `
+        -AllowStartIfOnBatteries `
+        -DontStopIfGoingOnBatteries `
+        -StartWhenAvailable `
+        -MultipleInstances IgnoreNew `
+        -RestartCount 5 `
+        -RestartInterval (New-TimeSpan -Minutes 1) `
+        -ExecutionTimeLimit ([TimeSpan]::Zero)
+    Register-ScheduledTask -TaskName 'MODEN Player' `
+        -Action $action -Trigger $trigger -Settings $settings `
+        -RunLevel Limited -User 'moden' -Force | Out-Null
+}
+
+function Stop-PlayerWatchdogs {
+    foreach ($name in @('powershell.exe', 'pwsh.exe')) {
+        Get-CimInstance Win32_Process -Filter "Name = '$name'" `
+            -ErrorAction SilentlyContinue | Where-Object {
+                $_.ProcessId -ne $PID -and
+                $_.CommandLine -and
+                $_.CommandLine -match '(?i)player-watchdog\.ps1'
+            } | ForEach-Object {
+                Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+            }
+    }
+}
+
 $driveMaintenanceMarker = Join-Path $LocalDir '.drive_maintenance'
 $maintenanceRequested = $false
+$playerMaintenanceMarker = Join-Path $LocalDir '.player_maintenance'
+$playerPauseMarker = Join-Path $LocalDir '.player_pause'
+$playerMaintenanceRequested = $false
+$playerRestartPending = $false
 
 try {
     if ($Force) {
@@ -200,7 +247,13 @@ try {
         exit 0
     }
 
-    foreach ($required in @('VERSION', 'capture_service.py', 'start-player.bat', 'requirements.txt')) {
+    foreach ($required in @(
+        'VERSION',
+        'capture_service.py',
+        'player-watchdog.ps1',
+        'start-player.bat',
+        'requirements.txt'
+    )) {
         if (-not (Test-Path (Join-Path $UpdateSource $required))) {
             Write-UpdateLog "Update source is incomplete: missing $required; skipping."
             exit 0
@@ -237,10 +290,17 @@ try {
 
     Write-UpdateLog "Updating $localVersion -> $sourceVersion"
 
+    Set-Content -Path $playerMaintenanceMarker `
+        -Value (Get-Date -Format o) -Encoding ASCII
+    $playerMaintenanceRequested = $true
+    $playerRestartPending = -not $NoRestart
+
+    Stop-ScheduledTask -TaskName 'MODEN Player' -ErrorAction SilentlyContinue
+    Stop-PlayerWatchdogs
     Get-Process -Name python, pythonw, chrome -ErrorAction SilentlyContinue |
         Stop-Process -Force -ErrorAction SilentlyContinue
 
-    & robocopy $UpdateSource $LocalDir /MIR /XD venv __pycache__ logs /XF config.ini device_token.txt .drive_maintenance /NFL /NDL /NJH /NJS /NP | Out-Null
+    & robocopy $UpdateSource $LocalDir /MIR /XD venv __pycache__ logs /XF config.ini device_token.txt .drive_maintenance .player_maintenance .player_pause /NFL /NDL /NJH /NJS /NP | Out-Null
     if ($LASTEXITCODE -ge 8) {
         throw "robocopy failed with code $LASTEXITCODE"
     }
@@ -255,6 +315,8 @@ try {
     } else {
         Write-UpdateLog 'venv or requirements.txt not found; skipping pip install.'
     }
+
+    Register-PlayerWatchdogTask
 
     $configPath = Join-Path $LocalDir 'config.ini'
     if (Test-Path $configPath) {
@@ -300,9 +362,14 @@ try {
         [System.Text.UTF8Encoding]::new($false)
     )
 
+    Remove-Item -LiteralPath $playerMaintenanceMarker -Force -ErrorAction SilentlyContinue
+    $playerMaintenanceRequested = $false
+
     if (-not $NoRestart) {
-        Start-Process (Join-Path $LocalDir 'start-player.bat')
+        Remove-Item -LiteralPath $playerPauseMarker -Force -ErrorAction SilentlyContinue
+        Start-ScheduledTask -TaskName 'MODEN Player'
     }
+    $playerRestartPending = $false
 
     Write-UpdateLog "Update complete ($sourceVersion)."
     exit 0
@@ -310,6 +377,19 @@ try {
     Write-UpdateLog "ERROR: $($_.Exception.Message)"
     exit 1
 } finally {
+    if ($playerMaintenanceRequested) {
+        Remove-Item -LiteralPath $playerMaintenanceMarker -Force -ErrorAction SilentlyContinue
+    }
+    if ($playerRestartPending) {
+        try {
+            Start-ScheduledTask -TaskName 'MODEN Player' -ErrorAction Stop
+        } catch {
+            $fallback = Join-Path $LocalDir 'start-player.bat'
+            if (Test-Path $fallback) {
+                Start-Process $fallback
+            }
+        }
+    }
     if ($maintenanceRequested) {
         Remove-Item -LiteralPath $driveMaintenanceMarker -Force -ErrorAction SilentlyContinue
     }

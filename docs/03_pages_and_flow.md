@@ -31,8 +31,9 @@ Este documento resume las pantallas principales y los flujos actuales de uso.
 ## 2. Puesta en marcha de una mesa
 
 1. El mini-PC inicia sesion como `moden`.
-2. La tarea programada `MODEN Player` lanza `start-player.bat`.
-3. `start-player.bat` arranca `capture_service.py` y Chrome kiosk.
+2. La tarea programada `MODEN Player` ejecuta `player-watchdog.ps1`.
+3. El supervisor mantiene activos `capture_service.py` y Chrome kiosk, sin
+   duplicarlos, y los recupera en un maximo aproximado de 30 segundos.
 4. Chrome abre `https://moden.up.railway.app/player`.
 5. El player recupera su token desde `localStorage` o desde
    `capture_service` (`/device_token`).

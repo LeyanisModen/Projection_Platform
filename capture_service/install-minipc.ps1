@@ -11,8 +11,9 @@
       (no está en winget). OBSBOT WebCam se instala manualmente.
     - Desplegar el capture_service en C:\moden\capture_service (robocopy,
       venv, pip install -r requirements.txt, config.ini con mesa_id).
-    - Registrar la tarea programada 'MODEN Player' (at logon) que lanza
-      start-player.bat. Tambien limpia un posible shortcut viejo en
+    - Registrar la tarea programada 'MODEN Player' (at logon) que mantiene
+      activos el servicio de captura y Chrome kiosk. Tambien limpia un
+      posible shortcut viejo en
       shell:startup si una version anterior lo dejo.
     - (Opcional) Auto-login para la cuenta 'moden'.
 
@@ -531,15 +532,23 @@ relanza el instalador (el PATH solo se refresca al crear el proceso).
     }
 
     Step "Auto-arranque (tarea programada 'MODEN Player')"
-    # Tarea programada "at logon" en lugar de shortcut en shell:startup.
+    # Tarea programada persistente en lugar de shortcut en shell:startup.
     # shell:startup sufre el StartupDelayInMSec (~10-15 s) que Windows 11
     # aplica a todo lo que vive en esa carpeta; la tarea programada arranca
     # sin ese retardo, que en un kiosko de produccion se nota.
-    $batPath = Join-Path $dest 'start-player.bat'
-    $action   = New-ScheduledTaskAction -Execute $batPath
+    $watchdogPath = Join-Path $dest 'player-watchdog.ps1'
+    $action = New-ScheduledTaskAction `
+        -Execute 'powershell.exe' `
+        -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$watchdogPath`""
     $trigger  = New-ScheduledTaskTrigger -AtLogOn -User 'moden'
-    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries `
-                  -DontStopIfGoingOnBatteries -StartWhenAvailable
+    $settings = New-ScheduledTaskSettingsSet `
+        -AllowStartIfOnBatteries `
+        -DontStopIfGoingOnBatteries `
+        -StartWhenAvailable `
+        -MultipleInstances IgnoreNew `
+        -RestartCount 5 `
+        -RestartInterval (New-TimeSpan -Minutes 1) `
+        -ExecutionTimeLimit ([TimeSpan]::Zero)
     Register-ScheduledTask -TaskName 'MODEN Player' `
         -Action $action -Trigger $trigger -Settings $settings `
         -RunLevel Limited -User 'moden' -Force | Out-Null
@@ -568,7 +577,7 @@ relanza el instalador (el PATH solo se refresca al crear el proceso).
     } else {
         Write-Warning "No encontre update-capture-service.ps1; no registro auto-update."
     }
-    Write-Host "  · tarea 'MODEN Player' registrada (trigger: at logon de 'moden')"
+    Write-Host "  · tarea 'MODEN Player' registrada (vigilancia continua cada 30 s)"
 
     # Si una versión anterior del instalador dejó un shortcut en
     # shell:startup, lo quitamos para que start-player.bat no se lance

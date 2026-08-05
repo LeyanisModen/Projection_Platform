@@ -1,45 +1,10 @@
 @echo off
-REM ---------------------------------------------------------------------------
-REM start-player.bat — lanza el capture service y Chrome kiosk en paralelo.
-REM
-REM Pensado para lanzarse por la tarea programada 'MODEN Player' (trigger
-REM "at logon" del usuario moden) que registra install-minipc.ps1. Los dos
-REM `start` salen inmediatamente (no bloquean), así que Windows termina
-REM el login rápido y cada proceso resuelve su propio arranque:
-REM   - Python hace su import de OpenCV (2-3 s) y abre el puerto 5555.
-REM   - Chrome arranca en kiosk; si la red aún no está resuelta, reintenta
-REM     por su cuenta — más rápido que un ping loop bloqueante.
-REM ---------------------------------------------------------------------------
+REM Idempotent launcher for the MODEN player.
+REM The persistent scheduled task runs player-watchdog.ps1. This command is
+REM also safe to run manually: it clears an intentional Q pause and starts a
+REM persistent watchdog. Its mutex prevents duplicate watchdogs and processes.
 
 set ROOT=C:\moden\capture_service
-set "CHROME_EXE="
 
-if exist "%ProgramFiles%\Google\Chrome\Application\chrome.exe" set "CHROME_EXE=%ProgramFiles%\Google\Chrome\Application\chrome.exe"
-if not defined CHROME_EXE if exist "%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe" set "CHROME_EXE=%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"
-if not defined CHROME_EXE if exist "%LocalAppData%\Google\Chrome\Application\chrome.exe" set "CHROME_EXE=%LocalAppData%\Google\Chrome\Application\chrome.exe"
-if not defined CHROME_EXE set "CHROME_EXE=chrome.exe"
-
-REM 1. Capture service en background con pythonw.exe (sin consola).
-REM    Usando python.exe cada print del servicio hacía parpadear la
-REM    barra de tareas sobre el kiosko; pythonw no tiene stdout en
-REM    consola, así que no existe ese problema. Los mensajes siguen
-REM    disponibles vía /stats (last_error, last_capture_at, ...).
-start "CaptureService" /B "%ROOT%\venv\Scripts\pythonw.exe" "%ROOT%\capture_service.py"
-
-REM 2. Chrome fullscreen kiosk. Flags:
-REM    --no-first-run / --no-default-browser-check → sin splash inicial.
-REM    --disable-background-networking → sin checks de sync al boot.
-REM    --disable-features=CalculateNativeWinOcclusion → el renderer no se
-REM       auto-pausa cuando Windows cree que la ventana está oculta
-REM       (esa era la razón de que al clicar "despertase").
-start "" "%CHROME_EXE%" ^
-  --kiosk ^
-  --noerrdialogs ^
-  --no-first-run ^
-  --no-default-browser-check ^
-  --disable-background-networking ^
-  --disable-translate ^
-  --disable-features=TranslateUI,CalculateNativeWinOcclusion ^
-  --disable-pinch ^
-  --overscroll-history-navigation=0 ^
-  "https://moden.up.railway.app/player"
+start "" /B powershell.exe -NoProfile -WindowStyle Hidden ^
+  -ExecutionPolicy Bypass -File "%ROOT%\player-watchdog.ps1" -Resume

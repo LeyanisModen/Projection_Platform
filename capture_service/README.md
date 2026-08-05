@@ -53,23 +53,27 @@ to the Chrome kiosk. Single Python process:
      `fer_g1_mesa2`, `fer_g2_mesa1`, …).
    - `output_dir = G:\Mi unidad\capturas_moden`
 
-6. **Auto-start** — register a scheduled task "at logon" for the
-   `moden` account so `start-player.bat` fires without the
-   `shell:startup` delay:
+6. **Auto-start and recovery** — register the persistent watchdog for the
+   `moden` account. It restores the local service or kiosk if either stops:
 
    ```powershell
-   $bat = 'C:\moden\capture_service\start-player.bat'
-   $action   = New-ScheduledTaskAction  -Execute $bat
+   $watchdog = 'C:\moden\capture_service\player-watchdog.ps1'
+   $action = New-ScheduledTaskAction -Execute 'powershell.exe' `
+       -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$watchdog`""
    $trigger  = New-ScheduledTaskTrigger -AtLogOn -User 'moden'
    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries `
-                 -DontStopIfGoingOnBatteries -StartWhenAvailable
+       -DontStopIfGoingOnBatteries -StartWhenAvailable `
+       -MultipleInstances IgnoreNew -RestartCount 5 `
+       -RestartInterval (New-TimeSpan -Minutes 1) `
+       -ExecutionTimeLimit ([TimeSpan]::Zero)
    Register-ScheduledTask -TaskName 'MODEN Player' `
        -Action $action -Trigger $trigger -Settings $settings `
        -RunLevel Limited -User 'moden' -Force
    ```
 
-   Next reboot, Windows will launch the capture service and open
-   Chrome in kiosk mode automatically. `install-minipc.ps1` already
+   Next reboot, Windows will launch the watchdog, which checks every 30
+   seconds. Chrome uses the isolated `C:\moden\chrome-kiosk-profile`, not a
+   personal Google profile, and its cache is capped. `install-minipc.ps1` already
    does this step — only run it by hand if you're setting up the
    service outside the installer.
 

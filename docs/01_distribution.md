@@ -69,7 +69,8 @@ Cada mesa fisica usa:
 - OBSBOT como camara.
 - Google Drive Desktop montado como `G:`.
 - Chrome Remote Desktop para soporte remoto.
-- Tarea programada `MODEN Player` al iniciar sesion del usuario `moden`.
+- Tarea programada persistente `MODEN Player`: supervisa cada 30 segundos el
+  servicio local y Chrome kiosk, usando un perfil tecnico aislado.
 
 Convencion de nombres:
 
@@ -115,4 +116,3 @@ flowchart LR
 - Puesta en marcha en fabrica: `capture_service/PUESTA_EN_MARCHA_FABRICA.txt`.
 - Branding del mini-PC: `capture_service/branding-wallpaper.jpg` y
   `capture_service/branding-user.jpg`.
-

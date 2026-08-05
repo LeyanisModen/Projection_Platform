@@ -415,5 +415,33 @@ class StorageSafetyTests(unittest.TestCase):
         )
 
 
+class PlayerPauseTests(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.pause_path = Path(self.temp_dir.name) / '.player_pause'
+        self.path_patch = patch.object(
+            CAPTURE_SERVICE,
+            '_player_pause_path',
+            return_value=self.pause_path,
+        )
+        self.path_patch.start()
+
+    def tearDown(self):
+        self.path_patch.stop()
+        self.temp_dir.cleanup()
+
+    def test_close_request_creates_active_pause(self):
+        self.assertTrue(CAPTURE_SERVICE._request_player_pause())
+        self.assertTrue(CAPTURE_SERVICE._player_pause_requested())
+
+    def test_stale_pause_is_removed(self):
+        self.pause_path.write_text('stale', encoding='ascii')
+        stale = CAPTURE_SERVICE.time.time() - (31 * 60)
+        CAPTURE_SERVICE.os.utime(self.pause_path, (stale, stale))
+
+        self.assertFalse(CAPTURE_SERVICE._player_pause_requested())
+        self.assertFalse(self.pause_path.exists())
+
+
 if __name__ == '__main__':
     unittest.main()

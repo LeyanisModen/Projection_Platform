@@ -16,7 +16,7 @@ Este archivo viaja dentro de capture_service/ y se copia al mini-PC en:
 TECLAS UTILES EN EL PLAYER
 ===========================================================
 
-Q dos veces  -> cerrar Chrome kiosko desde el player actualizado.
+Q dos veces  -> cerrar Chrome kiosko durante 30 minutos para mantenimiento.
 R            -> recargar la app sin cache.
 C            -> abrir / cerrar calibracion.
 B            -> mostrar / ocultar fondo de cobertura.
@@ -305,11 +305,12 @@ usuario moden.
 
 Si no existe, recrearla:
 
-$bat = 'C:\moden\capture_service\start-player.bat'
-$action   = New-ScheduledTaskAction -Execute $bat
+$watchdog = 'C:\moden\capture_service\player-watchdog.ps1'
+$action   = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$watchdog`""
 $trigger  = New-ScheduledTaskTrigger -AtLogOn -User 'moden'
-$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
+$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -MultipleInstances IgnoreNew -RestartCount 5 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero)
 Register-ScheduledTask -TaskName 'MODEN Player' -Action $action -Trigger $trigger -Settings $settings -RunLevel Limited -User 'moden' -Force
+Start-ScheduledTask -TaskName 'MODEN Player'
 Remove-Item (Join-Path ([Environment]::GetFolderPath('Startup')) 'Moden Player.lnk') -Force -ErrorAction SilentlyContinue
 
 
@@ -398,6 +399,11 @@ EXTRA -- RELANZAR PLAYER MANUALMENTE
 ===========================================================
 
 Start-Process 'C:\moden\capture_service\start-player.bat'
+
+# El comando anterior no duplica procesos y cancela una pausa hecha con Q.
+# Diagnostico del supervisor:
+Get-ScheduledTask -TaskName 'MODEN Player' | Format-List TaskName,State
+Get-Content 'C:\moden\capture_service\logs\player-watchdog.log' -Tail 30
 
 
 ===========================================================

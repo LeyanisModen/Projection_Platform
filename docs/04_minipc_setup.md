@@ -30,6 +30,7 @@ pendrive/
 │   ├── install-minipc.ps1
 │   ├── requirements.txt
 │   ├── start-player.bat
+│   ├── player-watchdog.ps1
 │   ├── README.md
 │   ├── SETUP_MINIPC.md
 │   └── 04_minipc_setup.pdf         ← runbook en PDF (regenerar antes)
@@ -463,8 +464,9 @@ servicio de Windows respectivamente, no por `shell:startup`.
 
 ## 9. Verifica la tarea programada "MODEN Player"
 
-El instalador del paso 3 ya crea la tarea programada `MODEN Player`
-con trigger *at logon* para la cuenta `moden`. No hace falta crearla
+El instalador del paso 3 ya crea la tarea persistente `MODEN Player`
+con trigger *at logon* para la cuenta `moden`. El supervisor comprueba cada
+30 segundos el servicio de captura y el kiosko. No hace falta crearla
 a mano ni tocar `shell:startup` (usamos tarea programada precisamente
 para evitar el delay de Windows 11 sobre la carpeta de inicio).
 
@@ -476,14 +478,19 @@ Si por lo que sea falta (mini-PC configurado antes de tener este paso
 integrado), la recreas así en PowerShell admin:
 
 ```powershell
-$bat = 'C:\moden\capture_service\start-player.bat'
-$action   = New-ScheduledTaskAction  -Execute $bat
+$watchdog = 'C:\moden\capture_service\player-watchdog.ps1'
+$action = New-ScheduledTaskAction -Execute 'powershell.exe' `
+    -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$watchdog`""
 $trigger  = New-ScheduledTaskTrigger -AtLogOn -User 'moden'
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries `
-              -DontStopIfGoingOnBatteries -StartWhenAvailable
+    -DontStopIfGoingOnBatteries -StartWhenAvailable `
+    -MultipleInstances IgnoreNew -RestartCount 5 `
+    -RestartInterval (New-TimeSpan -Minutes 1) `
+    -ExecutionTimeLimit ([TimeSpan]::Zero)
 Register-ScheduledTask -TaskName 'MODEN Player' `
     -Action $action -Trigger $trigger -Settings $settings `
     -RunLevel Limited -User 'moden' -Force
+Start-ScheduledTask -TaskName 'MODEN Player'
 
 # Limpia un posible shortcut heredado:
 Remove-Item (Join-Path ([Environment]::GetFolderPath('Startup')) 'Moden Player.lnk') -Force -ErrorAction SilentlyContinue
@@ -637,6 +644,8 @@ la PIN. Casos habituales:
 | Síntoma | Causa habitual | Arreglo |
 |---------|----------------|---------|
 | Chrome tarda 1 min en arrancar | Windows 11 startup delay + apps parasitas | Paso 8 (StartupDelayInMSec=0 + limpiar Inicio) |
+| Chrome queda en Google o muestra perfiles | Chrome normal sustituyo el kiosko | El supervisor cierra esa ventana y recupera el perfil tecnico en unos 30 s |
+| El servicio o el kiosko se cierra solo | Proceso detenido o fallo puntual | `MODEN Player` lo relanza; revisar `logs\player-watchdog.log` |
 | El visor queda "dormido" hasta clicar | `CalculateNativeWinOcclusion` | Ya incluido en los flags de `start-player.bat` |
 | `/capture` tarda 30s sin responder | MSMF hang / OBSBOT Center ocupada | `CAP_DSHOW` (ya en el .py) + matar `*obsbot*` |
 | `MissingSectionHeaderError` en el capture service | BOM en `config.ini` por PowerShell | Reescribir sin BOM (one-liner al final) |

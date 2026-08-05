@@ -1159,6 +1159,32 @@ def _token_path() -> Path:
     return Path(__file__).resolve().parent / 'device_token.txt'
 
 
+def _player_pause_path() -> Path:
+    return Path(__file__).resolve().parent / '.player_pause'
+
+
+def _request_player_pause() -> bool:
+    """Keep the watchdog from reopening Chrome after an intentional Q close."""
+    try:
+        _player_pause_path().write_text(datetime.now().isoformat(), encoding='ascii')
+        return True
+    except OSError:
+        return False
+
+
+def _player_pause_requested() -> bool:
+    path = _player_pause_path()
+    try:
+        if not path.is_file():
+            return False
+        if time.time() - path.stat().st_mtime <= 30 * 60:
+            return True
+        path.unlink(missing_ok=True)
+    except OSError:
+        return False
+    return False
+
+
 def _read_stored_token() -> str:
     try:
         p = _token_path()
@@ -1180,6 +1206,8 @@ def _write_stored_token(token: str) -> bool:
 def _close_chrome_processes():
     """Close the kiosk browser without touching the capture service."""
     try:
+        if not _request_player_pause():
+            _set_last_error('close browser: could not pause the player watchdog')
         if os.name == 'nt':
             result = subprocess.run(
                 ['taskkill', '/IM', 'chrome.exe', '/F'],
@@ -1234,6 +1262,7 @@ class CaptureHandler(BaseHTTPRequestHandler):
             payload['sync_window'] = sync_window_label()
             payload['drive_process_window_active'] = in_drive_process_window()
             payload['drive_maintenance_active'] = _drive_maintenance_requested()
+            payload['player_pause_active'] = _player_pause_requested()
             payload['drive_process_window'] = drive_process_window_label()
             payload['local_retention_days'] = CONFIG.local_retention_days
             payload['image_rotation'] = CONFIG.image_rotation
