@@ -4856,12 +4856,14 @@ class DeviceViewSet(viewsets.ViewSet):
                     # storage -- the visor will mirror it to Drive
                     # via the local capture service. Drive is the
                     # only place the annotated image lives.
-                    if debug_mode and result.get('detections'):
+                    if debug_mode:
                         try:
                             import base64
                             from django.utils import timezone
                             annotated_bytes = annotate_image(
-                                foto_bytes, result['detections']
+                                foto_bytes,
+                                result.get('detections', []),
+                                detection_roi=result.get('detection_roi'),
                             )
                             annotated_b64 = base64.b64encode(
                                 annotated_bytes

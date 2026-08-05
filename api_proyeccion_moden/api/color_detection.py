@@ -110,10 +110,9 @@ _CODE_TO_COLOR = {
 #
 # Range tuned for OBSBOT Tiny 2 mounted ~4.5 m above one edge of a 3 m
 # wide table, looking at 15x5 cm coloured cards.
-#  * MIN_AREA_RATIO: 600 px² on 4K (~170 px² on the compressed 2048
-#    frame). Strict enough to ignore letters in the cardboard boxes
-#    and dust specks, lax enough that a small ribbon at the far side
-#    of the table still reports.
+#  * MIN_AREA_RATIO: 1200 px² on 4K (~300 px² on a 1920x1080 frame).
+#    Real ribbons in the first Ferralia production capture are comfortably
+#    larger; doubling the old floor removes tiny coloured marks and labels.
 #  * MIN_AREA_RATIO_DISCARDED: stricter (1500 px² on 4K). The
 #    'descarte' wildcard only exists for diagnostic value; small
 #    detections of dark / brown / dark-red / dark-blue / near-black
@@ -121,16 +120,15 @@ _CODE_TO_COLOR = {
 #    than real ribbons, so we keep the threshold higher to keep the
 #    annotated overlay readable.
 _REF_FRAME_AREA = 3840 * 2160
-_MIN_AREA_RATIO = 600 / _REF_FRAME_AREA              # ~170 px² @ 2048
+_MIN_AREA_RATIO = 1200 / _REF_FRAME_AREA             # ~300 px² @ 1080p
 _MIN_AREA_RATIO_DISCARDED = 1500 / _REF_FRAME_AREA   # ~425 px² @ 2048
 _MAX_AREA_RATIO = 16000 / _REF_FRAME_AREA            # ~4500 px² @ 2048
 
 _SOLIDITY_MIN = 0.65
-# bbox_density min lowered from 70 to 65 after watching real shop
-# captures: legitimate ribbons sit around 68-90 % depending on edge
-# shadows and tape wrinkles. 65 still rejects splatters and noise
-# (which usually fall well below 50 %).
-_BBOX_DENSITY_MIN = 65.0  # percent
+# Real tape in production can lose some mask pixels to reflections, wrinkles
+# and reinforcing bars. A 60% floor keeps those ribbons while irregular
+# splatters and thin marks still fail density, solidity or minimum area.
+_BBOX_DENSITY_MIN = 60.0  # percent
 # Single AR range covering both vertical and horizontal tape. Real
 # ribbons in perspective routinely reach AR ~4-5 (long horizontal at
 # the far end of the table); the previous 4.0 ceiling was rejecting
@@ -140,6 +138,11 @@ _ASPECT_RATIO_RANGES = ((0.2, 5.0),)
 
 _MORPH_KERNEL = np.ones((5, 5), np.uint8)
 _BLUR_KERNEL = (5, 5)
+
+# Documentation photos deliberately include extra space beyond the far edge
+# of the table so the rebars of finished modules remain visible. That upper
+# strip contains clothing, tools and machinery, but never valid ribbons.
+_DETECTION_ROI_TOP_RATIO = 0.22
 
 
 def _expected_color_names(codigos_color):
@@ -218,7 +221,8 @@ def _evaluate_contour(cnt, total_area, min_area_ratio=None):
 
 
 def _scan_color(hsv_blurred, color_name, total_area,
-                ranges_source=_COLOR_HSV_RANGES, is_extra=False):
+                ranges_source=_COLOR_HSV_RANGES, is_extra=False,
+                roi_mask=None):
     """Return every reportable detection for a single colour.
 
     A colour can have multiple HSV ranges (used by 'red', which wraps
@@ -238,6 +242,8 @@ def _scan_color(hsv_blurred, color_name, total_area,
             np.array(upper, dtype=np.uint8),
         )
         mask = m if mask is None else cv2.bitwise_or(mask, m)
+    if roi_mask is not None:
+        mask = cv2.bitwise_and(mask, roi_mask)
     mask = cv2.erode(mask, _MORPH_KERNEL, iterations=1)
     mask = cv2.dilate(mask, _MORPH_KERNEL, iterations=2)
 
@@ -293,6 +299,9 @@ def detect_colors(image_bytes, codigos_color, debug=False):
 
     height, width = bgr.shape[:2]
     total_area = float(width * height)
+    roi_top_px = int(round(height * _DETECTION_ROI_TOP_RATIO))
+    roi_mask = np.zeros((height, width), dtype=np.uint8)
+    roi_mask[roi_top_px:, :] = 255
 
     hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
     blurred = cv2.GaussianBlur(hsv, _BLUR_KERNEL, 0)
@@ -310,7 +319,9 @@ def detect_colors(image_bytes, codigos_color, debug=False):
     cards_per_color = {}
     detections_all = []
     for color in colors_to_scan:
-        color_detections = _scan_color(blurred, color, total_area)
+        color_detections = _scan_color(
+            blurred, color, total_area, roi_mask=roi_mask
+        )
         cards_per_color[color] = sum(1 for d in color_detections if d['passed'])
         detections_all.extend(color_detections)
 
@@ -324,6 +335,7 @@ def detect_colors(image_bytes, codigos_color, debug=False):
                 blurred, color, total_area,
                 ranges_source=_DEBUG_EXTRA_RANGES,
                 is_extra=True,
+                roi_mask=roi_mask,
             )
             cards_per_color[color] = sum(1 for d in extra_detections if d['passed'])
             detections_all.extend(extra_detections)
@@ -339,6 +351,10 @@ def detect_colors(image_bytes, codigos_color, debug=False):
         'cards_per_color': cards_per_color,
         'missing': missing,
         'image_size': [width, height],
+        'detection_roi': {
+            'top_ratio': _DETECTION_ROI_TOP_RATIO,
+            'top_px': roi_top_px,
+        },
         **base,
     }
     if debug:
@@ -361,7 +377,8 @@ _BORDER_PASSED = 4
 _BORDER_REJECTED = 3
 
 
-def annotate_image(image_bytes, detections, jpeg_quality=85):
+def annotate_image(image_bytes, detections, jpeg_quality=85,
+                   detection_roi=None):
     """Draw every detection on the photo and return the JPEG bytes.
 
     Passed contours get a thick green border; rejected ones get an
@@ -379,6 +396,24 @@ def annotate_image(image_bytes, detections, jpeg_quality=85):
     # of resolution.
     font_scale = max(0.5, min(w_img, h_img) / 1500.0)
     line_thickness = max(2, int(round(min(w_img, h_img) / 700.0)))
+
+    if detection_roi:
+        roi_top_px = int(detection_roi.get('top_px') or 0)
+        roi_top_px = max(0, min(h_img, roi_top_px))
+        if roi_top_px:
+            overlay = bgr.copy()
+            cv2.rectangle(overlay, (0, 0), (w_img, roi_top_px), (20, 20, 20), -1)
+            bgr = cv2.addWeighted(overlay, 0.45, bgr, 0.55, 0)
+            cv2.line(
+                bgr, (0, roi_top_px), (w_img, roi_top_px),
+                (255, 200, 0), max(2, line_thickness),
+            )
+            cv2.putText(
+                bgr, 'AREA EXCLUIDA DE DETECCION',
+                (12, max(28, roi_top_px - 12)),
+                cv2.FONT_HERSHEY_SIMPLEX, font_scale,
+                _TEXT_BGR, line_thickness, cv2.LINE_AA,
+            )
 
     for det in detections:
         bbox = det.get('bbox')
