@@ -293,6 +293,7 @@ def sync_module_phases(modulo, fases, assigned_by=None, hints=None, prioritize=F
     """Add missing phases without rebuilding or discarding the existing queue."""
     hints = hints or {}
     created = []
+    group_ids = set()
     with transaction.atomic():
         for fase in (Fase.INFERIOR, Fase.SUPERIOR):
             if fase not in fases:
@@ -322,6 +323,9 @@ def sync_module_phases(modulo, fases, assigned_by=None, hints=None, prioritize=F
             )
             if item:
                 created.append(item)
+                group_ids.add(group.id)
+    for group in GrupoMesas.objects.filter(id__in=group_ids):
+        reconcile_superior_queue_for_group(group)
     return created
 
 
@@ -337,8 +341,6 @@ def sync_new_module(modulo, assigned_by=None):
         assigned_by=assigned_by,
         prioritize=False,
     )
-    with transaction.atomic():
-        _reposition_superior_by_inferior(modulo)
     return created
 
 
@@ -391,117 +393,126 @@ def _persist_active_order(mesa, items, current):
         )
 
 
-def _reposition_superior_by_inferior(modulo):
-    """Keep a module's superior close to its live inferior dependency.
+def reconcile_superior_queue_for_group(group):
+    """Interleave pending SUP work following the live inferior queues.
 
-    The relative order already chosen for other superior work is preserved.
-    Only this module moves between the superior items that correspond to
-    modules before and after it on the same inferior mesa.
+    The item already showing on each superior mesa remains anchored so an
+    in-progress sequence is never interrupted. All other superior items keep
+    their mesa assignment, but are ordered by a round-robin merge of the
+    inferior mesas. Superior-only repetitions stay at the tail in their
+    existing relative order.
     """
-    inferior_items = list(
-        MesaQueueItem.objects.select_related("mesa")
-        .filter(
-            modulo=modulo,
-            fase=Fase.INFERIOR,
-            status__in=ACTIVE_QUEUE_STATUSES,
+    with transaction.atomic():
+        inferior_items = list(
+            MesaQueueItem.objects.select_for_update()
+            .select_related("mesa", "modulo")
+            .filter(
+                mesa__grupo=group,
+                mesa__tipo=MesaTipo.INFERIOR,
+                fase=Fase.INFERIOR,
+                status__in=ACTIVE_QUEUE_STATUSES,
+            )
+            .order_by("mesa__indice", "mesa_id", "position", "id")
         )
-        .order_by("id")
-    )
-    superior_items = list(
-        MesaQueueItem.objects.select_related("mesa")
-        .filter(
-            modulo=modulo,
-            fase=Fase.SUPERIOR,
-            status__in=ACTIVE_QUEUE_STATUSES,
+        superior_items = list(
+            MesaQueueItem.objects.select_for_update()
+            .select_related("mesa", "modulo")
+            .filter(
+                mesa__grupo=group,
+                fase=Fase.SUPERIOR,
+                status__in=ACTIVE_QUEUE_STATUSES,
+            )
+            .order_by("mesa__indice", "mesa_id", "position", "id")
         )
-        .order_by("id")
-    )
-    if not inferior_items or not superior_items:
-        return None
+        if not inferior_items or not superior_items:
+            return superior_items
 
-    inferior_item = max(
-        inferior_items,
-        key=lambda item: (
-            item.status == MesaQueueStatus.MOSTRANDO,
-            item.id,
-        ),
-    )
-    superior_item = max(
-        superior_items,
-        key=lambda item: (
-            item.status == MesaQueueStatus.MOSTRANDO,
-            item.id,
-        ),
-    )
-    if superior_item.status == MesaQueueStatus.MOSTRANDO:
-        return superior_item
+        inferior_by_mesa = {}
+        inferior_source_by_module = {}
+        inferior_item_by_module = {}
+        for item in inferior_items:
+            inferior_by_mesa.setdefault(item.mesa_id, []).append(item)
+            inferior_source_by_module[item.modulo_id] = item.mesa_id
+            inferior_item_by_module[item.modulo_id] = item
 
-    inferior_queue = list(
-        MesaQueueItem.objects.select_for_update()
-        .select_related("modulo")
-        .filter(
-            mesa=inferior_item.mesa,
-            fase=Fase.INFERIOR,
-            status__in=ACTIVE_QUEUE_STATUSES,
+        mesa_ids = list(inferior_by_mesa)
+        mesa_index = {mesa_id: index for index, mesa_id in enumerate(mesa_ids)}
+        superior_by_module = {item.modulo_id: item for item in superior_items}
+        anchored = [
+            item for item in superior_items
+            if item.status == MesaQueueStatus.MOSTRANDO
+        ]
+        anchored_module_ids = {item.modulo_id for item in anchored}
+
+        queues = []
+        for mesa_id in mesa_ids:
+            queues.append([
+                superior_by_module[item.modulo_id]
+                for item in inferior_by_mesa[mesa_id]
+                if item.modulo_id in superior_by_module
+                and item.modulo_id not in anchored_module_ids
+            ])
+
+        # Continue after the inferior mesa that supplied the active SUP item.
+        # If nothing is active, retain the source mesa of the existing head.
+        cursor = 0
+        if anchored:
+            source_id = inferior_source_by_module.get(anchored[-1].modulo_id)
+            if source_id in mesa_index:
+                cursor = (mesa_index[source_id] + 1) % len(queues)
+        else:
+            source_id = inferior_source_by_module.get(superior_items[0].modulo_id)
+            if source_id in mesa_index:
+                cursor = mesa_index[source_id]
+
+        desired = []
+        while any(queues):
+            for _ in range(len(queues)):
+                if queues[cursor]:
+                    desired.append(queues[cursor].pop(0))
+                    cursor = (cursor + 1) % len(queues)
+                    break
+                cursor = (cursor + 1) % len(queues)
+
+        desired_ids = {item.id for item in desired}
+        standalone = [
+            item for item in superior_items
+            if item.id not in desired_ids
+            and item.modulo_id not in anchored_module_ids
+        ]
+        desired.extend(standalone)
+        rank = {item.id: index for index, item in enumerate(desired)}
+
+        for item in superior_items:
+            inferior_item = inferior_item_by_module.get(item.modulo_id)
+            if (
+                inferior_item
+                and item.plan_group_index != inferior_item.plan_group_index
+            ):
+                item.plan_group_index = inferior_item.plan_group_index
+                item.save(update_fields=["plan_group_index"])
+
+        superior_mesas = {
+            item.mesa_id: item.mesa for item in superior_items
+        }
+        for mesa_id, mesa in superior_mesas.items():
+            mesa_items = [item for item in superior_items if item.mesa_id == mesa_id]
+            current = next(
+                (
+                    item for item in mesa_items
+                    if item.status == MesaQueueStatus.MOSTRANDO
+                ),
+                None,
+            )
+            pending = [item for item in mesa_items if item is not current]
+            pending.sort(key=lambda item: (rank.get(item.id, len(rank)), item.id))
+            ordered = ([current] if current else []) + pending
+            _persist_active_order(mesa, ordered, current)
+
+        return sorted(
+            superior_items,
+            key=lambda item: (item.mesa.indice, item.position, item.id),
         )
-        .order_by("position", "id")
-    )
-    inferior_index = next(
-        (
-            index
-            for index, item in enumerate(inferior_queue)
-            if item.modulo_id == modulo.id
-        ),
-        None,
-    )
-    if inferior_index is None:
-        return None
-
-    ahead_ids = {
-        item.modulo_id for item in inferior_queue[:inferior_index]
-    }
-    after_ids = {
-        item.modulo_id for item in inferior_queue[inferior_index + 1:]
-    }
-
-    superior_mesa = Mesa.objects.select_for_update().get(id=superior_item.mesa_id)
-    superior_queue, current = _ordered_active_items(superior_mesa)
-    superior_queue = [
-        item for item in superior_queue if item.id != superior_item.id
-    ]
-    ahead_indexes = [
-        index
-        for index, item in enumerate(superior_queue)
-        if item.modulo_id in ahead_ids
-    ]
-    after_indexes = [
-        index
-        for index, item in enumerate(superior_queue)
-        if item.modulo_id in after_ids
-    ]
-
-    if ahead_indexes:
-        insert_at = max(ahead_indexes) + 1
-    elif after_indexes:
-        insert_at = min(after_indexes)
-    else:
-        insert_at = 1 if current else 0
-
-    current_index = next(
-        (
-            index
-            for index, item in enumerate(superior_queue)
-            if current and item.id == current.id
-        ),
-        None,
-    )
-    if current_index is not None:
-        insert_at = max(insert_at, current_index + 1)
-    insert_at = min(insert_at, len(superior_queue))
-
-    superior_queue.insert(insert_at, superior_item)
-    _persist_active_order(superior_mesa, superior_queue, current)
-    return superior_item
 
 
 def reconcile_module_queue_after_bastidor_move(modulo):
@@ -676,7 +687,16 @@ def reconcile_module_queue_after_bastidor_move(modulo):
         _persist_active_order(target_mesa, target_items, target_current)
         moved_items.append(item)
 
-    superior_item = _reposition_superior_by_inferior(modulo)
+    reconcile_superior_queue_for_group(group)
+    superior_item = (
+        MesaQueueItem.objects.filter(
+            modulo=modulo,
+            fase=Fase.SUPERIOR,
+            status__in=ACTIVE_QUEUE_STATUSES,
+        )
+        .order_by("id")
+        .last()
+    )
     if superior_item and all(item.id != superior_item.id for item in moved_items):
         moved_items.append(superior_item)
     return moved_items

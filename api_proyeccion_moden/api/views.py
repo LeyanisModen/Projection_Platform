@@ -45,6 +45,7 @@ from api.queue_sync import (
     QueueRelocationError,
     capture_phase_assignment_hints,
     reconcile_module_queue_after_bastidor_move,
+    reconcile_superior_queue_for_group,
     sync_module_phases,
     sync_new_module,
 )
@@ -3766,6 +3767,7 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
             plan_summaries.append(
                 self._build_group_plan(grupo, proyecto, user, append_mode=append_mode)
             )
+        reconcile_superior_queue_for_group(grupo)
         return plan_summaries
 
     @action(detail=True, methods=['post'], url_path='planificar')

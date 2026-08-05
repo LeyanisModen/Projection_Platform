@@ -3094,6 +3094,78 @@ class PlanningFoundationTests(APITestCase):
         self.assertEqual(inf_2_queue, ["M-04", "M-03"])
         self.assertEqual(sup_queue, ["M-04", "M-02", "M-03", "M-01"])
 
+    def test_reconciliar_superior_alterna_las_dos_colas_inferiores(self):
+        from api.queue_sync import reconcile_superior_queue_for_group
+
+        grupo = self._crear_grupo("Grupo SUP Alternado")
+        mesa_inf_1 = grupo.mesas.get(tipo="INFERIOR", indice=1)
+        mesa_inf_2 = grupo.mesas.get(tipo="INFERIOR", indice=2)
+        mesa_sup = grupo.mesas.get(tipo="SUPERIOR", indice=3)
+
+        modulos = {}
+        for nombre in ["A1", "A2", "A3", "B1", "B2", "B3"]:
+            modulos[nombre] = Modulo.objects.create(
+                nombre=nombre,
+                proyecto=self.project,
+                planta=self.planta,
+            )
+
+        for position, nombre in enumerate(["A1", "A2", "A3"]):
+            MesaQueueItem.objects.create(
+                mesa=mesa_inf_1,
+                modulo=modulos[nombre],
+                fase="INFERIOR",
+                position=position,
+                plan_group_index=1,
+                status="MOSTRANDO" if position == 0 else "EN_COLA",
+            )
+        for position, nombre in enumerate(["B1", "B2", "B3"]):
+            MesaQueueItem.objects.create(
+                mesa=mesa_inf_2,
+                modulo=modulos[nombre],
+                fase="INFERIOR",
+                position=position,
+                plan_group_index=2,
+                status="MOSTRANDO" if position == 0 else "EN_COLA",
+            )
+
+        # Reproduce the faulty production order: all Mesa 2, then Mesa 1.
+        for position, nombre in enumerate(["B1", "B2", "B3", "A1", "A2", "A3"]):
+            MesaQueueItem.objects.create(
+                mesa=mesa_sup,
+                modulo=modulos[nombre],
+                fase="SUPERIOR",
+                position=position,
+                plan_group_index=99,
+                status="MOSTRANDO" if position == 0 else "EN_COLA",
+            )
+        mesa_sup.current_image_index = 7
+        mesa_sup.save(update_fields=["current_image_index"])
+
+        reconcile_superior_queue_for_group(grupo)
+
+        superior = list(
+            mesa_sup.queue_items.filter(
+                fase="SUPERIOR",
+                status__in=["MOSTRANDO", "EN_COLA"],
+            )
+            .order_by("position")
+            .values_list("modulo__nombre", "status", "plan_group_index")
+        )
+        self.assertEqual(
+            superior,
+            [
+                ("B1", "MOSTRANDO", 2),
+                ("A1", "EN_COLA", 1),
+                ("B2", "EN_COLA", 2),
+                ("A2", "EN_COLA", 1),
+                ("B3", "EN_COLA", 2),
+                ("A3", "EN_COLA", 1),
+            ],
+        )
+        mesa_sup.refresh_from_db()
+        self.assertEqual(mesa_sup.current_image_index, 7)
+
     def test_planificar_grupo_usa_ancho_del_modulo_para_agrupacion(self):
         self.project.bastidor_longitud_cm = 20
         self.project.save(update_fields=["bastidor_longitud_cm"])
