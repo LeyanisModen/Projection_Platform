@@ -552,7 +552,7 @@ relanza el instalador (el PATH solo se refresca al crear el proceso).
     $watchdogPath = Join-Path $dest 'player-watchdog.ps1'
     $action = New-ScheduledTaskAction `
         -Execute 'powershell.exe' `
-        -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$watchdogPath`""
+        -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$watchdogPath`" -Root `"$dest`""
     $trigger  = New-ScheduledTaskTrigger -AtLogOn -User 'moden'
     $settings = New-ScheduledTaskSettingsSet `
         -AllowStartIfOnBatteries `

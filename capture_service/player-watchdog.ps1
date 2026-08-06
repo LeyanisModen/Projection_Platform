@@ -13,7 +13,7 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$Root = $PSScriptRoot,
+    [string]$Root = '',
     [int]$IntervalSeconds = 30,
     [int]$PauseMinutes = 30,
     [switch]$Once,
@@ -22,6 +22,15 @@ param(
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 2.0
+
+# Windows PowerShell 5.1 can evaluate $PSScriptRoot too early when it is used
+# directly as a parameter default, leaving Root empty in a scheduled task.
+if ([string]::IsNullOrWhiteSpace($Root)) {
+    $Root = $PSScriptRoot
+}
+if ([string]::IsNullOrWhiteSpace($Root)) {
+    throw 'Could not determine the capture-service root directory.'
+}
 
 $captureScript = Join-Path $Root 'capture_service.py'
 $pythonw = Join-Path $Root 'venv\Scripts\pythonw.exe'
@@ -51,12 +60,16 @@ function Write-WatchdogLog([string]$Message) {
 }
 
 function Get-ChromeExecutable {
-    foreach ($candidate in @(
-        (Join-Path $env:ProgramFiles 'Google\Chrome\Application\chrome.exe'),
-        (Join-Path ${env:ProgramFiles(x86)} 'Google\Chrome\Application\chrome.exe'),
-        (Join-Path $env:LOCALAPPDATA 'Google\Chrome\Application\chrome.exe')
+    foreach ($basePath in @(
+        $env:ProgramFiles,
+        ${env:ProgramFiles(x86)},
+        $env:LOCALAPPDATA
     )) {
-        if (-not [string]::IsNullOrWhiteSpace($candidate) -and (Test-Path $candidate)) {
+        if ([string]::IsNullOrWhiteSpace($basePath)) {
+            continue
+        }
+        $candidate = Join-Path $basePath 'Google\Chrome\Application\chrome.exe'
+        if (Test-Path $candidate) {
             return $candidate
         }
     }

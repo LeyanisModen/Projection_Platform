@@ -227,7 +227,7 @@ function Register-PlayerWatchdogTask {
 
     $action = New-ScheduledTaskAction `
         -Execute 'powershell.exe' `
-        -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$watchdog`""
+        -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$watchdog`" -Root `"$LocalDir`""
     $trigger = New-ScheduledTaskTrigger -AtLogOn -User 'moden'
     $settings = New-ScheduledTaskSettingsSet `
         -AllowStartIfOnBatteries `
