@@ -84,7 +84,12 @@ function Step([string]$name) {
     Write-Host ("=== {0} ===" -f $name) -ForegroundColor Cyan
 }
 
-function Set-IniValue([string]$Path, [string]$Section, [string]$Key, [string]$Value) {
+function Set-IniValues([string]$Path, [object[]]$Updates) {
+    $configInfo = Get-Item -LiteralPath $Path
+    if ($configInfo.Length -gt 1048576) {
+        throw "config.ini is too large ($($configInfo.Length) bytes); repair it before installation."
+    }
+
     $lines = [System.Collections.Generic.List[string]]::new()
     if (Test-Path $Path) {
         foreach ($line in Get-Content $Path) {
@@ -92,38 +97,43 @@ function Set-IniValue([string]$Path, [string]$Section, [string]$Key, [string]$Va
         }
     }
 
-    $sectionIndex = -1
-    for ($i = 0; $i -lt $lines.Count; $i++) {
-        if ($lines[$i].Trim().ToLowerInvariant() -eq "[$($Section.ToLowerInvariant())]") {
-            $sectionIndex = $i
-            break
-        }
-    }
-
-    if ($sectionIndex -lt 0) {
-        if ($lines.Count -gt 0 -and $lines[$lines.Count - 1].Trim() -ne '') {
-            [void]$lines.Add('')
-        }
-        [void]$lines.Add("[$Section]")
-        [void]$lines.Add("$Key = $Value")
-    } else {
-        $insertIndex = $sectionIndex + 1
-        $keyIndex = -1
-        for ($i = $sectionIndex + 1; $i -lt $lines.Count; $i++) {
-            if ($lines[$i].TrimStart().StartsWith('[')) {
-                break
-            }
-            $insertIndex = $i + 1
-            if ($lines[$i] -match "^\s*$([regex]::Escape($Key))\s*=") {
-                $keyIndex = $i
+    foreach ($update in $Updates) {
+        $section = [string]$update.Section
+        $key = [string]$update.Key
+        $value = [string]$update.Value
+        $sectionIndex = -1
+        for ($i = 0; $i -lt $lines.Count; $i++) {
+            if ($lines[$i].Trim().ToLowerInvariant() -eq "[$($section.ToLowerInvariant())]") {
+                $sectionIndex = $i
                 break
             }
         }
 
-        if ($keyIndex -ge 0) {
-            $lines[$keyIndex] = "$Key = $Value"
+        if ($sectionIndex -lt 0) {
+            if ($lines.Count -gt 0 -and $lines[$lines.Count - 1].Trim() -ne '') {
+                [void]$lines.Add('')
+            }
+            [void]$lines.Add("[$section]")
+            [void]$lines.Add("$key = $value")
         } else {
-            $lines.Insert($insertIndex, "$Key = $Value")
+            $insertIndex = $sectionIndex + 1
+            $keyIndex = -1
+            for ($i = $sectionIndex + 1; $i -lt $lines.Count; $i++) {
+                if ($lines[$i].TrimStart().StartsWith('[')) {
+                    break
+                }
+                $insertIndex = $i + 1
+                if ($lines[$i] -match "^\s*$([regex]::Escape($key))\s*=") {
+                    $keyIndex = $i
+                    break
+                }
+            }
+
+            if ($keyIndex -ge 0) {
+                $lines[$keyIndex] = "$key = $value"
+            } else {
+                $lines.Insert($insertIndex, "$key = $value")
+            }
         }
     }
 
@@ -491,40 +501,43 @@ relanza el instalador (el PATH solo se refresca al crear el proceso).
     }
 
     if (Test-Path $configPath) {
-        Set-IniValue $configPath 'documentation' 'interval_seconds' '20'
-        Set-IniValue $configPath 'documentation' 'active_start_hour' '6'
-        Set-IniValue $configPath 'documentation' 'active_start_minute' '50'
-        Set-IniValue $configPath 'documentation' 'active_end_hour' '15'
-        Set-IniValue $configPath 'documentation' 'active_end_minute' '0'
-        Set-IniValue $configPath 'documentation' 'max_local_gb' '30'
-        Set-IniValue $configPath 'documentation' 'min_free_gb' '5'
-        Set-IniValue $configPath 'documentation' 'local_retention_days' '7'
-        Set-IniValue $configPath 'documentation' 'sync_interval_seconds' '1800'
-        Set-IniValue $configPath 'documentation' 'sync_weekly_enabled' 'true'
-        Set-IniValue $configPath 'documentation' 'sync_weekly_start_day' 'FRI'
-        Set-IniValue $configPath 'documentation' 'sync_weekly_start_hour' '15'
-        Set-IniValue $configPath 'documentation' 'sync_weekly_start_minute' '30'
-        Set-IniValue $configPath 'documentation' 'sync_weekly_end_day' 'MON'
-        Set-IniValue $configPath 'documentation' 'sync_weekly_end_hour' '5'
-        Set-IniValue $configPath 'documentation' 'sync_weekly_end_minute' '0'
-        Set-IniValue $configPath 'documentation' 'drive_guard_enabled' 'true'
-        Set-IniValue $configPath 'documentation' 'drive_start_hour' '3'
-        Set-IniValue $configPath 'documentation' 'drive_start_minute' '45'
-        Set-IniValue $configPath 'documentation' 'drive_stop_hour' '4'
-        Set-IniValue $configPath 'documentation' 'drive_stop_minute' '45'
-        Set-IniValue $configPath 'documentation' 'drive_weekend_enabled' 'true'
-        Set-IniValue $configPath 'documentation' 'drive_weekend_start_day' 'FRI'
-        Set-IniValue $configPath 'documentation' 'drive_weekend_start_hour' '15'
-        Set-IniValue $configPath 'documentation' 'drive_weekend_start_minute' '15'
-        Set-IniValue $configPath 'documentation' 'drive_weekend_end_day' 'MON'
-        Set-IniValue $configPath 'documentation' 'drive_weekend_end_hour' '6'
-        Set-IniValue $configPath 'documentation' 'drive_weekend_end_minute' '35'
-        Set-IniValue $configPath 'documentation' 'drive_guard_interval_seconds' '30'
-        Set-IniValue $configPath 'sharpness' 'threshold_blurry' '2'
-        Set-IniValue $configPath 'sharpness' 'threshold_warning' '10'
-        Set-IniValue $configPath 'sharpness' 'min_brightness' '18'
-        Set-IniValue $configPath 'sharpness' 'min_contrast' '8'
-        Set-IniValue $configPath 'sharpness' 'retry_minutes' '15'
+        $safeConfigUpdates = @(
+            @{ Section = 'documentation'; Key = 'interval_seconds'; Value = '20' },
+            @{ Section = 'documentation'; Key = 'active_start_hour'; Value = '6' },
+            @{ Section = 'documentation'; Key = 'active_start_minute'; Value = '50' },
+            @{ Section = 'documentation'; Key = 'active_end_hour'; Value = '15' },
+            @{ Section = 'documentation'; Key = 'active_end_minute'; Value = '0' },
+            @{ Section = 'documentation'; Key = 'max_local_gb'; Value = '30' },
+            @{ Section = 'documentation'; Key = 'min_free_gb'; Value = '5' },
+            @{ Section = 'documentation'; Key = 'local_retention_days'; Value = '7' },
+            @{ Section = 'documentation'; Key = 'sync_interval_seconds'; Value = '1800' },
+            @{ Section = 'documentation'; Key = 'sync_weekly_enabled'; Value = 'true' },
+            @{ Section = 'documentation'; Key = 'sync_weekly_start_day'; Value = 'FRI' },
+            @{ Section = 'documentation'; Key = 'sync_weekly_start_hour'; Value = '15' },
+            @{ Section = 'documentation'; Key = 'sync_weekly_start_minute'; Value = '30' },
+            @{ Section = 'documentation'; Key = 'sync_weekly_end_day'; Value = 'MON' },
+            @{ Section = 'documentation'; Key = 'sync_weekly_end_hour'; Value = '5' },
+            @{ Section = 'documentation'; Key = 'sync_weekly_end_minute'; Value = '0' },
+            @{ Section = 'documentation'; Key = 'drive_guard_enabled'; Value = 'true' },
+            @{ Section = 'documentation'; Key = 'drive_start_hour'; Value = '3' },
+            @{ Section = 'documentation'; Key = 'drive_start_minute'; Value = '45' },
+            @{ Section = 'documentation'; Key = 'drive_stop_hour'; Value = '4' },
+            @{ Section = 'documentation'; Key = 'drive_stop_minute'; Value = '45' },
+            @{ Section = 'documentation'; Key = 'drive_weekend_enabled'; Value = 'true' },
+            @{ Section = 'documentation'; Key = 'drive_weekend_start_day'; Value = 'FRI' },
+            @{ Section = 'documentation'; Key = 'drive_weekend_start_hour'; Value = '15' },
+            @{ Section = 'documentation'; Key = 'drive_weekend_start_minute'; Value = '15' },
+            @{ Section = 'documentation'; Key = 'drive_weekend_end_day'; Value = 'MON' },
+            @{ Section = 'documentation'; Key = 'drive_weekend_end_hour'; Value = '6' },
+            @{ Section = 'documentation'; Key = 'drive_weekend_end_minute'; Value = '35' },
+            @{ Section = 'documentation'; Key = 'drive_guard_interval_seconds'; Value = '30' },
+            @{ Section = 'sharpness'; Key = 'threshold_blurry'; Value = '2' },
+            @{ Section = 'sharpness'; Key = 'threshold_warning'; Value = '10' },
+            @{ Section = 'sharpness'; Key = 'min_brightness'; Value = '18' },
+            @{ Section = 'sharpness'; Key = 'min_contrast'; Value = '8' },
+            @{ Section = 'sharpness'; Key = 'retry_minutes'; Value = '15' }
+        )
+        Set-IniValues $configPath $safeConfigUpdates
         Write-Host "  Â· capturas: 06:50-15:00, cada 20 segundos"
         Write-Host "  Â· Drive diario 03:45-04:45 y fin de semana VIE 15:15-LUN 06:35"
         Write-Host "  Â· copia de fotos a G: VIE 15:30-LUN 05:00; retencion local 7 dias"

@@ -9,6 +9,7 @@ port = 5555
 
 ; Camera index (first webcam = 0, second = 1, ...).
 camera_index = 0
+camera_backend = CAP_ANY
 
 ; On-demand /capture size. The OBSBOT Tiny 2 soporta 4K nativo pero
 ; el driver UVC se queda colgado en read() si le pides 3840x2160 nada

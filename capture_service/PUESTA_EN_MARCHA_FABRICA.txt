@@ -234,6 +234,21 @@ FORZAR UPDATE MANUAL DESDE DRIVE
 -----------------------------------------
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File 'C:\moden\capture_service\update-capture-service.ps1' -Force
 
+REPARAR CONFIG.INI CORRUPTO O DEMASIADO GRANDE
+-----------------------------------------
+No usar Get-Content sobre un config.ini de cientos de MB o GB. La reparacion
+lee solo el principio, conserva mesa_id/camara/rutas y deja una copia .bak:
+
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File 'C:\moden\capture_service\repair-config.ps1'
+
+Start-Process 'C:\moden\capture_service\start-player.bat'
+Start-Sleep -Seconds 10
+curl.exe http://127.0.0.1:5555/health
+curl.exe http://127.0.0.1:5555/stats
+
+Solo despues de comprobar que mesa_id es correcto y ambos endpoints responden,
+borrar config.ini.corrupt-*.bak para recuperar el espacio.
+
 VERIFICAR RECUPERACION AUTOMATICA DEL PLAYER
 -----------------------------------------
 Desde la version 2026-08-05.1, la tarea MODEN Player comprueba cada 30
