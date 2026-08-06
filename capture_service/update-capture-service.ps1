@@ -52,8 +52,10 @@ function Get-RelativePath([string]$BaseDir, [string]$Path) {
 
 function Test-IncludedUpdateFile([string]$RelativePath) {
     $parts = $RelativePath -split '[\\/]'
-    if ($parts.Count -gt 0 -and $parts[0] -in @('venv', '__pycache__', 'logs')) {
-        return $false
+    foreach ($part in $parts) {
+        if ($part -in @('venv', '__pycache__', 'logs')) {
+            return $false
+        }
     }
 
     $name = Split-Path $RelativePath -Leaf
@@ -71,28 +73,47 @@ function Test-IncludedUpdateFile([string]$RelativePath) {
     return $true
 }
 
+function Get-IncludedUpdateFiles([string]$Dir) {
+    $root = Get-Item -LiteralPath $Dir -Force
+    $pending = [System.Collections.Generic.Stack[System.IO.DirectoryInfo]]::new()
+    $pending.Push($root)
+
+    while ($pending.Count -gt 0) {
+        $current = $pending.Pop()
+        foreach ($file in Get-ChildItem -LiteralPath $current.FullName -File -Force) {
+            $rel = Get-RelativePath $Dir $file.FullName
+            if (Test-IncludedUpdateFile $rel) {
+                [PSCustomObject]@{
+                    RelativePath = $rel
+                    FullName = $file.FullName
+                }
+            }
+        }
+
+        foreach ($child in Get-ChildItem -LiteralPath $current.FullName -Directory -Force) {
+            if ($child.Name -notin @('venv', '__pycache__', 'logs')) {
+                $pending.Push($child)
+            }
+        }
+    }
+}
+
 function Get-TreeFingerprint([string]$Dir) {
     if (-not (Test-Path $Dir)) { return '' }
 
-    $lines = [System.Collections.Generic.List[string]]::new()
-    $files = Get-ChildItem $Dir -Recurse -File -Force |
-        ForEach-Object {
-            $rel = Get-RelativePath $Dir $_.FullName
-            if (Test-IncludedUpdateFile $rel) {
-                [PSCustomObject]@{ RelativePath = $rel; FullName = $_.FullName }
-            }
-        } |
-        Sort-Object RelativePath
-
-    foreach ($file in $files) {
-        $hash = (Get-FileHash $file.FullName -Algorithm SHA256).Hash
-        [void]$lines.Add("$($file.RelativePath)|$hash")
-    }
-
-    $payload = [System.Text.Encoding]::UTF8.GetBytes(($lines -join "`n"))
+    $files = @(Get-IncludedUpdateFiles $Dir | Sort-Object RelativePath)
     $sha = [System.Security.Cryptography.SHA256]::Create()
     try {
-        return ([BitConverter]::ToString($sha.ComputeHash($payload))).Replace('-', '')
+        foreach ($file in $files) {
+            $hash = (Get-FileHash $file.FullName -Algorithm SHA256).Hash
+            $line = [System.Text.Encoding]::UTF8.GetBytes(
+                "$($file.RelativePath)|$hash`n"
+            )
+            [void]$sha.TransformBlock($line, 0, $line.Length, $line, 0)
+        }
+        $empty = [byte[]]::new(0)
+        [void]$sha.TransformFinalBlock($empty, 0, 0)
+        return ([BitConverter]::ToString($sha.Hash)).Replace('-', '')
     } finally {
         $sha.Dispose()
     }
@@ -263,7 +284,7 @@ try {
     $sourceVersion = Read-Version $UpdateSource
     $localVersion = Read-Version $LocalDir
     $sourceFingerprint = Get-TreeFingerprint $UpdateSource
-    $localFingerprint = Get-TreeFingerprint $LocalDir
+    $localFingerprint = if ($Force) { '' } else { Get-TreeFingerprint $LocalDir }
 
     if ([string]::IsNullOrWhiteSpace($sourceVersion)) {
         Write-UpdateLog 'Source VERSION is empty; skipping.'
@@ -288,7 +309,14 @@ try {
         exit 0
     }
 
-    Write-UpdateLog "Updating $localVersion -> $sourceVersion"
+    [GC]::Collect()
+    [GC]::WaitForPendingFinalizers()
+
+    if ($localVersion -eq $sourceVersion) {
+        Write-UpdateLog "Repairing installation $sourceVersion"
+    } else {
+        Write-UpdateLog "Updating $localVersion -> $sourceVersion"
+    }
 
     Set-Content -Path $playerMaintenanceMarker `
         -Value (Get-Date -Format o) -Encoding ASCII
@@ -300,6 +328,16 @@ try {
     Get-Process -Name python, pythonw, chrome -ErrorAction SilentlyContinue |
         Stop-Process -Force -ErrorAction SilentlyContinue
 
+    $sourceRequirements = Join-Path $UpdateSource 'requirements.txt'
+    $localRequirements = Join-Path $LocalDir 'requirements.txt'
+    $requirementsChanged = -not (Test-Path $localRequirements)
+    if (-not $requirementsChanged) {
+        $requirementsChanged = (
+            (Get-FileHash $sourceRequirements -Algorithm SHA256).Hash -ne
+            (Get-FileHash $localRequirements -Algorithm SHA256).Hash
+        )
+    }
+
     & robocopy $UpdateSource $LocalDir /MIR /XD venv __pycache__ logs /XF config.ini device_token.txt .drive_maintenance .player_maintenance .player_pause /NFL /NDL /NJH /NJS /NP | Out-Null
     if ($LASTEXITCODE -ge 8) {
         throw "robocopy failed with code $LASTEXITCODE"
@@ -308,9 +346,16 @@ try {
     $venvPython = Join-Path $LocalDir 'venv\Scripts\python.exe'
     $requirements = Join-Path $LocalDir 'requirements.txt'
     if ((Test-Path $venvPython) -and (Test-Path $requirements)) {
-        & $venvPython -m pip install -r $requirements --quiet
-        if ($LASTEXITCODE -ne 0) {
-            Write-UpdateLog "pip install returned code $LASTEXITCODE; continuing with copied files."
+        & $venvPython -c 'import cv2' 2>$null
+        $dependenciesHealthy = $LASTEXITCODE -eq 0
+        if ($requirementsChanged -or -not $dependenciesHealthy) {
+            & $venvPython -m pip install --disable-pip-version-check `
+                --no-cache-dir -r $requirements --quiet
+            if ($LASTEXITCODE -ne 0) {
+                Write-UpdateLog "pip install returned code $LASTEXITCODE; continuing with copied files."
+            }
+        } else {
+            Write-UpdateLog 'Python dependencies unchanged; skipping pip install.'
         }
     } else {
         Write-UpdateLog 'venv or requirements.txt not found; skipping pip install.'
@@ -374,7 +419,8 @@ try {
     Write-UpdateLog "Update complete ($sourceVersion)."
     exit 0
 } catch {
-    Write-UpdateLog "ERROR: $($_.Exception.Message)"
+    $errorLine = $_.InvocationInfo.ScriptLineNumber
+    Write-UpdateLog "ERROR at line ${errorLine}: $($_.Exception.Message)"
     exit 1
 } finally {
     if ($playerMaintenanceRequested) {
