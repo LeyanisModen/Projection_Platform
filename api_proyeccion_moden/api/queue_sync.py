@@ -396,11 +396,11 @@ def _persist_active_order(mesa, items, current):
 def reconcile_superior_queue_for_group(group):
     """Interleave pending SUP work following the live inferior queues.
 
-    The item already showing on each superior mesa remains anchored so an
-    in-progress sequence is never interrupted. All other superior items keep
-    their mesa assignment, but are ordered by a round-robin merge of the
-    inferior mesas. Superior-only repetitions stay at the tail in their
-    existing relative order.
+    Superior work past the initial images remains anchored so an in-progress
+    sequence is never interrupted. Initial and queued items keep their mesa
+    assignment, but are ordered by a round-robin merge of the inferior mesas.
+    Superior-only repetitions stay at the tail in their existing relative
+    order.
     """
     with transaction.atomic():
         inferior_items = list(
@@ -441,7 +441,34 @@ def reconcile_superior_queue_for_group(group):
         anchored = [
             item for item in superior_items
             if item.status == MesaQueueStatus.MOSTRANDO
+            and item.mesa.current_image_index > EARLY_IMAGE_INDEX_LIMIT
         ]
+        priority_source_id = None
+        if not anchored:
+            progress_by_mesa = {
+                mesa_id: items[0].mesa.current_image_index
+                for mesa_id, items in inferior_by_mesa.items()
+            }
+            max_progress = max(progress_by_mesa.values())
+            leading_mesas = [
+                mesa_id
+                for mesa_id, progress in progress_by_mesa.items()
+                if progress == max_progress
+            ]
+            if (
+                len(mesa_ids) > 1
+                and max_progress > EARLY_IMAGE_INDEX_LIMIT
+                and len(leading_mesas) == 1
+            ):
+                priority_source_id = leading_mesas[0]
+            else:
+                # Without a clear dependency priority, retain an initial item
+                # as a soft anchor. This avoids disrupting fresh plans and
+                # inserting a newly imported module ahead of existing work.
+                anchored = [
+                    item for item in superior_items
+                    if item.status == MesaQueueStatus.MOSTRANDO
+                ]
         anchored_module_ids = {item.modulo_id for item in anchored}
 
         queues = []
@@ -453,15 +480,21 @@ def reconcile_superior_queue_for_group(group):
                 and item.modulo_id not in anchored_module_ids
             ])
 
-        # Continue after the inferior mesa that supplied the active SUP item.
-        # If nothing is active, retain the source mesa of the existing head.
+        # Continue after the inferior mesa that supplied genuinely started SUP
+        # work. An initial SUP item is replaceable only when one inferior mesa
+        # is clearly further along; otherwise preserve the existing head so a
+        # fresh plan or module import does not churn an otherwise valid queue.
         cursor = 0
         if anchored:
             source_id = inferior_source_by_module.get(anchored[-1].modulo_id)
             if source_id in mesa_index:
                 cursor = (mesa_index[source_id] + 1) % len(queues)
+        elif priority_source_id in mesa_index:
+            cursor = mesa_index[priority_source_id]
         else:
-            source_id = inferior_source_by_module.get(superior_items[0].modulo_id)
+            source_id = inferior_source_by_module.get(
+                superior_items[0].modulo_id
+            )
             if source_id in mesa_index:
                 cursor = mesa_index[source_id]
 
@@ -500,7 +533,7 @@ def reconcile_superior_queue_for_group(group):
             current = next(
                 (
                     item for item in mesa_items
-                    if item.status == MesaQueueStatus.MOSTRANDO
+                    if item.modulo_id in anchored_module_ids
                 ),
                 None,
             )
