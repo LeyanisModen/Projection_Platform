@@ -200,12 +200,9 @@ Este bloque se ejecuta UNA VEZ en mini-PCs ya desplegados para instalar la
 tarea programada "MODEN Auto Update".
 
 Despues de esto, las siguientes versiones se revisan solas cada noche a las
-04:15 desde:
-
-  G:\Mi unidad\MODEN_UPDATE\capture_service
-
-Tu trabajo sera reemplazar esa carpeta en el Drive de cada ferralla cuando
-quieras publicar una version nueva del capture_service.
+04:15 desde la rama deploy de GitHub. La carpeta de Drive se usa solo para
+instalar esta transicion en los mini-PC ya desplegados; no hay que mantenerla
+para las publicaciones futuras.
 
 $src = 'G:\Mi unidad\MODEN_UPDATE\capture_service'
 
@@ -230,13 +227,13 @@ Test-Path 'C:\moden\capture_service\device_token.txt'
 Get-ScheduledTask -TaskName 'MODEN Auto Update' | Format-List TaskName,State,Triggers
 
 
-FORZAR UPDATE MANUAL DESDE DRIVE
+FORZAR UPDATE MANUAL DESDE GITHUB
 -----------------------------------------
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File 'C:\moden\capture_service\update-capture-service.ps1' -Force
 
-El actualizador nunca instala una VERSION anterior a la local aunque Drive
-muestre temporalmente una copia atrasada. -Force vuelve a copiar la misma
-version para reparar archivos, pero tampoco permite bajar de version.
+El actualizador nunca instala una VERSION anterior a la local. -Force vuelve
+a descargar la version publicada para reparar archivos, pero tampoco permite
+bajar de version.
 
 REPARAR CONFIG.INI CORRUPTO O DEMASIADO GRANDE
 -----------------------------------------
@@ -272,10 +269,9 @@ Las capturas periodicas se guardan durante la semana en:
 
   C:\moden\capture_buffer
 
-Desde la version 2026-08-04.4 Google Drive Desktop permanece abierto de viernes
-15:15 a lunes 06:35 para sincronizar fotos. Entre semana solo abre de
-03:45 a 04:45 para la actualizacion automatica. El capture service lo cierra
-antes de produccion para impedir que una ventana de error tape el kiosko.
+Google Drive Desktop permanece abierto de viernes 15:15 a lunes 06:35 para
+sincronizar fotos. Entre semana permanece cerrado. La actualizacion automatica
+consulta GitHub directamente y no necesita Drive.
 
 Las capturas se copian del buffer a G: entre viernes 15:30 y lunes 05:00, con
 reintentos cada 30 minutos. La copia local se conserva 7 dias y solo se borra
@@ -285,8 +281,8 @@ Si quedan menos de 5 GB libres, se pausan solo las capturas periodicas. El
 player y las fotos obligatorias de los modulos siguen funcionando.
 
 La actualizacion automatica de las 04:15 sigue funcionando. El comando manual
-con -Force abre Drive temporalmente y lo mantiene disponible hasta que termina;
-no hay que prepararlo a mano.
+con -Force descarga de nuevo la publicacion actual de GitHub; no hay que
+preparar Drive a mano.
 
 Comprobar estado:
 

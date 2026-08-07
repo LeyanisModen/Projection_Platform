@@ -12,8 +12,8 @@ to the Chrome kiosk. Single Python process:
   local buffer, so Marketing + QA have a record of the whole shift without
   competing with production for internet bandwidth.
 - Google Drive Desktop process guard: Drive runs Friday 15:15 through Monday
-  06:35 for photo sync, plus 03:45-04:45 daily for the updater. Outside those
-  windows it is closed so no error dialog can cover Chrome kiosk.
+  06:35 for photo sync. Outside that window it is closed so no error dialog
+  can cover Chrome kiosk. Software updates come directly from GitHub.
 
 ## One-time install on a mini-PC
 
@@ -134,9 +134,9 @@ G:\Mi unidad\capturas_moden\
     error cannot interrupt projection; pending files stay in the local buffer.
   - The weekly photo batch is staged into `G:` during the weekend and retried
     every 30 minutes. Drive remains open until Monday 06:35 for cloud upload.
-  - The automatic updater runs at 04:15, inside the Drive window. A manual
-    update with `-Force` opens Drive temporarily and keeps it available until
-    the update finishes; no extra preparation is needed.
+  - The automatic updater checks GitHub `deploy` at 04:15. It downloads only
+    `VERSION` when nothing changed and does not need to start Google Drive.
+    A manual update with `-Force` downloads and reapplies the current release.
 
 - **Change working hours / mesa id / resolution**
   - Edit `config.ini` and restart the service (easiest: log off +

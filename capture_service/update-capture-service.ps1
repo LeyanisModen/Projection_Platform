@@ -3,17 +3,22 @@
   Nightly self-updater for deployed MODEN mini-PCs.
 
 .DESCRIPTION
-  Compares C:\moden\capture_service\VERSION with the version published in
-  Google Drive (default: G:\Mi unidad\MODEN_UPDATE\capture_service). If the
-  Drive version is newer/different, it stops the local player, mirrors the
-  folder while preserving local config/token, reapplies safe config defaults,
-  and starts the player again.
+  Compares C:\moden\capture_service\VERSION with capture_service/VERSION on
+  the GitHub deploy branch. It downloads a complete branch snapshot only when
+  a new version exists, then stops the local player, preserves local
+  config/token, applies the update, and starts the player again.
+
+  UpdateSource can still point to a local folder for transition or recovery.
 
   The script is intentionally quiet when there is nothing to update.
 #>
 [CmdletBinding()]
 param(
-    [string]$UpdateSource = 'G:\Mi unidad\MODEN_UPDATE\capture_service',
+    [string]$UpdateSource = '',
+    [ValidatePattern('^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$')]
+    [string]$GitHubRepository = 'LeyanisModen/Projection_Platform',
+    [ValidatePattern('^[A-Za-z0-9._/-]+$')]
+    [string]$GitHubBranch = 'deploy',
     [string]$LocalDir = 'C:\moden\capture_service',
     [int]$AllowedStartHour = 2,
     [int]$AllowedEndHour = 5,
@@ -76,6 +81,73 @@ function Compare-CaptureVersion([string]$Left, [string]$Right) {
     return ([int]$leftMatch.Groups[4].Value).CompareTo(
         [int]$rightMatch.Groups[4].Value
     )
+}
+
+function Invoke-HttpDownload([string]$Url, [string]$Destination) {
+    & curl.exe `
+        --fail `
+        --location `
+        --silent `
+        --show-error `
+        --retry 3 `
+        --retry-delay 2 `
+        --connect-timeout 15 `
+        --max-time 300 `
+        $Url `
+        --output $Destination
+    if ($LASTEXITCODE -ne 0) {
+        throw "Download failed with code ${LASTEXITCODE}: $Url"
+    }
+    if (
+        -not (Test-Path -LiteralPath $Destination) -or
+        (Get-Item -LiteralPath $Destination).Length -eq 0
+    ) {
+        throw "Downloaded file is empty: $Url"
+    }
+}
+
+function New-GitHubUpdateSource([string]$TemporaryRoot) {
+    $archivePath = Join-Path $TemporaryRoot 'deploy.zip'
+    $extractPath = Join-Path $TemporaryRoot 'expanded'
+    $archiveUrl = (
+        "https://github.com/$GitHubRepository/archive/refs/heads/" +
+        "$GitHubBranch.zip"
+    )
+
+    Invoke-HttpDownload $archiveUrl $archivePath
+    New-Item -Path $extractPath -ItemType Directory -Force | Out-Null
+    Expand-Archive -LiteralPath $archivePath -DestinationPath $extractPath -Force
+
+    $repositoryRoot = Get-ChildItem -LiteralPath $extractPath -Directory |
+        Select-Object -First 1
+    if ($null -eq $repositoryRoot) {
+        throw 'GitHub archive did not contain a repository directory.'
+    }
+
+    $source = Join-Path $repositoryRoot.FullName 'capture_service'
+    if (-not (Test-Path -LiteralPath $source)) {
+        throw 'GitHub archive did not contain capture_service.'
+    }
+    return $source
+}
+
+function Remove-TemporaryUpdateRoot([string]$Path) {
+    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path $Path)) {
+        return
+    }
+
+    $tempRoot = [System.IO.Path]::GetFullPath($env:TEMP).TrimEnd('\') + '\'
+    $fullPath = [System.IO.Path]::GetFullPath($Path)
+    if (
+        -not $fullPath.StartsWith(
+            $tempRoot,
+            [System.StringComparison]::OrdinalIgnoreCase
+        ) -or
+        (Split-Path $fullPath -Leaf) -notlike 'moden-capture-update-*'
+    ) {
+        throw "Refusing to remove unexpected temporary path: $fullPath"
+    }
+    Remove-Item -LiteralPath $fullPath -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 function Get-RelativePath([string]$BaseDir, [string]$Path) {
@@ -295,9 +367,53 @@ $playerMaintenanceMarker = Join-Path $LocalDir '.player_maintenance'
 $playerPauseMarker = Join-Path $LocalDir '.player_pause'
 $playerMaintenanceRequested = $false
 $playerRestartPending = $false
+$temporaryUpdateRoot = ''
+$usingGitHub = [string]::IsNullOrWhiteSpace($UpdateSource)
+$sourceLabel = $UpdateSource
 
 try {
-    if ($Force) {
+    if ($usingGitHub) {
+        $sourceLabel = "GitHub $GitHubRepository@$GitHubBranch"
+        $temporaryUpdateRoot = Join-Path $env:TEMP (
+            'moden-capture-update-{0}-{1}' -f $PID, (Get-Date -Format 'yyyyMMddHHmmss')
+        )
+        New-Item -Path $temporaryUpdateRoot -ItemType Directory -Force | Out-Null
+
+        $remoteVersionPath = Join-Path $temporaryUpdateRoot 'VERSION'
+        $remoteVersionUrl = (
+            "https://raw.githubusercontent.com/$GitHubRepository/" +
+            "$GitHubBranch/capture_service/VERSION"
+        )
+        Write-UpdateLog "Checking updates from $sourceLabel"
+        Invoke-HttpDownload $remoteVersionUrl $remoteVersionPath
+
+        $remoteVersion = Read-Version $temporaryUpdateRoot
+        $currentVersion = Read-Version $LocalDir
+        if ([string]::IsNullOrWhiteSpace($remoteVersion)) {
+            Write-UpdateLog 'GitHub VERSION is empty; skipping.'
+            exit 0
+        }
+
+        if (-not $AllowDowngrade -and -not [string]::IsNullOrWhiteSpace($currentVersion)) {
+            $versionComparison = Compare-CaptureVersion $remoteVersion $currentVersion
+            if ($null -ne $versionComparison -and $versionComparison -lt 0) {
+                Write-UpdateLog "GitHub version $remoteVersion is older than local $currentVersion; refusing downgrade."
+                exit 0
+            }
+        }
+
+        if (-not $Force -and $remoteVersion -eq $currentVersion) {
+            Write-UpdateLog "Already up to date ($currentVersion)."
+            exit 0
+        }
+        if (-not (Test-AllowedWindow)) {
+            Write-UpdateLog "Update $currentVersion -> $remoteVersion pending, but outside allowed window $AllowedStartHour-$AllowedEndHour."
+            exit 0
+        }
+
+        Write-UpdateLog "Downloading $sourceLabel snapshot."
+        $UpdateSource = New-GitHubUpdateSource $temporaryUpdateRoot
+    } elseif ($Force) {
         if (-not (Test-Path $LocalDir)) {
             New-Item -Path $LocalDir -ItemType Directory -Force | Out-Null
         }
@@ -311,7 +427,9 @@ try {
         }
     }
 
-    Write-UpdateLog "Checking updates from '$UpdateSource'"
+    if (-not $usingGitHub) {
+        Write-UpdateLog "Checking updates from '$UpdateSource'"
+    }
 
     if (-not (Test-Path $UpdateSource)) {
         Write-UpdateLog 'Update source is not available; skipping.'
@@ -361,12 +479,14 @@ try {
         exit 0
     }
 
-    Start-Sleep -Seconds 3
-    $sourceVersionAfterWait = Read-Version $UpdateSource
-    $sourceFingerprintAfterWait = Get-TreeFingerprint $UpdateSource
-    if ($sourceVersionAfterWait -ne $sourceVersion -or $sourceFingerprintAfterWait -ne $sourceFingerprint) {
-        Write-UpdateLog 'Source changed while checking; Drive may still be syncing. Skipping this run.'
-        exit 0
+    if (-not $usingGitHub) {
+        Start-Sleep -Seconds 3
+        $sourceVersionAfterWait = Read-Version $UpdateSource
+        $sourceFingerprintAfterWait = Get-TreeFingerprint $UpdateSource
+        if ($sourceVersionAfterWait -ne $sourceVersion -or $sourceFingerprintAfterWait -ne $sourceFingerprint) {
+            Write-UpdateLog 'Source changed while checking; Drive may still be syncing. Skipping this run.'
+            exit 0
+        }
     }
 
     [GC]::Collect()
@@ -453,6 +573,7 @@ try {
             @{ Section = 'documentation'; Key = 'sync_weekly_end_hour'; Value = '5' },
             @{ Section = 'documentation'; Key = 'sync_weekly_end_minute'; Value = '0' },
             @{ Section = 'documentation'; Key = 'drive_guard_enabled'; Value = 'true' },
+            @{ Section = 'documentation'; Key = 'drive_daily_enabled'; Value = 'false' },
             @{ Section = 'documentation'; Key = 'drive_start_hour'; Value = '3' },
             @{ Section = 'documentation'; Key = 'drive_start_minute'; Value = '45' },
             @{ Section = 'documentation'; Key = 'drive_stop_hour'; Value = '4' },
@@ -476,7 +597,7 @@ try {
 
     [System.IO.File]::WriteAllText(
         (Join-Path $LocalDir '.last_update_source.txt'),
-        "$UpdateSource`r`n$sourceVersion`r`n$(Get-Date -Format o)`r`n",
+        "$sourceLabel`r`n$sourceVersion`r`n$(Get-Date -Format o)`r`n",
         [System.Text.UTF8Encoding]::new($false)
     )
 
@@ -512,4 +633,5 @@ try {
     if ($maintenanceRequested) {
         Remove-Item -LiteralPath $driveMaintenanceMarker -Force -ErrorAction SilentlyContinue
     }
+    Remove-TemporaryUpdateRoot $temporaryUpdateRoot
 }

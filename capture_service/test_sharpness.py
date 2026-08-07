@@ -176,6 +176,7 @@ class DriveProcessWindowTests(unittest.TestCase):
     def setUp(self):
         self.setting_names = (
             'drive_guard_enabled',
+            'drive_daily_enabled',
             'drive_start_hour',
             'drive_start_minute',
             'drive_stop_hour',
@@ -194,6 +195,7 @@ class DriveProcessWindowTests(unittest.TestCase):
         }
         self.original_stats = dict(CAPTURE_SERVICE._stats)
         CAPTURE_SERVICE.CONFIG.drive_guard_enabled = True
+        CAPTURE_SERVICE.CONFIG.drive_daily_enabled = True
         CAPTURE_SERVICE.CONFIG.drive_start_hour = 3
         CAPTURE_SERVICE.CONFIG.drive_start_minute = 45
         CAPTURE_SERVICE.CONFIG.drive_stop_hour = 4
@@ -225,6 +227,12 @@ class DriveProcessWindowTests(unittest.TestCase):
         )
         self.assertFalse(
             CAPTURE_SERVICE.in_drive_process_window(datetime(2026, 8, 4, 4, 45))
+        )
+
+    def test_daily_drive_window_can_be_disabled(self):
+        CAPTURE_SERVICE.CONFIG.drive_daily_enabled = False
+        self.assertFalse(
+            CAPTURE_SERVICE.in_drive_process_window(datetime(2026, 8, 4, 4, 15))
         )
 
     def test_extended_weekend_drive_window_boundaries(self):

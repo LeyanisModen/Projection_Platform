@@ -33,8 +33,8 @@ Las fotos periodicas se guardan primero en:
   C:\moden\capture_buffer
 
 Se copian a Google Drive desde el viernes 15:30 hasta el lunes 05:00. Drive
-permanece cerrado durante produccion y solo abre 03:45-04:45 entre semana para
-la actualizacion automatica. Para comprobarlo:
+permanece cerrado entre semana. La actualizacion automatica consulta GitHub y
+no necesita abrir Drive. Para comprobarlo:
 
 curl.exe http://127.0.0.1:5555/stats
 
@@ -202,12 +202,9 @@ IMPORTANTE:
 
   - Si localStorage ya se habia borrado ANTES de actualizar, tocara
     vincular una vez mas desde admin. Despues de eso queda protegido.
-  - Despues de instalar esta version, futuras actualizaciones se revisan
-    solas desde:
-
-      G:\Mi unidad\MODEN_UPDATE\capture_service
-
-    Solo tienes que reemplazar ahi la carpeta capture_service de la ferralla.
+  - Despues de instalar esta version, futuras actualizaciones se descargan
+    solas desde la rama deploy de GitHub. La carpeta de Drive solo se usa para
+    esta instalacion inicial de transicion.
 
 # --- PowerShell admin ---
 
@@ -247,7 +244,7 @@ Test-Path 'C:\moden\capture_service\device_token.txt'
 Si sigue en False, revisa que el archivo copiado sea el capture_service.py
 nuevo y que el player cargue desde https://moden.up.railway.app/player.
 
-Forzar una revision de actualizacion desde Drive sin esperar a la noche:
+Forzar una revision de la version publicada en GitHub sin esperar a la noche:
 
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File 'C:\moden\capture_service\update-capture-service.ps1' -Force
 

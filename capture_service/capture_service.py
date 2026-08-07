@@ -112,10 +112,11 @@ class Config:
         self.sync_weekly_end_minute = 0
         self.local_retention_days = 7
         # Google Drive Desktop must not display dialogs over the production
-        # kiosk. Keep the process alive only around scheduled sync/update.
+        # kiosk. Keep the process alive only around scheduled photo sync.
         self.drive_guard_enabled = True
-        # Short daily window keeps the 04:15 updater working. The extended
-        # weekend window gives Drive time to upload the weekly photo batch.
+        # Software updates come directly from GitHub. The old daily Drive
+        # window remains configurable but is disabled by default.
+        self.drive_daily_enabled = False
         self.drive_start_hour = 3
         self.drive_start_minute = 45
         self.drive_stop_hour = 4
@@ -217,6 +218,9 @@ class Config:
             self.local_retention_days = d.getint('local_retention_days', self.local_retention_days)
             self.drive_guard_enabled = d.getboolean(
                 'drive_guard_enabled', self.drive_guard_enabled
+            )
+            self.drive_daily_enabled = d.getboolean(
+                'drive_daily_enabled', self.drive_daily_enabled
             )
             self.drive_start_hour = d.getint('drive_start_hour', self.drive_start_hour)
             self.drive_start_minute = d.getint(
@@ -629,28 +633,31 @@ def in_sync_window(now: datetime = None) -> bool:
 
 
 def drive_process_window_label():
-    daily = (
-        f'daily {CONFIG.drive_start_hour:02d}:{CONFIG.drive_start_minute:02d}-'
-        f'{CONFIG.drive_stop_hour:02d}:{CONFIG.drive_stop_minute:02d}'
-    )
-    if not CONFIG.drive_weekend_enabled:
-        return daily
-    weekend = _format_weekly_window(
-        CONFIG.drive_weekend_start_day,
-        CONFIG.drive_weekend_start_hour,
-        CONFIG.drive_weekend_start_minute,
-        CONFIG.drive_weekend_end_day,
-        CONFIG.drive_weekend_end_hour,
-        CONFIG.drive_weekend_end_minute,
-    )
-    return f'{daily}; weekend {weekend}'
+    windows = []
+    if CONFIG.drive_daily_enabled:
+        windows.append(
+            f'daily {CONFIG.drive_start_hour:02d}:{CONFIG.drive_start_minute:02d}-'
+            f'{CONFIG.drive_stop_hour:02d}:{CONFIG.drive_stop_minute:02d}'
+        )
+    if CONFIG.drive_weekend_enabled:
+        windows.append(
+            'weekend ' + _format_weekly_window(
+                CONFIG.drive_weekend_start_day,
+                CONFIG.drive_weekend_start_hour,
+                CONFIG.drive_weekend_start_minute,
+                CONFIG.drive_weekend_end_day,
+                CONFIG.drive_weekend_end_hour,
+                CONFIG.drive_weekend_end_minute,
+            )
+        )
+    return '; '.join(windows) if windows else 'disabled'
 
 
 def in_drive_process_window(now: datetime = None) -> bool:
     if not CONFIG.drive_guard_enabled:
         return False
     now = now or datetime.now()
-    if _in_daily_window(
+    if CONFIG.drive_daily_enabled and _in_daily_window(
         now,
         CONFIG.drive_start_hour,
         CONFIG.drive_start_minute,
@@ -1261,6 +1268,7 @@ class CaptureHandler(BaseHTTPRequestHandler):
             payload['sync_enabled'] = CONFIG.sync_enabled
             payload['sync_window'] = sync_window_label()
             payload['drive_process_window_active'] = in_drive_process_window()
+            payload['drive_daily_enabled'] = CONFIG.drive_daily_enabled
             payload['drive_maintenance_active'] = _drive_maintenance_requested()
             payload['player_pause_active'] = _player_pause_requested()
             payload['drive_process_window'] = drive_process_window_label()

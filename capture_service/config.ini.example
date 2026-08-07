@@ -75,9 +75,10 @@ sync_weekly_end_hour = 5
 sync_weekly_end_minute = 0
 
 ; Drive Desktop is deliberately closed during production so its error dialogs
-; cannot cover Chrome kiosk. The short daily window is only for the 04:15
-; updater; the extended weekend window uploads the weekly photo batch.
+; cannot cover Chrome kiosk. Updates come from GitHub; Drive opens only during
+; the extended weekend window that uploads the weekly photo batch.
 drive_guard_enabled = true
+drive_daily_enabled = false
 drive_start_hour = 3
 drive_start_minute = 45
 drive_stop_hour = 4
