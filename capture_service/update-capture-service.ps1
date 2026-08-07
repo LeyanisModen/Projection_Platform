@@ -106,13 +106,28 @@ function Invoke-HttpDownload([string]$Url, [string]$Destination) {
     }
 }
 
-function New-GitHubUpdateSource([string]$TemporaryRoot) {
+function Resolve-GitHubRevision([string]$TemporaryRoot) {
+    $referencePath = Join-Path $TemporaryRoot 'deploy-reference.json'
+    $referenceUrl = (
+        "https://api.github.com/repos/$GitHubRepository/" +
+        "git/ref/heads/$GitHubBranch"
+    )
+    Invoke-HttpDownload $referenceUrl $referencePath
+    $reference = Get-Content -LiteralPath $referencePath -Raw | ConvertFrom-Json
+    $revision = [string]$reference.object.sha
+    if ($revision -notmatch '^[0-9a-fA-F]{40}$') {
+        throw 'GitHub did not return a valid deploy revision.'
+    }
+    return $revision.ToLowerInvariant()
+}
+
+function New-GitHubUpdateSource(
+    [string]$TemporaryRoot,
+    [string]$Revision
+) {
     $archivePath = Join-Path $TemporaryRoot 'deploy.zip'
     $extractPath = Join-Path $TemporaryRoot 'expanded'
-    $archiveUrl = (
-        "https://github.com/$GitHubRepository/archive/refs/heads/" +
-        "$GitHubBranch.zip"
-    )
+    $archiveUrl = "https://github.com/$GitHubRepository/archive/$Revision.zip"
 
     Invoke-HttpDownload $archiveUrl $archivePath
     New-Item -Path $extractPath -ItemType Directory -Force | Out-Null
@@ -373,16 +388,21 @@ $sourceLabel = $UpdateSource
 
 try {
     if ($usingGitHub) {
-        $sourceLabel = "GitHub $GitHubRepository@$GitHubBranch"
         $temporaryUpdateRoot = Join-Path $env:TEMP (
             'moden-capture-update-{0}-{1}' -f $PID, (Get-Date -Format 'yyyyMMddHHmmss')
         )
         New-Item -Path $temporaryUpdateRoot -ItemType Directory -Force | Out-Null
 
+        $resolvedRevision = Resolve-GitHubRevision $temporaryUpdateRoot
+        $sourceLabel = (
+            "GitHub $GitHubRepository@$GitHubBranch " +
+            "($($resolvedRevision.Substring(0, 8)))"
+        )
+
         $remoteVersionPath = Join-Path $temporaryUpdateRoot 'VERSION'
         $remoteVersionUrl = (
             "https://raw.githubusercontent.com/$GitHubRepository/" +
-            "$GitHubBranch/capture_service/VERSION"
+            "$resolvedRevision/capture_service/VERSION"
         )
         Write-UpdateLog "Checking updates from $sourceLabel"
         Invoke-HttpDownload $remoteVersionUrl $remoteVersionPath
@@ -412,7 +432,9 @@ try {
         }
 
         Write-UpdateLog "Downloading $sourceLabel snapshot."
-        $UpdateSource = New-GitHubUpdateSource $temporaryUpdateRoot
+        $UpdateSource = New-GitHubUpdateSource `
+            $temporaryUpdateRoot `
+            $resolvedRevision
     } elseif ($Force) {
         if (-not (Test-Path $LocalDir)) {
             New-Item -Path $LocalDir -ItemType Directory -Force | Out-Null
