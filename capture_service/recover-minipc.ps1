@@ -96,6 +96,107 @@ function Set-RequiredConfigValue(
     return [regex]::Replace($Content, $pattern, "$Key = $Value")
 }
 
+function Set-IniValues([string]$Path, [object[]]$Updates) {
+    $configInfo = Get-Item -LiteralPath $Path
+    if ($configInfo.Length -gt 1MB) {
+        throw "config.ini is too large ($($configInfo.Length) bytes); repair is required."
+    }
+
+    $lines = [System.Collections.Generic.List[string]]::new()
+    foreach ($line in Get-Content -LiteralPath $Path) {
+        [void]$lines.Add($line)
+    }
+
+    foreach ($update in $Updates) {
+        $section = [string]$update.Section
+        $key = [string]$update.Key
+        $value = [string]$update.Value
+        $sectionIndex = -1
+
+        for ($i = 0; $i -lt $lines.Count; $i++) {
+            if ($lines[$i].Trim().ToLowerInvariant() -eq "[$($section.ToLowerInvariant())]") {
+                $sectionIndex = $i
+                break
+            }
+        }
+
+        if ($sectionIndex -lt 0) {
+            if ($lines.Count -gt 0 -and $lines[$lines.Count - 1].Trim() -ne '') {
+                [void]$lines.Add('')
+            }
+            [void]$lines.Add("[$section]")
+            [void]$lines.Add("$key = $value")
+            continue
+        }
+
+        $insertIndex = $sectionIndex + 1
+        $keyIndex = -1
+        for ($i = $sectionIndex + 1; $i -lt $lines.Count; $i++) {
+            if ($lines[$i].TrimStart().StartsWith('[')) {
+                break
+            }
+            $insertIndex = $i + 1
+            if ($lines[$i] -match "^\s*$([regex]::Escape($key))\s*=") {
+                $keyIndex = $i
+                break
+            }
+        }
+
+        if ($keyIndex -ge 0) {
+            $lines[$keyIndex] = "$key = $value"
+        } else {
+            $lines.Insert($insertIndex, "$key = $value")
+        }
+    }
+
+    [System.IO.File]::WriteAllText(
+        $Path,
+        ($lines -join [Environment]::NewLine) + [Environment]::NewLine,
+        [System.Text.UTF8Encoding]::new($false)
+    )
+}
+
+function Set-CurrentConfigPolicy([string]$Path) {
+    $updates = @(
+        @{ Section = 'documentation'; Key = 'interval_seconds'; Value = '20' },
+        @{ Section = 'documentation'; Key = 'active_start_hour'; Value = '6' },
+        @{ Section = 'documentation'; Key = 'active_start_minute'; Value = '50' },
+        @{ Section = 'documentation'; Key = 'active_end_hour'; Value = '15' },
+        @{ Section = 'documentation'; Key = 'active_end_minute'; Value = '0' },
+        @{ Section = 'documentation'; Key = 'max_local_gb'; Value = '30' },
+        @{ Section = 'documentation'; Key = 'min_free_gb'; Value = '5' },
+        @{ Section = 'documentation'; Key = 'local_retention_days'; Value = '7' },
+        @{ Section = 'documentation'; Key = 'sync_interval_seconds'; Value = '1800' },
+        @{ Section = 'documentation'; Key = 'sync_weekly_enabled'; Value = 'true' },
+        @{ Section = 'documentation'; Key = 'sync_weekly_start_day'; Value = 'FRI' },
+        @{ Section = 'documentation'; Key = 'sync_weekly_start_hour'; Value = '15' },
+        @{ Section = 'documentation'; Key = 'sync_weekly_start_minute'; Value = '30' },
+        @{ Section = 'documentation'; Key = 'sync_weekly_end_day'; Value = 'MON' },
+        @{ Section = 'documentation'; Key = 'sync_weekly_end_hour'; Value = '5' },
+        @{ Section = 'documentation'; Key = 'sync_weekly_end_minute'; Value = '0' },
+        @{ Section = 'documentation'; Key = 'drive_guard_enabled'; Value = 'true' },
+        @{ Section = 'documentation'; Key = 'drive_daily_enabled'; Value = 'false' },
+        @{ Section = 'documentation'; Key = 'drive_start_hour'; Value = '3' },
+        @{ Section = 'documentation'; Key = 'drive_start_minute'; Value = '45' },
+        @{ Section = 'documentation'; Key = 'drive_stop_hour'; Value = '4' },
+        @{ Section = 'documentation'; Key = 'drive_stop_minute'; Value = '45' },
+        @{ Section = 'documentation'; Key = 'drive_weekend_enabled'; Value = 'true' },
+        @{ Section = 'documentation'; Key = 'drive_weekend_start_day'; Value = 'FRI' },
+        @{ Section = 'documentation'; Key = 'drive_weekend_start_hour'; Value = '15' },
+        @{ Section = 'documentation'; Key = 'drive_weekend_start_minute'; Value = '15' },
+        @{ Section = 'documentation'; Key = 'drive_weekend_end_day'; Value = 'MON' },
+        @{ Section = 'documentation'; Key = 'drive_weekend_end_hour'; Value = '6' },
+        @{ Section = 'documentation'; Key = 'drive_weekend_end_minute'; Value = '35' },
+        @{ Section = 'documentation'; Key = 'drive_guard_interval_seconds'; Value = '30' },
+        @{ Section = 'sharpness'; Key = 'threshold_blurry'; Value = '2' },
+        @{ Section = 'sharpness'; Key = 'threshold_warning'; Value = '10' },
+        @{ Section = 'sharpness'; Key = 'min_brightness'; Value = '18' },
+        @{ Section = 'sharpness'; Key = 'min_contrast'; Value = '8' },
+        @{ Section = 'sharpness'; Key = 'retry_minutes'; Value = '15' }
+    )
+    Set-IniValues -Path $Path -Updates $updates
+}
+
 function Repair-LocalConfig {
     $configPath = Join-Path $Root 'config.ini'
     $templatePath = Join-Path $Root 'config.ini.example'
@@ -122,6 +223,7 @@ function Repair-LocalConfig {
         $content,
         [System.Text.UTF8Encoding]::new($false)
     )
+    Set-CurrentConfigPolicy -Path $configPath
 
     return $backupPath
 }
