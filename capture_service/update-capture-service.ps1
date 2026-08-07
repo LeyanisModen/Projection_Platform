@@ -108,9 +108,10 @@ function Invoke-HttpDownload([string]$Url, [string]$Destination) {
 
 function Resolve-GitHubRevision([string]$TemporaryRoot) {
     $referencePath = Join-Path $TemporaryRoot 'deploy-reference.json'
+    $cacheToken = [DateTime]::UtcNow.Ticks
     $referenceUrl = (
         "https://api.github.com/repos/$GitHubRepository/" +
-        "git/ref/heads/$GitHubBranch"
+        "git/ref/heads/$GitHubBranch?cache=$cacheToken"
     )
     Invoke-HttpDownload $referenceUrl $referencePath
     $reference = Get-Content -LiteralPath $referencePath -Raw | ConvertFrom-Json
