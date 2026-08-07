@@ -84,18 +84,6 @@ function Install-SourceFiles {
     }
 }
 
-function Set-RequiredConfigValue(
-    [string]$Content,
-    [string]$Key,
-    [string]$Value
-) {
-    $pattern = "(?m)^\s*$([regex]::Escape($Key))\s*=.*$"
-    if (-not [regex]::IsMatch($Content, $pattern)) {
-        throw "Required setting is missing from config.ini: $Key"
-    }
-    return [regex]::Replace($Content, $pattern, "$Key = $Value")
-}
-
 function Set-IniValues([string]$Path, [object[]]$Updates) {
     $configInfo = Get-Item -LiteralPath $Path
     if ($configInfo.Length -gt 1MB) {
@@ -215,13 +203,9 @@ function Repair-LocalConfig {
         Copy-Item -LiteralPath $templatePath -Destination $configPath
     }
 
-    $content = [System.IO.File]::ReadAllText($configPath)
-    $content = Set-RequiredConfigValue $content 'mesa_id' $MesaId
-    $content = Set-RequiredConfigValue $content 'image_rotation' "$ImageRotation"
-    [System.IO.File]::WriteAllText(
-        $configPath,
-        $content,
-        [System.Text.UTF8Encoding]::new($false)
+    Set-IniValues -Path $configPath -Updates @(
+        @{ Section = 'service'; Key = 'image_rotation'; Value = "$ImageRotation" },
+        @{ Section = 'documentation'; Key = 'mesa_id'; Value = $MesaId }
     )
     Set-CurrentConfigPolicy -Path $configPath
 
