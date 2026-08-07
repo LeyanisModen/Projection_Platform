@@ -234,6 +234,10 @@ FORZAR UPDATE MANUAL DESDE DRIVE
 -----------------------------------------
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File 'C:\moden\capture_service\update-capture-service.ps1' -Force
 
+El actualizador nunca instala una VERSION anterior a la local aunque Drive
+muestre temporalmente una copia atrasada. -Force vuelve a copiar la misma
+version para reparar archivos, pero tampoco permite bajar de version.
+
 REPARAR CONFIG.INI CORRUPTO O DEMASIADO GRANDE
 -----------------------------------------
 No usar Get-Content sobre un config.ini de cientos de MB o GB. La reparacion

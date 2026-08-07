@@ -18,6 +18,7 @@ param(
     [int]$AllowedStartHour = 2,
     [int]$AllowedEndHour = 5,
     [switch]$Force,
+    [switch]$AllowDowngrade,
     [switch]$NoRestart
 )
 
@@ -42,6 +43,39 @@ function Read-Version([string]$Dir) {
     $path = Join-Path $Dir 'VERSION'
     if (-not (Test-Path $path)) { return '' }
     return (Get-Content $path -Raw).Trim()
+}
+
+function Compare-CaptureVersion([string]$Left, [string]$Right) {
+    $pattern = '^(\d{4})-(\d{2})-(\d{2})\.(\d+)$'
+    $leftMatch = [regex]::Match($Left, $pattern)
+    $rightMatch = [regex]::Match($Right, $pattern)
+    if (-not $leftMatch.Success -or -not $rightMatch.Success) {
+        return $null
+    }
+
+    try {
+        $leftDate = [datetime]::new(
+            [int]$leftMatch.Groups[1].Value,
+            [int]$leftMatch.Groups[2].Value,
+            [int]$leftMatch.Groups[3].Value
+        )
+        $rightDate = [datetime]::new(
+            [int]$rightMatch.Groups[1].Value,
+            [int]$rightMatch.Groups[2].Value,
+            [int]$rightMatch.Groups[3].Value
+        )
+    } catch {
+        return $null
+    }
+
+    $dateComparison = [datetime]::Compare($leftDate, $rightDate)
+    if ($dateComparison -ne 0) {
+        return $dateComparison
+    }
+
+    return ([int]$leftMatch.Groups[4].Value).CompareTo(
+        [int]$rightMatch.Groups[4].Value
+    )
 }
 
 function Get-RelativePath([string]$BaseDir, [string]$Path) {
@@ -307,6 +341,14 @@ try {
     if ([string]::IsNullOrWhiteSpace($sourceVersion)) {
         Write-UpdateLog 'Source VERSION is empty; skipping.'
         exit 0
+    }
+
+    if (-not $AllowDowngrade -and -not [string]::IsNullOrWhiteSpace($localVersion)) {
+        $versionComparison = Compare-CaptureVersion $sourceVersion $localVersion
+        if ($null -ne $versionComparison -and $versionComparison -lt 0) {
+            Write-UpdateLog "Source version $sourceVersion is older than local $localVersion; refusing downgrade."
+            exit 0
+        }
     }
 
     if (-not $Force -and $sourceFingerprint -eq $localFingerprint) {

@@ -33,13 +33,14 @@ if ([string]::IsNullOrWhiteSpace($Root)) {
 }
 
 $captureScript = Join-Path $Root 'capture_service.py'
-$pythonw = Join-Path $Root 'venv\Scripts\pythonw.exe'
+$python = Join-Path $Root 'venv\Scripts\python.exe'
 $maintenanceMarker = Join-Path $Root '.player_maintenance'
 $pauseMarker = Join-Path $Root '.player_pause'
 $kioskProfile = 'C:\moden\chrome-kiosk-profile'
 $kioskCache = 'C:\moden\chrome-kiosk-cache'
 $playerUrl = 'https://moden.up.railway.app/player'
 $logPath = Join-Path $Root 'logs\player-watchdog.log'
+$captureErrorLog = Join-Path $Root 'logs\capture-service-error.log'
 $captureHealthFailures = 0
 
 function Write-WatchdogLog([string]$Message) {
@@ -102,15 +103,40 @@ function Test-CaptureServiceHealthy {
 }
 
 function Start-CaptureService {
-    if (-not (Test-Path $pythonw) -or -not (Test-Path $captureScript)) {
+    if (-not (Test-Path $python) -or -not (Test-Path $captureScript)) {
         Write-WatchdogLog 'Capture service files are missing; cannot start it.'
         return
     }
-    Start-Process -FilePath $pythonw `
-        -ArgumentList "`"$captureScript`"" `
+
+    $logDir = Split-Path $captureErrorLog -Parent
+    if (-not (Test-Path $logDir)) {
+        New-Item -Path $logDir -ItemType Directory -Force | Out-Null
+    }
+    if ((Test-Path $captureErrorLog) -and (Get-Item $captureErrorLog).Length -gt 1MB) {
+        Clear-Content -Path $captureErrorLog -ErrorAction SilentlyContinue
+    }
+
+    $process = Start-Process -FilePath $python `
+        -ArgumentList "-u `"$captureScript`"" `
         -WorkingDirectory $Root `
-        -WindowStyle Hidden
-    Write-WatchdogLog 'Capture service started.'
+        -WindowStyle Hidden `
+        -RedirectStandardError $captureErrorLog `
+        -PassThru
+    Start-Sleep -Seconds 3
+
+    if ($process.HasExited) {
+        $details = ''
+        if (Test-Path $captureErrorLog) {
+            $details = (@(Get-Content $captureErrorLog -Tail 8) -join ' | ').Trim()
+        }
+        if ([string]::IsNullOrWhiteSpace($details)) {
+            $details = 'No Python error output was produced.'
+        }
+        Write-WatchdogLog "Capture service exited immediately (code $($process.ExitCode)): $details"
+        return
+    }
+
+    Write-WatchdogLog "Capture service started (PID $($process.Id))."
 }
 
 function Repair-CaptureService {
