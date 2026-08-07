@@ -111,7 +111,7 @@ function Resolve-GitHubRevision([string]$TemporaryRoot) {
     $cacheToken = [DateTime]::UtcNow.Ticks
     $referenceUrl = (
         "https://api.github.com/repos/$GitHubRepository/" +
-        "git/ref/heads/$GitHubBranch?cache=$cacheToken"
+        "git/ref/heads/${GitHubBranch}?cache=$cacheToken"
     )
     Invoke-HttpDownload $referenceUrl $referencePath
     $reference = Get-Content -LiteralPath $referencePath -Raw | ConvertFrom-Json
