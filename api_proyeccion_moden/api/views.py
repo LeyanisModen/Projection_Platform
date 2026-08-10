@@ -1549,6 +1549,23 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         if stored_material_pieces and created_modulos:
             _persist_materiales_pieces(proyecto, stored_material_pieces)
 
+        if created_modulos:
+            # Technical records are resolved through fresh ORM instances. Reload
+            # the created batch so grouping uses the widths/types just persisted
+            # instead of the empty values held by the original create() objects.
+            created_ids = [modulo.id for modulo in created_modulos]
+            refreshed_by_id = {
+                modulo.id: modulo
+                for modulo in Modulo.objects.filter(id__in=created_ids)
+                .select_related('proyecto')
+                .prefetch_related('detalles_fase')
+            }
+            created_modulos = [
+                refreshed_by_id[modulo_id]
+                for modulo_id in created_ids
+                if modulo_id in refreshed_by_id
+            ]
+
         if (
             created_modulos
             and not proyecto.datos_tecnicos_importados

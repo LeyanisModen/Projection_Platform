@@ -2898,6 +2898,60 @@ class PlanningFoundationTests(APITestCase):
         self.assertGreater(inferior.dificultad_calculada, 0)
         self.assertIsNotNone(nuevo.grupo_bastidor_id)
 
+    def test_importar_lote_agrupa_nuevos_con_sus_anchos_tecnicos(self):
+        self.project.bastidor_longitud_cm = 114
+        self.project.save(update_fields=["bastidor_longitud_cm"])
+
+        technical_response = self.client.post(
+            f"/api/proyectos/{self.project.id}/import-technical-data/",
+            {
+                "technical_file": self._technical_db_file(
+                    "base_lote.db",
+                    [
+                        {"nombre": "M-01", "ancho": 100},
+                        {"nombre": "M-02", "ancho": 20},
+                        {"nombre": "M-03", "ancho": 20},
+                        {"nombre": "M-04", "ancho": 20},
+                    ],
+                ),
+            },
+            format="multipart",
+        )
+        self.assertEqual(technical_response.status_code, 200)
+        self.assertEqual(self.project.grupos_bastidor.count(), 1)
+
+        import_response = self.client.post(
+            f"/api/proyectos/{self.project.id}/import-structure/",
+            {
+                "plantas": json.dumps([{
+                    "nombre": "General",
+                    "orden": 2,
+                    "modulos": [
+                        {"nombre": "M-02", "imagenes": []},
+                        {"nombre": "M-03", "imagenes": []},
+                        {"nombre": "M-04", "imagenes": []},
+                    ],
+                }]),
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(import_response.status_code, 200)
+        nuevos = list(
+            Modulo.objects.filter(
+                proyecto=self.project,
+                nombre__in=["M-02", "M-03", "M-04"],
+            ).order_by("nombre")
+        )
+        self.assertEqual([str(modulo.ancho_cm) for modulo in nuevos], [
+            "20.00", "20.00", "20.00",
+        ])
+        self.assertEqual(
+            len({modulo.grupo_bastidor_id for modulo in nuevos}),
+            1,
+        )
+        self.assertEqual(self.project.grupos_bastidor.count(), 2)
+
     def test_nueva_base_actualiza_datos_sin_reconstruir_bastidores(self):
         first_response = self.client.post(
             f"/api/proyectos/{self.project.id}/import-technical-data/",
