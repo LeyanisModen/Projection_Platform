@@ -17,6 +17,28 @@ import {
 import { switchMap, forkJoin, of } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import { ProjectTablePreviewComponent } from './project-table-preview.component';
+import {
+    moduleAlreadyExists,
+    parseModuleImportFolder,
+} from './module-import.utils';
+
+const MODULE_IMPORT_PHASE_ORDER = ['INF', 'SD_S', 'SD_D', 'SUP'] as const;
+type ModuleImportPhase = typeof MODULE_IMPORT_PHASE_ORDER[number];
+
+interface ModuleImportPhaseFolder {
+    name: string;
+    handle: any;
+}
+
+interface ModuleImportCandidate {
+    folderName: string;
+    moduleName: string;
+    colorCode: string;
+    phaseFolders: Map<ModuleImportPhase, ModuleImportPhaseFolder>;
+    phases: ModuleImportPhase[];
+    alreadyImported: boolean;
+    selected: boolean;
+}
 
 @Component({
     selector: 'app-proyecto-detalle',
@@ -60,6 +82,10 @@ export class ProyectoDetailComponent implements OnInit {
     // Import State
     importing = false;
     importProgress = '';
+    showModuleImportModal = false;
+    moduleImportFolderName = '';
+    moduleImportCandidates: ModuleImportCandidate[] = [];
+    private moduleImportTechnicalDbFile: File | null = null;
     uploadingPlantaId: number | null = null;
     updatingSubmoduleId: number | null = null;
     showPlantaFilesModal = false;
@@ -111,6 +137,11 @@ export class ProyectoDetailComponent implements OnInit {
 
     @HostListener('document:keydown', ['$event'])
     onDocumentKeydown(event: KeyboardEvent): void {
+        if (this.showModuleImportModal && event.key === 'Escape') {
+            this.closeModuleImportSelection();
+            event.preventDefault();
+            return;
+        }
         if (!this.showSecuenciaModal) return;
         if (event.key === 'Escape') {
             this.closeSecuenciaModal();
@@ -920,11 +951,10 @@ export class ProyectoDetailComponent implements OnInit {
         return user ? (user.first_name || user.username) : 'Sin asignar';
     }
 
-    async importPlantaFromFolder() {
-        if (!this.proyectoId) return;
+    async importPlantaFromFolder(): Promise<void> {
+        if (!this.proyectoId || this.importing) return;
 
         try {
-            // Use File System Access API
             const projectHandle = await (window as any).showDirectoryPicker();
             if (!projectHandle) return;
 
@@ -932,69 +962,155 @@ export class ProyectoDetailComponent implements OnInit {
             this.importProgress = `Analizando carpeta: ${projectHandle.name}...`;
             this.cdr.detectChanges();
 
-            const formData = new FormData();
-            const validExtensions = ['.png', '.jpg', '.jpeg'];
-            let technicalDbFile: File | null = null;
-
-            // Use single virtual "General" planta for backend compatibility
-            const plantaUnicaData: any = {
-                nombre: 'General',
-                orden: 1,
-                modulos: []
-            };
-
-            const rootEntries: Array<[string, any]> = [];
-            for await (const entry of (projectHandle as any).entries()) {
-                rootEntries.push(entry);
+            const { candidates, technicalDbFile } = await this.scanModuleImportFolder(projectHandle);
+            if (candidates.length === 0) {
+                this.importing = false;
+                this.importProgress = '';
+                alert('No se encontraron módulos con carpetas INF, SUP, SD_S o SD_D.');
+                this.cdr.detectChanges();
+                return;
             }
 
-            for (const [entryName, entryHandle] of rootEntries) {
-                if (entryHandle.kind !== 'file') continue;
-                const ext = entryName.toLowerCase().substring(entryName.lastIndexOf('.'));
-                if (['.db', '.sqlite', '.sqlite3'].includes(ext)) {
-                    technicalDbFile = await entryHandle.getFile();
-                }
+            this.moduleImportFolderName = projectHandle.name;
+            this.moduleImportCandidates = candidates;
+            this.moduleImportTechnicalDbFile = technicalDbFile;
+            this.showModuleImportModal = true;
+            this.importing = false;
+            this.importProgress = '';
+            this.cdr.detectChanges();
+        } catch (err: any) {
+            this.importing = false;
+            this.importProgress = '';
+            if (err.name !== 'AbortError') {
+                console.error('Error reading folder:', err);
+                alert('Error leyendo la carpeta: ' + err.message);
             }
+            this.cdr.detectChanges();
+        }
+    }
 
-            const phaseOrder = ['INF', 'SD_S', 'SD_D', 'SUP'];
-            const phaseNames = new Set(phaseOrder);
-            const rootDirectories = rootEntries.filter(([, handle]) => handle.kind === 'directory');
-            const selectedFolderIsModule = rootDirectories.some(
-                ([name]) => phaseNames.has(name.toUpperCase())
+    private async scanModuleImportFolder(projectHandle: any): Promise<{
+        candidates: ModuleImportCandidate[];
+        technicalDbFile: File | null;
+    }> {
+        const rootEntries: Array<[string, any]> = [];
+        for await (const entry of projectHandle.entries()) {
+            rootEntries.push(entry);
+        }
+
+        let technicalDbFile: File | null = null;
+        for (const [entryName, entryHandle] of rootEntries) {
+            if (entryHandle.kind !== 'file') continue;
+            const ext = entryName.toLowerCase().substring(entryName.lastIndexOf('.'));
+            if (['.db', '.sqlite', '.sqlite3'].includes(ext)) {
+                technicalDbFile = await entryHandle.getFile();
+            }
+        }
+
+        const phaseNames = new Set<string>(MODULE_IMPORT_PHASE_ORDER);
+        const rootDirectories = rootEntries.filter(([, handle]) => handle.kind === 'directory');
+        const selectedFolderIsModule = rootDirectories.some(
+            ([name]) => phaseNames.has(name.toUpperCase())
+        );
+        const moduleDirectories: Array<[string, any]> = selectedFolderIsModule
+            ? [[projectHandle.name, projectHandle]]
+            : rootDirectories.filter(([name]) => !phaseNames.has(name.toUpperCase()));
+
+        const existingModuleNames = this.modulos.map(modulo => modulo.nombre);
+        const candidates: ModuleImportCandidate[] = [];
+
+        for (const [folderName, moduleHandle] of moduleDirectories) {
+            this.importProgress = `Revisando módulo: ${folderName}...`;
+            this.cdr.detectChanges();
+
+            const phaseFolders = new Map<ModuleImportPhase, ModuleImportPhaseFolder>();
+            for await (const [phaseName, phaseHandle] of moduleHandle.entries()) {
+                if (phaseHandle.kind !== 'directory') continue;
+                const normalizedPhase = phaseName.toUpperCase() as ModuleImportPhase;
+                if (!phaseNames.has(normalizedPhase)) continue;
+                phaseFolders.set(normalizedPhase, { name: phaseName, handle: phaseHandle });
+            }
+            if (phaseFolders.size === 0) continue;
+
+            const parsedFolder = parseModuleImportFolder(folderName);
+            const alreadyImported = moduleAlreadyExists(
+                parsedFolder.moduleName,
+                existingModuleNames
             );
-            const moduleDirectories: Array<[string, any]> = selectedFolderIsModule
-                ? [[projectHandle.name, projectHandle]]
-                : rootDirectories.filter(([name]) => !phaseNames.has(name.toUpperCase()));
+            candidates.push({
+                folderName,
+                moduleName: parsedFolder.moduleName,
+                colorCode: parsedFolder.colorCode,
+                phaseFolders,
+                phases: MODULE_IMPORT_PHASE_ORDER.filter(phase => phaseFolders.has(phase)),
+                alreadyImported,
+                selected: !alreadyImported,
+            });
+        }
 
-            for (const [moduloName, moduloHandle] of moduleDirectories) {
-                this.importProgress = `Procesando modulo: ${moduloName}...`;
+        candidates.sort((a, b) =>
+            a.moduleName.localeCompare(b.moduleName, undefined, { numeric: true })
+        );
+        return { candidates, technicalDbFile };
+    }
+
+    get selectedModuleImportCount(): number {
+        return this.moduleImportCandidates.filter(candidate => candidate.selected).length;
+    }
+
+    get newModuleImportCount(): number {
+        return this.moduleImportCandidates.filter(candidate => !candidate.alreadyImported).length;
+    }
+
+    selectOnlyNewModuleImports(): void {
+        this.moduleImportCandidates.forEach(candidate => {
+            candidate.selected = !candidate.alreadyImported;
+        });
+    }
+
+    clearModuleImportSelection(): void {
+        this.moduleImportCandidates.forEach(candidate => candidate.selected = false);
+    }
+
+    closeModuleImportSelection(): void {
+        this.showModuleImportModal = false;
+        this.moduleImportFolderName = '';
+        this.moduleImportCandidates = [];
+        this.moduleImportTechnicalDbFile = null;
+    }
+
+    confirmModuleImportSelection(): void {
+        if (!this.proyectoId || this.selectedModuleImportCount === 0) return;
+
+        const selectedCandidates = this.moduleImportCandidates.filter(candidate => candidate.selected);
+        const technicalDbFile = this.moduleImportTechnicalDbFile;
+        this.showModuleImportModal = false;
+        void this.uploadSelectedModules(selectedCandidates, technicalDbFile);
+    }
+
+    private async uploadSelectedModules(
+        selectedCandidates: ModuleImportCandidate[],
+        technicalDbFile: File | null
+    ): Promise<void> {
+        if (!this.proyectoId) return;
+
+        this.importing = true;
+        const formData = new FormData();
+        const validExtensions = ['.png', '.jpg', '.jpeg'];
+        const plantaUnicaData: any = {
+            nombre: 'General',
+            orden: 1,
+            modulos: []
+        };
+
+        try {
+            for (const candidate of selectedCandidates) {
+                this.importProgress = `Procesando módulo: ${candidate.moduleName}...`;
                 this.cdr.detectChanges();
 
-                const phaseFolders = new Map<string, { name: string; handle: any }>();
-                for await (const [faseName, faseHandle] of moduloHandle.entries()) {
-                    if (faseHandle.kind !== 'directory') continue;
-                    const normalizedName = faseName.toUpperCase();
-                    if (!phaseNames.has(normalizedName)) continue;
-                    phaseFolders.set(normalizedName, { name: faseName, handle: faseHandle });
-                }
-                if (phaseFolders.size === 0) continue;
-
-                // Parse color code from folder name (e.g. "A01_ymgc" -> name="A01", code="ymgc")
-                const parts = moduloName.split('_');
-                let colorCode = 'xxxx';
-                let cleanName = moduloName;
-                if (parts.length > 1) {
-                    const lastPart = parts[parts.length - 1].toLowerCase();
-                    if (lastPart.length === 4 && /^[ygcvmox]+$/.test(lastPart)) {
-                        colorCode = lastPart;
-                        cleanName = parts.slice(0, -1).join('_');
-                    }
-                }
-                cleanName = cleanName.replace(/^(MODULO|MOD)[_-]/i, '');
-
                 const moduloData: any = {
-                    nombre: cleanName,
-                    codigos_color: colorCode,
+                    nombre: candidate.moduleName,
+                    codigos_color: candidate.colorCode,
                     imagenes: []
                 };
                 const nextImageOrder: Record<'INFERIOR' | 'SUPERIOR', number> = {
@@ -1002,26 +1118,27 @@ export class ProyectoDetailComponent implements OnInit {
                     SUPERIOR: 1
                 };
 
-                for (const phaseFolderName of phaseOrder) {
-                    const phaseFolder = phaseFolders.get(phaseFolderName);
+                for (const phaseName of MODULE_IMPORT_PHASE_ORDER) {
+                    const phaseFolder = candidate.phaseFolders.get(phaseName);
                     if (!phaseFolder) continue;
 
                     const fase: 'INFERIOR' | 'SUPERIOR' =
-                        phaseFolderName === 'INF' ? 'INFERIOR' : 'SUPERIOR';
-                    const imgFiles: Array<[string, any]> = [];
+                        phaseName === 'INF' ? 'INFERIOR' : 'SUPERIOR';
+                    const imageFiles: Array<[string, any]> = [];
                     for await (const [fileName, fileHandle] of phaseFolder.handle.entries()) {
                         if (fileHandle.kind !== 'file') continue;
                         const ext = fileName.toLowerCase().substring(fileName.lastIndexOf('.'));
                         if (!validExtensions.includes(ext)) continue;
-                        imgFiles.push([fileName, fileHandle]);
+                        imageFiles.push([fileName, fileHandle]);
                     }
-                    imgFiles.sort((a, b) =>
+                    imageFiles.sort((a, b) =>
                         a[0].localeCompare(b[0], undefined, { numeric: true })
                     );
 
-                    for (const [fileName, fileHandle] of imgFiles) {
+                    for (const [fileName, fileHandle] of imageFiles) {
                         const file = await fileHandle.getFile();
-                        const formFileKey = `MOD_${moduloName}_${phaseFolder.name}_${fileName}`;
+                        const formFileKey =
+                            `MOD_${candidate.folderName}_${phaseFolder.name}_${fileName}`;
                         formData.append(formFileKey, file);
                         moduloData.imagenes.push({
                             filename: formFileKey,
@@ -1033,73 +1150,57 @@ export class ProyectoDetailComponent implements OnInit {
                 plantaUnicaData.modulos.push(moduloData);
             }
 
-            if (plantaUnicaData.modulos.length === 0) {
-                this.importing = false;
-                this.importProgress = '';
-                alert('No se encontraron modulos con carpetas INF, SUP, SD_S o SD_D.');
-                this.cdr.detectChanges();
-                return;
-            }
-
             this.importProgress = 'Subiendo datos...';
             this.cdr.detectChanges();
-
-            // Add structure to FormData
             formData.append('plantas', JSON.stringify([plantaUnicaData]));
             if (technicalDbFile) {
                 formData.append('technical_file', technicalDbFile);
             }
 
-            // Upload
+            this.closeModuleImportSelection();
             this.api.importProjectStructure(this.proyectoId, formData).subscribe({
                 next: (res) => {
-                    const finish = () => {
-                        this.importing = false;
-                        this.importProgress = '';
-                        const s = res.stats;
-                        const lines: string[] = [];
-                        lines.push('Módulos importados correctamente.');
-                        lines.push('');
-                        lines.push(`• Módulos creados: ${s.modulos || 0}`);
-                        lines.push(`• Imágenes cargadas: ${s.imagenes || 0}`);
-                        lines.push(`• Plano de referencia: ${s.plano_cargado ? 'sí' : 'no'}`);
-                        lines.push(`• Planilla (corte): ${s.planilla_cargada ? 'sí' : 'no'}`);
-                        if (technicalDbFile) {
-                            lines.push(s.base_tecnica_actualizada
-                                ? `• Base de datos técnica: guardada y aplicada (${s.detalles_fase || 0} fases)`
-                                : `• Base de datos técnica: no se pudo importar`);
-                        } else if (s.detalles_fase) {
-                            lines.push(`• Datos técnicos recuperados de la base guardada: ${s.detalles_fase} fases`);
-                        }
-                        if (s.errors && s.errors.length) {
-                            lines.push('');
-                            lines.push(`⚠ ${s.errors.length} incidencias.`);
-                        }
-                        alert(lines.join('\n'));
-                        this.loadData();
-                    };
-
-                    finish();
+                    this.importing = false;
+                    this.importProgress = '';
+                    const stats = res.stats;
+                    const lines: string[] = [
+                        'Módulos importados correctamente.',
+                        '',
+                        `• Módulos creados: ${stats.modulos || 0}`,
+                        `• Imágenes cargadas: ${stats.imagenes || 0}`,
+                        `• Plano de referencia: ${stats.plano_cargado ? 'sí' : 'no'}`,
+                        `• Planilla (corte): ${stats.planilla_cargada ? 'sí' : 'no'}`,
+                    ];
+                    if (technicalDbFile) {
+                        lines.push(stats.base_tecnica_actualizada
+                            ? `• Base de datos técnica: guardada y aplicada (${stats.detalles_fase || 0} fases)`
+                            : '• Base de datos técnica: no se pudo importar');
+                    } else if (stats.detalles_fase) {
+                        lines.push(
+                            `• Datos técnicos recuperados de la base guardada: ${stats.detalles_fase} fases`
+                        );
+                    }
+                    if (stats.errors?.length) {
+                        lines.push('', `⚠ ${stats.errors.length} incidencias.`);
+                    }
+                    alert(lines.join('\n'));
+                    this.loadData();
                 },
                 error: (err) => {
                     console.error('Error uploading modules', err);
                     this.importing = false;
                     this.importProgress = '';
-                    alert('Error importando los modulos');
+                    alert('Error importando los módulos');
                     this.cdr.detectChanges();
                 }
             });
-
         } catch (err: any) {
-            if (err.name !== 'AbortError') {
-                console.error('Error reading folder:', err);
-                this.importing = false;
-                alert('Error leyendo la carpeta: ' + err.message);
-                this.cdr.detectChanges();
-            } else {
-                this.importing = false;
-                this.importProgress = '';
-            }
+            console.error('Error reading selected module folders', err);
+            this.importing = false;
+            this.importProgress = '';
+            this.closeModuleImportSelection();
+            alert('Error leyendo los módulos seleccionados: ' + err.message);
+            this.cdr.detectChanges();
         }
     }
 

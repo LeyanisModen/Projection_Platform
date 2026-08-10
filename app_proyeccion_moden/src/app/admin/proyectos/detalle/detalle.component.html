@@ -175,13 +175,13 @@
                 <div class="project-config-header">
                     <div>
                         <label class="d-block mb-1">Importar módulos</label>
-                        <small class="text-muted">Selecciona el directorio con las carpetas MOD-xx para cargar módulos.</small>
+                        <small class="text-muted">Selecciona la carpeta común y elige cuáles de sus módulos quieres cargar.</small>
                     </div>
                 </div>
                 <div class="project-config-controls mt-2">
                     <button class="btn btn-sm btn-secondary w-100" (click)="importPlantaFromFolder()"
                         [disabled]="importing">
-                        {{ importing ? 'Importando...' : 'Importar nuevos Módulos' }}
+                        {{ importing ? 'Importando...' : 'Seleccionar módulos' }}
                     </button>
                 </div>
                 <div class="mt-2 text-primary small" *ngIf="importing">
@@ -455,7 +455,7 @@
                 <div
                     class="card h-100 d-flex align-items-center justify-content-center p-5 text-muted bg-light border-dashed">
                     <h3>Aún no hay módulos</h3>
-                    <p>Importa la carpeta del proyecto usando el botón "Importar nuevos Módulos" de la izquierda.</p>
+                    <p>Importa la carpeta del proyecto usando el botón "Seleccionar módulos" de la izquierda.</p>
                 </div>
             </ng-template>
 
@@ -473,6 +473,95 @@
         </div>
     </ng-container>
 
+</div>
+
+
+
+<!-- Selective module import modal -->
+<div class="module-import-modal-backdrop" *ngIf="showModuleImportModal"
+    (click)="closeModuleImportSelection()">
+    <section class="module-import-modal" role="dialog" aria-modal="true"
+        aria-labelledby="module-import-title" (click)="$event.stopPropagation()">
+        <header class="module-import-modal-header">
+            <div>
+                <span class="module-import-eyebrow">IMPORTACIÓN SELECTIVA</span>
+                <h4 id="module-import-title">Elige los módulos que quieres cargar</h4>
+                <p>
+                    Carpeta <strong>{{ moduleImportFolderName }}</strong> ·
+                    {{ moduleImportCandidates.length }} módulos detectados
+                </p>
+            </div>
+            <button type="button" class="module-import-close" (click)="closeModuleImportSelection()"
+                aria-label="Cerrar selección de módulos">
+                <i class="fa fa-times" aria-hidden="true"></i>
+            </button>
+        </header>
+
+        <div class="module-import-toolbar">
+            <div class="module-import-selection-summary">
+                <strong>{{ selectedModuleImportCount }}</strong>
+                <span>seleccionados</span>
+            </div>
+            <div class="module-import-selection-actions" aria-label="Acciones de selección">
+                <button type="button" (click)="selectOnlyNewModuleImports()">
+                    Todos los nuevos
+                </button>
+                <button type="button" (click)="clearModuleImportSelection()">
+                    Ninguno
+                </button>
+            </div>
+        </div>
+
+        <div class="module-import-hint" *ngIf="newModuleImportCount > 0">
+            <i class="fa fa-info-circle" aria-hidden="true"></i>
+            Los módulos nuevos están marcados. Los ya cargados se muestran como referencia y no volverán a enviarse.
+        </div>
+        <div class="module-import-hint is-warning" *ngIf="newModuleImportCount === 0">
+            <i class="fa fa-exclamation-circle" aria-hidden="true"></i>
+            Todas las carpetas detectadas corresponden a módulos que ya están cargados.
+        </div>
+
+        <div class="module-import-list">
+            <label class="module-import-candidate" *ngFor="let candidate of moduleImportCandidates"
+                [class.is-selected]="candidate.selected"
+                [class.is-existing]="candidate.alreadyImported">
+                <input type="checkbox" [(ngModel)]="candidate.selected"
+                    [disabled]="candidate.alreadyImported"
+                    [attr.aria-label]="'Importar módulo ' + candidate.moduleName">
+                <span class="module-import-folder-icon" aria-hidden="true">
+                    <i class="fa fa-folder-open-o"></i>
+                </span>
+                <span class="module-import-candidate-info">
+                    <span class="module-import-candidate-title">
+                        <strong>{{ candidate.moduleName }}</strong>
+                        <span class="module-import-existing-badge" *ngIf="candidate.alreadyImported">
+                            Ya cargado
+                        </span>
+                    </span>
+                    <small *ngIf="candidate.folderName !== candidate.moduleName">
+                        {{ candidate.folderName }}
+                    </small>
+                </span>
+                <span class="module-import-phases" aria-label="Carpetas encontradas">
+                    <span *ngFor="let phase of candidate.phases">{{ phase }}</span>
+                </span>
+            </label>
+        </div>
+
+        <footer class="module-import-footer">
+            <button type="button" class="btn btn-sm btn-outline-secondary"
+                (click)="closeModuleImportSelection()">
+                Cancelar
+            </button>
+            <button type="button" class="btn btn-sm module-import-confirm"
+                [disabled]="selectedModuleImportCount === 0"
+                (click)="confirmModuleImportSelection()">
+                <i class="fa fa-upload" aria-hidden="true"></i>
+                Importar {{ selectedModuleImportCount }}
+                {{ selectedModuleImportCount === 1 ? 'módulo' : 'módulos' }}
+            </button>
+        </footer>
+    </section>
 </div>
 
 
