@@ -1,12 +1,12 @@
 import {
     ChangeDetectionStrategy,
     Component,
-    computed,
     inject,
     input,
     resource,
     signal,
 } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 
 import {
@@ -17,6 +17,7 @@ import {
 
 @Component({
     selector: 'app-project-table-preview',
+    imports: [FormsModule],
     templateUrl: './project-table-preview.component.html',
     styleUrls: ['./project-table-preview.component.css'],
     changeDetection: ChangeDetectionStrategy.OnPush,
@@ -48,28 +49,12 @@ export class ProjectTablePreviewComponent {
         ),
     });
 
-    readonly inferiorQueues = computed(() =>
-        (this.previewResource.value()?.queues ?? []).filter(
-            queue => queue.tipo === 'INFERIOR',
-        ),
-    );
-
-    readonly superiorQueues = computed(() =>
-        (this.previewResource.value()?.queues ?? []).filter(
-            queue => queue.tipo === 'SUPERIOR',
-        ),
-    );
-
-    setInferiores(event: Event): void {
-        this.setCount(event, this.inferiorOptions, this.inferiores);
+    setInferiores(value: number): void {
+        this.setCount(value, this.inferiorOptions, this.inferiores);
     }
 
-    setSuperiores(event: Event): void {
-        this.setCount(event, this.superiorOptions, this.superiores);
-    }
-
-    reload(): void {
-        this.previewResource.reload();
+    setSuperiores(value: number): void {
+        this.setCount(value, this.superiorOptions, this.superiores);
     }
 
     isGroupStart(queue: ProyectoMesaPreviewQueue, index: number): boolean {
@@ -97,11 +82,10 @@ export class ProjectTablePreviewComponent {
     }
 
     private setCount(
-        event: Event,
+        value: number,
         allowed: number[],
         target: ReturnType<typeof signal<number>>,
     ): void {
-        const value = Number((event.target as HTMLSelectElement).value);
         if (allowed.includes(value)) {
             target.set(value);
         }

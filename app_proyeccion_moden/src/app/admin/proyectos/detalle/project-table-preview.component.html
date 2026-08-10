@@ -6,33 +6,29 @@
                 Simulación de producción
             </span>
             <h3 id="table-preview-title">Vista previa en mesas</h3>
-            <p>
-                Orden teórico del proyecto completo. No consulta el avance ni modifica las mesas reales.
-            </p>
+            <p>Orden teórico del proyecto completo, sin consultar ni modificar las mesas reales.</p>
         </div>
 
         <div class="table-preview-controls" aria-label="Configuración de mesas virtuales">
+            <span class="controls-title">Mesas virtuales</span>
             <label>
-                <span>Mesas INF</span>
-                <select [value]="inferiores()" (change)="setInferiores($event)">
+                <span>INF</span>
+                <select [ngModel]="inferiores()" (ngModelChange)="setInferiores($event)"
+                    aria-label="Cantidad de mesas inferiores">
                     @for (count of inferiorOptions; track count) {
-                        <option [value]="count">{{ count }}</option>
+                        <option [ngValue]="count">{{ count }}</option>
                     }
                 </select>
             </label>
             <label>
-                <span>Mesas SUP</span>
-                <select [value]="superiores()" (change)="setSuperiores($event)">
+                <span>SUP</span>
+                <select [ngModel]="superiores()" (ngModelChange)="setSuperiores($event)"
+                    aria-label="Cantidad de mesas superiores">
                     @for (count of superiorOptions; track count) {
-                        <option [value]="count">{{ count }}</option>
+                        <option [ngValue]="count">{{ count }}</option>
                     }
                 </select>
             </label>
-            <button type="button" class="table-preview-reload" (click)="reload()"
-                [disabled]="previewResource.isLoading()" aria-label="Volver a calcular la vista previa"
-                title="Volver a calcular">
-                <i class="fa fa-refresh" [class.fa-spin]="previewResource.isLoading()" aria-hidden="true"></i>
-            </button>
         </div>
     </header>
 
@@ -51,129 +47,74 @@
                 <strong>No se pudo generar la vista previa</strong>
                 <span>{{ errorMessage() }}</span>
             </div>
-            <button type="button" (click)="reload()">Reintentar</button>
         </div>
     } @else if (previewResource.value(); as preview) {
         <div class="table-preview-summary">
             <span><strong>{{ preview.total_modules }}</strong> módulos en el recorrido completo</span>
+            @if (previewResource.isLoading()) {
+                <span class="recalculating-state" role="status">
+                    <i class="fa fa-circle-o-notch fa-spin" aria-hidden="true"></i>
+                    Recalculando
+                </span>
+            }
             <span class="read-only-badge">
                 <i class="fa fa-eye" aria-hidden="true"></i>
                 Solo lectura
             </span>
         </div>
 
-        <div class="production-flow">
-            <section class="production-phase phase-inferior" aria-labelledby="inferior-preview-title">
-                <div class="phase-heading">
-                    <span class="phase-index">01</span>
-                    <div>
-                        <h4 id="inferior-preview-title">Fabricación inferior</h4>
-                        <p>Los bastidores se asignan enteros a la mesa con menor carga.</p>
-                    </div>
-                </div>
+        <div class="virtual-tables-grid">
+            @for (queue of preview.queues; track queue.key) {
+                <article class="virtual-table-card" [class.is-superior]="queue.tipo === 'SUPERIOR'">
+                    <header class="virtual-table-header">
+                        <div class="virtual-table-title">
+                            <span class="virtual-table-icon" aria-hidden="true">
+                                <i class="fa fa-desktop"></i>
+                            </span>
+                            <div>
+                                <strong>{{ queue.nombre }}</strong>
+                                <span>{{ queue.modulos.length }} módulos</span>
+                            </div>
+                        </div>
+                        <span class="phase-chip">{{ queue.tipo === 'SUPERIOR' ? 'SUP' : 'INF' }}</span>
+                    </header>
 
-                <div class="virtual-tables is-inferior">
-                    @for (queue of inferiorQueues(); track queue.key) {
-                        <article class="virtual-table-card">
-                            <header>
-                                <span class="virtual-table-icon" aria-hidden="true">
-                                    <i class="fa fa-desktop"></i>
-                                </span>
-                                <div>
-                                    <strong>{{ queue.nombre }}</strong>
-                                    <span>{{ queue.modulos.length }} módulos</span>
-                                </div>
-                                <span class="phase-chip">INF</span>
-                            </header>
-
-                            @if (queue.modulos.length > 0) {
-                                <ol class="virtual-queue">
-                                    @for (modulo of queue.modulos; track modulo.id; let index = $index) {
-                                        @if (isGroupStart(queue, index)) {
-                                            <li class="queue-group-divider">
-                                                <span>{{ modulo.group_name }}</span>
-                                                <small>Orden {{ modulo.group_index }}</small>
-                                            </li>
-                                        }
-                                        <li class="virtual-queue-item">
-                                            <span class="queue-position">{{ modulo.position }}</span>
-                                            <strong [title]="modulo.nombre">{{ modulo.nombre }}</strong>
-                                            @if (tipoModuloLabel(modulo)) {
-                                                <span class="module-type"
-                                                    [class.is-rotated]="modulo.tipo_modulo === 'CENTRAL_GIRADO'">
-                                                    {{ tipoModuloLabel(modulo) }}
-                                                </span>
-                                            }
-                                        </li>
+                    @if (queue.modulos.length > 0) {
+                        <ol class="virtual-queue">
+                            @for (modulo of queue.modulos; track modulo.id; let index = $index) {
+                                @if (queue.tipo === 'INFERIOR' && isGroupStart(queue, index)) {
+                                    <li class="queue-group-divider">
+                                        <span>{{ modulo.group_name }}</span>
+                                        <small>Orden {{ modulo.group_index }}</small>
+                                    </li>
+                                }
+                                <li class="virtual-queue-item">
+                                    <span class="queue-position">{{ modulo.position }}</span>
+                                    <strong [title]="modulo.nombre">{{ modulo.nombre }}</strong>
+                                    @if (queue.tipo === 'SUPERIOR') {
+                                        <span class="source-group" [title]="modulo.group_name">
+                                            G{{ modulo.group_index }}
+                                        </span>
                                     }
-                                </ol>
-                            } @else {
-                                <div class="virtual-queue-empty">Esta mesa queda libre</div>
-                            }
-                        </article>
-                    }
-                </div>
-            </section>
-
-            <div class="flow-bridge" aria-hidden="true">
-                <span></span>
-                <i class="fa fa-chevron-right"></i>
-                <small>ritmo combinado</small>
-            </div>
-
-            <section class="production-phase phase-superior" aria-labelledby="superior-preview-title">
-                <div class="phase-heading">
-                    <span class="phase-index">02</span>
-                    <div>
-                        <h4 id="superior-preview-title">Fabricación superior</h4>
-                        <p>Se alternan los módulos siguiendo el avance previsto de las inferiores.</p>
-                    </div>
-                </div>
-
-                <div class="virtual-tables is-superior">
-                    @for (queue of superiorQueues(); track queue.key) {
-                        <article class="virtual-table-card is-superior">
-                            <header>
-                                <span class="virtual-table-icon" aria-hidden="true">
-                                    <i class="fa fa-desktop"></i>
-                                </span>
-                                <div>
-                                    <strong>{{ queue.nombre }}</strong>
-                                    <span>{{ queue.modulos.length }} módulos</span>
-                                </div>
-                                <span class="phase-chip">SUP</span>
-                            </header>
-
-                            @if (queue.modulos.length > 0) {
-                                <ol class="virtual-queue">
-                                    @for (modulo of queue.modulos; track modulo.id) {
-                                        <li class="virtual-queue-item">
-                                            <span class="queue-position">{{ modulo.position }}</span>
-                                            <strong [title]="modulo.nombre">{{ modulo.nombre }}</strong>
-                                            <span class="source-group" [title]="modulo.group_name">
-                                                G{{ modulo.group_index }}
-                                            </span>
-                                            @if (tipoModuloLabel(modulo)) {
-                                                <span class="module-type"
-                                                    [class.is-rotated]="modulo.tipo_modulo === 'CENTRAL_GIRADO'">
-                                                    {{ tipoModuloLabel(modulo) }}
-                                                </span>
-                                            }
-                                        </li>
+                                    @if (tipoModuloLabel(modulo)) {
+                                        <span class="module-type"
+                                            [class.is-rotated]="modulo.tipo_modulo === 'CENTRAL_GIRADO'">
+                                            {{ tipoModuloLabel(modulo) }}
+                                        </span>
                                     }
-                                </ol>
-                            } @else {
-                                <div class="virtual-queue-empty">Esta mesa queda libre</div>
+                                </li>
                             }
-                        </article>
+                        </ol>
+                    } @else {
+                        <div class="virtual-queue-empty">Esta mesa queda libre</div>
                     }
-                </div>
-            </section>
+                </article>
+            }
         </div>
 
         <footer class="table-preview-note">
             <i class="fa fa-info-circle" aria-hidden="true"></i>
-            Para cambiar este recorrido, reordena los bastidores o módulos en la sección superior.
+            El orden se modifica reordenando los bastidores o módulos en la sección superior.
         </footer>
     }
 </section>
