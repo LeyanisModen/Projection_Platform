@@ -331,7 +331,7 @@
                                             </span>
                                             <span *ngIf="!isModuloMovible(modulo)"
                                                 class="grupo-modulo-lock"
-                                                title="Este módulo ya no se puede reordenar"
+                                                [title]="moduloBloqueoTitle(modulo)"
                                                 aria-label="Módulo bloqueado para reordenación">
                                                 <i class="fa fa-lock" aria-hidden="true"></i>
                                             </span>
@@ -371,7 +371,7 @@
                                             </button>
                                             <button type="button"
                                                 class="grupo-modulo-delete"
-                                                *ngIf="modulo.estado === 'PENDIENTE'"
+                                                *ngIf="isModuloMovible(modulo)"
                                                 (click)="eliminarModulo(modulo, $event)"
                                                 [title]="modulo.fotos_count
                                                     ? 'Eliminar modulo pendiente y sus fotos asociadas'

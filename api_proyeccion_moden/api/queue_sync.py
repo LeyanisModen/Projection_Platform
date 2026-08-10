@@ -9,6 +9,7 @@ from api.models import (
     MesaQueueItem,
     MesaQueueStatus,
     MesaTipo,
+    ModuloEstado,
 )
 
 
@@ -18,6 +19,76 @@ EARLY_IMAGE_INDEX_LIMIT = 1
 
 class QueueRelocationError(Exception):
     """Raised when a bastidor change would move work already on screen."""
+
+
+def module_reorderability(modulo, showing_items=None):
+    """Return whether a module can still change its bastidor position.
+
+    Images 1 and 2 are treated as setup time. Once either phase reaches the
+    third image, its physical position is considered committed.
+    """
+    if modulo.estado != ModuloEstado.PENDIENTE:
+        return False, (
+            f'No se puede mover "{modulo.nombre}" porque su estado es '
+            f'{modulo.estado}. Solo se mueven modulos pendientes.'
+        )
+
+    if modulo.inferior_hecho or modulo.superior_hecho or modulo.cerrado:
+        return False, (
+            f'No se puede mover "{modulo.nombre}" porque ya tiene una fase '
+            'fabricada.'
+        )
+
+    if showing_items is None:
+        showing_items = getattr(modulo, "reorder_showing_items", None)
+    if showing_items is None:
+        showing_items = (
+            modulo.mesa_queue_items.select_related("mesa")
+            .filter(status=MesaQueueStatus.MOSTRANDO)
+        )
+
+    advanced_items = [
+        item
+        for item in showing_items
+        if item.mesa.current_image_index > EARLY_IMAGE_INDEX_LIMIT
+    ]
+    if advanced_items:
+        phases = ", ".join(
+            f'{item.fase}: imagen {item.mesa.current_image_index + 1}'
+            for item in advanced_items
+        )
+        return False, (
+            f'No se puede mover "{modulo.nombre}" porque su fabricacion ya '
+            f'ha comenzado ({phases}).'
+        )
+
+    return True, None
+
+
+def module_reorderability_map(modules):
+    """Calculate reorderability for a module collection with one queue query."""
+    modules = list(modules)
+    showing_by_module = {modulo.id: [] for modulo in modules}
+    if not showing_by_module:
+        return {}
+
+    showing_items = (
+        MesaQueueItem.objects.select_related("mesa")
+        .filter(
+            modulo_id__in=showing_by_module,
+            status=MesaQueueStatus.MOSTRANDO,
+        )
+    )
+    for item in showing_items:
+        showing_by_module[item.modulo_id].append(item)
+
+    return {
+        modulo.id: module_reorderability(
+            modulo,
+            showing_items=showing_by_module[modulo.id],
+        )
+        for modulo in modules
+    }
 
 
 def capture_phase_assignment_hints(modulo, fases):

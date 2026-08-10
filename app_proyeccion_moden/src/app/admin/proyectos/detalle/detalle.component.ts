@@ -272,17 +272,21 @@ export class ProyectoDetailComponent implements OnInit {
     }
 
     isModuloMovible(modulo: GrupoBastidorModulo): boolean {
-        return modulo.estado === 'PENDIENTE';
+        return modulo.movible ?? (modulo.estado === 'PENDIENTE');
     }
 
-    /** Indice del ultimo modulo no-pendiente (completado / en proceso /
-     *  cerrado) en el bastidor. Esos modulos ya estan fisicamente en su
+    moduloBloqueoTitle(modulo: GrupoBastidorModulo): string {
+        return modulo.motivo_bloqueo || 'Este modulo ya no se puede reordenar';
+    }
+
+    /** Indice del ultimo modulo bloqueado por estado o avance real. Esos
+     *  modulos ya estan fisicamente en su
      *  posicion en el bastidor, asi que cualquier insercion debe ir DESPUES.
      *  -1 si todos son pendientes (o el bastidor esta vacio). */
     private _lastLockedIndex(grupo: GrupoBastidor): number {
         let last = -1;
         grupo.modulos.forEach((m, i) => {
-            if (m.estado !== 'PENDIENTE') last = i;
+            if (!this.isModuloMovible(m)) last = i;
         });
         return last;
     }
@@ -326,7 +330,7 @@ export class ProyectoDetailComponent implements OnInit {
         const indexDestino = event.currentIndex;
 
         if (!this.isModuloMovible(modulo)) {
-            alert(`No se puede mover "${modulo.nombre}": estado ${modulo.estado}.`);
+            alert(this.moduloBloqueoTitle(modulo));
             return;
         }
 
@@ -336,7 +340,7 @@ export class ProyectoDetailComponent implements OnInit {
         const destinoSinArrastrado: GrupoBastidorModulo[] = destino.modulos
             .filter(m => m.id !== modulo.id);
         const lastLocked = destinoSinArrastrado.reduce(
-            (acc, m, i) => (m.estado !== 'PENDIENTE' ? i : acc),
+            (acc, m, i) => (!this.isModuloMovible(m) ? i : acc),
             -1,
         );
         const indexClamped = Math.max(indexDestino, lastLocked + 1);
@@ -372,7 +376,7 @@ export class ProyectoDetailComponent implements OnInit {
     onModuloDropInNewBastidor(event: CdkDragDrop<null>): void {
         const modulo = event.item.data as GrupoBastidorModulo;
         if (!this.isModuloMovible(modulo)) {
-            alert(`No se puede mover "${modulo.nombre}": estado ${modulo.estado}.`);
+            alert(this.moduloBloqueoTitle(modulo));
             return;
         }
         this.movingModulo = true;

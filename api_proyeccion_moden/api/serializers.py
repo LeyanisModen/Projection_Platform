@@ -9,6 +9,7 @@ from api.models import (
     FotoFabricacion, GrupoMesas, GrupoMesasProyecto,
     DetalleModuloFase, GrupoBastidor, FerrallaContacto, FerrallaDireccion, Fase
 )
+from api.queue_sync import module_reorderability
 
 
 class FerrallaContactoSerializer(serializers.ModelSerializer):
@@ -366,8 +367,10 @@ class GrupoBastidorSerializer(serializers.ModelSerializer):
             obj.modulos.all(),
             key=lambda m: (m.orden_intra or 0, self._natural_key(m.nombre)),
         )
-        return [
-            {
+        serialized = []
+        for m in modulos:
+            movible, motivo_bloqueo = module_reorderability(m)
+            serialized.append({
                 "id": m.id,
                 "nombre": m.nombre,
                 "ancho_cm": m.ancho_cm,
@@ -377,9 +380,10 @@ class GrupoBastidorSerializer(serializers.ModelSerializer):
                 "superior_hecho": m.superior_hecho,
                 "cerrado": m.cerrado,
                 "fotos_count": m.fotos_fabricacion.count(),
-            }
-            for m in modulos
-        ]
+                "movible": movible,
+                "motivo_bloqueo": motivo_bloqueo,
+            })
+        return serialized
 
     def get_longitud_total_cm(self, obj):
         from decimal import Decimal, InvalidOperation

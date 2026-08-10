@@ -111,7 +111,7 @@
                                                 [cdkDragData]="modulo"
                                                 [cdkDragDisabled]="!isModuloMovible(modulo)"
                                                 [class.is-draggable]="isModuloMovible(modulo)"
-                                                [class.is-locked]="modulo.estado !== 'PENDIENTE'">
+                                                [class.is-locked]="isModuloLocked(modulo)">
                                                 <span class="queue-position">{{ modulo.position }}</span>
                                                 <strong [title]="modulo.nombre">{{ modulo.nombre }}</strong>
                                                 @if (tipoModuloLabel(modulo)) {
@@ -120,7 +120,7 @@
                                                         {{ tipoModuloLabel(modulo) }}
                                                     </span>
                                                 }
-                                                @if (modulo.estado === 'PENDIENTE' && modulo.group_id !== null) {
+                                                @if (!isModuloLocked(modulo)) {
                                                     <button type="button" class="drag-handle" cdkDragHandle
                                                         [disabled]="movingModuloId() !== null"
                                                         [attr.aria-label]="'Mover ' + modulo.nombre"
@@ -133,9 +133,7 @@
                                                     </button>
                                                 } @else {
                                                     <span class="module-lock"
-                                                        [title]="modulo.group_id === null
-                                                            ? 'Este módulo aún no tiene bastidor persistido'
-                                                            : 'Solo se pueden mover módulos pendientes'">
+                                                        [title]="moduloBloqueoTitle(modulo)">
                                                         <i class="fa fa-lock" aria-hidden="true"></i>
                                                     </span>
                                                 }
@@ -149,8 +147,8 @@
                         <ol class="virtual-queue">
                             @for (modulo of queue.modulos; track modulo.id) {
                                 <li class="virtual-queue-item"
-                                    [class.is-locked]="modulo.estado !== 'PENDIENTE'"
-                                    [attr.aria-disabled]="modulo.estado !== 'PENDIENTE'">
+                                    [class.is-locked]="isModuloLocked(modulo)"
+                                    [attr.aria-disabled]="isModuloLocked(modulo)">
                                     <span class="queue-position">{{ modulo.position }}</span>
                                     <strong [title]="modulo.nombre">{{ modulo.nombre }}</strong>
                                     <span class="source-group" [title]="modulo.group_name">
@@ -162,8 +160,8 @@
                                             {{ tipoModuloLabel(modulo) }}
                                         </span>
                                     }
-                                    @if (modulo.estado !== 'PENDIENTE') {
-                                        <span class="module-lock" title="Este módulo ya no se puede reordenar">
+                                    @if (isModuloLocked(modulo)) {
+                                        <span class="module-lock" [title]="moduloBloqueoTitle(modulo)">
                                             <i class="fa fa-lock" aria-hidden="true"></i>
                                         </span>
                                     }
@@ -179,7 +177,7 @@
 
         <footer class="table-preview-note">
             <i class="fa fa-info-circle" aria-hidden="true"></i>
-            Solo se mueven módulos pendientes. Cada cambio actualiza también los bastidores de la sección superior.
+            Solo se mueven módulos pendientes que no hayan pasado de la imagen 2. Cada cambio actualiza también los bastidores de la sección superior.
         </footer>
     }
 </section>

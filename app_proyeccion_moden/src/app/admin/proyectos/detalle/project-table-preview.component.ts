@@ -109,9 +109,20 @@ export class ProjectTablePreviewComponent {
     }
 
     isModuloMovible(modulo: ProyectoMesaPreviewModulo): boolean {
-        return modulo.estado === 'PENDIENTE'
-            && modulo.group_id !== null
+        return !this.isModuloLocked(modulo)
             && this.movingModuloId() === null;
+    }
+
+    isModuloLocked(modulo: ProyectoMesaPreviewModulo): boolean {
+        const productionLocked = !(modulo.movible ?? (modulo.estado === 'PENDIENTE'));
+        return productionLocked || modulo.group_id === null;
+    }
+
+    moduloBloqueoTitle(modulo: ProyectoMesaPreviewModulo): string {
+        if (modulo.group_id === null) {
+            return 'Este modulo aun no tiene bastidor persistido';
+        }
+        return modulo.motivo_bloqueo || 'Este modulo ya no se puede reordenar';
     }
 
     readonly previewSortPredicate = (
@@ -127,7 +138,7 @@ export class ProjectTablePreviewComponent {
             modulo => modulo.id !== drag.data.id,
         );
         const firstLockedIndex = destinationModules.findIndex(
-            modulo => modulo.estado !== 'PENDIENTE',
+            modulo => this.isModuloLocked(modulo),
         );
         return firstLockedIndex === -1 || index <= firstLockedIndex;
     };

@@ -44,6 +44,8 @@ from api.queue_sync import (
     EARLY_IMAGE_INDEX_LIMIT,
     QueueRelocationError,
     capture_phase_assignment_hints,
+    module_reorderability,
+    module_reorderability_map,
     reconcile_module_queue_after_bastidor_move,
     reconcile_superior_queue_for_group,
     sync_module_phases,
@@ -134,6 +136,29 @@ PHASE_PREFIXES = {
     'superior': 'SUPERIOR',
 }
 ACTIVE_QUEUE_STATUSES = ['EN_COLA', 'MOSTRANDO']
+
+
+def _modules_with_reorder_data(queryset):
+    return queryset.prefetch_related(
+        Prefetch(
+            'mesa_queue_items',
+            queryset=(
+                MesaQueueItem.objects
+                .filter(status=MesaQueueStatus.MOSTRANDO)
+                .select_related('mesa')
+            ),
+            to_attr='reorder_showing_items',
+        )
+    )
+
+
+def _grupos_with_reorder_data(queryset):
+    return queryset.select_related('proyecto').prefetch_related(
+        Prefetch(
+            'modulos',
+            queryset=_modules_with_reorder_data(Modulo.objects.all()),
+        )
+    )
 
 
 def _is_admin(user):
@@ -1222,15 +1247,19 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         superior_sequences = _distribute_superior_sequence(
             plan_data['superior_sequence'], num_superiores,
         )
+        reorderability = module_reorderability_map(proyecto.modulos.all())
 
         def serialize_module(modulo, position):
             group_index = plan_data['module_group_map'].get(modulo.id)
             persisted_group = modulo.grupo_bastidor
+            movible, motivo_bloqueo = reorderability[modulo.id]
             return {
                 'id': modulo.id,
                 'nombre': modulo.nombre,
                 'tipo_modulo': modulo.tipo_modulo,
                 'estado': modulo.estado,
+                'movible': movible,
+                'motivo_bloqueo': motivo_bloqueo,
                 'position': position,
                 'group_id': persisted_group.id if persisted_group else None,
                 'group_index': group_index,
@@ -1632,10 +1661,9 @@ class ProyectoViewSet(viewsets.ModelViewSet):
                         pass
                 grupo_vs._sync_proyecto_actual(grupo_m)
 
-        grupos = (
-            proyecto.grupos_bastidor.prefetch_related('modulos')
-            .order_by('indice')
-        )
+        grupos = _grupos_with_reorder_data(
+            proyecto.grupos_bastidor.all()
+        ).order_by('indice')
         return Response({
             'status': 'ok',
             'estrategia': estrategia,
@@ -2212,14 +2240,18 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
       - POST /grupos-bastidor/move-modulo/  -> {modulo_id, grupo_destino_id|null}
       - POST /grupos-bastidor/reorder/      -> {proyecto, orden: [grupo_id,...]}
     """
-    queryset = GrupoBastidor.objects.prefetch_related('modulos').all().order_by('proyecto', 'indice')
+    queryset = _grupos_with_reorder_data(
+        GrupoBastidor.objects.all()
+    ).order_by('proyecto', 'indice')
     serializer_class = GrupoBastidorSerializer
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = None
     http_method_names = ['get', 'patch', 'post', 'head', 'options']
 
     def get_queryset(self):
-        queryset = GrupoBastidor.objects.prefetch_related('modulos').all().order_by('proyecto', 'indice')
+        queryset = _grupos_with_reorder_data(
+            GrupoBastidor.objects.all()
+        ).order_by('proyecto', 'indice')
         if not _is_admin(self.request.user):
             queryset = queryset.filter(proyecto__usuario=self.request.user)
         proyecto_id = self.request.query_params.get('proyecto', None)
@@ -2251,21 +2283,11 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
 
     @staticmethod
     def _modulo_es_movible(modulo, *, cross_group):
-        """Solo se mueven modulos en PENDIENTE. Cualquier otro estado bloquea.
-
-        Los modulos pendientes son siempre movibles, aunque haya otros
-        modulos del mismo bastidor ya en fabricacion: sacar un pendiente
-        no interfiere con los que ya estan en proceso.
-        """
+        """Apply the same production-aware rule exposed by the serializers."""
         # cross_group queda en la firma por compatibilidad con la llamada,
         # pero ya no condiciona la decision.
         del cross_group  # noqa: usado solo para documentar el contrato.
-        if modulo.estado != 'PENDIENTE':
-            return False, (
-                f'No se puede mover "{modulo.nombre}" porque su estado es '
-                f'{modulo.estado}. Solo se mueven modulos pendientes.'
-            )
-        return True, None
+        return module_reorderability(modulo)
 
     @action(detail=False, methods=['post'], url_path='move-modulo')
     @transaction.atomic
@@ -2332,7 +2354,7 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
         # index_destino (0-based) y reindexa orden_intra 1..N.
         # Si same_group: remueve primero del orden actual y reinserta.
         destino_modulos = sorted(
-            grupo_destino.modulos.all(),
+            _modules_with_reorder_data(grupo_destino.modulos.all()),
             key=lambda m: (m.orden_intra or 0, _natural_sort_key(m.nombre)),
         )
         if same_group:
@@ -2349,7 +2371,8 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
         # primer hueco valido tras el ultimo bloqueado.
         last_locked = -1
         for i, m in enumerate(destino_modulos):
-            if m.estado != 'PENDIENTE':
+            movible_destino, _ = module_reorderability(m)
+            if not movible_destino:
                 last_locked = i
         if insert_at <= last_locked:
             insert_at = last_locked + 1
@@ -2390,10 +2413,9 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_409_CONFLICT,
             )
 
-        grupos = (
-            proyecto.grupos_bastidor.prefetch_related('modulos')
-            .order_by('indice')
-        )
+        grupos = _grupos_with_reorder_data(
+            proyecto.grupos_bastidor.all()
+        ).order_by('indice')
         return Response(GrupoBastidorSerializer(grupos, many=True).data)
 
     @action(detail=False, methods=['post'], url_path='reorder')
@@ -2431,10 +2453,9 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
         for i, gid in enumerate(ids_orden, start=1):
             GrupoBastidor.objects.filter(pk=gid).update(indice=i)
 
-        grupos = (
-            proyecto.grupos_bastidor.prefetch_related('modulos')
-            .order_by('indice')
-        )
+        grupos = _grupos_with_reorder_data(
+            proyecto.grupos_bastidor.all()
+        ).order_by('indice')
         return Response(GrupoBastidorSerializer(grupos, many=True).data)
 
 

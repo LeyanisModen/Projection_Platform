@@ -1859,6 +1859,146 @@ class PlanningFoundationTests(APITestCase):
             ["G1-ACTUAL", "G2-01", "G2-02", "M-01", "G2-03"],
         )
 
+    def test_modulo_en_segunda_imagen_sigue_siendo_movible(self):
+        grupo = self._crear_grupo("Grupo Fase Temprana")
+        mesa_inf = grupo.mesas.get(tipo="INFERIOR", indice=1)
+        bastidor = GrupoBastidor.objects.create(
+            proyecto=self.project,
+            indice=1,
+            nombre="Grupo 1",
+            asignado_a=grupo,
+        )
+        peer = Modulo.objects.create(
+            nombre="M-02",
+            proyecto=self.project,
+            planta=self.planta,
+            grupo_bastidor=bastidor,
+            orden_intra=1,
+        )
+        self.modulo.grupo_bastidor = bastidor
+        self.modulo.orden_intra = 2
+        self.modulo.save(update_fields=["grupo_bastidor", "orden_intra"])
+        MesaQueueItem.objects.create(
+            mesa=mesa_inf,
+            modulo=self.modulo,
+            fase="INFERIOR",
+            status=MesaQueueStatus.MOSTRANDO,
+            position=0,
+            plan_group_index=1,
+        )
+        mesa_inf.current_image_index = 1
+        mesa_inf.save(update_fields=["current_image_index"])
+
+        admin = User.objects.create_user(
+            username="early_module_admin",
+            password="pass123",
+            is_staff=True,
+        )
+        admin_token = Token.objects.create(user=admin)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {admin_token.key}")
+
+        groups_response = self.client.get(
+            f"/api/grupos-bastidor/?proyecto={self.project.id}"
+        )
+        self.assertEqual(groups_response.status_code, 200)
+        serialized = next(
+            item
+            for item in groups_response.data[0]["modulos"]
+            if item["id"] == self.modulo.id
+        )
+        self.assertTrue(serialized["movible"])
+        self.assertIsNone(serialized["motivo_bloqueo"])
+
+        move_response = self.client.post(
+            "/api/grupos-bastidor/move-modulo/",
+            {
+                "modulo_id": self.modulo.id,
+                "grupo_destino_id": bastidor.id,
+                "index_destino": 0,
+            },
+            format="json",
+        )
+        self.assertEqual(move_response.status_code, 200)
+        self.modulo.refresh_from_db()
+        peer.refresh_from_db()
+        self.assertLess(self.modulo.orden_intra, peer.orden_intra)
+
+    def test_modulo_iniciado_se_bloquea_en_bastidor_preview_y_api(self):
+        grupo = self._crear_grupo("Grupo Modulo Iniciado")
+        mesa_inf = grupo.mesas.get(tipo="INFERIOR", indice=1)
+        mesa_sup = grupo.mesas.get(tipo="SUPERIOR", indice=3)
+        bastidor = GrupoBastidor.objects.create(
+            proyecto=self.project,
+            indice=1,
+            nombre="Grupo 1",
+            asignado_a=grupo,
+        )
+        self.modulo.nombre = "B12"
+        self.modulo.grupo_bastidor = bastidor
+        self.modulo.orden_intra = 1
+        self.modulo.save(update_fields=["nombre", "grupo_bastidor", "orden_intra"])
+        MesaQueueItem.objects.create(
+            mesa=mesa_inf,
+            modulo=self.modulo,
+            fase="INFERIOR",
+            status=MesaQueueStatus.MOSTRANDO,
+            position=0,
+            plan_group_index=1,
+        )
+        MesaQueueItem.objects.create(
+            mesa=mesa_sup,
+            modulo=self.modulo,
+            fase="SUPERIOR",
+            status=MesaQueueStatus.MOSTRANDO,
+            position=0,
+            plan_group_index=1,
+        )
+        mesa_inf.current_image_index = 11
+        mesa_inf.save(update_fields=["current_image_index"])
+        mesa_sup.current_image_index = 2
+        mesa_sup.save(update_fields=["current_image_index"])
+
+        admin = User.objects.create_user(
+            username="started_module_admin",
+            password="pass123",
+            is_staff=True,
+        )
+        admin_token = Token.objects.create(user=admin)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {admin_token.key}")
+
+        groups_response = self.client.get(
+            f"/api/grupos-bastidor/?proyecto={self.project.id}"
+        )
+        self.assertEqual(groups_response.status_code, 200)
+        serialized = groups_response.data[0]["modulos"][0]
+        self.assertFalse(serialized["movible"])
+        self.assertIn("fabricacion ya ha comenzado", serialized["motivo_bloqueo"])
+
+        preview_response = self.client.get(
+            f"/api/proyectos/{self.project.id}/preview-mesas/"
+        )
+        self.assertEqual(preview_response.status_code, 200)
+        preview_items = [
+            item
+            for queue in preview_response.data["queues"]
+            for item in queue["modulos"]
+            if item["id"] == self.modulo.id
+        ]
+        self.assertTrue(preview_items)
+        self.assertTrue(all(not item["movible"] for item in preview_items))
+
+        move_response = self.client.post(
+            "/api/grupos-bastidor/move-modulo/",
+            {
+                "modulo_id": self.modulo.id,
+                "grupo_destino_id": bastidor.id,
+                "index_destino": 0,
+            },
+            format="json",
+        )
+        self.assertEqual(move_response.status_code, 409)
+        self.assertIn("fabricacion ya ha comenzado", move_response.data["detail"])
+
     def test_no_mueve_de_mesa_un_modulo_que_ya_se_esta_mostrando(self):
         admin = User.objects.create_user(
             username="move_showing_module_admin",
