@@ -337,8 +337,22 @@
 }
 
 .virtual-queue-item.is-locked {
-    color: #87929a;
-    background: #fafbfb;
+    color: #858e95;
+    background: #eef0f2;
+    border-color: #d9dee2;
+    border-left-color: #b6bdc3;
+    cursor: not-allowed;
+}
+
+.virtual-queue-item.is-locked strong {
+    color: #858e95;
+}
+
+.virtual-queue-item.is-locked .queue-position,
+.virtual-queue-item.is-locked .module-type,
+.virtual-queue-item.is-locked .source-group {
+    filter: grayscale(1);
+    opacity: 0.72;
 }
 
 .drag-handle {

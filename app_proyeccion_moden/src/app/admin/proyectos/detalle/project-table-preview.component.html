@@ -148,7 +148,9 @@
                     } @else if (queue.tipo === 'SUPERIOR' && queue.modulos.length > 0) {
                         <ol class="virtual-queue">
                             @for (modulo of queue.modulos; track modulo.id) {
-                                <li class="virtual-queue-item">
+                                <li class="virtual-queue-item"
+                                    [class.is-locked]="modulo.estado !== 'PENDIENTE'"
+                                    [attr.aria-disabled]="modulo.estado !== 'PENDIENTE'">
                                     <span class="queue-position">{{ modulo.position }}</span>
                                     <strong [title]="modulo.nombre">{{ modulo.nombre }}</strong>
                                     <span class="source-group" [title]="modulo.group_name">
@@ -158,6 +160,11 @@
                                         <span class="module-type"
                                             [class.is-rotated]="modulo.tipo_modulo === 'CENTRAL_GIRADO'">
                                             {{ tipoModuloLabel(modulo) }}
+                                        </span>
+                                    }
+                                    @if (modulo.estado !== 'PENDIENTE') {
+                                        <span class="module-lock" title="Este módulo ya no se puede reordenar">
+                                            <i class="fa fa-lock" aria-hidden="true"></i>
                                         </span>
                                     }
                                 </li>
