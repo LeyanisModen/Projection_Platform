@@ -3110,6 +3110,18 @@ class PlanningFoundationTests(APITestCase):
             queues["INF-1"]["modulos"][0]["group_name"],
             "Bastidor inicial",
         )
+        self.assertEqual(
+            queues["INF-1"]["modulos"][0]["group_id"],
+            grupo_1.id,
+        )
+        self.assertEqual(
+            queues["INF-1"]["modulos"][0]["estado"],
+            "PENDIENTE",
+        )
+        self.assertEqual(
+            queues["INF-1"]["modulos"][1]["estado"],
+            "CERRADO",
+        )
 
         self.assertEqual(GrupoMesas.objects.count(), grupos_before)
         self.assertEqual(MesaQueueItem.objects.count(), queue_items_before)

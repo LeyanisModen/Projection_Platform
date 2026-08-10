@@ -97,7 +97,9 @@ export interface ProyectoMesaPreviewModulo {
     id: number;
     nombre: string;
     tipo_modulo: TipoModulo;
+    estado: 'PENDIENTE' | 'EN_PROGRESO' | 'COMPLETADO' | 'CERRADO';
     position: number;
+    group_id: number | null;
     group_index: number | null;
     group_name: string;
 }

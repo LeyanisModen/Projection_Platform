@@ -460,7 +460,8 @@
         <div class="project-table-preview-row" *ngIf="grupos.length > 0">
             <app-project-table-preview
                 [projectId]="proyectoActual.id"
-                [refreshKey]="tablePreviewRevision">
+                [refreshKey]="tablePreviewRevision"
+                (groupsChanged)="onPreviewGroupsChanged($event)">
             </app-project-table-preview>
         </div>
     </ng-container>

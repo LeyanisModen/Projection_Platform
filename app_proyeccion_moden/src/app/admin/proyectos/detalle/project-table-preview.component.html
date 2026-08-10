@@ -6,7 +6,7 @@
                 Simulación de producción
             </span>
             <h3 id="table-preview-title">Vista previa en mesas</h3>
-            <p>Orden teórico del proyecto completo, sin consultar ni modificar las mesas reales.</p>
+            <p>Arrastra en las mesas INF para modificar los bastidores; SUP se recalcula automáticamente.</p>
         </div>
 
         <div class="table-preview-controls" aria-label="Configuración de mesas virtuales">
@@ -57,15 +57,24 @@
                     Recalculando
                 </span>
             }
-            <span class="read-only-badge">
-                <i class="fa fa-eye" aria-hidden="true"></i>
-                Solo lectura
+            <span class="edit-mode-badge">
+                <i class="fa fa-bars" aria-hidden="true"></i>
+                Edición en INF
             </span>
         </div>
 
+        @if (moveError()) {
+            <div class="move-error" role="alert">
+                <i class="fa fa-exclamation-triangle" aria-hidden="true"></i>
+                {{ moveError() }}
+            </div>
+        }
+
         <div class="virtual-tables-grid">
-            @for (queue of preview.queues; track queue.key) {
-                <article class="virtual-table-card" [class.is-superior]="queue.tipo === 'SUPERIOR'">
+            @for (queue of queueViews(); track queue.key) {
+                <article class="virtual-table-card"
+                    [class.is-superior]="queue.tipo === 'SUPERIOR'"
+                    [class.is-updating]="movingModuloId() !== null">
                     <header class="virtual-table-header">
                         <div class="virtual-table-title">
                             <span class="virtual-table-icon" aria-hidden="true">
@@ -79,23 +88,72 @@
                         <span class="phase-chip">{{ queue.tipo === 'SUPERIOR' ? 'SUP' : 'INF' }}</span>
                     </header>
 
-                    @if (queue.modulos.length > 0) {
+                    @if (queue.tipo === 'INFERIOR' && queue.groups.length > 0) {
+                        <div class="virtual-queue is-editable">
+                            @for (group of queue.groups; track group.key) {
+                                <section class="queue-group">
+                                    <div class="queue-group-divider">
+                                        <span>{{ group.group_name }}</span>
+                                        <small>Orden {{ group.group_index }}</small>
+                                    </div>
+                                    <ol class="group-module-list"
+                                        cdkDropList
+                                        [id]="dropListId(group)"
+                                        [cdkDropListData]="group"
+                                        [cdkDropListConnectedTo]="connectedDropListIds(group)"
+                                        [cdkDropListDisabled]="group.group_id === null || movingModuloId() !== null"
+                                        [cdkDropListSortPredicate]="previewSortPredicate"
+                                        (cdkDropListDropped)="onModuloDrop($event)"
+                                        [attr.aria-label]="'Módulos de ' + group.group_name">
+                                        @for (modulo of group.modulos; track modulo.id) {
+                                            <li class="virtual-queue-item"
+                                                cdkDrag
+                                                [cdkDragData]="modulo"
+                                                [cdkDragDisabled]="!isModuloMovible(modulo)"
+                                                [class.is-draggable]="isModuloMovible(modulo)"
+                                                [class.is-locked]="modulo.estado !== 'PENDIENTE'">
+                                                <span class="queue-position">{{ modulo.position }}</span>
+                                                <strong [title]="modulo.nombre">{{ modulo.nombre }}</strong>
+                                                @if (tipoModuloLabel(modulo)) {
+                                                    <span class="module-type"
+                                                        [class.is-rotated]="modulo.tipo_modulo === 'CENTRAL_GIRADO'">
+                                                        {{ tipoModuloLabel(modulo) }}
+                                                    </span>
+                                                }
+                                                @if (modulo.estado === 'PENDIENTE' && modulo.group_id !== null) {
+                                                    <button type="button" class="drag-handle" cdkDragHandle
+                                                        [disabled]="movingModuloId() !== null"
+                                                        [attr.aria-label]="'Mover ' + modulo.nombre"
+                                                        title="Arrastrar para reordenar">
+                                                        @if (movingModuloId() === modulo.id) {
+                                                            <i class="fa fa-circle-o-notch fa-spin" aria-hidden="true"></i>
+                                                        } @else {
+                                                            <i class="fa fa-bars" aria-hidden="true"></i>
+                                                        }
+                                                    </button>
+                                                } @else {
+                                                    <span class="module-lock"
+                                                        [title]="modulo.group_id === null
+                                                            ? 'Este módulo aún no tiene bastidor persistido'
+                                                            : 'Solo se pueden mover módulos pendientes'">
+                                                        <i class="fa fa-lock" aria-hidden="true"></i>
+                                                    </span>
+                                                }
+                                            </li>
+                                        }
+                                    </ol>
+                                </section>
+                            }
+                        </div>
+                    } @else if (queue.tipo === 'SUPERIOR' && queue.modulos.length > 0) {
                         <ol class="virtual-queue">
-                            @for (modulo of queue.modulos; track modulo.id; let index = $index) {
-                                @if (queue.tipo === 'INFERIOR' && isGroupStart(queue, index)) {
-                                    <li class="queue-group-divider">
-                                        <span>{{ modulo.group_name }}</span>
-                                        <small>Orden {{ modulo.group_index }}</small>
-                                    </li>
-                                }
+                            @for (modulo of queue.modulos; track modulo.id) {
                                 <li class="virtual-queue-item">
                                     <span class="queue-position">{{ modulo.position }}</span>
                                     <strong [title]="modulo.nombre">{{ modulo.nombre }}</strong>
-                                    @if (queue.tipo === 'SUPERIOR') {
-                                        <span class="source-group" [title]="modulo.group_name">
-                                            G{{ modulo.group_index }}
-                                        </span>
-                                    }
+                                    <span class="source-group" [title]="modulo.group_name">
+                                        G{{ modulo.group_index }}
+                                    </span>
                                     @if (tipoModuloLabel(modulo)) {
                                         <span class="module-type"
                                             [class.is-rotated]="modulo.tipo_modulo === 'CENTRAL_GIRADO'">
@@ -114,7 +172,7 @@
 
         <footer class="table-preview-note">
             <i class="fa fa-info-circle" aria-hidden="true"></i>
-            El orden se modifica reordenando los bastidores o módulos en la sección superior.
+            Solo se mueven módulos pendientes. Cada cambio actualiza también los bastidores de la sección superior.
         </footer>
     }
 </section>

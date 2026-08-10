@@ -1230,7 +1230,9 @@ class ProyectoViewSet(viewsets.ModelViewSet):
                 'id': modulo.id,
                 'nombre': modulo.nombre,
                 'tipo_modulo': modulo.tipo_modulo,
+                'estado': modulo.estado,
                 'position': position,
+                'group_id': persisted_group.id if persisted_group else None,
                 'group_index': group_index,
                 'group_name': (
                     persisted_group.nombre

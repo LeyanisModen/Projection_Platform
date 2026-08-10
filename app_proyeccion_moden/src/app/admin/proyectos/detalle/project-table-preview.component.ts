@@ -1,23 +1,48 @@
 import {
     ChangeDetectionStrategy,
     Component,
+    computed,
     inject,
     input,
+    output,
     resource,
     signal,
 } from '@angular/core';
+import { CdkDragDrop, DragDropModule } from '@angular/cdk/drag-drop';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 
 import {
     ApiService,
+    GrupoBastidor,
     ProyectoMesaPreviewModulo,
     ProyectoMesaPreviewQueue,
 } from '../../../services/api.service';
 
+interface ProyectoMesaPreviewGroup {
+    key: string;
+    group_id: number | null;
+    group_index: number | null;
+    group_name: string;
+    modulos: ProyectoMesaPreviewModulo[];
+}
+
+interface ProyectoMesaPreviewQueueView extends ProyectoMesaPreviewQueue {
+    groups: ProyectoMesaPreviewGroup[];
+}
+
+export function previewIndexToBastidorIndex(
+    moduleCountAfterRemoval: number,
+    previewIndex: number,
+): number {
+    const count = Math.max(0, Math.trunc(moduleCountAfterRemoval));
+    const safePreviewIndex = Math.min(Math.max(0, Math.trunc(previewIndex)), count);
+    return count - safePreviewIndex;
+}
+
 @Component({
     selector: 'app-project-table-preview',
-    imports: [FormsModule],
+    imports: [DragDropModule, FormsModule],
     templateUrl: './project-table-preview.component.html',
     styleUrls: ['./project-table-preview.component.css'],
     changeDetection: ChangeDetectionStrategy.OnPush,
@@ -27,9 +52,12 @@ export class ProjectTablePreviewComponent {
 
     readonly projectId = input.required<number>();
     readonly refreshKey = input(0);
+    readonly groupsChanged = output<GrupoBastidor[]>();
 
     readonly inferiores = signal(2);
     readonly superiores = signal(1);
+    readonly movingModuloId = signal<number | null>(null);
+    readonly moveError = signal('');
     readonly inferiorOptions = [1, 2, 3, 4];
     readonly superiorOptions = [1, 2];
 
@@ -49,6 +77,20 @@ export class ProjectTablePreviewComponent {
         ),
     });
 
+    readonly queueViews = computed<ProyectoMesaPreviewQueueView[]>(() =>
+        (this.previewResource.value()?.queues ?? []).map(queue => ({
+            ...queue,
+            groups: queue.tipo === 'INFERIOR' ? this.buildInferiorGroups(queue) : [],
+        })),
+    );
+
+    readonly inferiorDropListIds = computed(() =>
+        this.queueViews()
+            .flatMap(queue => queue.groups)
+            .filter(group => group.group_id !== null)
+            .map(group => this.dropListId(group)),
+    );
+
     setInferiores(value: number): void {
         this.setCount(value, this.inferiorOptions, this.inferiores);
     }
@@ -57,9 +99,85 @@ export class ProjectTablePreviewComponent {
         this.setCount(value, this.superiorOptions, this.superiores);
     }
 
-    isGroupStart(queue: ProyectoMesaPreviewQueue, index: number): boolean {
-        return index === 0
-            || queue.modulos[index - 1].group_index !== queue.modulos[index].group_index;
+    dropListId(group: ProyectoMesaPreviewGroup): string {
+        return `preview-bastidor-${group.key}`;
+    }
+
+    connectedDropListIds(group: ProyectoMesaPreviewGroup): string[] {
+        const ownId = this.dropListId(group);
+        return this.inferiorDropListIds().filter(id => id !== ownId);
+    }
+
+    isModuloMovible(modulo: ProyectoMesaPreviewModulo): boolean {
+        return modulo.estado === 'PENDIENTE'
+            && modulo.group_id !== null
+            && this.movingModuloId() === null;
+    }
+
+    readonly previewSortPredicate = (
+        index: number,
+        drag: { data: ProyectoMesaPreviewModulo },
+        drop: { data: ProyectoMesaPreviewGroup },
+    ): boolean => {
+        if (!this.isModuloMovible(drag.data) || drop.data.group_id === null) {
+            return false;
+        }
+
+        const destinationModules = drop.data.modulos.filter(
+            modulo => modulo.id !== drag.data.id,
+        );
+        const firstLockedIndex = destinationModules.findIndex(
+            modulo => modulo.estado !== 'PENDIENTE',
+        );
+        return firstLockedIndex === -1 || index <= firstLockedIndex;
+    };
+
+    onModuloDrop(event: CdkDragDrop<ProyectoMesaPreviewGroup>): void {
+        const modulo = event.item.data as ProyectoMesaPreviewModulo;
+        const destination = event.container.data;
+
+        if (
+            this.movingModuloId() !== null
+            || !this.isModuloMovible(modulo)
+            || destination.group_id === null
+        ) {
+            return;
+        }
+        if (
+            event.previousContainer === event.container
+            && event.previousIndex === event.currentIndex
+        ) {
+            return;
+        }
+
+        // El planificador muestra cada bastidor en orden inverso durante INF.
+        // Convertimos la posicion visible a orden_intra antes de persistirla.
+        const destinationCount = destination.modulos.filter(
+            candidate => candidate.id !== modulo.id,
+        ).length;
+        const destinationIndex = previewIndexToBastidorIndex(
+            destinationCount,
+            event.currentIndex,
+        );
+
+        this.moveError.set('');
+        this.movingModuloId.set(modulo.id);
+        this.api.moveModuloEntreBastidores(
+            modulo.id,
+            destination.group_id,
+            destinationIndex,
+        ).subscribe({
+            next: grupos => {
+                this.movingModuloId.set(null);
+                this.groupsChanged.emit(grupos);
+            },
+            error: error => {
+                this.movingModuloId.set(null);
+                this.moveError.set(
+                    error?.error?.detail || `No se pudo mover el modulo ${modulo.nombre}.`,
+                );
+            },
+        });
     }
 
     tipoModuloLabel(modulo: ProyectoMesaPreviewModulo): string {
@@ -89,5 +207,31 @@ export class ProjectTablePreviewComponent {
         if (allowed.includes(value)) {
             target.set(value);
         }
+    }
+
+    private buildInferiorGroups(
+        queue: ProyectoMesaPreviewQueue,
+    ): ProyectoMesaPreviewGroup[] {
+        const groups = new Map<string, ProyectoMesaPreviewGroup>();
+
+        for (const modulo of queue.modulos) {
+            const identity = modulo.group_id !== null
+                ? `id-${modulo.group_id}`
+                : `virtual-${modulo.group_index}`;
+            let group = groups.get(identity);
+            if (!group) {
+                group = {
+                    key: `${queue.key}-${identity}`,
+                    group_id: modulo.group_id,
+                    group_index: modulo.group_index,
+                    group_name: modulo.group_name,
+                    modulos: [],
+                };
+                groups.set(identity, group);
+            }
+            group.modulos.push(modulo);
+        }
+
+        return [...groups.values()];
     }
 }

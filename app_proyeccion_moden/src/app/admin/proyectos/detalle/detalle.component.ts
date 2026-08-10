@@ -1663,6 +1663,12 @@ export class ProyectoDetailComponent implements OnInit {
         this.tablePreviewRevision += 1;
     }
 
+    onPreviewGroupsChanged(grupos: GrupoBastidor[]): void {
+        this.grupos = grupos.sort((a, b) => a.indice - b.indice);
+        this.refreshTablePreview();
+        this.cdr.detectChanges();
+    }
+
     getColorHex(code: string): string {
         const map: Record<string, string> = {
             y: '#eab308',  // yellow
