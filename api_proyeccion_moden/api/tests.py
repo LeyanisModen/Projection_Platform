@@ -3650,6 +3650,90 @@ class PlanningFoundationTests(APITestCase):
         self.assertEqual(inf_1_queue, ["A05", "A04", "A03", "A02"])
         self.assertEqual(inf_2_queue, ["A01"])
 
+    def test_reordenar_bastidores_actualiza_colas_sin_reiniciar_el_actual(self):
+        self.modulo.cerrado = True
+        self.modulo.save(update_fields=["cerrado"])
+        self.user.is_staff = True
+        self.user.save(update_fields=["is_staff"])
+
+        grupos = [
+            GrupoBastidor.objects.create(
+                proyecto=self.project,
+                indice=index,
+                nombre=f"Grupo {index}",
+            )
+            for index in range(1, 4)
+        ]
+        modules = []
+        for index, (nombre, grupo_bastidor) in enumerate(
+            zip(["A01", "B01", "C01"], grupos),
+            start=1,
+        ):
+            modules.append(
+                Modulo.objects.create(
+                    nombre=nombre,
+                    proyecto=self.project,
+                    planta=self.planta,
+                    grupo_bastidor=grupo_bastidor,
+                    orden_intra=1,
+                    ancho_cm="10.00",
+                )
+            )
+
+        grupo_operativo = self._crear_grupo("Grupo Reorden Bastidor")
+        mesa_inf_2 = grupo_operativo.mesas.get(tipo="INFERIOR", indice=2)
+        mesa_inf_2.activa = False
+        mesa_inf_2.save(update_fields=["activa"])
+
+        plan_response = self.client.post(
+            f"/api/grupos-mesas/{grupo_operativo.id}/planificar/",
+            {"proyecto_id": self.project.id},
+            format="json",
+        )
+        self.assertEqual(plan_response.status_code, 200)
+
+        mesa_inf = grupo_operativo.mesas.get(tipo="INFERIOR", indice=1)
+        mesa_sup = grupo_operativo.mesas.get(tipo="SUPERIOR", indice=3)
+        current_inf = mesa_inf.queue_items.get(
+            modulo=modules[0],
+            fase="INFERIOR",
+            status="MOSTRANDO",
+        )
+        mesa_inf.current_image_index = 11
+        mesa_inf.save(update_fields=["current_image_index"])
+
+        response = self.client.post(
+            "/api/grupos-bastidor/reorder/",
+            {
+                "proyecto": self.project.id,
+                "orden": [grupos[0].id, grupos[2].id, grupos[1].id],
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+
+        inf_queue = list(
+            mesa_inf.queue_items.filter(
+                status__in=["MOSTRANDO", "EN_COLA"],
+            ).order_by("position").values_list("modulo__nombre", flat=True)
+        )
+        sup_queue = list(
+            mesa_sup.queue_items.filter(
+                status__in=["MOSTRANDO", "EN_COLA"],
+            ).order_by("position").values_list("modulo__nombre", flat=True)
+        )
+        self.assertEqual(inf_queue, ["A01", "C01", "B01"])
+        self.assertEqual(sup_queue, ["A01", "C01", "B01"])
+
+        mesa_inf.refresh_from_db()
+        self.assertEqual(mesa_inf.current_image_index, 11)
+        self.assertTrue(
+            MesaQueueItem.objects.filter(
+                id=current_inf.id,
+                status="MOSTRANDO",
+            ).exists()
+        )
+
     def test_planificar_grupo_conserva_grupo_iniciado_y_reemplaza_lo_pendiente(self):
         self.project.bastidor_longitud_cm = 20
         self.project.save(update_fields=["bastidor_longitud_cm"])

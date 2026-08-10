@@ -1002,6 +1002,53 @@ def _collect_anchored_item_ids_for_grupo(grupo):
     return anchored
 
 
+def _collect_bastidor_reorder_anchor_ids_for_grupo(grupo):
+    """Preserve all queued phases belonging to physically committed work.
+
+    Reordering the project cards may rebuild the pending plan, but it must not
+    split or relocate a bastidor once any of its modules is no longer movable.
+    The existing photo/completion anchors are included as an additional guard.
+    """
+    active_items = list(
+        MesaQueueItem.objects.filter(
+            mesa__grupo=grupo,
+            status__in=ACTIVE_QUEUE_STATUSES,
+        ).select_related('mesa', 'modulo')
+    )
+    if not active_items:
+        return set()
+
+    modules_by_id = {item.modulo_id: item.modulo for item in active_items}
+    reorderability = module_reorderability_map(modules_by_id.values())
+    existing_anchor_ids = _collect_anchored_item_ids_for_grupo(grupo)
+
+    locked_bastidor_ids = set()
+    locked_module_ids = set()
+    for modulo_id, modulo in modules_by_id.items():
+        movable, _ = reorderability.get(modulo_id, (False, None))
+        if not movable:
+            if modulo.grupo_bastidor_id is not None:
+                locked_bastidor_ids.add(modulo.grupo_bastidor_id)
+            else:
+                locked_module_ids.add(modulo_id)
+
+    # A legacy photo/completion anchor also commits its complete bastidor.
+    for item in active_items:
+        if item.id not in existing_anchor_ids:
+            continue
+        if item.modulo.grupo_bastidor_id is not None:
+            locked_bastidor_ids.add(item.modulo.grupo_bastidor_id)
+        else:
+            locked_module_ids.add(item.modulo_id)
+
+    return {
+        item.id
+        for item in active_items
+        if item.modulo.grupo_bastidor_id in locked_bastidor_ids
+        or item.modulo_id in locked_module_ids
+    }
+
+
 def _distribute_superior_sequence(superior_sequence, num_superiores):
     """Reparte la cola superior entre M mesas en round-robin simple.
 
@@ -2464,11 +2511,31 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Asignar indices temporales primero para no chocar con la unique constraint.
-        for i, gid in enumerate(ids_orden, start=1):
-            GrupoBastidor.objects.filter(pk=gid).update(indice=10000 + i)
-        for i, gid in enumerate(ids_orden, start=1):
-            GrupoBastidor.objects.filter(pk=gid).update(indice=i)
+        with transaction.atomic():
+            # Asignar indices temporales primero para no chocar con la unique constraint.
+            for i, gid in enumerate(ids_orden, start=1):
+                GrupoBastidor.objects.filter(pk=gid).update(indice=10000 + i)
+            for i, gid in enumerate(ids_orden, start=1):
+                GrupoBastidor.objects.filter(pk=gid).update(indice=i)
+
+            # El orden de los cards es tambien el orden de fabricacion. Rehacer
+            # las colas afectadas conserva el trabajo iniciado y redistribuye
+            # solo lo pendiente con el mismo planner usado por las mesas.
+            grupos_operativos = list(
+                GrupoMesas.objects.select_for_update().filter(
+                    Q(proyectos_cola__proyecto=proyecto)
+                    | Q(
+                        mesas__queue_items__modulo__proyecto=proyecto,
+                        mesas__queue_items__status__in=ACTIVE_QUEUE_STATUSES,
+                    )
+                ).distinct().order_by('id')
+            )
+            planner = GrupoMesasViewSet()
+            for grupo_operativo in grupos_operativos:
+                planner._replan_after_bastidor_reorder(
+                    grupo_operativo,
+                    request.user,
+                )
 
         grupos = _grupos_with_reorder_data(
             proyecto.grupos_bastidor.all()
@@ -3106,6 +3173,31 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
     def _collect_anchored_item_ids(self, grupo):
         return _collect_anchored_item_ids_for_grupo(grupo)
 
+    def _replan_after_bastidor_reorder(self, grupo, user):
+        """Rebuild movable queues after changing persisted bastidor order."""
+        anchored_ids = _collect_bastidor_reorder_anchor_ids_for_grupo(grupo)
+        MesaQueueItem.objects.filter(
+            mesa__grupo=grupo,
+            status__in=ACTIVE_QUEUE_STATUSES,
+        ).exclude(id__in=anchored_ids).delete()
+
+        plan_summaries = []
+        entries = list(
+            grupo.proyectos_cola.select_related('proyecto').order_by('orden', 'id')
+        )
+        for entry in entries:
+            plan_summaries.append(
+                self._build_group_plan(
+                    grupo,
+                    entry.proyecto,
+                    user,
+                    append_mode=True,
+                )
+            )
+        reconcile_superior_queue_for_group(grupo)
+        self._sync_proyecto_actual(grupo)
+        return plan_summaries
+
     @staticmethod
     def _apply_mesa_changes(grupo, final_states):
         """Actualiza tipo y activa de las mesas del grupo segun
@@ -3433,6 +3525,14 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
     def _normalize_active_queue_for_mesa(self, mesa, preserved_items):
         normalized = []
         ordered_items = list(sorted(preserved_items, key=lambda item: item.position))
+        previous_current_id = next(
+            (
+                item.id
+                for item in ordered_items
+                if item.status == MesaQueueStatus.MOSTRANDO
+            ),
+            None,
+        )
         for index, item in enumerate(ordered_items):
             desired_status = 'MOSTRANDO' if index == 0 else 'EN_COLA'
             updates = []
@@ -3447,8 +3547,12 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
             normalized.append(item)
 
         mesa.imagen_actual = normalized[0].imagen if normalized else None
-        mesa.current_image_index = 0
-        mesa.save(update_fields=['imagen_actual', 'current_image_index', 'ultima_actualizacion'])
+        update_fields = ['imagen_actual', 'ultima_actualizacion']
+        current_id = normalized[0].id if normalized else None
+        if current_id != previous_current_id:
+            mesa.current_image_index = 0
+            update_fields.append('current_image_index')
+        mesa.save(update_fields=update_fields)
         return normalized
 
     def _get_preserved_active_prefix(self, grupo):
@@ -3810,8 +3914,20 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
             for mesa in (*mesas_inf, *mesas_sup):
                 current_item = mesa.queue_items.filter(status=MesaQueueStatus.MOSTRANDO).order_by('position').first()
                 mesa.imagen_actual = current_item.imagen if current_item else None
-                mesa.current_image_index = 0
-                mesa.save(update_fields=['imagen_actual', 'current_image_index', 'ultima_actualizacion'])
+                previous_current_id = next(
+                    (
+                        item.id
+                        for item in preserved_by_mesa.get(mesa.id, [])
+                        if item.status == MesaQueueStatus.MOSTRANDO
+                    ),
+                    None,
+                )
+                current_id = current_item.id if current_item else None
+                update_fields = ['imagen_actual', 'ultima_actualizacion']
+                if current_id != previous_current_id or current_item is None:
+                    mesa.current_image_index = 0
+                    update_fields.append('current_image_index')
+                mesa.save(update_fields=update_fields)
 
             # Reserve the GrupoBastidor rows that now have modules in this
             # grupo's plan. Other grupos won't touch them on subsequent
