@@ -2521,14 +2521,19 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
             # El orden de los cards es tambien el orden de fabricacion. Rehacer
             # las colas afectadas conserva el trabajo iniciado y redistribuye
             # solo lo pendiente con el mismo planner usado por las mesas.
-            grupos_operativos = list(
-                GrupoMesas.objects.select_for_update().filter(
+            grupos_operativos_ids = list(
+                GrupoMesas.objects.filter(
                     Q(proyectos_cola__proyecto=proyecto)
                     | Q(
                         mesas__queue_items__modulo__proyecto=proyecto,
                         mesas__queue_items__status__in=ACTIVE_QUEUE_STATUSES,
                     )
-                ).distinct().order_by('id')
+                ).values_list('id', flat=True).distinct()
+            )
+            grupos_operativos = list(
+                GrupoMesas.objects.select_for_update()
+                .filter(id__in=grupos_operativos_ids)
+                .order_by('id')
             )
             planner = GrupoMesasViewSet()
             for grupo_operativo in grupos_operativos:
