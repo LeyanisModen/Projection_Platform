@@ -456,6 +456,15 @@
 
     </div>
 
+    <ng-container *ngIf="proyecto as proyectoActual">
+        <div class="project-table-preview-row" *ngIf="grupos.length > 0">
+            <app-project-table-preview
+                [projectId]="proyectoActual.id"
+                [refreshKey]="tablePreviewRevision">
+            </app-project-table-preview>
+        </div>
+    </ng-container>
+
 </div>
 
 

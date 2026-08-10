@@ -93,6 +93,35 @@ export interface GrupoBastidor {
     overflow: boolean;
 }
 
+export interface ProyectoMesaPreviewModulo {
+    id: number;
+    nombre: string;
+    tipo_modulo: TipoModulo;
+    position: number;
+    group_index: number | null;
+    group_name: string;
+}
+
+export interface ProyectoMesaPreviewQueue {
+    key: string;
+    nombre: string;
+    tipo: ModuloFase;
+    indice: number;
+    modulos: ProyectoMesaPreviewModulo[];
+}
+
+export interface ProyectoMesasPreview {
+    project_id: number;
+    project_name: string;
+    read_only: true;
+    configuration: {
+        inferiores: number;
+        superiores: number;
+    };
+    total_modules: number;
+    queues: ProyectoMesaPreviewQueue[];
+}
+
 export interface Planta {
     id: number;
     nombre: string;
@@ -436,6 +465,23 @@ export class ApiService {
 
     getProyectoModulos(id: number): Observable<Modulo[]> {
         return this.http.get<Modulo[]>(`${this.baseUrl}/proyectos/${id}/modulos/`, { headers: this.getHeaders() });
+    }
+
+    getProyectoMesasPreview(
+        id: number,
+        inferiores = 2,
+        superiores = 1,
+    ): Observable<ProyectoMesasPreview> {
+        return this.http.get<ProyectoMesasPreview>(
+            `${this.baseUrl}/proyectos/${id}/preview-mesas/`,
+            {
+                headers: this.getHeaders(),
+                params: {
+                    inferiores: String(inferiores),
+                    superiores: String(superiores),
+                },
+            },
+        );
     }
 
     getProyectoQueueItems(id: number): Observable<ModuloQueueItem[]> {

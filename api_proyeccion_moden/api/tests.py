@@ -3042,6 +3042,85 @@ class PlanningFoundationTests(APITestCase):
         self.assertNotIn("mallazo_inf", rows)
         self.assertNotIn("mallazo_sup", rows)
 
+    def test_preview_mesas_reutiliza_orden_real_sin_crear_colas(self):
+        grupo_1 = GrupoBastidor.objects.create(
+            proyecto=self.project,
+            indice=1,
+            nombre="Bastidor inicial",
+        )
+        grupo_2 = GrupoBastidor.objects.create(
+            proyecto=self.project,
+            indice=2,
+            nombre="Bastidor final",
+        )
+
+        self.modulo.nombre = "A01"
+        self.modulo.grupo_bastidor = grupo_1
+        self.modulo.orden_intra = 1
+        self.modulo.inferior_hecho = True
+        self.modulo.superior_hecho = True
+        self.modulo.cerrado = True
+        self.modulo.estado = "CERRADO"
+        self.modulo.save()
+
+        Modulo.objects.create(
+            nombre="A02",
+            proyecto=self.project,
+            planta=self.planta,
+            grupo_bastidor=grupo_1,
+            orden_intra=2,
+        )
+        Modulo.objects.create(
+            nombre="B01",
+            proyecto=self.project,
+            planta=self.planta,
+            grupo_bastidor=grupo_2,
+            orden_intra=1,
+        )
+
+        grupos_before = GrupoMesas.objects.count()
+        queue_items_before = MesaQueueItem.objects.count()
+
+        response = self.client.get(
+            f"/api/proyectos/{self.project.id}/preview-mesas/"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["read_only"])
+        self.assertEqual(response.data["configuration"], {
+            "inferiores": 2,
+            "superiores": 1,
+        })
+        self.assertEqual(response.data["total_modules"], 3)
+
+        queues = {queue["key"]: queue for queue in response.data["queues"]}
+        self.assertEqual(
+            [item["nombre"] for item in queues["INF-1"]["modulos"]],
+            ["A02", "A01"],
+        )
+        self.assertEqual(
+            [item["nombre"] for item in queues["INF-2"]["modulos"]],
+            ["B01"],
+        )
+        self.assertEqual(
+            [item["nombre"] for item in queues["SUP-1"]["modulos"]],
+            ["A02", "B01", "A01"],
+        )
+        self.assertEqual(
+            queues["INF-1"]["modulos"][0]["group_name"],
+            "Bastidor inicial",
+        )
+
+        self.assertEqual(GrupoMesas.objects.count(), grupos_before)
+        self.assertEqual(MesaQueueItem.objects.count(), queue_items_before)
+        self.modulo.refresh_from_db()
+        self.assertTrue(self.modulo.cerrado)
+
+        invalid_response = self.client.get(
+            f"/api/proyectos/{self.project.id}/preview-mesas/?inferiores=0"
+        )
+        self.assertEqual(invalid_response.status_code, 400)
+
     def test_planificar_grupo_crea_colas_automaticas(self):
         self.project.bastidor_longitud_cm = 20
         self.project.save(update_fields=["bastidor_longitud_cm"])

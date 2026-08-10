@@ -1194,6 +1194,88 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         serializer = ModuloSerializer(modulos, many=True, context={'request': request})
         return Response(serializer.data)
 
+    @action(detail=True, methods=['get'], url_path='preview-mesas')
+    def preview_mesas(self, request, pk=None):
+        """Simula el orden completo del proyecto sin crear colas reales."""
+        proyecto = self.get_object()
+
+        def parse_count(name, default, maximum):
+            raw_value = request.query_params.get(name, default)
+            try:
+                value = int(raw_value)
+            except (TypeError, ValueError):
+                raise ValidationError({name: 'Debe ser un numero entero.'})
+            if value < 1 or value > maximum:
+                raise ValidationError({name: f'Debe estar entre 1 y {maximum}.'})
+            return value
+
+        num_inferiores = parse_count('inferiores', 2, 4)
+        num_superiores = parse_count('superiores', 1, 2)
+
+        # La misma funcion construye las colas reales. En modo preview se
+        # incluyen todas las fases, con independencia del avance productivo.
+        plan_data = GrupoMesasViewSet._build_plan_sequences(
+            proyecto,
+            num_inferiores=num_inferiores,
+            include_completed=True,
+        )
+        superior_sequences = _distribute_superior_sequence(
+            plan_data['superior_sequence'], num_superiores,
+        )
+
+        def serialize_module(modulo, position):
+            group_index = plan_data['module_group_map'].get(modulo.id)
+            persisted_group = modulo.grupo_bastidor
+            return {
+                'id': modulo.id,
+                'nombre': modulo.nombre,
+                'tipo_modulo': modulo.tipo_modulo,
+                'position': position,
+                'group_index': group_index,
+                'group_name': (
+                    persisted_group.nombre
+                    if persisted_group and persisted_group.nombre
+                    else f'Grupo {group_index}'
+                ),
+            }
+
+        queues = []
+        for index, sequence in enumerate(plan_data['inferior_sequences'], start=1):
+            queues.append({
+                'key': f'INF-{index}',
+                'nombre': f'Mesa inferior {index}',
+                'tipo': MesaTipo.INFERIOR,
+                'indice': index,
+                'modulos': [
+                    serialize_module(modulo, position)
+                    for position, modulo in enumerate(sequence, start=1)
+                ],
+            })
+
+        for index, sequence in enumerate(superior_sequences, start=1):
+            queues.append({
+                'key': f'SUP-{index}',
+                'nombre': f'Mesa superior {index}',
+                'tipo': MesaTipo.SUPERIOR,
+                'indice': index,
+                'modulos': [
+                    serialize_module(modulo, position)
+                    for position, modulo in enumerate(sequence, start=1)
+                ],
+            })
+
+        return Response({
+            'project_id': proyecto.id,
+            'project_name': proyecto.nombre,
+            'read_only': True,
+            'configuration': {
+                'inferiores': num_inferiores,
+                'superiores': num_superiores,
+            },
+            'total_modules': proyecto.modulos.count(),
+            'queues': queues,
+        })
+
     @action(detail=True, methods=['get'])
     def queue(self, request, pk=None):
         """Get the module queue for a project."""
@@ -3389,8 +3471,10 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
 
         return preserve_until, preserved_by_mesa, preserved_keys
 
-    def _build_plan_sequences(self, proyecto, num_inferiores, excluded_phase_keys=None,
-                               group_index_offset=0, initial_loads_inf=None):
+    @staticmethod
+    def _build_plan_sequences(proyecto, num_inferiores, excluded_phase_keys=None,
+                              group_index_offset=0, initial_loads_inf=None,
+                              include_completed=False):
         """Construye las secuencias de planificacion para N mesas inferiores.
 
         ``initial_loads_inf`` es una lista de longitud ``num_inferiores`` con
@@ -3421,34 +3505,44 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
             raise ValueError('initial_loads_inf debe tener una entrada por mesa inferior')
 
         modulos = list(
-            proyecto.modulos.select_related('planta').prefetch_related('detalles_fase').all()
+            proyecto.modulos.select_related('planta', 'grupo_bastidor')
+            .prefetch_related('detalles_fase').all()
         )
         # Sin mesas inferiores activas la fase INFERIOR no se planifica:
         # los modulos pendientes de inferior se ignoran este pase.
-        inferiors_pending = [
-            modulo for modulo in modulos
-            if num_inferiores > 0
-            and not modulo.cerrado
-            and not modulo.inferior_hecho
-            and (modulo.id, 'INFERIOR') not in excluded_phase_keys
-        ]
-        superior_only_pending = [
-            modulo for modulo in modulos
-            if not modulo.cerrado
-            and (modulo.inferior_hecho or num_inferiores == 0)
-            and not modulo.superior_hecho
-            and (modulo.id, 'SUPERIOR') not in excluded_phase_keys
-        ]
+        if include_completed:
+            inferiors_pending = list(modulos) if num_inferiores > 0 else []
+            superior_only_pending = list(modulos) if num_inferiores == 0 else []
+            planned_phase_keys = {
+                (modulo.id, fase)
+                for modulo in modulos
+                for fase in ('INFERIOR', 'SUPERIOR')
+            }
+        else:
+            inferiors_pending = [
+                modulo for modulo in modulos
+                if num_inferiores > 0
+                and not modulo.cerrado
+                and not modulo.inferior_hecho
+                and (modulo.id, 'INFERIOR') not in excluded_phase_keys
+            ]
+            superior_only_pending = [
+                modulo for modulo in modulos
+                if not modulo.cerrado
+                and (modulo.inferior_hecho or num_inferiores == 0)
+                and not modulo.superior_hecho
+                and (modulo.id, 'SUPERIOR') not in excluded_phase_keys
+            ]
 
-        planned_phase_keys = {
-            (modulo.id, 'INFERIOR') for modulo in inferiors_pending
-        } | {
-            (modulo.id, 'SUPERIOR')
-            for modulo in modulos
-            if not modulo.cerrado
-            and not modulo.superior_hecho
-            and (modulo.id, 'SUPERIOR') not in excluded_phase_keys
-        }
+            planned_phase_keys = {
+                (modulo.id, 'INFERIOR') for modulo in inferiors_pending
+            } | {
+                (modulo.id, 'SUPERIOR')
+                for modulo in modulos
+                if not modulo.cerrado
+                and not modulo.superior_hecho
+                and (modulo.id, 'SUPERIOR') not in excluded_phase_keys
+            }
 
         # La cola operativa lee los GrupoBastidor PERSISTIDOS (lo que el
         # admin ha agrupado/movido/reordenado via drag-drop) en vez de
@@ -3516,8 +3610,10 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         superior_from_inferiors = _merge_inferior_sequences_for_superior([
             [
                 module for module in seq
-                if not module.superior_hecho
-                and (module.id, 'SUPERIOR') not in excluded_phase_keys
+                if include_completed or (
+                    not module.superior_hecho
+                    and (module.id, 'SUPERIOR') not in excluded_phase_keys
+                )
             ]
             for seq in inferior_sequences
         ])

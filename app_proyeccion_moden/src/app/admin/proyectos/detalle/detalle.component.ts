@@ -16,11 +16,18 @@ import {
 } from '../../../services/api.service';
 import { switchMap, forkJoin, of } from 'rxjs';
 import { environment } from '../../../../environments/environment';
+import { ProjectTablePreviewComponent } from './project-table-preview.component';
 
 @Component({
     selector: 'app-proyecto-detalle',
     standalone: true,
-    imports: [CommonModule, FormsModule, RouterModule, DragDropModule],
+    imports: [
+        CommonModule,
+        FormsModule,
+        RouterModule,
+        DragDropModule,
+        ProjectTablePreviewComponent,
+    ],
     templateUrl: './detalle.component.html',
     styleUrls: ['./detalle.component.css']
 })
@@ -86,6 +93,7 @@ export class ProyectoDetailComponent implements OnInit {
     selectedSecuenciaIndex = 0;
     loadingSecuencia = false;
     secuenciaImageErrors = new Set<number>();
+    tablePreviewRevision = 0;
 
     constructor(
         private route: ActivatedRoute,
@@ -142,6 +150,7 @@ export class ProyectoDetailComponent implements OnInit {
                     this.users = data.users || [];
                     this.modulos = data.modulos || [];
                     this.grupos = (data.grupos || []).sort((a, b) => a.indice - b.indice);
+                    this.refreshTablePreview();
 
                     // Auto-create default planta if none exist (for backend compatibility)
                     if (this.plantas.length === 0) {
@@ -346,6 +355,7 @@ export class ProyectoDetailComponent implements OnInit {
             next: (grupos) => {
                 this.grupos = grupos.sort((a, b) => a.indice - b.indice);
                 this.movingModulo = false;
+                this.refreshTablePreview();
                 this.cdr.detectChanges();
             },
             error: (err) => {
@@ -370,6 +380,7 @@ export class ProyectoDetailComponent implements OnInit {
             next: (grupos) => {
                 this.grupos = grupos.sort((a, b) => a.indice - b.indice);
                 this.movingModulo = false;
+                this.refreshTablePreview();
                 this.cdr.detectChanges();
             },
             error: (err) => {
@@ -391,6 +402,7 @@ export class ProyectoDetailComponent implements OnInit {
         this.api.reorderBastidores(this.proyectoId, orden).subscribe({
             next: (grupos) => {
                 this.grupos = grupos.sort((a, b) => a.indice - b.indice);
+                this.refreshTablePreview();
                 this.cdr.detectChanges();
             },
             error: (err) => {
@@ -419,6 +431,7 @@ export class ProyectoDetailComponent implements OnInit {
                 }
                 this.grupos = res.grupos.sort((a, b) => a.indice - b.indice);
                 this.recalculatingBastidores = false;
+                this.refreshTablePreview();
                 this.cdr.detectChanges();
             },
             error: (err) => {
@@ -523,6 +536,7 @@ export class ProyectoDetailComponent implements OnInit {
         this.api.updateGrupoBastidor(grupo.id, { nombre: target }).subscribe({
             next: (updated) => {
                 grupo.nombre = updated.nombre;
+                this.refreshTablePreview();
                 this.cdr.detectChanges();
             },
             error: (err) => {
@@ -681,6 +695,7 @@ export class ProyectoDetailComponent implements OnInit {
         this.api.deletePlanta(planta.id).subscribe({
             next: () => {
                 this.plantas = this.plantas.filter(p => p.id !== planta.id);
+                this.refreshTablePreview();
 
                 if (this.plantaFilesTarget?.id === planta.id) {
                     this.closePlantaFilesModal();
@@ -771,6 +786,7 @@ export class ProyectoDetailComponent implements OnInit {
                 this.loadingBulk = false;
                 // Reset form for next batch
                 this.bulkModulo.start += this.bulkModulo.count;
+                this.refreshTablePreview();
                 this.cdr.detectChanges();
             },
             error: (err: any) => {
@@ -1641,6 +1657,10 @@ export class ProyectoDetailComponent implements OnInit {
                 this.cdr.detectChanges();
             }
         });
+    }
+
+    private refreshTablePreview(): void {
+        this.tablePreviewRevision += 1;
     }
 
     getColorHex(code: string): string {

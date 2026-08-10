@@ -980,6 +980,10 @@
     width: 0.7rem;
 }
 
+.project-table-preview-row {
+    margin-top: 1rem;
+}
+
 .grupo-modulo-phase:not(.is-completa) .phase-check {
     opacity: 0.45;
 }
