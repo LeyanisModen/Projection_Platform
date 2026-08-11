@@ -5,11 +5,120 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
+import numpy as np
+
 
 MODULE_PATH = Path(__file__).with_name('capture_service.py')
 SPEC = importlib.util.spec_from_file_location('moden_capture_service', MODULE_PATH)
 CAPTURE_SERVICE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(CAPTURE_SERVICE)
+
+
+class FakeCamera:
+    def __init__(self, luminance_values):
+        self.frames = [
+            np.full((48, 64, 3), value, dtype=np.uint8)
+            for value in luminance_values
+        ]
+        self.index = 0
+
+    def read(self):
+        frame = self.frames[min(self.index, len(self.frames) - 1)]
+        self.index += 1
+        return True, frame
+
+
+class AdvancingClock:
+    def __init__(self, step=0.2):
+        self.value = -step
+        self.step = step
+
+    def __call__(self):
+        self.value += self.step
+        return self.value
+
+
+class CaptureLuminanceTests(unittest.TestCase):
+    def setUp(self):
+        self.original_values = {
+            'capture_settle_min_seconds': (
+                CAPTURE_SERVICE.CONFIG.capture_settle_min_seconds
+            ),
+            'capture_settle_max_seconds': (
+                CAPTURE_SERVICE.CONFIG.capture_settle_max_seconds
+            ),
+            'capture_luminance_tolerance_percent': (
+                CAPTURE_SERVICE.CONFIG.capture_luminance_tolerance_percent
+            ),
+        }
+        CAPTURE_SERVICE.CONFIG.capture_settle_min_seconds = 0.6
+        CAPTURE_SERVICE.CONFIG.capture_settle_max_seconds = 2.0
+        CAPTURE_SERVICE.CONFIG.capture_luminance_tolerance_percent = 3.0
+
+    def tearDown(self):
+        for name, value in self.original_values.items():
+            setattr(CAPTURE_SERVICE.CONFIG, name, value)
+
+    def test_luminance_window_accepts_small_variation(self):
+        self.assertTrue(
+            CAPTURE_SERVICE._luminance_window_is_stable(
+                [100.0, 101.0, 99.5, 100.5],
+                tolerance_percent=3.0,
+            )
+        )
+
+    def test_luminance_window_rejects_exposure_change(self):
+        self.assertFalse(
+            CAPTURE_SERVICE._luminance_window_is_stable(
+                [60.0, 72.0, 86.0, 100.0],
+                tolerance_percent=3.0,
+            )
+        )
+
+    def test_capture_waits_until_luminance_converges(self):
+        camera = FakeCamera([20, 40, 60, 80, 81, 80, 81])
+        clock = AdvancingClock()
+
+        with patch.object(
+            CAPTURE_SERVICE.time,
+            'monotonic',
+            side_effect=clock,
+        ):
+            ret, frame, diagnostics = (
+                CAPTURE_SERVICE._capture_stabilized_frame(camera)
+            )
+
+        self.assertTrue(ret)
+        self.assertTrue(diagnostics['settled'])
+        self.assertGreaterEqual(camera.index, 7)
+        self.assertAlmostEqual(
+            CAPTURE_SERVICE._frame_luminance(frame),
+            81.0,
+            places=1,
+        )
+
+    def test_capture_times_out_with_latest_valid_frame(self):
+        CAPTURE_SERVICE.CONFIG.capture_settle_min_seconds = 0.2
+        CAPTURE_SERVICE.CONFIG.capture_settle_max_seconds = 0.8
+        camera = FakeCamera([20, 80])
+        clock = AdvancingClock()
+
+        with patch.object(
+            CAPTURE_SERVICE.time,
+            'monotonic',
+            side_effect=clock,
+        ):
+            ret, frame, diagnostics = (
+                CAPTURE_SERVICE._capture_stabilized_frame(camera)
+            )
+
+        self.assertTrue(ret)
+        self.assertFalse(diagnostics['settled'])
+        self.assertAlmostEqual(
+            CAPTURE_SERVICE._frame_luminance(frame),
+            80.0,
+            places=1,
+        )
 
 
 class SharpnessStatusTests(unittest.TestCase):

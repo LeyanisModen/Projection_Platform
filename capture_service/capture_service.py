@@ -87,6 +87,12 @@ class Config:
         # Backend name (resolved later as cv2.<name>). CAP_ANY lets OpenCV
         # pick; override to CAP_DSHOW or CAP_MSMF if a given PC needs it.
         self.camera_backend = 'CAP_ANY'
+        # A projected capture slide changes the scene brightness abruptly.
+        # Read frames until auto-exposure settles instead of saving one of the
+        # first, frequently over/under-exposed frames returned by the camera.
+        self.capture_settle_min_seconds = 1.5
+        self.capture_settle_max_seconds = 3.0
+        self.capture_luminance_tolerance_percent = 3.0
 
         # documentation defaults (disabled until the .ini turns it on)
         self.doc_enabled = False
@@ -168,6 +174,27 @@ class Config:
             self.capture_width = s.getint('capture_width', self.capture_width)
             self.capture_height = s.getint('capture_height', self.capture_height)
             self.jpeg_quality = s.getint('jpeg_quality', self.jpeg_quality)
+            self.capture_settle_min_seconds = max(
+                0.0,
+                s.getfloat(
+                    'capture_settle_min_seconds',
+                    self.capture_settle_min_seconds,
+                ),
+            )
+            self.capture_settle_max_seconds = max(
+                self.capture_settle_min_seconds,
+                s.getfloat(
+                    'capture_settle_max_seconds',
+                    self.capture_settle_max_seconds,
+                ),
+            )
+            self.capture_luminance_tolerance_percent = max(
+                0.1,
+                s.getfloat(
+                    'capture_luminance_tolerance_percent',
+                    self.capture_luminance_tolerance_percent,
+                ),
+            )
             self.image_rotation = self._parse_image_rotation(
                 s.get('image_rotation', str(self.image_rotation)),
                 self.image_rotation,
@@ -326,6 +353,9 @@ _camera = None
 # holds the lock (handler or doc_loop). A plain Lock() deadlocks the
 # first time capture_frame() is called.
 _camera_lock = threading.RLock()
+_CAPTURE_LUMINANCE_SAMPLE_INTERVAL_SECONDS = 0.15
+_CAPTURE_LUMINANCE_STABLE_SAMPLES = 4
+_CAPTURE_LUMINANCE_ABSOLUTE_TOLERANCE = 2.0
 
 
 def get_camera():
@@ -351,16 +381,105 @@ def get_camera():
         return _camera
 
 
-def capture_frame():
+def _frame_luminance(frame) -> float:
+    """Estimate scene luminance cheaply from the central part of a frame."""
+    height, width = frame.shape[:2]
+    y_margin = height // 8
+    x_margin = width // 8
+    roi = frame[y_margin:height - y_margin, x_margin:width - x_margin]
+    if roi.size == 0:
+        roi = frame
+
+    # Sampling is enough for exposure convergence and avoids repeatedly
+    # converting a full 4K frame while the camera settles.
+    row_step = max(1, roi.shape[0] // 180)
+    column_step = max(1, roi.shape[1] // 320)
+    sample = roi[::row_step, ::column_step]
+    blue, green, red, _ = cv2.mean(sample)
+    return float((0.114 * blue) + (0.587 * green) + (0.299 * red))
+
+
+def _luminance_window_is_stable(values, tolerance_percent: float) -> bool:
+    if len(values) < _CAPTURE_LUMINANCE_STABLE_SAMPLES:
+        return False
+    average = sum(values) / len(values)
+    allowed_spread = max(
+        _CAPTURE_LUMINANCE_ABSOLUTE_TOLERANCE,
+        average * tolerance_percent / 100.0,
+    )
+    return (max(values) - min(values)) <= allowed_spread
+
+
+def _capture_stabilized_frame(cam):
+    """Continuously drain frames until camera auto-exposure is stable."""
+    started_at = time.monotonic()
+    next_sample_at = started_at
+    latest_frame = None
+    luminance_samples = []
+    settled = False
+
+    while True:
+        ret, frame = cam.read()
+        now = time.monotonic()
+        elapsed = now - started_at
+
+        if ret and frame is not None:
+            latest_frame = frame
+            if now >= next_sample_at:
+                luminance_samples.append(_frame_luminance(frame))
+                luminance_samples = luminance_samples[
+                    -_CAPTURE_LUMINANCE_STABLE_SAMPLES:
+                ]
+                next_sample_at = (
+                    now + _CAPTURE_LUMINANCE_SAMPLE_INTERVAL_SECONDS
+                )
+                settled = (
+                    elapsed >= CONFIG.capture_settle_min_seconds
+                    and _luminance_window_is_stable(
+                        luminance_samples,
+                        CONFIG.capture_luminance_tolerance_percent,
+                    )
+                )
+                if settled:
+                    break
+        elif latest_frame is None:
+            # Some backends fail immediately while warming up. Avoid a tight
+            # CPU loop but keep trying until the bounded timeout expires.
+            time.sleep(0.02)
+
+        if elapsed >= CONFIG.capture_settle_max_seconds:
+            break
+
+    elapsed = time.monotonic() - started_at
+    spread = None
+    luminance = None
+    if luminance_samples:
+        luminance = luminance_samples[-1]
+        spread = max(luminance_samples) - min(luminance_samples)
+    diagnostics = {
+        'settled': settled,
+        'elapsed_seconds': elapsed,
+        'luminance': luminance,
+        'luminance_spread': spread,
+        'sample_count': len(luminance_samples),
+    }
+    return latest_frame is not None, latest_frame, diagnostics
+
+
+def capture_frame(stabilize_luminance=False):
     """Fresh frame from the camera. Caller must hold _camera_lock."""
     cam = get_camera()
     if cam is None or not cam.isOpened():
         _set_camera_health(False, 'camera open failed')
         return False, None
-    # Discard a few buffered frames so we get a fresh one.
-    for _ in range(3):
-        cam.read()
-    ret, frame = cam.read()
+    if stabilize_luminance:
+        ret, frame, diagnostics = _capture_stabilized_frame(cam)
+        _record_capture_stabilization(diagnostics)
+    else:
+        # Periodic documentation frames do not need to delay every capture.
+        for _ in range(3):
+            cam.read()
+        ret, frame = cam.read()
     if ret and frame is not None:
         frame = _apply_image_rotation(frame)
         _set_camera_health(True)
@@ -408,6 +527,10 @@ _stats = {
     'camera_available': None,
     'last_camera_ok_at': None,
     'last_camera_error_at': None,
+    'last_on_demand_luminance': None,
+    'last_on_demand_luminance_spread': None,
+    'last_on_demand_settle_ms': None,
+    'last_on_demand_light_stable': None,
     'skipped_out_of_schedule': 0,
     # Sharpness check starts on the first active tick. Low-confidence
     # results are retried during the day so an early dark frame is not final.
@@ -444,6 +567,27 @@ def _set_camera_health(available, error=None):
         _stats['last_camera_error_at'] = now_iso
         _stats['last_error'] = error or 'camera unavailable'
         _stats['sharpness_status'] = 'unknown'
+
+
+def _record_capture_stabilization(diagnostics):
+    luminance = diagnostics.get('luminance')
+    spread = diagnostics.get('luminance_spread')
+    settle_ms = round(diagnostics['elapsed_seconds'] * 1000)
+    settled = bool(diagnostics.get('settled'))
+    with _stats_lock:
+        _stats['last_on_demand_luminance'] = (
+            round(luminance, 2) if luminance is not None else None
+        )
+        _stats['last_on_demand_luminance_spread'] = (
+            round(spread, 2) if spread is not None else None
+        )
+        _stats['last_on_demand_settle_ms'] = settle_ms
+        _stats['last_on_demand_light_stable'] = settled
+    outcome = 'settled' if settled else 'timeout'
+    print(
+        f'[Capture] luminance {outcome} after {settle_ms} ms '
+        f'(value={luminance!r}, spread={spread!r})'
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1344,7 +1488,7 @@ class CaptureHandler(BaseHTTPRequestHandler):
 
     def _handle_capture(self):
         with _camera_lock:
-            ret, frame = capture_frame()
+            ret, frame = capture_frame(stabilize_luminance=True)
         if not ret or frame is None:
             self.send_error(500, 'Camera capture failed')
             return

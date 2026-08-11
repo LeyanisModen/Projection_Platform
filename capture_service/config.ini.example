@@ -19,6 +19,13 @@ capture_width = 1920
 capture_height = 1080
 jpeg_quality = 95
 
+; On-demand _FOTO / _CHECK captures continuously read frames while the camera
+; adapts to the projected white slide. It may finish after the minimum once
+; four luminance samples are stable, and always returns by the maximum timeout.
+capture_settle_min_seconds = 1.5
+capture_settle_max_seconds = 3.0
+capture_luminance_tolerance_percent = 3.0
+
 ; Orientation applied to every frame before saving/uploading.
 ; Factory cameras mounted on vertical posts need 180 so the table appears
 ; upright in Drive/backend evidence. Use 0 for bench/testing setups.
