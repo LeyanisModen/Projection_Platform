@@ -739,6 +739,66 @@ class DeviceHeartbeatSerializer(serializers.Serializer):
         choices=['ok', 'warning', 'blurry', 'unknown'],
     )
 
+
+CAPTURE_DAY_CHOICES = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']
+
+
+class MesaCaptureRotationSerializer(serializers.Serializer):
+    mesa_id = serializers.IntegerField(min_value=1)
+    image_rotation = serializers.ChoiceField(choices=[0, 90, 180, 270])
+
+
+class FerrallaCaptureConfigSerializer(serializers.Serializer):
+    active_days = serializers.ListField(
+        child=serializers.ChoiceField(choices=CAPTURE_DAY_CHOICES),
+        allow_empty=False,
+    )
+    start_time = serializers.TimeField(
+        input_formats=['%H:%M', '%H:%M:%S'],
+        format='%H:%M',
+    )
+    end_time = serializers.TimeField(
+        input_formats=['%H:%M', '%H:%M:%S'],
+        format='%H:%M',
+    )
+    interval_seconds = serializers.IntegerField(min_value=10, max_value=3600)
+    rotations = MesaCaptureRotationSerializer(many=True, required=False)
+
+    def validate_active_days(self, value):
+        if len(value) != len(set(value)):
+            raise serializers.ValidationError('No se pueden repetir dias.')
+        return value
+
+    def validate_rotations(self, value):
+        mesa_ids = [item['mesa_id'] for item in value]
+        if len(mesa_ids) != len(set(mesa_ids)):
+            raise serializers.ValidationError('No se puede repetir una mesa.')
+        return value
+
+    def validate(self, attrs):
+        if attrs['start_time'] >= attrs['end_time']:
+            raise serializers.ValidationError(
+                {'end_time': 'La hora final debe ser posterior a la inicial.'}
+            )
+        return attrs
+
+
+class DeviceCaptureConfigAckSerializer(serializers.Serializer):
+    revision = serializers.IntegerField(min_value=1)
+    status = serializers.ChoiceField(choices=['applied', 'error'])
+    error = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=2000,
+    )
+
+    def validate(self, attrs):
+        if attrs['status'] == 'error' and not attrs.get('error', '').strip():
+            raise serializers.ValidationError(
+                {'error': 'Indica el error que impidio aplicar la configuracion.'}
+            )
+        return attrs
+
 class MesaStateSerializer(serializers.ModelSerializer):
     image_url = serializers.CharField(source='imagen_actual.url', read_only=True)
 

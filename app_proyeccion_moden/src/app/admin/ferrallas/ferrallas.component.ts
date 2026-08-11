@@ -1,7 +1,17 @@
 import { Component, OnInit, OnDestroy, ChangeDetectorRef, HostListener } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ApiService, FerrallaContacto, FerrallaDireccion, GrupoMesas, GrupoMesaResumen, User } from '../../services/api.service';
+import {
+  ApiService,
+  CaptureConfigStatus,
+  CaptureDay,
+  FerrallaCaptureConfig,
+  FerrallaContacto,
+  FerrallaDireccion,
+  GrupoMesas,
+  GrupoMesaResumen,
+  User,
+} from '../../services/api.service';
 
 @Component({
   selector: 'app-ferrallas',
@@ -13,6 +23,16 @@ import { ApiService, FerrallaContacto, FerrallaDireccion, GrupoMesas, GrupoMesaR
 export class FerrallasComponent implements OnInit, OnDestroy {
   private static readonly MESA_OFFLINE_AFTER_MS = 2 * 60 * 1000;
   private static readonly MESA_REFRESH_MS = 30 * 1000;
+  readonly captureDays: { value: CaptureDay; label: string }[] = [
+    { value: 'MON', label: 'L' },
+    { value: 'TUE', label: 'M' },
+    { value: 'WED', label: 'X' },
+    { value: 'THU', label: 'J' },
+    { value: 'FRI', label: 'V' },
+    { value: 'SAT', label: 'S' },
+    { value: 'SUN', label: 'D' },
+  ];
+  readonly imageRotations = [0, 90, 180, 270] as const;
 
   users: User[] = [];
   loading = false;
@@ -26,6 +46,11 @@ export class FerrallasComponent implements OnInit, OnDestroy {
   gruposMesas: GrupoMesas[] = [];
   loadingMesas = false;
   showAddMesaForm = false;
+  captureConfig: FerrallaCaptureConfig | null = null;
+  loadingCaptureConfig = false;
+  savingCaptureConfig = false;
+  captureConfigError = '';
+  captureConfigMessage = '';
 
   editingGrupoId: number | null = null;
   editingGrupoName: string = '';
@@ -137,11 +162,109 @@ export class FerrallasComponent implements OnInit, OnDestroy {
 
     if (this.selectedUser) {
       this.loadGruposMesas(this.selectedUser.id);
+      this.loadCaptureConfig(this.selectedUser.id);
       this.startMesaAutoRefresh();
     } else {
       this.gruposMesas = [];
+      this.captureConfig = null;
+      this.captureConfigError = '';
+      this.captureConfigMessage = '';
       this.clearMesaAutoRefresh();
     }
+  }
+
+  loadCaptureConfig(userId: number, silent = false): void {
+    if (!silent) this.loadingCaptureConfig = true;
+    this.api.getFerrallaCaptureConfig(userId).subscribe({
+      next: (config) => {
+        if (this.selectedUser?.id !== userId) return;
+        this.captureConfig = config;
+        this.loadingCaptureConfig = false;
+        this.captureConfigError = '';
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        if (this.selectedUser?.id !== userId) return;
+        console.error('Error loading capture config', err);
+        this.loadingCaptureConfig = false;
+        if (!silent) {
+          this.captureConfigError = 'No se pudo cargar la configuracion.';
+        }
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  isCaptureDayActive(day: CaptureDay): boolean {
+    return !!this.captureConfig?.active_days.includes(day);
+  }
+
+  toggleCaptureDay(day: CaptureDay): void {
+    if (!this.captureConfig || this.savingCaptureConfig) return;
+    const activeDays = new Set(this.captureConfig.active_days);
+    if (activeDays.has(day)) {
+      if (activeDays.size === 1) return;
+      activeDays.delete(day);
+    } else {
+      activeDays.add(day);
+    }
+    this.captureConfig.active_days = this.captureDays
+      .map(item => item.value)
+      .filter(value => activeDays.has(value));
+    this.captureConfigMessage = '';
+  }
+
+  saveCaptureConfig(): void {
+    if (!this.selectedUser || !this.captureConfig || this.savingCaptureConfig) return;
+    const userId = this.selectedUser.id;
+    this.savingCaptureConfig = true;
+    this.captureConfigError = '';
+    this.captureConfigMessage = '';
+    const payload = {
+      active_days: [...this.captureConfig.active_days],
+      start_time: this.captureConfig.start_time,
+      end_time: this.captureConfig.end_time,
+      interval_seconds: Number(this.captureConfig.interval_seconds),
+      rotations: this.captureConfig.mesas.map(mesa => ({
+        mesa_id: mesa.id,
+        image_rotation: mesa.image_rotation,
+      })),
+    };
+    this.api.updateFerrallaCaptureConfig(userId, payload).subscribe({
+      next: (config) => {
+        this.savingCaptureConfig = false;
+        if (this.selectedUser?.id !== userId) {
+          this.cdr.detectChanges();
+          return;
+        }
+        this.captureConfig = config;
+        this.captureConfigMessage = 'Configuracion guardada. Las mesas la aplicaran en su proxima consulta.';
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        console.error('Error saving capture config', err);
+        this.savingCaptureConfig = false;
+        if (this.selectedUser?.id !== userId) {
+          this.cdr.detectChanges();
+          return;
+        }
+        const detail = err?.error?.detail;
+        this.captureConfigError = typeof detail === 'string'
+          ? detail
+          : 'No se pudo guardar la configuracion.';
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  captureStatusLabel(status: CaptureConfigStatus): string {
+    const labels: Record<CaptureConfigStatus, string> = {
+      applied: 'Aplicado',
+      pending: 'Pendiente',
+      error: 'Error',
+      unlinked: 'Sin vincular',
+    };
+    return labels[status];
   }
 
   loadGruposMesas(userId: number, silent = false) {
@@ -263,6 +386,7 @@ export class FerrallasComponent implements OnInit, OnDestroy {
     this.api.addMesaToGrupo(grupo.id, 'INFERIOR').subscribe({
       next: (mesa) => {
         grupo.mesas = this.sortMesasByName([...(grupo.mesas || []), mesa]);
+        if (this.selectedUser) this.loadCaptureConfig(this.selectedUser.id, true);
         this.loadingMesas = false;
         this.cdr.detectChanges();
       },
@@ -321,6 +445,7 @@ export class FerrallasComponent implements OnInit, OnDestroy {
     this.api.deleteMesa(mesa.id, force).subscribe({
       next: () => {
         grupo.mesas = (grupo.mesas || []).filter(m => m.id !== mesa.id);
+        if (this.selectedUser) this.loadCaptureConfig(this.selectedUser.id, true);
         this.loadingMesas = false;
         this.cdr.detectChanges();
       },
@@ -403,7 +528,10 @@ export class FerrallasComponent implements OnInit, OnDestroy {
           this.pairingLoading = false;
           if (res.status === 'ok') {
             this.pairingSuccess = true;
-            if (this.selectedUser) this.loadGruposMesas(this.selectedUser.id);
+            if (this.selectedUser) {
+              this.loadGruposMesas(this.selectedUser.id);
+              this.loadCaptureConfig(this.selectedUser.id, true);
+            }
           } else {
             this.pairingError = 'Error desconocido';
           }
@@ -443,7 +571,10 @@ export class FerrallasComponent implements OnInit, OnDestroy {
     this.api.unbindDevice(this.unbindMesa.id)
       .subscribe({
         next: () => {
-          if (this.selectedUser) this.loadGruposMesas(this.selectedUser.id);
+          if (this.selectedUser) {
+            this.loadGruposMesas(this.selectedUser.id);
+            this.loadCaptureConfig(this.selectedUser.id, true);
+          }
           this.closeUnbindModal();
         },
         error: () => {

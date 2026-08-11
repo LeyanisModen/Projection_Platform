@@ -46,4 +46,5 @@ docs/usuarios_activos.txt
 # PDFs del runbook se generan con scripts/build-pendrive.ps1 antes
 # de preparar el pendrive — el markdown en docs/ es la fuente.
 capture_service/*.pdf
+capture_service/remote_config.json
 admin_tools/perspective_tool/build.log

@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import tempfile
 import unittest
 from datetime import datetime, timedelta
@@ -224,6 +225,124 @@ class ActiveWindowTests(unittest.TestCase):
     def test_weekends_remain_inactive(self):
         self.assertFalse(
             CAPTURE_SERVICE.in_active_window(datetime(2026, 8, 2, 10, 0))
+        )
+
+
+class RemoteConfigTests(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.cache_path = Path(self.temp_dir.name) / 'remote_config.json'
+        self.path_patch = patch.object(
+            CAPTURE_SERVICE,
+            '_remote_config_path',
+            return_value=self.cache_path,
+        )
+        self.path_patch.start()
+        self.original_values = {
+            'active_days': set(CAPTURE_SERVICE.CONFIG.active_days),
+            'active_start_hour': CAPTURE_SERVICE.CONFIG.active_start_hour,
+            'active_start_minute': CAPTURE_SERVICE.CONFIG.active_start_minute,
+            'active_end_hour': CAPTURE_SERVICE.CONFIG.active_end_hour,
+            'active_end_minute': CAPTURE_SERVICE.CONFIG.active_end_minute,
+            'interval_seconds': CAPTURE_SERVICE.CONFIG.interval_seconds,
+            'image_rotation': CAPTURE_SERVICE.CONFIG.image_rotation,
+            'remote_config_check_hours': (
+                CAPTURE_SERVICE.CONFIG.remote_config_check_hours
+            ),
+        }
+        self.original_stats = dict(CAPTURE_SERVICE._stats)
+        CAPTURE_SERVICE.CONFIG.remote_config_check_hours = (6, 9, 12, 15)
+
+    def tearDown(self):
+        self.path_patch.stop()
+        for name, value in self.original_values.items():
+            setattr(CAPTURE_SERVICE.CONFIG, name, value)
+        with CAPTURE_SERVICE._stats_lock:
+            CAPTURE_SERVICE._stats.clear()
+            CAPTURE_SERVICE._stats.update(self.original_stats)
+        self.temp_dir.cleanup()
+
+    @staticmethod
+    def payload(revision=4):
+        return {
+            'revision': revision,
+            'schedule': {
+                'active_days': ['MON', 'TUE', 'WED', 'THU'],
+                'start_time': '07:00',
+                'end_time': '14:30',
+                'interval_seconds': 30,
+            },
+            'camera': {'image_rotation': 90},
+        }
+
+    def test_remote_config_is_validated_cached_atomically_and_applied(self):
+        normalized = CAPTURE_SERVICE._normalize_remote_config(self.payload())
+
+        CAPTURE_SERVICE._write_remote_config_cache(normalized)
+        CAPTURE_SERVICE._apply_remote_config(normalized, 'test')
+
+        self.assertEqual(json.loads(self.cache_path.read_text()), normalized)
+        self.assertEqual(CAPTURE_SERVICE.CONFIG.active_days, {0, 1, 2, 3})
+        self.assertEqual(CAPTURE_SERVICE.CONFIG.active_start_hour, 7)
+        self.assertEqual(CAPTURE_SERVICE.CONFIG.active_end_minute, 30)
+        self.assertEqual(CAPTURE_SERVICE.CONFIG.interval_seconds, 30.0)
+        self.assertEqual(CAPTURE_SERVICE.CONFIG.image_rotation, 90)
+        self.assertEqual(CAPTURE_SERVICE._stats['remote_config_revision'], 4)
+        self.assertFalse(any(self.cache_path.parent.glob('*.tmp')))
+
+    def test_invalid_rotation_never_reaches_the_runtime_config(self):
+        payload = self.payload()
+        payload['camera']['image_rotation'] = 45
+
+        with self.assertRaises(ValueError):
+            CAPTURE_SERVICE._normalize_remote_config(payload)
+
+    def test_same_revision_is_acknowledged_without_rewriting_cache(self):
+        payload = self.payload(revision=7)
+        with CAPTURE_SERVICE._stats_lock:
+            CAPTURE_SERVICE._stats['remote_config_revision'] = 7
+
+        with (
+            patch.object(
+                CAPTURE_SERVICE,
+                '_read_stored_token',
+                return_value='stored-token',
+            ),
+            patch.object(
+                CAPTURE_SERVICE,
+                '_remote_request_json',
+                side_effect=[payload, {'status': 'ok'}],
+            ),
+            patch.object(
+                CAPTURE_SERVICE,
+                '_write_remote_config_cache',
+            ) as write_cache,
+            patch.object(CAPTURE_SERVICE, '_apply_remote_config') as apply_config,
+        ):
+            outcome = CAPTURE_SERVICE._sync_remote_config_once()
+
+        self.assertEqual(outcome, 'success')
+        write_cache.assert_not_called()
+        apply_config.assert_not_called()
+
+    def test_next_checks_follow_0600_0900_1200_1500_schedule(self):
+        self.assertEqual(
+            CAPTURE_SERVICE._next_remote_config_check(
+                datetime(2026, 8, 11, 5, 30)
+            ),
+            datetime(2026, 8, 11, 6, 0),
+        )
+        self.assertEqual(
+            CAPTURE_SERVICE._next_remote_config_check(
+                datetime(2026, 8, 11, 9, 1)
+            ),
+            datetime(2026, 8, 11, 12, 0),
+        )
+        self.assertEqual(
+            CAPTURE_SERVICE._next_remote_config_check(
+                datetime(2026, 8, 11, 15, 1)
+            ),
+            datetime(2026, 8, 12, 6, 0),
         )
 
 

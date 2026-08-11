@@ -305,6 +305,40 @@ export interface GrupoMesaResumen {
     camera_sharpness?: 'ok' | 'warning' | 'blurry' | 'unknown' | null;
 }
 
+export type CaptureDay = 'MON' | 'TUE' | 'WED' | 'THU' | 'FRI' | 'SAT' | 'SUN';
+export type CaptureConfigStatus = 'applied' | 'pending' | 'error' | 'unlinked';
+
+export interface MesaCaptureConfig {
+    id: number;
+    nombre: string;
+    is_linked: boolean;
+    image_rotation: 0 | 90 | 180 | 270;
+    revision: number;
+    applied_revision: number;
+    requested_at: string | null;
+    applied_at: string | null;
+    error: string;
+    status: CaptureConfigStatus;
+}
+
+export interface FerrallaCaptureConfig {
+    user_id: number;
+    active_days: CaptureDay[];
+    start_time: string;
+    end_time: string;
+    interval_seconds: number;
+    check_times: string[];
+    mesas: MesaCaptureConfig[];
+}
+
+export interface FerrallaCaptureConfigUpdate {
+    active_days: CaptureDay[];
+    start_time: string;
+    end_time: string;
+    interval_seconds: number;
+    rotations: { mesa_id: number; image_rotation: 0 | 90 | 180 | 270 }[];
+}
+
 export interface GrupoMesasProyectoEntry {
     id: number;
     proyecto: number;
@@ -559,6 +593,24 @@ export class ApiService {
 
     deleteUser(id: number): Observable<void> {
         return this.http.delete<void>(`${this.baseUrl}/users/${id}/`, { headers: this.getHeaders() });
+    }
+
+    getFerrallaCaptureConfig(id: number): Observable<FerrallaCaptureConfig> {
+        return this.http.get<FerrallaCaptureConfig>(
+            `${this.baseUrl}/users/${id}/capture-config/`,
+            { headers: this.getHeaders() }
+        );
+    }
+
+    updateFerrallaCaptureConfig(
+        id: number,
+        data: FerrallaCaptureConfigUpdate
+    ): Observable<FerrallaCaptureConfig> {
+        return this.http.put<FerrallaCaptureConfig>(
+            `${this.baseUrl}/users/${id}/capture-config/`,
+            data,
+            { headers: this.getHeaders() }
+        );
     }
 
     // =========================================================================

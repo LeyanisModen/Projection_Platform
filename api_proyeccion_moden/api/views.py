@@ -24,7 +24,8 @@ from api.serializers import (
     ImagenSerializer, MesaSerializer, MesaResumenGrupoSerializer,
     ModuloQueueSerializer, ModuloQueueItemSerializer, MesaQueueItemSerializer,
     FotoFabricacionSerializer, GrupoMesasSerializer, DetalleModuloFaseSerializer,
-    GrupoBastidorSerializer, FaseModuloSerializer
+    GrupoBastidorSerializer, FaseModuloSerializer,
+    FerrallaCaptureConfigSerializer, DeviceCaptureConfigAckSerializer,
 )
 from api.models import (
     Modulo, Proyecto, Planta, Imagen, Mesa,
@@ -32,7 +33,7 @@ from api.models import (
     FotoFabricacion, GrupoMesas, GrupoMesasProyecto,
     DetalleModuloFase, MesaQueueStatus, ModuloEstado, Fase,
     GrupoBastidor, MaterialPieza, MaterialInformado, MaterialOrigenCheck,
-    MaterialTipo, MesaTipo,
+    MaterialTipo, MesaTipo, UserProfile,
 )
 from api.project_media import (
     collect_module_media,
@@ -163,6 +164,54 @@ def _grupos_with_reorder_data(queryset):
 
 def _is_admin(user):
     return bool(user and (user.is_staff or user.is_superuser))
+
+
+CAPTURE_DAY_ORDER = {
+    day: index
+    for index, day in enumerate(['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'])
+}
+
+
+def _capture_config_status(mesa):
+    if not mesa.device_token_hash:
+        return 'unlinked'
+    if mesa.capture_config_error:
+        return 'error'
+    if mesa.capture_config_applied_revision >= mesa.capture_config_revision:
+        return 'applied'
+    return 'pending'
+
+
+def _ferralla_capture_config_payload(user, mesas=None):
+    profile, _ = UserProfile.objects.get_or_create(user=user)
+    if mesas is None:
+        mesas = Mesa.objects.filter(usuario=user).order_by('nombre', 'id')
+    return {
+        'user_id': user.id,
+        'active_days': sorted(
+            profile.capture_active_days or [],
+            key=lambda day: CAPTURE_DAY_ORDER.get(day, 99),
+        ),
+        'start_time': profile.capture_start_time.strftime('%H:%M'),
+        'end_time': profile.capture_end_time.strftime('%H:%M'),
+        'interval_seconds': profile.capture_interval_seconds,
+        'check_times': ['06:00', '09:00', '12:00', '15:00'],
+        'mesas': [
+            {
+                'id': mesa.id,
+                'nombre': mesa.nombre,
+                'is_linked': bool(mesa.device_token_hash),
+                'image_rotation': mesa.image_rotation,
+                'revision': mesa.capture_config_revision,
+                'applied_revision': mesa.capture_config_applied_revision,
+                'requested_at': mesa.capture_config_requested_at,
+                'applied_at': mesa.capture_config_applied_at,
+                'error': mesa.capture_config_error or '',
+                'status': _capture_config_status(mesa),
+            }
+            for mesa in mesas
+        ],
+    }
 
 
 class ServerSentEventRenderer(renderers.BaseRenderer):
@@ -1095,6 +1144,84 @@ class UserViewSet(viewsets.ModelViewSet):
         if self.action == 'list':
             return queryset.filter(is_superuser=False)
         return queryset
+
+    @action(detail=True, methods=['get', 'put'], url_path='capture-config')
+    def capture_config(self, request, pk=None):
+        if not _is_admin(request.user):
+            return Response({'detail': 'Forbidden'}, status=403)
+
+        ferralla = self.get_object()
+        if request.method == 'GET':
+            return Response(_ferralla_capture_config_payload(ferralla))
+
+        serializer = FerrallaCaptureConfigSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        active_days = sorted(
+            data['active_days'],
+            key=lambda day: CAPTURE_DAY_ORDER[day],
+        )
+        rotations = {
+            item['mesa_id']: int(item['image_rotation'])
+            for item in data.get('rotations', [])
+        }
+
+        with transaction.atomic():
+            profile, _ = UserProfile.objects.get_or_create(user=ferralla)
+            profile = UserProfile.objects.select_for_update().get(pk=profile.pk)
+            mesas = list(
+                Mesa.objects.select_for_update()
+                .filter(usuario=ferralla)
+                .order_by('nombre', 'id')
+            )
+            mesa_ids = {mesa.id for mesa in mesas}
+            unknown_ids = sorted(set(rotations) - mesa_ids)
+            if unknown_ids:
+                raise ValidationError({
+                    'rotations': (
+                        'Las siguientes mesas no pertenecen a esta ferralla: '
+                        + ', '.join(str(mesa_id) for mesa_id in unknown_ids)
+                    )
+                })
+
+            schedule_changed = any([
+                list(profile.capture_active_days or []) != active_days,
+                profile.capture_start_time != data['start_time'],
+                profile.capture_end_time != data['end_time'],
+                profile.capture_interval_seconds != data['interval_seconds'],
+            ])
+            if schedule_changed:
+                profile.capture_active_days = active_days
+                profile.capture_start_time = data['start_time']
+                profile.capture_end_time = data['end_time']
+                profile.capture_interval_seconds = data['interval_seconds']
+                profile.save(update_fields=[
+                    'capture_active_days',
+                    'capture_start_time',
+                    'capture_end_time',
+                    'capture_interval_seconds',
+                ])
+
+            for mesa in mesas:
+                rotation_changed = (
+                    mesa.id in rotations
+                    and mesa.image_rotation != rotations[mesa.id]
+                )
+                if not schedule_changed and not rotation_changed:
+                    continue
+                if rotation_changed:
+                    mesa.image_rotation = rotations[mesa.id]
+                mesa.capture_config_revision += 1
+                mesa.capture_config_error = ''
+                update_fields = [
+                    'capture_config_revision',
+                    'capture_config_error',
+                ]
+                if rotation_changed:
+                    update_fields.append('image_rotation')
+                mesa.save(update_fields=update_fields)
+
+        return Response(_ferralla_capture_config_payload(ferralla))
 
 
 class ProyectoViewSet(viewsets.ModelViewSet):
@@ -4832,6 +4959,75 @@ class DeviceViewSet(viewsets.ViewSet):
         mesa.save(update_fields=fields)
 
         return Response({'status': 'ok'})
+
+    @action(detail=False, methods=['get'], url_path='config')
+    def capture_config(self, request):
+        mesa = self._authenticate_device(request)
+        if not mesa:
+            return Response({'detail': 'Unauthorized'}, status=401)
+
+        profile, _ = UserProfile.objects.get_or_create(user=mesa.usuario)
+        mesa.capture_config_requested_at = timezone.now()
+        mesa.save(update_fields=['capture_config_requested_at'])
+        active_days = sorted(
+            profile.capture_active_days or [],
+            key=lambda day: CAPTURE_DAY_ORDER.get(day, 99),
+        )
+        return Response({
+            'revision': mesa.capture_config_revision,
+            'mesa_id': mesa.id,
+            'mesa_name': mesa.nombre,
+            'schedule': {
+                'active_days': active_days,
+                'start_time': profile.capture_start_time.strftime('%H:%M'),
+                'end_time': profile.capture_end_time.strftime('%H:%M'),
+                'interval_seconds': profile.capture_interval_seconds,
+            },
+            'camera': {
+                'image_rotation': mesa.image_rotation,
+            },
+        })
+
+    @action(detail=False, methods=['post'], url_path='config-ack')
+    def capture_config_ack(self, request):
+        mesa = self._authenticate_device(request)
+        if not mesa:
+            return Response({'detail': 'Unauthorized'}, status=401)
+
+        serializer = DeviceCaptureConfigAckSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        revision = data['revision']
+        if revision > mesa.capture_config_revision:
+            return Response(
+                {'detail': 'Revision desconocida para esta mesa.'},
+                status=409,
+            )
+
+        now = timezone.now()
+        fields = ['capture_config_requested_at']
+        mesa.capture_config_requested_at = now
+        if data['status'] == 'applied':
+            if revision >= mesa.capture_config_applied_revision:
+                mesa.capture_config_applied_revision = revision
+                mesa.capture_config_applied_at = now
+                fields.extend([
+                    'capture_config_applied_revision',
+                    'capture_config_applied_at',
+                ])
+            if revision == mesa.capture_config_revision:
+                mesa.capture_config_error = ''
+                fields.append('capture_config_error')
+        elif revision == mesa.capture_config_revision:
+            mesa.capture_config_error = data['error'].strip()
+            fields.append('capture_config_error')
+        mesa.save(update_fields=list(dict.fromkeys(fields)))
+
+        return Response({
+            'status': 'ok',
+            'desired_revision': mesa.capture_config_revision,
+            'applied_revision': mesa.capture_config_applied_revision,
+        })
 
     @action(detail=False, methods=['post'])
     def set_index(self, request):

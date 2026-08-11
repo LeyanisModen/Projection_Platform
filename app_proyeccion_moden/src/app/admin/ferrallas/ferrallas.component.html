@@ -221,6 +221,105 @@
                     </div>
                 </div>
                 <div class="card-body p-3">
+                    <section class="capture-config-panel mb-3">
+                        <div class="capture-config-header">
+                            <div>
+                                <span class="capture-config-kicker">DOCUMENTACION AUTOMATICA</span>
+                                <h6>Horario y camaras</h6>
+                                <p>El horario se aplica a toda la ferralla. La rotacion es individual por mesa.</p>
+                            </div>
+                            <button type="button" class="btn btn-sm btn-outline-secondary"
+                                (click)="loadCaptureConfig(selectedUser.id)"
+                                [disabled]="loadingCaptureConfig || savingCaptureConfig"
+                                title="Actualizar estado">
+                                <i class="fa fa-refresh" [class.fa-spin]="loadingCaptureConfig"></i>
+                            </button>
+                        </div>
+
+                        <div *ngIf="loadingCaptureConfig && !captureConfig" class="capture-config-loading">
+                            <i class="fa fa-spinner fa-spin"></i> Cargando configuracion...
+                        </div>
+
+                        <div class="capture-config-content" *ngIf="captureConfig as config">
+                            <div class="capture-schedule">
+                                <div class="capture-days" role="group" aria-label="Dias de captura">
+                                    <button type="button" *ngFor="let day of captureDays"
+                                        [class.active]="isCaptureDayActive(day.value)"
+                                        [disabled]="savingCaptureConfig"
+                                        (click)="toggleCaptureDay(day.value)"
+                                        [attr.aria-pressed]="isCaptureDayActive(day.value)">
+                                        {{ day.label }}
+                                    </button>
+                                </div>
+                                <label class="capture-field">
+                                    <span>Desde</span>
+                                    <input type="time" class="form-control" [(ngModel)]="config.start_time"
+                                        (ngModelChange)="captureConfigMessage = ''"
+                                        [disabled]="savingCaptureConfig">
+                                </label>
+                                <label class="capture-field">
+                                    <span>Hasta</span>
+                                    <input type="time" class="form-control" [(ngModel)]="config.end_time"
+                                        (ngModelChange)="captureConfigMessage = ''"
+                                        [disabled]="savingCaptureConfig">
+                                </label>
+                                <label class="capture-field capture-interval">
+                                    <span>Cada</span>
+                                    <div class="capture-interval-input">
+                                        <input type="number" class="form-control" min="10" max="3600" step="1"
+                                            [(ngModel)]="config.interval_seconds"
+                                            (ngModelChange)="captureConfigMessage = ''"
+                                            [disabled]="savingCaptureConfig">
+                                        <small>seg</small>
+                                    </div>
+                                </label>
+                                <span class="capture-check-times">
+                                    Consulta: inicio, {{ config.check_times.join(', ') }}
+                                </span>
+                            </div>
+
+                            <div class="capture-mesas" *ngIf="config.mesas.length; else noCaptureMesas">
+                                <div class="capture-mesa-row" *ngFor="let mesa of config.mesas">
+                                    <strong>{{ mesa.nombre }}</strong>
+                                    <label>
+                                        <span class="sr-only">Rotacion de {{ mesa.nombre }}</span>
+                                        <select class="form-control" [(ngModel)]="mesa.image_rotation"
+                                            (ngModelChange)="captureConfigMessage = ''"
+                                            [disabled]="savingCaptureConfig">
+                                            <option *ngFor="let rotation of imageRotations" [ngValue]="rotation">
+                                                {{ rotation }} grados
+                                            </option>
+                                        </select>
+                                    </label>
+                                    <span class="capture-status" [ngClass]="'status-' + mesa.status"
+                                        [title]="mesa.error || ('Revision ' + mesa.applied_revision + '/' + mesa.revision)">
+                                        {{ captureStatusLabel(mesa.status) }}
+                                    </span>
+                                </div>
+                            </div>
+                            <ng-template #noCaptureMesas>
+                                <div class="capture-no-mesas">Crea una mesa para configurar su camara.</div>
+                            </ng-template>
+                        </div>
+
+                        <div class="capture-config-footer" *ngIf="captureConfig">
+                            <div class="capture-config-feedback">
+                                <span class="text-success" *ngIf="captureConfigMessage">
+                                    <i class="fa fa-check-circle"></i> {{ captureConfigMessage }}
+                                </span>
+                                <span class="text-danger" *ngIf="captureConfigError">
+                                    <i class="fa fa-exclamation-circle"></i> {{ captureConfigError }}
+                                </span>
+                            </div>
+                            <button type="button" class="btn btn-primary btn-sm"
+                                (click)="saveCaptureConfig()"
+                                [disabled]="savingCaptureConfig || loadingCaptureConfig">
+                                <i class="fa" [ngClass]="savingCaptureConfig ? 'fa-spinner fa-spin' : 'fa-save'"></i>
+                                Guardar configuracion
+                            </button>
+                        </div>
+                    </section>
+
                     <div class="mesas-section">
                         <div class="d-flex justify-content-between align-items-center mb-3">
                             <h6 class="mb-0 font-weight-bold">Grupos de Mesas</h6>

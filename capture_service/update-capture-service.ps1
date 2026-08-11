@@ -190,6 +190,7 @@ function Test-IncludedUpdateFile([string]$RelativePath) {
     if ($name -in @(
         'config.ini',
         'device_token.txt',
+        'remote_config.json',
         '.last_update_source.txt',
         '.drive_maintenance',
         '.player_maintenance',
@@ -541,7 +542,7 @@ try {
         )
     }
 
-    & robocopy $UpdateSource $LocalDir /MIR /XD venv __pycache__ logs /XF config.ini 'config.ini.corrupt-*.bak' 'config.ini.repair-*.tmp' device_token.txt .drive_maintenance .player_maintenance .player_pause /NFL /NDL /NJH /NJS /NP | Out-Null
+    & robocopy $UpdateSource $LocalDir /MIR /XD venv __pycache__ logs /XF config.ini 'config.ini.corrupt-*.bak' 'config.ini.repair-*.tmp' device_token.txt remote_config.json .drive_maintenance .player_maintenance .player_pause /NFL /NDL /NJH /NJS /NP | Out-Null
     if ($LASTEXITCODE -ge 8) {
         throw "robocopy failed with code $LASTEXITCODE"
     }

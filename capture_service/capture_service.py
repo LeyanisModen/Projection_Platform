@@ -38,7 +38,9 @@ Listens on localhost:5555. Two jobs in one process:
      configured retention, or when the local footprint exceeds
      `max_local_gb`.
 
-All settings come from `config.ini` next to this script.
+Hardware and storage settings come from `config.ini`. The working window,
+capture interval and image rotation can be overridden by the admin dashboard;
+the last valid revision is cached atomically in `remote_config.json`.
 """
 import configparser
 import json
@@ -47,7 +49,9 @@ import shutil
 import subprocess
 import threading
 import time
-from datetime import datetime, time as dtime
+import urllib.error
+import urllib.request
+from datetime import datetime, timedelta, time as dtime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 
@@ -57,6 +61,7 @@ import cv2
 # Config
 # ---------------------------------------------------------------------------
 CONFIG_PATH = Path(__file__).with_name('config.ini')
+REMOTE_CONFIG_PATH = Path(__file__).with_name('remote_config.json')
 
 DAY_NAME_TO_INDEX = {
     'MON': 0, 'TUE': 1, 'WED': 2, 'THU': 3, 'FRI': 4, 'SAT': 5, 'SUN': 6,
@@ -93,6 +98,14 @@ class Config:
         self.capture_settle_min_seconds = 1.5
         self.capture_settle_max_seconds = 3.0
         self.capture_luminance_tolerance_percent = 3.0
+        self.remote_config_enabled = True
+        self.remote_config_url = 'https://moden.up.railway.app/api/device/config/'
+        self.remote_config_ack_url = (
+            'https://moden.up.railway.app/api/device/config-ack/'
+        )
+        self.remote_config_timeout_seconds = 15.0
+        self.remote_config_retry_seconds = 600.0
+        self.remote_config_check_hours = (6, 9, 12, 15)
 
         # documentation defaults (disabled until the .ini turns it on)
         self.doc_enabled = False
@@ -199,6 +212,42 @@ class Config:
                 s.get('image_rotation', str(self.image_rotation)),
                 self.image_rotation,
             )
+            self.remote_config_enabled = s.getboolean(
+                'remote_config_enabled', self.remote_config_enabled
+            )
+            self.remote_config_url = s.get(
+                'remote_config_url', self.remote_config_url
+            ).strip()
+            self.remote_config_ack_url = s.get(
+                'remote_config_ack_url', self.remote_config_ack_url
+            ).strip()
+            self.remote_config_timeout_seconds = max(
+                2.0,
+                s.getfloat(
+                    'remote_config_timeout_seconds',
+                    self.remote_config_timeout_seconds,
+                ),
+            )
+            self.remote_config_retry_seconds = max(
+                60.0,
+                s.getfloat(
+                    'remote_config_retry_seconds',
+                    self.remote_config_retry_seconds,
+                ),
+            )
+            check_hours = []
+            for raw_hour in s.get(
+                'remote_config_check_hours',
+                ','.join(str(hour) for hour in self.remote_config_check_hours),
+            ).split(','):
+                try:
+                    hour = int(raw_hour.strip())
+                except ValueError:
+                    continue
+                if 0 <= hour <= 23 and hour not in check_hours:
+                    check_hours.append(hour)
+            if check_hours:
+                self.remote_config_check_hours = tuple(sorted(check_hours))
 
         if cp.has_section('documentation'):
             d = cp['documentation']
@@ -343,6 +392,7 @@ class Config:
 
 
 CONFIG = Config(CONFIG_PATH)
+_remote_config_lock = threading.RLock()
 
 
 # ---------------------------------------------------------------------------
@@ -531,6 +581,12 @@ _stats = {
     'last_on_demand_luminance_spread': None,
     'last_on_demand_settle_ms': None,
     'last_on_demand_light_stable': None,
+    'remote_config_revision': None,
+    'remote_config_source': 'config.ini',
+    'last_remote_config_check_at': None,
+    'last_remote_config_applied_at': None,
+    'next_remote_config_check_at': None,
+    'remote_config_error': None,
     'skipped_out_of_schedule': 0,
     # Sharpness check starts on the first active tick. Low-confidence
     # results are retried during the day so an early dark frame is not final.
@@ -695,10 +751,16 @@ def _ensure_sharpness_checked_today():
 # ---------------------------------------------------------------------------
 def in_active_window(now: datetime = None) -> bool:
     now = now or datetime.now()
-    if now.weekday() not in CONFIG.active_days:
+    with _remote_config_lock:
+        active_days = set(CONFIG.active_days)
+        start_hour = CONFIG.active_start_hour
+        start_minute = CONFIG.active_start_minute
+        end_hour = CONFIG.active_end_hour
+        end_minute = CONFIG.active_end_minute
+    if now.weekday() not in active_days:
         return False
-    start = dtime(CONFIG.active_start_hour, CONFIG.active_start_minute)
-    end = dtime(CONFIG.active_end_hour, CONFIG.active_end_minute)
+    start = dtime(start_hour, start_minute)
+    end = dtime(end_hour, end_minute)
     current = now.time()
     return start <= current < end
 
@@ -1354,6 +1416,319 @@ def _write_stored_token(token: str) -> bool:
         return False
 
 
+class RemoteConfigTransientError(RuntimeError):
+    pass
+
+
+class RemoteConfigPermanentError(RuntimeError):
+    pass
+
+
+def _remote_config_path() -> Path:
+    return REMOTE_CONFIG_PATH
+
+
+def _parse_remote_time(value, field_name):
+    parts = str(value or '').strip().split(':')
+    if len(parts) != 2:
+        raise ValueError(f'{field_name} must use HH:MM')
+    try:
+        hour, minute = (int(part) for part in parts)
+    except ValueError as exc:
+        raise ValueError(f'{field_name} must use HH:MM') from exc
+    if not 0 <= hour <= 23 or not 0 <= minute <= 59:
+        raise ValueError(f'{field_name} is outside the valid time range')
+    return f'{hour:02d}:{minute:02d}'
+
+
+def _remote_integer(value, field_name):
+    if isinstance(value, bool):
+        raise ValueError(f'{field_name} must be an integer')
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f'{field_name} must be an integer') from exc
+
+
+def _normalize_remote_config(payload):
+    if not isinstance(payload, dict):
+        raise ValueError('remote config must be a JSON object')
+    schedule = payload.get('schedule')
+    camera = payload.get('camera')
+    if not isinstance(schedule, dict) or not isinstance(camera, dict):
+        raise ValueError('remote config is missing schedule or camera')
+
+    revision = _remote_integer(payload.get('revision'), 'revision')
+    if revision < 1:
+        raise ValueError('revision must be at least 1')
+
+    raw_days = schedule.get('active_days')
+    if not isinstance(raw_days, list) or not raw_days:
+        raise ValueError('active_days must contain at least one day')
+    active_days = [str(day).strip().upper() for day in raw_days]
+    if len(active_days) != len(set(active_days)):
+        raise ValueError('active_days contains duplicates')
+    invalid_days = [day for day in active_days if day not in DAY_NAME_TO_INDEX]
+    if invalid_days:
+        raise ValueError(f'invalid active_days: {", ".join(invalid_days)}')
+
+    start_time = _parse_remote_time(schedule.get('start_time'), 'start_time')
+    end_time = _parse_remote_time(schedule.get('end_time'), 'end_time')
+    if start_time >= end_time:
+        raise ValueError('end_time must be later than start_time')
+    interval_seconds = _remote_integer(
+        schedule.get('interval_seconds'), 'interval_seconds'
+    )
+    if not 10 <= interval_seconds <= 3600:
+        raise ValueError('interval_seconds must be between 10 and 3600')
+
+    image_rotation = _remote_integer(
+        camera.get('image_rotation'), 'image_rotation'
+    )
+    if image_rotation not in (0, 90, 180, 270):
+        raise ValueError('image_rotation must be 0, 90, 180 or 270')
+
+    return {
+        'revision': revision,
+        'schedule': {
+            'active_days': active_days,
+            'start_time': start_time,
+            'end_time': end_time,
+            'interval_seconds': interval_seconds,
+        },
+        'camera': {
+            'image_rotation': image_rotation,
+        },
+    }
+
+
+def _write_remote_config_cache(payload):
+    path = _remote_config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_name(f'.{path.name}.{os.getpid()}.tmp')
+    try:
+        with temp_path.open('w', encoding='utf-8', newline='') as handle:
+            json.dump(payload, handle, indent=2, sort_keys=True)
+            handle.write('\n')
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_path, path)
+    finally:
+        try:
+            temp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _apply_remote_config(payload, source):
+    schedule = payload['schedule']
+    start_hour, start_minute = (
+        int(part) for part in schedule['start_time'].split(':')
+    )
+    end_hour, end_minute = (
+        int(part) for part in schedule['end_time'].split(':')
+    )
+    with _remote_config_lock:
+        CONFIG.active_days = {
+            DAY_NAME_TO_INDEX[day] for day in schedule['active_days']
+        }
+        CONFIG.active_start_hour = start_hour
+        CONFIG.active_start_minute = start_minute
+        CONFIG.active_end_hour = end_hour
+        CONFIG.active_end_minute = end_minute
+        CONFIG.interval_seconds = float(schedule['interval_seconds'])
+        CONFIG.image_rotation = payload['camera']['image_rotation']
+    with _stats_lock:
+        _stats['remote_config_revision'] = payload['revision']
+        _stats['remote_config_source'] = source
+        _stats['last_remote_config_applied_at'] = datetime.now().isoformat(
+            timespec='seconds'
+        )
+
+
+def _load_cached_remote_config():
+    path = _remote_config_path()
+    if not path.is_file():
+        return False
+    try:
+        payload = json.loads(path.read_text(encoding='utf-8'))
+        normalized = _normalize_remote_config(payload)
+        _apply_remote_config(normalized, 'remote_config.json')
+        print(
+            '[RemoteConfig] Loaded cached revision '
+            f'{normalized["revision"]} from {path}.'
+        )
+        return True
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        with _stats_lock:
+            _stats['remote_config_error'] = f'cached config: {exc}'
+        print(f'[RemoteConfig] Ignoring invalid cache: {exc}')
+        return False
+
+
+def _remote_request_json(method, url, token, payload=None):
+    body = None
+    headers = {
+        'Accept': 'application/json',
+        'Authorization': f'Bearer {token}',
+        'User-Agent': 'MODEN-CaptureService',
+    }
+    if payload is not None:
+        body = json.dumps(payload).encode('utf-8')
+        headers['Content-Type'] = 'application/json'
+    request = urllib.request.Request(
+        url,
+        data=body,
+        headers=headers,
+        method=method,
+    )
+    try:
+        with urllib.request.urlopen(
+            request,
+            timeout=CONFIG.remote_config_timeout_seconds,
+        ) as response:
+            raw = response.read(65536)
+    except urllib.error.HTTPError as exc:
+        detail = exc.read(512).decode('utf-8', errors='replace').strip()
+        message = f'HTTP {exc.code}: {detail or exc.reason}'
+        if exc.code == 429 or exc.code >= 500:
+            raise RemoteConfigTransientError(message) from exc
+        raise RemoteConfigPermanentError(message) from exc
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        raise RemoteConfigTransientError(str(exc)) from exc
+    except ValueError as exc:
+        raise RemoteConfigPermanentError(str(exc)) from exc
+
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw.decode('utf-8'))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RemoteConfigPermanentError(
+            f'invalid JSON response: {exc}'
+        ) from exc
+
+
+def _ack_remote_config(token, revision, status, error=''):
+    payload = {'revision': revision, 'status': status}
+    if error:
+        payload['error'] = error[:2000]
+    _remote_request_json(
+        'POST',
+        CONFIG.remote_config_ack_url,
+        token,
+        payload,
+    )
+
+
+def _set_remote_config_error(message):
+    with _stats_lock:
+        _stats['remote_config_error'] = str(message)
+
+
+def _sync_remote_config_once():
+    now_iso = datetime.now().isoformat(timespec='seconds')
+    with _stats_lock:
+        _stats['last_remote_config_check_at'] = now_iso
+
+    token = _read_stored_token()
+    if not token:
+        _set_remote_config_error('device token not available')
+        return 'transient'
+
+    try:
+        response = _remote_request_json(
+            'GET', CONFIG.remote_config_url, token
+        )
+        payload = _normalize_remote_config(response)
+    except RemoteConfigTransientError as exc:
+        _set_remote_config_error(exc)
+        print(f'[RemoteConfig] Temporary fetch error: {exc}')
+        return 'transient'
+    except (RemoteConfigPermanentError, ValueError) as exc:
+        _set_remote_config_error(exc)
+        print(f'[RemoteConfig] Fetch rejected: {exc}')
+        return 'permanent'
+
+    with _stats_lock:
+        current_revision = _stats['remote_config_revision']
+    if current_revision != payload['revision']:
+        try:
+            _write_remote_config_cache(payload)
+            _apply_remote_config(payload, 'railway')
+            print(
+                '[RemoteConfig] Applied revision '
+                f'{payload["revision"]}: '
+                f'{payload["schedule"]["start_time"]}-'
+                f'{payload["schedule"]["end_time"]}, '
+                f'{payload["schedule"]["interval_seconds"]}s, '
+                f'rotation={payload["camera"]["image_rotation"]}.'
+            )
+        except (OSError, ValueError) as exc:
+            message = f'cannot persist remote config: {exc}'
+            _set_remote_config_error(message)
+            try:
+                _ack_remote_config(
+                    token, payload['revision'], 'error', message
+                )
+            except (RemoteConfigTransientError, RemoteConfigPermanentError):
+                pass
+            return 'transient'
+
+    try:
+        _ack_remote_config(token, payload['revision'], 'applied')
+    except RemoteConfigTransientError as exc:
+        _set_remote_config_error(f'ack: {exc}')
+        print(f'[RemoteConfig] Temporary acknowledgement error: {exc}')
+        return 'transient'
+    except RemoteConfigPermanentError as exc:
+        _set_remote_config_error(f'ack: {exc}')
+        print(f'[RemoteConfig] Acknowledgement rejected: {exc}')
+        return 'permanent'
+
+    with _stats_lock:
+        _stats['remote_config_error'] = None
+    return 'success'
+
+
+def _next_remote_config_check(now=None):
+    now = now or datetime.now()
+    for hour in CONFIG.remote_config_check_hours:
+        candidate = now.replace(hour=hour, minute=0, second=0, microsecond=0)
+        if candidate > now:
+            return candidate
+    tomorrow = now + timedelta(days=1)
+    return tomorrow.replace(
+        hour=CONFIG.remote_config_check_hours[0],
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+
+
+def remote_config_loop():
+    if not CONFIG.remote_config_enabled:
+        print('[RemoteConfig] Disabled in config.ini')
+        return
+
+    outcome = _sync_remote_config_once()
+    while True:
+        now = datetime.now()
+        if outcome == 'transient':
+            next_check = now + timedelta(
+                seconds=CONFIG.remote_config_retry_seconds
+            )
+        else:
+            next_check = _next_remote_config_check(now)
+        with _stats_lock:
+            _stats['next_remote_config_check_at'] = next_check.isoformat(
+                timespec='seconds'
+            )
+        delay = max(1.0, (next_check - now).total_seconds())
+        time.sleep(delay)
+        outcome = _sync_remote_config_once()
+
+
 def _close_chrome_processes():
     """Close the kiosk browser without touching the capture service."""
     try:
@@ -1418,6 +1793,18 @@ class CaptureHandler(BaseHTTPRequestHandler):
             payload['drive_process_window'] = drive_process_window_label()
             payload['local_retention_days'] = CONFIG.local_retention_days
             payload['image_rotation'] = CONFIG.image_rotation
+            payload['active_days'] = [
+                DAY_INDEX_TO_NAME[day] for day in sorted(CONFIG.active_days)
+            ]
+            payload['active_start_time'] = (
+                f'{CONFIG.active_start_hour:02d}:'
+                f'{CONFIG.active_start_minute:02d}'
+            )
+            payload['active_end_time'] = (
+                f'{CONFIG.active_end_hour:02d}:'
+                f'{CONFIG.active_end_minute:02d}'
+            )
+            payload['capture_interval_seconds'] = CONFIG.interval_seconds
             self._respond_json(200, payload)
         elif self.path == '/device_token':
             self._respond_json(200, {'device_token': _read_stored_token()})
@@ -1589,6 +1976,15 @@ class CaptureHandler(BaseHTTPRequestHandler):
 # Main
 # ---------------------------------------------------------------------------
 def main():
+    _load_cached_remote_config()
+
+    remote_config_thread = threading.Thread(
+        target=remote_config_loop,
+        name='RemoteConfigLoop',
+        daemon=True,
+    )
+    remote_config_thread.start()
+
     drive_guard_thread = threading.Thread(
         target=google_drive_process_guard_loop,
         name='GoogleDriveProcessGuard',

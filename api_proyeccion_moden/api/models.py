@@ -1,7 +1,12 @@
 from decimal import Decimal, InvalidOperation
+from datetime import time
 
 from django.db import models
 from django.contrib.auth.models import User
+
+
+def default_capture_active_days():
+    return ['MON', 'TUE', 'WED', 'THU', 'FRI']
 
 
 # =============================================================================
@@ -702,6 +707,15 @@ class Mesa(models.Model):
         blank=True,
         help_text="Reported by the mini-PC: 'ok' | 'warning' | 'blurry' | 'unknown'.",
     )
+    image_rotation = models.PositiveSmallIntegerField(
+        default=180,
+        help_text='Rotacion de las capturas de esta mesa: 0, 90, 180 o 270 grados.',
+    )
+    capture_config_revision = models.PositiveBigIntegerField(default=1)
+    capture_config_applied_revision = models.PositiveBigIntegerField(default=0)
+    capture_config_requested_at = models.DateTimeField(null=True, blank=True)
+    capture_config_applied_at = models.DateTimeField(null=True, blank=True)
+    capture_config_error = models.TextField(blank=True, default='')
     # Latest result of a _check slide. Source of truth for both the
     # player (mini-PC) and the visor (dashboard) so they show the same
     # success/error/no_camera overlay and apply the same SPACE-to-clear
@@ -775,6 +789,10 @@ class UserProfile(models.Model):
         default=12,
         help_text='Modulos que la ferralla produce por dia (se reparten entre sus mesas INF).'
     )
+    capture_active_days = models.JSONField(default=default_capture_active_days)
+    capture_start_time = models.TimeField(default=time(6, 50))
+    capture_end_time = models.TimeField(default=time(15, 0))
+    capture_interval_seconds = models.PositiveIntegerField(default=20)
 
     def __str__(self):
         return f"Perfil de {self.user.username}"

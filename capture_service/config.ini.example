@@ -31,6 +31,17 @@ capture_luminance_tolerance_percent = 3.0
 ; upright in Drive/backend evidence. Use 0 for bench/testing setups.
 image_rotation = 180
 
+; The admin dashboard is the source of truth for the working window,
+; capture interval and per-table rotation. The service loads its last valid
+; remote_config.json first, then checks Railway at startup and at 06/09/12/15.
+; Only temporary connection failures are retried every 10 minutes.
+remote_config_enabled = true
+remote_config_url = https://moden.up.railway.app/api/device/config/
+remote_config_ack_url = https://moden.up.railway.app/api/device/config-ack/
+remote_config_timeout_seconds = 15
+remote_config_retry_seconds = 600
+remote_config_check_hours = 6,9,12,15
+
 
 [documentation]
 ; Set enabled = false to turn the periodic capture loop off entirely.

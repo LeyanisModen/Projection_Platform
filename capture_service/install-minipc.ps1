@@ -429,7 +429,7 @@ if (-not $SkipCaptureService) {
     # - config.ini: contiene ajustes locales de cada mini-PC.
     # - device_token.txt: token emparejado del player; no debe perderse en actualizaciones.
     Write-Host "  · robocopy"
-    & robocopy $source $dest /MIR /XD venv __pycache__ /XF config.ini device_token.txt /NFL /NDL /NJH /NJS /NP | Out-Null
+    & robocopy $source $dest /MIR /XD venv __pycache__ /XF config.ini device_token.txt remote_config.json /NFL /NDL /NJH /NJS /NP | Out-Null
     if ($LASTEXITCODE -ge 8) {
         throw "robocopy falló con código $LASTEXITCODE"
     }

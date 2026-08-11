@@ -19,7 +19,8 @@ from api.models import (
     Imagen, Mesa, MesaQueueItem, Modulo, Planta, Proyecto,
     DetalleModuloFase, GrupoMesas, FotoFabricacion,
     FerrallaContacto, FerrallaDireccion, PairingSession,
-    MesaQueueStatus, ModuloEstado, GrupoBastidor, GrupoMesasProyecto
+    MesaQueueStatus, ModuloEstado, GrupoBastidor, GrupoMesasProyecto,
+    UserProfile,
 )
 
 
@@ -204,6 +205,110 @@ class PermissionAndDeviceAuthTests(APITestCase):
             HTTP_AUTHORIZATION=f"Bearer {self.device_token}",
         )
         self.assertEqual(response.status_code, 200)
+
+    def test_device_capture_config_requires_token_and_returns_effective_values(self):
+        response = self.client.get('/api/device/config/')
+        self.assertEqual(response.status_code, 401)
+
+        response = self.client.get(
+            '/api/device/config/',
+            HTTP_AUTHORIZATION=f'Bearer {self.device_token}',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['revision'], 1)
+        self.assertEqual(response.data['schedule']['active_days'], [
+            'MON', 'TUE', 'WED', 'THU', 'FRI',
+        ])
+        self.assertEqual(response.data['schedule']['start_time'], '06:50')
+        self.assertEqual(response.data['schedule']['end_time'], '15:00')
+        self.assertEqual(response.data['schedule']['interval_seconds'], 20)
+        self.assertEqual(response.data['camera']['image_rotation'], 180)
+        self.mesa_a.refresh_from_db()
+        self.assertIsNotNone(self.mesa_a.capture_config_requested_at)
+
+    def test_admin_updates_capture_config_and_only_increments_changed_revisions(self):
+        mesa_b = Mesa.objects.create(nombre='Mesa B', usuario=self.user_a)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.admin_token.key}')
+        payload = {
+            'active_days': ['MON', 'TUE', 'WED', 'THU'],
+            'start_time': '07:00',
+            'end_time': '14:30',
+            'interval_seconds': 30,
+            'rotations': [
+                {'mesa_id': self.mesa_a.id, 'image_rotation': 90},
+                {'mesa_id': mesa_b.id, 'image_rotation': 180},
+            ],
+        }
+
+        response = self.client.put(
+            f'/api/users/{self.user_a.id}/capture-config/',
+            payload,
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.mesa_a.refresh_from_db()
+        mesa_b.refresh_from_db()
+        profile = UserProfile.objects.get(user=self.user_a)
+        self.assertEqual(profile.capture_active_days, payload['active_days'])
+        self.assertEqual(profile.capture_start_time.strftime('%H:%M'), '07:00')
+        self.assertEqual(profile.capture_end_time.strftime('%H:%M'), '14:30')
+        self.assertEqual(profile.capture_interval_seconds, 30)
+        self.assertEqual(self.mesa_a.image_rotation, 90)
+        self.assertEqual(self.mesa_a.capture_config_revision, 2)
+        self.assertEqual(mesa_b.capture_config_revision, 2)
+
+        unchanged = self.client.put(
+            f'/api/users/{self.user_a.id}/capture-config/',
+            payload,
+            format='json',
+        )
+        self.assertEqual(unchanged.status_code, 200)
+        self.mesa_a.refresh_from_db()
+        mesa_b.refresh_from_db()
+        self.assertEqual(self.mesa_a.capture_config_revision, 2)
+        self.assertEqual(mesa_b.capture_config_revision, 2)
+
+    def test_regular_user_cannot_edit_remote_capture_config(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.user_a_token.key}')
+        response = self.client.put(
+            f'/api/users/{self.user_a.id}/capture-config/',
+            {
+                'active_days': ['MON'],
+                'start_time': '07:00',
+                'end_time': '15:00',
+                'interval_seconds': 20,
+                'rotations': [],
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_device_ack_marks_only_the_reported_revision_as_applied(self):
+        applied = self.client.post(
+            '/api/device/config-ack/',
+            {'revision': 1, 'status': 'applied'},
+            format='json',
+            HTTP_AUTHORIZATION=f'Bearer {self.device_token}',
+        )
+        self.assertEqual(applied.status_code, 200)
+        self.mesa_a.refresh_from_db()
+        self.assertEqual(self.mesa_a.capture_config_applied_revision, 1)
+        self.assertIsNotNone(self.mesa_a.capture_config_applied_at)
+
+        self.mesa_a.capture_config_revision = 2
+        self.mesa_a.save(update_fields=['capture_config_revision'])
+        stale = self.client.post(
+            '/api/device/config-ack/',
+            {'revision': 1, 'status': 'applied'},
+            format='json',
+            HTTP_AUTHORIZATION=f'Bearer {self.device_token}',
+        )
+        self.assertEqual(stale.status_code, 200)
+        self.mesa_a.refresh_from_db()
+        self.assertEqual(self.mesa_a.capture_config_applied_revision, 1)
+        self.assertEqual(self.mesa_a.capture_config_revision, 2)
 
     def test_pair_rejects_expired_mesa_code(self):
         self.mesa_a.pairing_code = "ABC123"
