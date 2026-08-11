@@ -74,17 +74,19 @@
     text-transform: uppercase;
 }
 
-.table-preview-controls label {
+.table-count-control {
     display: flex;
     height: 30px;
     align-items: center;
     gap: 0.3rem;
+    margin: 0;
     color: #5f6d77;
     font-size: 0.62rem;
     font-weight: 850;
+    line-height: 1;
 }
 
-.table-preview-controls label > span {
+.table-count-control > span {
     display: flex;
     height: 30px;
     align-items: center;
@@ -92,9 +94,11 @@
 }
 
 .table-preview-controls select {
+    display: block;
     box-sizing: border-box;
     width: 52px;
     height: 30px;
+    margin: 0;
     padding: 0 0.35rem;
     color: #27343e;
     font-size: 0.72rem;

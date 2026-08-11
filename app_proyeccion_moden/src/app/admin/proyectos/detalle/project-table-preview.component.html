@@ -11,7 +11,7 @@
 
         <div class="table-preview-controls" aria-label="Configuración de mesas virtuales">
             <span class="controls-title">Mesas virtuales</span>
-            <label>
+            <label class="table-count-control">
                 <span>INF</span>
                 <select [ngModel]="inferiores()" (ngModelChange)="setInferiores($event)"
                     aria-label="Cantidad de mesas inferiores">
@@ -20,7 +20,7 @@
                     }
                 </select>
             </label>
-            <label>
+            <label class="table-count-control">
                 <span>SUP</span>
                 <select [ngModel]="superiores()" (ngModelChange)="setSuperiores($event)"
                     aria-label="Cantidad de mesas superiores">
