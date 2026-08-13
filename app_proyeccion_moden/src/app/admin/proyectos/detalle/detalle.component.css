@@ -2546,6 +2546,17 @@
     filter: grayscale(1);
 }
 
+.grupo-modulo-item.has-sd .grupo-modulo-nombre-texto,
+.grupo-modulo-drag-preview.has-sd .grupo-modulo-nombre {
+    color: #b54718;
+    font-weight: 700;
+}
+
+.grupo-modulo-item.has-sd.is-not-movable .grupo-modulo-nombre-texto {
+    color: #9b6047;
+    filter: none;
+}
+
 .grupo-modulo-lock {
     display: inline-grid;
     width: 17px;

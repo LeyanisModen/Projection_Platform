@@ -41,6 +41,7 @@ from api.project_media import (
     delete_module_media,
     delete_project_media,
 )
+from api.module_features import annotate_modules_with_sd
 from api.queue_sync import (
     EARLY_IMAGE_INDEX_LIMIT,
     QueueRelocationError,
@@ -140,7 +141,7 @@ ACTIVE_QUEUE_STATUSES = ['EN_COLA', 'MOSTRANDO']
 
 
 def _modules_with_reorder_data(queryset):
-    return queryset.prefetch_related(
+    return annotate_modules_with_sd(queryset).prefetch_related(
         Prefetch(
             'mesa_queue_items',
             queryset=(
@@ -1422,6 +1423,11 @@ class ProyectoViewSet(viewsets.ModelViewSet):
             plan_data['superior_sequence'], num_superiores,
         )
         reorderability = module_reorderability_map(proyecto.modulos.all())
+        sd_module_ids = set(
+            annotate_modules_with_sd(proyecto.modulos.all())
+            .filter(tiene_sd=True)
+            .values_list('id', flat=True)
+        )
 
         def serialize_module(modulo, position):
             group_index = plan_data['module_group_map'].get(modulo.id)
@@ -1432,6 +1438,7 @@ class ProyectoViewSet(viewsets.ModelViewSet):
                 'nombre': modulo.nombre,
                 'tipo_modulo': modulo.tipo_modulo,
                 'estado': modulo.estado,
+                'tiene_sd': modulo.id in sd_module_ids,
                 'movible': movible,
                 'motivo_bloqueo': motivo_bloqueo,
                 'position': position,

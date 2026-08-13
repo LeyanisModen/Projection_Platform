@@ -111,9 +111,10 @@
                                                 [cdkDragData]="modulo"
                                                 [cdkDragDisabled]="!isModuloMovible(modulo)"
                                                 [class.is-draggable]="isModuloMovible(modulo)"
+                                                [class.has-sd]="modulo.tiene_sd"
                                                 [class.is-locked]="isModuloLocked(modulo)">
                                                 <span class="queue-position">{{ modulo.position }}</span>
-                                                <strong [title]="modulo.nombre">{{ modulo.nombre }}</strong>
+                                                <strong [title]="modulo.tiene_sd ? modulo.nombre + ' · Incluye extensores SD' : modulo.nombre">{{ modulo.nombre }}</strong>
                                                 @if (tipoModuloLabel(modulo)) {
                                                     <span class="module-type"
                                                         [class.is-rotated]="modulo.tipo_modulo === 'CENTRAL_GIRADO'">
@@ -147,10 +148,11 @@
                         <ol class="virtual-queue">
                             @for (modulo of queue.modulos; track modulo.id) {
                                 <li class="virtual-queue-item"
+                                    [class.has-sd]="modulo.tiene_sd"
                                     [class.is-locked]="isModuloLocked(modulo)"
                                     [attr.aria-disabled]="isModuloLocked(modulo)">
                                     <span class="queue-position">{{ modulo.position }}</span>
-                                    <strong [title]="modulo.nombre">{{ modulo.nombre }}</strong>
+                                    <strong [title]="modulo.tiene_sd ? modulo.nombre + ' · Incluye extensores SD' : modulo.nombre">{{ modulo.nombre }}</strong>
                                     <span class="source-group" [title]="modulo.group_name">
                                         G{{ modulo.group_index }}
                                     </span>

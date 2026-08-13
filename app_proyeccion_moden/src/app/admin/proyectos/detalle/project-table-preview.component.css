@@ -441,6 +441,15 @@
     white-space: nowrap;
 }
 
+.virtual-queue-item.has-sd strong {
+    color: #b54718;
+    font-weight: 800;
+}
+
+.virtual-queue-item.has-sd.is-locked strong {
+    color: #9b6047;
+}
+
 .module-type,
 .source-group {
     flex: 0 0 auto;

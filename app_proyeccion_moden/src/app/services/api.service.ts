@@ -79,6 +79,7 @@ export interface GrupoBastidorModulo {
     superior_hecho: boolean;
     cerrado: boolean;
     fotos_count: number;
+    tiene_sd: boolean;
     movible?: boolean;
     motivo_bloqueo?: string | null;
 }
@@ -100,6 +101,7 @@ export interface ProyectoMesaPreviewModulo {
     nombre: string;
     tipo_modulo: TipoModulo;
     estado: 'PENDIENTE' | 'EN_PROGRESO' | 'COMPLETADO' | 'CERRADO';
+    tiene_sd: boolean;
     movible?: boolean;
     motivo_bloqueo?: string | null;
     position: number;

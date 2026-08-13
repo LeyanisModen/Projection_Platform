@@ -317,12 +317,13 @@
                                     class="grupo-modulo-item"
                                     [class.is-completado]="modulo.estado === 'COMPLETADO' || modulo.estado === 'CERRADO'"
                                     [class.is-progreso]="modulo.estado === 'EN_PROGRESO'"
+                                    [class.has-sd]="modulo.tiene_sd"
                                     [class.is-not-movable]="!isModuloMovible(modulo)"
                                     [attr.aria-disabled]="!isModuloMovible(modulo)">
                                     <div class="grupo-modulo-main">
                                         <span class="grupo-modulo-nombre">
                                             <span class="grupo-modulo-nombre-texto"
-                                                [title]="modulo.nombre">{{ modulo.nombre }}</span>
+                                                [title]="modulo.tiene_sd ? modulo.nombre + ' · Incluye extensores SD' : modulo.nombre">{{ modulo.nombre }}</span>
                                             <span *ngIf="modulo.tipo_modulo"
                                                 class="grupo-modulo-tipo-chip"
                                                 [class.tipo-girado]="modulo.tipo_modulo === 'CENTRAL_GIRADO'"
@@ -412,7 +413,8 @@
                                     </div>
 
                                     <!-- Preview minimalista durante el drag (sin botones). -->
-                                    <div *cdkDragPreview class="grupo-modulo-drag-preview">
+                                    <div *cdkDragPreview class="grupo-modulo-drag-preview"
+                                        [class.has-sd]="modulo.tiene_sd">
                                         <span class="grupo-modulo-nombre">{{ modulo.nombre }}</span>
                                         <span *ngIf="modulo.tipo_modulo"
                                             class="grupo-modulo-tipo-chip"

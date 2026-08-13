@@ -10,6 +10,7 @@ from api.models import (
     DetalleModuloFase, GrupoBastidor, FerrallaContacto, FerrallaDireccion, Fase
 )
 from api.queue_sync import module_reorderability
+from api.module_features import module_has_sd
 
 
 class FerrallaContactoSerializer(serializers.ModelSerializer):
@@ -380,6 +381,7 @@ class GrupoBastidorSerializer(serializers.ModelSerializer):
                 "superior_hecho": m.superior_hecho,
                 "cerrado": m.cerrado,
                 "fotos_count": m.fotos_fabricacion.count(),
+                "tiene_sd": module_has_sd(m),
                 "movible": movible,
                 "motivo_bloqueo": motivo_bloqueo,
             })

@@ -3535,14 +3535,27 @@ class PlanningFoundationTests(APITestCase):
         self.modulo.estado = "CERRADO"
         self.modulo.save()
 
-        Modulo.objects.create(
+        Imagen.objects.create(
+            modulo=self.modulo,
+            fase="SUPERIOR",
+            orden=1,
+            url="/media/imagenes/P1/A01/MOD_A01_SD_S_01.png",
+        )
+
+        modulo_sd_d = Modulo.objects.create(
             nombre="A02",
             proyecto=self.project,
             planta=self.planta,
             grupo_bastidor=grupo_1,
             orden_intra=2,
         )
-        Modulo.objects.create(
+        Imagen.objects.create(
+            modulo=modulo_sd_d,
+            fase="SUPERIOR",
+            orden=1,
+            url="/media/imagenes/P1/A02/MOD_A02_SD_D_01.png",
+        )
+        modulo_normal = Modulo.objects.create(
             nombre="B01",
             proyecto=self.project,
             planta=self.planta,
@@ -3552,6 +3565,19 @@ class PlanningFoundationTests(APITestCase):
 
         grupos_before = GrupoMesas.objects.count()
         queue_items_before = MesaQueueItem.objects.count()
+
+        groups_response = self.client.get(
+            f"/api/grupos-bastidor/?proyecto={self.project.id}"
+        )
+        self.assertEqual(groups_response.status_code, 200)
+        serialized_groups = {
+            item["id"]: item
+            for group in groups_response.data
+            for item in group["modulos"]
+        }
+        self.assertTrue(serialized_groups[self.modulo.id]["tiene_sd"])
+        self.assertTrue(serialized_groups[modulo_sd_d.id]["tiene_sd"])
+        self.assertFalse(serialized_groups[modulo_normal.id]["tiene_sd"])
 
         response = self.client.get(
             f"/api/proyectos/{self.project.id}/preview-mesas/"
@@ -3594,6 +3620,26 @@ class PlanningFoundationTests(APITestCase):
             queues["INF-1"]["modulos"][1]["estado"],
             "CERRADO",
         )
+        preview_items = [
+            item
+            for queue in queues.values()
+            for item in queue["modulos"]
+        ]
+        self.assertTrue(all(
+            item["tiene_sd"]
+            for item in preview_items
+            if item["id"] == self.modulo.id
+        ))
+        self.assertTrue(all(
+            item["tiene_sd"]
+            for item in preview_items
+            if item["id"] == modulo_sd_d.id
+        ))
+        self.assertTrue(all(
+            not item["tiene_sd"]
+            for item in preview_items
+            if item["id"] == modulo_normal.id
+        ))
 
         self.assertEqual(GrupoMesas.objects.count(), grupos_before)
         self.assertEqual(MesaQueueItem.objects.count(), queue_items_before)
