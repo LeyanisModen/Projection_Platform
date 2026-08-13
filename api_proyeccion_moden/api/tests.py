@@ -1021,7 +1021,7 @@ class PlanningFoundationTests(APITestCase):
         )
         self.assertEqual(profile.capture_start_time, time(6, 0))
 
-        completed_at = timezone.make_aware(datetime(2026, 8, 13, 9, 30))
+        completed_at = timezone.make_aware(datetime(2026, 8, 13, 7, 30))
         self.modulo.inferior_hecho = True
         self.modulo.superior_hecho = True
         self.modulo.estado = ModuloEstado.COMPLETADO
@@ -1053,6 +1053,8 @@ class PlanningFoundationTests(APITestCase):
         self.assertEqual(response.data["totals"]["horas_productivas"], 4.0)
         self.assertEqual(response.data["totals"]["modulos_por_hora"], 0.25)
         self.assertEqual(response.data["totals"]["kg_por_hora"], 25.0)
+        self.assertEqual(response.data["por_hora"][0]["hora"], "07")
+        self.assertEqual(response.data["por_hora"][0]["modulos_completados"], 1)
 
     def _technical_db_file(self, filename, rows):
         temp_path = None

@@ -1314,29 +1314,32 @@ export class Dashboard implements OnInit, OnDestroy {
     const byDate = new Map(this.statsData.por_dia.map(d => [d.fecha, d]));
     const dailyCap = this.statsData.esperado?.capacidad_diaria_modulos || 0;
 
-    // Single-day view: bucket por hour using por_hora from the backend.
-    // Fixed working window 08h-17h so the X axis stays predictable; data
-    // outside that window is rare and would only be visible in the table.
+    // Single-day view: show the real completion hours returned by the backend.
+    // This keeps work outside the configured schedule visible and avoids empty
+    // columns for hours where no module was completed.
     if (dayCount === 1 && this.statsData.por_hora) {
-      const byHour = new Map(this.statsData.por_hora.map(h => [h.hora, h]));
-      const hoursToShow = ['08', '09', '10', '11', '12', '13', '14', '15', '16', '17'];
-      const hourlyCap = dailyCap > 0 ? dailyCap / hoursToShow.length : 0;
-      return hoursToShow.map((hh) => {
-        const found = byHour.get(hh);
-        return {
-          key: hh,
-          label: `${hh}h`,
-          modulos_completados: found?.modulos_completados || 0,
-          fases_completadas: found?.fases_completadas || 0,
-          peso_malla_inicial_kg: found?.peso_malla_inicial_kg || 0,
-          peso_malla_final_kg: found?.peso_malla_final_kg || 0,
-          desperdicio_kg: found?.desperdicio_kg || 0,
-          dificultad_total: found?.dificultad_total || 0,
-          meta_modulos: hourlyCap,
-          working_days: 0,
-          granularity: 'hour' as const,
-        };
-      });
+      const productiveHours = this.statsData.totals.horas_productivas;
+      const hourlyCap = dailyCap > 0 && productiveHours > 0
+        ? dailyCap / productiveHours
+        : 0;
+      return [...this.statsData.por_hora]
+        .sort((left, right) => Number(left.hora) - Number(right.hora))
+        .map((found) => {
+          const hh = found.hora.padStart(2, '0');
+          return {
+            key: hh,
+            label: `${hh}h`,
+            modulos_completados: found.modulos_completados || 0,
+            fases_completadas: found.fases_completadas || 0,
+            peso_malla_inicial_kg: found.peso_malla_inicial_kg || 0,
+            peso_malla_final_kg: found.peso_malla_final_kg || 0,
+            desperdicio_kg: found.desperdicio_kg || 0,
+            dificultad_total: found.dificultad_total || 0,
+            meta_modulos: hourlyCap,
+            working_days: 0,
+            granularity: 'hour' as const,
+          };
+        });
     }
 
     if (dayCount <= 20) {
