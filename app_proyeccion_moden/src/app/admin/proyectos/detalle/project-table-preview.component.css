@@ -93,6 +93,30 @@
     line-height: 1;
 }
 
+.completed-groups-control {
+    display: flex;
+    height: 30px;
+    align-items: center;
+    gap: 0.38rem;
+    margin: 0 0 0 0.15rem;
+    padding-left: 0.65rem;
+    color: #5f6d77;
+    font-size: 0.62rem;
+    font-weight: 750;
+    line-height: 1;
+    border-left: 1px solid #d4dde2;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.completed-groups-control input {
+    width: 15px;
+    height: 15px;
+    margin: 0;
+    accent-color: var(--preview-orange);
+    cursor: pointer;
+}
+
 .table-preview-controls select {
     display: block;
     box-sizing: border-box;
@@ -109,6 +133,7 @@
 }
 
 .table-preview-controls select:focus-visible,
+.completed-groups-control input:focus-visible,
 .table-preview-state button:focus-visible {
     outline: 2px solid var(--preview-orange);
     outline-offset: 2px;
@@ -571,6 +596,13 @@
 
     .controls-title {
         width: 100%;
+    }
+
+    .completed-groups-control {
+        width: 100%;
+        margin-left: 0;
+        padding-left: 0;
+        border-left: 0;
     }
 
     .edit-mode-badge {

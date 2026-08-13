@@ -29,6 +29,12 @@
                     }
                 </select>
             </label>
+            <label class="completed-groups-control">
+                <input type="checkbox"
+                    [ngModel]="mostrarBastidoresCompletados()"
+                    (ngModelChange)="setMostrarBastidoresCompletados($event)">
+                <span>Mostrar completados</span>
+            </label>
         </div>
     </header>
 
@@ -50,7 +56,10 @@
         </div>
     } @else if (previewResource.value(); as preview) {
         <div class="table-preview-summary">
-            <span><strong>{{ preview.total_modules }}</strong> módulos en el recorrido completo</span>
+            <span>
+                <strong>{{ visibleModuleCount() }}</strong>
+                {{ mostrarBastidoresCompletados() ? 'módulos en el recorrido completo' : 'módulos visibles de ' + preview.total_modules }}
+            </span>
             @if (previewResource.isLoading()) {
                 <span class="recalculating-state" role="status">
                     <i class="fa fa-circle-o-notch fa-spin" aria-hidden="true"></i>

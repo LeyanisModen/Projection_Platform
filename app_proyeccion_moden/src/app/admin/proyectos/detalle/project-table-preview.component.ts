@@ -40,6 +40,50 @@ export function previewIndexToBastidorIndex(
     return count - safePreviewIndex;
 }
 
+function previewGroupIdentity(modulo: ProyectoMesaPreviewModulo): string {
+    if (modulo.group_id !== null) {
+        return `id-${modulo.group_id}`;
+    }
+    return `virtual-${modulo.group_index ?? modulo.group_name}`;
+}
+
+export function filterCompletedPreviewGroups(
+    queues: ProyectoMesaPreviewQueue[],
+    showCompletedGroups: boolean,
+): ProyectoMesaPreviewQueue[] {
+    if (showCompletedGroups) {
+        return queues;
+    }
+
+    const modulesByGroup = new Map<string, Map<number, ProyectoMesaPreviewModulo>>();
+    for (const queue of queues) {
+        for (const modulo of queue.modulos) {
+            const groupKey = previewGroupIdentity(modulo);
+            const groupModules = modulesByGroup.get(groupKey) ?? new Map();
+            groupModules.set(modulo.id, modulo);
+            modulesByGroup.set(groupKey, groupModules);
+        }
+    }
+
+    const completedGroups = new Set(
+        [...modulesByGroup.entries()]
+            .filter(([, modules]) =>
+                modules.size > 0
+                && [...modules.values()].every(modulo =>
+                    modulo.estado === 'COMPLETADO' || modulo.estado === 'CERRADO',
+                ),
+            )
+            .map(([groupKey]) => groupKey),
+    );
+
+    return queues.map(queue => ({
+        ...queue,
+        modulos: queue.modulos.filter(
+            modulo => !completedGroups.has(previewGroupIdentity(modulo)),
+        ),
+    }));
+}
+
 @Component({
     selector: 'app-project-table-preview',
     imports: [DragDropModule, FormsModule],
@@ -56,6 +100,7 @@ export class ProjectTablePreviewComponent {
 
     readonly inferiores = signal(2);
     readonly superiores = signal(1);
+    readonly mostrarBastidoresCompletados = signal(true);
     readonly movingModuloId = signal<number | null>(null);
     readonly moveError = signal('');
     readonly inferiorOptions = [1, 2, 3, 4];
@@ -77,12 +122,21 @@ export class ProjectTablePreviewComponent {
         ),
     });
 
+    readonly filteredQueues = computed(() => filterCompletedPreviewGroups(
+        this.previewResource.value()?.queues ?? [],
+        this.mostrarBastidoresCompletados(),
+    ));
+
     readonly queueViews = computed<ProyectoMesaPreviewQueueView[]>(() =>
-        (this.previewResource.value()?.queues ?? []).map(queue => ({
+        this.filteredQueues().map(queue => ({
             ...queue,
             groups: queue.tipo === 'INFERIOR' ? this.buildInferiorGroups(queue) : [],
         })),
     );
+
+    readonly visibleModuleCount = computed(() => new Set(
+        this.filteredQueues().flatMap(queue => queue.modulos.map(modulo => modulo.id)),
+    ).size);
 
     readonly inferiorDropListIds = computed(() =>
         this.queueViews()
@@ -97,6 +151,10 @@ export class ProjectTablePreviewComponent {
 
     setSuperiores(value: number): void {
         this.setCount(value, this.superiorOptions, this.superiores);
+    }
+
+    setMostrarBastidoresCompletados(value: boolean): void {
+        this.mostrarBastidoresCompletados.set(value);
     }
 
     dropListId(group: ProyectoMesaPreviewGroup): string {
@@ -226,9 +284,7 @@ export class ProjectTablePreviewComponent {
         const groups = new Map<string, ProyectoMesaPreviewGroup>();
 
         for (const modulo of queue.modulos) {
-            const identity = modulo.group_id !== null
-                ? `id-${modulo.group_id}`
-                : `virtual-${modulo.group_index}`;
+            const identity = previewGroupIdentity(modulo);
             let group = groups.get(identity);
             if (!group) {
                 group = {
