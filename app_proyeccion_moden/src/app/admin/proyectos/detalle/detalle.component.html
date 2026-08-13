@@ -337,6 +337,37 @@
                                                 <i class="fa fa-lock" aria-hidden="true"></i>
                                             </span>
                                         </span>
+                                    </div>
+                                    <div class="grupo-modulo-controls">
+                                        <div class="grupo-modulo-phases"
+                                            [attr.aria-label]="'Fases de ' + modulo.nombre">
+                                            <button type="button"
+                                                class="grupo-modulo-phase"
+                                                [class.is-completa]="modulo.inferior_hecho"
+                                                (click)="toggleFaseModulo(modulo, 'INFERIOR', $event)"
+                                                [attr.aria-pressed]="modulo.inferior_hecho"
+                                                [title]="modulo.inferior_hecho ? 'Fase inferior terminada. Clic para reiniciar' : 'Fase inferior pendiente. Clic para completar'"
+                                                [attr.aria-label]="(modulo.inferior_hecho ? 'Reiniciar' : 'Completar') + ' fase inferior de ' + modulo.nombre">
+                                                <span>INF</span>
+                                                <span class="grupo-modulo-phase-icon" aria-hidden="true">
+                                                    <i class="fa fa-check phase-check"></i>
+                                                    <i *ngIf="modulo.inferior_hecho" class="fa fa-undo phase-undo"></i>
+                                                </span>
+                                            </button>
+                                            <button type="button"
+                                                class="grupo-modulo-phase"
+                                                [class.is-completa]="modulo.superior_hecho"
+                                                (click)="toggleFaseModulo(modulo, 'SUPERIOR', $event)"
+                                                [attr.aria-pressed]="modulo.superior_hecho"
+                                                [title]="modulo.superior_hecho ? 'Fase superior terminada. Clic para reiniciar, incluidos SD_S y SD_D' : 'Fase superior pendiente. Clic para completar'"
+                                                [attr.aria-label]="(modulo.superior_hecho ? 'Reiniciar' : 'Completar') + ' fase superior de ' + modulo.nombre">
+                                                <span>SUP</span>
+                                                <span class="grupo-modulo-phase-icon" aria-hidden="true">
+                                                    <i class="fa fa-check phase-check"></i>
+                                                    <i *ngIf="modulo.superior_hecho" class="fa fa-undo phase-undo"></i>
+                                                </span>
+                                            </button>
+                                        </div>
                                         <span class="grupo-modulo-actions">
                                             <button type="button"
                                                 class="grupo-modulo-preview"
@@ -381,35 +412,6 @@
                                                 <i class="fa fa-trash" aria-hidden="true"></i>
                                             </button>
                                         </span>
-                                    </div>
-                                    <div class="grupo-modulo-phases"
-                                        [attr.aria-label]="'Fases de ' + modulo.nombre">
-                                        <button type="button"
-                                            class="grupo-modulo-phase"
-                                            [class.is-completa]="modulo.inferior_hecho"
-                                            (click)="toggleFaseModulo(modulo, 'INFERIOR', $event)"
-                                            [attr.aria-pressed]="modulo.inferior_hecho"
-                                            [title]="modulo.inferior_hecho ? 'Fase inferior terminada. Clic para reiniciar' : 'Fase inferior pendiente. Clic para completar'"
-                                            [attr.aria-label]="(modulo.inferior_hecho ? 'Reiniciar' : 'Completar') + ' fase inferior de ' + modulo.nombre">
-                                            <span>INF</span>
-                                            <span class="grupo-modulo-phase-icon" aria-hidden="true">
-                                                <i class="fa fa-check phase-check"></i>
-                                                <i *ngIf="modulo.inferior_hecho" class="fa fa-undo phase-undo"></i>
-                                            </span>
-                                        </button>
-                                        <button type="button"
-                                            class="grupo-modulo-phase"
-                                            [class.is-completa]="modulo.superior_hecho"
-                                            (click)="toggleFaseModulo(modulo, 'SUPERIOR', $event)"
-                                            [attr.aria-pressed]="modulo.superior_hecho"
-                                            [title]="modulo.superior_hecho ? 'Fase superior terminada. Clic para reiniciar, incluidos SD_S y SD_D' : 'Fase superior pendiente. Clic para completar'"
-                                            [attr.aria-label]="(modulo.superior_hecho ? 'Reiniciar' : 'Completar') + ' fase superior de ' + modulo.nombre">
-                                            <span>SUP</span>
-                                            <span class="grupo-modulo-phase-icon" aria-hidden="true">
-                                                <i class="fa fa-check phase-check"></i>
-                                                <i *ngIf="modulo.superior_hecho" class="fa fa-undo phase-undo"></i>
-                                            </span>
-                                        </button>
                                     </div>
 
                                     <!-- Preview minimalista durante el drag (sin botones). -->
