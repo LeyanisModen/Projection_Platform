@@ -61,6 +61,8 @@ export interface Proyecto {
     datos_tecnicos_importados: boolean;
     datos_tecnicos_archivo?: string | null;
     datos_tecnicos_actualizados_at?: string | null;
+    plano_archivo?: string | null;
+    planilla_archivo?: string | null;
     estrategia_bastidor: EstrategiaBastidor;
     capacidad_diaria_usuario?: number;
     grupos_count?: number;
@@ -130,28 +132,18 @@ export interface ProyectoMesasPreview {
     queues: ProyectoMesaPreviewQueue[];
 }
 
-export interface Planta {
-    id: number;
-    nombre: string;
-    proyecto: number;
-    orden: number;
-    modulos_count: number;
-    plano_imagen?: string;
-    fichero_corte?: string;
-}
-
 export interface Modulo {
     id: number;
     url: string;
     nombre: string;
     ancho_cm: string | null;
     tipo_modulo: TipoModulo;
-    planta: number | null;
     proyecto: string;
     grupo_bastidor: number | null;
     inferior_hecho: boolean;
     superior_hecho: boolean;
     estado: 'PENDIENTE' | 'EN_PROGRESO' | 'COMPLETADO' | 'CERRADO';
+    completado_at: string | null;
     cerrado: boolean;
     cerrado_at: string | null;
     cerrado_by: string | null;
@@ -189,7 +181,6 @@ export interface FotoFabricacion {
     id: number;
     modulo: number;
     modulo_nombre: string;
-    planta_nombre: string | null;
     proyecto_id: number | null;
     mesa: number | null;
     mesa_nombre: string | null;
@@ -261,7 +252,6 @@ export interface ModuloQueueItem {
     queue: string;
     modulo: string;
     modulo_nombre: string;
-    modulo_planta: string;
     position: number;
     added_by: string | null;
     created_at: string;
@@ -273,7 +263,6 @@ export interface MesaQueueItem {
     mesa_nombre: string;
     modulo: number;
     modulo_nombre: string;
-    modulo_planta_id?: number;
     modulo_proyecto_id?: number;
     modulo_proyecto_nombre?: string;
     fase: 'INFERIOR' | 'SUPERIOR';
@@ -425,7 +414,12 @@ export interface ProductionStatsHour extends ProductionStatsBucket {
 
 export interface ProductionStatsResponse {
     range: { from: string; to: string; working_days: number };
-    totals: ProductionStatsBucket & { modulos_completados: number };
+    totals: ProductionStatsBucket & {
+        modulos_completados: number;
+        horas_productivas: number;
+        modulos_por_hora: number;
+        kg_por_hora: number;
+    };
     por_mesa: ProductionStatsMesa[];
     por_dia: ProductionStatsDay[];
     por_hora?: ProductionStatsHour[] | null;
@@ -545,13 +539,12 @@ export class ApiService {
     /**
      * Import project structure with images from folder.
      * @param proyectoId - The project ID to import into
-     * @param formData - FormData containing 'plantas' JSON and image files
+     * @param formData - FormData containing 'modulos' JSON and image files
      */
     importProjectStructure(proyectoId: number, formData: FormData): Observable<{
         status: string;
         proyecto_id: number;
         stats: {
-            plantas: number;
             modulos: number;
             imagenes: number;
             detalles_fase: number;
@@ -578,7 +571,6 @@ export class ApiService {
         proyecto_id: number;
         project: Proyecto;
         stats: {
-            plantas: number;
             modulos: number;
             imagenes: number;
             detalles_fase: number;
@@ -649,28 +641,8 @@ export class ApiService {
         );
     }
 
-    // =========================================================================
-    // PLANTAS
-    // =========================================================================
-    getPlantas(proyectoId: number): Observable<Planta[]> {
-        return this.http.get<PagedResponse<Planta>>(`${this.baseUrl}/plantas/?proyecto=${proyectoId}`, { headers: this.getHeaders() })
-            .pipe(map(response => response.results));
-    }
-
-    createPlanta(data: any): Observable<Planta> {
-        return this.http.post<Planta>(`${this.baseUrl}/plantas/`, data, { headers: this.getHeaders() });
-    }
-
-    updatePlanta(id: number, data: any): Observable<Planta> {
-        return this.http.patch<Planta>(`${this.baseUrl}/plantas/${id}/`, data, { headers: this.getHeaders() });
-    }
-
-    deletePlanta(id: number): Observable<void> {
-        return this.http.delete<void>(`${this.baseUrl}/plantas/${id}/`, { headers: this.getHeaders() });
-    }
-
-    updatePlantaFiles(id: number, formData: FormData): Observable<Planta> {
-        return this.http.patch<Planta>(`${this.baseUrl}/plantas/${id}/`, formData, {
+    updateProyectoFiles(id: number, formData: FormData): Observable<Proyecto> {
+        return this.http.patch<Proyecto>(`${this.baseUrl}/proyectos/${id}/`, formData, {
             headers: this.getAuthHeaders()
         });
     }
@@ -678,11 +650,9 @@ export class ApiService {
     // =========================================================================
     // MODULOS (paginated)
     // =========================================================================
-    getModulos(plantaId?: number, proyectoId?: number): Observable<Modulo[]> {
+    getModulos(proyectoId?: number): Observable<Modulo[]> {
         let url = `${this.baseUrl}/modulos/`;
-        if (plantaId) {
-            url += `?planta=${plantaId}`;
-        } else if (proyectoId) {
+        if (proyectoId) {
             url += `?proyecto=${proyectoId}`;
         }
         return this.http.get<PagedResponse<Modulo>>(url, { headers: this.getHeaders() })
@@ -993,14 +963,13 @@ export class ApiService {
     // =========================================================================
     // FOTOS FABRICACION
     // =========================================================================
-    getFotos(params: { modulo?: number | number[]; planta?: number; proyecto?: number; grupo_bastidor?: number | number[] }): Observable<FotoFabricacion[]> {
+    getFotos(params: { modulo?: number | number[]; proyecto?: number; grupo_bastidor?: number | number[] }): Observable<FotoFabricacion[]> {
         let url = `${this.baseUrl}/fotos/`;
         const queryParts: string[] = [];
         if (params.modulo) {
             const ids = Array.isArray(params.modulo) ? params.modulo : [params.modulo];
             if (ids.length) queryParts.push(`modulo=${ids.join(',')}`);
         }
-        if (params.planta) queryParts.push(`planta=${params.planta}`);
         if (params.proyecto) queryParts.push(`proyecto=${params.proyecto}`);
         if (params.grupo_bastidor) {
             const ids = Array.isArray(params.grupo_bastidor) ? params.grupo_bastidor : [params.grupo_bastidor];
@@ -1010,14 +979,13 @@ export class ApiService {
         return this.http.get<FotoFabricacion[]>(url, { headers: this.getHeaders() });
     }
 
-    downloadFotosZip(params: { modulo?: number | number[]; planta?: number; proyecto?: number; grupo_bastidor?: number | number[] }): Observable<Blob> {
+    downloadFotosZip(params: { modulo?: number | number[]; proyecto?: number; grupo_bastidor?: number | number[] }): Observable<Blob> {
         let url = `${this.baseUrl}/fotos/download_zip/`;
         const queryParts: string[] = [];
         if (params.modulo) {
             const ids = Array.isArray(params.modulo) ? params.modulo : [params.modulo];
             if (ids.length) queryParts.push(`modulo=${ids.join(',')}`);
         }
-        if (params.planta) queryParts.push(`planta=${params.planta}`);
         if (params.proyecto) queryParts.push(`proyecto=${params.proyecto}`);
         if (params.grupo_bastidor) {
             const ids = Array.isArray(params.grupo_bastidor) ? params.grupo_bastidor : [params.grupo_bastidor];

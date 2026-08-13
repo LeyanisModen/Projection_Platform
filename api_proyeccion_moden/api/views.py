@@ -21,7 +21,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from api.serializers import (
-    ProyectoSerializer, PlantaSerializer, UserSerializer, ModuloSerializer,
+    ProyectoSerializer, UserSerializer, ModuloSerializer,
     ImagenSerializer, MesaSerializer, MesaResumenGrupoSerializer,
     ModuloQueueSerializer, ModuloQueueItemSerializer, MesaQueueItemSerializer,
     FotoFabricacionSerializer, GrupoMesasSerializer, DetalleModuloFaseSerializer,
@@ -29,7 +29,7 @@ from api.serializers import (
     FerrallaCaptureConfigSerializer, DeviceCaptureConfigAckSerializer,
 )
 from api.models import (
-    Modulo, Proyecto, Planta, Imagen, Mesa,
+    Modulo, Proyecto, Imagen, Mesa,
     ModuloQueue, ModuloQueueItem, MesaQueueItem,
     FotoFabricacion, GrupoMesas, GrupoMesasProyecto,
     DetalleModuloFase, MesaQueueStatus, ModuloEstado, Fase,
@@ -40,6 +40,7 @@ from api.project_media import (
     collect_module_media,
     collect_project_media,
     delete_module_media,
+    delete_unreferenced_storage_files,
     delete_project_media,
 )
 from api.module_features import annotate_modules_with_sd
@@ -133,7 +134,6 @@ def _normalize_tipo_modulo(raw):
     return alias_map.get(canonical, '')
 
 MODULE_NAME_ALIASES = ['modulo', 'modulo_nombre', 'nombre_modulo', 'module', 'module_name']
-PLANTA_NAME_ALIASES = ['planta', 'planta_nombre', 'nombre_planta', 'nivel', 'floor']
 FASE_ALIASES = ['fase', 'phase', 'subfase', 'fase_nombre']
 PHASE_PREFIXES = {
     'inf': 'INFERIOR',
@@ -336,7 +336,6 @@ def _normalize_technical_records(records):
     for raw_row in records:
         row = _row_to_canonical_dict(raw_row)
         modulo_nombre = _extract_value(row, MODULE_NAME_ALIASES)
-        planta_nombre = _extract_value(row, PLANTA_NAME_ALIASES)
         module_fields = _extract_module_fields(row)
 
         if not modulo_nombre:
@@ -348,7 +347,6 @@ def _normalize_technical_records(records):
         if explicit_phase and explicit_fields:
             normalized_records.append({
                 'modulo_nombre': modulo_nombre,
-                'planta_nombre': planta_nombre,
                 'fase': explicit_phase,
                 'fields': explicit_fields,
                 'module_fields': module_fields,
@@ -363,7 +361,6 @@ def _normalize_technical_records(records):
             record_added = True
             normalized_records.append({
                 'modulo_nombre': modulo_nombre,
-                'planta_nombre': planta_nombre,
                 'fase': fase,
                 'fields': prefixed_fields,
                 'module_fields': module_fields,
@@ -372,7 +369,6 @@ def _normalize_technical_records(records):
         if not record_added and module_fields:
             normalized_records.append({
                 'modulo_nombre': modulo_nombre,
-                'planta_nombre': planta_nombre,
                 'fase': None,
                 'fields': {},
                 'module_fields': module_fields,
@@ -398,14 +394,12 @@ def _flatten_json_technical_data(payload):
                 if not isinstance(module, dict):
                     continue
                 modulo_nombre = module.get('nombre') or module.get('modulo') or module.get('modulo_nombre')
-                planta_nombre = module.get('planta') or module.get('planta_nombre')
                 ancho_cm = module.get('ancho_cm') or module.get('ancho') or module.get('ancho_modulo_cm')
                 for detalle in module.get('detalles_fase', []):
                     if not isinstance(detalle, dict):
                         continue
                     flattened.append({
                         'modulo': modulo_nombre,
-                        'planta': planta_nombre,
                         'ancho_cm': ancho_cm,
                         **detalle,
                     })
@@ -747,7 +741,7 @@ def _persist_materiales_pieces(proyecto, pieces):
     return stats
 
 
-def _resolve_modulo_for_record(proyecto, modulo_nombre, planta_nombre=None):
+def _resolve_modulo_for_record(proyecto, modulo_nombre):
     """
     Busca un modulo del proyecto por nombre tolerando prefijos comunes.
     Acepta coincidencia exacta o cualquier variacion con prefijos MOD_, MOD-, MODULO_, MODULO-.
@@ -777,16 +771,14 @@ def _resolve_modulo_for_record(proyecto, modulo_nombre, planta_nombre=None):
     for cand in candidates:
         name_filter |= Q(nombre__iexact=cand)
 
-    queryset = proyecto.modulos.select_related('planta').filter(name_filter)
-    if planta_nombre:
-        queryset = queryset.filter(planta__nombre__iexact=str(planta_nombre).strip())
+    queryset = proyecto.modulos.filter(name_filter)
 
     matches = list(queryset[:2])
     if not matches:
         # No es un error: el registro tecnico no tiene contraparte en el proyecto
         return None, None
     if len(matches) > 1:
-        return None, f'El modulo "{modulo_nombre}" es ambiguo; indica tambien la planta'
+        return None, f'El nombre de modulo "{modulo_nombre}" esta repetido en el proyecto'
     return matches[0], None
 
 
@@ -1273,6 +1265,22 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         else:
             serializer.save()
 
+    def perform_update(self, serializer):
+        replaced_files = []
+        for field_name in ('plano_archivo', 'planilla_archivo'):
+            if field_name not in serializer.validated_data:
+                continue
+            current_file = getattr(serializer.instance, field_name)
+            if current_file and current_file.name:
+                replaced_files.append(current_file.name)
+
+        serializer.save()
+        if replaced_files:
+            transaction.on_commit(
+                lambda: delete_unreferenced_storage_files(replaced_files),
+                robust=True,
+            )
+
     def perform_destroy(self, instance):
         media_snapshot = collect_project_media(instance)
         with transaction.atomic():
@@ -1347,7 +1355,6 @@ class ProyectoViewSet(viewsets.ModelViewSet):
             modulo, error = _resolve_modulo_for_record(
                 proyecto,
                 record['modulo_nombre'],
-                record.get('planta_nombre'),
             )
             if error:
                 stats['errors'].append(error)
@@ -1495,7 +1502,6 @@ class ProyectoViewSet(viewsets.ModelViewSet):
     @staticmethod
     def _new_import_stats():
         return {
-            'plantas': 0,
             'modulos': 0,
             'imagenes': 0,
             'detalles_fase': 0,
@@ -1524,7 +1530,7 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         proyecto = self.get_object()
         try:
             queue = proyecto.modulo_queue
-            items = queue.items.select_related('modulo', 'modulo__planta').all().order_by('position')
+            items = queue.items.select_related('modulo').all().order_by('position')
             serializer = ModuloQueueItemSerializer(items, many=True, context={'request': request})
             return Response(serializer.data)
         except ModuloQueue.DoesNotExist:
@@ -1673,8 +1679,9 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         """
         Import project structure from uploaded folder data.
         Expects multipart form with:
-        - 'plantas': JSON string with structure
-        - image files referenced by filename in plantas JSON
+        - 'modulos': JSON string with the module structure
+        - image files referenced by filename in the modules JSON
+        - optional 'plano_file' and 'planilla_file' PDF files
         """
         import os
         import json
@@ -1683,28 +1690,53 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         # Get uploaded files
         files = request.FILES
         
-        # Parse plantas JSON from string (comes as string in multipart form)
-        plantas_raw = request.data.get('plantas', '[]')
-        if isinstance(plantas_raw, str):
+        # Keep accepting the old nested payload during the rollout so a stale
+        # browser tab cannot break an import. Nothing is persisted as a floor.
+        modules_raw = request.data.get('modulos')
+        legacy_payload = modules_raw is None
+        if legacy_payload:
+            modules_raw = request.data.get('plantas', '[]')
+        if isinstance(modules_raw, str):
             try:
-                plantas_data = json.loads(plantas_raw)
+                parsed_structure = json.loads(modules_raw)
             except json.JSONDecodeError as e:
                 return Response({
                     'status': 'error',
-                    'message': f'Invalid JSON in plantas: {str(e)}'
+                    'message': f'La estructura de modulos no es JSON valido: {str(e)}'
                 }, status=400)
         else:
-            plantas_data = plantas_raw
+            parsed_structure = modules_raw
         
         stats = self._new_import_stats()
-        if not isinstance(plantas_data, list):
+        if not isinstance(parsed_structure, list):
             return Response({
                 'status': 'error',
-                'message': 'La estructura de plantas debe ser una lista.',
+                'message': 'La estructura de modulos debe ser una lista.',
                 'stats': stats,
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        print(f"[IMPORT] Proyecto {proyecto.id}: {len(plantas_data)} plantas, {len(files)} files")
+        legacy_project_data = {}
+        if legacy_payload:
+            modulos_data = []
+            for legacy_group in parsed_structure:
+                if not isinstance(legacy_group, dict):
+                    continue
+                modulos_data.extend(legacy_group.get('modulos') or [])
+                legacy_project_data.setdefault(
+                    'plano_filename', legacy_group.get('plano_filename')
+                )
+                legacy_project_data.setdefault(
+                    'planilla_filename',
+                    legacy_group.get('planilla_filename')
+                    or legacy_group.get('corte_filename'),
+                )
+        else:
+            modulos_data = parsed_structure
+
+        print(
+            f"[IMPORT] Proyecto {proyecto.id}: "
+            f"{len(modulos_data)} modulos, {len(files)} archivos"
+        )
 
         strict_validation = str(
             request.data.get('strict_validation', '')
@@ -1797,40 +1829,57 @@ class ProyectoViewSet(viewsets.ModelViewSet):
             for name in proyecto.modulos.values_list('nombre', flat=True)
         }
 
-        for planta_data in plantas_data:
+        project_data = {
+            'modulos': modulos_data,
+            'plano_filename': legacy_project_data.get('plano_filename'),
+            'planilla_filename': legacy_project_data.get('planilla_filename'),
+        }
+
+        for project_data in [project_data]:
             try:
-                if not isinstance(planta_data, dict):
-                    stats['errors'].append('Se omitio una planta con estructura invalida.')
-                    continue
-                # Reuse the virtual "General" floor when importing extra modules.
-                planta, planta_created = Planta.objects.get_or_create(
-                    nombre=planta_data.get('nombre', 'Sin nombre'),
-                    proyecto=proyecto,
-                    defaults={'orden': planta_data.get('orden', 0)},
-                )
-                if planta_created:
-                    stats['plantas'] += 1
+                replaced_project_files = []
+                for field_name, legacy_name, model_field, stats_field, label in (
+                    (
+                        'plano_file',
+                        project_data.get('plano_filename'),
+                        proyecto.plano_archivo,
+                        'plano_cargado',
+                        'plano',
+                    ),
+                    (
+                        'planilla_file',
+                        project_data.get('planilla_filename'),
+                        proyecto.planilla_archivo,
+                        'planilla_cargada',
+                        'planilla',
+                    ),
+                ):
+                    uploaded_file = files.get(field_name)
+                    if not uploaded_file and legacy_name:
+                        uploaded_file = files.get(legacy_name)
+                    if not uploaded_file:
+                        continue
+                    if os.path.splitext(uploaded_file.name)[1].lower() != '.pdf':
+                        stats['errors'].append(
+                            f'El archivo de {label} debe ser un PDF.'
+                        )
+                        continue
+                    if model_field and model_field.name:
+                        replaced_project_files.append(model_field.name)
+                    model_field.save(uploaded_file.name, uploaded_file)
+                    stats[stats_field] = True
 
-                # Check for Plant Files (Plano and Corte)
-                plano_filename = planta_data.get('plano_filename')
-                if plano_filename:
-                    uploaded_file = files.get(plano_filename)
-                    if uploaded_file:
-                        planta.plano_imagen.save(uploaded_file.name, uploaded_file)
-                        stats['plano_cargado'] = True
-
-                corte_filename = planta_data.get('corte_filename')
-                if corte_filename:
-                    uploaded_file = files.get(corte_filename)
-                    if uploaded_file:
-                        planta.fichero_corte.save(uploaded_file.name, uploaded_file)
-                        stats['planilla_cargada'] = True
-                
-                modulos_data = planta_data.get('modulos', [])
-                if not isinstance(modulos_data, list):
-                    stats['errors'].append(
-                        f"La planta {planta.nombre} no contiene una lista valida de modulos."
+                if replaced_project_files:
+                    transaction.on_commit(
+                        lambda file_names=tuple(replaced_project_files): (
+                            delete_unreferenced_storage_files(file_names)
+                        ),
+                        robust=True,
                     )
+                
+                modulos_data = project_data.get('modulos', [])
+                if not isinstance(modulos_data, list):
+                    stats['errors'].append('La lista de modulos no es valida.')
                     continue
                 for modulo_data in modulos_data:
                     modulo_name = 'Sin nombre'
@@ -1881,7 +1930,6 @@ class ProyectoViewSet(viewsets.ModelViewSet):
                                 ancho_cm=_extract_module_fields(
                                     _row_to_canonical_dict(modulo_data)
                                 ).get('ancho_cm'),
-                                planta=planta,
                                 proyecto=proyecto,
                                 estado='PENDIENTE',
                                 codigos_color=(
@@ -1912,7 +1960,6 @@ class ProyectoViewSet(viewsets.ModelViewSet):
                                 media_path = os.path.join(
                                     'imagenes',
                                     str(proyecto.id),
-                                    str(planta.id),
                                     str(modulo.id),
                                 )
                                 full_path = os.path.join(
@@ -1991,7 +2038,7 @@ class ProyectoViewSet(viewsets.ModelViewSet):
                             [f'No se pudo guardar: {exc}'],
                         )
             except Exception as e:
-                stats['errors'].append(f"Error creating planta: {str(e)}")
+                stats['errors'].append(f"Error preparando el proyecto: {str(e)}")
 
         technical_stats = self._apply_technical_records(
             proyecto,
@@ -2967,25 +3014,6 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
         return Response(GrupoBastidorSerializer(grupos, many=True).data)
 
 
-class PlantaViewSet(viewsets.ModelViewSet):
-    """
-    API endpoint para ver, crear, editar y borrar plantas.
-    Filtrar por proyecto con ?proyecto=ID
-    """
-    queryset = Planta.objects.annotate(modulos_count=Count('modulos')).order_by('orden', 'nombre')
-    serializer_class = PlantaSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get_queryset(self):
-        queryset = Planta.objects.annotate(modulos_count=Count('modulos')).order_by('orden', 'nombre')
-        if not _is_admin(self.request.user):
-            queryset = queryset.filter(proyecto__usuario=self.request.user)
-        proyecto_id = self.request.query_params.get('proyecto', None)
-        if proyecto_id is not None:
-            queryset = queryset.filter(proyecto_id=proyecto_id)
-        return queryset
-
-
 class ModuloViewSet(viewsets.ModelViewSet):
     """
     API endpoint que permite ver, crear, editar y borrar módulos.
@@ -3002,10 +3030,7 @@ class ModuloViewSet(viewsets.ModelViewSet):
         if not _is_admin(self.request.user):
             queryset = queryset.filter(proyecto__usuario=self.request.user)
         proyecto_id = self.request.query_params.get('proyecto', None)
-        planta_id = self.request.query_params.get('planta', None)
-        if planta_id is not None:
-            queryset = queryset.filter(planta_id=planta_id)
-        elif proyecto_id is not None:
+        if proyecto_id is not None:
             queryset = queryset.filter(proyecto_id=proyecto_id)
         return queryset
 
@@ -3431,8 +3456,7 @@ class MesaViewSet(viewsets.ModelViewSet):
         item = (
             mesa.queue_items
             .select_related(
-                'modulo', 'imagen', 'mesa',
-                'modulo__planta', 'modulo__planta__proyecto',
+                'modulo', 'modulo__proyecto', 'imagen', 'mesa',
             )
             .prefetch_related(
                 Prefetch(
@@ -4073,7 +4097,7 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
             raise ValueError('initial_loads_inf debe tener una entrada por mesa inferior')
 
         modulos = list(
-            proyecto.modulos.select_related('planta', 'grupo_bastidor')
+            proyecto.modulos.select_related('grupo_bastidor')
             .prefetch_related('detalles_fase').all()
         )
         # Sin mesas inferiores activas la fase INFERIOR no se planifica:
@@ -4514,6 +4538,44 @@ def _count_working_days(start_date, end_date):
     return total
 
 
+def _working_hours_in_range(start_date, end_date, profile, now=None):
+    """Return elapsed configured working hours inside an inclusive date range."""
+    from datetime import time, timedelta
+    from django.utils import timezone
+
+    if end_date < start_date:
+        return 0.0
+
+    current_tz = timezone.get_current_timezone()
+    now = now or timezone.localtime(timezone.now(), current_tz)
+    active_days = set(
+        getattr(profile, 'capture_active_days', None)
+        or ['MON', 'TUE', 'WED', 'THU', 'FRI']
+    )
+    start_time = getattr(profile, 'capture_start_time', None) or time(6, 50)
+    end_time = getattr(profile, 'capture_end_time', None) or time(15, 0)
+    day_codes = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']
+
+    seconds = 0.0
+    current = start_date
+    while current <= end_date:
+        if day_codes[current.weekday()] in active_days:
+            day_start = timezone.make_aware(
+                timezone.datetime.combine(current, start_time), current_tz
+            )
+            day_end = timezone.make_aware(
+                timezone.datetime.combine(current, end_time), current_tz
+            )
+            if day_end <= day_start:
+                day_end += timedelta(days=1)
+            effective_end = min(day_end, now)
+            if effective_end > day_start:
+                seconds += (effective_end - day_start).total_seconds()
+        current += timedelta(days=1)
+
+    return seconds / 3600.0
+
+
 def _compute_dificultad_scale(user, fallback_detalles=None, proyecto_id=None):
     """
     Computes the scale factor that maps the user's mean raw dificultad
@@ -4873,10 +4935,23 @@ class ProductionStatsView(APIView):
         if profile_user is None and request.user.is_authenticated and not _is_admin(request.user):
             profile_user = request.user
         if profile_user is not None and hasattr(profile_user, 'profile'):
-            profile_cap = profile_user.profile.capacidad_diaria_modulos
+            profile = profile_user.profile
+            profile_cap = profile.capacidad_diaria_modulos
             if profile_cap:
                 capacidad_diaria = profile_cap
+        else:
+            profile = None
         working_days = _count_working_days(from_date, to_date)
+        working_hours = _working_hours_in_range(
+            from_date, to_date, profile, timezone.localtime(timezone.now(), current_tz)
+        )
+        totals['horas_productivas'] = round(working_hours, 2)
+        totals['modulos_por_hora'] = round(
+            modulos_completados / working_hours, 2
+        ) if working_hours > 0 else 0.0
+        totals['kg_por_hora'] = round(
+            totals['peso_malla_final_kg'] / working_hours, 2
+        ) if working_hours > 0 else 0.0
 
         return Response({
             'range': {
@@ -4905,12 +4980,12 @@ class DetalleModuloFaseViewSet(viewsets.ModelViewSet):
     """
     API endpoint para datos tecnicos importados por modulo y fase.
     """
-    queryset = DetalleModuloFase.objects.select_related('modulo', 'modulo__proyecto', 'modulo__planta').all()
+    queryset = DetalleModuloFase.objects.select_related('modulo', 'modulo__proyecto').all()
     serializer_class = DetalleModuloFaseSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        queryset = DetalleModuloFase.objects.select_related('modulo', 'modulo__proyecto', 'modulo__planta').all()
+        queryset = DetalleModuloFase.objects.select_related('modulo', 'modulo__proyecto').all()
         if not _is_admin(self.request.user):
             queryset = queryset.filter(modulo__proyecto__usuario=self.request.user)
         modulo_id = self.request.query_params.get('modulo')
@@ -4963,12 +5038,12 @@ class ModuloQueueItemViewSet(viewsets.ModelViewSet):
     """
     API endpoint para gestionar items en la cola de módulos.
     """
-    queryset = ModuloQueueItem.objects.select_related('modulo', 'modulo__planta').all().order_by('queue', 'position')
+    queryset = ModuloQueueItem.objects.select_related('modulo', 'modulo__proyecto').all().order_by('queue', 'position')
     serializer_class = ModuloQueueItemSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        queryset = ModuloQueueItem.objects.select_related('modulo', 'modulo__planta').all().order_by('position')
+        queryset = ModuloQueueItem.objects.select_related('modulo', 'modulo__proyecto').all().order_by('position')
         if not _is_admin(self.request.user):
             queryset = queryset.filter(queue__proyecto__usuario=self.request.user)
         queue_id = self.request.query_params.get('queue', None)
@@ -5414,7 +5489,7 @@ class DeviceViewSet(viewsets.ViewSet):
         from api.models import MesaQueueStatus
 
         item = mesa.queue_items.select_related(
-            'modulo', 'imagen', 'mesa', 'modulo__planta', 'modulo__planta__proyecto'
+            'modulo', 'modulo__proyecto', 'imagen', 'mesa'
         ).filter(status=MesaQueueStatus.MOSTRANDO).first()
 
         if not item:
@@ -5516,7 +5591,7 @@ class DeviceViewSet(viewsets.ViewSet):
             return Response({'detail': 'modulo_id, fase, and paso are required'}, status=400)
 
         try:
-            modulo = Modulo.objects.select_related('planta', 'planta__proyecto').get(id=modulo_id)
+            modulo = Modulo.objects.select_related('proyecto').get(id=modulo_id)
         except Modulo.DoesNotExist:
             return Response({'detail': 'Modulo not found'}, status=404)
 
@@ -5533,8 +5608,7 @@ class DeviceViewSet(viewsets.ViewSet):
         foto_bytes = foto_file.read()
 
         proyecto_id = modulo.proyecto_id
-        planta_id = modulo.planta_id or 0
-        media_path = os.path.join('fotos', str(proyecto_id), str(planta_id), str(modulo.id))
+        media_path = os.path.join('fotos', str(proyecto_id), str(modulo.id))
         full_dir = os.path.join(django_settings.MEDIA_ROOT, media_path)
         os.makedirs(full_dir, exist_ok=True)
 
@@ -5809,14 +5883,16 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
     """
     API endpoint para gestionar items en la cola de mesas (WorkItems).
     """
-    queryset = MesaQueueItem.objects.select_related('mesa', 'modulo', 'imagen', 'modulo__planta', 'modulo__planta__proyecto').all().order_by('mesa', 'position')
+    queryset = MesaQueueItem.objects.select_related(
+        'mesa', 'modulo', 'modulo__proyecto', 'imagen'
+    ).all().order_by('mesa', 'position')
     serializer_class = MesaQueueItemSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
         queryset = (
             MesaQueueItem.objects
-            .select_related('mesa', 'modulo', 'imagen', 'modulo__planta', 'modulo__planta__proyecto')
+            .select_related('mesa', 'modulo', 'modulo__proyecto', 'imagen')
             .prefetch_related(
                 'modulo__detalles_fase',
                 Prefetch(
@@ -6080,10 +6156,10 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
 class FotoFabricacionViewSet(viewsets.ReadOnlyModelViewSet):
     """
     API endpoint to list/retrieve fabrication photos.
-    Filterable by modulo, planta, proyecto, grupo_bastidor, fase.
+    Filterable by modulo, proyecto, grupo_bastidor, fase.
     """
     queryset = FotoFabricacion.objects.select_related(
-        'modulo', 'modulo__proyecto', 'modulo__planta', 'modulo__planta__proyecto',
+        'modulo', 'modulo__proyecto',
         'modulo__grupo_bastidor', 'mesa', 'imagen_referencia'
     ).all()
     serializer_class = FotoFabricacionSerializer
@@ -6114,7 +6190,7 @@ class FotoFabricacionViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         queryset = FotoFabricacion.objects.select_related(
-            'modulo', 'modulo__proyecto', 'modulo__planta', 'modulo__planta__proyecto',
+            'modulo', 'modulo__proyecto',
             'modulo__grupo_bastidor', 'mesa'
         ).all()
 
@@ -6122,15 +6198,12 @@ class FotoFabricacionViewSet(viewsets.ReadOnlyModelViewSet):
             queryset = queryset.filter(modulo__proyecto__usuario=self.request.user)
 
         modulo_ids = self._get_modulo_ids(self.request)
-        planta_id = self.request.query_params.get('planta')
         proyecto_id = self.request.query_params.get('proyecto')
         grupo_bastidor_ids = self._get_grupo_bastidor_ids(self.request)
         fase = self.request.query_params.get('fase')
 
         if modulo_ids:
             queryset = queryset.filter(modulo_id__in=modulo_ids)
-        if planta_id:
-            queryset = queryset.filter(modulo__planta_id=planta_id)
         if proyecto_id:
             queryset = queryset.filter(modulo__proyecto_id=proyecto_id)
         if grupo_bastidor_ids:
@@ -6153,7 +6226,7 @@ class FotoFabricacionViewSet(viewsets.ReadOnlyModelViewSet):
     def download_zip(self, request):
         """
         Download photos as ZIP file.
-        Query params: ?proyecto=ID or ?planta=ID or ?modulo=ID.
+        Query params: ?proyecto=ID or ?modulo=ID.
         Optional: ?grupo_bastidor=ID or ?grupo_bastidor=ID,ID.
         ZIP name uses the entity name; internal structure excludes the
         top-level folder (Windows "Extract All" creates it from the ZIP name).
@@ -6165,7 +6238,6 @@ class FotoFabricacionViewSet(viewsets.ReadOnlyModelViewSet):
         from django.http import HttpResponse
 
         proyecto_id = request.query_params.get('proyecto')
-        planta_id = request.query_params.get('planta')
         modulo_ids = self._get_modulo_ids(request)
         grupo_bastidor_ids = self._get_grupo_bastidor_ids(request)
 
@@ -6179,7 +6251,6 @@ class FotoFabricacionViewSet(viewsets.ReadOnlyModelViewSet):
         with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
             for foto in fotos:
                 proyecto_nombre = foto.modulo.proyecto.nombre if foto.modulo.proyecto else 'sin_proyecto'
-                planta_nombre = foto.modulo.planta.nombre if foto.modulo.planta else 'sin_planta'
                 modulo_nombre = foto.modulo.nombre
                 grupo_bastidor = foto.modulo.grupo_bastidor
                 if grupo_bastidor:
@@ -6202,12 +6273,8 @@ class FotoFabricacionViewSet(viewsets.ReadOnlyModelViewSet):
                     archive_path = filename if len(modulo_ids) == 1 else f"{modulo_nombre}/{filename}"
                     if not zip_entity_name:
                         zip_entity_name = modulo_nombre if len(modulo_ids) == 1 else f"{proyecto_nombre}_modulos"
-                elif planta_id:
-                    archive_path = f"{modulo_nombre}/{filename}"
-                    if not zip_entity_name:
-                        zip_entity_name = planta_nombre
                 else:
-                    archive_path = f"{planta_nombre}/{modulo_nombre}/{filename}"
+                    archive_path = f"{modulo_nombre}/{filename}"
                     if not zip_entity_name:
                         zip_entity_name = proyecto_nombre
 

@@ -80,6 +80,18 @@ class Proyecto(models.Model):
         null=True,
         blank=True,
     )
+    plano_archivo = models.FileField(
+        upload_to='planos/',
+        blank=True,
+        null=True,
+        help_text='Plano PDF del proyecto.',
+    )
+    planilla_archivo = models.FileField(
+        upload_to='planillas/',
+        blank=True,
+        null=True,
+        help_text='Planilla PDF del proyecto.',
+    )
     estrategia_bastidor = models.CharField(
         max_length=32,
         choices=EstrategiaBastidor.choices,
@@ -136,34 +148,6 @@ class GrupoBastidor(models.Model):
 
 
 
-class Planta(models.Model):
-    """
-    Planta/Nivel dentro de un proyecto.
-    Jerarquía: Proyecto -> Planta -> Modulo
-    """
-    id = models.AutoField(primary_key=True)
-    nombre = models.CharField(max_length=200)
-    proyecto = models.ForeignKey(Proyecto, on_delete=models.CASCADE, related_name='plantas')
-    orden = models.PositiveIntegerField(default=0)
-    
-    # New fields for Dashboard
-    plano_imagen = models.ImageField(upload_to='planos/', blank=True, null=True)
-    fichero_corte = models.FileField(upload_to='cortes/', blank=True, null=True)
-
-    def __str__(self):
-        return f"{self.proyecto.nombre} - {self.nombre}"
-
-    class Meta:
-        db_table = 'api_planta'
-        ordering = ['orden', 'nombre']
-        constraints = [
-            models.UniqueConstraint(
-                fields=['proyecto', 'nombre'],
-                name='unique_planta_nombre_per_proyecto'
-            ),
-        ]
-
-
 class TipoModulo(models.TextChoices):
     CENTRAL = 'CENTRAL', 'Central'
     CENTRAL_GIRADO = 'CENTRAL_GIRADO', 'Central girado'
@@ -188,13 +172,6 @@ class Modulo(models.Model):
         null=True,
         blank=True,
         help_text='Ancho util del modulo para agrupacion en bastidor.'
-    )
-    planta = models.ForeignKey(
-        Planta,
-        on_delete=models.CASCADE,
-        related_name='modulos',
-        null=True,  # Temporarily nullable for migration
-        blank=True
     )
     proyecto = models.ForeignKey(Proyecto, on_delete=models.CASCADE, related_name='modulos')
     grupo_bastidor = models.ForeignKey(
@@ -246,8 +223,7 @@ class Modulo(models.Model):
     )
 
     def __str__(self):
-        planta_nombre = self.planta.nombre if self.planta else "Sin planta"
-        return f"{self.nombre} ({planta_nombre})"
+        return f"{self.nombre} ({self.proyecto.nombre})"
 
     def actualizar_estado(self):
         """Update estado based on phase completion."""

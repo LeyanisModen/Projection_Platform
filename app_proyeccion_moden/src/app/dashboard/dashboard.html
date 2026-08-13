@@ -219,12 +219,16 @@
                                 </span>
                             </div>
                             <div class="stats-kpi">
-                                <span class="stats-kpi-label">Cortes</span>
-                                <span class="stats-kpi-value">{{ statsData.totals.cantidad_cortes }}</span>
+                                <span class="stats-kpi-label">Ritmo de módulos</span>
+                                <span class="stats-kpi-value">
+                                    {{ statsData.totals.modulos_por_hora | number:'1.0-2' }} <small>mód./h</small>
+                                </span>
                             </div>
                             <div class="stats-kpi">
-                                <span class="stats-kpi-label">Dificultad</span>
-                                <span class="stats-kpi-value">{{ statsData.totals.dificultad_total | number:'1.0-0' }}</span>
+                                <span class="stats-kpi-label">Ritmo de peso</span>
+                                <span class="stats-kpi-value">
+                                    {{ statsData.totals.kg_por_hora | number:'1.0-1' }} <small>kg/h</small>
+                                </span>
                             </div>
                         </div>
 
@@ -391,20 +395,24 @@
                                         <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
                                     </svg>
                                 </button>
-                                <button class="project-icon project-icon-disabled" type="button"
-                                    title="Descarga de plano no disponible todavía"
-                                    aria-label="Descargar plano no disponible todavía"
-                                    disabled>
+                                <button class="project-icon" type="button"
+                                    [class.project-icon-disabled]="!proyecto.plano_archivo"
+                                    [title]="proyecto.plano_archivo ? 'Abrir plano PDF' : 'Plano no disponible'"
+                                    aria-label="Abrir plano PDF"
+                                    [disabled]="!proyecto.plano_archivo"
+                                    (click)="openProjectDocument(proyecto, 'plano', $event)">
                                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                         <path d="M9 18 3 20V6l6-2 6 2 6-2v14l-6 2-6-2z"></path>
                                         <path d="M9 4v14"></path>
                                         <path d="M15 6v14"></path>
                                     </svg>
                                 </button>
-                                <button class="project-icon project-icon-disabled" type="button"
-                                    title="Descarga de planillas no disponible todavía"
-                                    aria-label="Descargar planillas no disponible todavía"
-                                    disabled>
+                                <button class="project-icon" type="button"
+                                    [class.project-icon-disabled]="!proyecto.planilla_archivo"
+                                    [title]="proyecto.planilla_archivo ? 'Abrir planilla PDF' : 'Planilla no disponible'"
+                                    aria-label="Abrir planilla PDF"
+                                    [disabled]="!proyecto.planilla_archivo"
+                                    (click)="openProjectDocument(proyecto, 'planilla', $event)">
                                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                                         <path d="M14 2v6h6"></path>
@@ -478,14 +486,13 @@
                     <div class="plan-modal-loading">Este proyecto no tiene módulos.</div>
                 } @else {
                     <div class="plan-modal-body">
-                        @for (group of planModalGroupedByPlanta(); track group.plantaId) {
-                            <div class="plan-planta-block">
-                                <div class="plan-planta-header">
-                                    <strong>{{ group.plantaNombre }}</strong>
-                                    <span class="plan-planta-count">{{ group.done }}/{{ group.total }}</span>
-                                </div>
+                        <div class="plan-project-block">
+                            <div class="plan-project-header">
+                                <strong>Módulos del proyecto</strong>
+                                <span class="plan-project-count">{{ planModalDoneCount() }}/{{ planModalModulos.length }}</span>
+                            </div>
                                 <ul class="plan-modulo-list">
-                                    @for (m of group.modulos; track m.id) {
+                                    @for (m of planModalSortedModulos(); track m.id) {
                                         <li class="plan-modulo-row"
                                             [class.done]="moduloEstadoClass(m) === 'done'"
                                             [class.partial]="moduloEstadoClass(m) === 'partial'"
@@ -509,13 +516,19 @@
                                                         <i class="fa fa-download" aria-hidden="true"></i>
                                                     </button>
                                                 }
+                                                @if (m.completado_at) {
+                                                    <time class="plan-modulo-completed-at"
+                                                        [attr.datetime]="m.completado_at"
+                                                        [title]="'Terminado el ' + (m.completado_at | date:'dd/MM/yyyy HH:mm')">
+                                                        {{ m.completado_at | date:'dd/MM/yyyy HH:mm' }}
+                                                    </time>
+                                                }
                                                 <span class="plan-modulo-estado">{{ moduloEstadoLabel(m) }}</span>
                                             </div>
                                         </li>
                                     }
                                 </ul>
-                            </div>
-                        }
+                        </div>
                     </div>
                 }
             </div>

@@ -18,7 +18,6 @@ interface ProjectGroup {
 }
 
 interface ImportStats {
-  plantas: number;
   modulos: number;
   imagenes: number;
   detalles_fase?: number;
@@ -283,30 +282,22 @@ export class ProyectosComponent implements OnInit {
     scan: ModuleImportScanResult
   ): FormData {
     const formData = new FormData();
-    const plantaData: any = {
-      nombre: 'General',
-      orden: 1,
-      modulos: this.validFolderModules.map(candidate =>
-        appendModuleImportCandidate(formData, candidate, 'PROY')
-      ),
-    };
+    const modules = this.validFolderModules.map(candidate =>
+      appendModuleImportCandidate(formData, candidate, 'PROY')
+    );
 
     if (scan.planoFile) {
-      const key = `PROY_FILE_PLANO_${scan.planoFile.entryName}`;
-      formData.append(key, scan.planoFile.file, key);
-      plantaData.plano_filename = key;
+      formData.append('plano_file', scan.planoFile.file, scan.planoFile.entryName);
     }
     if (scan.planillaFile) {
-      const key = `PROY_FILE_PLANILLA_${scan.planillaFile.entryName}`;
-      formData.append(key, scan.planillaFile.file, key);
-      plantaData.corte_filename = key;
+      formData.append('planilla_file', scan.planillaFile.file, scan.planillaFile.entryName);
     }
     if (scan.technicalDbFile) {
       formData.append('technical_file', scan.technicalDbFile, scan.technicalDbFile.name);
     }
 
     formData.append('project', JSON.stringify(projectData));
-    formData.append('plantas', JSON.stringify([plantaData]));
+    formData.append('modulos', JSON.stringify(modules));
     formData.append('strict_validation', 'true');
     formData.append('client_errors', JSON.stringify(scan.rootIssues));
     formData.append('client_module_errors', JSON.stringify(

@@ -55,7 +55,7 @@ export interface ModuleImportPayload {
 
 const VALID_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg']);
 const TECHNICAL_EXTENSIONS = new Set(['.db', '.sqlite', '.sqlite3']);
-const PLANILLA_EXTENSIONS = new Set(['.pdf', '.xls', '.xlsx']);
+const PROJECT_DOCUMENT_EXTENSION = '.pdf';
 
 export function parseModuleImportFolder(folderName: string): ParsedModuleFolder {
     const parts = folderName.split('_');
@@ -137,11 +137,13 @@ export async function scanModuleImportFolder(
     for (const [entryName, entryHandle] of rootEntries) {
         if (entryHandle.kind !== 'file') continue;
         const extension = fileExtension(entryName);
-        const recognizedProjectFile = (
-            TECHNICAL_EXTENSIONS.has(extension) ||
-            VALID_IMAGE_EXTENSIONS.has(extension) ||
-            PLANILLA_EXTENSIONS.has(extension)
-        );
+        const normalizedName = entryName
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase();
+        const isPlano = extension === PROJECT_DOCUMENT_EXTENSION && normalizedName.includes('plano');
+        const isPlanilla = extension === PROJECT_DOCUMENT_EXTENSION && normalizedName.includes('planilla');
+        const recognizedProjectFile = TECHNICAL_EXTENSIONS.has(extension) || isPlano || isPlanilla;
         if (!recognizedProjectFile) continue;
         const projectFile = await readProjectFile(entryName, entryHandle, rootIssues);
         if (!projectFile) continue;
@@ -154,7 +156,7 @@ export async function scanModuleImportFolder(
             } else {
                 technicalDbFile = projectFile.file;
             }
-        } else if (VALID_IMAGE_EXTENSIONS.has(extension)) {
+        } else if (isPlano) {
             if (planoFile) {
                 rootIssues.push(
                     `Hay mas de un plano. Se usara ${planoFile.entryName} y se omitira ${entryName}.`
@@ -162,7 +164,7 @@ export async function scanModuleImportFolder(
             } else {
                 planoFile = projectFile;
             }
-        } else if (PLANILLA_EXTENSIONS.has(extension)) {
+        } else if (isPlanilla) {
             if (planillaFile) {
                 rootIssues.push(
                     `Hay mas de una planilla. Se usara ${planillaFile.entryName} y se omitira ${entryName}.`

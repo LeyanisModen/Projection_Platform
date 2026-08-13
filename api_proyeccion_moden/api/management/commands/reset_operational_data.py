@@ -12,7 +12,6 @@ from api.models import (
     ModuloQueue,
     ModuloQueueItem,
     PairingSession,
-    Planta,
     Proyecto,
 )
 
@@ -51,7 +50,6 @@ class Command(BaseCommand):
                 "imagenes": Imagen.objects.count(),
                 "detalles_fase": DetalleModuloFase.objects.count(),
                 "modulos": Modulo.objects.count(),
-                "plantas": Planta.objects.count(),
                 "proyectos": Proyecto.objects.count(),
                 "mesas": Mesa.objects.count(),
                 "grupos_mesas": GrupoMesas.objects.count(),
@@ -65,7 +63,6 @@ class Command(BaseCommand):
             Imagen.objects.all().delete()
             DetalleModuloFase.objects.all().delete()
             Modulo.objects.all().delete()
-            Planta.objects.all().delete()
             Proyecto.objects.all().delete()
             Mesa.objects.all().delete()
             GrupoMesas.objects.all().delete()

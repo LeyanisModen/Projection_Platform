@@ -162,13 +162,6 @@
   /* Forces text truncation */
 }
 
-/* Ensure actions don't shrink */
-.planta-actions {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-}
-
 .header-text-group h2,
 .header-text-group small {
   white-space: nowrap;
@@ -2779,52 +2772,6 @@
   /* Ensure it's on top of everything */
 }
 
-/* =============================================================================
-   PLANTA ACTIONS & BLUEPRINT MODAL
-   ============================================================================= */
-.planta-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-left: 20px;
-}
-
-.btn-action-planta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
-  border-radius: 6px;
-  font-size: 0.85rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-  text-decoration: none;
-  border: 1px solid transparent;
-}
-
-.btn-plano {
-  background-color: #e3f2fd;
-  color: #1976d2;
-  border-color: #bbdefb;
-}
-
-.btn-plano:hover {
-  background-color: #bbdefb;
-  transform: translateY(-1px);
-}
-
-.btn-pdf {
-  background-color: #fce4ec;
-  color: #c2185b;
-  border-color: #f8bbd0;
-}
-
-.btn-pdf:hover {
-  background-color: #f8bbd0;
-  transform: translateY(-1px);
-}
-
 /* Blueprint Modal */
 .blueprint-overlay {
   background: rgba(0, 0, 0, 0.85);
@@ -2960,7 +2907,7 @@
 }
 
 /* =============================================================================
-   PLANTA ACTIONS & BLUEPRINT MODAL
+   BLUEPRINT MODAL
    ============================================================================= */
 
 
@@ -3299,13 +3246,13 @@
   padding-right: 4px;
 }
 
-.plan-planta-block {
+.plan-project-block {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.plan-planta-header {
+.plan-project-header {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -3316,14 +3263,14 @@
   letter-spacing: 0.05em;
 }
 
-.plan-planta-header strong {
+.plan-project-header strong {
   color: #212529;
   font-size: 0.88rem;
   text-transform: none;
   letter-spacing: 0;
 }
 
-.plan-planta-count {
+.plan-project-count {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
 }
@@ -3385,6 +3332,13 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+
+.plan-modulo-completed-at {
+  color: #64748b;
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .plan-modulo-action {

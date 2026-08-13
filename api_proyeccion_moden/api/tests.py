@@ -5,24 +5,81 @@ import os
 import sqlite3
 import tempfile
 import zipfile
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import override_settings
+from django.db import connection
+from django.db.migrations.executor import MigrationExecutor
+from django.test import TransactionTestCase, override_settings
 from django.utils import timezone
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
 from api.models import (
-    Imagen, Mesa, MesaQueueItem, Modulo, Planta, Proyecto,
+    Imagen, Mesa, MesaQueueItem, Modulo, Proyecto,
     DetalleModuloFase, GrupoMesas, FotoFabricacion,
     FerrallaContacto, FerrallaDireccion, PairingSession,
     MesaQueueStatus, ModuloEstado, GrupoBastidor, GrupoMesasProyecto,
     UserProfile,
 )
+
+
+class RemovePlantaMigrationTests(TransactionTestCase):
+    migrate_from = [('api', '0049_mesa_capture_config_applied_at_and_more')]
+    migrate_to = [('api', '0050_remove_planta')]
+
+    def test_migration_preserves_project_files_and_module_relationship(self):
+        executor = MigrationExecutor(connection)
+        executor.migrate(self.migrate_from)
+        old_apps = executor.loader.project_state(self.migrate_from).apps
+
+        UserModel = old_apps.get_model('auth', 'User')
+        ProyectoModel = old_apps.get_model('api', 'Proyecto')
+        PlantaModel = old_apps.get_model('api', 'Planta')
+        ModuloModel = old_apps.get_model('api', 'Modulo')
+
+        user = UserModel.objects.create(username='migration-check')
+        project = ProyectoModel.objects.create(
+            nombre='Proyecto migracion',
+            usuario_id=user.pk,
+        )
+        plant = PlantaModel.objects.create(
+            nombre='General',
+            proyecto_id=project.pk,
+            orden=1,
+            plano_imagen='planos/plano-historico.pdf',
+            fichero_corte='cortes/planilla-historica.pdf',
+        )
+        module = ModuloModel.objects.create(
+            nombre='A01',
+            proyecto_id=project.pk,
+            planta_id=plant.pk,
+        )
+
+        executor = MigrationExecutor(connection)
+        executor.migrate(self.migrate_to)
+        new_apps = executor.loader.project_state(self.migrate_to).apps
+        NewProyectoModel = new_apps.get_model('api', 'Proyecto')
+        NewModuloModel = new_apps.get_model('api', 'Modulo')
+        migrated_project = NewProyectoModel.objects.get(pk=project.pk)
+        migrated_module = NewModuloModel.objects.get(pk=module.pk)
+
+        self.assertEqual(
+            migrated_project.plano_archivo.name,
+            'planos/plano-historico.pdf',
+        )
+        self.assertEqual(
+            migrated_project.planilla_archivo.name,
+            'cortes/planilla-historica.pdf',
+        )
+        self.assertEqual(migrated_module.proyecto_id, project.pk)
+        self.assertFalse(
+            any(field.name == 'planta' for field in NewModuloModel._meta.fields)
+        )
+        self.assertNotIn('api_planta', connection.introspection.table_names())
 
 
 @override_settings(
@@ -100,17 +157,14 @@ class PermissionAndDeviceAuthTests(APITestCase):
 
         with tempfile.TemporaryDirectory() as media_root:
             with override_settings(MEDIA_ROOT=media_root):
-                planta = Planta.objects.create(
-                    nombre="Planta a borrar", proyecto=self.project_a, orden=1
-                )
                 modulo = Modulo.objects.create(
-                    nombre="A01", planta=planta, proyecto=self.project_a
+                    nombre="A01", proyecto=self.project_a
                 )
-                planta.plano_imagen.save(
+                self.project_a.plano_archivo.save(
                     "plano-a.pdf", SimpleUploadedFile("plano-a.pdf", b"plano")
                 )
-                planta.fichero_corte.save(
-                    "corte-a.zip", SimpleUploadedFile("corte-a.zip", b"corte")
+                self.project_a.planilla_archivo.save(
+                    "planilla-a.pdf", SimpleUploadedFile("planilla-a.pdf", b"planilla")
                 )
                 self.project_a.fichero_datos_tecnicos.save(
                     "datos-a.db",
@@ -121,7 +175,6 @@ class PermissionAndDeviceAuthTests(APITestCase):
                     Path(media_root)
                     / "imagenes"
                     / str(self.project_a.id)
-                    / str(planta.id)
                     / str(modulo.id)
                     / "paso.png"
                 )
@@ -134,7 +187,7 @@ class PermissionAndDeviceAuthTests(APITestCase):
                     activo=True,
                     url=(
                         f"/media/imagenes/{self.project_a.id}/"
-                        f"{planta.id}/{modulo.id}/paso.png"
+                        f"{modulo.id}/paso.png"
                     ),
                 )
                 legacy_image = Imagen.objects.create(
@@ -149,7 +202,6 @@ class PermissionAndDeviceAuthTests(APITestCase):
                     Path(media_root)
                     / "fotos"
                     / str(self.project_a.id)
-                    / str(planta.id)
                     / str(modulo.id)
                     / "captura.jpg"
                 )
@@ -161,7 +213,7 @@ class PermissionAndDeviceAuthTests(APITestCase):
                     paso=0,
                     url=(
                         f"/media/fotos/{self.project_a.id}/"
-                        f"{planta.id}/{modulo.id}/captura.jpg"
+                        f"{modulo.id}/captura.jpg"
                     ),
                 )
 
@@ -174,8 +226,8 @@ class PermissionAndDeviceAuthTests(APITestCase):
                 other_project_file.parent.mkdir(parents=True)
                 other_project_file.write_bytes(b"keep")
 
-                plano_path = Path(planta.plano_imagen.path)
-                corte_path = Path(planta.fichero_corte.path)
+                plano_path = Path(self.project_a.plano_archivo.path)
+                planilla_path = Path(self.project_a.planilla_archivo.path)
                 technical_path = Path(
                     self.project_a.fichero_datos_tecnicos.path
                 )
@@ -190,10 +242,72 @@ class PermissionAndDeviceAuthTests(APITestCase):
                 self.assertFalse(project_image.exists())
                 self.assertFalse(project_photo.exists())
                 self.assertFalse(plano_path.exists())
-                self.assertFalse(corte_path.exists())
+                self.assertFalse(planilla_path.exists())
                 self.assertFalse(technical_path.exists())
                 self.assertFalse(legacy_image_path.exists())
                 self.assertTrue(other_project_file.exists())
+
+    def test_project_documents_require_pdf_and_replacements_remove_old_files(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.admin_token.key}")
+
+        with tempfile.TemporaryDirectory() as media_root:
+            with override_settings(MEDIA_ROOT=media_root):
+                self.project_a.plano_archivo.save(
+                    "plano-anterior.pdf",
+                    SimpleUploadedFile("plano-anterior.pdf", b"plano-anterior"),
+                )
+                self.project_a.planilla_archivo.save(
+                    "planilla-anterior.pdf",
+                    SimpleUploadedFile(
+                        "planilla-anterior.pdf", b"planilla-anterior"
+                    ),
+                )
+                old_plano_path = Path(self.project_a.plano_archivo.path)
+                old_planilla_path = Path(self.project_a.planilla_archivo.path)
+
+                invalid_response = self.client.patch(
+                    f"/api/proyectos/{self.project_a.id}/",
+                    {
+                        "plano_archivo": SimpleUploadedFile(
+                            "plano.png", b"imagen", "image/png"
+                        ),
+                        "planilla_archivo": SimpleUploadedFile(
+                            "planilla.txt", b"texto", "text/plain"
+                        ),
+                    },
+                    format="multipart",
+                )
+
+                self.assertEqual(invalid_response.status_code, 400)
+                self.assertIn("plano_archivo", invalid_response.data)
+                self.assertIn("planilla_archivo", invalid_response.data)
+                self.assertTrue(old_plano_path.exists())
+                self.assertTrue(old_planilla_path.exists())
+
+                with self.captureOnCommitCallbacks(execute=True):
+                    valid_response = self.client.patch(
+                        f"/api/proyectos/{self.project_a.id}/",
+                        {
+                            "plano_archivo": SimpleUploadedFile(
+                                "plano-nuevo.pdf",
+                                b"plano-nuevo",
+                                "application/pdf",
+                            ),
+                            "planilla_archivo": SimpleUploadedFile(
+                                "planilla-nueva.pdf",
+                                b"planilla-nueva",
+                                "application/pdf",
+                            ),
+                        },
+                        format="multipart",
+                    )
+
+                self.assertEqual(valid_response.status_code, 200)
+                self.project_a.refresh_from_db()
+                self.assertFalse(old_plano_path.exists())
+                self.assertFalse(old_planilla_path.exists())
+                self.assertTrue(Path(self.project_a.plano_archivo.path).exists())
+                self.assertTrue(Path(self.project_a.planilla_archivo.path).exists())
 
     def test_device_heartbeat_requires_valid_device_token(self):
         response = self.client.post("/api/device/heartbeat/", {}, format="json")
@@ -418,19 +532,16 @@ class FotoFabricacionDownloadTests(APITestCase):
 
         self.user = User.objects.create_user(username="ferralla_fotos", password="pass123")
         self.proyecto = Proyecto.objects.create(nombre="Proyecto Fotos", usuario=self.user)
-        self.planta = Planta.objects.create(nombre="P1", proyecto=self.proyecto, orden=1)
         self.grupo_1 = GrupoBastidor.objects.create(proyecto=self.proyecto, indice=1)
         self.grupo_2 = GrupoBastidor.objects.create(proyecto=self.proyecto, indice=2)
         self.modulo_1 = Modulo.objects.create(
             nombre="M-01",
-            planta=self.planta,
             proyecto=self.proyecto,
             grupo_bastidor=self.grupo_1,
             orden_intra=1,
         )
         self.modulo_2 = Modulo.objects.create(
             nombre="M-02",
-            planta=self.planta,
             proyecto=self.proyecto,
             grupo_bastidor=self.grupo_2,
             orden_intra=1,
@@ -520,13 +631,12 @@ class MesaQueueItemBehaviorTests(APITestCase):
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
 
         self.project = Proyecto.objects.create(nombre="Proyecto Cola", usuario=self.user)
-        self.planta = Planta.objects.create(nombre="P1", proyecto=self.project, orden=1)
         self.mesa_a = Mesa.objects.create(nombre="Mesa A", usuario=self.user)
         self.mesa_b = Mesa.objects.create(nombre="Mesa B", usuario=self.user)
 
-        self.modulo_a = Modulo.objects.create(nombre="M-A", proyecto=self.project, planta=self.planta)
-        self.modulo_b = Modulo.objects.create(nombre="M-B", proyecto=self.project, planta=self.planta)
-        self.modulo_c = Modulo.objects.create(nombre="M-C", proyecto=self.project, planta=self.planta)
+        self.modulo_a = Modulo.objects.create(nombre="M-A", proyecto=self.project)
+        self.modulo_b = Modulo.objects.create(nombre="M-B", proyecto=self.project)
+        self.modulo_c = Modulo.objects.create(nombre="M-C", proyecto=self.project)
 
     def _create_item(self, mesa_id, modulo_id, fase="INFERIOR", position=0):
         return self.client.post(
@@ -900,8 +1010,49 @@ class PlanningFoundationTests(APITestCase):
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.token.key}")
 
         self.project = Proyecto.objects.create(nombre="Proyecto Plan", usuario=self.user)
-        self.planta = Planta.objects.create(nombre="P1", proyecto=self.project, orden=1)
-        self.modulo = Modulo.objects.create(nombre="M-01", proyecto=self.project, planta=self.planta)
+        self.modulo = Modulo.objects.create(nombre="M-01", proyecto=self.project)
+
+    def test_estadisticas_calculan_ritmo_sobre_horas_transcurridas(self):
+        profile = UserProfile.objects.create(
+            user=self.user,
+            capture_active_days=["THU"],
+            capture_start_time=time(6, 0),
+            capture_end_time=time(14, 0),
+        )
+        self.assertEqual(profile.capture_start_time, time(6, 0))
+
+        completed_at = timezone.make_aware(datetime(2026, 8, 13, 9, 30))
+        self.modulo.inferior_hecho = True
+        self.modulo.superior_hecho = True
+        self.modulo.estado = ModuloEstado.COMPLETADO
+        self.modulo.completado_at = completed_at
+        self.modulo.save(update_fields=[
+            "inferior_hecho",
+            "superior_hecho",
+            "estado",
+            "completado_at",
+        ])
+        DetalleModuloFase.objects.create(
+            modulo=self.modulo,
+            fase="INFERIOR",
+            peso_malla_final_kg="40.00",
+        )
+        DetalleModuloFase.objects.create(
+            modulo=self.modulo,
+            fase="SUPERIOR",
+            peso_malla_final_kg="60.00",
+        )
+
+        current_time = timezone.make_aware(datetime(2026, 8, 13, 10, 0))
+        with patch("django.utils.timezone.now", return_value=current_time):
+            response = self.client.get(
+                "/api/stats/production/?from=2026-08-13&to=2026-08-13"
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["totals"]["horas_productivas"], 4.0)
+        self.assertEqual(response.data["totals"]["modulos_por_hora"], 0.25)
+        self.assertEqual(response.data["totals"]["kg_por_hora"], 25.0)
 
     def _technical_db_file(self, filename, rows):
         temp_path = None
@@ -968,7 +1119,7 @@ class PlanningFoundationTests(APITestCase):
         self.modulo.nombre = "M-01-R"
         self.modulo.save(update_fields=["nombre"])
 
-        modulo, error = _resolve_modulo_for_record(self.project, "M-01", "P1")
+        modulo, error = _resolve_modulo_for_record(self.project, "M-01")
 
         self.assertIsNone(error)
         self.assertEqual(modulo, self.modulo)
@@ -1264,7 +1415,6 @@ class PlanningFoundationTests(APITestCase):
         otro_modulo = Modulo.objects.create(
             nombre="M-02",
             proyecto=self.project,
-            planta=self.planta,
         )
         otra_imagen_inf = Imagen.objects.create(
             modulo=otro_modulo,
@@ -1397,14 +1547,12 @@ class PlanningFoundationTests(APITestCase):
         modulo_actual = Modulo.objects.create(
             nombre="M-05-A",
             proyecto=self.project,
-            planta=self.planta,
             grupo_bastidor=grupo_actual,
             orden_intra=1,
         )
         modulo_siguiente = Modulo.objects.create(
             nombre="M-05-B",
             proyecto=self.project,
-            planta=self.planta,
             grupo_bastidor=grupo_actual,
             orden_intra=2,
         )
@@ -1484,14 +1632,12 @@ class PlanningFoundationTests(APITestCase):
         modulo_actual = Modulo.objects.create(
             nombre="M-05-A",
             proyecto=self.project,
-            planta=self.planta,
             grupo_bastidor=grupo_actual,
             orden_intra=1,
         )
         modulo_siguiente = Modulo.objects.create(
             nombre="M-05-B",
             proyecto=self.project,
-            planta=self.planta,
             grupo_bastidor=grupo_actual,
             orden_intra=2,
         )
@@ -1584,37 +1730,20 @@ class PlanningFoundationTests(APITestCase):
             position=0,
             plan_group_index=1,
         )
-        general = Planta.objects.create(
-            nombre="General",
-            proyecto=self.project,
-            orden=2,
-        )
-
         response = self.client.post(
             f"/api/proyectos/{self.project.id}/import-structure/",
             {
-                "plantas": json.dumps(
-                    [{
-                        "nombre": "General",
-                        "orden": 2,
-                        "modulos": [{
-                            "nombre": "M-02",
-                            "ancho_cm": "10.00",
-                            "imagenes": [],
-                        }],
-                    }]
-                )
+                "modulos": json.dumps([{
+                    "nombre": "M-02",
+                    "ancho_cm": "10.00",
+                    "imagenes": [],
+                }])
             },
             format="multipart",
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(
-            Planta.objects.filter(proyecto=self.project, nombre="General").count(),
-            1,
-        )
         nuevo = Modulo.objects.get(proyecto=self.project, nombre="M-02")
-        self.assertEqual(nuevo.planta_id, general.id)
         self.assertEqual(nuevo.grupo_bastidor_id, bastidor.id)
         nuevo_items = MesaQueueItem.objects.filter(
             modulo=nuevo,
@@ -1633,17 +1762,11 @@ class PlanningFoundationTests(APITestCase):
         duplicate_response = self.client.post(
             f"/api/proyectos/{self.project.id}/import-structure/",
             {
-                "plantas": json.dumps(
-                    [{
-                        "nombre": "General",
-                        "orden": 2,
-                        "modulos": [{
-                            "nombre": "M-02",
-                            "ancho_cm": "10.00",
-                            "imagenes": [],
-                        }],
-                    }]
-                )
+                "modulos": json.dumps([{
+                    "nombre": "M-02",
+                    "ancho_cm": "10.00",
+                    "imagenes": [],
+                }])
             },
             format="multipart",
         )
@@ -1658,15 +1781,11 @@ class PlanningFoundationTests(APITestCase):
         inf_key = "MOD_M-02_INF_01_malla.jpg"
         sup_key = "MOD_M-02_SUP_01_malla.jpg"
         structure = [{
-            "nombre": "General",
-            "orden": 2,
-            "modulos": [{
                 "nombre": "M-02",
                 "imagenes": [
                     {"filename": inf_key, "fase": "INFERIOR", "orden": 1},
                     {"filename": sup_key, "fase": "SUPERIOR", "orden": 1},
                 ],
-            }],
         }]
 
         with tempfile.TemporaryDirectory() as media_root:
@@ -1674,7 +1793,7 @@ class PlanningFoundationTests(APITestCase):
                 response = self.client.post(
                     f"/api/proyectos/{self.project.id}/import-structure/",
                     {
-                        "plantas": json.dumps(structure),
+                        "modulos": json.dumps(structure),
                         inf_key: SimpleUploadedFile(
                             "01_malla.jpg", b"imagen-inferior", "image/jpeg"
                         ),
@@ -1708,10 +1827,7 @@ class PlanningFoundationTests(APITestCase):
         inf_key = "MOD_M-02_INF_01.jpg"
         sup_key = "MOD_M-02_SUP_01.jpg"
         invalid_inf_key = "MOD_M-03_INF_01.jpg"
-        structure = [{
-            "nombre": "General",
-            "orden": 2,
-            "modulos": [
+        structure = [
                 {
                     "nombre": "M-02",
                     "source_folder": "MOD-M-02",
@@ -1740,13 +1856,12 @@ class PlanningFoundationTests(APITestCase):
                         "orden": 1,
                     }],
                 },
-            ],
-        }]
+        ]
 
         response = self.client.post(
             f"/api/proyectos/{self.project.id}/import-structure/",
             {
-                "plantas": json.dumps(structure),
+                "modulos": json.dumps(structure),
                 "strict_validation": "true",
                 inf_key: SimpleUploadedFile(inf_key, b"inf", "image/jpeg"),
                 sup_key: SimpleUploadedFile(sup_key, b"sup", "image/jpeg"),
@@ -1780,9 +1895,6 @@ class PlanningFoundationTests(APITestCase):
     def test_crear_con_estructura_revierte_proyecto_si_todos_fallan(self):
         inf_key = "PROY_M-99_INF_01.jpg"
         structure = [{
-            "nombre": "General",
-            "orden": 1,
-            "modulos": [{
                 "nombre": "M-99",
                 "source_folder": "MOD-M-99",
                 "imagenes": [{
@@ -1791,14 +1903,13 @@ class PlanningFoundationTests(APITestCase):
                     "source_phase": "INF",
                     "orden": 1,
                 }],
-            }],
         }]
 
         response = self.client.post(
             "/api/proyectos/create-with-structure/",
             {
                 "project": json.dumps({"nombre": "Proyecto invalido"}),
-                "plantas": json.dumps(structure),
+                "modulos": json.dumps(structure),
                 "strict_validation": "true",
                 inf_key: SimpleUploadedFile(inf_key, b"inf", "image/jpeg"),
             },
@@ -1819,9 +1930,6 @@ class PlanningFoundationTests(APITestCase):
         inf_key = "PROY_M-10_INF_01.jpg"
         sup_key = "PROY_M-10_SUP_01.jpg"
         structure = [{
-            "nombre": "General",
-            "orden": 1,
-            "modulos": [{
                 "nombre": "M-10",
                 "source_folder": "MOD-M-10",
                 "imagenes": [
@@ -1838,7 +1946,6 @@ class PlanningFoundationTests(APITestCase):
                         "orden": 1,
                     },
                 ],
-            }],
         }]
         client_errors = [{
             "module": "M-11",
@@ -1850,7 +1957,7 @@ class PlanningFoundationTests(APITestCase):
             "/api/proyectos/create-with-structure/",
             {
                 "project": json.dumps({"nombre": "Proyecto parcial"}),
-                "plantas": json.dumps(structure),
+                "modulos": json.dumps(structure),
                 "strict_validation": "true",
                 "client_module_errors": json.dumps(client_errors),
                 inf_key: SimpleUploadedFile(inf_key, b"inf", "image/jpeg"),
@@ -1875,9 +1982,6 @@ class PlanningFoundationTests(APITestCase):
         inf_key = "PROY_M-20_INF_01.jpg"
         sup_key = "PROY_M-20_SUP_01.jpg"
         structure = [{
-            "nombre": "General",
-            "orden": 1,
-            "modulos": [{
                 "nombre": "M-20",
                 "source_folder": "MOD-M-20",
                 "imagenes": [
@@ -1894,7 +1998,6 @@ class PlanningFoundationTests(APITestCase):
                         "orden": 1,
                     },
                 ],
-            }],
         }]
 
         with tempfile.TemporaryDirectory() as media_root:
@@ -1908,7 +2011,7 @@ class PlanningFoundationTests(APITestCase):
                             "/api/proyectos/create-with-structure/",
                             {
                                 "project": json.dumps({"nombre": "Proyecto interrumpido"}),
-                                "plantas": json.dumps(structure),
+                                "modulos": json.dumps(structure),
                                 "strict_validation": "true",
                                 inf_key: SimpleUploadedFile(inf_key, b"inf", "image/jpeg"),
                                 sup_key: SimpleUploadedFile(sup_key, b"sup", "image/jpeg"),
@@ -1953,28 +2056,24 @@ class PlanningFoundationTests(APITestCase):
         modulo_actual = Modulo.objects.create(
             nombre="G1-ACTUAL",
             proyecto=self.project,
-            planta=self.planta,
             grupo_bastidor=origen,
             orden_intra=2,
         )
         peer_1 = Modulo.objects.create(
             nombre="G2-01",
             proyecto=self.project,
-            planta=self.planta,
             grupo_bastidor=destino,
             orden_intra=3,
         )
         peer_2 = Modulo.objects.create(
             nombre="G2-02",
             proyecto=self.project,
-            planta=self.planta,
             grupo_bastidor=destino,
             orden_intra=2,
         )
         peer_3 = Modulo.objects.create(
             nombre="G2-03",
             proyecto=self.project,
-            planta=self.planta,
             grupo_bastidor=destino,
             orden_intra=1,
         )
@@ -2196,7 +2295,6 @@ class PlanningFoundationTests(APITestCase):
         peer = Modulo.objects.create(
             nombre="M-02",
             proyecto=self.project,
-            planta=self.planta,
             grupo_bastidor=bastidor,
             orden_intra=1,
         )
@@ -2347,21 +2445,18 @@ class PlanningFoundationTests(APITestCase):
         pendiente_superior = Modulo.objects.create(
             nombre="G01",
             proyecto=self.project,
-            planta=self.planta,
             grupo_bastidor=destino,
             orden_intra=1,
         )
         iniciado = Modulo.objects.create(
             nombre="G02",
             proyecto=self.project,
-            planta=self.planta,
             grupo_bastidor=destino,
             orden_intra=2,
         )
         terminado = Modulo.objects.create(
             nombre="G04",
             proyecto=self.project,
-            planta=self.planta,
             grupo_bastidor=destino,
             orden_intra=3,
             estado=ModuloEstado.COMPLETADO,
@@ -2526,7 +2621,6 @@ class PlanningFoundationTests(APITestCase):
         peer = Modulo.objects.create(
             nombre="G2-01",
             proyecto=self.project,
-            planta=self.planta,
             grupo_bastidor=destino,
             orden_intra=1,
         )
@@ -2591,7 +2685,6 @@ class PlanningFoundationTests(APITestCase):
         siguiente = Modulo.objects.create(
             nombre="M-SIG",
             proyecto=self.project,
-            planta=self.planta,
         )
 
         with tempfile.TemporaryDirectory() as media_root:
@@ -2600,7 +2693,6 @@ class PlanningFoundationTests(APITestCase):
                     Path(media_root)
                     / "imagenes"
                     / str(self.project.id)
-                    / str(self.planta.id)
                     / str(self.modulo.id)
                     / "paso.png"
                 )
@@ -2613,7 +2705,7 @@ class PlanningFoundationTests(APITestCase):
                     activo=True,
                     url=(
                         f"/media/imagenes/{self.project.id}/"
-                        f"{self.planta.id}/{self.modulo.id}/paso.png"
+                        f"{self.modulo.id}/paso.png"
                     ),
                 )
                 MesaQueueItem.objects.create(
@@ -2665,7 +2757,6 @@ class PlanningFoundationTests(APITestCase):
                     Path(media_root)
                     / "fotos"
                     / str(self.project.id)
-                    / str(self.planta.id)
                     / str(self.modulo.id)
                     / "prueba.jpg"
                 )
@@ -2677,7 +2768,7 @@ class PlanningFoundationTests(APITestCase):
                     paso=0,
                     url=(
                         f"/media/fotos/{self.project.id}/"
-                        f"{self.planta.id}/{self.modulo.id}/prueba.jpg"
+                        f"{self.modulo.id}/prueba.jpg"
                     ),
                 )
 
@@ -2853,7 +2944,6 @@ class PlanningFoundationTests(APITestCase):
                 Modulo.objects.create(
                     nombre=f"M-0{i}",
                     proyecto=self.project,
-                    planta=self.planta,
                     ancho_cm="15.00",
                 )
             )
@@ -2897,7 +2987,6 @@ class PlanningFoundationTests(APITestCase):
                 Modulo.objects.create(
                     nombre=f"M-0{i}",
                     proyecto=self.project,
-                    planta=self.planta,
                     ancho_cm="10.00",
                 )
             )
@@ -3061,7 +3150,7 @@ class PlanningFoundationTests(APITestCase):
         self.project.save(update_fields=["bastidor_longitud_cm"])
         # Dos modulos en el mismo bastidor (caben los dos con ancho 10cm).
         modulo_b = Modulo.objects.create(
-            nombre="M-02", proyecto=self.project, planta=self.planta,
+            nombre="M-02", proyecto=self.project,
             ancho_cm="10.00",
         )
         self.modulo.ancho_cm = "10.00"
@@ -3179,7 +3268,7 @@ class PlanningFoundationTests(APITestCase):
         for i in range(2, 5):
             modulos.append(
                 Modulo.objects.create(
-                    nombre=f"M-0{i}", proyecto=self.project, planta=self.planta,
+                    nombre=f"M-0{i}", proyecto=self.project,
                     ancho_cm="15.00",
                 )
             )
@@ -3228,7 +3317,7 @@ class PlanningFoundationTests(APITestCase):
         for i in range(2, 5):
             modulos.append(
                 Modulo.objects.create(
-                    nombre=f"M-0{i}", proyecto=self.project, planta=self.planta,
+                    nombre=f"M-0{i}", proyecto=self.project,
                     ancho_cm="15.00",
                 )
             )
@@ -3376,11 +3465,9 @@ class PlanningFoundationTests(APITestCase):
         import_response = self.client.post(
             f"/api/proyectos/{self.project.id}/import-structure/",
             {
-                "plantas": json.dumps([{
-                    "nombre": "General",
-                    "orden": 2,
-                    "modulos": [{"nombre": "M-02", "imagenes": []}],
-                }]),
+                "modulos": json.dumps([
+                    {"nombre": "M-02", "imagenes": []},
+                ]),
             },
             format="multipart",
         )
@@ -3421,15 +3508,11 @@ class PlanningFoundationTests(APITestCase):
         import_response = self.client.post(
             f"/api/proyectos/{self.project.id}/import-structure/",
             {
-                "plantas": json.dumps([{
-                    "nombre": "General",
-                    "orden": 2,
-                    "modulos": [
-                        {"nombre": "M-02", "imagenes": []},
-                        {"nombre": "M-03", "imagenes": []},
-                        {"nombre": "M-04", "imagenes": []},
-                    ],
-                }]),
+                "modulos": json.dumps([
+                    {"nombre": "M-02", "imagenes": []},
+                    {"nombre": "M-03", "imagenes": []},
+                    {"nombre": "M-04", "imagenes": []},
+                ]),
             },
             format="multipart",
         )
@@ -3522,11 +3605,9 @@ class PlanningFoundationTests(APITestCase):
         import_response = self.client.post(
             f"/api/proyectos/{self.project.id}/import-structure/",
             {
-                "plantas": json.dumps([{
-                    "nombre": "General",
-                    "orden": 2,
-                    "modulos": [{"nombre": "M-02", "imagenes": []}],
-                }]),
+                "modulos": json.dumps([
+                    {"nombre": "M-02", "imagenes": []},
+                ]),
                 "technical_file": self._technical_db_file(
                     "base_nueva.db",
                     [
@@ -3561,8 +3642,8 @@ class PlanningFoundationTests(APITestCase):
 
     def test_import_technical_data_from_csv_prefixed_columns(self):
         csv_content = (
-            "planta,modulo,inf_espesor_cm,inf_cantidad_cortes,sup_espesor_cm,sup_cantidad_refuerzos\n"
-            "P1,M-01,14,6,11,4\n"
+            "modulo,inf_espesor_cm,inf_cantidad_cortes,sup_espesor_cm,sup_cantidad_refuerzos\n"
+            "M-01,14,6,11,4\n"
         )
         technical_file = SimpleUploadedFile(
             "detalles.csv",
@@ -3683,25 +3764,21 @@ class PlanningFoundationTests(APITestCase):
         modulo_largo = Modulo.objects.create(
             nombre="M-02",
             proyecto=self.project,
-            planta=self.planta,
             tipo_modulo="LADO_LARGO",
         )
         modulo_corto = Modulo.objects.create(
             nombre="M-03",
             proyecto=self.project,
-            planta=self.planta,
             tipo_modulo="LADO_CORTO",
         )
         modulo_esquina = Modulo.objects.create(
             nombre="M-04",
             proyecto=self.project,
-            planta=self.planta,
             tipo_modulo="ESQUINA",
         )
         modulo_girado = Modulo.objects.create(
             nombre="M-05",
             proyecto=self.project,
-            planta=self.planta,
             tipo_modulo="CENTRAL_GIRADO",
         )
 
@@ -3765,7 +3842,6 @@ class PlanningFoundationTests(APITestCase):
         modulo_sd_d = Modulo.objects.create(
             nombre="A02",
             proyecto=self.project,
-            planta=self.planta,
             grupo_bastidor=grupo_1,
             orden_intra=2,
         )
@@ -3778,7 +3854,6 @@ class PlanningFoundationTests(APITestCase):
         modulo_normal = Modulo.objects.create(
             nombre="B01",
             proyecto=self.project,
-            planta=self.planta,
             grupo_bastidor=grupo_2,
             orden_intra=1,
         )
@@ -3880,7 +3955,6 @@ class PlanningFoundationTests(APITestCase):
             modulo = Modulo.objects.create(
                 nombre=f"M-0{index}",
                 proyecto=self.project,
-                planta=self.planta,
             )
             extra_modules.append(modulo)
 
@@ -3936,7 +4010,6 @@ class PlanningFoundationTests(APITestCase):
             modulos[nombre] = Modulo.objects.create(
                 nombre=nombre,
                 proyecto=self.project,
-                planta=self.planta,
             )
 
         for position, nombre in enumerate(["A1", "A2", "A3"]):
@@ -4008,7 +4081,6 @@ class PlanningFoundationTests(APITestCase):
             modulos[nombre] = Modulo.objects.create(
                 nombre=nombre,
                 proyecto=self.project,
-                planta=self.planta,
             )
 
         for position, nombre in enumerate(["A1", "A2"]):
@@ -4076,13 +4148,11 @@ class PlanningFoundationTests(APITestCase):
         modulo_b = Modulo.objects.create(
             nombre="M-02",
             proyecto=self.project,
-            planta=self.planta,
             ancho_cm="12.00",
         )
         modulo_c = Modulo.objects.create(
             nombre="M-03",
             proyecto=self.project,
-            planta=self.planta,
             ancho_cm="8.00",
         )
 
@@ -4158,7 +4228,6 @@ class PlanningFoundationTests(APITestCase):
             modulo = Modulo.objects.create(
                 nombre=nombre,
                 proyecto=self.project,
-                planta=self.planta,
                 ancho_cm="10.00",
                 grupo_bastidor=grupo_bastidor,
                 orden_intra=orden,
@@ -4217,7 +4286,6 @@ class PlanningFoundationTests(APITestCase):
                 Modulo.objects.create(
                     nombre=nombre,
                     proyecto=self.project,
-                    planta=self.planta,
                     grupo_bastidor=grupo_bastidor,
                     orden_intra=1,
                     ancho_cm="10.00",
@@ -4288,7 +4356,6 @@ class PlanningFoundationTests(APITestCase):
                 Modulo.objects.create(
                     nombre=f"M-0{index}",
                     proyecto=self.project,
-                    planta=self.planta,
                     ancho_cm="10.00",
                 )
             )
@@ -4326,9 +4393,16 @@ class PlanningFoundationTests(APITestCase):
         completed_module.actualizar_estado()
 
         proyecto_nuevo = Proyecto.objects.create(nombre="Proyecto Nuevo", usuario=self.user, bastidor_longitud_cm=20)
-        planta_nueva = Planta.objects.create(nombre="P2", proyecto=proyecto_nuevo, orden=1)
-        nuevo_1 = Modulo.objects.create(nombre="N-01", proyecto=proyecto_nuevo, planta=planta_nueva, ancho_cm="10.00")
-        nuevo_2 = Modulo.objects.create(nombre="N-02", proyecto=proyecto_nuevo, planta=planta_nueva, ancho_cm="10.00")
+        nuevo_1 = Modulo.objects.create(
+            nombre="N-01",
+            proyecto=proyecto_nuevo,
+            ancho_cm="10.00",
+        )
+        nuevo_2 = Modulo.objects.create(
+            nombre="N-02",
+            proyecto=proyecto_nuevo,
+            ancho_cm="10.00",
+        )
         for modulo in [nuevo_1, nuevo_2]:
             DetalleModuloFase.objects.create(
                 modulo=modulo,
@@ -4375,7 +4449,6 @@ class PlanningFoundationTests(APITestCase):
                 Modulo.objects.create(
                     nombre=f"M-0{index}",
                     proyecto=self.project,
-                    planta=self.planta,
                     ancho_cm="10.00",
                 )
             )

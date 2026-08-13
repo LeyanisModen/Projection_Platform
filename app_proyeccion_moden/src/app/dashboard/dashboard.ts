@@ -6,7 +6,7 @@ import { DragDropModule, CdkDragDrop, moveItemInArray, transferArrayItem } from 
 
 import {
   ApiService,
-  Proyecto, Planta, Modulo, Mesa, ModuloQueueItem, MesaQueueItem, Imagen, FotoFabricacion,
+  Proyecto, Modulo, Mesa, ModuloQueueItem, MesaQueueItem, Imagen, FotoFabricacion,
   GrupoMesas, GrupoMesasProyectoEntry, ProductionStatsResponse
 } from '../services/api.service';
 import {
@@ -18,7 +18,7 @@ import {
   BloqueGeneralPorProyecto,
   GrupoMaterial,
 } from '../services/lista-materiales.service';
-import { Subject, takeUntil, forkJoin, interval } from 'rxjs';
+import { Subject, takeUntil, interval } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { ZoomableImageComponent } from '../shared/zoomable-image/zoomable-image.component';
 
@@ -42,11 +42,8 @@ interface Subfase {
 export class Dashboard implements OnInit, OnDestroy {
   // Sidebar State
   panelState: 'collapsed' | 'expanded' = 'expanded';
-  navLevel: 'projects' | 'plants' | 'modules' = 'projects';
-
   // Data
   proyectos: Proyecto[] = [];
-  plantas: Planta[] = [];
   modulos: Modulo[] = [];
   mesaQueueItems = new Map<number, MesaQueueItem[]>(); // mesaId -> items
   imagenes: Imagen[] = []; // Images for expanded module
@@ -59,7 +56,6 @@ export class Dashboard implements OnInit, OnDestroy {
 
   // Data Loading States
   loadingProyectos = false;
-  loadingPlantas = false;
   loadingModulos = false;
   loadingImagenes = false; // Loading images for expanded module
   loadingMesas = false;
@@ -67,7 +63,6 @@ export class Dashboard implements OnInit, OnDestroy {
 
   // Selection State
   selectedProyecto: Proyecto | null = null;
-  selectedPlanta: Planta | null = null;
   selectedModulo: Modulo | null = null;
 
   // Stats State
@@ -113,7 +108,6 @@ export class Dashboard implements OnInit, OnDestroy {
   showPlanModal = false;
   planModalProyecto: Proyecto | null = null;
   planModalModulos: Modulo[] = [];
-  private planModalPlantas = new Map<number, string>();
   loadingPlanModal = false;
   showPlanFotosModal = false;
   planFotosTarget: { id: number; nombre: string } | null = null;
@@ -148,9 +142,9 @@ export class Dashboard implements OnInit, OnDestroy {
   gestionarAddProyectoId: number | null = null;
   gestionarBusy = false;
 
-  verPlano(planta: Planta): void {
-    if (planta.plano_imagen) {
-      this.blueprintUrl = this.resolveUrl(planta.plano_imagen);
+  verPlano(proyecto: Proyecto): void {
+    if (proyecto.plano_archivo) {
+      this.blueprintUrl = this.resolveUrl(proyecto.plano_archivo);
       this.showBlueprintModal = true;
       this.cdr.detectChanges();
     }
@@ -181,17 +175,13 @@ export class Dashboard implements OnInit, OnDestroy {
     this.showPlanModal = true;
     this.planModalProyecto = proyecto;
     this.planModalModulos = [];
-    this.planModalPlantas.clear();
     this.loadingPlanModal = true;
     this.cdr.detectChanges();
 
-    forkJoin({
-      modulos: this.api.getProyectoModulos(proyecto.id),
-      plantas: this.api.getPlantas(proyecto.id)
-    }).pipe(takeUntil(this.destroy$)).subscribe({
-      next: ({ modulos, plantas }) => {
+    this.api.getProyectoModulos(proyecto.id)
+      .pipe(takeUntil(this.destroy$)).subscribe({
+      next: (modulos) => {
         this.planModalModulos = modulos;
-        this.planModalPlantas = new Map(plantas.map(p => [p.id, p.nombre]));
         this.loadingPlanModal = false;
         this.cdr.detectChanges();
       },
@@ -206,7 +196,6 @@ export class Dashboard implements OnInit, OnDestroy {
     this.showPlanModal = false;
     this.planModalProyecto = null;
     this.planModalModulos = [];
-    this.planModalPlantas.clear();
     this.closePlanFotosModal();
     this.cdr.detectChanges();
   }
@@ -526,30 +515,21 @@ export class Dashboard implements OnInit, OnDestroy {
       .filter((g) => g.rows.length > 0);
   }
 
-  /** Groups modulos of the open plan modal by planta (in-project order). */
-  planModalGroupedByPlanta(): Array<{ plantaId: number | null; plantaNombre: string; modulos: Modulo[]; done: number; total: number }> {
-    const groups = new Map<number | null, Modulo[]>();
-    for (const m of this.planModalModulos) {
-      const key = m.planta ?? null;
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key)!.push(m);
-    }
-    const result: Array<{ plantaId: number | null; plantaNombre: string; modulos: Modulo[]; done: number; total: number }> = [];
-    for (const [plantaId, modulos] of groups.entries()) {
-      const sorted = [...modulos].sort((a, b) =>
-        a.nombre.localeCompare(b.nombre, undefined, { numeric: true })
-      );
-      const done = sorted.filter(m => m.inferior_hecho && m.superior_hecho).length;
-      result.push({
-        plantaId,
-        plantaNombre: plantaId != null ? (this.planModalPlantas.get(plantaId) || `Planta ${plantaId}`) : 'Sin planta',
-        modulos: sorted,
-        done,
-        total: sorted.length
-      });
-    }
-    result.sort((a, b) => a.plantaNombre.localeCompare(b.plantaNombre, undefined, { numeric: true }));
-    return result;
+  planModalSortedModulos(): Modulo[] {
+    return [...this.planModalModulos].sort((a, b) =>
+      a.nombre.localeCompare(b.nombre, undefined, { numeric: true })
+    );
+  }
+
+  planModalDoneCount(): number {
+    return this.planModalModulos.filter(m => m.inferior_hecho && m.superior_hecho).length;
+  }
+
+  openProjectDocument(proyecto: Proyecto, type: 'plano' | 'planilla', event?: Event): void {
+    event?.stopPropagation();
+    const url = type === 'plano' ? proyecto.plano_archivo : proyecto.planilla_archivo;
+    if (!url) return;
+    window.open(this.resolveUrl(url), '_blank', 'noopener');
   }
 
   moduloEstadoLabel(m: Modulo): 'Fabricado' | 'En proceso' | 'Pendiente' {
@@ -821,22 +801,6 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
 
-  // Breadcrumb Navigation
-  navigateTo(level: 'projects' | 'plants'): void {
-    if (level === 'projects') {
-      this.selectedProyecto = null;
-      this.selectedPlanta = null;
-      this.selectedModulo = null;
-      this.navLevel = 'projects';
-      this.loadProyectos();
-    } else if (level === 'plants' && this.selectedProyecto) {
-      this.selectedPlanta = null;
-      this.selectedModulo = null;
-      this.navLevel = 'plants';
-      this.loadPlantasForProyecto(this.selectedProyecto.id);
-    }
-  }
-
   private destroy$ = new Subject<void>();
 
   constructor(
@@ -904,7 +868,7 @@ export class Dashboard implements OnInit, OnDestroy {
       .pipe(takeUntil(this.destroy$))
       .subscribe(() => {
         this.pollMesasQueue();
-        this.refreshActivePlantaModules();
+        this.refreshActiveProjectModules();
       });
 
     // Slower loop (20s) to refresh project counters + production stats
@@ -1030,28 +994,6 @@ export class Dashboard implements OnInit, OnDestroy {
     this.panelState = this.panelState === 'expanded' ? 'collapsed' : 'expanded';
     this.cdr.detectChanges();
   }
-
-  navigateBack(): void {
-    if (this.navLevel === 'modules') {
-      this.navLevel = 'plants';
-      this.selectedModulo = null;
-      this.expandedModulo = null;
-    } else if (this.navLevel === 'plants') {
-      this.navLevel = 'projects';
-      this.selectedPlanta = null;
-      this.selectedModulo = null;
-      this.expandedModulo = null;
-    }
-  }
-
-  getHeaderTitle(): string {
-    if (this.navLevel === 'projects') return 'Proyectos';
-    if (this.navLevel === 'plants') return this.selectedProyecto?.nombre || 'Plantas';
-    if (this.navLevel === 'modules') return this.selectedPlanta?.nombre || 'Módulos';
-    return '';
-  }
-
-
 
   ngOnDestroy(): void {
     this.destroy$.next();
@@ -1247,9 +1189,8 @@ export class Dashboard implements OnInit, OnDestroy {
   // =========================================================================
   selectProyecto(proyecto: Proyecto): void {
     this.selectedProyecto = proyecto;
-    this.selectedPlanta = null;
     this.selectedModulo = null;
-    this.navLevel = 'projects';
+    this.loadModulosForProyecto(proyecto.id);
     this.cdr.detectChanges();
   }
 
@@ -1581,36 +1522,9 @@ export class Dashboard implements OnInit, OnDestroy {
     return Math.round(value).toString();
   }
 
-  loadPlantasForProyecto(proyectoId: number): void {
-    this.loadingPlantas = true;
-    this.api.getPlantas(proyectoId)
-      .pipe(takeUntil(this.destroy$))
-      .subscribe({
-        next: (data) => {
-          this.plantas = data;
-          this.loadingPlantas = false;
-          this.cdr.detectChanges();
-        },
-        error: (err) => {
-          console.error('Error loading plantas', err);
-          this.loadingPlantas = false;
-        }
-      });
-  }
-
-  // =========================================================================
-  // PLANTA SELECTION
-  // =========================================================================
-  selectPlanta(planta: Planta): void {
-    this.selectedPlanta = planta;
-    this.selectedModulo = null;
-    this.navLevel = 'modules'; // Drill down
-    this.loadModulosForPlanta(planta.id);
-  }
-
-  loadModulosForPlanta(plantaId: number): void {
+  loadModulosForProyecto(proyectoId: number): void {
     this.loadingModulos = true;
-    this.api.getModulos(plantaId)
+    this.api.getModulos(proyectoId)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (data) => {
@@ -1630,10 +1544,10 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   // Silent refresh for module status updates (polled)
-  refreshActivePlantaModules(): void {
-    if (!this.selectedPlanta || this.loadingModulos) return;
+  refreshActiveProjectModules(): void {
+    if (!this.selectedProyecto || this.loadingModulos) return;
 
-    this.api.getModulos(this.selectedPlanta.id)
+    this.api.getModulos(this.selectedProyecto.id)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (data) => {
@@ -1869,8 +1783,8 @@ export class Dashboard implements OnInit, OnDestroy {
           if (mesaId) this.loadMesaQueueItems(mesaId);
 
           // Reload modules to get updated inferior_hecho/superior_hecho
-          if (this.selectedPlanta) {
-            this.api.getModulos(this.selectedPlanta.id)
+          if (this.selectedProyecto) {
+            this.api.getModulos(this.selectedProyecto.id)
               .pipe(takeUntil(this.destroy$))
               .subscribe({
                 next: (modulos) => {
@@ -2150,87 +2064,35 @@ export class Dashboard implements OnInit, OnDestroy {
   // NAVIGATION (Context Switch)
   // =========================================================================
   navigateToModule(item: MesaQueueItem): void {
-    if (!item.modulo_proyecto_id || !item.modulo_planta_id) {
+    if (!item.modulo_proyecto_id) {
       console.warn('Navigation IDs missing', item);
       return;
     }
 
-    // Helper to finish selection once Modulos are loaded
-    const finishSelection = () => {
-      const targetModuloId = item.modulo; // Now typed as number
-      const mod = this.modulos.find(m => m.id === targetModuloId);
-      if (mod) {
-        if (this.selectedModulo?.id !== mod.id) {
-          this.toggleModulo(mod);
-        } else if (!this.expandedModulo) {
-          this.toggleModulo(mod);
-        }
-      } else {
-        console.warn('Module not found in list', targetModuloId);
-      }
-    };
-
-    // Helper to chain Planta selection
-    const selectPlantaStep = () => {
-      if (this.selectedPlanta?.id !== item.modulo_planta_id) {
-        const planta = this.plantas.find(p => p.id === item.modulo_planta_id);
-        if (planta) {
-          this.selectedPlanta = planta;
-          this.selectedModulo = null;
-          this.navLevel = 'modules';
-
-          this.loadingModulos = true;
-          this.api.getModulos(planta.id).subscribe({
-            next: (modulos) => {
-              this.modulos = this.sortModulos(modulos);
-              this.loadingModulos = false;
-              this.cdr.detectChanges();
-              finishSelection();
-            },
-            error: (err) => {
-              this.loadingModulos = false;
-              console.error(err);
-            }
-          });
-        }
-      } else {
-        if (this.modulos.length === 0) {
-          this.api.getModulos(item.modulo_planta_id!).subscribe(modulos => {
-            this.modulos = this.sortModulos(modulos);
-            finishSelection();
-          });
-        } else {
-          finishSelection();
-        }
-      }
-    };
-
-    // 1. Check Project
-    if (this.selectedProyecto?.id !== item.modulo_proyecto_id) {
-      const proj = this.proyectos.find(p => p.id === item.modulo_proyecto_id);
-      if (proj) {
-        this.selectedProyecto = proj;
-        this.selectedPlanta = null;
-        this.selectedModulo = null;
-        this.navLevel = 'plants';
-
-        this.loadingPlantas = true;
-        this.api.getPlantas(proj.id).subscribe({
-          next: (plantas) => {
-            this.plantas = plantas;
-            this.loadingPlantas = false;
-            this.cdr.detectChanges();
-            selectPlantaStep();
-          },
-          error: (err) => {
-            this.loadingPlantas = false;
-            console.error(err);
-          }
-        });
-      }
-    } else {
-      selectPlantaStep();
+    const proyecto = this.proyectos.find(p => p.id === item.modulo_proyecto_id);
+    if (!proyecto) {
+      console.warn('Project not found in list', item.modulo_proyecto_id);
+      return;
     }
+
+    this.selectedProyecto = proyecto;
+    this.selectedModulo = null;
+    this.loadingModulos = true;
+    this.api.getModulos(proyecto.id)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (modulos) => {
+          this.modulos = this.sortModulos(modulos);
+          this.loadingModulos = false;
+          const target = this.modulos.find(m => m.id === item.modulo);
+          if (target) this.toggleModulo(target);
+          this.cdr.detectChanges();
+        },
+        error: (err) => {
+          this.loadingModulos = false;
+          console.error('Error loading project modules', err);
+        }
+      });
   }
 
   // Cancel and close modal

@@ -56,7 +56,7 @@
 
     <div class="row">
 
-        <!-- PLANTAS (Columna Izquierda / Layout) -->
+        <!-- Project tools (left column) -->
 
         <div class="col-md-4">
 
@@ -120,7 +120,7 @@
                     <input #technicalDataInput type="file" accept=".json,.csv,.db,.sqlite,.sqlite3" hidden (change)="onTechnicalDataSelected($event)">
                     <button
                         type="button"
-                        class="btn btn-sm btn-import-planta"
+                        class="btn btn-sm btn-import-modules"
                         (click)="triggerTechnicalDataUpload(technicalDataInput)"
                         [disabled]="technicalImporting">
                         {{ technicalImporting ? 'Importando...' : (proyecto.datos_tecnicos_importados ? 'Actualizar base técnica' : 'Importar datos técnicos') }}
@@ -141,13 +141,13 @@
             </div>
 
             <!-- Archivos del proyecto -->
-            <div class="project-config-card mb-3 p-3 bg-white rounded border" *ngIf="selectedPlanta">
+            <div class="project-config-card mb-3 p-3 bg-white rounded border">
                 <div class="project-config-header d-flex justify-content-between align-items-start">
                     <div>
                         <label class="d-block mb-1">Archivos del proyecto</label>
                     </div>
                     <button type="button" class="btn btn-sm btn-edit-icon p-0"
-                        (click)="openPlantaFilesModal(selectedPlanta)"
+                        (click)="openProjectFilesModal()"
                         title="Editar archivos del proyecto">
                         <i class="fa fa-pencil" aria-hidden="true"></i>
                     </button>
@@ -155,17 +155,17 @@
                 <ul class="archivo-proyecto-list mt-2">
                     <li>
                         <strong>Plano:</strong>
-                        <span *ngIf="selectedPlanta.plano_imagen" class="text-success">
+                        <span *ngIf="proyecto.plano_archivo" class="text-success">
                             <i class="fa fa-check"></i> cargado
                         </span>
-                        <span *ngIf="!selectedPlanta.plano_imagen" class="text-muted">sin cargar</span>
+                        <span *ngIf="!proyecto.plano_archivo" class="text-muted">sin cargar</span>
                     </li>
                     <li>
                         <strong>Planilla:</strong>
-                        <span *ngIf="selectedPlanta.fichero_corte" class="text-success">
+                        <span *ngIf="proyecto.planilla_archivo" class="text-success">
                             <i class="fa fa-check"></i> cargada
                         </span>
-                        <span *ngIf="!selectedPlanta.fichero_corte" class="text-muted">sin cargar</span>
+                        <span *ngIf="!proyecto.planilla_archivo" class="text-muted">sin cargar</span>
                     </li>
                 </ul>
             </div>
@@ -179,7 +179,7 @@
                     </div>
                 </div>
                 <div class="project-config-controls mt-2">
-                    <button class="btn btn-sm btn-secondary w-100" (click)="importPlantaFromFolder()"
+                    <button class="btn btn-sm btn-secondary w-100" (click)="importModulesFromFolder()"
                         [disabled]="importing">
                         {{ importing ? 'Importando...' : 'Seleccionar módulos' }}
                     </button>
@@ -693,11 +693,11 @@
 
 
 
-<div class="planta-files-modal-backdrop" *ngIf="showPlantaFilesModal" (click)="closePlantaFilesModal()">
+<div class="project-files-modal-backdrop" *ngIf="showProjectFilesModal" (click)="closeProjectFilesModal()">
 
-    <div class="planta-files-modal" (click)="$event.stopPropagation()">
+    <div class="project-files-modal" (click)="$event.stopPropagation()">
 
-        <div class="planta-files-modal-header">
+        <div class="project-files-modal-header">
 
             <div>
 
@@ -707,33 +707,33 @@
 
             </div>
 
-            <button class="btn btn-sm btn-outline-secondary" (click)="closePlantaFilesModal()">Cerrar</button>
+            <button class="btn btn-sm btn-outline-secondary" (click)="closeProjectFilesModal()">Cerrar</button>
 
         </div>
 
 
 
-        <div class="planta-file-row">
+        <div class="project-file-row">
 
-            <div class="planta-file-info">
+            <div class="project-file-info">
 
-                <strong>Plano (.jpg)</strong>
+                <strong>Plano (.pdf)</strong>
 
                 <span class="text-muted">
 
-                    {{ getPlantaFileUrl('plano') ? 'Archivo cargado' : 'No hay archivo' }}
+                    {{ getProjectFileUrl('plano') ? 'Archivo cargado' : 'No hay archivo' }}
 
                 </span>
 
             </div>
 
-            <div class="planta-file-actions">
+            <div class="project-file-actions">
 
                 <button class="btn btn-sm btn-outline-dark"
 
-                    (click)="openPlantaFile('plano')"
+                    (click)="openProjectFile('plano')"
 
-                    [disabled]="!plantaFileExists.plano || checkingPlantaFiles || uploadingPlantaId === plantaFilesTarget?.id">
+                    [disabled]="!projectFileExists.plano || checkingProjectFiles || uploadingProjectFile">
 
                     Ver actual
 
@@ -741,17 +741,17 @@
 
                 <button class="btn btn-sm btn-outline-primary"
 
-                    (click)="triggerPlantaFileUpload(modalPlanoInput)"
+                    (click)="triggerProjectFileUpload(modalPlanoInput)"
 
-                    [disabled]="uploadingPlantaId === plantaFilesTarget?.id">
+                    [disabled]="uploadingProjectFile">
 
-                    {{ getPlantaFileUrl('plano') ? 'Cambiar' : 'Subir' }}
+                    {{ getProjectFileUrl('plano') ? 'Cambiar' : 'Subir' }}
 
                 </button>
 
-                <input #modalPlanoInput type="file" accept=".jpg,.jpeg,image/jpeg"
+                <input #modalPlanoInput type="file" accept=".pdf,application/pdf"
 
-                    (change)="onPlantaFileSelected($event, 'plano')" hidden>
+                    (change)="onProjectFileSelected($event, 'plano')" hidden>
 
             </div>
 
@@ -759,27 +759,27 @@
 
 
 
-        <div class="planta-file-row">
+        <div class="project-file-row">
 
-            <div class="planta-file-info">
+            <div class="project-file-info">
 
                 <strong>Planilla (.pdf)</strong>
 
                 <span class="text-muted">
 
-                    {{ getPlantaFileUrl('corte') ? 'Archivo cargado' : 'No hay archivo' }}
+                    {{ getProjectFileUrl('planilla') ? 'Archivo cargado' : 'No hay archivo' }}
 
                 </span>
 
             </div>
 
-            <div class="planta-file-actions">
+            <div class="project-file-actions">
 
                 <button class="btn btn-sm btn-outline-dark"
 
-                    (click)="openPlantaFile('corte')"
+                    (click)="openProjectFile('planilla')"
 
-                    [disabled]="!plantaFileExists.corte || checkingPlantaFiles || uploadingPlantaId === plantaFilesTarget?.id">
+                    [disabled]="!projectFileExists.planilla || checkingProjectFiles || uploadingProjectFile">
 
                     Ver actual
 
@@ -787,17 +787,17 @@
 
                 <button class="btn btn-sm btn-outline-secondary"
 
-                    (click)="triggerPlantaFileUpload(modalCorteInput)"
+                    (click)="triggerProjectFileUpload(modalCorteInput)"
 
-                    [disabled]="uploadingPlantaId === plantaFilesTarget?.id">
+                    [disabled]="uploadingProjectFile">
 
-                    {{ getPlantaFileUrl('corte') ? 'Cambiar' : 'Subir' }}
+                    {{ getProjectFileUrl('planilla') ? 'Cambiar' : 'Subir' }}
 
                 </button>
 
                 <input #modalCorteInput type="file" accept=".pdf,application/pdf"
 
-                    (change)="onPlantaFileSelected($event, 'corte')" hidden>
+                    (change)="onProjectFileSelected($event, 'planilla')" hidden>
 
             </div>
 

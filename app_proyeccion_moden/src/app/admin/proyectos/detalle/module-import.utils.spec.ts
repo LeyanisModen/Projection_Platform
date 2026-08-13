@@ -138,4 +138,22 @@ describe('module import folder helpers', () => {
             'La carpeta SD_D no contiene imagenes JPG o PNG.'
         );
     });
+
+    it('recognizes project plano and planilla PDFs by their names', async () => {
+        const root = fakeDirectory('Proyecto', {
+            'Plano general A3.pdf': fakeFile('Plano general A3.pdf'),
+            'planilla_corte_final.PDF': fakeFile('planilla_corte_final.PDF'),
+            'plano_antiguo.jpg': fakeFile('plano_antiguo.jpg'),
+            'MOD-A01': fakeDirectory('MOD-A01', {
+                INF: fakeDirectory('INF', { '01.jpg': fakeFile('01.jpg') }),
+                SUP: fakeDirectory('SUP', { '01.jpg': fakeFile('01.jpg') }),
+            }),
+        });
+
+        const result = await scanModuleImportFolder(root);
+
+        expect(result.planoFile?.entryName).toBe('Plano general A3.pdf');
+        expect(result.planillaFile?.entryName).toBe('planilla_corte_final.PDF');
+        expect(result.rootIssues).toEqual([]);
+    });
 });

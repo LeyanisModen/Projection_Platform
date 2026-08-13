@@ -8,7 +8,7 @@ from django.conf import settings
 from django.core.files.storage import default_storage
 from django.db.models import Q
 
-from api.models import FotoFabricacion, Imagen, Planta
+from api.models import FotoFabricacion, Imagen, Proyecto
 
 
 logger = logging.getLogger(__name__)
@@ -24,7 +24,6 @@ class ProjectMediaSnapshot:
 @dataclass(frozen=True)
 class ModuleMediaSnapshot:
     project_id: int
-    plant_id: int
     module_id: int
     storage_files: tuple[str, ...]
     media_urls: tuple[str, ...]
@@ -32,14 +31,10 @@ class ModuleMediaSnapshot:
 
 def collect_project_media(project):
     """Collect file references before the project's cascade delete runs."""
-    plant_files = Planta.objects.filter(proyecto=project).values_list(
-        'plano_imagen', 'fichero_corte'
-    )
     storage_files = {
-        file_name
-        for row in plant_files
-        for file_name in row
-        if file_name
+        field_file.name
+        for field_file in (project.plano_archivo, project.planilla_archivo)
+        if field_file and field_file.name
     }
     if project.fichero_datos_tecnicos:
         storage_files.add(project.fichero_datos_tecnicos.name)
@@ -79,7 +74,6 @@ def collect_module_media(module):
     ).values_list('url', flat=True)
     return ModuleMediaSnapshot(
         project_id=module.proyecto_id,
-        plant_id=module.planta_id or 0,
         module_id=module.pk,
         storage_files=storage_files,
         media_urls=tuple(sorted(set(image_urls).union(photo_urls))),
@@ -114,11 +108,23 @@ def _safe_local_path(relative_path):
 
 def _storage_file_is_referenced(file_name):
     return (
-        Planta.objects.filter(
-            Q(plano_imagen=file_name) | Q(fichero_corte=file_name)
+        Proyecto.objects.filter(
+            Q(plano_archivo=file_name)
+            | Q(planilla_archivo=file_name)
+            | Q(fichero_datos_tecnicos=file_name)
         ).exists()
         or Imagen.objects.filter(archivo=file_name).exists()
     )
+
+
+def delete_unreferenced_storage_files(file_names):
+    """Delete replaced files only after their database references disappear."""
+    for file_name in set(filter(None, file_names)):
+        try:
+            if not _storage_file_is_referenced(file_name):
+                default_storage.delete(file_name)
+        except Exception:
+            logger.exception('Could not delete unreferenced file %s', file_name)
 
 
 def _media_url_is_referenced(url):
@@ -133,8 +139,8 @@ def _directory_has_references(relative_directory):
     media_prefix = (settings.MEDIA_URL or '/media/').rstrip('/') + '/'
     url_prefix = f'{media_prefix}{prefix}'
     return (
-        Planta.objects.filter(
-            Q(plano_imagen__startswith=prefix) | Q(fichero_corte__startswith=prefix)
+        Proyecto.objects.filter(
+            Q(plano_archivo__startswith=prefix) | Q(planilla_archivo__startswith=prefix)
         ).exists()
         or Imagen.objects.filter(
             Q(archivo__startswith=prefix) | Q(url__startswith=url_prefix)
@@ -146,9 +152,7 @@ def _directory_has_references(relative_directory):
 def delete_project_media(snapshot):
     """Delete unreferenced project files after its database commit succeeds."""
     try:
-        for file_name in snapshot.storage_files:
-            if not _storage_file_is_referenced(file_name):
-                default_storage.delete(file_name)
+        delete_unreferenced_storage_files(snapshot.storage_files)
 
         for url in snapshot.media_urls:
             if _media_url_is_referenced(url):
@@ -180,9 +184,7 @@ def delete_project_media(snapshot):
 def delete_module_media(snapshot):
     """Delete only the unreferenced files and directories of one module."""
     try:
-        for file_name in snapshot.storage_files:
-            if not _storage_file_is_referenced(file_name):
-                default_storage.delete(file_name)
+        delete_unreferenced_storage_files(snapshot.storage_files)
 
         for url in snapshot.media_urls:
             if _media_url_is_referenced(url):
@@ -192,20 +194,19 @@ def delete_module_media(snapshot):
             if local_path and local_path.is_file():
                 local_path.unlink()
 
-        for category in ('imagenes', 'fotos'):
-            relative_directory = (
-                f'{category}/{snapshot.project_id}/'
-                f'{snapshot.plant_id}/{snapshot.module_id}'
-            )
-            if _directory_has_references(relative_directory):
-                logger.warning(
-                    'Keeping module media directory with active references: %s',
-                    relative_directory,
-                )
-                continue
-            local_directory = _safe_local_path(relative_directory)
-            if local_directory and local_directory.is_dir():
-                shutil.rmtree(local_directory)
+        # Remove empty parent directories left by both legacy
+        # project/plant/module paths and the new project/module paths.
+        for url in snapshot.media_urls:
+            relative_path = _relative_media_path(url)
+            local_path = _safe_local_path(relative_path)
+            parent = local_path.parent if local_path else None
+            media_root = Path(settings.MEDIA_ROOT).resolve()
+            while parent and parent != media_root:
+                try:
+                    parent.rmdir()
+                except OSError:
+                    break
+                parent = parent.parent
     except Exception:
         logger.exception(
             'Could not fully delete media for module %s', snapshot.module_id

@@ -40,11 +40,10 @@ Para facilitar la gestión manual o mediante scripts, replicaremos la estructura
 /media/
   └── ferralla/
       └── <nombre_proyecto>/        # Ej: Hospital_Central
-          └── <nombre_planta>/      # Ej: Planta_Baja
-              └── <nombre_modulo>/  # Ej:            Muro_Contencion_Norte
-                  ├── 01_INF_plano.jpg
-                  ├── 02_SUP_detalles.jpg
-                  └── ...
+          └── <nombre_modulo>/      # Ej: Muro_Contencion_Norte
+              ├── 01_INF_plano.jpg
+              ├── 02_SUP_detalles.jpg
+              └── ...
 ```
 
 ### B. Sincronización Base de Datos
@@ -52,14 +51,14 @@ La Base de Datos no almacenará los binarios de las imágenes (BLOBs), sino las 
 
 **Estructura de Datos (Modelos Django):**
 
-1.  **Proyecto**: `nombre`, `codigo`
-2.  **Planta**: `nombre`, `proyecto (FK)` (Nivel intermedio para agrupar módulos)
-3.  **Modulo**: `nombre`, `planta (FK)`, `tipo (INF/SUP)`
-4.  **Imagen**: 
+1.  **Proyecto**: `nombre`, `codigo`, `plano_archivo`, `planilla_archivo`
+2.  **Modulo**: `nombre`, `proyecto (FK)`
+3.  **Imagen**:
     - `archivo`: Ruta al archivo (FileField/CharField)
     - `modulo (FK)`: Relación con el módulo
+    - `fase`: `INFERIOR` o `SUPERIOR`
     - `orden`: Entero (1, 2, 3...) para secuencia de proyección
-5.  **Mesa**:
+4.  **Mesa**:
     - `nombre`: "Mesa de Corte 1"
     - `token`: UUID único para autenticación (ej. `550e8400-e29b...`)
     - `imagen_actual`: Estado actual

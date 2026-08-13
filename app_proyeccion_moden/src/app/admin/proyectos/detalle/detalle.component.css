@@ -177,13 +177,7 @@
     border-color: #ddd6fe;
 }
 
-.planta-title-wrap {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-}
-
-.btn-import-planta {
+.btn-import-modules {
     background-color: #334155;
     color: #fff;
     border: none;
@@ -191,70 +185,16 @@
     transition: background-color 0.15s ease;
 }
 
-.btn-import-planta:hover:not(:disabled) {
+.btn-import-modules:hover:not(:disabled) {
     background-color: #1e293b;
 }
 
-.btn-import-planta:disabled {
+.btn-import-modules:disabled {
     opacity: 0.6;
     cursor: not-allowed;
 }
 
-.planta-files-icon-btn {
-    background: transparent;
-    border: none;
-    outline: none;
-    box-shadow: none;
-    width: 28px;
-    height: 28px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.85rem;
-    cursor: pointer;
-    border-radius: 50%;
-    color: #bbb;
-    transition: all 0.2s ease;
-}
-
-.planta-files-icon-btn:hover:not(:disabled) {
-    color: #6366f1;
-    background-color: #eef2ff;
-}
-
-.planta-files-icon-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
-.planta-delete-icon-btn {
-    background: transparent;
-    border: none;
-    outline: none;
-    box-shadow: none;
-    width: 28px;
-    height: 28px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.85rem;
-    cursor: pointer;
-    border-radius: 50%;
-    color: #bbb;
-    transition: all 0.2s ease;
-}
-
-.planta-delete-icon-btn:hover:not(:disabled) {
-    color: #f44336;
-    background-color: #ffebee;
-}
-
-.planta-delete-icon-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
-.planta-files-modal-backdrop {
+.project-files-modal-backdrop {
     position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.45);
@@ -264,7 +204,7 @@
     justify-content: center;
 }
 
-.planta-files-modal {
+.project-files-modal {
     width: min(620px, 92vw);
     background: #fff;
     border-radius: 12px;
@@ -272,7 +212,7 @@
     padding: 1rem 1rem 0.6rem;
 }
 
-.planta-files-modal-header {
+.project-files-modal-header {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
@@ -280,7 +220,7 @@
     gap: 1rem;
 }
 
-.planta-files-modal-header h4 {
+.project-files-modal-header h4 {
     margin: 0;
     font-size: 1.05rem;
 }
@@ -566,7 +506,7 @@
     border-color: #e6eaec;
 }
 
-.planta-file-row {
+.project-file-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -575,17 +515,17 @@
     border-top: 1px solid #e5e7eb;
 }
 
-.planta-file-row:first-of-type {
+.project-file-row:first-of-type {
     border-top: none;
 }
 
-.planta-file-info {
+.project-file-info {
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
 }
 
-.planta-file-actions {
+.project-file-actions {
     display: flex;
     align-items: center;
     gap: 0.5rem;

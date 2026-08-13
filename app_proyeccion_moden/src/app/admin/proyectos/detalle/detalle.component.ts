@@ -10,7 +10,7 @@ import {
     transferArrayItem,
 } from '@angular/cdk/drag-drop';
 import {
-    ApiService, Proyecto, Planta, Modulo, User, FotoFabricacion, Imagen,
+    ApiService, Proyecto, Modulo, User, FotoFabricacion, Imagen,
     DetalleModuloFase, TechnicalImportStats, GrupoBastidor, GrupoBastidorModulo,
     EstrategiaBastidor, ModuloFase
 } from '../../../services/api.service';
@@ -41,26 +41,11 @@ import {
 export class ProyectoDetailComponent implements OnInit {
     proyectoId: number | null = null;
     proyecto: Proyecto | null = null;
-    plantas: Planta[] = [];
-    selectedPlanta: Planta | null = null;
     modulos: Modulo[] = [];
     grupos: GrupoBastidor[] = [];
     users: User[] = [];
 
     loading = false;
-    showPlantaForm = false;
-    showModuloForm = false;
-
-    newPlanta: Partial<Planta> = { nombre: '', orden: 1 };
-
-    // Bulk Creation State
-    bulkModulo = {
-        prefix: 'MOD-',
-        start: 1,
-        count: 10
-    };
-    loadingBulk = false;
-
     // Module status options
     statusOptions = ['PENDIENTE', 'EN_PROGRESO', 'COMPLETADO'];
 
@@ -71,12 +56,11 @@ export class ProyectoDetailComponent implements OnInit {
     moduleImportFolderName = '';
     moduleImportCandidates: ModuleImportCandidate[] = [];
     private moduleImportTechnicalDbFile: File | null = null;
-    uploadingPlantaId: number | null = null;
+    uploadingProjectFile = false;
     updatingSubmoduleId: number | null = null;
-    showPlantaFilesModal = false;
-    plantaFilesTarget: Planta | null = null;
-    checkingPlantaFiles = false;
-    plantaFileExists = { plano: false, corte: false };
+    showProjectFilesModal = false;
+    checkingProjectFiles = false;
+    projectFileExists = { plano: false, planilla: false };
     dropdownOpen = false;
     savingProjectConfig = false;
     editingProjectName = false;
@@ -154,41 +138,18 @@ export class ProyectoDetailComponent implements OnInit {
         this.loading = true;
         forkJoin({
             proyecto: this.api.getProyecto(this.proyectoId),
-            plantas: this.api.getPlantas(this.proyectoId),
             users: this.api.getUsers(),
-            modulos: this.api.getModulos(undefined, this.proyectoId),
+            modulos: this.api.getModulos(this.proyectoId),
             grupos: this.api.getGruposBastidor(this.proyectoId)
         }).subscribe({
             next: (data) => {
                 if (data && data.proyecto) {
                     this.proyecto = data.proyecto;
-                    this.plantas = data.plantas?.sort((a: Planta, b: Planta) => a.orden - b.orden) || [];
                     this.users = data.users || [];
                     this.modulos = data.modulos || [];
                     this.grupos = (data.grupos || []).sort((a, b) => a.indice - b.indice);
                     this.refreshTablePreview();
 
-                    // Auto-create default planta if none exist (for backend compatibility)
-                    if (this.plantas.length === 0) {
-                        this.api.createPlanta({ nombre: 'General', orden: 1, proyecto: this.proyectoId }).subscribe({
-                            next: (p) => {
-                                this.plantas = [p];
-                                this.selectedPlanta = p;
-                                this.loading = false;
-                                this.cdr.detectChanges();
-                            },
-                            error: () => {
-                                this.loading = false;
-                                this.cdr.detectChanges();
-                            }
-                        });
-                        return;
-                    }
-
-                    // Set selectedPlanta for file management compatibility
-                    if (this.plantas.length > 0 && !this.selectedPlanta) {
-                        this.selectedPlanta = this.plantas[0];
-                    }
                     this.loading = false;
                     this.cdr.detectChanges();
                 } else {
@@ -666,98 +627,10 @@ export class ProyectoDetailComponent implements OnInit {
         });
     }
 
-    togglePlantaForm() {
-        this.showPlantaForm = !this.showPlantaForm;
-        // Auto-suggest next order
-        if (this.showPlantaForm && this.plantas.length > 0) {
-            const maxOrder = Math.max(...this.plantas.map(p => p.orden));
-            this.newPlanta.orden = maxOrder + 1;
-        }
-    }
-
-    createPlanta() {
+    loadModulos() {
         if (!this.proyectoId) return;
-
-        const payload = {
-            ...this.newPlanta,
-            proyecto: this.proyectoId
-        };
-
         this.loading = true;
-        this.api.createPlanta(payload).subscribe({
-            next: (planta: Planta) => {
-                this.plantas.push(planta);
-                this.plantas.sort((a: Planta, b: Planta) => a.orden - b.orden); // Re-sort
-                this.showPlantaForm = false;
-                this.newPlanta = { nombre: '', orden: 1 };
-                this.loading = false;
-                // Optionally auto-select
-                this.selectPlanta(planta);
-                this.cdr.detectChanges();
-            },
-            error: (err: any) => {
-                console.error('Error creating planta', err);
-                this.loading = false;
-                this.cdr.detectChanges();
-            }
-        });
-    }
-
-    deletePlanta(planta: Planta, event?: Event): void {
-        if (event) {
-            event.stopPropagation();
-        }
-
-        const confirmed = confirm(`¿Eliminar la planta "${planta.nombre}"? Esta acción no se puede deshacer.`);
-        if (!confirmed) {
-            return;
-        }
-
-        this.loading = true;
-        this.api.deletePlanta(planta.id).subscribe({
-            next: () => {
-                this.plantas = this.plantas.filter(p => p.id !== planta.id);
-                this.refreshTablePreview();
-
-                if (this.plantaFilesTarget?.id === planta.id) {
-                    this.closePlantaFilesModal();
-                }
-
-                if (this.selectedPlanta?.id === planta.id) {
-                    const nextPlanta = this.plantas[0] ?? null;
-                    this.selectedPlanta = nextPlanta;
-
-                    if (nextPlanta) {
-                        this.loadModulos(nextPlanta.id);
-                    } else {
-                        this.modulos = [];
-                        this.loading = false;
-                        this.cdr.detectChanges();
-                    }
-                    return;
-                }
-
-                this.loading = false;
-                this.cdr.detectChanges();
-            },
-            error: (err: any) => {
-                console.error('Error deleting planta', err);
-                const detail = err?.error?.detail || 'No se pudo eliminar la planta.';
-                alert(detail);
-                this.loading = false;
-                this.cdr.detectChanges();
-            }
-        });
-    }
-
-    selectPlanta(planta: Planta) {
-        this.selectedPlanta = planta;
-        this.loadModulos(planta.id);
-    }
-
-    loadModulos(plantaId: number) {
-        this.loading = true;
-        this.api.getModulos(plantaId).subscribe({
+        this.api.getModulos(this.proyectoId).subscribe({
             next: (modulos: Modulo[]) => {
                 this.modulos = modulos;
                 this.loading = false;
@@ -766,55 +639,6 @@ export class ProyectoDetailComponent implements OnInit {
             error: (err: any) => {
                 console.error('Error loading modulos', err);
                 this.loading = false;
-                this.cdr.detectChanges();
-            }
-        });
-    }
-
-    toggleModuloForm() {
-        this.showModuloForm = !this.showModuloForm;
-    }
-
-    createModulosBulk() {
-        if (!this.selectedPlanta || !this.proyectoId) return;
-
-        this.loadingBulk = true;
-        const requests = [];
-
-        for (let i = 0; i < this.bulkModulo.count; i++) {
-            const num = this.bulkModulo.start + i;
-            // Pad number with leading zero if < 10 for consistency (optional, but good for sorting)
-            const numStr = num < 10 ? `0${num}` : `${num}`;
-            const name = `${this.bulkModulo.prefix}${numStr}`;
-
-            const payload = {
-                nombre: name,
-                planta: this.selectedPlanta.id,
-                proyecto: this.proyectoId,
-                estado: 'PENDIENTE',
-                inferior_hecho: false,
-                superior_hecho: false,
-                cerrado: false
-            };
-
-            requests.push(this.api.createModulo(payload));
-        }
-
-        // Execute all requests
-        forkJoin(requests).subscribe({
-            next: (newModulos) => {
-                this.modulos = [...this.modulos, ...newModulos];
-                this.showModuloForm = false;
-                this.loadingBulk = false;
-                // Reset form for next batch
-                this.bulkModulo.start += this.bulkModulo.count;
-                this.refreshTablePreview();
-                this.cdr.detectChanges();
-            },
-            error: (err: any) => {
-                console.error('Error creating modules', err);
-                this.loadingBulk = false;
-                alert('Error creating some modules. Check console.');
                 this.cdr.detectChanges();
             }
         });
@@ -938,7 +762,7 @@ export class ProyectoDetailComponent implements OnInit {
         return user ? (user.first_name || user.username) : 'Sin asignar';
     }
 
-    async importPlantaFromFolder(): Promise<void> {
+    async importModulesFromFolder(): Promise<void> {
         if (!this.proyectoId || this.importing) return;
 
         try {
@@ -1044,25 +868,21 @@ export class ProyectoDetailComponent implements OnInit {
 
         this.importing = true;
         const formData = new FormData();
-        const plantaUnicaData: any = {
-            nombre: 'General',
-            orden: 1,
-            modulos: []
-        };
+        const modulesData: any[] = [];
 
         try {
             for (const candidate of selectedCandidates) {
                 this.importProgress = `Procesando módulo: ${candidate.moduleName}...`;
                 this.cdr.detectChanges();
 
-                plantaUnicaData.modulos.push(
+                modulesData.push(
                     appendModuleImportCandidate(formData, candidate)
                 );
             }
 
             this.importProgress = 'Subiendo datos...';
             this.cdr.detectChanges();
-            formData.append('plantas', JSON.stringify([plantaUnicaData]));
+            formData.append('modulos', JSON.stringify(modulesData));
             formData.append('strict_validation', 'true');
             formData.append('client_module_errors', JSON.stringify(
                 invalidCandidates.map(candidate => ({
@@ -1187,125 +1007,80 @@ export class ProyectoDetailComponent implements OnInit {
         return `${value}${suffix}`;
     }
 
-    triggerPlantaFileUpload(fileInput: HTMLInputElement): void {
+    triggerProjectFileUpload(fileInput: HTMLInputElement): void {
         fileInput.value = '';
         fileInput.click();
     }
 
-    openPlantaFilesModal(planta: Planta, event?: Event): void {
+    openProjectFilesModal(event?: Event): void {
         if (event) {
             event.stopPropagation();
         }
-        this.plantaFilesTarget = planta;
-        this.showPlantaFilesModal = true;
-        this.refreshPlantaFileAvailability();
+        this.showProjectFilesModal = true;
+        this.refreshProjectFileAvailability();
     }
 
-    closePlantaFilesModal(): void {
-        this.showPlantaFilesModal = false;
-        this.plantaFilesTarget = null;
-        this.plantaFileExists = { plano: false, corte: false };
-        this.checkingPlantaFiles = false;
+    closeProjectFilesModal(): void {
+        this.showProjectFilesModal = false;
+        this.projectFileExists = { plano: false, planilla: false };
+        this.checkingProjectFiles = false;
     }
 
-    onPlantaFileSelected(event: Event, fileType: 'plano' | 'corte', planta?: Planta): void {
+    onProjectFileSelected(event: Event, fileType: 'plano' | 'planilla'): void {
         const input = event.target as HTMLInputElement;
         const file = input.files?.[0];
         if (!file) return;
-        const targetPlanta = planta || this.plantaFilesTarget;
-        if (!targetPlanta) return;
+        if (!this.proyectoId) return;
 
-        const isPlano = fileType === 'plano';
-        const validMimeTypes = isPlano
-            ? ['image/jpeg', 'image/jpg']
-            : ['application/pdf'];
-        const validExtensions = isPlano ? ['.jpg', '.jpeg'] : ['.pdf'];
         const fileName = file.name.toLowerCase();
-        const extensionOk = validExtensions.some(ext => fileName.endsWith(ext));
-        const mimeOk = validMimeTypes.includes(file.type);
-
-        if (!extensionOk && !mimeOk) {
-            alert(isPlano ? 'El plano debe ser un archivo JPG/JPEG.' : 'La planilla debe ser un archivo PDF.');
+        if (!fileName.endsWith('.pdf') && file.type !== 'application/pdf') {
+            alert(`${fileType === 'plano' ? 'El plano' : 'La planilla'} debe ser un archivo PDF.`);
             return;
         }
 
         const formData = new FormData();
-        if (isPlano) {
-            formData.append('plano_imagen', file);
-        } else {
-            formData.append('fichero_corte', file);
-        }
+        formData.append(fileType === 'plano' ? 'plano_archivo' : 'planilla_archivo', file);
 
-        this.uploadingPlantaId = targetPlanta.id;
-        this.api.updatePlantaFiles(targetPlanta.id, formData).subscribe({
-            next: (updatedPlanta) => {
-                this.applyUpdatedPlanta(updatedPlanta);
-                this.refreshPlantaAfterUpload(targetPlanta.id);
-                this.uploadingPlantaId = null;
+        this.uploadingProjectFile = true;
+        this.api.updateProyectoFiles(this.proyectoId, formData).subscribe({
+            next: (updatedProject) => {
+                this.proyecto = updatedProject;
+                this.uploadingProjectFile = false;
+                this.refreshProjectFileAvailability();
                 this.cdr.detectChanges();
             },
             error: (err) => {
-                console.error('Error updating plant files', err);
-                this.uploadingPlantaId = null;
-                alert('No se pudo actualizar el archivo de la planta.');
+                console.error('Error updating project files', err);
+                this.uploadingProjectFile = false;
+                alert(err?.error?.[fileType === 'plano' ? 'plano_archivo' : 'planilla_archivo']?.[0]
+                    || 'No se pudo actualizar el archivo del proyecto.');
                 this.cdr.detectChanges();
             }
         });
     }
 
-    getPlantaFileUrl(fileType: 'plano' | 'corte'): string | null {
+    getProjectFileUrl(fileType: 'plano' | 'planilla'): string | null {
         const rawUrl = fileType === 'plano'
-            ? this.plantaFilesTarget?.plano_imagen
-            : this.plantaFilesTarget?.fichero_corte;
+            ? this.proyecto?.plano_archivo
+            : this.proyecto?.planilla_archivo;
         return this.toAbsoluteFileUrl(rawUrl ?? null);
     }
 
-    openPlantaFile(fileType: 'plano' | 'corte'): void {
-        const canOpen = fileType === 'plano' ? this.plantaFileExists.plano : this.plantaFileExists.corte;
+    openProjectFile(fileType: 'plano' | 'planilla'): void {
+        const canOpen = this.projectFileExists[fileType];
         if (!canOpen) return;
-        const url = this.getPlantaFileUrl(fileType);
+        const url = this.getProjectFileUrl(fileType);
         if (!url) return;
         window.open(url, '_blank', 'noopener');
     }
 
-    private applyUpdatedPlanta(updatedPlanta: Planta): void {
-        const index = this.plantas.findIndex(p => p.id === updatedPlanta.id);
-        if (index !== -1) {
-            this.plantas[index] = updatedPlanta;
-        }
-        if (this.selectedPlanta?.id === updatedPlanta.id) {
-            this.selectedPlanta = updatedPlanta;
-        }
-        if (this.plantaFilesTarget?.id === updatedPlanta.id) {
-            this.plantaFilesTarget = updatedPlanta;
-        }
-    }
-
-    private refreshPlantaAfterUpload(plantaId: number): void {
-        if (!this.proyectoId) return;
-        this.api.getPlantas(this.proyectoId).subscribe({
-            next: (plantas) => {
-                this.plantas = plantas.sort((a: Planta, b: Planta) => a.orden - b.orden);
-                const refreshed = this.plantas.find(p => p.id === plantaId);
-                if (refreshed) {
-                    this.applyUpdatedPlanta(refreshed);
-                }
-                this.refreshPlantaFileAvailability();
-                this.cdr.detectChanges();
-            },
-            error: (err) => {
-                console.error('Error refreshing plantas after upload', err);
-            }
-        });
-    }
-
-    private async refreshPlantaFileAvailability(): Promise<void> {
-        this.checkingPlantaFiles = true;
-        const planoUrl = this.getPlantaFileUrl('plano');
-        const corteUrl = this.getPlantaFileUrl('corte');
-        this.plantaFileExists.plano = await this.checkFileReachable(planoUrl);
-        this.plantaFileExists.corte = await this.checkFileReachable(corteUrl);
-        this.checkingPlantaFiles = false;
+    private async refreshProjectFileAvailability(): Promise<void> {
+        this.checkingProjectFiles = true;
+        const planoUrl = this.getProjectFileUrl('plano');
+        const planillaUrl = this.getProjectFileUrl('planilla');
+        this.projectFileExists.plano = await this.checkFileReachable(planoUrl);
+        this.projectFileExists.planilla = await this.checkFileReachable(planillaUrl);
+        this.checkingProjectFiles = false;
         this.cdr.detectChanges();
     }
 
@@ -1559,29 +1334,6 @@ export class ProyectoDetailComponent implements OnInit {
         if (this.selectedFotoIndex < this.fotos.length - 1) this.selectedFotoIndex++;
     }
 
-    downloadFotosPlanta(planta: Planta, event?: Event): void {
-        if (event) event.stopPropagation();
-        this.downloadingZip = true;
-        this.api.downloadFotosZip({ planta: planta.id }).subscribe({
-            next: (blob) => {
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `fotos_${planta.nombre}.zip`;
-                a.click();
-                window.URL.revokeObjectURL(url);
-                this.downloadingZip = false;
-                this.cdr.detectChanges();
-            },
-            error: (err) => {
-                console.error('Error downloading ZIP', err);
-                this.downloadingZip = false;
-                alert('Error descargando fotos');
-                this.cdr.detectChanges();
-            }
-        });
-    }
-
     loadFotos(moduloId: number): void {
         this.loadingFotos = true;
         this.api.getFotos({ modulo: moduloId }).subscribe({
@@ -1659,14 +1411,12 @@ export class ProyectoDetailComponent implements OnInit {
         });
     }
 
-    downloadFotosZip(scope: 'modulo' | 'planta' | 'proyecto'): void {
+    downloadFotosZip(scope: 'modulo' | 'proyecto'): void {
         this.downloadingZip = true;
-        let params: { modulo?: number; planta?: number; proyecto?: number } = {};
+        let params: { modulo?: number; proyecto?: number } = {};
 
         if (scope === 'modulo' && this.fotosTarget) {
             params.modulo = this.fotosTarget.id;
-        } else if (scope === 'planta' && this.selectedPlanta) {
-            params.planta = this.selectedPlanta.id;
         } else if (scope === 'proyecto' && this.proyectoId) {
             params.proyecto = this.proyectoId;
         }

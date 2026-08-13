@@ -1,63 +1,73 @@
+"""Create a small set of development data for MOD:EN.
+
+Run from api_proyeccion_moden with:
+    python manage.py shell < ../scripts/django/seed_data.py
 """
-Script de poblado de datos de ejemplo para MOD:EN.
-Ejecutar desde api_proyeccion_moden/ con: python manage.py shell < ..\scripts\django\seed_data.py
-O importando y llamando a seed() desde el shell.
-"""
+
 from django.contrib.auth.models import User
-from api.models import Proyecto, Modulo, Imagen, Mesa
+
+from api.models import Fase, Imagen, ImagenStatus, Mesa, Modulo, Proyecto
+
+
+def _create_demo_images(module, image_count):
+    for phase in (Fase.INFERIOR, Fase.SUPERIOR):
+        for order in range(1, image_count + 1):
+            Imagen.objects.get_or_create(
+                modulo=module,
+                fase=phase,
+                orden=order,
+                version=1,
+                defaults={
+                    "url": (
+                        "https://via.placeholder.com/1920x1080.png"
+                        f"?text={module.nombre.replace(' ', '+')}+{phase}+Plano+{order}"
+                    ),
+                    "tipo": f"Plano {order}",
+                    "status": ImagenStatus.PUBLISHED,
+                    "activo": True,
+                },
+            )
+
 
 def seed():
-    # Crear usuario admin si no existe
-    admin, created = User.objects.get_or_create(username='Moden')
+    admin, created = User.objects.get_or_create(username="Moden")
     if created:
-        admin.set_password('admin')
+        admin.set_password("admin")
         admin.is_superuser = True
         admin.is_staff = True
         admin.save()
         print("Usuario admin creado.")
 
-    # Proyecto 1: Nave Industrial Ficticia
-    p1, _ = Proyecto.objects.get_or_create(nombre="Nave Industrial Norte", usuario_id=admin.id)
-    
-    # Módulos del Proyecto 1 (con fases Inferior/Superior)
-    m1_inf, _ = Modulo.objects.get_or_create(nombre="Módulo 1 - Inferior", planta="Inferior", proyecto_id=p1.id)
-    m1_sup, _ = Modulo.objects.get_or_create(nombre="Módulo 1 - Superior", planta="Superior", proyecto_id=p1.id)
-    m2_inf, _ = Modulo.objects.get_or_create(nombre="Módulo 2 - Inferior", planta="Inferior", proyecto_id=p1.id)
-    m2_sup, _ = Modulo.objects.get_or_create(nombre="Módulo 2 - Superior", planta="Superior", proyecto_id=p1.id)
-    m3_inf, _ = Modulo.objects.get_or_create(nombre="Módulo 3 - Inferior", planta="Inferior", proyecto_id=p1.id)
-    m3_sup, _ = Modulo.objects.get_or_create(nombre="Módulo 3 - Superior", planta="Superior", proyecto_id=p1.id)
+    project_one, _ = Proyecto.objects.get_or_create(
+        nombre="Nave Industrial Norte",
+        usuario=admin,
+    )
+    for module_name in ("Modulo 1", "Modulo 2", "Modulo 3"):
+        module, _ = Modulo.objects.get_or_create(
+            nombre=module_name,
+            proyecto=project_one,
+        )
+        _create_demo_images(module, 3)
 
-    # Imágenes de ejemplo (URLs placeholder)
-    for mod in [m1_inf, m1_sup, m2_inf, m2_sup, m3_inf, m3_sup]:
-        for i in range(1, 4):  # 3 imágenes por módulo
-            Imagen.objects.get_or_create(
-                url=f"https://via.placeholder.com/1920x1080.png?text={mod.nombre.replace(' ', '+')}+Plano+{i}",
-                tipo=f"Plano {i}",
-                modulo_id=mod.id
-            )
+    project_two, _ = Proyecto.objects.get_or_create(
+        nombre="Edificio Residencial Sur",
+        usuario=admin,
+    )
+    module, _ = Modulo.objects.get_or_create(
+        nombre="Bloque A",
+        proyecto=project_two,
+    )
+    _create_demo_images(module, 2)
 
-    # Proyecto 2: Edificio Residencial
-    p2, _ = Proyecto.objects.get_or_create(nombre="Edificio Residencial Sur", usuario_id=admin.id)
-    m4_inf, _ = Modulo.objects.get_or_create(nombre="Bloque A - Inferior", planta="Inferior", proyecto_id=p2.id)
-    m4_sup, _ = Modulo.objects.get_or_create(nombre="Bloque A - Superior", planta="Superior", proyecto_id=p2.id)
-    for mod in [m4_inf, m4_sup]:
-        for i in range(1, 3):
-            Imagen.objects.get_or_create(
-                url=f"https://via.placeholder.com/1920x1080.png?text={mod.nombre.replace(' ', '+')}+Plano+{i}",
-                tipo=f"Plano {i}",
-                modulo_id=mod.id
-            )
-
-    # Mesas de trabajo
-    Mesa.objects.get_or_create(nombre="Mesa 1", usuario_id=admin.id)
-    Mesa.objects.get_or_create(nombre="Mesa 2", usuario_id=admin.id)
-    Mesa.objects.get_or_create(nombre="Mesa 3", usuario_id=admin.id)
+    for table_name in ("Mesa 1", "Mesa 2", "Mesa 3"):
+        Mesa.objects.get_or_create(nombre=table_name, usuario=admin)
 
     print("Datos de ejemplo creados correctamente.")
     print(f"Proyectos: {Proyecto.objects.count()}")
-    print(f"Módulos: {Modulo.objects.count()}")
-    print(f"Imágenes: {Imagen.objects.count()}")
+    print(f"Modulos: {Modulo.objects.count()}")
+    print(f"Imagenes: {Imagen.objects.count()}")
     print(f"Mesas: {Mesa.objects.count()}")
+
 
 if __name__ == "__main__":
     seed()

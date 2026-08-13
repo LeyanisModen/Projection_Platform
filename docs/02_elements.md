@@ -21,14 +21,16 @@ password real de Django sigue guardandose como hash.
 
 ## 2. Proyecto
 
-Un proyecto agrupa plantas, modulos, planos, datos tecnicos, fotos y estado de
-fabricacion.
+Un proyecto agrupa directamente modulos, plano, planilla, datos tecnicos,
+fotos y estado de fabricacion. Cada planta de una obra se gestiona como un
+proyecto independiente y se identifica en el nombre del proyecto.
 
 Campos/relaciones importantes:
 
 - `usuario`: ferralla propietaria.
 - `modulos`: unidades a fabricar.
 - `grupos_bastidor`: agrupacion/orden de modulos.
+- `plano_archivo` y `planilla_archivo`: documentos PDF del proyecto.
 - `capacidad_diaria_usuario`: lectura del perfil de ferralla.
 - Estrategia de bastidor y longitud objetivo.
 
@@ -122,7 +124,6 @@ erDiagram
     USER ||--o{ PROYECTO : posee
     USER ||--o{ GRUPOMESAS : organiza
     GRUPOMESAS ||--o{ MESA : contiene
-    PROYECTO ||--o{ PLANTA : contiene
     PROYECTO ||--o{ MODULO : contiene
     MODULO ||--o{ DETALLEMODULOFASE : describe
     MODULO ||--o{ FOTO_FABRICACION : genera
@@ -130,4 +131,3 @@ erDiagram
     PROYECTO ||--|| MODULOQUEUE : planifica
     MODULOQUEUE ||--o{ MODULOQUEUEITEM : contiene
 ```
-

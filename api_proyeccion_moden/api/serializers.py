@@ -4,7 +4,7 @@ from django.contrib.auth.models import User
 from rest_framework import serializers
 
 from api.models import (
-    Proyecto, Planta, Modulo, Imagen, Mesa,
+    Proyecto, Modulo, Imagen, Mesa,
     ModuloQueue, ModuloQueueItem, MesaQueueItem, UserProfile, MesaQueueStatus,
     FotoFabricacion, GrupoMesas, GrupoMesasProyecto,
     DetalleModuloFase, GrupoBastidor, FerrallaContacto, FerrallaDireccion, Fase
@@ -210,7 +210,6 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
 # CORE SERIALIZERS
 # =============================================================================
 class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
-    num_plantas = serializers.IntegerField(write_only=True, required=False, min_value=0, default=0)
     usuario_nombre = serializers.ReadOnlyField(source='usuario.username')
     capacidad_diaria_usuario = serializers.SerializerMethodField()
     grupos_count = serializers.SerializerMethodField()
@@ -222,9 +221,10 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
     class Meta:
         model = Proyecto
         fields = [
-            "id", "url", "nombre", "usuario", "usuario_nombre", "num_plantas",
+            "id", "url", "nombre", "usuario", "usuario_nombre",
             "bastidor_longitud_cm", "datos_tecnicos_importados",
             "datos_tecnicos_archivo", "datos_tecnicos_actualizados_at",
+            "plano_archivo", "planilla_archivo",
             "estrategia_bastidor",
             "capacidad_diaria_usuario",
             "grupos_count", "modulos_count", "modulos_completados",
@@ -239,6 +239,18 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
         if not obj.fichero_datos_tecnicos:
             return None
         return os.path.basename(obj.fichero_datos_tecnicos.name)
+
+    @staticmethod
+    def _validate_pdf(value, label):
+        if value and os.path.splitext(value.name)[1].lower() != '.pdf':
+            raise serializers.ValidationError(f'El {label} debe ser un archivo PDF.')
+        return value
+
+    def validate_plano_archivo(self, value):
+        return self._validate_pdf(value, 'plano')
+
+    def validate_planilla_archivo(self, value):
+        return self._validate_pdf(value, 'planilla')
 
     def get_capacidad_diaria_usuario(self, obj):
         if obj.usuario and hasattr(obj.usuario, 'profile'):
@@ -271,45 +283,6 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
         ).count()
 
 
-    def create(self, validated_data):
-        num_plantas = validated_data.pop('num_plantas', 0)
-        proyecto = super().create(validated_data)
-
-        if num_plantas > 0:
-            # Create plants
-            # Avoid circular import by importing inside method if needed, 
-            # though Planta is already imported at top level
-            
-            # Batch create for efficiency? Or simple loop. 
-            # Loop is fine for small numbers.
-            planta_objects = []
-            for i in range(1, num_plantas + 1):
-                planta_objects.append(
-                    Planta(
-                        nombre=f"Planta {i}",
-                        proyecto=proyecto,
-                        orden=i
-                    )
-                )
-            if planta_objects:
-                Planta.objects.bulk_create(planta_objects)
-                
-        return proyecto
-
-
-class PlantaSerializer(serializers.ModelSerializer):
-    modulos_count = serializers.SerializerMethodField()
-
-    class Meta:
-        model = Planta
-        fields = ["id", "nombre", "proyecto", "orden", "modulos_count", "plano_imagen", "fichero_corte"]
-
-    def get_modulos_count(self, obj):
-        if hasattr(obj, 'modulos_count'):
-            return obj.modulos_count
-        return obj.modulos.count()
-
-
 class ModuloSerializer(serializers.ModelSerializer):
     fotos_count = serializers.SerializerMethodField()
     detalles_fase = serializers.SerializerMethodField()
@@ -317,12 +290,12 @@ class ModuloSerializer(serializers.ModelSerializer):
     class Meta:
         model = Modulo
         fields = [
-            "id", "nombre", "ancho_cm", "tipo_modulo", "planta", "proyecto", "grupo_bastidor",
+            "id", "nombre", "ancho_cm", "tipo_modulo", "proyecto", "grupo_bastidor",
             "inferior_hecho", "superior_hecho", "estado",
-            "cerrado", "cerrado_at", "cerrado_by",
+            "completado_at", "cerrado", "cerrado_at", "cerrado_by",
             "codigos_color", "fotos_count", "detalles_fase"
         ]
-        read_only_fields = ["cerrado_at", "grupo_bastidor"]
+        read_only_fields = ["completado_at", "cerrado_at", "grupo_bastidor"]
 
     def get_fotos_count(self, obj):
         if hasattr(obj, '_fotos_count'):
@@ -457,7 +430,6 @@ class ImagenSerializer(serializers.HyperlinkedModelSerializer):
 
 class FotoFabricacionSerializer(serializers.ModelSerializer):
     modulo_nombre = serializers.CharField(source='modulo.nombre', read_only=True)
-    planta_nombre = serializers.SerializerMethodField()
     proyecto_id = serializers.SerializerMethodField()
     mesa_nombre = serializers.CharField(source='mesa.nombre', read_only=True, allow_null=True)
     fase_label = serializers.SerializerMethodField()
@@ -465,7 +437,7 @@ class FotoFabricacionSerializer(serializers.ModelSerializer):
     class Meta:
         model = FotoFabricacion
         fields = [
-            "id", "modulo", "modulo_nombre", "planta_nombre", "proyecto_id",
+            "id", "modulo", "modulo_nombre", "proyecto_id",
             "mesa", "mesa_nombre",
             "fase", "fase_label", "paso", "imagen_referencia",
             "url", "capturada_at", "updated_at",
@@ -476,11 +448,6 @@ class FotoFabricacionSerializer(serializers.ModelSerializer):
 
     def get_fase_label(self, obj):
         return "INF" if obj.fase == "INFERIOR" else "SUP"
-
-    def get_planta_nombre(self, obj):
-        if obj.modulo and obj.modulo.planta:
-            return obj.modulo.planta.nombre
-        return None
 
     def get_proyecto_id(self, obj):
         if obj.modulo:
@@ -569,12 +536,11 @@ class GrupoMesasSerializer(serializers.ModelSerializer):
 
 class ModuloQueueItemSerializer(serializers.ModelSerializer):
     modulo_nombre = serializers.CharField(source='modulo.nombre', read_only=True)
-    modulo_planta = serializers.CharField(source='modulo.planta.nombre', read_only=True)
     
     class Meta:
         model = ModuloQueueItem
         fields = [
-            "id", "queue", "modulo", "modulo_nombre", "modulo_planta",
+            "id", "queue", "modulo", "modulo_nombre",
             "position", "added_by", "created_at"
         ]
         read_only_fields = ["created_at"]
@@ -584,7 +550,6 @@ class MesaQueueItemSerializer(serializers.ModelSerializer):
     modulo_nombre = serializers.CharField(source='modulo.nombre', read_only=True)
     imagen_url = serializers.CharField(source='imagen.url', read_only=True)
     mesa_nombre = serializers.CharField(source='mesa.nombre', read_only=True)
-    modulo_planta_id = serializers.SerializerMethodField()
     modulo_proyecto_id = serializers.SerializerMethodField()
     modulo_proyecto_nombre = serializers.CharField(
         source='modulo.proyecto.nombre', read_only=True, default=''
@@ -605,7 +570,7 @@ class MesaQueueItemSerializer(serializers.ModelSerializer):
         model = MesaQueueItem
         fields = [
             "id", "mesa", "mesa_nombre",
-            "modulo", "modulo_nombre", "modulo_planta_id",
+            "modulo", "modulo_nombre",
             "modulo_proyecto_id", "modulo_proyecto_nombre",
             "fase", "imagen", "imagen_url",
             "position", "plan_group_index",
@@ -710,15 +675,8 @@ class MesaQueueItemSerializer(serializers.ModelSerializer):
             instance.save()
         return instance
 
-    def get_modulo_planta_id(self, obj):
-        if obj.modulo_id and obj.modulo.planta_id:
-            return obj.modulo.planta_id
-        return None
-
     def get_modulo_proyecto_id(self, obj):
-        if obj.modulo_id and obj.modulo.planta_id and obj.modulo.planta and obj.modulo.planta.proyecto_id:
-            return obj.modulo.planta.proyecto_id
-        return None
+        return obj.modulo.proyecto_id if obj.modulo_id else None
 
 # =============================================================================
 # DEVICE PAIRING SERIALIZERS

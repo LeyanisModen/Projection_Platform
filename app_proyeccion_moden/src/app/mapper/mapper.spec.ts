@@ -1,4 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideHttpClient } from '@angular/common/http';
+import { provideRouter } from '@angular/router';
 
 import { Mapper } from './mapper';
 
@@ -8,7 +10,8 @@ describe('Mapper', () => {
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [Mapper]
+      imports: [Mapper],
+      providers: [provideHttpClient(), provideRouter([])]
     })
     .compileComponents();
 
