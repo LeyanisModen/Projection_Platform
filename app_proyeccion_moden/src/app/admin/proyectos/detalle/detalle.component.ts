@@ -310,29 +310,30 @@ export class ProyectoDetailComponent implements OnInit {
         return modulo.motivo_bloqueo || 'Este modulo ya no se puede reordenar';
     }
 
-    /** Indice del ultimo modulo bloqueado por estado o avance real. Esos
-     *  modulos ya estan fisicamente en su
-     *  posicion en el bastidor, asi que cualquier insercion debe ir DESPUES.
+    /** Primer modulo bloqueado por estado o avance real. El bastidor inferior
+     *  se fabrica desde abajo hacia arriba en el card, por lo que cualquier
+     *  modulo nuevo debe quedar visualmente ANTES (encima) de esta frontera.
      *  -1 si todos son pendientes (o el bastidor esta vacio). */
-    private _lastLockedIndex(grupo: GrupoBastidor): number {
-        let last = -1;
-        grupo.modulos.forEach((m, i) => {
-            if (!this.isModuloMovible(m)) last = i;
-        });
-        return last;
+    private _firstLockedIndex(
+        grupo: GrupoBastidor,
+        excludeModuloId?: number,
+    ): number {
+        return grupo.modulos
+            .filter(m => m.id !== excludeModuloId)
+            .findIndex(m => !this.isModuloMovible(m));
     }
 
-    /** Predicate para cdkDropList: rechaza que el placeholder caiga en
-     *  posiciones <= ultimo bloqueado. Se ejecuta por cada movimiento de
-     *  cursor durante el drag. */
-    bastidorSortPredicate = (index: number, _drag: unknown, drop: { data: GrupoBastidor }): boolean => {
+    /** Predicate para cdkDropList: impide soltar por debajo del primer
+     *  bloqueado, lo que adelantaría el modulo nuevo en la fabricación. */
+    bastidorSortPredicate = (
+        index: number,
+        drag: { data: GrupoBastidorModulo },
+        drop: { data: GrupoBastidor },
+    ): boolean => {
         const grupo = drop?.data;
         if (!grupo) return true;
-        // Cuando es el mismo grupo, el modulo arrastrado se "saca" temporalmente
-        // de la lista en CDK para calcular indices. _lastLockedIndex se calcula
-        // sobre la lista actual (sin el arrastrado), asi que es consistente.
-        const lastLocked = this._lastLockedIndex(grupo);
-        return index > lastLocked;
+        const firstLocked = this._firstLockedIndex(grupo, drag.data.id);
+        return firstLocked === -1 || index <= firstLocked;
     };
 
     onModuloDragStarted(grupo: GrupoBastidor): void {
@@ -365,24 +366,25 @@ export class ProyectoDetailComponent implements OnInit {
             return;
         }
 
-        // Defensa redundante: si por cualquier razon el drop cae antes/entre
-        // modulos ya fabricados (bloqueados), reordenar destino para que el
-        // arrastrado quede justo despues del ultimo bloqueado.
+        // Defensa redundante: si por cualquier razon el drop cae debajo de
+        // modulos ya fabricados, llevarlo al primer hueco seguro por encima.
+        // INF recorre el card en sentido inverso: abajo se fabrica primero.
         const destinoSinArrastrado: GrupoBastidorModulo[] = destino.modulos
             .filter(m => m.id !== modulo.id);
-        const lastLocked = destinoSinArrastrado.reduce(
-            (acc, m, i) => (!this.isModuloMovible(m) ? i : acc),
-            -1,
+        const firstLocked = destinoSinArrastrado.findIndex(
+            m => !this.isModuloMovible(m),
         );
-        const indexClamped = Math.max(indexDestino, lastLocked + 1);
+        const indexClamped = firstLocked === -1
+            ? indexDestino
+            : Math.min(indexDestino, firstLocked);
 
         const sameGroup = event.previousContainer === event.container;
         if (sameGroup) {
             // Intra-bastidor: solo persiste si cambio realmente de posicion.
             if (event.previousIndex === event.currentIndex) return;
-            moveItemInArray(destino.modulos, event.previousIndex, event.currentIndex);
+            moveItemInArray(destino.modulos, event.previousIndex, indexClamped);
         } else {
-            transferArrayItem(origen.modulos, destino.modulos, event.previousIndex, event.currentIndex);
+            transferArrayItem(origen.modulos, destino.modulos, event.previousIndex, indexClamped);
         }
 
         this.movingModulo = true;

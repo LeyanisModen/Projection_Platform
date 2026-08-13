@@ -2104,6 +2104,179 @@ class PlanningFoundationTests(APITestCase):
         self.assertEqual(move_response.status_code, 409)
         self.assertIn("fabricacion ya ha comenzado", move_response.data["detail"])
 
+    def test_modulo_nuevo_queda_encima_del_primer_bloqueado_del_bastidor(self):
+        grupo = self._crear_grupo("Grupo Insercion Segura")
+        mesa_inf = grupo.mesas.get(tipo="INFERIOR", indice=1)
+        mesa_origen = grupo.mesas.get(tipo="INFERIOR", indice=2)
+        origen = GrupoBastidor.objects.create(
+            proyecto=self.project,
+            indice=1,
+            nombre="Grupo Origen",
+            asignado_a=grupo,
+        )
+        destino = GrupoBastidor.objects.create(
+            proyecto=self.project,
+            indice=2,
+            nombre="Grupo Destino",
+            asignado_a=grupo,
+        )
+        self.modulo.nombre = "G03"
+        self.modulo.grupo_bastidor = origen
+        self.modulo.orden_intra = 1
+        self.modulo.save(update_fields=["nombre", "grupo_bastidor", "orden_intra"])
+        pendiente_superior = Modulo.objects.create(
+            nombre="G01",
+            proyecto=self.project,
+            planta=self.planta,
+            grupo_bastidor=destino,
+            orden_intra=1,
+        )
+        iniciado = Modulo.objects.create(
+            nombre="G02",
+            proyecto=self.project,
+            planta=self.planta,
+            grupo_bastidor=destino,
+            orden_intra=2,
+        )
+        terminado = Modulo.objects.create(
+            nombre="G04",
+            proyecto=self.project,
+            planta=self.planta,
+            grupo_bastidor=destino,
+            orden_intra=3,
+            estado=ModuloEstado.COMPLETADO,
+            inferior_hecho=True,
+            superior_hecho=True,
+            cerrado=True,
+        )
+        iniciado_item = MesaQueueItem.objects.create(
+            mesa=mesa_inf,
+            modulo=iniciado,
+            fase="INFERIOR",
+            status=MesaQueueStatus.MOSTRANDO,
+            position=0,
+            plan_group_index=destino.indice,
+        )
+        pendiente_item = MesaQueueItem.objects.create(
+            mesa=mesa_inf,
+            modulo=pendiente_superior,
+            fase="INFERIOR",
+            status=MesaQueueStatus.EN_COLA,
+            position=1,
+            plan_group_index=destino.indice,
+        )
+        moved_item = MesaQueueItem.objects.create(
+            mesa=mesa_origen,
+            modulo=self.modulo,
+            fase="INFERIOR",
+            status=MesaQueueStatus.EN_COLA,
+            position=0,
+            plan_group_index=origen.indice,
+        )
+        mesa_inf.current_image_index = 14
+        mesa_inf.save(update_fields=["current_image_index"])
+        admin = User.objects.create_user(
+            username="safe_insert_admin",
+            password="pass123",
+            is_staff=True,
+        )
+        admin_token = Token.objects.create(user=admin)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {admin_token.key}")
+
+        response = self.client.post(
+            "/api/grupos-bastidor/move-modulo/",
+            {
+                "modulo_id": self.modulo.id,
+                "grupo_destino_id": destino.id,
+                # Simula soltarlo al fondo del card, en el lado peligroso.
+                "index_destino": 99,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            list(
+                destino.modulos.order_by("orden_intra").values_list(
+                    "nombre", flat=True
+                )
+            ),
+            [
+                pendiente_superior.nombre,
+                self.modulo.nombre,
+                iniciado.nombre,
+                terminado.nombre,
+            ],
+        )
+        moved_item.refresh_from_db()
+        pendiente_item.refresh_from_db()
+        self.assertEqual(moved_item.mesa_id, mesa_inf.id)
+        self.assertEqual(moved_item.status, MesaQueueStatus.EN_COLA)
+        self.assertEqual(moved_item.position, 1)
+        self.assertEqual(pendiente_item.position, 2)
+        self.assertEqual(
+            list(
+                mesa_inf.queue_items.filter(status__in=[
+                    MesaQueueStatus.MOSTRANDO,
+                    MesaQueueStatus.EN_COLA,
+                ])
+                .order_by("position")
+                .values_list("modulo__nombre", flat=True)
+            ),
+            [iniciado.nombre, self.modulo.nombre, pendiente_superior.nombre],
+        )
+
+        # Repara tambien un orden peligroso persistido por la version anterior:
+        # el modulo pendiente ya esta en el bastidor, pero debajo del bloque
+        # fisico. Aunque se intente volver a soltar al fondo, debe subir al
+        # primer hueco seguro y la cola debe seguir al modulo en fabricacion.
+        Modulo.objects.filter(pk=pendiente_superior.pk).update(orden_intra=1)
+        Modulo.objects.filter(pk=iniciado.pk).update(orden_intra=2)
+        Modulo.objects.filter(pk=terminado.pk).update(orden_intra=3)
+        Modulo.objects.filter(pk=self.modulo.pk).update(orden_intra=4)
+        iniciado_item.position = 0
+        iniciado_item.save(update_fields=["position"])
+        pendiente_item.position = 1
+        pendiente_item.save(update_fields=["position"])
+        moved_item.position = 2
+        moved_item.save(update_fields=["position"])
+
+        repair_response = self.client.post(
+            "/api/grupos-bastidor/move-modulo/",
+            {
+                "modulo_id": self.modulo.id,
+                "grupo_destino_id": destino.id,
+                "index_destino": 99,
+            },
+            format="json",
+        )
+
+        self.assertEqual(repair_response.status_code, 200)
+        self.assertEqual(
+            list(
+                destino.modulos.order_by("orden_intra").values_list(
+                    "nombre", flat=True
+                )
+            ),
+            [
+                pendiente_superior.nombre,
+                self.modulo.nombre,
+                iniciado.nombre,
+                terminado.nombre,
+            ],
+        )
+        self.assertEqual(
+            list(
+                mesa_inf.queue_items.filter(status__in=[
+                    MesaQueueStatus.MOSTRANDO,
+                    MesaQueueStatus.EN_COLA,
+                ])
+                .order_by("position")
+                .values_list("modulo__nombre", flat=True)
+            ),
+            [iniciado.nombre, self.modulo.nombre, pendiente_superior.nombre],
+        )
+
     def test_no_mueve_de_mesa_un_modulo_que_ya_se_esta_mostrando(self):
         admin = User.objects.create_user(
             username="move_showing_module_admin",

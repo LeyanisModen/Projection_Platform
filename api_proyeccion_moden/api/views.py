@@ -2556,17 +2556,18 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
         else:
             insert_at = min(index_destino, len(destino_modulos))
 
-        # No permitir insertar antes o entre modulos ya fabricados
-        # (completado / en proceso / cerrado): esos modulos estan
-        # fisicamente en su posicion en el bastidor. Clampamos al
-        # primer hueco valido tras el ultimo bloqueado.
-        last_locked = -1
+        # INF fabrica el bastidor en orden inverso al card: los modulos de
+        # abajo salen primero. Un modulo nuevo no puede colocarse debajo de
+        # trabajo ya iniciado o terminado porque se adelantaría a ese trabajo.
+        # Clampamos al primer hueco seguro por encima del primer bloqueado.
+        first_locked = None
         for i, m in enumerate(destino_modulos):
             movible_destino, _ = module_reorderability(m)
             if not movible_destino:
-                last_locked = i
-        if insert_at <= last_locked:
-            insert_at = last_locked + 1
+                first_locked = i
+                break
+        if first_locked is not None and insert_at > first_locked:
+            insert_at = first_locked
 
         destino_modulos.insert(insert_at, modulo)
 
