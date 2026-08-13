@@ -1,6 +1,7 @@
 import csv
 import io
 import json
+import logging
 import os
 import re
 import sqlite3
@@ -58,6 +59,9 @@ from rest_framework.authtoken.views import ObtainAuthToken
 from rest_framework.authtoken.models import Token
 
 from rest_framework import renderers
+
+
+logger = logging.getLogger(__name__)
 
 
 TECHNICAL_FIELD_ALIASES = {
@@ -1488,6 +1492,21 @@ class ProyectoViewSet(viewsets.ModelViewSet):
             'queues': queues,
         })
 
+    @staticmethod
+    def _new_import_stats():
+        return {
+            'plantas': 0,
+            'modulos': 0,
+            'imagenes': 0,
+            'detalles_fase': 0,
+            'plano_cargado': False,
+            'planilla_cargada': False,
+            'base_tecnica_actualizada': False,
+            'errors': [],
+            'modulos_omitidos': 0,
+            'module_errors': [],
+        }
+
     @action(detail=True, methods=['get'])
     def queue(self, request, pk=None):
         """Get the module queue for a project."""
@@ -1511,8 +1530,146 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         except ModuloQueue.DoesNotExist:
             return Response([])
 
+    @staticmethod
+    def _strict_module_import_errors(modulo_data, files):
+        modulo_name = str(modulo_data.get('nombre') or '').strip() or 'Sin nombre'
+        images = modulo_data.get('imagenes')
+        errors = []
+        if not str(modulo_data.get('nombre') or '').strip():
+            errors.append('El modulo no tiene nombre.')
+        if not isinstance(images, list) or not images:
+            errors.append('No contiene imagenes.')
+            return modulo_name, errors
+
+        source_phases = set()
+        phase_orders = set()
+        for image_index, image_data in enumerate(images, start=1):
+            if not isinstance(image_data, dict):
+                errors.append(f'La imagen {image_index} no tiene una estructura valida.')
+                continue
+            filename = str(image_data.get('filename') or '').strip()
+            phase = str(image_data.get('fase') or '').strip().upper()
+            source_phase = str(image_data.get('source_phase') or '').strip().upper()
+            order = image_data.get('orden')
+
+            if source_phase not in {'INF', 'SD_S', 'SD_D', 'SUP'}:
+                errors.append(f'La imagen {filename or image_index} no indica su carpeta de origen.')
+            else:
+                source_phases.add(source_phase)
+            expected_phase = 'INFERIOR' if source_phase == 'INF' else 'SUPERIOR'
+            if phase not in {'INFERIOR', 'SUPERIOR'}:
+                errors.append(f'La imagen {filename or image_index} tiene una fase invalida.')
+            elif source_phase and phase != expected_phase:
+                errors.append(
+                    f'La imagen {filename or image_index} no coincide con su carpeta {source_phase}.'
+                )
+            if not filename or filename not in files:
+                errors.append(f'No se recibio el archivo {filename or image_index}.')
+            elif getattr(files[filename], 'size', 0) <= 0:
+                errors.append(f'El archivo {filename} esta vacio.')
+            try:
+                normalized_order = int(order)
+                order_key = (phase, normalized_order)
+                if normalized_order <= 0:
+                    raise ValueError
+                if order_key in phase_orders:
+                    errors.append(f'El orden {normalized_order} esta repetido en {phase}.')
+                phase_orders.add(order_key)
+            except (TypeError, ValueError):
+                errors.append(f'La imagen {filename or image_index} tiene un orden invalido.')
+
+        for required_phase in ('INF', 'SUP'):
+            if required_phase not in source_phases:
+                errors.append(f'Falta la fase obligatoria {required_phase}.')
+        return modulo_name, errors
+
+    @action(detail=False, methods=['post'], url_path='create-with-structure')
+    def create_with_structure(self, request):
+        project_raw = request.data.get('project', '{}')
+        try:
+            project_data = json.loads(project_raw) if isinstance(project_raw, str) else project_raw
+        except json.JSONDecodeError as exc:
+            return Response(
+                {'status': 'error', 'message': f'Datos del proyecto no validos: {exc}'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not isinstance(project_data, dict):
+            return Response(
+                {'status': 'error', 'message': 'Los datos del proyecto no tienen una estructura valida.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = self.get_serializer(data=project_data)
+        serializer.is_valid(raise_exception=True)
+        cleanup_snapshot = None
+        failure_response = None
+
+        with transaction.atomic():
+            self.perform_create(serializer)
+            proyecto = serializer.instance
+            try:
+                import_response = self._import_structure_into_project(request, proyecto)
+            except Exception:
+                logger.exception(
+                    'Unexpected error while creating project %s with its structure',
+                    proyecto.pk,
+                )
+                cleanup_snapshot = collect_project_media(proyecto)
+                transaction.set_rollback(True)
+                failure_response = Response(
+                    {
+                        'status': 'error',
+                        'message': (
+                            'No se pudo completar la importacion. '
+                            'El proyecto no fue guardado.'
+                        ),
+                        'stats': self._new_import_stats(),
+                    },
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+            else:
+                raw_stats = (
+                    import_response.data.get('stats', {})
+                    if hasattr(import_response, 'data')
+                    else {}
+                )
+                stats = self._new_import_stats()
+                if isinstance(raw_stats, dict):
+                    stats.update(raw_stats)
+                if import_response.status_code >= 400 or stats.get('modulos', 0) <= 0:
+                    cleanup_snapshot = collect_project_media(proyecto)
+                    transaction.set_rollback(True)
+                    message = (
+                        import_response.data.get('message')
+                        if hasattr(import_response, 'data')
+                        else None
+                    )
+                    failure_response = Response(
+                        {
+                            'status': 'error',
+                            'message': message or (
+                                'No se creo ningun modulo valido. '
+                                'El proyecto no fue guardado.'
+                            ),
+                            'stats': stats,
+                        },
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+        if failure_response is not None:
+            if cleanup_snapshot is not None:
+                delete_project_media(cleanup_snapshot)
+            return failure_response
+
+        response_data = dict(import_response.data)
+        response_data['project'] = self.get_serializer(serializer.instance).data
+        return Response(response_data, status=status.HTTP_201_CREATED)
+
     @action(detail=True, methods=['post'], url_path='import-structure')
     def import_structure(self, request, pk=None):
+        return self._import_structure_into_project(request, self.get_object())
+
+    def _import_structure_into_project(self, request, proyecto):
         """
         Import project structure from uploaded folder data.
         Expects multipart form with:
@@ -1522,8 +1679,6 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         import os
         import json
         from django.conf import settings as django_settings
-        
-        proyecto = self.get_object()
         
         # Get uploaded files
         files = request.FILES
@@ -1541,13 +1696,65 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         else:
             plantas_data = plantas_raw
         
+        stats = self._new_import_stats()
+        if not isinstance(plantas_data, list):
+            return Response({
+                'status': 'error',
+                'message': 'La estructura de plantas debe ser una lista.',
+                'stats': stats,
+            }, status=status.HTTP_400_BAD_REQUEST)
+
         print(f"[IMPORT] Proyecto {proyecto.id}: {len(plantas_data)} plantas, {len(files)} files")
 
-        stats = {
-            'plantas': 0, 'modulos': 0, 'imagenes': 0, 'detalles_fase': 0,
-            'plano_cargado': False, 'planilla_cargada': False,
-            'base_tecnica_actualizada': False, 'errors': []
-        }
+        strict_validation = str(
+            request.data.get('strict_validation', '')
+        ).strip().lower() in {'1', 'true', 'yes', 'si'}
+
+        def add_module_error(module_name, source_folder, errors):
+            normalized_errors = [str(error) for error in errors if str(error).strip()]
+            entry = {
+                'module': str(module_name or 'Sin nombre'),
+                'folder': str(source_folder or module_name or 'Sin nombre'),
+                'errors': normalized_errors,
+            }
+            stats['module_errors'].append(entry)
+            stats['modulos_omitidos'] += 1
+            stats['errors'].extend(
+                f"{entry['module']}: {error}" for error in normalized_errors
+            )
+
+        client_module_errors_raw = request.data.get('client_module_errors', '[]')
+        client_errors_raw = request.data.get('client_errors', '[]')
+        try:
+            client_module_errors = (
+                json.loads(client_module_errors_raw)
+                if isinstance(client_module_errors_raw, str)
+                else client_module_errors_raw
+            )
+            if isinstance(client_module_errors, list):
+                for entry in client_module_errors:
+                    if not isinstance(entry, dict):
+                        continue
+                    errors = entry.get('errors') or []
+                    if isinstance(errors, str):
+                        errors = [errors]
+                    add_module_error(
+                        entry.get('module'),
+                        entry.get('folder'),
+                        errors,
+                    )
+        except (TypeError, ValueError, json.JSONDecodeError):
+            stats['errors'].append('No se pudo interpretar el informe local de modulos.')
+        try:
+            client_errors = (
+                json.loads(client_errors_raw)
+                if isinstance(client_errors_raw, str)
+                else client_errors_raw
+            )
+            if isinstance(client_errors, list):
+                stats['errors'].extend(str(error) for error in client_errors if str(error).strip())
+        except (TypeError, ValueError, json.JSONDecodeError):
+            stats['errors'].append('No se pudo interpretar el informe local de archivos.')
         created_modulos = []
         stored_technical_records = []
         stored_material_pieces = []
@@ -1592,6 +1799,9 @@ class ProyectoViewSet(viewsets.ModelViewSet):
 
         for planta_data in plantas_data:
             try:
+                if not isinstance(planta_data, dict):
+                    stats['errors'].append('Se omitio una planta con estructura invalida.')
+                    continue
                 # Reuse the virtual "General" floor when importing extra modules.
                 planta, planta_created = Planta.objects.get_or_create(
                     nombre=planta_data.get('nombre', 'Sin nombre'),
@@ -1617,95 +1827,169 @@ class ProyectoViewSet(viewsets.ModelViewSet):
                         stats['planilla_cargada'] = True
                 
                 modulos_data = planta_data.get('modulos', [])
+                if not isinstance(modulos_data, list):
+                    stats['errors'].append(
+                        f"La planta {planta.nombre} no contiene una lista valida de modulos."
+                    )
+                    continue
                 for modulo_data in modulos_data:
+                    modulo_name = 'Sin nombre'
+                    source_folder = 'Sin nombre'
+                    written_paths = []
+                    module_media_directory = None
                     try:
-                        modulo_name = modulo_data.get('nombre', 'Sin nombre').strip()
+                        if not isinstance(modulo_data, dict):
+                            add_module_error(
+                                'Sin nombre',
+                                'Sin nombre',
+                                ['La informacion del modulo no tiene una estructura valida.'],
+                            )
+                            continue
+                        modulo_name = str(modulo_data.get('nombre') or '').strip() or 'Sin nombre'
+                        source_folder = str(
+                            modulo_data.get('source_folder') or modulo_name
+                        )
+                        if strict_validation:
+                            _, validation_errors = self._strict_module_import_errors(
+                                modulo_data,
+                                files,
+                            )
+                            if validation_errors:
+                                add_module_error(
+                                    modulo_name,
+                                    source_folder,
+                                    validation_errors,
+                                )
+                                continue
                         canonical_name = _module_name_without_repeat_suffix(
                             modulo_name
                         ).casefold()
                         if canonical_name in existing_module_names:
-                            stats['errors'].append(
-                                f'El modulo {modulo_name} ya existe y se omitio.'
+                            add_module_error(
+                                modulo_name,
+                                source_folder,
+                                ['El modulo ya existe en el proyecto.'],
                             )
                             continue
 
-                        # Create Modulo
-                        modulo = Modulo.objects.create(
-                            nombre=modulo_name,
-                            ancho_cm=_extract_module_fields(_row_to_canonical_dict(modulo_data)).get('ancho_cm'),
-                            planta=planta,
-                            proyecto=proyecto,
-                            estado='PENDIENTE',
-                            codigos_color=(modulo_data.get('codigos_color') or 'xxxxxxxx').ljust(8, 'x')[:8]
-                        )
-                        created_modulos.append(modulo)
-                        existing_module_names.add(canonical_name)
-                        stats['modulos'] += 1
-                        
-                        imagenes_data = modulo_data.get('imagenes', [])
-                        for imagen_data in imagenes_data:
-                            try:
+                        module_image_count = 0
+                        module_detail_count = 0
+                        module_warnings = []
+                        with transaction.atomic():
+                            modulo = Modulo.objects.create(
+                                nombre=modulo_name,
+                                ancho_cm=_extract_module_fields(
+                                    _row_to_canonical_dict(modulo_data)
+                                ).get('ancho_cm'),
+                                planta=planta,
+                                proyecto=proyecto,
+                                estado='PENDIENTE',
+                                codigos_color=(
+                                    modulo_data.get('codigos_color') or 'xxxxxxxx'
+                                ).ljust(8, 'x')[:8],
+                            )
+
+                            imagenes_data = modulo_data.get('imagenes', [])
+                            if not isinstance(imagenes_data, list):
+                                raise ValueError('La lista de imagenes no es valida.')
+                            for imagen_data in imagenes_data:
+                                if not isinstance(imagen_data, dict):
+                                    raise ValueError('Una imagen no tiene una estructura valida.')
                                 filename = imagen_data.get('filename')
                                 fase = imagen_data.get('fase', 'INFERIOR')
                                 orden = imagen_data.get('orden', 1)
-                                
-                                # Check if file was uploaded
                                 uploaded_file = files.get(filename)
-                                if uploaded_file:
-                                    # The multipart key includes module, source
-                                    # folder (INF/SUP/SD_*) and original name.
-                                    # Using uploaded_file.name caused equal names
-                                    # from different phases to overwrite each other.
-                                    stored_filename = get_valid_filename(
-                                        os.path.basename(str(filename))
-                                    )
-                                    # Save file to media folder
-                                    media_path = os.path.join('imagenes', str(proyecto.id), str(planta.id), str(modulo.id))
-                                    full_path = os.path.join(django_settings.MEDIA_ROOT, media_path)
-                                    os.makedirs(full_path, exist_ok=True)
-                                    
-                                    file_path = os.path.join(full_path, stored_filename)
-                                    with open(file_path, 'wb+') as destination:
-                                        for chunk in uploaded_file.chunks():
-                                            destination.write(chunk)
-                                    
-                                    # Create Imagen record
-                                    url = f'/media/{media_path}/{stored_filename}'
-                                    Imagen.objects.create(
-                                        url=url,
-                                        modulo=modulo,
-                                        fase=fase,
-                                        orden=orden,
-                                        activo=True
-                                    )
-                                    stats['imagenes'] += 1
-                                else:
-                                    stats['errors'].append(f"File not found: {filename}")
-                            except Exception as e:
-                                stats['errors'].append(f"Error creating imagen: {str(e)}")
+                                if not uploaded_file:
+                                    message = f'No se recibio el archivo {filename}.'
+                                    if strict_validation:
+                                        raise ValueError(message)
+                                    module_warnings.append(message)
+                                    continue
 
-                        detalles_fase_data = modulo_data.get('detalles_fase', [])
-                        for detalle_data in detalles_fase_data:
-                            try:
+                                stored_filename = get_valid_filename(
+                                    os.path.basename(str(filename))
+                                )
+                                media_path = os.path.join(
+                                    'imagenes',
+                                    str(proyecto.id),
+                                    str(planta.id),
+                                    str(modulo.id),
+                                )
+                                full_path = os.path.join(
+                                    django_settings.MEDIA_ROOT,
+                                    media_path,
+                                )
+                                module_media_directory = full_path
+                                os.makedirs(full_path, exist_ok=True)
+
+                                file_path = os.path.join(full_path, stored_filename)
+                                written_paths.append(file_path)
+                                with open(file_path, 'wb+') as destination:
+                                    for chunk in uploaded_file.chunks():
+                                        destination.write(chunk)
+
+                                url = f'/media/{media_path}/{stored_filename}'
+                                Imagen.objects.create(
+                                    url=url,
+                                    modulo=modulo,
+                                    fase=fase,
+                                    orden=orden,
+                                    activo=True,
+                                )
+                                module_image_count += 1
+
+                            detalles_fase_data = modulo_data.get('detalles_fase', [])
+                            if not isinstance(detalles_fase_data, list):
+                                raise ValueError('La lista de detalles tecnicos no es valida.')
+                            for detalle_data in detalles_fase_data:
+                                if not isinstance(detalle_data, dict):
+                                    raise ValueError(
+                                        'Un detalle tecnico no tiene una estructura valida.'
+                                    )
                                 fase = _normalize_phase(detalle_data.get('fase'))
                                 if not fase:
-                                    stats['errors'].append(
-                                        f"Detalle tecnico sin fase valida para modulo {modulo.nombre}"
-                                    )
+                                    message = 'Detalle tecnico sin fase valida.'
+                                    if strict_validation:
+                                        raise ValueError(message)
+                                    module_warnings.append(message)
                                     continue
 
                                 detail_fields = _extract_detail_fields(
                                     _row_to_canonical_dict(detalle_data)
                                 )
-                                if not detail_fields:
-                                    continue
+                                if detail_fields:
+                                    self._upsert_modulo_phase_detail(
+                                        modulo,
+                                        fase,
+                                        detail_fields,
+                                    )
+                                    module_detail_count += 1
 
-                                self._upsert_modulo_phase_detail(modulo, fase, detail_fields)
-                                stats['detalles_fase'] += 1
-                            except Exception as e:
-                                stats['errors'].append(f"Error creating detalle tecnico: {str(e)}")
-                    except Exception as e:
-                        stats['errors'].append(f"Error creating modulo: {str(e)}")
+                        created_modulos.append(modulo)
+                        existing_module_names.add(canonical_name)
+                        stats['modulos'] += 1
+                        stats['imagenes'] += module_image_count
+                        stats['detalles_fase'] += module_detail_count
+                        stats['errors'].extend(
+                            f'{modulo_name}: {warning}' for warning in module_warnings
+                        )
+                    except Exception as exc:
+                        for file_path in written_paths:
+                            try:
+                                if os.path.isfile(file_path):
+                                    os.remove(file_path)
+                            except OSError:
+                                pass
+                        if module_media_directory:
+                            try:
+                                os.rmdir(module_media_directory)
+                            except OSError:
+                                pass
+                        add_module_error(
+                            modulo_name,
+                            source_folder,
+                            [f'No se pudo guardar: {exc}'],
+                        )
             except Exception as e:
                 stats['errors'].append(f"Error creating planta: {str(e)}")
 

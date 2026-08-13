@@ -6,6 +6,30 @@
         </button>
     </div>
 
+    <section class="creation-report" *ngIf="creationReport as report">
+        <div class="creation-report-icon" aria-hidden="true">&#10003;</div>
+        <div class="creation-report-content">
+            <strong>Proyecto "{{ report.projectName }}" creado</strong>
+            <div class="creation-report-metrics">
+                <span>{{ report.stats.modulos }} módulos creados</span>
+                <span>{{ report.stats.imagenes }} imágenes cargadas</span>
+                <span *ngIf="report.stats.modulos_omitidos">
+                    {{ report.stats.modulos_omitidos }} módulos omitidos
+                </span>
+            </div>
+            <div class="creation-report-errors" *ngIf="report.stats.module_errors?.length">
+                <strong>Carpetas que requieren corrección:</strong>
+                <div *ngFor="let moduleError of report.stats.module_errors">
+                    <b>{{ moduleError.module }}</b>
+                    <span *ngIf="moduleError.folder !== moduleError.module"> ({{ moduleError.folder }})</span>:
+                    {{ moduleError.errors.join(' ') }}
+                </div>
+            </div>
+        </div>
+        <button type="button" class="creation-report-close" (click)="creationReport = null"
+            aria-label="Cerrar resumen">&times;</button>
+    </section>
+
     <!-- Formulario de Creación -->
     <div class="card mb-4" *ngIf="showForm">
         <div class="card-header">
@@ -63,6 +87,38 @@
                             </div>
                         </div>
 
+                        <section class="folder-analysis" *ngIf="folderScan as scan">
+                            <header class="folder-analysis-header">
+                                <div>
+                                    <strong>Revisión previa de la carpeta</strong>
+                                    <small>Se comprueba todo antes de crear el proyecto.</small>
+                                </div>
+                                <div class="folder-analysis-counts">
+                                    <span class="is-valid">{{ validFolderModules.length }} válidos</span>
+                                    <span class="is-invalid" *ngIf="invalidFolderModules.length">
+                                        {{ invalidFolderModules.length }} con incidencias
+                                    </span>
+                                </div>
+                            </header>
+
+                            <div class="folder-analysis-general" *ngIf="scan.rootIssues.length">
+                                <div *ngFor="let issue of scan.rootIssues">{{ issue }}</div>
+                            </div>
+
+                            <div class="folder-analysis-modules">
+                                <article *ngFor="let candidate of scan.candidates"
+                                    [class.is-invalid]="!candidate.valid">
+                                    <div class="folder-analysis-module-title">
+                                        <strong>{{ candidate.moduleName }}</strong>
+                                        <span>{{ candidate.phases.join(' + ') || 'Sin fases válidas' }}</span>
+                                    </div>
+                                    <div class="folder-analysis-issues" *ngIf="candidate.issues.length">
+                                        <div *ngFor="let issue of candidate.issues">{{ issue }}</div>
+                                    </div>
+                                </article>
+                            </div>
+                        </section>
+
                         <!-- Import Stats -->
                         <div *ngIf="importStats" class="import-stats alert alert-success mb-3">
                             <strong>Importacion completada:</strong>
@@ -84,12 +140,21 @@
                             <button type="button" class="btn btn-secondary mr-2"
                                 (click)="toggleForm()">Cancelar</button>
                             <button type="submit" class="btn btn-success"
-                                [disabled]="!projectForm.form.valid || loading || importing">
-                                {{ selectedFolder ? 'Crear e Importar' : 'Crear Proyecto' }}
+                                [disabled]="!projectForm.form.valid || loading || importing || !canCreateSelectedProject">
+                                {{ selectedFolder
+                                    ? 'Crear e importar ' + validFolderModules.length + ' módulos'
+                                    : 'Crear Proyecto' }}
                             </button>
                         </div>
                     </form>
-                    <div *ngIf="error" class="alert alert-danger mt-2">{{ error }}</div>
+                    <div *ngIf="error" class="alert alert-danger mt-2">
+                        <strong>{{ error }}</strong>
+                        <div class="error-module-list" *ngIf="importStats?.module_errors?.length">
+                            <div *ngFor="let moduleError of importStats?.module_errors">
+                                <b>{{ moduleError.module }}</b>: {{ moduleError.errors.join(' ') }}
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="col-md-5 pl-md-4">

@@ -7,6 +7,7 @@ import tempfile
 import zipfile
 from datetime import timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -1702,6 +1703,225 @@ class PlanningFoundationTests(APITestCase):
 
                 self.assertEqual(uploaded_bytes(inferior), b"imagen-inferior")
                 self.assertEqual(uploaded_bytes(superior), b"imagen-superior")
+
+    def test_importacion_estricta_omite_solo_el_modulo_invalido(self):
+        inf_key = "MOD_M-02_INF_01.jpg"
+        sup_key = "MOD_M-02_SUP_01.jpg"
+        invalid_inf_key = "MOD_M-03_INF_01.jpg"
+        structure = [{
+            "nombre": "General",
+            "orden": 2,
+            "modulos": [
+                {
+                    "nombre": "M-02",
+                    "source_folder": "MOD-M-02",
+                    "imagenes": [
+                        {
+                            "filename": inf_key,
+                            "fase": "INFERIOR",
+                            "source_phase": "INF",
+                            "orden": 1,
+                        },
+                        {
+                            "filename": sup_key,
+                            "fase": "SUPERIOR",
+                            "source_phase": "SUP",
+                            "orden": 1,
+                        },
+                    ],
+                },
+                {
+                    "nombre": "M-03",
+                    "source_folder": "MOD-M-03",
+                    "imagenes": [{
+                        "filename": invalid_inf_key,
+                        "fase": "INFERIOR",
+                        "source_phase": "INF",
+                        "orden": 1,
+                    }],
+                },
+            ],
+        }]
+
+        response = self.client.post(
+            f"/api/proyectos/{self.project.id}/import-structure/",
+            {
+                "plantas": json.dumps(structure),
+                "strict_validation": "true",
+                inf_key: SimpleUploadedFile(inf_key, b"inf", "image/jpeg"),
+                sup_key: SimpleUploadedFile(sup_key, b"sup", "image/jpeg"),
+                invalid_inf_key: SimpleUploadedFile(
+                    invalid_inf_key,
+                    b"inf-invalida",
+                    "image/jpeg",
+                ),
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["stats"]["modulos"], 1)
+        self.assertEqual(response.data["stats"]["imagenes"], 2)
+        self.assertEqual(response.data["stats"]["modulos_omitidos"], 1)
+        self.assertEqual(
+            response.data["stats"]["module_errors"][0]["module"],
+            "M-03",
+        )
+        self.assertIn(
+            "Falta la fase obligatoria SUP.",
+            response.data["stats"]["module_errors"][0]["errors"],
+        )
+        valid = Modulo.objects.get(proyecto=self.project, nombre="M-02")
+        self.assertEqual(valid.imagenes.count(), 2)
+        self.assertFalse(
+            Modulo.objects.filter(proyecto=self.project, nombre="M-03").exists()
+        )
+
+    def test_crear_con_estructura_revierte_proyecto_si_todos_fallan(self):
+        inf_key = "PROY_M-99_INF_01.jpg"
+        structure = [{
+            "nombre": "General",
+            "orden": 1,
+            "modulos": [{
+                "nombre": "M-99",
+                "source_folder": "MOD-M-99",
+                "imagenes": [{
+                    "filename": inf_key,
+                    "fase": "INFERIOR",
+                    "source_phase": "INF",
+                    "orden": 1,
+                }],
+            }],
+        }]
+
+        response = self.client.post(
+            "/api/proyectos/create-with-structure/",
+            {
+                "project": json.dumps({"nombre": "Proyecto invalido"}),
+                "plantas": json.dumps(structure),
+                "strict_validation": "true",
+                inf_key: SimpleUploadedFile(inf_key, b"inf", "image/jpeg"),
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(
+            Proyecto.objects.filter(nombre="Proyecto invalido").exists()
+        )
+        self.assertEqual(response.data["stats"]["modulos"], 0)
+        self.assertEqual(
+            response.data["stats"]["module_errors"][0]["module"],
+            "M-99",
+        )
+
+    def test_crear_con_estructura_conserva_validos_e_informa_omitidos(self):
+        inf_key = "PROY_M-10_INF_01.jpg"
+        sup_key = "PROY_M-10_SUP_01.jpg"
+        structure = [{
+            "nombre": "General",
+            "orden": 1,
+            "modulos": [{
+                "nombre": "M-10",
+                "source_folder": "MOD-M-10",
+                "imagenes": [
+                    {
+                        "filename": inf_key,
+                        "fase": "INFERIOR",
+                        "source_phase": "INF",
+                        "orden": 1,
+                    },
+                    {
+                        "filename": sup_key,
+                        "fase": "SUPERIOR",
+                        "source_phase": "SUP",
+                        "orden": 1,
+                    },
+                ],
+            }],
+        }]
+        client_errors = [{
+            "module": "M-11",
+            "folder": "MOD-M-11",
+            "errors": ["Falta la carpeta obligatoria SUP."],
+        }]
+
+        response = self.client.post(
+            "/api/proyectos/create-with-structure/",
+            {
+                "project": json.dumps({"nombre": "Proyecto parcial"}),
+                "plantas": json.dumps(structure),
+                "strict_validation": "true",
+                "client_module_errors": json.dumps(client_errors),
+                inf_key: SimpleUploadedFile(inf_key, b"inf", "image/jpeg"),
+                sup_key: SimpleUploadedFile(sup_key, b"sup", "image/jpeg"),
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        proyecto = Proyecto.objects.get(nombre="Proyecto parcial")
+        self.assertEqual(response.data["project"]["id"], proyecto.id)
+        self.assertEqual(response.data["stats"]["modulos"], 1)
+        self.assertEqual(response.data["stats"]["modulos_omitidos"], 1)
+        self.assertTrue(
+            Modulo.objects.filter(proyecto=proyecto, nombre="M-10").exists()
+        )
+        self.assertFalse(
+            Modulo.objects.filter(proyecto=proyecto, nombre="M-11").exists()
+        )
+
+    def test_crear_con_estructura_limpia_archivos_si_falla_despues_de_guardarlos(self):
+        inf_key = "PROY_M-20_INF_01.jpg"
+        sup_key = "PROY_M-20_SUP_01.jpg"
+        structure = [{
+            "nombre": "General",
+            "orden": 1,
+            "modulos": [{
+                "nombre": "M-20",
+                "source_folder": "MOD-M-20",
+                "imagenes": [
+                    {
+                        "filename": inf_key,
+                        "fase": "INFERIOR",
+                        "source_phase": "INF",
+                        "orden": 1,
+                    },
+                    {
+                        "filename": sup_key,
+                        "fase": "SUPERIOR",
+                        "source_phase": "SUP",
+                        "orden": 1,
+                    },
+                ],
+            }],
+        }]
+
+        with tempfile.TemporaryDirectory() as media_root:
+            with override_settings(MEDIA_ROOT=media_root):
+                with patch("api.views.logger.exception"):
+                    with patch(
+                        "api.views.sync_new_module",
+                        side_effect=RuntimeError("fallo posterior simulado"),
+                    ):
+                        response = self.client.post(
+                            "/api/proyectos/create-with-structure/",
+                            {
+                                "project": json.dumps({"nombre": "Proyecto interrumpido"}),
+                                "plantas": json.dumps(structure),
+                                "strict_validation": "true",
+                                inf_key: SimpleUploadedFile(inf_key, b"inf", "image/jpeg"),
+                                sup_key: SimpleUploadedFile(sup_key, b"sup", "image/jpeg"),
+                            },
+                            format="multipart",
+                        )
+
+                self.assertEqual(response.status_code, 500)
+                self.assertEqual(response.data["stats"]["errors"], [])
+                self.assertFalse(
+                    Proyecto.objects.filter(nombre="Proyecto interrumpido").exists()
+                )
+                self.assertEqual(list(Path(media_root).rglob("*.*")), [])
 
     def test_mover_modulo_a_otro_bastidor_lo_traslada_a_su_mesa_inferior(self):
         admin = User.objects.create_user(

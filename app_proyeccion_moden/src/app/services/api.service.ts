@@ -558,6 +558,12 @@ export class ApiService {
             plano_cargado?: boolean;
             planilla_cargada?: boolean;
             base_tecnica_actualizada?: boolean;
+            modulos_omitidos?: number;
+            module_errors?: Array<{
+                module: string;
+                folder: string;
+                errors: string[];
+            }>;
             errors: string[];
         };
     }> {
@@ -565,6 +571,34 @@ export class ApiService {
         return this.http.post<any>(`${this.baseUrl}/proyectos/${proyectoId}/import-structure/`, formData, {
             headers: this.getAuthHeaders()
         });
+    }
+
+    createProjectWithStructure(formData: FormData): Observable<{
+        status: string;
+        proyecto_id: number;
+        project: Proyecto;
+        stats: {
+            plantas: number;
+            modulos: number;
+            imagenes: number;
+            detalles_fase: number;
+            plano_cargado?: boolean;
+            planilla_cargada?: boolean;
+            base_tecnica_actualizada?: boolean;
+            modulos_omitidos?: number;
+            module_errors?: Array<{
+                module: string;
+                folder: string;
+                errors: string[];
+            }>;
+            errors: string[];
+        };
+    }> {
+        return this.http.post<any>(
+            `${this.baseUrl}/proyectos/create-with-structure/`,
+            formData,
+            { headers: this.getAuthHeaders() }
+        );
     }
 
     importProjectTechnicalData(proyectoId: number, formData: FormData): Observable<{

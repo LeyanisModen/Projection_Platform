@@ -4,6 +4,11 @@ import { FormsModule } from '@angular/forms';
 import { ApiService, User, Proyecto } from '../../services/api.service';
 import { forkJoin } from 'rxjs';
 import { Router } from '@angular/router';
+import {
+  appendModuleImportCandidate,
+  ModuleImportScanResult,
+  scanModuleImportFolder,
+} from './detalle/module-import.utils';
 
 interface ProjectGroup {
   username: string;
@@ -16,7 +21,22 @@ interface ImportStats {
   plantas: number;
   modulos: number;
   imagenes: number;
+  detalles_fase?: number;
+  plano_cargado?: boolean;
+  planilla_cargada?: boolean;
+  base_tecnica_actualizada?: boolean;
+  modulos_omitidos?: number;
+  module_errors?: Array<{
+    module: string;
+    folder: string;
+    errors: string[];
+  }>;
   errors: string[];
+}
+
+interface ProjectCreationReport {
+  projectName: string;
+  stats: ImportStats;
 }
 
 @Component({
@@ -41,6 +61,8 @@ export class ProyectosComponent implements OnInit {
   importProgress: string = '';
   importing = false;
   importStats: ImportStats | null = null;
+  folderScan: ModuleImportScanResult | null = null;
+  creationReport: ProjectCreationReport | null = null;
 
   constructor(private api: ApiService, private router: Router, private cdr: ChangeDetectorRef) { }
 
@@ -116,31 +138,66 @@ export class ProyectosComponent implements OnInit {
     this.selectedFolder = null;
     this.folderName = '';
     this.importStats = null;
+    this.folderScan = null;
+    this.creationReport = null;
   }
 
   async selectFolder() {
     try {
-      // Use File System Access API to pick a folder
       const dirHandle = await (window as any).showDirectoryPicker();
       this.selectedFolder = dirHandle;
       this.folderName = dirHandle.name;
-      // Auto-set project name from folder name if empty
+      this.folderScan = null;
+      this.creationReport = null;
+      this.error = '';
       if (!this.newProject.nombre) {
         this.newProject.nombre = dirHandle.name;
       }
-      // Force UI update
+
+      this.importing = true;
+      this.importProgress = 'Analizando la estructura completa...';
+      this.cdr.detectChanges();
+      this.folderScan = await scanModuleImportFolder(
+        dirHandle,
+        [],
+        folderName => {
+          this.importProgress = `Revisando modulo: ${folderName}...`;
+          this.cdr.detectChanges();
+        }
+      );
+      this.importing = false;
+      this.importProgress = '';
+
+      if (this.validFolderModules.length === 0) {
+        this.error = this.folderScan.candidates.length
+          ? 'No hay ningun modulo valido. Corrige las incidencias indicadas antes de crear el proyecto.'
+          : 'No se encontraron carpetas de modulos en la carpeta seleccionada.';
+      }
       this.cdr.detectChanges();
     } catch (err: any) {
+      this.importing = false;
+      this.importProgress = '';
       if (err.name !== 'AbortError') {
         console.error('Error selecting folder:', err);
-        this.error = 'Error seleccionando carpeta';
+        this.error = 'Error leyendo la carpeta: ' + (err.message || 'error desconocido');
         this.cdr.detectChanges();
       }
     }
   }
 
+  get validFolderModules() {
+    return this.folderScan?.candidates.filter(candidate => candidate.valid) || [];
+  }
+
+  get invalidFolderModules() {
+    return this.folderScan?.candidates.filter(candidate => !candidate.valid) || [];
+  }
+
+  get canCreateSelectedProject(): boolean {
+    return !this.selectedFolder || this.validFolderModules.length > 0;
+  }
+
   async createProyecto() {
-    this.loading = true;
     this.error = '';
 
     const projectData: any = {
@@ -148,238 +205,147 @@ export class ProyectosComponent implements OnInit {
       usuario: this.newProject.usuario || null
     };
 
-    this.api.createProyecto(projectData).subscribe({
-      next: async (project) => {
-        this.projects.push(project);
-        this.groupProjects();
-
-        // If folder selected, import structure
-        if (this.selectedFolder) {
-          // Don't reset yet - importFolderStructure will handle cleanup
+    if (!this.selectedFolder) {
+      this.loading = true;
+      this.api.createProyecto(projectData).subscribe({
+        next: (project) => {
+          this.projects.push(project);
+          this.groupProjects();
+          this.resetCreationForm();
+        },
+        error: (err) => {
+          console.error('Error creating project', err);
+          this.error = this.apiErrorMessage(err, 'Error creando el proyecto.');
           this.loading = false;
-          await this.importFolderStructure(project.id);
-        } else {
-          // No folder - just close the form
+          this.cdr.detectChanges();
+        }
+      });
+      return;
+    }
+
+    if (!this.folderScan || this.validFolderModules.length === 0) {
+      this.error = 'La carpeta no contiene ningun modulo valido para importar.';
+      this.cdr.detectChanges();
+      return;
+    }
+
+    this.loading = true;
+    this.importing = true;
+    this.importProgress = `Preparando ${this.validFolderModules.length} modulos validos...`;
+    this.cdr.detectChanges();
+
+    try {
+      const formData = this.buildProjectCreationFormData(projectData, this.folderScan);
+      this.importProgress = 'Creando proyecto y subiendo imagenes...';
+      this.api.createProjectWithStructure(formData).subscribe({
+        next: (result) => {
+          const projectName = this.newProject.nombre;
+          this.projects.push(result.project);
+          this.groupProjects();
+          this.creationReport = { projectName, stats: result.stats };
+          this.importStats = result.stats;
           this.newProject = { nombre: '', usuario: null };
           this.showForm = false;
           this.loading = false;
-          this.selectedFolder = null;
-          this.folderName = '';
-          this.cdr.detectChanges();
-        }
-      },
-      error: (err) => {
-        console.error('Error creating project', err);
-        this.error = 'Error creando proyecto';
-        this.loading = false;
-      }
-    });
-  }
-
-  async importFolderStructure(proyectoId: number) {
-    if (!this.selectedFolder) return;
-
-    this.importing = true;
-    this.importProgress = 'Leyendo estructura del proyecto...';
-
-    try {
-      const formData = new FormData();
-      const validExtensions = ['.png', '.jpg', '.jpeg'];
-      let technicalDbFile: File | null = null;
-
-      // Single virtual "General" planta for backend compatibility
-      const plantaUnicaData: any = {
-        nombre: 'General',
-        orden: 1,
-        modulos: []
-      };
-
-      console.log('[IMPORT] Starting flat folder scan:', this.selectedFolder.name);
-
-      // Iterate through modules (first level folders) OR files
-      for await (const [childName, childHandle] of (this.selectedFolder as any).entries()) {
-        console.log('[IMPORT] Found root entry:', childName, childHandle.kind);
-
-        // CASE 1: Module (directory like MOD-01)
-        if (childHandle.kind === 'directory') {
-          const moduloName = childName;
-          // Strip common prefixes so names match the technical DB (MODULO_A01 -> A01)
-          const cleanName = moduloName.replace(/^(MODULO|MOD)[_-]/i, '');
-
-          this.importProgress = `Procesando modulo: ${cleanName}...`;
-          this.cdr.detectChanges();
-
-          const moduloData: any = {
-            nombre: cleanName,
-            imagenes: []
-          };
-
-          const phaseFolders = new Map<string, { name: string; handle: any }>();
-          for await (const [faseName, faseHandle] of childHandle.entries()) {
-            if (faseHandle.kind !== 'directory') continue;
-            const normalizedName = faseName.toUpperCase();
-            if (!['INF', 'SD_S', 'SD_D', 'SUP'].includes(normalizedName)) continue;
-            phaseFolders.set(normalizedName, { name: faseName, handle: faseHandle });
-          }
-
-          const phaseOrder = ['INF', 'SD_S', 'SD_D', 'SUP'];
-          const nextImageOrder: Record<'INFERIOR' | 'SUPERIOR', number> = {
-            INFERIOR: 1,
-            SUPERIOR: 1
-          };
-
-          for (const phaseFolderName of phaseOrder) {
-            const phaseFolder = phaseFolders.get(phaseFolderName);
-            if (!phaseFolder) continue;
-
-            const faseName = phaseFolder.name;
-            const faseHandle = phaseFolder.handle;
-            const fase: 'INFERIOR' | 'SUPERIOR' =
-              phaseFolderName === 'INF' ? 'INFERIOR' : 'SUPERIOR';
-
-            // Collect image files first, then sort alphabetically
-            const imageFiles: Array<[string, any]> = [];
-            for await (const [fileName, fileHandle] of faseHandle.entries()) {
-              if (fileHandle.kind !== 'file') continue;
-              const ext = fileName.toLowerCase().substring(fileName.lastIndexOf('.'));
-              if (!validExtensions.includes(ext)) continue;
-              imageFiles.push([fileName, fileHandle]);
-            }
-            imageFiles.sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }));
-
-            for (const [fileName, fileHandle] of imageFiles) {
-              this.importProgress = `Cargando imagen: ${fileName}...`;
-              this.cdr.detectChanges();
-
-              const file = await fileHandle.getFile();
-              const uniqueFilename = `PROY_${moduloName}_${faseName}_${fileName}`;
-              formData.append(uniqueFilename, file, uniqueFilename);
-
-              moduloData.imagenes.push({
-                fase: fase,
-                orden: nextImageOrder[fase]++,
-                filename: uniqueFilename
-              });
-            }
-          }
-
-          if (moduloData.imagenes.length > 0) {
-            plantaUnicaData.modulos.push(moduloData);
-          }
-        }
-        // CASE 2: Project files (plano, bdd, etc)
-        else if (childHandle.kind === 'file') {
-          const fileName = childName;
-          const ext = fileName.toLowerCase().substring(fileName.lastIndexOf('.'));
-          const uniqueFilename = `PROY_FILE_${fileName}`;
-
-          if (['.jpg', '.jpeg', '.png'].includes(ext)) {
-            console.log(`[IMPORT] Found PLANO for project: ${fileName}`);
-            const file = await (childHandle as any).getFile();
-            formData.append(uniqueFilename, file, uniqueFilename);
-            plantaUnicaData.plano_filename = uniqueFilename;
-          }
-          else if (['.pdf', '.xls', '.xlsx'].includes(ext)) {
-            console.log(`[IMPORT] Found DOC for project: ${fileName}`);
-            const file = await (childHandle as any).getFile();
-            formData.append(uniqueFilename, file, uniqueFilename);
-            plantaUnicaData.corte_filename = uniqueFilename;
-          }
-          else if (['.db', '.sqlite', '.sqlite3'].includes(ext)) {
-            console.log(`[IMPORT] Found technical DB for project: ${fileName}`);
-            technicalDbFile = await (childHandle as any).getFile();
-          }
-        }
-      }
-
-      console.log(`[IMPORT] Detectados ${plantaUnicaData.modulos.length} módulos en la carpeta`);
-      if (plantaUnicaData.modulos.length === 0) {
-        const proceed = confirm(
-          'No se detectó ningún módulo válido en la carpeta seleccionada.\n\n' +
-          'Estructura esperada: MODULO_A01/INF/*.jpg y SUP/*.jpg. ' +
-          'SD_S y SD_D son carpetas opcionales que se integran antes de SUP.\n\n' +
-          '¿Quieres crear el proyecto vacío igualmente?'
-        );
-        if (!proceed) {
           this.importing = false;
           this.importProgress = '';
+          this.selectedFolder = null;
+          this.folderName = '';
+          this.folderScan = null;
           this.cdr.detectChanges();
-          return;
-        }
-      }
-
-      // Add the single planta to formData
-      formData.append('plantas', JSON.stringify([plantaUnicaData]));
-      if (technicalDbFile) {
-        formData.append('technical_file', technicalDbFile);
-      }
-
-      this.importProgress = 'Subiendo archivos al servidor...';
-
-      // Send to server
-      this.api.importProjectStructure(proyectoId, formData).subscribe({
-        next: (result) => {
-          this.importStats = result.stats;
-          console.log('Import complete:', result);
-
-          const showSummary = () => {
-            const s = result.stats;
-            const lines: string[] = [];
-            lines.push(`Proyecto "${this.newProject.nombre}" creado correctamente.`);
-            lines.push('');
-            lines.push(`• Módulos creados: ${s.modulos || 0}`);
-            lines.push(`• Imágenes cargadas: ${s.imagenes || 0}`);
-            lines.push(`• Plano de referencia: ${s.plano_cargado ? 'sí' : 'no'}`);
-            lines.push(`• Planilla (corte): ${s.planilla_cargada ? 'sí' : 'no'}`);
-            if (technicalDbFile) {
-              lines.push(s.base_tecnica_actualizada
-                ? `• Base de datos técnica: guardada y aplicada (${s.detalles_fase || 0} fases)`
-                : `• Base de datos técnica: no se pudo importar`);
-            } else if (s.detalles_fase) {
-              lines.push(`• Datos técnicos recuperados de la base guardada: ${s.detalles_fase} fases`);
-            } else {
-              lines.push(`• Base de datos técnica: no incluida en la carpeta`);
-            }
-            if (s.errors && s.errors.length) {
-              lines.push('');
-              lines.push(`⚠ ${s.errors.length} incidencias. Revisa la consola para más detalle.`);
-            }
-            alert(lines.join('\n'));
-          };
-
-          const finishImport = () => {
-            this.importing = false;
-            this.importProgress = '';
-            showSummary();
-            if (result.stats.errors.length > 0) {
-              this.error = `Importacion completada con ${result.stats.errors.length} errores`;
-            } else {
-              this.showForm = false;
-              this.selectedFolder = null;
-              this.folderName = '';
-              this.importStats = null;
-              this.newProject = { nombre: '', usuario: null };
-            }
-            this.cdr.detectChanges();
-          };
-
-          finishImport();
         },
         error: (err) => {
-          console.error('Error importing structure:', err);
-          this.error = 'Error importando estructura';
+          console.error('Error creating project with structure:', err);
+          const stats = err?.error?.stats as ImportStats | undefined;
+          if (stats) this.importStats = stats;
+          this.error = this.apiErrorMessage(
+            err,
+            'No se pudo crear el proyecto. No se guardo ningun proyecto vacio.'
+          );
+          this.loading = false;
           this.importing = false;
           this.importProgress = '';
           this.cdr.detectChanges();
         }
       });
-
     } catch (err: any) {
-      console.error('Error reading folder:', err);
-      this.error = 'Error leyendo carpeta: ' + err.message;
+      console.error('Error preparing project structure:', err);
+      this.error = 'Error preparando la importacion: ' + (err.message || 'error desconocido');
+      this.loading = false;
       this.importing = false;
       this.importProgress = '';
+      this.cdr.detectChanges();
     }
+  }
+
+  private buildProjectCreationFormData(
+    projectData: any,
+    scan: ModuleImportScanResult
+  ): FormData {
+    const formData = new FormData();
+    const plantaData: any = {
+      nombre: 'General',
+      orden: 1,
+      modulos: this.validFolderModules.map(candidate =>
+        appendModuleImportCandidate(formData, candidate, 'PROY')
+      ),
+    };
+
+    if (scan.planoFile) {
+      const key = `PROY_FILE_PLANO_${scan.planoFile.entryName}`;
+      formData.append(key, scan.planoFile.file, key);
+      plantaData.plano_filename = key;
+    }
+    if (scan.planillaFile) {
+      const key = `PROY_FILE_PLANILLA_${scan.planillaFile.entryName}`;
+      formData.append(key, scan.planillaFile.file, key);
+      plantaData.corte_filename = key;
+    }
+    if (scan.technicalDbFile) {
+      formData.append('technical_file', scan.technicalDbFile, scan.technicalDbFile.name);
+    }
+
+    formData.append('project', JSON.stringify(projectData));
+    formData.append('plantas', JSON.stringify([plantaData]));
+    formData.append('strict_validation', 'true');
+    formData.append('client_errors', JSON.stringify(scan.rootIssues));
+    formData.append('client_module_errors', JSON.stringify(
+      this.invalidFolderModules.map(candidate => ({
+        module: candidate.moduleName,
+        folder: candidate.folderName,
+        errors: candidate.issues,
+      }))
+    ));
+    return formData;
+  }
+
+  private apiErrorMessage(err: any, fallback: string): string {
+    const payload = err?.error;
+    if (typeof payload === 'string' && payload.trim()) return payload;
+    if (payload?.message) return payload.message;
+    if (payload?.detail) return payload.detail;
+    if (payload && typeof payload === 'object') {
+      const fieldErrors = Object.entries(payload)
+        .filter(([key]) => !['stats', 'status'].includes(key))
+        .flatMap(([key, value]) => {
+          const messages = Array.isArray(value) ? value : [value];
+          return messages.map(message => `${key}: ${message}`);
+        });
+      if (fieldErrors.length) return fieldErrors.join(' ');
+    }
+    return fallback;
+  }
+
+  private resetCreationForm(): void {
+    this.newProject = { nombre: '', usuario: null };
+    this.showForm = false;
+    this.loading = false;
+    this.importing = false;
+    this.selectedFolder = null;
+    this.folderName = '';
+    this.folderScan = null;
+    this.importProgress = '';
+    this.cdr.detectChanges();
   }
 
   manageProject(project: Proyecto) {

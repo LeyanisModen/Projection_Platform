@@ -520,17 +520,25 @@
             <i class="fa fa-info-circle" aria-hidden="true"></i>
             Los módulos nuevos están marcados. Los ya cargados se muestran como referencia y no volverán a enviarse.
         </div>
-        <div class="module-import-hint is-warning" *ngIf="newModuleImportCount === 0">
+        <div class="module-import-hint is-warning"
+            *ngIf="newModuleImportCount === 0 && invalidModuleImportCount === 0">
             <i class="fa fa-exclamation-circle" aria-hidden="true"></i>
             Todas las carpetas detectadas corresponden a módulos que ya están cargados.
+        </div>
+        <div class="module-import-hint is-warning" *ngIf="invalidModuleImportCount > 0">
+            <i class="fa fa-exclamation-triangle" aria-hidden="true"></i>
+            {{ invalidModuleImportCount }}
+            {{ invalidModuleImportCount === 1 ? 'módulo necesita' : 'módulos necesitan' }}
+            corrección y no se importarán.
         </div>
 
         <div class="module-import-list">
             <label class="module-import-candidate" *ngFor="let candidate of moduleImportCandidates"
                 [class.is-selected]="candidate.selected"
-                [class.is-existing]="candidate.alreadyImported">
+                [class.is-existing]="candidate.alreadyImported"
+                [class.is-invalid]="!candidate.valid">
                 <input type="checkbox" [(ngModel)]="candidate.selected"
-                    [disabled]="candidate.alreadyImported"
+                    [disabled]="candidate.alreadyImported || !candidate.valid"
                     [attr.aria-label]="'Importar módulo ' + candidate.moduleName">
                 <span class="module-import-folder-icon" aria-hidden="true">
                     <i class="fa fa-folder-open-o"></i>
@@ -541,9 +549,15 @@
                         <span class="module-import-existing-badge" *ngIf="candidate.alreadyImported">
                             Ya cargado
                         </span>
+                        <span class="module-import-invalid-badge" *ngIf="!candidate.valid">
+                            Con errores
+                        </span>
                     </span>
                     <small *ngIf="candidate.folderName !== candidate.moduleName">
                         {{ candidate.folderName }}
+                    </small>
+                    <small class="module-import-candidate-error" *ngFor="let issue of candidate.issues">
+                        {{ issue }}
                     </small>
                 </span>
                 <span class="module-import-phases" aria-label="Carpetas encontradas">
