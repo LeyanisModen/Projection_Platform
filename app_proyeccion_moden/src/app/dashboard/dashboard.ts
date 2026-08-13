@@ -20,6 +20,7 @@ import {
 } from '../services/lista-materiales.service';
 import { Subject, takeUntil, forkJoin, interval } from 'rxjs';
 import { environment } from '../../environments/environment';
+import { ZoomableImageComponent } from '../shared/zoomable-image/zoomable-image.component';
 
 // Logical entity for display and drag-drop
 interface Subfase {
@@ -36,7 +37,7 @@ interface Subfase {
   standalone: true,
   templateUrl: './dashboard.html',
   styleUrl: './dashboard.css',
-  imports: [CommonModule, DragDropModule, FormsModule]
+  imports: [CommonModule, DragDropModule, FormsModule, ZoomableImageComponent]
 })
 export class Dashboard implements OnInit, OnDestroy {
   // Sidebar State

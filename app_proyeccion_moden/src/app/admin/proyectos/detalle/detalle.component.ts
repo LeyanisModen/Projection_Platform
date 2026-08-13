@@ -17,6 +17,7 @@ import {
 import { switchMap, forkJoin, of } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import { ProjectTablePreviewComponent } from './project-table-preview.component';
+import { ZoomableImageComponent } from '../../../shared/zoomable-image/zoomable-image.component';
 import {
     moduleAlreadyExists,
     parseModuleImportFolder,
@@ -49,6 +50,7 @@ interface ModuleImportCandidate {
         RouterModule,
         DragDropModule,
         ProjectTablePreviewComponent,
+        ZoomableImageComponent,
     ],
     templateUrl: './detalle.component.html',
     styleUrls: ['./detalle.component.css']

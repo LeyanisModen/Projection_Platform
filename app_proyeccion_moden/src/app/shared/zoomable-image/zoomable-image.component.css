@@ -1,0 +1,118 @@
+:host {
+    display: block;
+    width: 100%;
+    height: clamp(280px, 55vh, 620px);
+}
+
+.zoomable-image-viewport {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    outline: none;
+    overscroll-behavior: contain;
+    touch-action: none;
+    user-select: none;
+}
+
+.zoomable-image-viewport:focus-visible {
+    box-shadow: inset 0 0 0 3px rgba(232, 93, 36, 0.75);
+}
+
+.zoomable-image-viewport.can-pan {
+    cursor: grab;
+}
+
+.zoomable-image-viewport.is-dragging {
+    cursor: grabbing;
+}
+
+.zoomable-image {
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    transform-origin: center;
+    transition: transform 160ms ease-out;
+    pointer-events: none;
+    will-change: transform;
+}
+
+.zoomable-image.is-moving {
+    transition: none;
+}
+
+.zoom-controls {
+    position: absolute;
+    right: 12px;
+    bottom: 12px;
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 5px;
+    color: #f8fafc;
+    background: rgba(15, 23, 42, 0.84);
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: 9px;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.24);
+    backdrop-filter: blur(8px);
+    cursor: default;
+}
+
+.zoom-controls button {
+    display: inline-grid;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    color: inherit;
+    background: transparent;
+    border: 0;
+    border-radius: 6px;
+    cursor: pointer;
+    place-items: center;
+}
+
+.zoom-controls button:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.16);
+}
+
+.zoom-controls button:focus-visible {
+    outline: 2px solid #fb923c;
+    outline-offset: 1px;
+}
+
+.zoom-controls button:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.zoom-controls output {
+    min-width: 46px;
+    color: inherit;
+    font-size: 0.72rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+}
+
+.zoom-controls-divider {
+    width: 1px;
+    height: 20px;
+    margin: 0 2px;
+    background: rgba(255, 255, 255, 0.22);
+}
+
+@media (max-width: 600px) {
+    :host {
+        height: clamp(240px, 48vh, 420px);
+    }
+
+    .zoom-controls {
+        right: 8px;
+        bottom: 8px;
+    }
+}

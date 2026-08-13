@@ -1,0 +1,63 @@
+<div
+    #viewport
+    class="zoomable-image-viewport"
+    [class.can-pan]="zoom() > 1"
+    [class.is-dragging]="dragging()"
+    tabindex="0"
+    role="group"
+    [attr.aria-label]="viewerLabel() + '. Usa mas y menos para ampliar, cero para restablecer y las flechas para desplazarte.'"
+    aria-keyshortcuts="+ - 0 ArrowLeft ArrowRight ArrowUp ArrowDown"
+    title="Rueda o doble clic para ampliar. Arrastra para desplazarte."
+    (wheel)="onWheel($event)"
+    (dblclick)="onDoubleClick($event)"
+    (keydown)="onKeyDown($event)"
+    (pointerdown)="onPointerDown($event)"
+    (pointermove)="onPointerMove($event)"
+    (pointerup)="onPointerEnd($event)"
+    (pointercancel)="onPointerEnd($event)">
+    <img
+        #image
+        class="zoomable-image"
+        [src]="src()"
+        [alt]="alt()"
+        [style.transform]="imageTransform()"
+        [class.is-moving]="dragging()"
+        draggable="false"
+        (load)="onImageLoad()"
+        (dragstart)="$event.preventDefault()">
+
+    <div
+        class="zoom-controls"
+        role="group"
+        aria-label="Controles de zoom"
+        (pointerdown)="$event.stopPropagation()"
+        (wheel)="$event.stopPropagation()"
+        (dblclick)="$event.stopPropagation()">
+        <button
+            type="button"
+            (click)="zoomOut()"
+            [disabled]="!canZoomOut()"
+            title="Alejar"
+            aria-label="Alejar imagen">
+            <i class="fa fa-search-minus" aria-hidden="true"></i>
+        </button>
+        <output [attr.aria-label]="'Zoom ' + zoomPercent() + ' por ciento'">{{ zoomPercent() }}%</output>
+        <button
+            type="button"
+            (click)="zoomIn()"
+            [disabled]="!canZoomIn()"
+            title="Ampliar"
+            aria-label="Ampliar imagen">
+            <i class="fa fa-search-plus" aria-hidden="true"></i>
+        </button>
+        <span class="zoom-controls-divider" aria-hidden="true"></span>
+        <button
+            type="button"
+            (click)="reset()"
+            [disabled]="!canZoomOut()"
+            title="Restablecer al 100%"
+            aria-label="Restablecer zoom al cien por ciento">
+            <i class="fa fa-undo" aria-hidden="true"></i>
+        </button>
+    </div>
+</div>

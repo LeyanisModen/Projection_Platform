@@ -556,7 +556,11 @@
                         <div class="plan-fotos-stage">
                             <button type="button" class="plan-fotos-nav" (click)="prevPlanFoto()" [disabled]="selectedPlanFotoIndex === 0" aria-label="Foto anterior">‹</button>
                             <div class="plan-fotos-image-wrap">
-                                <img [src]="getPlanFotoUrl(planFotos[selectedPlanFotoIndex])" [alt]="'Foto de ' + (planFotosTarget?.nombre || 'módulo')">
+                                <app-zoomable-image
+                                    [src]="getPlanFotoUrl(planFotos[selectedPlanFotoIndex])"
+                                    [alt]="'Foto de ' + (planFotosTarget?.nombre || 'módulo')"
+                                    [viewerLabel]="'Foto de fabricación de ' + (planFotosTarget?.nombre || 'módulo')"
+                                    [resetKey]="selectedPlanFotoIndex" />
                             </div>
                             <button type="button" class="plan-fotos-nav" (click)="nextPlanFoto()" [disabled]="selectedPlanFotoIndex >= planFotos.length - 1" aria-label="Foto siguiente">›</button>
                         </div>

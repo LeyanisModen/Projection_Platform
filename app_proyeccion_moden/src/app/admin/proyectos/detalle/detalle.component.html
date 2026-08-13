@@ -1003,7 +1003,11 @@
 
                 <div class="slideshow-image-wrap">
 
-                    <img [src]="getFotoUrl(fotos[selectedFotoIndex])" alt="Foto fabricación">
+                    <app-zoomable-image
+                        [src]="getFotoUrl(fotos[selectedFotoIndex])"
+                        [alt]="'Foto de fabricación de ' + (fotosTarget?.nombre || 'módulo')"
+                        [viewerLabel]="'Foto de fabricación de ' + (fotosTarget?.nombre || 'módulo')"
+                        [resetKey]="selectedFotoIndex" />
 
                 </div>
 
