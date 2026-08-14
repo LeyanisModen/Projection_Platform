@@ -71,8 +71,11 @@ to the Chrome kiosk. Single Python process:
        -RunLevel Limited -User 'moden' -Force
    ```
 
-   Next reboot, Windows will launch the watchdog, which checks every 30
-   seconds. Chrome uses the isolated `C:\moden\chrome-kiosk-profile`, not a
+   Next reboot, Windows will launch the watchdog. It checks Chrome and restores
+   its keyboard focus every 10 seconds, while checking the capture service every
+   30 seconds. The double `Q` maintenance pause disables both kiosk reopening
+   and focus recovery. Chrome uses the isolated
+   `C:\moden\chrome-kiosk-profile`, not a
    personal Google profile, and its cache is capped. `install-minipc.ps1` already
    does this step — only run it by hand if you're setting up the
    service outside the installer.

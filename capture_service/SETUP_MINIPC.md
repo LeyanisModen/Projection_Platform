@@ -275,9 +275,10 @@ Start-ScheduledTask -TaskName 'MODEN Player'
 
 Reinicia: al iniciar sesión debe salir Chrome en kiosk apuntando a
 `https://moden.up.railway.app/`, con el capture service corriendo en
-segundo plano. El supervisor comprueba ambos procesos cada 30 segundos y usa
-un perfil de Chrome exclusivo, sin cuentas personales. `install-minipc.ps1`
-ya ejecuta este bloque; solo
+segundo plano. El supervisor comprueba Chrome y recupera su foco cada 10
+segundos; el servicio de captura se comprueba cada 30 segundos. Usa un perfil
+de Chrome exclusivo, sin cuentas personales. El doble `Q` pausa también la
+recuperación de foco. `install-minipc.ps1` ya ejecuta este bloque; solo
 hazlo a mano si estás montando el servicio fuera del instalador.
 
 Si necesitas abrir OBSBOT para reencuadrar la cámara, mata `python`,

@@ -252,9 +252,11 @@ borrar config.ini.corrupt-*.bak para recuperar el espacio.
 
 VERIFICAR RECUPERACION AUTOMATICA DEL PLAYER
 -----------------------------------------
-Desde la version 2026-08-05.1, la tarea MODEN Player comprueba cada 30
-segundos el capture service y Chrome kiosk. Usa un perfil tecnico separado,
-sin las cuentas personales de Chrome ni el selector de perfiles.
+Desde la version 2026-08-14.1, la tarea MODEN Player comprueba Chrome y
+recupera el foco del teclado cada 10 segundos. El capture service se comprueba
+cada 30 segundos. Usa un perfil tecnico separado, sin las cuentas personales
+de Chrome ni el selector de perfiles. El doble Q pausa tambien la recuperacion
+de foco para poder trabajar por remoto.
 
 Get-ScheduledTask -TaskName 'MODEN Player' | Format-List TaskName,State
 Get-Content 'C:\moden\capture_service\logs\player-watchdog.log' -Tail 30

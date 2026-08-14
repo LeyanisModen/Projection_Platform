@@ -591,7 +591,7 @@ relanza el instalador (el PATH solo se refresca al crear el proceso).
     } else {
         Write-Warning "No encontre update-capture-service.ps1; no registro auto-update."
     }
-    Write-Host "  · tarea 'MODEN Player' registrada (vigilancia continua cada 30 s)"
+    Write-Host "  · tarea 'MODEN Player' registrada (kiosko/foco 10 s; captura 30 s)"
 
     # Si una versión anterior del instalador dejó un shortcut en
     # shell:startup, lo quitamos para que start-player.bat no se lance

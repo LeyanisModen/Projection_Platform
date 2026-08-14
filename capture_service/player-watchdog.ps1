@@ -4,9 +4,10 @@
 
 .DESCRIPTION
   The script normally stays alive as the scheduled task "MODEN Player" and
-  checks the local service and kiosk every 30 seconds. It uses an isolated
-  Chrome profile so personal profiles, account prompts and normal Chrome
-  windows cannot replace the production kiosk.
+  checks the kiosk every 10 seconds and the local service every 30 seconds.
+  It also restores keyboard focus to the kiosk when another application takes
+  it. An isolated Chrome profile prevents personal profiles, account prompts
+  and normal Chrome windows from replacing the production kiosk.
 
   -Once performs a single check for manual recovery.
   -Resume clears the temporary pause created when Q closes the browser.
@@ -14,7 +15,7 @@
 [CmdletBinding()]
 param(
     [string]$Root = '',
-    [int]$IntervalSeconds = 30,
+    [int]$IntervalSeconds = 10,
     [int]$PauseMinutes = 30,
     [switch]$Once,
     [switch]$Resume
@@ -42,6 +43,135 @@ $playerUrl = 'https://moden.up.railway.app/player'
 $logPath = Join-Path $Root 'logs\player-watchdog.log'
 $captureErrorLog = Join-Path $Root 'logs\capture-service-error.log'
 $captureHealthFailures = 0
+$lastCaptureHealthCheck = [datetime]::MinValue
+$focusRecoveryFailures = 0
+
+if (-not ('ModenPlayer.NativeWindow' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+namespace ModenPlayer
+{
+    public static class NativeWindow
+    {
+        private const int SW_SHOW = 5;
+        private const int SW_RESTORE = 9;
+
+        [DllImport("user32.dll")]
+        public static extern IntPtr GetForegroundWindow();
+
+        [DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(
+            IntPtr windowHandle,
+            out uint processId
+        );
+
+        [DllImport("kernel32.dll")]
+        private static extern uint GetCurrentThreadId();
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool AttachThreadInput(
+            uint attachThread,
+            uint attachToThread,
+            [MarshalAs(UnmanagedType.Bool)] bool attach
+        );
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool BringWindowToTop(IntPtr windowHandle);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool SetForegroundWindow(IntPtr windowHandle);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool ShowWindowAsync(
+            IntPtr windowHandle,
+            int command
+        );
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool IsIconic(IntPtr windowHandle);
+
+        public static uint GetForegroundProcessId()
+        {
+            uint processId;
+            GetWindowThreadProcessId(GetForegroundWindow(), out processId);
+            return processId;
+        }
+
+        public static bool RestoreForegroundWindow(IntPtr target)
+        {
+            if (target == IntPtr.Zero)
+            {
+                return false;
+            }
+
+            IntPtr foreground = GetForegroundWindow();
+            if (foreground == target)
+            {
+                return true;
+            }
+
+            ShowWindowAsync(target, IsIconic(target) ? SW_RESTORE : SW_SHOW);
+
+            uint ignoredProcessId;
+            uint currentThread = GetCurrentThreadId();
+            uint foregroundThread = foreground == IntPtr.Zero
+                ? 0
+                : GetWindowThreadProcessId(foreground, out ignoredProcessId);
+            uint targetThread = GetWindowThreadProcessId(
+                target,
+                out ignoredProcessId
+            );
+            bool attachedForeground = false;
+            bool attachedTarget = false;
+
+            try
+            {
+                if (foregroundThread != 0 && foregroundThread != currentThread)
+                {
+                    attachedForeground = AttachThreadInput(
+                        currentThread,
+                        foregroundThread,
+                        true
+                    );
+                }
+                if (targetThread != 0 &&
+                    targetThread != currentThread &&
+                    targetThread != foregroundThread)
+                {
+                    attachedTarget = AttachThreadInput(
+                        currentThread,
+                        targetThread,
+                        true
+                    );
+                }
+
+                BringWindowToTop(target);
+                SetForegroundWindow(target);
+                return GetForegroundWindow() == target;
+            }
+            finally
+            {
+                if (attachedTarget)
+                {
+                    AttachThreadInput(currentThread, targetThread, false);
+                }
+                if (attachedForeground)
+                {
+                    AttachThreadInput(currentThread, foregroundThread, false);
+                }
+            }
+        }
+    }
+}
+'@
+}
 
 function Write-WatchdogLog([string]$Message) {
     try {
@@ -178,6 +308,76 @@ function Get-RootChromeProcesses {
     )
 }
 
+function Get-KioskWindowHandle([object[]]$KioskRoots) {
+    foreach ($rootProcess in $KioskRoots) {
+        try {
+            $nativeProcess = Get-Process -Id $rootProcess.ProcessId `
+                -ErrorAction Stop
+            $windowHandle = [IntPtr]$nativeProcess.MainWindowHandle
+            if ($windowHandle -ne [IntPtr]::Zero) {
+                return $windowHandle
+            }
+        } catch {
+            continue
+        }
+    }
+    return [IntPtr]::Zero
+}
+
+function Get-ForegroundWindowDescription {
+    $ownerProcessId = [uint32][ModenPlayer.NativeWindow]::GetForegroundProcessId()
+    if ($ownerProcessId -eq 0) {
+        return 'unknown window'
+    }
+    try {
+        $owner = Get-Process -Id $ownerProcessId -ErrorAction Stop
+        $title = ($owner.MainWindowTitle -replace '[\r\n]+', ' ').Trim()
+        if ([string]::IsNullOrWhiteSpace($title)) {
+            $title = '-'
+        }
+        return "$($owner.ProcessName) pid=$ownerProcessId title='$title'"
+    } catch {
+        return "pid=$ownerProcessId"
+    }
+}
+
+function Repair-KioskFocus([object[]]$KioskRoots) {
+    $windowHandle = Get-KioskWindowHandle $KioskRoots
+    if ($windowHandle -eq [IntPtr]::Zero) {
+        $script:focusRecoveryFailures++
+        if ($script:focusRecoveryFailures -eq 1 -or
+            $script:focusRecoveryFailures % 6 -eq 0) {
+            Write-WatchdogLog 'Kiosk is running but its window handle is unavailable.'
+        }
+        return
+    }
+
+    $foregroundHandle = [ModenPlayer.NativeWindow]::GetForegroundWindow()
+    if ($foregroundHandle -eq $windowHandle) {
+        $script:focusRecoveryFailures = 0
+        return
+    }
+
+    $previousForeground = Get-ForegroundWindowDescription
+    if ([ModenPlayer.NativeWindow]::RestoreForegroundWindow($windowHandle)) {
+        $script:focusRecoveryFailures = 0
+        Write-WatchdogLog (
+            "Kiosk keyboard focus restored; previous foreground: " +
+            $previousForeground
+        )
+        return
+    }
+
+    $script:focusRecoveryFailures++
+    if ($script:focusRecoveryFailures -eq 1 -or
+        $script:focusRecoveryFailures % 6 -eq 0) {
+        Write-WatchdogLog (
+            "Could not restore kiosk keyboard focus; foreground: " +
+            $previousForeground
+        )
+    }
+}
+
 function Stop-ChromeTree([int]$ProcessId) {
     Start-Process -FilePath 'taskkill.exe' `
         -ArgumentList "/PID $ProcessId /T /F" `
@@ -276,14 +476,25 @@ function Repair-Kiosk {
             Start-Sleep -Seconds 1
         }
         Start-Kiosk $chrome
+        Start-Sleep -Seconds 2
+        $roots = @(Get-RootChromeProcesses)
+        $kioskRoots = @($roots | Where-Object {
+            $_.CommandLine -and $_.CommandLine -match $profilePattern
+        })
     }
+
+    Repair-KioskFocus $kioskRoots
 }
 
 function Invoke-PlayerCheck {
     if (Test-PlayerMaintenance) {
         return
     }
-    Repair-CaptureService
+    $now = Get-Date
+    if (($now - $script:lastCaptureHealthCheck).TotalSeconds -ge 30) {
+        $script:lastCaptureHealthCheck = $now
+        Repair-CaptureService
+    }
     Repair-Kiosk
 }
 
@@ -310,7 +521,7 @@ try {
             Write-WatchdogLog "Recovery check failed: $($_.Exception.Message)"
         }
         if (-not $Once) {
-            Start-Sleep -Seconds ([Math]::Max(10, $IntervalSeconds))
+            Start-Sleep -Seconds ([Math]::Max(5, $IntervalSeconds))
         }
     } while (-not $Once)
 } finally {
