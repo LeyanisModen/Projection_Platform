@@ -487,6 +487,19 @@ export class ApiService {
         return headers;
     }
 
+    private normalizePaginationUrl(url: string): string {
+        try {
+            const parsed = new URL(url, 'https://pagination.local');
+            const basePath = this.baseUrl.replace(/\/$/, '');
+            const path = parsed.pathname.startsWith(`${basePath}/`)
+                ? parsed.pathname
+                : `${basePath}/${parsed.pathname.replace(/^\/+/, '')}`;
+            return `${path}${parsed.search}`;
+        } catch {
+            return url;
+        }
+    }
+
     // =========================================================================
     // PROYECTOS (paginated)
     // =========================================================================
@@ -659,7 +672,7 @@ export class ApiService {
             .pipe(
                 expand(response => response.next
                     ? this.http.get<PagedResponse<Modulo>>(
-                        response.next,
+                        this.normalizePaginationUrl(response.next),
                         { headers: this.getHeaders() }
                     )
                     : EMPTY

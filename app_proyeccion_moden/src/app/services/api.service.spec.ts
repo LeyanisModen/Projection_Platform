@@ -34,12 +34,12 @@ describe('ApiService', () => {
 
         httpTesting.expectOne('/api/modulos/?proyecto=7').flush({
             count: 101,
-            next: 'https://moden.example/api/modulos/?page=2&proyecto=7',
+            next: 'http://projectionplatform-production.up.railway.app/api/modulos/?page=2&proyecto=7',
             previous: null,
             results: firstPage,
         });
         httpTesting.expectOne(
-            'https://moden.example/api/modulos/?page=2&proyecto=7'
+            '/api/modulos/?page=2&proyecto=7'
         ).flush({
             count: 101,
             next: null,
