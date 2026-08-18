@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
-import { Observable, map, tap } from 'rxjs';
+import { EMPTY, Observable, expand, map, reduce, tap } from 'rxjs';
 
 // =============================================================================
 // INTERFACES
@@ -656,7 +656,20 @@ export class ApiService {
             url += `?proyecto=${proyectoId}`;
         }
         return this.http.get<PagedResponse<Modulo>>(url, { headers: this.getHeaders() })
-            .pipe(map(response => response.results));
+            .pipe(
+                expand(response => response.next
+                    ? this.http.get<PagedResponse<Modulo>>(
+                        response.next,
+                        { headers: this.getHeaders() }
+                    )
+                    : EMPTY
+                ),
+                map(response => response.results),
+                reduce(
+                    (modulos, page) => modulos.concat(page),
+                    [] as Modulo[]
+                )
+            );
     }
 
     createModulo(data: any): Observable<Modulo> {
