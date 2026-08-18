@@ -2380,13 +2380,18 @@
 }
 
 .foto-modal {
-    width: min(900px, 95vw);
-    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    width: 90vw;
+    height: 90vh;
+    max-width: none;
+    max-height: 90vh;
+    box-sizing: border-box;
     background: #fff;
     border-radius: 12px;
     box-shadow: 0 16px 36px rgba(0, 0, 0, 0.24);
     padding: 1.25rem;
-    overflow-y: auto;
+    overflow: hidden;
 }
 
 .foto-modal-header {
@@ -2407,12 +2412,16 @@
     display: flex;
     flex-direction: column;
     align-items: center;
+    flex: 1;
+    min-height: 0;
     gap: 0.75rem;
 }
 
 .slideshow-container {
     display: flex;
     align-items: center;
+    flex: 1;
+    min-height: 0;
     gap: 0.5rem;
     width: 100%;
 }
@@ -2422,11 +2431,18 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    min-height: 300px;
-    max-height: 60vh;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    max-height: none;
     background: #f1f5f9;
     border-radius: 8px;
     overflow: hidden;
+}
+
+.slideshow-image-wrap app-zoomable-image {
+    height: 100%;
+    min-height: 0;
 }
 
 .slideshow-image-wrap img {

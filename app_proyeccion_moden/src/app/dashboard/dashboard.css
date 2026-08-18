@@ -3369,9 +3369,12 @@
 
 .modal-content.plan-fotos-modal {
   text-align: left;
-  max-width: 960px;
-  width: min(96vw, 960px);
-  max-height: 88vh;
+  width: 90vw;
+  height: 90vh;
+  max-width: none;
+  max-height: 90vh;
+  box-sizing: border-box;
+  overflow: hidden;
   padding: 20px 24px;
   display: flex;
   flex-direction: column;
@@ -3381,6 +3384,8 @@
 .plan-fotos-body {
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-height: 0;
   gap: 12px;
 }
 
@@ -3388,6 +3393,8 @@
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
+  flex: 1;
+  min-height: 0;
   gap: 12px;
 }
 
@@ -3409,8 +3416,11 @@
 }
 
 .plan-fotos-image-wrap {
-  min-height: 420px;
-  max-height: 66vh;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  max-height: none;
+  box-sizing: border-box;
   border-radius: 16px;
   background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
   border: 1px solid rgba(15, 23, 42, 0.08);
@@ -3419,6 +3429,11 @@
   align-items: center;
   justify-content: center;
   padding: 14px;
+}
+
+.plan-fotos-image-wrap app-zoomable-image {
+  height: 100%;
+  min-height: 0;
 }
 
 .plan-fotos-image-wrap img {
