@@ -549,6 +549,8 @@ class TimelapseTab(QWidget):
         self.spin_width = QSpinBox()
         self.spin_width.setRange(160, 7680)
         self.spin_width.setValue(1280)
+        self.chk_timestamp = QCheckBox("Mostrar hora en el video")
+        self.chk_timestamp.setToolTip("Usa nombres tipo 08-30-15.jpg y dibuja 08:30:15 en cada frame.")
 
         opts_row = QHBoxLayout()
         opts_row.addWidget(QLabel("FPS:"))
@@ -556,6 +558,8 @@ class TimelapseTab(QWidget):
         opts_row.addSpacing(20)
         opts_row.addWidget(QLabel("Ancho de salida:"))
         opts_row.addWidget(self.spin_width)
+        opts_row.addSpacing(20)
+        opts_row.addWidget(self.chk_timestamp)
         opts_row.addStretch(1)
 
         self.lbl_count = QLabel("Imágenes seleccionadas: —")
@@ -643,13 +647,15 @@ class TimelapseTab(QWidget):
             self.spin_fps.value(),
             self.spin_width.value(),
             prefer_ffmpeg=True,
+            show_timestamp=self.chk_timestamp.isChecked(),
         )
         self._runner.signals.progress.connect(self._on_progress)
         self._runner.signals.log.connect(lambda l: self.log.append(l))
         self._runner.signals.finished.connect(self._on_finished)
 
         self.log.clear()
-        self.log.append(f"Generando {out_path} con {len(imgs)} imágenes a {self.spin_fps.value()} fps…")
+        timestamp_msg = " con hora visible" if self.chk_timestamp.isChecked() else ""
+        self.log.append(f"Generando {out_path} con {len(imgs)} imágenes a {self.spin_fps.value()} fps{timestamp_msg}…")
         self.progress.setValue(0)
         self.btn_run.setEnabled(False)
         self.btn_cancel.setEnabled(True)

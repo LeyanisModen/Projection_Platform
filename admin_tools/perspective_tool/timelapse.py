@@ -123,6 +123,7 @@ class TimelapseRunner(QRunnable):
         fps: int,
         width: Optional[int],
         prefer_ffmpeg: bool = True,
+        show_timestamp: bool = False,
     ) -> None:
         super().__init__()
         self.images = list(images)
@@ -130,6 +131,7 @@ class TimelapseRunner(QRunnable):
         self.fps = max(1, int(fps))
         self.width = width if width and width > 0 else None
         self.prefer_ffmpeg = prefer_ffmpeg
+        self.show_timestamp = bool(show_timestamp)
         self.signals = TimelapseSignals()
         self._cancelled = False
 
@@ -167,6 +169,56 @@ class TimelapseRunner(QRunnable):
         new_h -= new_h % 2
         return (new_w, new_h)
 
+    def _timestamp_label(self, image_path: Path) -> str:
+        t = _parse_time(image_path.name)
+        if t is None:
+            return ""
+        return f"{t.hour:02d}:{t.minute:02d}:{t.second:02d}"
+
+    @staticmethod
+    def _draw_timestamp(frame, label: str):
+        if not label:
+            return frame
+
+        h, w = frame.shape[:2]
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        scale = max(0.65, min(2.0, w / 1200.0))
+        thickness = max(1, int(round(scale * 2)))
+        margin = max(14, int(round(w * 0.018)))
+        pad_x = max(12, int(round(w * 0.014)))
+        pad_y = max(8, int(round(w * 0.009)))
+
+        (text_w, text_h), baseline = cv2.getTextSize(label, font, scale, thickness)
+        x1 = margin
+        y2 = h - margin
+        x2 = min(w - margin, x1 + text_w + pad_x * 2)
+        y1 = max(margin, y2 - text_h - baseline - pad_y * 2)
+
+        overlay = frame.copy()
+        cv2.rectangle(overlay, (x1, y1), (x2, y2), (0, 0, 0), -1)
+        cv2.addWeighted(overlay, 0.58, frame, 0.42, 0, frame)
+        cv2.putText(
+            frame,
+            label,
+            (x1 + pad_x, y2 - pad_y - baseline),
+            font,
+            scale,
+            (255, 255, 255),
+            thickness,
+            cv2.LINE_AA,
+        )
+        return frame
+
+    def _read_frame(self, image_path: Path, out_w: int, out_h: int):
+        img = cv2.imread(str(image_path))
+        if img is None:
+            return None
+        if (img.shape[1], img.shape[0]) != (out_w, out_h):
+            img = cv2.resize(img, (out_w, out_h), interpolation=cv2.INTER_AREA)
+        if self.show_timestamp:
+            img = self._draw_timestamp(img, self._timestamp_label(image_path))
+        return img
+
     def _run_opencv(self) -> None:
         out_w, out_h = self._target_size(self.images[0])
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
@@ -179,12 +231,10 @@ class TimelapseRunner(QRunnable):
             for i, p in enumerate(self.images, start=1):
                 if self._cancelled:
                     break
-                img = cv2.imread(str(p))
+                img = self._read_frame(p, out_w, out_h)
                 if img is None:
                     self.signals.log.emit(f"Saltado (no leíble): {p.name}")
                     continue
-                if (img.shape[1], img.shape[0]) != (out_w, out_h):
-                    img = cv2.resize(img, (out_w, out_h), interpolation=cv2.INTER_AREA)
                 writer.write(img)
                 self.signals.progress.emit(i, total)
         finally:
@@ -202,20 +252,47 @@ class TimelapseRunner(QRunnable):
             return str(p).replace("'", r"'\''")
 
         with tempfile.TemporaryDirectory(prefix="timelapse_") as tmp:
+            ffmpeg_images = self.images
+            if self.show_timestamp:
+                self.signals.log.emit("Preparando frames con hora visible...")
+                prepared_dir = Path(tmp) / "frames"
+                prepared_dir.mkdir()
+                ffmpeg_images = []
+                total = len(self.images)
+                for i, p in enumerate(self.images, start=1):
+                    if self._cancelled:
+                        self.signals.finished.emit(False, "Cancelado")
+                        return
+                    img = self._read_frame(p, out_w, out_h)
+                    if img is None:
+                        self.signals.log.emit(f"Saltado (no legible): {p.name}")
+                        continue
+                    out_frame = prepared_dir / f"frame_{i:06d}.jpg"
+                    cv2.imwrite(str(out_frame), img, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
+                    ffmpeg_images.append(out_frame)
+                    self.signals.progress.emit(i, total)
+                if not ffmpeg_images:
+                    raise RuntimeError("No se pudo preparar ningun frame legible")
+
             list_file = Path(tmp) / "files.txt"
             with list_file.open("w", encoding="utf-8") as fh:
-                for p in self.images:
+                for p in ffmpeg_images:
                     fh.write(f"file '{escape(p)}'\n")
                     fh.write(f"duration {1.0 / self.fps:.6f}\n")
-                fh.write(f"file '{escape(self.images[-1])}'\n")
+                fh.write(f"file '{escape(ffmpeg_images[-1])}'\n")
 
+            vf = (
+                f"fps={self.fps}"
+                if self.show_timestamp
+                else f"scale={out_w}:{out_h}:flags=lanczos,fps={self.fps}"
+            )
             cmd = [
                 ffmpeg_exe,
                 "-y",
                 "-f", "concat",
                 "-safe", "0",
                 "-i", str(list_file),
-                "-vf", f"scale={out_w}:{out_h}:flags=lanczos,fps={self.fps}",
+                "-vf", vf,
                 "-c:v", "libx264",
                 "-preset", "medium",
                 "-crf", "23",

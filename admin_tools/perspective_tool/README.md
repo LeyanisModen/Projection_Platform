@@ -41,6 +41,7 @@ python main.py
    - Selecciona una carpeta (idealmente `_rect/` o una carpeta padre con subcarpetas `YYYY-MM-DD`).
    - Filtra por rango de fechas y/o de hora si quieres.
    - Define FPS y ancho de salida.
+   - Opcional: activa *Mostrar hora en el video* para dibujar en cada frame la hora leida del nombre del JPG (`HH-MM-SS.jpg`).
    - *Generar…* → MP4.
 
 ## Formato del JSON de calibración
