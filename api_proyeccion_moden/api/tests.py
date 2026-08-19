@@ -3315,6 +3315,92 @@ class PlanningFoundationTests(APITestCase):
             4,
         )
 
+    def test_desactivar_mesa_sup_recupera_fases_de_bastidor_en_curso(self):
+        """Redistribuir mesas no puede omitir la SUP de un INF preservado."""
+        self.project.bastidor_longitud_cm = 114
+        self.project.save(update_fields=["bastidor_longitud_cm"])
+        self.modulo.nombre = "A02"
+        self.modulo.ancho_cm = "18.00"
+        self.modulo.save(update_fields=["nombre", "ancho_cm"])
+
+        modules = [self.modulo]
+        for name in ("A03", "A06", "A07"):
+            modules.append(
+                Modulo.objects.create(
+                    nombre=name,
+                    proyecto=self.project,
+                    ancho_cm="18.00",
+                )
+            )
+
+        bastidor = GrupoBastidor.objects.create(
+            proyecto=self.project,
+            indice=1,
+            nombre="Grupo 1",
+        )
+        for order, module in enumerate(modules, start=1):
+            module.grupo_bastidor = bastidor
+            module.orden_intra = order
+            module.save(update_fields=["grupo_bastidor", "orden_intra"])
+            DetalleModuloFase.objects.create(
+                modulo=module,
+                fase="INFERIOR",
+                espesor_cm="18.00",
+            )
+
+        grupo = self._crear_grupo("Grupo Redistribucion SUP")
+        response = self.client.post(
+            f"/api/grupos-mesas/{grupo.id}/planificar/",
+            {"proyecto_id": self.project.id},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+
+        completed_modules = [
+            module for module in modules
+            if module.nombre in {"A06", "A07"}
+        ]
+        for module in completed_modules:
+            module.inferior_hecho = True
+            module.superior_hecho = True
+            module.actualizar_estado()
+        MesaQueueItem.objects.filter(modulo__in=completed_modules).update(
+            status=MesaQueueStatus.HECHO,
+        )
+
+        # La mesa nueva nace activa, pero se desactiva antes de asignarle trabajo.
+        mesa_sup_inactiva = Mesa.objects.create(
+            nombre="Mesa 4",
+            usuario=self.user,
+            grupo=grupo,
+            tipo="SUPERIOR",
+            indice=4,
+            activa=True,
+        )
+        response = self.client.post(
+            f"/api/grupos-mesas/{grupo.id}/actualizar-mesas/",
+            {"cambios": [{"mesa_id": mesa_sup_inactiva.id, "activa": False}]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+
+        mesa_sup_inactiva.refresh_from_db()
+        self.assertFalse(mesa_sup_inactiva.activa)
+        self.assertFalse(
+            mesa_sup_inactiva.queue_items.filter(
+                status__in=[MesaQueueStatus.EN_COLA, MesaQueueStatus.MOSTRANDO],
+            ).exists()
+        )
+
+        for module in modules[:2]:
+            active_items = MesaQueueItem.objects.filter(
+                modulo=module,
+                status__in=[MesaQueueStatus.EN_COLA, MesaQueueStatus.MOSTRANDO],
+            )
+            self.assertEqual(active_items.filter(fase="INFERIOR").count(), 1)
+            self.assertEqual(active_items.filter(fase="SUPERIOR").count(), 1)
+            self.assertTrue(active_items.get(fase="SUPERIOR").mesa.activa)
+
     def test_reactivar_mesa_la_devuelve_al_planner(self):
         """Reactivar una mesa la incluye de nuevo en la distribucion."""
         self.project.bastidor_longitud_cm = 20

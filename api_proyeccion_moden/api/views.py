@@ -2188,6 +2188,7 @@ class ProyectoViewSet(viewsets.ModelViewSet):
                         )
                     except Exception:
                         pass
+                reconcile_superior_queue_for_group(grupo_m)
                 grupo_vs._sync_proyecto_actual(grupo_m)
 
         grupos = _grupos_with_reorder_data(
@@ -2271,6 +2272,7 @@ class ProyectoViewSet(viewsets.ModelViewSet):
                             # No interrumpir el import si el replan
                             # falla en algun grupo concreto.
                             pass
+                    reconcile_superior_queue_for_group(grupo_m)
                     grupo_vs._sync_proyecto_actual(grupo_m)
 
         stats['grupos_bastidor'] = grupos_creados
@@ -3766,6 +3768,7 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
                 plan_summaries.append(
                     self._build_group_plan(grupo, entry.proyecto, request.user, append_mode=True)
                 )
+            reconcile_superior_queue_for_group(grupo)
             self._sync_proyecto_actual(grupo)
 
         fresh = self._refresh_grupo_with_prefetch(grupo)
@@ -3894,6 +3897,7 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
                 except Exception:
                     pass
 
+            reconcile_superior_queue_for_group(grupo)
             self._sync_proyecto_actual(grupo)
 
         fresh = self._refresh_grupo_with_prefetch(grupo)
@@ -3949,6 +3953,7 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
                     self._build_group_plan(grupo, entry.proyecto, request.user, append_mode=True)
                 except Exception:
                     pass
+            reconcile_superior_queue_for_group(grupo)
 
         fresh = self._refresh_grupo_with_prefetch(grupo)
         return Response(GrupoMesasSerializer(fresh).data)
