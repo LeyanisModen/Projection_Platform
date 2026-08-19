@@ -65,12 +65,6 @@
                                 [class.locked]="mesa.locked"
                                 [class.blackout]="mesa.blackout"
                                 [class.mesa-inactiva]="!mesa.activa">
-                                @if (mesa.activa && getMesaOverflowCount(mesa.id) > 0) {
-                                    <div class="mesa-overflow-caption"
-                                        [title]="getMesaOverflowCount(mesa.id) + ' modulos programados fuera de la vista'">
-                                        +{{ getMesaOverflowCount(mesa.id) }} pendientes
-                                    </div>
-                                }
                                 <div class="mesa-header">
                                     <div class="mesa-title-container">
                                         <span class="mesa-role-badge">{{ getMesaRoleLabel(mesa) }}</span>
@@ -127,7 +121,7 @@
                                     </div>
                                 } @else {
                                     <div class="mesa-queue">
-                                        @for (item of getVisibleMesaQueueItems(mesa.id); track trackByItem($index, item)) {
+                                        @for (item of getMesaQueueItems(mesa.id); track trackByItem($index, item)) {
                                             @if (shouldShowGroupDivider(item, $index, mesa)) {
                                                 <div class="queue-group-divider">
                                                     — {{ getItemGrupoLabel(item) }} —

@@ -1651,37 +1651,11 @@
               0 1px 3px rgba(15, 23, 42, 0.06);
   display: flex;
   flex-direction: column;
-  /* Altura fija para que todas las mesas se vean uniformes. La cola
-     interna recorta lo que no quepa via overflow:hidden -- aprovechando
-     el alto disponible mostramos lo maximo posible. */
+  /* La tarjeta conserva siempre su tamano; solo se desplaza su cola. */
   height: 520px;
   min-width: 0;
   overflow: hidden;
   position: relative;
-}
-
-/* Banda con degradado al final del card cuando hay items que el
-   clipping deja fuera de vista. Cubre todo el ancho con un fade blanco
-   para suavizar el corte y centra el contador "+N pendientes". */
-.mesa-overflow-caption {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  z-index: 1;
-  padding: 22px 12px 10px;
-  text-align: center;
-  background: linear-gradient(
-    to top,
-    rgba(255, 255, 255, 0.98) 55%,
-    rgba(255, 255, 255, 0)
-  );
-  pointer-events: none;
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: #6c757d;
-  font-style: italic;
-  letter-spacing: 0.02em;
 }
 
 .mesa-header {
@@ -1691,6 +1665,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .mesa-header h3 {
@@ -1902,6 +1877,7 @@
 
 .queue-group-divider {
   text-align: center;
+  flex-shrink: 0;
   font-size: 0.7rem;
   font-weight: 600;
   color: #adb5bd;
@@ -1981,8 +1957,30 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-color: #cbd2d9 transparent;
+  scrollbar-width: thin;
   min-height: 0;
+}
+
+.mesa-queue::-webkit-scrollbar {
+  width: 7px;
+}
+
+.mesa-queue::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.mesa-queue::-webkit-scrollbar-thumb {
+  background: #cbd2d9;
+  border-radius: 999px;
+}
+
+.mesa-queue::-webkit-scrollbar-thumb:hover {
+  background: #9aa4ae;
 }
 
 
@@ -1996,6 +1994,7 @@
 .queue-item {
   display: flex;
   align-items: center;
+  flex-shrink: 0;
   padding: 8px 12px;
   margin-bottom: 8px;
   background: white;

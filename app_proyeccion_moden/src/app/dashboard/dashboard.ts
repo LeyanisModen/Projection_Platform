@@ -2221,57 +2221,6 @@ export class Dashboard implements OnInit, OnDestroy {
     return proyecto ? `${proyecto} · ${grupo}` : grupo;
   }
 
-  /**
-   * Tope "duro" de items por mesa. La altura del card limita visualmente
-   * cuantos se ven (via overflow:hidden en CSS); esto solo evita
-   * renderizar cantidades absurdas si una mesa tuviera cientos de items.
-   */
-  private readonly MAX_VISIBLE_ITEMS = 50;
-
-  // Heuristica de altura para estimar cuantos items caben en un card sin
-  // medir el DOM. Sincronizado con CSS:
-  // - mesa-card height: 520
-  // - mesa-header + paddings: ~80
-  // -> queue dispone de ~440 px.
-  // Cada queue-item ~ 38 px de alto, cada divider de grupo ~ 28 px.
-  private readonly QUEUE_AVAILABLE_PX = 440;
-  private readonly QUEUE_ITEM_PX = 38;
-  private readonly QUEUE_DIVIDER_PX = 28;
-
-  /** Items renderizados en la cola de una mesa. El CSS del card recorta
-   * los que no caben por altura. */
-  getVisibleMesaQueueItems(mesaId: number): MesaQueueItem[] {
-    return this.getMesaQueueItems(mesaId).slice(0, this.MAX_VISIBLE_ITEMS);
-  }
-
-  /** Estima cuantos items realmente caben en el card sumando altura de
-   * items y dividers de grupo (solo INF tiene dividers). */
-  private estimateMesaVisibleCount(mesa: Mesa): number {
-    const items = this.getMesaQueueItems(mesa.id);
-    let height = 0;
-    let visible = 0;
-    for (let i = 0; i < items.length; i++) {
-      let cost = this.QUEUE_ITEM_PX;
-      if (mesa.tipo === 'INFERIOR' && this.shouldShowGroupDivider(items[i], i, mesa)) {
-        cost += this.QUEUE_DIVIDER_PX;
-      }
-      if (height + cost > this.QUEUE_AVAILABLE_PX) break;
-      height += cost;
-      visible++;
-    }
-    return visible;
-  }
-
-  /** Cuantos items totales hay programados mas alla de lo visible en el
-   * card. Util para indicar "queda trabajo pendiente fuera de vista". */
-  getMesaOverflowCount(mesaId: number): number {
-    const mesa = this.mesas.find(m => m.id === mesaId);
-    const total = this.getMesaQueueItems(mesaId).length;
-    if (!mesa) return 0;
-    return Math.max(0, total - this.estimateMesaVisibleCount(mesa));
-  }
-
-
   getProyectoNombre(projectId: number | null): string {
     if (!projectId) return 'Sin proyecto asignado';
     return this.proyectos.find((proyecto) => proyecto.id === projectId)?.nombre || `Proyecto ${projectId}`;
