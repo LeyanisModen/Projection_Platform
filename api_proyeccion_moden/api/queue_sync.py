@@ -464,8 +464,100 @@ def _persist_active_order(mesa, items, current):
         )
 
 
+def _backfill_missing_superior_items(group, inferior_items, superior_items):
+    """Create SUP work accidentally missing for modules already queued in INF."""
+    inferior_by_module = {}
+    for item in inferior_items:
+        if item.modulo.cerrado or item.modulo.superior_hecho:
+            continue
+        inferior_by_module.setdefault(item.modulo_id, item)
+
+    if not inferior_by_module:
+        return superior_items
+
+    active_superior_module_ids = set(
+        MesaQueueItem.objects.select_for_update()
+        .filter(
+            modulo_id__in=inferior_by_module,
+            fase=Fase.SUPERIOR,
+            status__in=ACTIVE_QUEUE_STATUSES,
+        )
+        .values_list("modulo_id", flat=True)
+    )
+    missing_inferior_items = [
+        item
+        for module_id, item in inferior_by_module.items()
+        if module_id not in active_superior_module_ids
+    ]
+    if not missing_inferior_items:
+        return superior_items
+
+    superior_mesas = list(
+        group.mesas.select_for_update()
+        .filter(tipo=MesaTipo.SUPERIOR, activa=True)
+        .order_by("indice", "id")
+    )
+    if not superior_mesas:
+        return superior_items
+
+    loads = {
+        mesa.id: sum(1 for item in superior_items if item.mesa_id == mesa.id)
+        for mesa in superior_mesas
+    }
+    next_positions = {
+        mesa.id: max(
+            (
+                item.position
+                for item in superior_items
+                if item.mesa_id == mesa.id
+            ),
+            default=-1,
+        ) + 1
+        for mesa in superior_mesas
+    }
+
+    for inferior_item in missing_inferior_items:
+        target_mesa = min(
+            superior_mesas,
+            key=lambda mesa: (loads[mesa.id], mesa.indice, mesa.id),
+        )
+        superior_item, created = MesaQueueItem.objects.filter(
+            status__in=ACTIVE_QUEUE_STATUSES,
+        ).select_related("mesa").get_or_create(
+            modulo_id=inferior_item.modulo_id,
+            fase=Fase.SUPERIOR,
+            defaults={
+                "mesa": target_mesa,
+                "imagen": None,
+                "position": next_positions[target_mesa.id],
+                "plan_group_index": inferior_item.plan_group_index,
+                "status": MesaQueueStatus.EN_COLA,
+                "assigned_by_id": inferior_item.assigned_by_id,
+            },
+        )
+        if not created:
+            if (
+                superior_item.mesa.grupo_id == group.id
+                and all(item.id != superior_item.id for item in superior_items)
+            ):
+                superior_items.append(superior_item)
+                if superior_item.mesa_id in loads:
+                    loads[superior_item.mesa_id] += 1
+                    next_positions[superior_item.mesa_id] = max(
+                        next_positions[superior_item.mesa_id],
+                        superior_item.position + 1,
+                    )
+            continue
+
+        superior_items.append(superior_item)
+        loads[target_mesa.id] += 1
+        next_positions[target_mesa.id] += 1
+
+    return superior_items
+
+
 def reconcile_superior_queue_for_group(group):
-    """Interleave pending SUP work following the live inferior queues.
+    """Backfill and interleave SUP work following the live inferior queues.
 
     Superior work past the initial images remains anchored so an in-progress
     sequence is never interrupted. Initial and queued items keep their mesa
@@ -494,6 +586,11 @@ def reconcile_superior_queue_for_group(group):
                 status__in=ACTIVE_QUEUE_STATUSES,
             )
             .order_by("mesa__indice", "mesa_id", "position", "id")
+        )
+        superior_items = _backfill_missing_superior_items(
+            group,
+            inferior_items,
+            superior_items,
         )
         if not inferior_items or not superior_items:
             return superior_items

@@ -4074,6 +4074,79 @@ class PlanningFoundationTests(APITestCase):
         mesa_sup.refresh_from_db()
         self.assertEqual(mesa_sup.current_image_index, 7)
 
+    def test_reconciliar_superior_recupera_fases_omitidas(self):
+        from api.queue_sync import reconcile_superior_queue_for_group
+
+        grupo = self._crear_grupo("Grupo SUP Incompleto")
+        mesa_inf_1 = grupo.mesas.get(tipo="INFERIOR", indice=1)
+        mesa_inf_2 = grupo.mesas.get(tipo="INFERIOR", indice=2)
+        mesa_sup = grupo.mesas.get(tipo="SUPERIOR", indice=3)
+
+        modulos = {
+            nombre: Modulo.objects.create(nombre=nombre, proyecto=self.project)
+            for nombre in ["ACTUAL", "A02", "A03"]
+        }
+        MesaQueueItem.objects.create(
+            mesa=mesa_inf_1,
+            modulo=modulos["ACTUAL"],
+            fase="INFERIOR",
+            position=0,
+            plan_group_index=1,
+            status="MOSTRANDO",
+        )
+        for position, nombre in enumerate(["A03", "A02"]):
+            MesaQueueItem.objects.create(
+                mesa=mesa_inf_2,
+                modulo=modulos[nombre],
+                fase="INFERIOR",
+                position=position,
+                plan_group_index=14,
+                status="MOSTRANDO" if position == 0 else "EN_COLA",
+            )
+
+        current_superior = MesaQueueItem.objects.create(
+            mesa=mesa_sup,
+            modulo=modulos["ACTUAL"],
+            fase="SUPERIOR",
+            position=0,
+            plan_group_index=1,
+            status="MOSTRANDO",
+        )
+        mesa_sup.current_image_index = 7
+        mesa_sup.save(update_fields=["current_image_index"])
+
+        reconcile_superior_queue_for_group(grupo)
+        reconcile_superior_queue_for_group(grupo)
+
+        superior = list(
+            mesa_sup.queue_items.filter(
+                fase="SUPERIOR",
+                status__in=["MOSTRANDO", "EN_COLA"],
+            )
+            .order_by("position")
+            .values_list(
+                "modulo__nombre",
+                "status",
+                "plan_group_index",
+            )
+        )
+        self.assertEqual(
+            superior,
+            [
+                ("ACTUAL", "MOSTRANDO", 1),
+                ("A03", "EN_COLA", 14),
+                ("A02", "EN_COLA", 14),
+            ],
+        )
+        self.assertTrue(
+            MesaQueueItem.objects.filter(
+                id=current_superior.id,
+                status="MOSTRANDO",
+            ).exists()
+        )
+        mesa_sup.refresh_from_db()
+        self.assertEqual(mesa_sup.current_image_index, 7)
+
     def test_reconciliar_superior_prioriza_inferior_mas_avanzada(self):
         from api.queue_sync import reconcile_superior_queue_for_group
 
