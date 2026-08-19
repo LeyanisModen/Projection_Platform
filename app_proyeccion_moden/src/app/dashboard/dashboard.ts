@@ -108,6 +108,7 @@ export class Dashboard implements OnInit, OnDestroy {
   showPlanModal = false;
   planModalProyecto: Proyecto | null = null;
   planModalModulos: Modulo[] = [];
+  planModalSort: 'name' | 'completed' = 'name';
   loadingPlanModal = false;
   showPlanFotosModal = false;
   planFotosTarget: { id: number; nombre: string } | null = null;
@@ -516,9 +517,27 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   planModalSortedModulos(): Modulo[] {
-    return [...this.planModalModulos].sort((a, b) =>
-      a.nombre.localeCompare(b.nombre, undefined, { numeric: true })
-    );
+    const compareByName = (a: Modulo, b: Modulo) =>
+      a.nombre.localeCompare(b.nombre, undefined, { numeric: true });
+
+    if (this.planModalSort === 'name') {
+      return [...this.planModalModulos].sort(compareByName);
+    }
+
+    return [...this.planModalModulos].sort((a, b) => {
+      const aTimestamp = a.completado_at ? Date.parse(a.completado_at) : Number.NaN;
+      const bTimestamp = b.completado_at ? Date.parse(b.completado_at) : Number.NaN;
+      const aHasDate = Number.isFinite(aTimestamp);
+      const bHasDate = Number.isFinite(bTimestamp);
+
+      if (aHasDate && bHasDate && aTimestamp !== bTimestamp) {
+        return bTimestamp - aTimestamp;
+      }
+      if (aHasDate !== bHasDate) {
+        return aHasDate ? -1 : 1;
+      }
+      return compareByName(a, b);
+    });
   }
 
   planModalDoneCount(): number {

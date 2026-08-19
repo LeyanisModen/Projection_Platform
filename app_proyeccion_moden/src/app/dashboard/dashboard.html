@@ -489,7 +489,16 @@
                         <div class="plan-project-block">
                             <div class="plan-project-header">
                                 <strong>Módulos del proyecto</strong>
-                                <span class="plan-project-count">{{ planModalDoneCount() }}/{{ planModalModulos.length }}</span>
+                                <div class="plan-project-tools">
+                                    <span class="plan-project-count">{{ planModalDoneCount() }}/{{ planModalModulos.length }}</span>
+                                    <label class="plan-project-sort">
+                                        <span>Ordenar por</span>
+                                        <select [(ngModel)]="planModalSort" aria-label="Ordenar módulos del proyecto">
+                                            <option value="name">Nombre</option>
+                                            <option value="completed">Últimos terminados</option>
+                                        </select>
+                                    </label>
+                                </div>
                             </div>
                                 <ul class="plan-modulo-list">
                                     @for (m of planModalSortedModulos(); track m.id) {

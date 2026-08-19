@@ -3254,9 +3254,10 @@
 
 .plan-project-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 10px;
+  flex-wrap: wrap;
   color: #6c757d;
   font-size: 0.78rem;
   text-transform: uppercase;
@@ -3273,6 +3274,43 @@
 .plan-project-count {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
+}
+
+.plan-project-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.plan-project-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #64748b;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.plan-project-sort select {
+  min-height: 32px;
+  padding: 5px 28px 5px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  border-radius: 8px;
+  background: #fff;
+  color: #334155;
+  font: inherit;
+  font-size: 0.74rem;
+  letter-spacing: 0;
+  text-transform: none;
+  cursor: pointer;
+}
+
+.plan-project-sort select:focus-visible {
+  outline: 2px solid rgba(240, 100, 15, 0.45);
+  outline-offset: 2px;
 }
 
 .plan-modulo-list {

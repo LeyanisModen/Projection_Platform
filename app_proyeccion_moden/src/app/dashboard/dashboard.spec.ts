@@ -1,7 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { Dashboard } from './dashboard';
-import { ProductionStatsBucket, ProductionStatsResponse } from '../services/api.service';
+import { Modulo, ProductionStatsBucket, ProductionStatsResponse } from '../services/api.service';
 
 describe('Dashboard', () => {
   let component: Dashboard;
@@ -60,5 +60,29 @@ describe('Dashboard', () => {
     expect(buckets.map(bucket => bucket.key)).toEqual(['07', '09']);
     expect(buckets.map(bucket => bucket.label)).toEqual(['07h', '09h']);
     expect(buckets.every(bucket => bucket.meta_modulos === 3)).toBe(true);
+  });
+
+  it('orders project modules naturally by name by default', () => {
+    component.planModalModulos = [
+      { id: 10, nombre: 'A10', completado_at: null } as Modulo,
+      { id: 2, nombre: 'A2', completado_at: null } as Modulo,
+      { id: 1, nombre: 'A01', completado_at: null } as Modulo,
+    ];
+
+    expect(component.planModalSortedModulos().map(modulo => modulo.nombre))
+      .toEqual(['A01', 'A2', 'A10']);
+  });
+
+  it('orders recently completed modules first and leaves pending modules last', () => {
+    component.planModalSort = 'completed';
+    component.planModalModulos = [
+      { id: 3, nombre: 'A03', completado_at: null } as Modulo,
+      { id: 1, nombre: 'A01', completado_at: '2026-08-18T08:30:00Z' } as Modulo,
+      { id: 4, nombre: 'A04', completado_at: 'invalid-date' } as Modulo,
+      { id: 2, nombre: 'A02', completado_at: '2026-08-19T07:15:00Z' } as Modulo,
+    ];
+
+    expect(component.planModalSortedModulos().map(modulo => modulo.nombre))
+      .toEqual(['A02', 'A01', 'A03', 'A04']);
   });
 });
