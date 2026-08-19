@@ -3258,6 +3258,7 @@
   justify-content: space-between;
   gap: 10px;
   flex-wrap: wrap;
+  min-height: 32px;
   color: #6c757d;
   font-size: 0.78rem;
   text-transform: uppercase;
@@ -3265,28 +3266,38 @@
 }
 
 .plan-project-header strong {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
   color: #212529;
   font-size: 0.88rem;
+  line-height: 1;
   text-transform: none;
   letter-spacing: 0;
 }
 
 .plan-project-count {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
+  line-height: 1;
 }
 
 .plan-project-tools {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 12px;
+  gap: 10px;
+  min-height: 32px;
 }
 
 .plan-project-sort {
   display: inline-flex;
   align-items: center;
   gap: 7px;
+  height: 32px;
   color: #64748b;
   font-size: 0.68rem;
   font-weight: 700;
@@ -3294,8 +3305,18 @@
   white-space: nowrap;
 }
 
+.plan-project-sort > span {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  line-height: 1;
+}
+
 .plan-project-sort select {
+  box-sizing: border-box;
+  height: 32px;
   min-height: 32px;
+  margin: 0;
   padding: 5px 28px 5px 10px;
   border: 1px solid rgba(148, 163, 184, 0.45);
   border-radius: 8px;
