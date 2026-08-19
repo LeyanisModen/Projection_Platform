@@ -73,16 +73,17 @@ describe('Dashboard', () => {
       .toEqual(['A01', 'A2', 'A10']);
   });
 
-  it('orders recently completed modules first and leaves pending modules last', () => {
+  it('orders active modules first, then recent completions and pending modules', () => {
     component.planModalSort = 'completed';
     component.planModalModulos = [
-      { id: 3, nombre: 'A03', completado_at: null } as Modulo,
-      { id: 1, nombre: 'A01', completado_at: '2026-08-18T08:30:00Z' } as Modulo,
-      { id: 4, nombre: 'A04', completado_at: 'invalid-date' } as Modulo,
-      { id: 2, nombre: 'A02', completado_at: '2026-08-19T07:15:00Z' } as Modulo,
+      { id: 3, nombre: 'A03', estado: 'PENDIENTE', estado_operativo: 'PENDIENTE', completado_at: null } as Modulo,
+      { id: 1, nombre: 'A01', estado: 'COMPLETADO', estado_operativo: 'COMPLETADO', completado_at: '2026-08-18T08:30:00Z' } as Modulo,
+      { id: 5, nombre: 'A05', estado: 'PENDIENTE', estado_operativo: 'EN_PROGRESO', completado_at: null } as Modulo,
+      { id: 4, nombre: 'A04', estado: 'PENDIENTE', estado_operativo: 'PENDIENTE', completado_at: 'invalid-date' } as Modulo,
+      { id: 2, nombre: 'A02', estado: 'COMPLETADO', estado_operativo: 'COMPLETADO', completado_at: '2026-08-19T07:15:00Z' } as Modulo,
     ];
 
     expect(component.planModalSortedModulos().map(modulo => modulo.nombre))
-      .toEqual(['A02', 'A01', 'A03', 'A04']);
+      .toEqual(['A05', 'A02', 'A01', 'A03', 'A04']);
   });
 });

@@ -77,6 +77,7 @@ export interface GrupoBastidorModulo {
     ancho_cm: string | null;
     tipo_modulo: TipoModulo;
     estado: 'PENDIENTE' | 'EN_PROGRESO' | 'COMPLETADO' | 'CERRADO';
+    estado_operativo?: 'PENDIENTE' | 'EN_PROGRESO' | 'COMPLETADO' | 'CERRADO';
     inferior_hecho: boolean;
     superior_hecho: boolean;
     inferior_en_curso?: boolean;
@@ -145,6 +146,7 @@ export interface Modulo {
     inferior_hecho: boolean;
     superior_hecho: boolean;
     estado: 'PENDIENTE' | 'EN_PROGRESO' | 'COMPLETADO' | 'CERRADO';
+    estado_operativo?: 'PENDIENTE' | 'EN_PROGRESO' | 'COMPLETADO' | 'CERRADO';
     completado_at: string | null;
     cerrado: boolean;
     cerrado_at: string | null;

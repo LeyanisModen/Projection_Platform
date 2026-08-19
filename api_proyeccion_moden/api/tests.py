@@ -2333,6 +2333,7 @@ class PlanningFoundationTests(APITestCase):
         )
         self.assertTrue(serialized["movible"])
         self.assertIsNone(serialized["motivo_bloqueo"])
+        self.assertEqual(serialized["estado_operativo"], ModuloEstado.PENDIENTE)
         self.assertTrue(serialized["inferior_en_curso"])
         self.assertFalse(serialized["superior_en_curso"])
 
@@ -2400,8 +2401,46 @@ class PlanningFoundationTests(APITestCase):
         serialized = groups_response.data[0]["modulos"][0]
         self.assertFalse(serialized["movible"])
         self.assertIn("fabricacion ya ha comenzado", serialized["motivo_bloqueo"])
+        self.assertEqual(serialized["estado_operativo"], ModuloEstado.EN_PROGRESO)
         self.assertTrue(serialized["inferior_en_curso"])
         self.assertTrue(serialized["superior_en_curso"])
+
+        project_modules_response = self.client.get(
+            f"/api/proyectos/{self.project.id}/modulos/"
+        )
+        self.assertEqual(project_modules_response.status_code, 200)
+        project_module = next(
+            item
+            for item in project_modules_response.data
+            if item["id"] == self.modulo.id
+        )
+        self.assertEqual(
+            project_module["estado_operativo"],
+            ModuloEstado.EN_PROGRESO,
+        )
+
+        MesaQueueItem.objects.filter(
+            modulo=self.modulo,
+            status=MesaQueueStatus.MOSTRANDO,
+        ).update(status=MesaQueueStatus.EN_COLA)
+        project_modules_response = self.client.get(
+            f"/api/proyectos/{self.project.id}/modulos/"
+        )
+        project_module = next(
+            item
+            for item in project_modules_response.data
+            if item["id"] == self.modulo.id
+        )
+        self.assertEqual(
+            project_module["estado_operativo"],
+            ModuloEstado.PENDIENTE,
+        )
+        self.modulo.refresh_from_db()
+        self.assertEqual(self.modulo.estado, ModuloEstado.PENDIENTE)
+        MesaQueueItem.objects.filter(
+            modulo=self.modulo,
+            status=MesaQueueStatus.EN_COLA,
+        ).update(status=MesaQueueStatus.MOSTRANDO)
 
         preview_response = self.client.get(
             f"/api/proyectos/{self.project.id}/preview-mesas/"

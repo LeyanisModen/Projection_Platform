@@ -315,8 +315,8 @@
                                     (cdkDragStarted)="onModuloDragStarted(grupo)"
                                     (cdkDragEnded)="onModuloDragEnded()"
                                     class="grupo-modulo-item"
-                                    [class.is-completado]="modulo.estado === 'COMPLETADO' || modulo.estado === 'CERRADO'"
-                                    [class.is-progreso]="modulo.estado === 'EN_PROGRESO'"
+                                    [class.is-completado]="moduloEstadoOperativo(modulo) === 'COMPLETADO' || moduloEstadoOperativo(modulo) === 'CERRADO'"
+                                    [class.is-progreso]="moduloEstadoOperativo(modulo) === 'EN_PROGRESO'"
                                     [class.has-sd]="modulo.tiene_sd"
                                     [class.is-not-movable]="!isModuloMovible(modulo)"
                                     [attr.aria-disabled]="!isModuloMovible(modulo)">

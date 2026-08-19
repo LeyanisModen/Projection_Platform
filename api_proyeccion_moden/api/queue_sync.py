@@ -21,6 +21,36 @@ class QueueRelocationError(Exception):
     """Raised when a bastidor change would move work already on screen."""
 
 
+def module_operational_state(modulo, showing_items=None):
+    """Return the module state visible to operators.
+
+    The persisted state continues to describe completed phases. Operationally,
+    a module is also in progress once a showing phase has passed the two setup
+    images and its physical position is therefore committed.
+    """
+    if modulo.cerrado:
+        return ModuloEstado.CERRADO
+    if modulo.inferior_hecho and modulo.superior_hecho:
+        return ModuloEstado.COMPLETADO
+    if modulo.inferior_hecho or modulo.superior_hecho:
+        return ModuloEstado.EN_PROGRESO
+
+    if showing_items is None:
+        showing_items = getattr(modulo, "reorder_showing_items", None)
+    if showing_items is None:
+        showing_items = (
+            modulo.mesa_queue_items.select_related("mesa")
+            .filter(status=MesaQueueStatus.MOSTRANDO)
+        )
+
+    if any(
+        item.mesa.current_image_index > EARLY_IMAGE_INDEX_LIMIT
+        for item in showing_items
+    ):
+        return ModuloEstado.EN_PROGRESO
+    return ModuloEstado.PENDIENTE
+
+
 def module_reorderability(modulo, showing_items=None):
     """Return whether a module can still change its bastidor position.
 

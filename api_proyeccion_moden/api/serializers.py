@@ -9,7 +9,7 @@ from api.models import (
     FotoFabricacion, GrupoMesas, GrupoMesasProyecto,
     DetalleModuloFase, GrupoBastidor, FerrallaContacto, FerrallaDireccion, Fase
 )
-from api.queue_sync import module_reorderability
+from api.queue_sync import module_operational_state, module_reorderability
 from api.module_features import module_has_sd
 
 
@@ -286,12 +286,14 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
 class ModuloSerializer(serializers.ModelSerializer):
     fotos_count = serializers.SerializerMethodField()
     detalles_fase = serializers.SerializerMethodField()
+    estado_operativo = serializers.SerializerMethodField()
 
     class Meta:
         model = Modulo
         fields = [
             "id", "nombre", "ancho_cm", "tipo_modulo", "proyecto", "grupo_bastidor",
             "inferior_hecho", "superior_hecho", "estado",
+            "estado_operativo",
             "completado_at", "cerrado", "cerrado_at", "cerrado_by",
             "codigos_color", "fotos_count", "detalles_fase"
         ]
@@ -301,6 +303,9 @@ class ModuloSerializer(serializers.ModelSerializer):
         if hasattr(obj, '_fotos_count'):
             return obj._fotos_count
         return obj.fotos_fabricacion.count()
+
+    def get_estado_operativo(self, obj):
+        return module_operational_state(obj)
 
     def get_detalles_fase(self, obj):
         detalles = getattr(obj, '_prefetched_objects_cache', {}).get('detalles_fase')
@@ -343,10 +348,14 @@ class GrupoBastidorSerializer(serializers.ModelSerializer):
         )
         serialized = []
         for m in modulos:
-            movible, motivo_bloqueo = module_reorderability(m)
+            showing_items = getattr(m, "reorder_showing_items", [])
+            movible, motivo_bloqueo = module_reorderability(
+                m,
+                showing_items=showing_items,
+            )
             fases_en_curso = {
                 item.fase
-                for item in getattr(m, "reorder_showing_items", [])
+                for item in showing_items
             }
             serialized.append({
                 "id": m.id,
@@ -354,6 +363,10 @@ class GrupoBastidorSerializer(serializers.ModelSerializer):
                 "ancho_cm": m.ancho_cm,
                 "tipo_modulo": m.tipo_modulo,
                 "estado": m.estado,
+                "estado_operativo": module_operational_state(
+                    m,
+                    showing_items=showing_items,
+                ),
                 "inferior_hecho": m.inferior_hecho,
                 "superior_hecho": m.superior_hecho,
                 "inferior_en_curso": Fase.INFERIOR in fases_en_curso,

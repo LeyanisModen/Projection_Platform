@@ -257,6 +257,10 @@ export class ProyectoDetailComponent implements OnInit {
         return modulo.motivo_bloqueo || 'Este modulo ya no se puede reordenar';
     }
 
+    moduloEstadoOperativo(modulo: GrupoBastidorModulo): GrupoBastidorModulo['estado'] {
+        return modulo.estado_operativo || modulo.estado;
+    }
+
     /** Primer modulo bloqueado por estado o avance real. El bastidor inferior
      *  se fabrica desde abajo hacia arriba en el card, por lo que cualquier
      *  modulo nuevo debe quedar visualmente ANTES (encima) de esta frontera.

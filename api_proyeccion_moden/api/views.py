@@ -1401,7 +1401,9 @@ class ProyectoViewSet(viewsets.ModelViewSet):
     def modulos(self, request, pk=None):
         """Get all modules for a project."""
         proyecto = self.get_object()
-        modulos = proyecto.modulos.all().order_by('id')
+        modulos = _modules_with_reorder_data(
+            proyecto.modulos.all()
+        ).order_by('id')
         serializer = ModuloSerializer(modulos, many=True, context={'request': request})
         return Response(serializer.data)
 
@@ -3026,8 +3028,10 @@ class ModuloViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         from django.db.models import Count
-        queryset = Modulo.objects.prefetch_related('detalles_fase').all().annotate(
-            _fotos_count=Count('fotos_fabricacion')
+        queryset = _modules_with_reorder_data(
+            Modulo.objects.prefetch_related('detalles_fase').all().annotate(
+                _fotos_count=Count('fotos_fabricacion')
+            )
         ).order_by("id")
         if not _is_admin(self.request.user):
             queryset = queryset.filter(proyecto__usuario=self.request.user)

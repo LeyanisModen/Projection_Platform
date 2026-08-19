@@ -525,6 +525,15 @@ export class Dashboard implements OnInit, OnDestroy {
     }
 
     return [...this.planModalModulos].sort((a, b) => {
+      const stateRank = (modulo: Modulo): number => {
+        const state = this.moduloEstadoOperativo(modulo);
+        if (state === 'EN_PROGRESO') return 0;
+        if (state === 'COMPLETADO' || state === 'CERRADO') return 1;
+        return 2;
+      };
+      const rankDifference = stateRank(a) - stateRank(b);
+      if (rankDifference !== 0) return rankDifference;
+
       const aTimestamp = a.completado_at ? Date.parse(a.completado_at) : Number.NaN;
       const bTimestamp = b.completado_at ? Date.parse(b.completado_at) : Number.NaN;
       const aHasDate = Number.isFinite(aTimestamp);
@@ -552,15 +561,24 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   moduloEstadoLabel(m: Modulo): 'Fabricado' | 'En proceso' | 'Pendiente' {
-    if (m.inferior_hecho && m.superior_hecho) return 'Fabricado';
-    if (m.inferior_hecho || m.superior_hecho) return 'En proceso';
+    const state = this.moduloEstadoOperativo(m);
+    if (state === 'COMPLETADO' || state === 'CERRADO') return 'Fabricado';
+    if (state === 'EN_PROGRESO') return 'En proceso';
     return 'Pendiente';
   }
 
   moduloEstadoClass(m: Modulo): 'done' | 'partial' | 'pending' {
-    if (m.inferior_hecho && m.superior_hecho) return 'done';
-    if (m.inferior_hecho || m.superior_hecho) return 'partial';
+    const state = this.moduloEstadoOperativo(m);
+    if (state === 'COMPLETADO' || state === 'CERRADO') return 'done';
+    if (state === 'EN_PROGRESO') return 'partial';
     return 'pending';
+  }
+
+  private moduloEstadoOperativo(m: Modulo): Modulo['estado'] {
+    if (m.estado_operativo) return m.estado_operativo;
+    if (m.inferior_hecho && m.superior_hecho) return 'COMPLETADO';
+    if (m.inferior_hecho || m.superior_hecho) return 'EN_PROGRESO';
+    return m.estado || 'PENDIENTE';
   }
 
   /**
