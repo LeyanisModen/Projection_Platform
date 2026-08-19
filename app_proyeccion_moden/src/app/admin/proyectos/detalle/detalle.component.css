@@ -1233,6 +1233,17 @@
     color: #bd5c00;
 }
 
+.grupo-modulo-phase.is-en-curso {
+    background: #fff4e5;
+    border-color: #f0b66d;
+    color: #a85100;
+}
+
+.grupo-modulo-phase.is-en-curso:hover {
+    background: #ffe7c2;
+    border-color: #dc8627;
+}
+
 .grupo-modulo-phase:focus-visible {
     outline: 2px solid currentColor;
     outline-offset: 1px;
@@ -1269,6 +1280,14 @@
 
 .grupo-modulo-phase.is-completa:hover .phase-undo,
 .grupo-modulo-phase.is-completa:focus-visible .phase-undo {
+    display: inline-block;
+}
+
+.grupo-modulo-phase.is-en-curso .phase-check {
+    display: none;
+}
+
+.grupo-modulo-phase.is-en-curso .phase-undo {
     display: inline-block;
 }
 

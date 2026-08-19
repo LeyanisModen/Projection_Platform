@@ -79,6 +79,8 @@ export interface GrupoBastidorModulo {
     estado: 'PENDIENTE' | 'EN_PROGRESO' | 'COMPLETADO' | 'CERRADO';
     inferior_hecho: boolean;
     superior_hecho: boolean;
+    inferior_en_curso?: boolean;
+    superior_en_curso?: boolean;
     cerrado: boolean;
     fotos_count: number;
     tiene_sd: boolean;

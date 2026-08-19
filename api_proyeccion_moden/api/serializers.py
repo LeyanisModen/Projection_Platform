@@ -344,6 +344,10 @@ class GrupoBastidorSerializer(serializers.ModelSerializer):
         serialized = []
         for m in modulos:
             movible, motivo_bloqueo = module_reorderability(m)
+            fases_en_curso = {
+                item.fase
+                for item in getattr(m, "reorder_showing_items", [])
+            }
             serialized.append({
                 "id": m.id,
                 "nombre": m.nombre,
@@ -352,6 +356,8 @@ class GrupoBastidorSerializer(serializers.ModelSerializer):
                 "estado": m.estado,
                 "inferior_hecho": m.inferior_hecho,
                 "superior_hecho": m.superior_hecho,
+                "inferior_en_curso": Fase.INFERIOR in fases_en_curso,
+                "superior_en_curso": Fase.SUPERIOR in fases_en_curso,
                 "cerrado": m.cerrado,
                 "fotos_count": m.fotos_fabricacion.count(),
                 "tiene_sd": module_has_sd(m),

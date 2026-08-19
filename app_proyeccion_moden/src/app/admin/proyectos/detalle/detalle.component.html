@@ -344,27 +344,29 @@
                                             <button type="button"
                                                 class="grupo-modulo-phase"
                                                 [class.is-completa]="modulo.inferior_hecho"
+                                                [class.is-en-curso]="!modulo.inferior_hecho && modulo.inferior_en_curso"
                                                 (click)="toggleFaseModulo(modulo, 'INFERIOR', $event)"
                                                 [attr.aria-pressed]="modulo.inferior_hecho"
-                                                [title]="modulo.inferior_hecho ? 'Fase inferior terminada. Clic para reiniciar' : 'Fase inferior pendiente. Clic para completar'"
-                                                [attr.aria-label]="(modulo.inferior_hecho ? 'Reiniciar' : 'Completar') + ' fase inferior de ' + modulo.nombre">
+                                                [title]="modulo.inferior_hecho ? 'Fase inferior terminada. Clic para reiniciar' : (modulo.inferior_en_curso ? 'Fase inferior en curso. Clic para reiniciar' : 'Fase inferior pendiente. Clic para completar')"
+                                                [attr.aria-label]="((modulo.inferior_hecho || modulo.inferior_en_curso) ? 'Reiniciar' : 'Completar') + ' fase inferior de ' + modulo.nombre">
                                                 <span>INF</span>
                                                 <span class="grupo-modulo-phase-icon" aria-hidden="true">
                                                     <i class="fa fa-check phase-check"></i>
-                                                    <i *ngIf="modulo.inferior_hecho" class="fa fa-undo phase-undo"></i>
+                                                    <i *ngIf="modulo.inferior_hecho || modulo.inferior_en_curso" class="fa fa-undo phase-undo"></i>
                                                 </span>
                                             </button>
                                             <button type="button"
                                                 class="grupo-modulo-phase"
                                                 [class.is-completa]="modulo.superior_hecho"
+                                                [class.is-en-curso]="!modulo.superior_hecho && modulo.superior_en_curso"
                                                 (click)="toggleFaseModulo(modulo, 'SUPERIOR', $event)"
                                                 [attr.aria-pressed]="modulo.superior_hecho"
-                                                [title]="modulo.superior_hecho ? 'Fase superior terminada. Clic para reiniciar, incluidos SD_S y SD_D' : 'Fase superior pendiente. Clic para completar'"
-                                                [attr.aria-label]="(modulo.superior_hecho ? 'Reiniciar' : 'Completar') + ' fase superior de ' + modulo.nombre">
+                                                [title]="modulo.superior_hecho ? 'Fase superior terminada. Clic para reiniciar, incluidos SD_S y SD_D' : (modulo.superior_en_curso ? 'Fase superior en curso. Clic para reiniciar, incluidos SD_S y SD_D' : 'Fase superior pendiente. Clic para completar')"
+                                                [attr.aria-label]="((modulo.superior_hecho || modulo.superior_en_curso) ? 'Reiniciar' : 'Completar') + ' fase superior de ' + modulo.nombre">
                                                 <span>SUP</span>
                                                 <span class="grupo-modulo-phase-icon" aria-hidden="true">
                                                     <i class="fa fa-check phase-check"></i>
-                                                    <i *ngIf="modulo.superior_hecho" class="fa fa-undo phase-undo"></i>
+                                                    <i *ngIf="modulo.superior_hecho || modulo.superior_en_curso" class="fa fa-undo phase-undo"></i>
                                                 </span>
                                             </button>
                                         </div>

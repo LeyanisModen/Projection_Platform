@@ -23,6 +23,7 @@ import {
     ModuleImportCandidate,
     scanModuleImportFolder,
 } from './module-import.utils';
+import { getModuloPhaseAction } from './phase-action.utils';
 
 @Component({
     selector: 'app-proyecto-detalle',
@@ -602,11 +603,7 @@ export class ProyectoDetailComponent implements OnInit {
         event: Event
     ): void {
         event.stopPropagation();
-        const completada = fase === 'INFERIOR'
-            ? modulo.inferior_hecho
-            : modulo.superior_hecho;
-
-        if (completada) {
+        if (getModuloPhaseAction(modulo, fase) === 'restart') {
             this.reiniciarFaseModulo(modulo, fase);
             return;
         }

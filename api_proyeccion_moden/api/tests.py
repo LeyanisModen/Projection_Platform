@@ -2333,6 +2333,8 @@ class PlanningFoundationTests(APITestCase):
         )
         self.assertTrue(serialized["movible"])
         self.assertIsNone(serialized["motivo_bloqueo"])
+        self.assertTrue(serialized["inferior_en_curso"])
+        self.assertFalse(serialized["superior_en_curso"])
 
         move_response = self.client.post(
             "/api/grupos-bastidor/move-modulo/",
@@ -2398,6 +2400,8 @@ class PlanningFoundationTests(APITestCase):
         serialized = groups_response.data[0]["modulos"][0]
         self.assertFalse(serialized["movible"])
         self.assertIn("fabricacion ya ha comenzado", serialized["motivo_bloqueo"])
+        self.assertTrue(serialized["inferior_en_curso"])
+        self.assertTrue(serialized["superior_en_curso"])
 
         preview_response = self.client.get(
             f"/api/proyectos/{self.project.id}/preview-mesas/"
