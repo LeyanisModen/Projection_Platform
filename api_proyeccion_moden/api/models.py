@@ -56,6 +56,11 @@ class EstrategiaBastidor(models.TextChoices):
     AISLAR_CENTRAL_GIRADO = 'AISLAR_CENTRAL_GIRADO', 'Aislar central girado'
 
 
+class EstrategiaColaSuperior(models.TextChoices):
+    PLANIFICADA = 'PLANIFICADA', 'Alternancia planificada'
+    ADAPTATIVA = 'ADAPTATIVA', 'Adaptar al avance real'
+
+
 class Proyecto(models.Model):
     id = models.AutoField(primary_key=True)
     nombre = models.CharField(max_length=200)
@@ -202,6 +207,15 @@ class Modulo(models.Model):
     
     # Timestamp cuando ambas fases quedaron hechas
     completado_at = models.DateTimeField(null=True, blank=True)
+    superior_needed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text=(
+            'Momento desde el que produccion inferior necesita esta fase '
+            'superior. Permite ordenar la mesa SUP por demanda real.'
+        ),
+    )
 
     # Cierre por supervisor
     cerrado = models.BooleanField(default=False)
@@ -228,6 +242,8 @@ class Modulo(models.Model):
     def actualizar_estado(self):
         """Update estado based on phase completion."""
         from django.utils import timezone
+        if self.superior_hecho:
+            self.superior_needed_at = None
         if self.cerrado:
             self.estado = ModuloEstado.CERRADO
         elif self.inferior_hecho and self.superior_hecho:
@@ -245,7 +261,8 @@ class Modulo(models.Model):
             self.completado_at = None
 
         self.save(update_fields=[
-            'estado', 'inferior_hecho', 'superior_hecho', 'completado_at'
+            'estado', 'inferior_hecho', 'superior_hecho', 'completado_at',
+            'superior_needed_at',
         ])
 
     def save(self, *args, **kwargs):
@@ -555,6 +572,15 @@ class GrupoMesas(models.Model):
         null=True,
         blank=True,
         related_name='grupos_mesas_activos',
+    )
+    estrategia_cola_superior = models.CharField(
+        max_length=20,
+        choices=EstrategiaColaSuperior.choices,
+        default=EstrategiaColaSuperior.PLANIFICADA,
+        help_text=(
+            'PLANIFICADA mantiene la alternancia teorica. ADAPTATIVA '
+            'prioriza los superiores ya requeridos por las mesas inferiores.'
+        ),
     )
     activa = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -978,8 +1004,14 @@ class MesaQueueItem(models.Model):
         # Also update the module phase status
         if self.fase == Fase.INFERIOR:
             self.modulo.inferior_hecho = True
+            if (
+                not self.modulo.superior_hecho
+                and self.modulo.superior_needed_at is None
+            ):
+                self.modulo.superior_needed_at = self.done_at
         else:
             self.modulo.superior_hecho = True
+            self.modulo.superior_needed_at = None
         self.modulo.actualizar_estado()
 
     class Meta:

@@ -4199,6 +4199,314 @@ class PlanningFoundationTests(APITestCase):
         mesa_sup.refresh_from_db()
         self.assertEqual(mesa_sup.current_image_index, 7)
 
+    def test_grupo_mesas_permite_activar_orden_superior_adaptativo(self):
+        grupo = self._crear_grupo("Grupo Estrategia SUP")
+
+        self.assertEqual(grupo.estrategia_cola_superior, "PLANIFICADA")
+
+        response = self.client.patch(
+            f"/api/grupos-mesas/{grupo.id}/",
+            {"estrategia_cola_superior": "ADAPTATIVA"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.data["estrategia_cola_superior"],
+            "ADAPTATIVA",
+        )
+        grupo.refresh_from_db()
+        self.assertEqual(grupo.estrategia_cola_superior, "ADAPTATIVA")
+
+    def test_superior_adaptativo_prioriza_demanda_de_una_sola_mesa(self):
+        from api.queue_sync import reconcile_superior_queue_for_group
+
+        grupo = self._crear_grupo("Grupo SUP Adaptativo")
+        grupo.estrategia_cola_superior = "ADAPTATIVA"
+        grupo.save(update_fields=["estrategia_cola_superior"])
+        mesa_inf_1 = grupo.mesas.get(tipo="INFERIOR", indice=1)
+        mesa_inf_2 = grupo.mesas.get(tipo="INFERIOR", indice=2)
+        mesa_sup = grupo.mesas.get(tipo="SUPERIOR", indice=3)
+
+        modulos = {
+            nombre: Modulo.objects.create(nombre=nombre, proyecto=self.project)
+            for nombre in ["A1", "A2", "B1", "B2"]
+        }
+        demand_base = timezone.now() - timedelta(minutes=10)
+        Modulo.objects.filter(id=modulos["A1"].id).update(
+            inferior_hecho=True,
+            estado=ModuloEstado.EN_PROGRESO,
+            superior_needed_at=demand_base,
+        )
+        Modulo.objects.filter(id=modulos["A2"].id).update(
+            superior_needed_at=demand_base + timedelta(minutes=2),
+        )
+
+        MesaQueueItem.objects.create(
+            mesa=mesa_inf_1,
+            modulo=modulos["A1"],
+            fase="INFERIOR",
+            position=0,
+            status="HECHO",
+            done_at=demand_base,
+        )
+        MesaQueueItem.objects.create(
+            mesa=mesa_inf_1,
+            modulo=modulos["A2"],
+            fase="INFERIOR",
+            position=0,
+            status="MOSTRANDO",
+        )
+        for position, nombre in enumerate(["B1", "B2"]):
+            MesaQueueItem.objects.create(
+                mesa=mesa_inf_2,
+                modulo=modulos[nombre],
+                fase="INFERIOR",
+                position=position,
+                status="MOSTRANDO" if position == 0 else "EN_COLA",
+            )
+
+        for position, nombre in enumerate(["B1", "A1", "B2", "A2"]):
+            MesaQueueItem.objects.create(
+                mesa=mesa_sup,
+                modulo=modulos[nombre],
+                fase="SUPERIOR",
+                position=position,
+                status="MOSTRANDO" if position == 0 else "EN_COLA",
+            )
+
+        reconcile_superior_queue_for_group(grupo)
+
+        superior = list(
+            mesa_sup.queue_items.filter(
+                fase="SUPERIOR",
+                status__in=["MOSTRANDO", "EN_COLA"],
+            )
+            .order_by("position")
+            .values_list("modulo__nombre", "status")
+        )
+        self.assertEqual(superior, [
+            ("A1", "MOSTRANDO"),
+            ("A2", "EN_COLA"),
+            ("B1", "EN_COLA"),
+            ("B2", "EN_COLA"),
+        ])
+
+    def test_activar_adaptativo_recupera_inferior_corto_ya_terminado(self):
+        grupo = self._crear_grupo("Grupo SUP Fase Corta")
+        mesa_inf = grupo.mesas.get(tipo="INFERIOR", indice=1)
+        mesa_sup = grupo.mesas.get(tipo="SUPERIOR", indice=3)
+        regular = Modulo.objects.create(nombre="REGULAR", proyecto=self.project)
+        corto = Modulo.objects.create(nombre="SOLO-SUP", proyecto=self.project)
+        done_at = timezone.now() - timedelta(minutes=4)
+        Modulo.objects.filter(id=corto.id).update(
+            inferior_hecho=True,
+            estado=ModuloEstado.EN_PROGRESO,
+        )
+
+        MesaQueueItem.objects.create(
+            mesa=mesa_inf,
+            modulo=regular,
+            fase="INFERIOR",
+            position=0,
+            status="MOSTRANDO",
+        )
+        MesaQueueItem.objects.create(
+            mesa=mesa_inf,
+            modulo=corto,
+            fase="INFERIOR",
+            position=0,
+            status="HECHO",
+            done_at=done_at,
+        )
+        MesaQueueItem.objects.create(
+            mesa=mesa_sup,
+            modulo=regular,
+            fase="SUPERIOR",
+            position=0,
+            status="MOSTRANDO",
+        )
+        MesaQueueItem.objects.create(
+            mesa=mesa_sup,
+            modulo=corto,
+            fase="SUPERIOR",
+            position=1,
+            status="EN_COLA",
+        )
+
+        response = self.client.patch(
+            f"/api/grupos-mesas/{grupo.id}/",
+            {"estrategia_cola_superior": "ADAPTATIVA"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        corto.refresh_from_db()
+        self.assertEqual(corto.superior_needed_at, done_at)
+        superior = list(
+            mesa_sup.queue_items.filter(
+                fase="SUPERIOR",
+                status__in=["MOSTRANDO", "EN_COLA"],
+            )
+            .order_by("position")
+            .values_list("modulo__nombre", "status")
+        )
+        self.assertEqual(superior[0], ("SOLO-SUP", "MOSTRANDO"))
+
+    def test_avance_inferior_reordena_adaptativo_sin_mover_sup_empezado(self):
+        grupo = self._crear_grupo("Grupo SUP Anclado")
+        grupo.estrategia_cola_superior = "ADAPTATIVA"
+        grupo.save(update_fields=["estrategia_cola_superior"])
+        mesa_inf = grupo.mesas.get(tipo="INFERIOR", indice=1)
+        mesa_sup = grupo.mesas.get(tipo="SUPERIOR", indice=3)
+        requerido = Modulo.objects.create(nombre="REQUERIDO", proyecto=self.project)
+        empezado = Modulo.objects.create(nombre="EMPEZADO", proyecto=self.project)
+
+        MesaQueueItem.objects.create(
+            mesa=mesa_inf,
+            modulo=requerido,
+            fase="INFERIOR",
+            position=0,
+            status="MOSTRANDO",
+        )
+        MesaQueueItem.objects.create(
+            mesa=mesa_sup,
+            modulo=empezado,
+            fase="SUPERIOR",
+            position=0,
+            status="MOSTRANDO",
+        )
+        MesaQueueItem.objects.create(
+            mesa=mesa_sup,
+            modulo=requerido,
+            fase="SUPERIOR",
+            position=1,
+            status="EN_COLA",
+        )
+        mesa_sup.current_image_index = 4
+        mesa_sup.save(update_fields=["current_image_index"])
+
+        response = self.client.post(
+            f"/api/mesas/{mesa_inf.id}/set_index/",
+            {"index": 2},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        requerido.refresh_from_db()
+        self.assertIsNotNone(requerido.superior_needed_at)
+        superior = list(
+            mesa_sup.queue_items.filter(
+                fase="SUPERIOR",
+                status__in=["MOSTRANDO", "EN_COLA"],
+            )
+            .order_by("position")
+            .values_list("modulo__nombre", "status")
+        )
+        self.assertEqual(superior, [
+            ("EMPEZADO", "MOSTRANDO"),
+            ("REQUERIDO", "EN_COLA"),
+        ])
+        mesa_sup.refresh_from_db()
+        self.assertEqual(mesa_sup.current_image_index, 4)
+
+    def test_inferior_de_una_imagen_demanda_superior_al_terminar(self):
+        grupo = self._crear_grupo("Grupo SUP Una Imagen")
+        grupo.estrategia_cola_superior = "ADAPTATIVA"
+        grupo.save(update_fields=["estrategia_cola_superior"])
+        mesa_inf = grupo.mesas.get(tipo="INFERIOR", indice=1)
+        mesa_sup = grupo.mesas.get(tipo="SUPERIOR", indice=3)
+        corto = Modulo.objects.create(nombre="CORTO", proyecto=self.project)
+        previsto = Modulo.objects.create(nombre="PREVISTO", proyecto=self.project)
+
+        inferior = MesaQueueItem.objects.create(
+            mesa=mesa_inf,
+            modulo=corto,
+            fase="INFERIOR",
+            position=0,
+            status="MOSTRANDO",
+        )
+        MesaQueueItem.objects.create(
+            mesa=mesa_sup,
+            modulo=previsto,
+            fase="SUPERIOR",
+            position=0,
+            status="MOSTRANDO",
+        )
+        MesaQueueItem.objects.create(
+            mesa=mesa_sup,
+            modulo=corto,
+            fase="SUPERIOR",
+            position=1,
+            status="EN_COLA",
+        )
+
+        response = self.client.post(
+            f"/api/mesa-queue-items/{inferior.id}/marcar_hecho/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        corto.refresh_from_db()
+        self.assertTrue(corto.inferior_hecho)
+        self.assertIsNotNone(corto.superior_needed_at)
+        head = mesa_sup.queue_items.filter(
+            fase="SUPERIOR",
+            status="MOSTRANDO",
+        ).get()
+        self.assertEqual(head.modulo_id, corto.id)
+
+    def test_reiniciar_solo_superior_demanda_y_completarlo_limpia_prioridad(self):
+        grupo = self._crear_grupo("Grupo SUP Reinicio")
+        mesa_inf = grupo.mesas.get(tipo="INFERIOR", indice=1)
+        mesa_sup = grupo.mesas.get(tipo="SUPERIOR", indice=3)
+        Modulo.objects.filter(id=self.modulo.id).update(
+            inferior_hecho=True,
+            superior_hecho=True,
+            estado=ModuloEstado.COMPLETADO,
+            completado_at=timezone.now(),
+        )
+        MesaQueueItem.objects.create(
+            mesa=mesa_inf,
+            modulo=self.modulo,
+            fase="INFERIOR",
+            position=0,
+            status="HECHO",
+            done_at=timezone.now(),
+        )
+        MesaQueueItem.objects.create(
+            mesa=mesa_sup,
+            modulo=self.modulo,
+            fase="SUPERIOR",
+            position=0,
+            status="HECHO",
+            done_at=timezone.now(),
+        )
+
+        reset_response = self.client.post(
+            f"/api/modulos/{self.modulo.id}/reiniciar-fase/",
+            {"fase": "SUPERIOR"},
+            format="json",
+        )
+
+        self.assertEqual(reset_response.status_code, 200)
+        self.modulo.refresh_from_db()
+        self.assertTrue(self.modulo.inferior_hecho)
+        self.assertFalse(self.modulo.superior_hecho)
+        self.assertIsNotNone(self.modulo.superior_needed_at)
+
+        complete_response = self.client.post(
+            f"/api/modulos/{self.modulo.id}/completar-fase/",
+            {"fase": "SUPERIOR"},
+            format="json",
+        )
+
+        self.assertEqual(complete_response.status_code, 200)
+        self.modulo.refresh_from_db()
+        self.assertTrue(self.modulo.superior_hecho)
+        self.assertIsNone(self.modulo.superior_needed_at)
+
     def test_reconciliar_superior_recupera_fases_omitidas(self):
         from api.queue_sync import reconcile_superior_queue_for_group
 

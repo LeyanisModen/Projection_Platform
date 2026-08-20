@@ -51,6 +51,12 @@
                                             <span class="grupo-cola-more">+ {{ grupo.proyectos_cola.length - 1 }} en cola</span>
                                         }
                                     }
+                                    @if (grupo.estrategia_cola_superior === 'ADAPTATIVA') {
+                                        <span class="grupo-estrategia-chip" title="La cola superior sigue la demanda real de las mesas inferiores">
+                                            <i class="fa fa-bolt" aria-hidden="true"></i>
+                                            SUP adaptativo
+                                        </span>
+                                    }
                                 </div>
                                 <button type="button" class="btn-gestionar" (click)="openGestionarModal(grupo)">
                                     <i class="fa fa-sliders" aria-hidden="true"></i>
@@ -760,6 +766,41 @@
                             (blur)="saveGestionarGrupoNombre()"
                             (keydown.enter)="saveGestionarGrupoNombre()"
                             maxlength="200">
+                    </section>
+
+                    <section class="gestionar-section">
+                        <h4>Orden de la mesa superior</h4>
+                        <div class="estrategia-superior-options" role="group" aria-label="Estrategia de orden para superiores">
+                            <button type="button"
+                                class="estrategia-superior-option"
+                                [class.active]="gestionandoGrupo.estrategia_cola_superior !== 'ADAPTATIVA'"
+                                [attr.aria-pressed]="gestionandoGrupo.estrategia_cola_superior !== 'ADAPTATIVA'"
+                                [disabled]="gestionarBusy || gestionarAplicandoCambios"
+                                (click)="setGestionarEstrategiaColaSuperior('PLANIFICADA')">
+                                <span class="estrategia-icon planificada"><i class="fa fa-random" aria-hidden="true"></i></span>
+                                <span class="estrategia-copy">
+                                    <strong>Alternancia planificada</strong>
+                                    <small>Intercala las mesas inferiores una a una.</small>
+                                </span>
+                                <i class="fa fa-check estrategia-check" aria-hidden="true"></i>
+                            </button>
+                            <button type="button"
+                                class="estrategia-superior-option"
+                                [class.active]="gestionandoGrupo.estrategia_cola_superior === 'ADAPTATIVA'"
+                                [attr.aria-pressed]="gestionandoGrupo.estrategia_cola_superior === 'ADAPTATIVA'"
+                                [disabled]="gestionarBusy || gestionarAplicandoCambios"
+                                (click)="setGestionarEstrategiaColaSuperior('ADAPTATIVA')">
+                                <span class="estrategia-icon adaptativa"><i class="fa fa-bolt" aria-hidden="true"></i></span>
+                                <span class="estrategia-copy">
+                                    <strong>Adaptar al avance real</strong>
+                                    <small>Prioriza los superiores que ya necesita produccion inferior.</small>
+                                </span>
+                                <i class="fa fa-check estrategia-check" aria-hidden="true"></i>
+                            </button>
+                        </div>
+                        <p class="estrategia-superior-help">
+                            Recomendado cuando las mesas inferiores no avanzan al mismo ritmo.
+                        </p>
                     </section>
 
                     <section class="gestionar-section">

@@ -7,7 +7,7 @@ import { DragDropModule, CdkDragDrop, moveItemInArray, transferArrayItem } from 
 import {
   ApiService,
   Proyecto, Modulo, Mesa, ModuloQueueItem, MesaQueueItem, Imagen, FotoFabricacion,
-  GrupoMesas, GrupoMesasProyectoEntry, ProductionStatsResponse
+  EstrategiaColaSuperior, GrupoMesas, GrupoMesasProyectoEntry, ProductionStatsResponse
 } from '../services/api.service';
 import {
   ListaMaterialesService,
@@ -748,6 +748,37 @@ export class Dashboard implements OnInit, OnDestroy {
     });
   }
 
+  setGestionarEstrategiaColaSuperior(estrategia: EstrategiaColaSuperior): void {
+    if (!this.gestionandoGrupo || this.gestionarBusy) return;
+    const grupo = this.gestionandoGrupo;
+    const anterior = grupo.estrategia_cola_superior || 'PLANIFICADA';
+    if (anterior === estrategia) return;
+
+    grupo.estrategia_cola_superior = estrategia;
+    const grupoListado = this.gruposMesas.find(item => item.id === grupo.id);
+    if (grupoListado) grupoListado.estrategia_cola_superior = estrategia;
+    this.gestionarBusy = true;
+    this.cdr.detectChanges();
+
+    this.api.updateGrupoMesas(grupo.id, {
+      estrategia_cola_superior: estrategia,
+    }).subscribe({
+      next: (updated) => {
+        this.applyGestionarGrupoUpdate(updated);
+        this.loadMesas();
+        this.gestionarBusy = false;
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        grupo.estrategia_cola_superior = anterior;
+        if (grupoListado) grupoListado.estrategia_cola_superior = anterior;
+        this.gestionarBusy = false;
+        alert(err?.error?.detail || 'No se pudo cambiar el orden de superiores.');
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
 
   addProyectoToCola(): void {
     if (!this.gestionandoGrupo || !this.gestionarAddProyectoId) return;
@@ -831,6 +862,7 @@ export class Dashboard implements OnInit, OnDestroy {
       grupo.proyecto_actual = updated.proyecto_actual;
       grupo.proyectos_cola = updated.proyectos_cola;
       grupo.nombre = updated.nombre;
+      grupo.estrategia_cola_superior = updated.estrategia_cola_superior;
     }
     if (this.gestionandoGrupo?.id === updated.id) {
       this.gestionandoGrupo = grupo || updated;

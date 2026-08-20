@@ -341,12 +341,15 @@ export interface GrupoMesasProyectoEntry {
     orden: number;
 }
 
+export type EstrategiaColaSuperior = 'PLANIFICADA' | 'ADAPTATIVA';
+
 export interface GrupoMesas {
     id: number;
     nombre: string;
     usuario: number;
     proyecto_actual: number | null;
     proyectos_cola: GrupoMesasProyectoEntry[];
+    estrategia_cola_superior: EstrategiaColaSuperior;
     activa: boolean;
     created_at: string;
     mesas: GrupoMesaResumen[];

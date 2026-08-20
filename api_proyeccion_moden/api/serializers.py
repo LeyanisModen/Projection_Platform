@@ -538,6 +538,7 @@ class GrupoMesasSerializer(serializers.ModelSerializer):
         fields = [
             "id", "nombre", "usuario",
             "proyecto_actual", "proyectos_cola",
+            "estrategia_cola_superior",
             "activa", "created_at", "mesas",
         ]
         read_only_fields = ["created_at", "mesas", "proyectos_cola"]

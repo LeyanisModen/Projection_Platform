@@ -52,6 +52,8 @@ from api.queue_sync import (
     module_reorderability_map,
     reconcile_module_queue_after_bastidor_move,
     reconcile_superior_queue_for_group,
+    reconcile_superior_queue_if_adaptive,
+    register_superior_demand_for_mesa,
     sync_module_phases,
     sync_new_module,
 )
@@ -3189,8 +3191,12 @@ class ModuloViewSet(viewsets.ModelViewSet):
 
         if Fase.INFERIOR in fases:
             modulo.inferior_hecho = False
+            modulo.superior_needed_at = None
         if Fase.SUPERIOR in fases:
             modulo.superior_hecho = False
+            modulo.superior_needed_at = (
+                timezone.now() if modulo.inferior_hecho else None
+            )
 
         repeated_name = _module_repeat_name(modulo.nombre)
         name_changed = repeated_name != modulo.nombre
@@ -3212,6 +3218,7 @@ class ModuloViewSet(viewsets.ModelViewSet):
             'cerrado_by',
             'estado',
             'completado_at',
+            'superior_needed_at',
         ]
         if name_changed:
             update_fields.append('nombre')
@@ -3249,8 +3256,15 @@ class ModuloViewSet(viewsets.ModelViewSet):
     def _completar_fases(modulo, fases, user):
         if Fase.INFERIOR in fases:
             modulo.inferior_hecho = True
+            if (
+                Fase.SUPERIOR not in fases
+                and not modulo.superior_hecho
+                and modulo.superior_needed_at is None
+            ):
+                modulo.superior_needed_at = timezone.now()
         if Fase.SUPERIOR in fases:
             modulo.superior_hecho = True
+            modulo.superior_needed_at = None
         modulo.actualizar_estado()
 
         now = timezone.now()
@@ -3258,12 +3272,19 @@ class ModuloViewSet(viewsets.ModelViewSet):
             MesaQueueItem.objects.filter(modulo=modulo, fase__in=fases)
             .exclude(status=MesaQueueStatus.HECHO)
         )
+        affected_group_ids = set(
+            pending_items.exclude(mesa__grupo_id=None)
+            .values_list('mesa__grupo_id', flat=True)
+        )
         for item in pending_items:
             item.status = MesaQueueStatus.HECHO
             if item.done_at is None:
                 item.done_at = now
             item.done_by = user
             item.save(update_fields=['status', 'done_at', 'done_by'])
+
+        for group in GrupoMesas.objects.filter(id__in=affected_group_ids):
+            reconcile_superior_queue_if_adaptive(group)
 
     @action(detail=True, methods=['get'])
     def imagenes(self, request, pk=None):
@@ -3531,6 +3552,7 @@ class MesaViewSet(viewsets.ModelViewSet):
             return Response({'detail': 'Index must be an integer'}, status=400)
 
         mesa.save(update_fields=['current_image_index', 'ultima_actualizacion'])
+        register_superior_demand_for_mesa(mesa)
         return Response({'status': 'ok', 'index': mesa.current_image_index})
 
 
@@ -3576,7 +3598,11 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         usuario = serializer.validated_data.get('usuario')
         if not _is_admin(self.request.user) and usuario and usuario.id != self.request.user.id:
             raise PermissionDenied('No puedes mover grupos a otra ferralla')
-        serializer.save()
+        previous_strategy = serializer.instance.estrategia_cola_superior
+        with transaction.atomic():
+            group = serializer.save()
+            if group.estrategia_cola_superior != previous_strategy:
+                reconcile_superior_queue_for_group(group)
 
     def perform_destroy(self, instance):
         # Evita dejar mesas huerfanas cuando se elimina un grupo operativo.
@@ -5423,6 +5449,7 @@ class DeviceViewSet(viewsets.ViewSet):
             except (TypeError, ValueError):
                 return Response({'detail': 'Index must be an integer'}, status=400)
             mesa.save(update_fields=['current_image_index', 'ultima_actualizacion'])
+            register_superior_demand_for_mesa(mesa)
             return Response({'status': 'ok', 'index': mesa.current_image_index})
         return Response({'detail': 'Index required'}, status=400)
 
@@ -5542,6 +5569,7 @@ class DeviceViewSet(viewsets.ViewSet):
             mesa.imagen_actual = None
             mesa.current_image_index = 0
         mesa.save(update_fields=['imagen_actual', 'current_image_index'])
+        reconcile_superior_queue_if_adaptive(mesa.grupo)
 
         return Response({'status': 'ok'})
 
@@ -5941,21 +5969,9 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
         phase boolean (inferior_hecho / superior_hecho) so the module
         eventually transitions to COMPLETADO / CERRADO.
         """
-        from django.utils import timezone
         item = self.get_object()
-        item.status = MesaQueueStatus.HECHO
-        if item.done_at is None:
-            item.done_at = timezone.now()
-        item.done_by = request.user if request.user.is_authenticated else None
-        item.save(update_fields=['status', 'done_at', 'done_by'])
-
-        modulo = item.modulo
-        if modulo is not None:
-            if item.fase == 'INFERIOR':
-                modulo.inferior_hecho = True
-            elif item.fase == 'SUPERIOR':
-                modulo.superior_hecho = True
-            modulo.actualizar_estado()
+        item.marcar_hecho(user=request.user)
+        reconcile_superior_queue_if_adaptive(item.mesa.grupo)
 
         serializer = self.get_serializer(item)
         return Response(serializer.data)
@@ -6057,6 +6073,8 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
                 mesa.imagen_actual = None
                 mesa.current_image_index = 0
             mesa.save(update_fields=['imagen_actual', 'current_image_index'])
+
+        reconcile_superior_queue_if_adaptive(mesa.grupo)
 
         serializer = self.get_serializer(item)
         return Response(serializer.data)

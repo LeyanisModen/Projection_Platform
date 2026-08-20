@@ -1,7 +1,9 @@
 from django.db import transaction
 from django.db.models import Count, Max, Q
+from django.utils import timezone
 
 from api.models import (
+    EstrategiaColaSuperior,
     Fase,
     GrupoMesas,
     GrupoMesasProyecto,
@@ -9,6 +11,7 @@ from api.models import (
     MesaQueueItem,
     MesaQueueStatus,
     MesaTipo,
+    Modulo,
     ModuloEstado,
 )
 
@@ -586,15 +589,144 @@ def _backfill_missing_superior_items(group, inferior_items, superior_items):
     return superior_items
 
 
+def initialize_superior_demands_for_group(group):
+    """Recover real SUP demand for work that was already active or completed.
+
+    This is primarily used when adaptive ordering is enabled on a group that
+    was already producing. Normal operation records the timestamp as soon as
+    INF passes its setup images or finishes.
+    """
+    with transaction.atomic():
+        pending_superior_module_ids = set(
+            MesaQueueItem.objects.filter(
+                mesa__grupo=group,
+                fase=Fase.SUPERIOR,
+                status__in=ACTIVE_QUEUE_STATUSES,
+                modulo__superior_hecho=False,
+                modulo__superior_needed_at__isnull=True,
+            ).values_list("modulo_id", flat=True)
+        )
+        if not pending_superior_module_ids:
+            return 0
+
+        modules = list(
+            Modulo.objects.select_for_update().filter(
+                id__in=pending_superior_module_ids,
+                superior_hecho=False,
+                superior_needed_at__isnull=True,
+            )
+        )
+        if not modules:
+            return 0
+
+        active_inferior = {
+            item.modulo_id: item
+            for item in (
+                MesaQueueItem.objects.select_related("mesa")
+                .filter(
+                    mesa__grupo=group,
+                    mesa__tipo=MesaTipo.INFERIOR,
+                    fase=Fase.INFERIOR,
+                    status=MesaQueueStatus.MOSTRANDO,
+                    modulo_id__in=pending_superior_module_ids,
+                )
+                .order_by("mesa__indice", "position", "id")
+            )
+        }
+        inferior_done_at = dict(
+            MesaQueueItem.objects.filter(
+                mesa__grupo=group,
+                fase=Fase.INFERIOR,
+                status=MesaQueueStatus.HECHO,
+                done_at__isnull=False,
+                modulo_id__in=pending_superior_module_ids,
+            )
+            .values("modulo_id")
+            .annotate(last_done_at=Max("done_at"))
+            .values_list("modulo_id", "last_done_at")
+        )
+
+        now = timezone.now()
+        changed = []
+        for modulo in modules:
+            active_item = active_inferior.get(modulo.id)
+            if (
+                active_item
+                and active_item.mesa.current_image_index
+                > EARLY_IMAGE_INDEX_LIMIT
+            ):
+                modulo.superior_needed_at = (
+                    active_item.mesa.ultima_actualizacion or now
+                )
+            elif modulo.inferior_hecho:
+                modulo.superior_needed_at = (
+                    inferior_done_at.get(modulo.id) or now
+                )
+            else:
+                continue
+            changed.append(modulo)
+
+        if changed:
+            Modulo.objects.bulk_update(changed, ["superior_needed_at"])
+        return len(changed)
+
+
+def register_superior_demand_for_mesa(mesa, needed_at=None):
+    """Record that the INF item on screen now requires its SUP counterpart."""
+    if (
+        mesa.tipo != MesaTipo.INFERIOR
+        or mesa.current_image_index <= EARLY_IMAGE_INDEX_LIMIT
+    ):
+        return False
+
+    current_item = (
+        MesaQueueItem.objects.filter(
+            mesa=mesa,
+            fase=Fase.INFERIOR,
+            status=MesaQueueStatus.MOSTRANDO,
+        )
+        .only("modulo_id")
+        .first()
+    )
+    if not current_item:
+        return False
+
+    changed = Modulo.objects.filter(
+        id=current_item.modulo_id,
+        superior_hecho=False,
+        superior_needed_at__isnull=True,
+    ).update(superior_needed_at=needed_at or timezone.now())
+    if changed and mesa.grupo_id:
+        group = GrupoMesas.objects.get(id=mesa.grupo_id)
+        if group.estrategia_cola_superior == EstrategiaColaSuperior.ADAPTATIVA:
+            reconcile_superior_queue_for_group(group)
+    return bool(changed)
+
+
+def reconcile_superior_queue_if_adaptive(group):
+    """Reconcile a group only when its explicit adaptive policy is active."""
+    if not group:
+        return []
+    if group.estrategia_cola_superior != EstrategiaColaSuperior.ADAPTATIVA:
+        return []
+    return reconcile_superior_queue_for_group(group)
+
+
 def reconcile_superior_queue_for_group(group):
-    """Backfill and interleave SUP work following the live inferior queues.
+    """Backfill and order SUP work according to the group's selected policy.
 
     Superior work past the initial images remains anchored so an in-progress
-    sequence is never interrupted. Initial and queued items keep their mesa
-    assignment, but are ordered by a round-robin merge of the inferior mesas.
-    Superior-only repetitions stay at the tail in their existing relative
-    order.
+    sequence is never interrupted. Planned groups use the round-robin merge of
+    inferior mesas. Adaptive groups first serve modules already requested by
+    real INF progress; untouched and superior-only work retains the theoretical
+    order afterwards.
     """
+    adaptive = (
+        group.estrategia_cola_superior == EstrategiaColaSuperior.ADAPTATIVA
+    )
+    if adaptive:
+        initialize_superior_demands_for_group(group)
+
     with transaction.atomic():
         inferior_items = list(
             MesaQueueItem.objects.select_for_update()
@@ -622,7 +754,7 @@ def reconcile_superior_queue_for_group(group):
             inferior_items,
             superior_items,
         )
-        if not inferior_items or not superior_items:
+        if not superior_items or (not inferior_items and not adaptive):
             return superior_items
 
         inferior_by_mesa = {}
@@ -642,7 +774,29 @@ def reconcile_superior_queue_for_group(group):
             and item.mesa.current_image_index > EARLY_IMAGE_INDEX_LIMIT
         ]
         priority_source_id = None
-        if not anchored:
+        priority_items = []
+        if adaptive:
+            priority_items = sorted(
+                (
+                    item for item in superior_items
+                    if item not in anchored
+                    and item.modulo.superior_needed_at is not None
+                ),
+                key=lambda item: (
+                    item.modulo.superior_needed_at,
+                    item.assigned_at,
+                    item.id,
+                ),
+            )
+            if not anchored and not priority_items:
+                # With no real demand yet, preserve the current initial item.
+                # This makes adaptive mode indistinguishable from the planned
+                # sequence while both inferior mesas still advance together.
+                anchored = [
+                    item for item in superior_items
+                    if item.status == MesaQueueStatus.MOSTRANDO
+                ]
+        elif not anchored:
             progress_by_mesa = {
                 mesa_id: items[0].mesa.current_image_index
                 for mesa_id, items in inferior_by_mesa.items()
@@ -668,6 +822,7 @@ def reconcile_superior_queue_for_group(group):
                     if item.status == MesaQueueStatus.MOSTRANDO
                 ]
         anchored_module_ids = {item.modulo_id for item in anchored}
+        priority_module_ids = {item.modulo_id for item in priority_items}
 
         queues = []
         for mesa_id in mesa_ids:
@@ -676,6 +831,7 @@ def reconcile_superior_queue_for_group(group):
                 for item in inferior_by_mesa[mesa_id]
                 if item.modulo_id in superior_by_module
                 and item.modulo_id not in anchored_module_ids
+                and item.modulo_id not in priority_module_ids
             ])
 
         # Continue after the inferior mesa that supplied genuinely started SUP
@@ -683,20 +839,21 @@ def reconcile_superior_queue_for_group(group):
         # is clearly further along; otherwise preserve the existing head so a
         # fresh plan or module import does not churn an otherwise valid queue.
         cursor = 0
-        if anchored:
-            source_id = inferior_source_by_module.get(anchored[-1].modulo_id)
-            if source_id in mesa_index:
-                cursor = (mesa_index[source_id] + 1) % len(queues)
-        elif priority_source_id in mesa_index:
-            cursor = mesa_index[priority_source_id]
-        else:
-            source_id = inferior_source_by_module.get(
-                superior_items[0].modulo_id
-            )
-            if source_id in mesa_index:
-                cursor = mesa_index[source_id]
+        if queues:
+            if anchored:
+                source_id = inferior_source_by_module.get(anchored[-1].modulo_id)
+                if source_id in mesa_index:
+                    cursor = (mesa_index[source_id] + 1) % len(queues)
+            elif priority_source_id in mesa_index:
+                cursor = mesa_index[priority_source_id]
+            else:
+                source_id = inferior_source_by_module.get(
+                    superior_items[0].modulo_id
+                )
+                if source_id in mesa_index:
+                    cursor = mesa_index[source_id]
 
-        desired = []
+        desired = list(priority_items)
         while any(queues):
             for _ in range(len(queues)):
                 if queues[cursor]:
