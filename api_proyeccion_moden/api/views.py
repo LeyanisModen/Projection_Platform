@@ -3194,9 +3194,9 @@ class ModuloViewSet(viewsets.ModelViewSet):
             modulo.superior_needed_at = None
         if Fase.SUPERIOR in fases:
             modulo.superior_hecho = False
-            modulo.superior_needed_at = (
-                timezone.now() if modulo.inferior_hecho else None
-            )
+            # A manual SUP reset means the component is physically waiting
+            # for rework, regardless of the persisted INF phase state.
+            modulo.superior_needed_at = timezone.now()
 
         repeated_name = _module_repeat_name(modulo.nombre)
         name_changed = repeated_name != modulo.nombre

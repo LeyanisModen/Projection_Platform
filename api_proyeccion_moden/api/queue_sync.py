@@ -776,6 +776,17 @@ def reconcile_superior_queue_for_group(group):
         priority_source_id = None
         priority_items = []
         if adaptive:
+            if not anchored:
+                # Once a genuinely requested SUP item has been selected for
+                # display, keep it at the head even during its setup images.
+                # This is especially important for supervisor-triggered
+                # rework, which _insert_phase intentionally preempts while
+                # the previous item has not really started.
+                anchored = [
+                    item for item in superior_items
+                    if item.status == MesaQueueStatus.MOSTRANDO
+                    and item.modulo.superior_needed_at is not None
+                ]
             priority_items = sorted(
                 (
                     item for item in superior_items

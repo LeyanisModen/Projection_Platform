@@ -4507,6 +4507,60 @@ class PlanningFoundationTests(APITestCase):
         self.assertTrue(self.modulo.superior_hecho)
         self.assertIsNone(self.modulo.superior_needed_at)
 
+    def test_reiniciar_superior_pendiente_prevalece_sobre_demanda_anterior(self):
+        grupo = self._crear_grupo("Grupo SUP Reinicio Adaptativo")
+        grupo.estrategia_cola_superior = "ADAPTATIVA"
+        grupo.save(update_fields=["estrategia_cola_superior"])
+        mesa_sup = grupo.mesas.get(tipo="SUPERIOR", indice=3)
+
+        actual = Modulo.objects.create(
+            nombre="F14",
+            proyecto=self.project,
+            superior_needed_at=timezone.now() - timedelta(minutes=10),
+        )
+        MesaQueueItem.objects.create(
+            mesa=mesa_sup,
+            modulo=actual,
+            fase="SUPERIOR",
+            position=0,
+            status="MOSTRANDO",
+        )
+        MesaQueueItem.objects.create(
+            mesa=mesa_sup,
+            modulo=self.modulo,
+            fase="SUPERIOR",
+            position=1,
+            status="EN_COLA",
+        )
+        mesa_sup.current_image_index = 0
+        mesa_sup.save(update_fields=["current_image_index"])
+
+        response = self.client.post(
+            f"/api/modulos/{self.modulo.id}/reiniciar-fase/",
+            {"fase": "SUPERIOR"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.modulo.refresh_from_db()
+        self.assertFalse(self.modulo.inferior_hecho)
+        self.assertFalse(self.modulo.superior_hecho)
+        self.assertIsNotNone(self.modulo.superior_needed_at)
+        superior = list(
+            mesa_sup.queue_items.filter(
+                fase="SUPERIOR",
+                status__in=["MOSTRANDO", "EN_COLA"],
+            )
+            .order_by("position")
+            .values_list("modulo__nombre", "status")
+        )
+        self.assertEqual(superior, [
+            ("M-01-R", "MOSTRANDO"),
+            ("F14", "EN_COLA"),
+        ])
+        mesa_sup.refresh_from_db()
+        self.assertEqual(mesa_sup.current_image_index, 0)
+
     def test_reconciliar_superior_recupera_fases_omitidas(self):
         from api.queue_sync import reconcile_superior_queue_for_group
 
