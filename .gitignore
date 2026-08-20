@@ -41,6 +41,7 @@ docker-compose.yml
 # --- Local-only (per-project DBs, personal cheatsheets) ---
 docs/*.db
 docs/usuarios_activos.txt
+/temp/
 
 # --- Build artifacts (regenerados por scripts/, no commitear) ---
 # PDFs del runbook se generan con scripts/build-pendrive.ps1 antes
