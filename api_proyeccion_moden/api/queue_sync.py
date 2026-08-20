@@ -837,13 +837,24 @@ def reconcile_superior_queue_for_group(group):
 
         queues = []
         for mesa_id in mesa_ids:
-            queues.append([
-                superior_by_module[item.modulo_id]
-                for item in inferior_by_mesa[mesa_id]
-                if item.modulo_id in superior_by_module
-                and item.modulo_id not in anchored_module_ids
-                and item.modulo_id not in priority_module_ids
-            ])
+            queue = []
+            for inferior_item in inferior_by_mesa[mesa_id]:
+                if (
+                    inferior_item.modulo_id in anchored_module_ids
+                    or inferior_item.modulo_id in priority_module_ids
+                ):
+                    continue
+
+                superior_item = superior_by_module.get(inferior_item.modulo_id)
+                if superior_item is not None:
+                    queue.append(superior_item)
+                elif adaptive and inferior_item.modulo.superior_hecho:
+                    # A finished SUP whose INF is still active has already
+                    # consumed this inferior mesa's round-robin turn. Keep a
+                    # virtual slot so accumulated SUP inventory naturally
+                    # shifts capacity towards the other inferior mesas.
+                    queue.append(None)
+            queues.append(queue)
 
         # Continue after the inferior mesa that supplied genuinely started SUP
         # work. An initial SUP item is replaceable only when one inferior mesa
@@ -868,7 +879,9 @@ def reconcile_superior_queue_for_group(group):
         while any(queues):
             for _ in range(len(queues)):
                 if queues[cursor]:
-                    desired.append(queues[cursor].pop(0))
+                    superior_item = queues[cursor].pop(0)
+                    if superior_item is not None:
+                        desired.append(superior_item)
                     cursor = (cursor + 1) % len(queues)
                     break
                 cursor = (cursor + 1) % len(queues)

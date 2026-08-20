@@ -4292,6 +4292,80 @@ class PlanningFoundationTests(APITestCase):
             ("B2", "EN_COLA"),
         ])
 
+    def test_superior_adaptativo_cuenta_sup_terminados_como_turnos_consumidos(self):
+        from api.queue_sync import reconcile_superior_queue_for_group
+
+        grupo = self._crear_grupo("Grupo SUP con inventario")
+        grupo.estrategia_cola_superior = "ADAPTATIVA"
+        grupo.save(update_fields=["estrategia_cola_superior"])
+        mesa_inf_1 = grupo.mesas.get(tipo="INFERIOR", indice=1)
+        mesa_inf_2 = grupo.mesas.get(tipo="INFERIOR", indice=2)
+        mesa_sup = grupo.mesas.get(tipo="SUPERIOR", indice=3)
+
+        superiores_listos = {"F04-R", "F03", "F02"}
+        modulos = {
+            nombre: Modulo.objects.create(
+                nombre=nombre,
+                proyecto=self.project,
+                superior_hecho=nombre in superiores_listos,
+                estado=(
+                    ModuloEstado.EN_PROGRESO
+                    if nombre in superiores_listos
+                    else ModuloEstado.PENDIENTE
+                ),
+            )
+            for nombre in [
+                "F11", "F10", "H04", "H03",
+                "F04-R", "F03", "F02", "F09",
+            ]
+        }
+        for position, nombre in enumerate(["F11", "F10", "H04", "H03"]):
+            MesaQueueItem.objects.create(
+                mesa=mesa_inf_1,
+                modulo=modulos[nombre],
+                fase="INFERIOR",
+                position=position,
+                status="MOSTRANDO" if position == 0 else "EN_COLA",
+            )
+        for position, nombre in enumerate(["F04-R", "F03", "F02", "F09"]):
+            MesaQueueItem.objects.create(
+                mesa=mesa_inf_2,
+                modulo=modulos[nombre],
+                fase="INFERIOR",
+                position=position,
+                status="MOSTRANDO" if position == 0 else "EN_COLA",
+            )
+
+        # Reproduce la cola visible actual, que omite los SUP ya fabricados.
+        for position, nombre in enumerate(["F11", "F09", "F10", "H04", "H03"]):
+            MesaQueueItem.objects.create(
+                mesa=mesa_sup,
+                modulo=modulos[nombre],
+                fase="SUPERIOR",
+                position=position,
+                status="MOSTRANDO" if position == 0 else "EN_COLA",
+            )
+        mesa_sup.current_image_index = 7
+        mesa_sup.save(update_fields=["current_image_index"])
+
+        reconcile_superior_queue_for_group(grupo)
+
+        superior = list(
+            mesa_sup.queue_items.filter(
+                fase="SUPERIOR",
+                status__in=["MOSTRANDO", "EN_COLA"],
+            )
+            .order_by("position")
+            .values_list("modulo__nombre", "status")
+        )
+        self.assertEqual(superior, [
+            ("F11", "MOSTRANDO"),
+            ("F10", "EN_COLA"),
+            ("H04", "EN_COLA"),
+            ("H03", "EN_COLA"),
+            ("F09", "EN_COLA"),
+        ])
+
     def test_activar_adaptativo_recupera_inferior_corto_ya_terminado(self):
         grupo = self._crear_grupo("Grupo SUP Fase Corta")
         mesa_inf = grupo.mesas.get(tipo="INFERIOR", indice=1)
