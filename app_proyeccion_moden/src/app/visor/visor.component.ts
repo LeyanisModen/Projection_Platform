@@ -55,7 +55,7 @@ export class VisorComponent implements OnInit, OnDestroy {
   // AnyDesk whether the kiosk is actually running the latest bundle
   // or a cached one. F12 is blocked in kiosk; this is the simplest
   // version probe we can offer the operator on screen.
-  readonly buildTag = '2026-06-30_visor-beds';
+  readonly buildTag = '2026-08-24_projection-settle';
   // Surfaces what's happening inside recoverTokenOrPair on the
   // LOADING screen so we can diagnose from AnyDesk without DevTools.
   loadingMessage: string = 'Conectando…';
@@ -80,6 +80,12 @@ export class VisorComponent implements OnInit, OnDestroy {
   private captureMode: 'foto' | 'check' = 'foto';
   private captureTargetIndex: number | null = null;
   private captureTargetItemId: number | string | null = null;
+  private captureProjectionUrl: string | null = null;
+  private lastRenderedProjectionUrl: string | null = null;
+  private captureStartTimer: any = null;
+  private captureLoadTimeoutTimer: any = null;
+  private captureScheduleGeneration = 0;
+  private captureStartScheduled = false;
   captureStatus: 'idle' | 'capturing' | 'uploading' | 'done' | 'error' = 'idle';
   captureErrorMessage: string | null = null;
 
@@ -123,6 +129,8 @@ export class VisorComponent implements OnInit, OnDestroy {
   // service ~3 s to recover before we surface the failure.
   private static readonly CAPTURE_MAX_ATTEMPTS = 3;
   private static readonly CAPTURE_RETRY_MS = 1000;
+  private static readonly PROJECTOR_SETTLE_AFTER_RENDER_MS = 1000;
+  private static readonly PROJECTION_LOAD_TIMEOUT_MS = 12000;
   // True only from the second capture attempt onwards -- used to
   // decide whether to project the 'waiting for camera' slide. On the
   // first attempt we keep the original _check.jpg blueprint on screen
@@ -411,6 +419,7 @@ export class VisorComponent implements OnInit, OnDestroy {
     this.clearAuthRecoveryTimer();
     this.clearSlideLockIndicator();
     this.clearBrowserCloseStatus();
+    this.clearCaptureSchedule();
     if (this.eventSource) this.eventSource.close();
   }
 
@@ -1132,6 +1141,19 @@ export class VisorComponent implements OnInit, OnDestroy {
   // =========================================================================
   // PHOTO CAPTURE
   // =========================================================================
+  onProjectedImageReady(imageUrl: string): void {
+    this.lastRenderedProjectionUrl = imageUrl;
+    if (!this.capturingPhoto || imageUrl !== this.captureProjectionUrl) return;
+    this.scheduleCaptureAfterProjectionReady();
+  }
+
+  onProjectedImageFailed(imageUrl: string): void {
+    if (!this.capturingPhoto || imageUrl !== this.captureProjectionUrl) return;
+    this.failCaptureProjection(
+      'No se pudo cargar la imagen de comprobaciÃ³n. Puedes revisar la conexiÃ³n y volver a intentarlo.'
+    );
+  }
+
   private checkPhotoTrigger(): void {
     if (this.isSupervisor || this.capturingPhoto) return;
     if (this.currentIndex < 0 || !this.images.length) return;
@@ -1163,19 +1185,92 @@ export class VisorComponent implements OnInit, OnDestroy {
 
   triggerPhotoCapture(mode: 'foto' | 'check' = 'foto'): void {
     if (this.capturingPhoto || !this.activeItem) return;
+    this.clearCaptureSchedule();
     this.capturingPhoto = true;
     this.captureMode = mode;
     this.captureTargetIndex = this.currentIndex;
     this.captureTargetItemId = this.activeItem?.id ?? null;
+    this.captureProjectionUrl = this.projectedImage;
     this.captureStatus = 'capturing';
     this.captureErrorMessage = null;
     this.cdr.detectChanges();
 
-    // Wait ~500 ms for the projector to actually show the current
-    // slide (the operator may have just navigated here) before asking
-    // the camera to capture, otherwise we risk photographing the
-    // previous slide.
-    setTimeout(() => this.attemptCapture(1), 500);
+    if (!this.captureProjectionUrl) {
+      this.failCaptureProjection('No hay una imagen preparada para capturar.');
+      return;
+    }
+
+    this.captureLoadTimeoutTimer = setTimeout(
+      () => this.failCaptureProjection(
+        'La imagen de comprobaciÃ³n no terminÃ³ de cargar. Puedes revisar la conexiÃ³n y volver a intentarlo.'
+      ),
+      VisorComponent.PROJECTION_LOAD_TIMEOUT_MS,
+    );
+
+    // Cached images may already have emitted load before the capture was
+    // armed. Otherwise onProjectedImageReady will continue the sequence.
+    if (this.lastRenderedProjectionUrl === this.captureProjectionUrl) {
+      this.scheduleCaptureAfterProjectionReady();
+    }
+  }
+
+  private scheduleCaptureAfterProjectionReady(): void {
+    if (this.captureStartScheduled || !this.capturingPhoto) return;
+    this.captureStartScheduled = true;
+    if (this.captureLoadTimeoutTimer) {
+      clearTimeout(this.captureLoadTimeoutTimer);
+      this.captureLoadTimeoutTimer = null;
+    }
+
+    const generation = this.captureScheduleGeneration;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (generation !== this.captureScheduleGeneration || !this.capturingPhoto) return;
+      this.captureStartTimer = setTimeout(() => {
+        this.captureStartTimer = null;
+        this.captureStartScheduled = false;
+        if (generation !== this.captureScheduleGeneration || !this.capturingPhoto) return;
+        if (!this.isCurrentCaptureTarget(this.captureTargetIndex, this.captureTargetItemId)
+            || this.projectedImage !== this.captureProjectionUrl) {
+          this.cancelStaleCapture();
+          return;
+        }
+        this.attemptCapture(1);
+      }, VisorComponent.PROJECTOR_SETTLE_AFTER_RENDER_MS);
+    }));
+  }
+
+  private failCaptureProjection(message: string): void {
+    if (!this.capturingPhoto) return;
+    const mode = this.captureMode;
+    this.clearCaptureSchedule();
+    this.capturingPhoto = false;
+    this.cameraRetrying = false;
+    this.captureStatus = 'error';
+    this.captureErrorMessage = message;
+    if (mode === 'check') this.applyCheckResult(false);
+    this.cdr.detectChanges();
+  }
+
+  private cancelStaleCapture(): void {
+    this.clearCaptureSchedule();
+    this.capturingPhoto = false;
+    this.cameraRetrying = false;
+    this.captureStatus = 'idle';
+    this.captureErrorMessage = null;
+    this.cdr.detectChanges();
+  }
+
+  private clearCaptureSchedule(): void {
+    this.captureScheduleGeneration += 1;
+    this.captureStartScheduled = false;
+    if (this.captureStartTimer) {
+      clearTimeout(this.captureStartTimer);
+      this.captureStartTimer = null;
+    }
+    if (this.captureLoadTimeoutTimer) {
+      clearTimeout(this.captureLoadTimeoutTimer);
+      this.captureLoadTimeoutTimer = null;
+    }
   }
 
   private attemptCapture(attempt: number): void {

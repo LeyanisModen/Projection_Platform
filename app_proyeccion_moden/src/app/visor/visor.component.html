@@ -53,7 +53,8 @@
         <!-- Simplified Mapper for Debug -->
         <app-mapper [imageUrl]="projectedImage" [isCalibrationActive]="isCalibrationActive"
             [mesaId]="mesaState?.id ?? null" [calibrationJson]="mesaState?.calibration_json ?? null"
-            [allowInteraction]="isSupervisor">
+            [allowInteraction]="isSupervisor" (imageReady)="onProjectedImageReady($event)"
+            (imageFailed)="onProjectedImageFailed($event)">
         </app-mapper>
         }
 
