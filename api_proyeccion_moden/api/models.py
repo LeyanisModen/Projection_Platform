@@ -546,7 +546,6 @@ class FotoFabricacion(models.Model):
     class Meta:
         db_table = 'api_foto_fabricacion'
         ordering = ['-capturada_at']
-        unique_together = [('modulo', 'fase', 'paso')]
         indexes = [
             models.Index(fields=['modulo', 'fase']),
             models.Index(fields=['modulo', 'fase', 'paso']),

@@ -7,6 +7,7 @@ import re
 import sqlite3
 import tempfile
 import unicodedata
+import uuid
 
 from django.contrib.auth.models import User
 from django.utils.text import get_valid_filename
@@ -5587,8 +5588,9 @@ class DeviceViewSet(viewsets.ViewSet):
         - 'mesa_id': int (required when using user Token auth)
         - 'check': 'true' to validate colors against modulo.codigos_color
 
-        A (modulo, fase, paso) has at most one photo: re-capturing the
-        same step overwrites the previous file and updates the row.
+        Every capture is stored as an independent historical event. Repeating
+        a step, moving backwards, or restarting a phase never overwrites the
+        evidence captured previously.
         """
         import os
         from django.conf import settings as django_settings
@@ -5649,33 +5651,22 @@ class DeviceViewSet(viewsets.ViewSet):
         full_dir = os.path.join(django_settings.MEDIA_ROOT, media_path)
         os.makedirs(full_dir, exist_ok=True)
 
-        # Deterministic filename: the file is overwritten in-place on
-        # re-capture so each (modulo, fase, paso) has exactly one file.
         fase_pref = 'INF' if fase == Fase.INFERIOR else 'SUP'
         ext = os.path.splitext(foto_file.name)[1].lower() or '.jpg'
         safe_modulo = ''.join(
             c if c.isalnum() or c in '-_' else '_'
             for c in (modulo.nombre or '')
         ) or f'modulo{modulo.id}'
-        filename = f"{safe_modulo}_{fase_pref}_paso{int(paso)}{ext}"
+        capture_timestamp = timezone.localtime(timezone.now()).strftime(
+            '%Y%m%d_%H%M%S_%f'
+        )
+        capture_suffix = uuid.uuid4().hex[:8]
+        filename = (
+            f"{safe_modulo}_{fase_pref}_paso{int(paso)}_"
+            f"{capture_timestamp}_{capture_suffix}{ext}"
+        )
         file_path = os.path.join(full_dir, filename)
         url = f'/media/{media_path}/{filename}'
-
-        # Remove the old file if the previous row pointed somewhere else
-        # (e.g. legacy timestamped names before this change).
-        previous = FotoFabricacion.objects.filter(
-            modulo=modulo, fase=fase, paso=int(paso)
-        ).first()
-        if previous and previous.url and previous.url != url:
-            prev_rel = previous.url.lstrip('/')
-            if prev_rel.startswith('media/'):
-                prev_rel = prev_rel[len('media/'):]
-            prev_abs = os.path.join(django_settings.MEDIA_ROOT, prev_rel)
-            try:
-                if os.path.isfile(prev_abs):
-                    os.remove(prev_abs)
-            except OSError:
-                pass
 
         with open(file_path, 'wb') as destination:
             destination.write(foto_bytes)
@@ -5717,7 +5708,6 @@ class DeviceViewSet(viewsets.ViewSet):
                     if debug_mode:
                         try:
                             import base64
-                            from django.utils import timezone
                             annotated_bytes = annotate_image(
                                 foto_bytes,
                                 result.get('detections', []),
@@ -5759,20 +5749,27 @@ class DeviceViewSet(viewsets.ViewSet):
                     check_result = False
                     check_detail = {'error': str(exc)}
 
-        foto, created = FotoFabricacion.objects.update_or_create(
-            modulo=modulo,
-            fase=fase,
-            paso=int(paso),
-            defaults={
-                'mesa': mesa,
-                'imagen_referencia': imagen_ref,
-                'url': url,
-                'filename_original': foto_file.name,
-                'file_size': len(foto_bytes),
-                'check_result': check_result,
-                'check_detail': check_detail,
-            },
-        )
+        try:
+            foto = FotoFabricacion.objects.create(
+                modulo=modulo,
+                fase=fase,
+                paso=int(paso),
+                mesa=mesa,
+                imagen_referencia=imagen_ref,
+                url=url,
+                filename_original=foto_file.name,
+                file_size=len(foto_bytes),
+                check_result=check_result,
+                check_detail=check_detail,
+            )
+        except Exception:
+            # The file is written first so a DB failure must not leave an
+            # unreferenced capture behind on the Railway volume.
+            try:
+                os.remove(file_path)
+            except OSError:
+                pass
+            raise
 
         # Mirror the result on the mesa so both the player and the
         # supervisor visor can react to it via the polling state.
@@ -5789,7 +5786,7 @@ class DeviceViewSet(viewsets.ViewSet):
         if annotated_b64:
             data['annotated_jpeg_b64'] = annotated_b64
             data['annotated_filename'] = annotated_filename
-        return Response(data, status=201 if created else 200)
+        return Response(data, status=201)
 
     @action(detail=False, methods=['post'])
     def notify_no_camera(self, request):

@@ -321,6 +321,75 @@ class PermissionAndDeviceAuthTests(APITestCase):
         )
         self.assertEqual(response.status_code, 200)
 
+    def test_repeated_step_captures_are_kept_as_independent_history(self):
+        modulo = Modulo.objects.create(nombre='A01', proyecto=self.project_a)
+
+        with tempfile.TemporaryDirectory() as media_root:
+            with override_settings(MEDIA_ROOT=media_root):
+                first = self.client.post(
+                    '/api/device/upload_foto/',
+                    {
+                        'foto': SimpleUploadedFile(
+                            'capture.jpg', b'first-capture', 'image/jpeg'
+                        ),
+                        'modulo_id': modulo.id,
+                        'fase': 'INFERIOR',
+                        'paso': 4,
+                    },
+                    format='multipart',
+                    HTTP_AUTHORIZATION=f'Bearer {self.device_token}',
+                )
+                second = self.client.post(
+                    '/api/device/upload_foto/',
+                    {
+                        'foto': SimpleUploadedFile(
+                            'capture.jpg', b'second-capture', 'image/jpeg'
+                        ),
+                        'modulo_id': modulo.id,
+                        'fase': 'INFERIOR',
+                        'paso': 4,
+                    },
+                    format='multipart',
+                    HTTP_AUTHORIZATION=f'Bearer {self.device_token}',
+                )
+
+                self.assertEqual(first.status_code, 201)
+                self.assertEqual(second.status_code, 201)
+                captures = list(
+                    FotoFabricacion.objects.filter(
+                        modulo=modulo,
+                        fase='INFERIOR',
+                        paso=4,
+                    ).order_by('capturada_at')
+                )
+                self.assertEqual(len(captures), 2)
+                self.assertNotEqual(captures[0].url, captures[1].url)
+
+                stored_contents = []
+                for capture in captures:
+                    relative_path = capture.url.removeprefix('/media/')
+                    stored_path = Path(media_root) / relative_path
+                    self.assertTrue(stored_path.exists())
+                    stored_contents.append(stored_path.read_bytes())
+
+                self.assertCountEqual(
+                    stored_contents,
+                    [b'first-capture', b'second-capture'],
+                )
+
+                self.client.credentials(
+                    HTTP_AUTHORIZATION=f'Token {self.user_a_token.key}'
+                )
+                gallery = self.client.get(
+                    f'/api/fotos/?modulo={modulo.id}'
+                )
+                self.assertEqual(gallery.status_code, 200)
+                self.assertEqual(len(gallery.data), 2)
+                self.assertEqual(
+                    {item['id'] for item in gallery.data},
+                    {capture.id for capture in captures},
+                )
+
     def test_device_capture_config_requires_token_and_returns_effective_values(self):
         response = self.client.get('/api/device/config/')
         self.assertEqual(response.status_code, 401)
