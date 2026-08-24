@@ -139,10 +139,10 @@ _ASPECT_RATIO_RANGES = ((0.2, 5.0),)
 _MORPH_KERNEL = np.ones((5, 5), np.uint8)
 _BLUR_KERNEL = (5, 5)
 
-# Documentation photos deliberately include extra space beyond the far edge
-# of the table so the rebars of finished modules remain visible. That upper
-# strip contains clothing, tools and machinery, but never valid ribbons.
-_DETECTION_ROI_TOP_RATIO = 0.22
+# The corrected camera angle now leaves the documentation margin below the
+# table. Keep that floor/projector strip out of colour detection while
+# retaining the whole upper part of the table, where valid ribbons can occur.
+_DETECTION_ROI_BOTTOM_RATIO = 0.27
 
 
 def _expected_color_names(codigos_color):
@@ -299,9 +299,10 @@ def detect_colors(image_bytes, codigos_color, debug=False):
 
     height, width = bgr.shape[:2]
     total_area = float(width * height)
-    roi_top_px = int(round(height * _DETECTION_ROI_TOP_RATIO))
+    roi_bottom_px = int(round(height * _DETECTION_ROI_BOTTOM_RATIO))
+    roi_cutoff_y = max(0, height - roi_bottom_px)
     roi_mask = np.zeros((height, width), dtype=np.uint8)
-    roi_mask[roi_top_px:, :] = 255
+    roi_mask[:roi_cutoff_y, :] = 255
 
     hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
     blurred = cv2.GaussianBlur(hsv, _BLUR_KERNEL, 0)
@@ -352,8 +353,9 @@ def detect_colors(image_bytes, codigos_color, debug=False):
         'missing': missing,
         'image_size': [width, height],
         'detection_roi': {
-            'top_ratio': _DETECTION_ROI_TOP_RATIO,
-            'top_px': roi_top_px,
+            'bottom_ratio': _DETECTION_ROI_BOTTOM_RATIO,
+            'bottom_px': roi_bottom_px,
+            'cutoff_y': roi_cutoff_y,
         },
         **base,
     }
@@ -398,19 +400,31 @@ def annotate_image(image_bytes, detections, jpeg_quality=85,
     line_thickness = max(2, int(round(min(w_img, h_img) / 700.0)))
 
     if detection_roi:
-        roi_top_px = int(detection_roi.get('top_px') or 0)
-        roi_top_px = max(0, min(h_img, roi_top_px))
-        if roi_top_px:
+        roi_bottom_px = int(detection_roi.get('bottom_px') or 0)
+        roi_bottom_px = max(0, min(h_img, roi_bottom_px))
+        roi_cutoff_y = int(
+            detection_roi.get('cutoff_y')
+            if detection_roi.get('cutoff_y') is not None
+            else h_img - roi_bottom_px
+        )
+        roi_cutoff_y = max(0, min(h_img, roi_cutoff_y))
+        if roi_bottom_px:
             overlay = bgr.copy()
-            cv2.rectangle(overlay, (0, 0), (w_img, roi_top_px), (20, 20, 20), -1)
+            cv2.rectangle(
+                overlay,
+                (0, roi_cutoff_y),
+                (w_img, h_img),
+                (20, 20, 20),
+                -1,
+            )
             bgr = cv2.addWeighted(overlay, 0.45, bgr, 0.55, 0)
             cv2.line(
-                bgr, (0, roi_top_px), (w_img, roi_top_px),
+                bgr, (0, roi_cutoff_y), (w_img, roi_cutoff_y),
                 (255, 200, 0), max(2, line_thickness),
             )
             cv2.putText(
                 bgr, 'AREA EXCLUIDA DE DETECCION',
-                (12, max(28, roi_top_px - 12)),
+                (12, min(h_img - 12, roi_cutoff_y + 36)),
                 cv2.FONT_HERSHEY_SIMPLEX, font_scale,
                 _TEXT_BGR, line_thickness, cv2.LINE_AA,
             )

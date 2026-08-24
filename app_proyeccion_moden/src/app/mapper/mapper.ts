@@ -30,6 +30,8 @@ export class Mapper implements OnChanges {
   @Input() isCalibrationActive: boolean = false;
   @Input() mesaId: number | null = null;
   @Input() allowInteraction: boolean = true;
+  @Output() imageReady = new EventEmitter<string>();
+  @Output() imageFailed = new EventEmitter<string>();
 
   // Variables para gestionar la lógica del setter de calibración
   private _calibrationJson: any = null;
@@ -714,6 +716,14 @@ export class Mapper implements OnChanges {
   changeImage(imageUrl: string) {
     this.correctedVideo.nativeElement.src = imageUrl;
   };
+
+  notifyImageReady(): void {
+    if (this.imageUrl) this.imageReady.emit(this.imageUrl);
+  }
+
+  notifyImageFailed(): void {
+    if (this.imageUrl) this.imageFailed.emit(this.imageUrl);
+  }
 
   toggleSourceCorrect() {
     if (this.correctingSource) {

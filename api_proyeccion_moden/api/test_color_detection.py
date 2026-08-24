@@ -21,10 +21,10 @@ class ColorDetectionRoiTests(unittest.TestCase):
             1200 / color_detection._REF_FRAME_AREA,
         )
 
-    def test_upper_strip_is_ignored_but_table_colour_is_detected(self):
+    def test_bottom_strip_is_ignored_but_upper_table_colour_is_detected(self):
         image = np.full((1000, 1000, 3), 255, dtype=np.uint8)
-        cv2.rectangle(image, (200, 50), (225, 90), (0, 0, 255), -1)
-        cv2.rectangle(image, (600, 500), (625, 540), (0, 255, 0), -1)
+        cv2.rectangle(image, (200, 50), (225, 90), (0, 255, 0), -1)
+        cv2.rectangle(image, (600, 850), (625, 890), (0, 0, 255), -1)
 
         result = color_detection.detect_colors(
             _encode_image(image), 'rg', debug=True
@@ -33,7 +33,8 @@ class ColorDetectionRoiTests(unittest.TestCase):
         self.assertEqual(result['cards_per_color']['red'], 0)
         self.assertGreaterEqual(result['cards_per_color']['green'], 1)
         self.assertEqual(result['missing'], {'red': 1})
-        self.assertEqual(result['detection_roi']['top_px'], 220)
+        self.assertEqual(result['detection_roi']['bottom_px'], 270)
+        self.assertEqual(result['detection_roi']['cutoff_y'], 730)
 
     def test_tiny_colour_mark_is_below_new_area_floor(self):
         image = np.full((1000, 1000, 3), 255, dtype=np.uint8)
@@ -61,8 +62,8 @@ class ColorDetectionRoiTests(unittest.TestCase):
         )
 
         self.assertEqual(decoded.shape[:2], (1000, 1000))
-        self.assertLess(int(decoded[50, 500].mean()), 200)
-        self.assertGreater(int(decoded[500, 500].mean()), 240)
+        self.assertGreater(int(decoded[100, 500].mean()), 240)
+        self.assertLess(int(decoded[900, 500].mean()), 200)
 
 
 if __name__ == '__main__':
