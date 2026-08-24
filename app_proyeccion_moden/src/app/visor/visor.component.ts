@@ -1705,7 +1705,9 @@ export class VisorComponent implements OnInit, OnDestroy {
   }
 
   startHeartbeat(): void {
+    this.heartbeatSub?.unsubscribe();
     this.heartbeatSub = interval(30000).pipe(
+      startWith(0),
       switchMap(() => {
         const mesaId = this.mesaIdForPairing || this.mesaState?.id;
         const payload: Record<string, any> = mesaId ? { mesa_id: mesaId } : {};
@@ -1722,11 +1724,19 @@ export class VisorComponent implements OnInit, OnDestroy {
         if (this.cameraSharpness) {
           payload['camera_sharpness'] = this.cameraSharpness;
         }
-        return this.http.post(`${this.apiUrl}heartbeat/`, payload, { headers: this.getAuthHeaders() });
-      }),
-      catchError((err) => {
-        if (err.status === 401) this.handleUnauthorized('Heartbeat');
-        return of(null);
+        return this.http.post(
+          `${this.apiUrl}heartbeat/`,
+          payload,
+          { headers: this.getAuthHeaders() },
+        ).pipe(
+          // Keep the outer interval alive after a transient factory-network
+          // failure. Otherwise one failed POST leaves a stale health value in
+          // Railway until Chrome is restarted.
+          catchError((err) => {
+            if (err.status === 401) this.handleUnauthorized('Heartbeat');
+            return of(null);
+          }),
+        );
       })
     ).subscribe();
   }

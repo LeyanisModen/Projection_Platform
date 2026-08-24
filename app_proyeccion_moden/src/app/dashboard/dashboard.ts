@@ -40,6 +40,8 @@ interface Subfase {
   imports: [CommonModule, DragDropModule, FormsModule, ZoomableImageComponent]
 })
 export class Dashboard implements OnInit, OnDestroy {
+  private static readonly MESA_OFFLINE_AFTER_MS = 2 * 60 * 1000;
+
   // Sidebar State
   panelState: 'collapsed' | 'expanded' = 'expanded';
   // Data
@@ -946,6 +948,7 @@ export class Dashboard implements OnInit, OnDestroy {
       .pipe(takeUntil(this.destroy$))
       .subscribe(() => {
         this.silentRefreshProyectosAndStats();
+        this.refreshMesasHealth();
       });
   }
 
@@ -1141,6 +1144,46 @@ export class Dashboard implements OnInit, OnDestroy {
           this.loadingMesas = false;
         }
       });
+  }
+
+  private refreshMesasHealth(): void {
+    this.api.getMesas()
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (freshMesas) => {
+          const freshById = new Map(freshMesas.map(mesa => [mesa.id, mesa]));
+          this.mesas = this.mesas.map((mesa) => {
+            const fresh = freshById.get(mesa.id);
+            if (!fresh) return mesa;
+            return {
+              ...mesa,
+              is_linked: fresh.is_linked,
+              last_seen: fresh.last_seen,
+              capture_service_online: fresh.capture_service_online,
+              camera_sharpness: fresh.camera_sharpness,
+            };
+          });
+          this.cdr.detectChanges();
+        },
+        error: (err) => {
+          console.warn('[Dashboard] No se pudo refrescar la salud de las mesas.', err);
+        },
+      });
+  }
+
+  isMesaPlayerOffline(mesa: Mesa): boolean {
+    if (!mesa.is_linked) return false;
+    if (!mesa.last_seen) return true;
+    const lastSeen = new Date(mesa.last_seen).getTime();
+    if (!Number.isFinite(lastSeen)) return true;
+    return Date.now() - lastSeen > Dashboard.MESA_OFFLINE_AFTER_MS;
+  }
+
+  getMesaCameraWarningTitle(mesa: Mesa): string {
+    if (this.isMesaPlayerOffline(mesa)) {
+      return 'Mini-PC sin senal: no se recibe heartbeat desde hace mas de 2 minutos.';
+    }
+    return 'Camara no disponible: el servicio local no puede capturar imagenes.';
   }
 
   loadGruposMesas(): void {

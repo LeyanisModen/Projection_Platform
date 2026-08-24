@@ -1,7 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { Dashboard } from './dashboard';
-import { Modulo, ProductionStatsBucket, ProductionStatsResponse } from '../services/api.service';
+import { Mesa, Modulo, ProductionStatsBucket, ProductionStatsResponse } from '../services/api.service';
 
 describe('Dashboard', () => {
   let component: Dashboard;
@@ -85,5 +85,20 @@ describe('Dashboard', () => {
 
     expect(component.planModalSortedModulos().map(modulo => modulo.nombre))
       .toEqual(['A05', 'A02', 'A01', 'A03', 'A04']);
+  });
+
+  it('warns when a linked mesa has not sent a heartbeat for two minutes', () => {
+    const mesa = {
+      is_linked: true,
+      last_seen: new Date(Date.now() - 121000).toISOString(),
+    } as Mesa;
+
+    expect(component.isMesaPlayerOffline(mesa)).toBe(true);
+  });
+
+  it('does not report an unlinked mesa as an offline player', () => {
+    const mesa = { is_linked: false, last_seen: null } as Mesa;
+
+    expect(component.isMesaPlayerOffline(mesa)).toBe(false);
   });
 });
