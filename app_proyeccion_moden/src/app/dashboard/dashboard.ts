@@ -40,8 +40,6 @@ interface Subfase {
   imports: [CommonModule, DragDropModule, FormsModule, ZoomableImageComponent]
 })
 export class Dashboard implements OnInit, OnDestroy {
-  private static readonly MESA_OFFLINE_AFTER_MS = 2 * 60 * 1000;
-
   // Sidebar State
   panelState: 'collapsed' | 'expanded' = 'expanded';
   // Data
@@ -1171,19 +1169,8 @@ export class Dashboard implements OnInit, OnDestroy {
       });
   }
 
-  isMesaPlayerOffline(mesa: Mesa): boolean {
-    if (!mesa.is_linked) return false;
-    if (!mesa.last_seen) return true;
-    const lastSeen = new Date(mesa.last_seen).getTime();
-    if (!Number.isFinite(lastSeen)) return true;
-    return Date.now() - lastSeen > Dashboard.MESA_OFFLINE_AFTER_MS;
-  }
-
-  getMesaCameraWarningTitle(mesa: Mesa): string {
-    if (this.isMesaPlayerOffline(mesa)) {
-      return 'Mini-PC sin senal: no se recibe heartbeat desde hace mas de 2 minutos.';
-    }
-    return 'Camara no disponible: el servicio local no puede capturar imagenes.';
+  isMesaCameraUnavailable(mesa: Mesa): boolean {
+    return mesa.is_linked && mesa.capture_service_online === false;
   }
 
   loadGruposMesas(): void {

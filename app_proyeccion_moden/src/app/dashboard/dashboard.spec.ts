@@ -87,18 +87,22 @@ describe('Dashboard', () => {
       .toEqual(['A05', 'A02', 'A01', 'A03', 'A04']);
   });
 
-  it('warns when a linked mesa has not sent a heartbeat for two minutes', () => {
+  it('does not conflate an old player heartbeat with an unavailable camera', () => {
     const mesa = {
       is_linked: true,
-      last_seen: new Date(Date.now() - 121000).toISOString(),
+      capture_service_online: true,
+      last_seen: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
     } as Mesa;
 
-    expect(component.isMesaPlayerOffline(mesa)).toBe(true);
+    expect(component.isMesaCameraUnavailable(mesa)).toBe(false);
   });
 
-  it('does not report an unlinked mesa as an offline player', () => {
-    const mesa = { is_linked: false, last_seen: null } as Mesa;
+  it('warns only when a linked mesa explicitly reports its capture service offline', () => {
+    const mesa = { is_linked: true, capture_service_online: false } as Mesa;
+    const unlinkedMesa = { is_linked: false, capture_service_online: false } as Mesa;
 
-    expect(component.isMesaPlayerOffline(mesa)).toBe(false);
+    expect(component.isMesaCameraUnavailable(mesa)).toBe(true);
+    expect(component.isMesaCameraUnavailable(unlinkedMesa)).toBe(false);
   });
+
 });
