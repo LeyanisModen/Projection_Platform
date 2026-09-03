@@ -51,7 +51,7 @@ export class Login {
 
         // Redirect based on role
         if (response.is_staff || response.is_superuser) {
-          this.router.navigate(['/admin-dashboard/ferrallas'], { replaceUrl: true });
+          this.router.navigate(['/admin-dashboard/proyectos'], { replaceUrl: true });
         } else {
           this.router.navigate(['/dashboard'], { replaceUrl: true });
         }

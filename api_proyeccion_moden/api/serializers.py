@@ -1,4 +1,5 @@
 import os
+from decimal import Decimal
 
 from django.contrib.auth.models import User
 from rest_framework import serializers
@@ -55,6 +56,13 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
     capacidad_diaria_modulos = serializers.IntegerField(
         source='profile.capacidad_diaria_modulos', required=False, min_value=1
     )
+    bastidor_longitud_cm = serializers.DecimalField(
+        source='profile.bastidor_longitud_cm',
+        max_digits=6,
+        decimal_places=2,
+        required=False,
+        min_value=Decimal('0.01'),
+    )
     contactos = FerrallaContactoSerializer(many=True, required=False)
     direcciones = FerrallaDireccionSerializer(many=True, required=False)
 
@@ -63,7 +71,8 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
         fields = [
             "id", "url", "username", "email", "password", "groups",
             "first_name", "last_name", "telefono", "direccion", "coordinador",
-            "password_texto_plano", "capacidad_diaria_modulos", "contactos", "direcciones",
+            "password_texto_plano", "capacidad_diaria_modulos", "bastidor_longitud_cm",
+            "contactos", "direcciones",
         ]
 
     def _request_user_is_admin(self):
@@ -124,6 +133,7 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
         direccion = profile_data.get('direccion')
         coordinador = profile_data.get('coordinador')
         capacidad = profile_data.get('capacidad_diaria_modulos')
+        bastidor_longitud = profile_data.get('bastidor_longitud_cm')
         password_texto_plano = profile_data.get('password_texto_plano')
 
         user = super().create(validated_data)
@@ -143,6 +153,8 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
             )
         if capacidad is not None:
             profile_kwargs['capacidad_diaria_modulos'] = capacidad
+        if bastidor_longitud is not None:
+            profile_kwargs['bastidor_longitud_cm'] = bastidor_longitud
         UserProfile.objects.create(user=user, **profile_kwargs)
 
         if contactos_data is not None:
@@ -163,6 +175,7 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
         direccion = profile_data.get('direccion')
         coordinador = profile_data.get('coordinador')
         capacidad = profile_data.get('capacidad_diaria_modulos')
+        bastidor_longitud = profile_data.get('bastidor_longitud_cm')
         password_texto_plano_provided = 'password_texto_plano' in profile_data
         password_texto_plano = profile_data.get('password_texto_plano')
 
@@ -178,6 +191,8 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
             profile_defaults['coordinador'] = coordinador
         if capacidad is not None:
             profile_defaults['capacidad_diaria_modulos'] = capacidad
+        if bastidor_longitud is not None:
+            profile_defaults['bastidor_longitud_cm'] = bastidor_longitud
 
         # Password handling
         if password:
@@ -217,14 +232,21 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
     modulos_completados = serializers.SerializerMethodField()
     modulos_completados_hoy = serializers.SerializerMethodField()
     datos_tecnicos_archivo = serializers.SerializerMethodField()
+    bastidor_longitud_cm = serializers.SerializerMethodField()
+    # Rolling-deploy compatibility for an older frontend still in service.
+    planilla_archivo = serializers.FileField(
+        source='documentos_archivo',
+        required=False,
+        allow_null=True,
+    )
 
     class Meta:
         model = Proyecto
         fields = [
             "id", "url", "nombre", "usuario", "usuario_nombre",
-            "bastidor_longitud_cm", "datos_tecnicos_importados",
+            "bastidor_longitud_cm", "peso_maximo_grua_kg", "datos_tecnicos_importados",
             "datos_tecnicos_archivo", "datos_tecnicos_actualizados_at",
-            "plano_archivo", "planilla_archivo",
+            "plano_archivo", "documentos_archivo", "planilla_archivo",
             "estrategia_bastidor",
             "capacidad_diaria_usuario",
             "grupos_count", "modulos_count", "modulos_completados",
@@ -240,6 +262,9 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
             return None
         return os.path.basename(obj.fichero_datos_tecnicos.name)
 
+    def get_bastidor_longitud_cm(self, obj):
+        return obj.bastidor_longitud_efectiva_cm
+
     @staticmethod
     def _validate_pdf(value, label):
         if value and os.path.splitext(value.name)[1].lower() != '.pdf':
@@ -249,8 +274,19 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
     def validate_plano_archivo(self, value):
         return self._validate_pdf(value, 'plano')
 
+    @staticmethod
+    def _validate_documents_zip(value):
+        if value and os.path.splitext(value.name)[1].lower() != '.zip':
+            raise serializers.ValidationError(
+                'Los documentos deben estar en un archivo ZIP.'
+            )
+        return value
+
+    def validate_documentos_archivo(self, value):
+        return self._validate_documents_zip(value)
+
     def validate_planilla_archivo(self, value):
-        return self._validate_pdf(value, 'planilla')
+        return self._validate_documents_zip(value)
 
     def get_capacidad_diaria_usuario(self, obj):
         if obj.usuario and hasattr(obj.usuario, 'profile'):
@@ -322,13 +358,20 @@ class GrupoBastidorSerializer(serializers.ModelSerializer):
     modulos = serializers.SerializerMethodField()
     longitud_total_cm = serializers.SerializerMethodField()
     capacidad_cm = serializers.SerializerMethodField()
+    peso_total_kg = serializers.SerializerMethodField()
+    capacidad_peso_kg = serializers.SerializerMethodField()
+    peso_desconocido = serializers.SerializerMethodField()
+    overflow_longitud = serializers.SerializerMethodField()
+    overflow_peso = serializers.SerializerMethodField()
     overflow = serializers.SerializerMethodField()
 
     class Meta:
         model = GrupoBastidor
         fields = [
             "id", "proyecto", "indice", "nombre", "created_at",
-            "modulos", "longitud_total_cm", "capacidad_cm", "overflow",
+            "modulos", "longitud_total_cm", "capacidad_cm",
+            "peso_total_kg", "capacidad_peso_kg", "peso_desconocido",
+            "overflow_longitud", "overflow_peso", "overflow",
         ]
         read_only_fields = ["created_at", "proyecto"]
 
@@ -369,6 +412,7 @@ class GrupoBastidorSerializer(serializers.ModelSerializer):
                 ),
                 "inferior_hecho": m.inferior_hecho,
                 "superior_hecho": m.superior_hecho,
+                "completado_at": m.completado_at,
                 "inferior_en_curso": Fase.INFERIOR in fases_en_curso,
                 "superior_en_curso": Fase.SUPERIOR in fases_en_curso,
                 "cerrado": m.cerrado,
@@ -394,12 +438,38 @@ class GrupoBastidorSerializer(serializers.ModelSerializer):
     def get_capacidad_cm(self, obj):
         from decimal import Decimal, InvalidOperation
         try:
-            return float(Decimal(obj.proyecto.bastidor_longitud_cm))
+            return float(Decimal(obj.proyecto.bastidor_longitud_efectiva_cm))
         except (TypeError, InvalidOperation, AttributeError):
             return 114.0
 
-    def get_overflow(self, obj):
+    @staticmethod
+    def _module_weights(obj):
+        return [module.peso_total_kg for module in obj.modulos.all()]
+
+    def get_peso_total_kg(self, obj):
+        return float(sum(
+            (weight for weight in self._module_weights(obj) if weight is not None),
+            Decimal('0'),
+        ))
+
+    def get_capacidad_peso_kg(self, obj):
+        value = obj.proyecto.peso_maximo_grua_kg
+        return float(value) if value is not None else None
+
+    def get_peso_desconocido(self, obj):
+        return any(weight is None for weight in self._module_weights(obj))
+
+    def get_overflow_longitud(self, obj):
         return self.get_longitud_total_cm(obj) > self.get_capacidad_cm(obj)
+
+    def get_overflow_peso(self, obj):
+        capacity = self.get_capacidad_peso_kg(obj)
+        if capacity is None:
+            return False
+        return self.get_peso_total_kg(obj) > capacity
+
+    def get_overflow(self, obj):
+        return self.get_overflow_longitud(obj) or self.get_overflow_peso(obj)
 
 
 class DetalleModuloFaseSerializer(serializers.ModelSerializer):

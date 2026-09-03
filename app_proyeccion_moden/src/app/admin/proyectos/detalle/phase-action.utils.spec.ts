@@ -8,6 +8,7 @@ function modulo(overrides: Partial<GrupoBastidorModulo> = {}): GrupoBastidorModu
         ancho_cm: '18',
         tipo_modulo: 'CENTRAL',
         estado: 'PENDIENTE',
+        completado_at: null,
         inferior_hecho: false,
         superior_hecho: false,
         cerrado: false,

@@ -1,6 +1,7 @@
 from decimal import Decimal, InvalidOperation
 from datetime import time
 
+from django.core.validators import MinValueValidator
 from django.db import models
 from django.contrib.auth.models import User
 
@@ -71,6 +72,14 @@ class Proyecto(models.Model):
         default=114,
         help_text='Longitud util del bastidor para calcular capacidad por espesor.'
     )
+    peso_maximo_grua_kg = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal('0.01'))],
+        help_text='Peso maximo que puede elevar la grua de la obra. Vacio significa sin limite configurado.',
+    )
     datos_tecnicos_importados = models.BooleanField(
         default=False,
         help_text='Indica si ya se importo el fichero de datos tecnicos y se calcularon los grupos.'
@@ -91,11 +100,11 @@ class Proyecto(models.Model):
         null=True,
         help_text='Plano PDF del proyecto.',
     )
-    planilla_archivo = models.FileField(
-        upload_to='planillas/',
+    documentos_archivo = models.FileField(
+        upload_to='documentos/',
         blank=True,
         null=True,
-        help_text='Planilla PDF del proyecto.',
+        help_text='Archivo ZIP con la documentacion del proyecto.',
     )
     estrategia_bastidor = models.CharField(
         max_length=32,
@@ -107,6 +116,23 @@ class Proyecto(models.Model):
 
     def __str__(self):
         return self.nombre
+
+    @property
+    def bastidor_longitud_efectiva_cm(self):
+        """Return the assigned ferralla's rack length, with a legacy fallback."""
+        if self.usuario_id:
+            try:
+                value = self.usuario.profile.bastidor_longitud_cm
+                value = Decimal(value)
+                if value > 0:
+                    return value
+            except (UserProfile.DoesNotExist, TypeError, InvalidOperation):
+                pass
+        try:
+            value = Decimal(self.bastidor_longitud_cm)
+            return value if value > 0 else Decimal('114')
+        except (TypeError, InvalidOperation):
+            return Decimal('114')
 
     class Meta:
         db_table = 'api_proyecto'
@@ -239,6 +265,25 @@ class Modulo(models.Model):
     def __str__(self):
         return f"{self.nombre} ({self.proyecto.nombre})"
 
+    @property
+    def peso_total_kg(self):
+        """Return a safe total only when both manufacturing phases are known."""
+        detalles = getattr(self, '_prefetched_objects_cache', {}).get(
+            'detalles_fase'
+        )
+        if detalles is None:
+            detalles = self.detalles_fase.all()
+        phase_weights = {}
+        for detalle in detalles:
+            if detalle.fase not in (Fase.INFERIOR, Fase.SUPERIOR):
+                continue
+            phase_weight = detalle.peso_total_kg
+            if phase_weight is not None:
+                phase_weights[detalle.fase] = Decimal(phase_weight)
+        if set(phase_weights) != {Fase.INFERIOR, Fase.SUPERIOR}:
+            return None
+        return sum(phase_weights.values(), Decimal('0'))
+
     def actualizar_estado(self):
         """Update estado based on phase completion."""
         from django.utils import timezone
@@ -336,7 +381,9 @@ class DetalleModuloFase(models.Model):
     @property
     def capacidad_bastidor(self):
         try:
-            longitud_bastidor = Decimal(self.modulo.proyecto.bastidor_longitud_cm)
+            longitud_bastidor = Decimal(
+                self.modulo.proyecto.bastidor_longitud_efectiva_cm
+            )
             ancho_modulo = Decimal(self.modulo.ancho_cm or self.espesor_cm)
         except (TypeError, InvalidOperation):
             return None
@@ -789,6 +836,13 @@ class UserProfile(models.Model):
     capacidad_diaria_modulos = models.PositiveIntegerField(
         default=12,
         help_text='Modulos que la ferralla produce por dia (se reparten entre sus mesas INF).'
+    )
+    bastidor_longitud_cm = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        default=114,
+        validators=[MinValueValidator(Decimal('0.01'))],
+        help_text='Longitud util de los bastidores de esta ferralla.',
     )
     capture_active_days = models.JSONField(default=default_capture_active_days)
     capture_start_time = models.TimeField(default=time(6, 50))

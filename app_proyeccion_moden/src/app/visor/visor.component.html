@@ -179,6 +179,26 @@
                 {{ mesaState?.nombre || 'Mesa ID: ' + mesaState?.id }}
             </div>
         }
+
+        @if (shutdownStatus) {
+        <div class="shutdown-status"
+            [class.holding]="shutdownStatus === 'holding'"
+            [class.shutting-down]="shutdownStatus === 'shutting-down'"
+            [class.cancelled]="shutdownStatus === 'cancelled'"
+            [class.error]="shutdownStatus === 'error'"
+            role="status"
+            aria-live="assertive">
+            @if (shutdownStatus === 'holding') {
+            <span>Mantén &larr; + Espacio + &rarr; para apagar ({{ shutdownSecondsRemaining }} s)</span>
+            <span class="shutdown-progress" aria-hidden="true">
+                <span [style.width.%]="shutdownProgressPercent"></span>
+            </span>
+            }
+            @else if (shutdownStatus === 'shutting-down') { Apagando mini-PC... }
+            @else if (shutdownStatus === 'cancelled') { Apagado cancelado }
+            @else if (shutdownStatus === 'error') { No se pudo apagar: revisa el servicio local }
+        </div>
+        }
     </div>
     }
 

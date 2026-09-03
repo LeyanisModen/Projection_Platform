@@ -553,9 +553,9 @@ export class Dashboard implements OnInit, OnDestroy {
     return this.planModalModulos.filter(m => m.inferior_hecho && m.superior_hecho).length;
   }
 
-  openProjectDocument(proyecto: Proyecto, type: 'plano' | 'planilla', event?: Event): void {
+  openProjectDocument(proyecto: Proyecto, type: 'plano' | 'documentos', event?: Event): void {
     event?.stopPropagation();
-    const url = type === 'plano' ? proyecto.plano_archivo : proyecto.planilla_archivo;
+    const url = type === 'plano' ? proyecto.plano_archivo : proyecto.documentos_archivo;
     if (!url) return;
     window.open(this.resolveUrl(url), '_blank', 'noopener');
   }

@@ -10,9 +10,9 @@ export const ADMIN_ROUTES: Routes = [
         component: AdminLayoutComponent,
         canActivate: [AdminGuard],
         children: [
-            { path: '', redirectTo: 'ferrallas', pathMatch: 'full' },
-            { path: 'ferrallas', component: FerrallasComponent, title: 'Admin - Ferrallas' },
+            { path: '', redirectTo: 'proyectos', pathMatch: 'full' },
             { path: 'proyectos', component: ProyectosComponent, title: 'Admin - Proyectos' },
+            { path: 'ferrallas', component: FerrallasComponent, title: 'Admin - Ferrallas' },
             {
                 path: 'proyectos/:id',
                 loadComponent: () => import('./proyectos/detalle/detalle.component').then(m => m.ProyectoDetailComponent),

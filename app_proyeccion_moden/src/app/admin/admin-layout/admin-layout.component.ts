@@ -9,25 +9,25 @@ import { ApiService } from '../../services/api.service';
   template: `
     <div class="admin-container">
       <header class="admin-header">
-        <a class="brand" routerLink="/admin-dashboard/ferrallas" aria-label="Ir a Ferrallas">
+        <a class="brand" routerLink="/admin-dashboard/proyectos" aria-label="Ir a Proyectos">
           <img src="assets/logo-moden.jpg" alt="MOD:EN" class="header-logo" />
           <span class="subtitle">Administracion de la plataforma</span>
         </a>
 
         <nav class="header-nav" aria-label="Secciones de administracion">
           <a
-            routerLink="/admin-dashboard/ferrallas"
-            routerLinkActive="active"
-            ariaCurrentWhenActive="page"
-          >
-            Ferrallas
-          </a>
-          <a
             routerLink="/admin-dashboard/proyectos"
             routerLinkActive="active"
             ariaCurrentWhenActive="page"
           >
             Proyectos
+          </a>
+          <a
+            routerLink="/admin-dashboard/ferrallas"
+            routerLinkActive="active"
+            ariaCurrentWhenActive="page"
+          >
+            Ferrallas
           </a>
         </nav>
 

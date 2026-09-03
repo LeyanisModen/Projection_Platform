@@ -121,7 +121,8 @@ export class FerrallasComponent implements OnInit, OnDestroy {
       password: '',
       contactos: [] as FerrallaContacto[],
       direcciones: [] as FerrallaDireccion[],
-      capacidad_diaria_modulos: 12
+      capacidad_diaria_modulos: 12,
+      bastidor_longitud_cm: 114
     };
   }
 
@@ -612,6 +613,7 @@ export class FerrallasComponent implements OnInit, OnDestroy {
     this.newUser = {
       ...user,
       password: '',
+      bastidor_longitud_cm: user.bastidor_longitud_cm || 114,
       contactos: this.getEditableContactos(user),
       direcciones: this.getEditableDirecciones(user)
     };

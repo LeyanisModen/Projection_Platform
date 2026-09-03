@@ -27,6 +27,7 @@ export interface User {
     coordinador?: string;
     password_texto_plano?: string;
     capacidad_diaria_modulos?: number;
+    bastidor_longitud_cm?: number;
     contactos?: FerrallaContacto[];
     direcciones?: FerrallaDireccion[];
 }
@@ -56,13 +57,14 @@ export interface Proyecto {
     id: number;
     url: string;
     nombre: string;
-    usuario: string;
+    usuario: string | null;
     bastidor_longitud_cm: number;
+    peso_maximo_grua_kg: number | null;
     datos_tecnicos_importados: boolean;
     datos_tecnicos_archivo?: string | null;
     datos_tecnicos_actualizados_at?: string | null;
     plano_archivo?: string | null;
-    planilla_archivo?: string | null;
+    documentos_archivo?: string | null;
     estrategia_bastidor: EstrategiaBastidor;
     capacidad_diaria_usuario?: number;
     grupos_count?: number;
@@ -80,6 +82,7 @@ export interface GrupoBastidorModulo {
     estado_operativo?: 'PENDIENTE' | 'EN_PROGRESO' | 'COMPLETADO' | 'CERRADO';
     inferior_hecho: boolean;
     superior_hecho: boolean;
+    completado_at: string | null;
     inferior_en_curso?: boolean;
     superior_en_curso?: boolean;
     cerrado: boolean;
@@ -98,6 +101,11 @@ export interface GrupoBastidor {
     modulos: GrupoBastidorModulo[];
     longitud_total_cm: number;
     capacidad_cm: number;
+    peso_total_kg: number;
+    capacidad_peso_kg: number | null;
+    peso_desconocido: boolean;
+    overflow_longitud: boolean;
+    overflow_peso: boolean;
     overflow: boolean;
 }
 
@@ -569,7 +577,7 @@ export class ApiService {
             imagenes: number;
             detalles_fase: number;
             plano_cargado?: boolean;
-            planilla_cargada?: boolean;
+            documentos_cargados?: boolean;
             base_tecnica_actualizada?: boolean;
             modulos_omitidos?: number;
             module_errors?: Array<{
@@ -595,7 +603,7 @@ export class ApiService {
             imagenes: number;
             detalles_fase: number;
             plano_cargado?: boolean;
-            planilla_cargada?: boolean;
+            documentos_cargados?: boolean;
             base_tecnica_actualizada?: boolean;
             modulos_omitidos?: number;
             module_errors?: Array<{

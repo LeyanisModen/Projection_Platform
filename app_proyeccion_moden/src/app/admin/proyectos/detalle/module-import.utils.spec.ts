@@ -139,10 +139,11 @@ describe('module import folder helpers', () => {
         );
     });
 
-    it('recognizes project plano and planilla PDFs by their names', async () => {
+    it('recognizes the project plan PDF and documents ZIP by their names', async () => {
         const root = fakeDirectory('Proyecto', {
             'Plano general A3.pdf': fakeFile('Plano general A3.pdf'),
-            'planilla_corte_final.PDF': fakeFile('planilla_corte_final.PDF'),
+            'Documentación_obra_final.ZIP': fakeFile('Documentación_obra_final.ZIP'),
+            'planilla_antigua.pdf': fakeFile('planilla_antigua.pdf'),
             'plano_antiguo.jpg': fakeFile('plano_antiguo.jpg'),
             'MOD-A01': fakeDirectory('MOD-A01', {
                 INF: fakeDirectory('INF', { '01.jpg': fakeFile('01.jpg') }),
@@ -153,7 +154,7 @@ describe('module import folder helpers', () => {
         const result = await scanModuleImportFolder(root);
 
         expect(result.planoFile?.entryName).toBe('Plano general A3.pdf');
-        expect(result.planillaFile?.entryName).toBe('planilla_corte_final.PDF');
+        expect(result.documentosFile?.entryName).toBe('Documentación_obra_final.ZIP');
         expect(result.rootIssues).toEqual([]);
     });
 });

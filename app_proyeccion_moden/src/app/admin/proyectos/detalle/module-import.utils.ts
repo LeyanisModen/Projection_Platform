@@ -37,7 +37,7 @@ export interface ModuleImportScanResult {
     candidates: ModuleImportCandidate[];
     technicalDbFile: File | null;
     planoFile: ProjectImportFile | null;
-    planillaFile: ProjectImportFile | null;
+    documentosFile: ProjectImportFile | null;
     rootIssues: string[];
 }
 
@@ -55,7 +55,8 @@ export interface ModuleImportPayload {
 
 const VALID_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg']);
 const TECHNICAL_EXTENSIONS = new Set(['.db', '.sqlite', '.sqlite3']);
-const PROJECT_DOCUMENT_EXTENSION = '.pdf';
+const PROJECT_PLAN_EXTENSION = '.pdf';
+const PROJECT_DOCUMENTS_EXTENSION = '.zip';
 
 export function parseModuleImportFolder(folderName: string): ParsedModuleFolder {
     const parts = folderName.split('_');
@@ -132,7 +133,7 @@ export async function scanModuleImportFolder(
     const rootIssues: string[] = [];
     let technicalDbFile: File | null = null;
     let planoFile: ProjectImportFile | null = null;
-    let planillaFile: ProjectImportFile | null = null;
+    let documentosFile: ProjectImportFile | null = null;
 
     for (const [entryName, entryHandle] of rootEntries) {
         if (entryHandle.kind !== 'file') continue;
@@ -141,9 +142,10 @@ export async function scanModuleImportFolder(
             .normalize('NFD')
             .replace(/[\u0300-\u036f]/g, '')
             .toLowerCase();
-        const isPlano = extension === PROJECT_DOCUMENT_EXTENSION && normalizedName.includes('plano');
-        const isPlanilla = extension === PROJECT_DOCUMENT_EXTENSION && normalizedName.includes('planilla');
-        const recognizedProjectFile = TECHNICAL_EXTENSIONS.has(extension) || isPlano || isPlanilla;
+        const isPlano = extension === PROJECT_PLAN_EXTENSION && normalizedName.includes('plano');
+        const isDocumentos = extension === PROJECT_DOCUMENTS_EXTENSION
+            && (normalizedName.includes('document') || normalizedName.includes('planilla'));
+        const recognizedProjectFile = TECHNICAL_EXTENSIONS.has(extension) || isPlano || isDocumentos;
         if (!recognizedProjectFile) continue;
         const projectFile = await readProjectFile(entryName, entryHandle, rootIssues);
         if (!projectFile) continue;
@@ -164,13 +166,13 @@ export async function scanModuleImportFolder(
             } else {
                 planoFile = projectFile;
             }
-        } else if (isPlanilla) {
-            if (planillaFile) {
+        } else if (isDocumentos) {
+            if (documentosFile) {
                 rootIssues.push(
-                    `Hay mas de una planilla. Se usara ${planillaFile.entryName} y se omitira ${entryName}.`
+                    `Hay mas de un ZIP de documentos. Se usara ${documentosFile.entryName} y se omitira ${entryName}.`
                 );
             } else {
-                planillaFile = projectFile;
+                documentosFile = projectFile;
             }
         }
     }
@@ -281,7 +283,7 @@ export async function scanModuleImportFolder(
         candidates,
         technicalDbFile,
         planoFile,
-        planillaFile,
+        documentosFile,
         rootIssues,
     };
 }

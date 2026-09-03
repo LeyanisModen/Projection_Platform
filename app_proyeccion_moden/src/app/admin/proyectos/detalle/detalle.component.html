@@ -75,7 +75,7 @@
 
                             [class.selected]="proyecto.usuario === null"
 
-                            (click)="changeFerralla(null); dropdownOpen = false">
+                            (click)="requestFerrallaChange(null)">
 
                             Sin asignar
 
@@ -87,7 +87,7 @@
 
                             [class.selected]="proyecto.usuario === user.url"
 
-                            (click)="changeFerralla(user.url); dropdownOpen = false">
+                            (click)="requestFerrallaChange(user.url)">
 
                             {{ user.first_name || user.username }}
 
@@ -95,6 +95,45 @@
 
                     </div>
                 </div>
+            </div>
+
+            <div class="project-config-card project-logistics-card mb-3 p-3 bg-white rounded border">
+                <div class="project-config-header">
+                    <label class="d-block mb-1">Límites de transporte</label>
+                    <small class="text-muted">
+                        El bastidor pertenece a la ferralla; la carga máxima depende de la grúa de este proyecto.
+                    </small>
+                </div>
+                <div class="project-logistics-rack">
+                    <span>Longitud útil del bastidor</span>
+                    <strong>{{ proyecto.bastidor_longitud_cm | number:'1.0-2' }} cm</strong>
+                </div>
+                <label class="project-logistics-field" for="crane-limit">
+                    <span>Carga máxima de grúa</span>
+                    <span class="project-logistics-input-wrap">
+                        <input id="crane-limit" type="number" class="project-config-input"
+                            [(ngModel)]="craneLimitDraft" min="0.01" step="0.01"
+                            placeholder="Sin límite" [disabled]="savingProjectConfig">
+                        <span class="project-config-unit">kg</span>
+                    </span>
+                </label>
+                <div class="project-logistics-actions">
+                    <button type="button" class="btn btn-sm btn-outline-primary"
+                        (click)="saveCraneLimit()" [disabled]="savingProjectConfig">
+                        {{ savingProjectConfig ? 'Guardando...' : 'Guardar límite' }}
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary"
+                        (click)="recalculateCurrentBastidores()"
+                        [disabled]="recalculatingBastidores || !proyecto.datos_tecnicos_importados || !grupos.length">
+                        {{ recalculatingBastidores ? 'Recalculando...' : 'Recalcular bastidores' }}
+                    </button>
+                </div>
+                <small class="project-config-hint">
+                    Los módulos sin peso completo se aíslan y los que exceden el límite por sí solos se marcan. Los cambios se aplican automáticamente a grupos nuevos; recalcular rehace los existentes y solo se permite si siguen pendientes.
+                </small>
+                <small class="project-config-message" *ngIf="projectConfigMessage">
+                    <i class="fa fa-check-circle" aria-hidden="true"></i> {{ projectConfigMessage }}
+                </small>
             </div>
 
             <div class="project-config-card mb-3 p-3 bg-white rounded border">
@@ -161,11 +200,11 @@
                         <span *ngIf="!proyecto.plano_archivo" class="text-muted">sin cargar</span>
                     </li>
                     <li>
-                        <strong>Planilla:</strong>
-                        <span *ngIf="proyecto.planilla_archivo" class="text-success">
+                        <strong>Documentos:</strong>
+                        <span *ngIf="proyecto.documentos_archivo" class="text-success">
                             <i class="fa fa-check"></i> cargada
                         </span>
-                        <span *ngIf="!proyecto.planilla_archivo" class="text-muted">sin cargar</span>
+                        <span *ngIf="!proyecto.documentos_archivo" class="text-muted">sin cargar</span>
                     </li>
                 </ul>
             </div>
@@ -292,10 +331,23 @@
                                 </div>
                                 <div class="grupo-bastidor-meta">
                                     <small class="grupo-capacidad"
-                                        [class.is-overflow]="grupo.overflow"
-                                        [title]="grupo.overflow ? 'Sobrepasa la longitud maxima del bastidor' : ''">
+                                        [class.is-overflow]="grupo.overflow_longitud"
+                                        [title]="grupo.overflow_longitud ? 'Sobrepasa la longitud máxima del bastidor' : ''">
                                         {{ grupo.longitud_total_cm | number:'1.0-1' }} / {{ grupo.capacidad_cm | number:'1.0-0' }} cm
                                         <span class="grupo-modulos-count-inline">· {{ grupo.modulos.length }} mod.</span>
+                                    </small>
+                                    <small class="grupo-capacidad grupo-peso"
+                                        [class.is-overflow]="grupo.overflow_peso"
+                                        [class.is-unknown]="grupo.peso_desconocido"
+                                        [title]="grupo.peso_desconocido
+                                            ? 'Falta el peso técnico de al menos un módulo'
+                                            : (grupo.overflow_peso ? 'Sobrepasa la carga máxima de la grúa' : '')">
+                                        {{ grupo.peso_total_kg | number:'1.0-1' }}
+                                        <ng-container *ngIf="grupo.capacidad_peso_kg !== null; else noCraneLimit">
+                                            / {{ grupo.capacidad_peso_kg | number:'1.0-1' }} kg
+                                        </ng-container>
+                                        <ng-template #noCraneLimit>kg</ng-template>
+                                        <span *ngIf="grupo.peso_desconocido"> · incompleto</span>
                                     </small>
                                 </div>
                             </div>
@@ -337,6 +389,12 @@
                                                 <i class="fa fa-lock" aria-hidden="true"></i>
                                             </span>
                                         </span>
+                                        <time *ngIf="modulo.completado_at"
+                                            class="grupo-modulo-completado-at"
+                                            [attr.datetime]="modulo.completado_at"
+                                            [title]="'Terminado el ' + (modulo.completado_at | date:'dd/MM/yyyy HH:mm')">
+                                            Terminado {{ modulo.completado_at | date:'dd/MM/yyyy HH:mm' }}
+                                        </time>
                                     </div>
                                     <div class="grupo-modulo-controls">
                                         <div class="grupo-modulo-phases"
@@ -695,6 +753,39 @@
 
 
 
+<div class="ferralla-change-backdrop" *ngIf="showFerrallaChangeModal"
+    (click)="cancelFerrallaChange()">
+    <section class="ferralla-change-modal" role="dialog" aria-modal="true"
+        aria-labelledby="ferralla-change-title" (click)="$event.stopPropagation()">
+        <div class="ferralla-change-icon" aria-hidden="true">
+            <i class="fa fa-exchange"></i>
+        </div>
+        <div class="ferralla-change-content">
+            <span class="ferralla-change-eyebrow">CAMBIO DE ASIGNACIÓN</span>
+            <h4 id="ferralla-change-title">Confirmar nueva ferralla</h4>
+            <p>El proyecto pasará de <strong>{{ getSelectedFerrallaLabel() }}</strong> a
+                <strong>{{ getPendingFerrallaLabel() }}</strong>.</p>
+            <p class="ferralla-change-warning">
+                Se comprobará que no siga en colas ni tenga bastidores reservados en otra ferralla.
+            </p>
+            <div class="ferralla-change-error" *ngIf="ferrallaChangeError">
+                <i class="fa fa-exclamation-circle" aria-hidden="true"></i>
+                {{ ferrallaChangeError }}
+            </div>
+        </div>
+        <div class="ferralla-change-actions">
+            <button type="button" class="btn btn-outline-secondary"
+                (click)="cancelFerrallaChange()" [disabled]="changingFerralla">Cancelar</button>
+            <button type="button" class="btn btn-primary"
+                (click)="confirmFerrallaChange()" [disabled]="changingFerralla">
+                {{ changingFerralla ? 'Comprobando...' : 'Comprobar y cambiar' }}
+            </button>
+        </div>
+    </section>
+</div>
+
+
+
 <div class="project-files-modal-backdrop" *ngIf="showProjectFilesModal" (click)="closeProjectFilesModal()">
 
     <div class="project-files-modal" (click)="$event.stopPropagation()">
@@ -705,7 +796,7 @@
 
                 <h4>Archivos del Proyecto</h4>
 
-                <small class="text-muted">Plano e información de planilla del proyecto.</small>
+                <small class="text-muted">Plano PDF y documentación comprimida del proyecto.</small>
 
             </div>
 
@@ -765,11 +856,11 @@
 
             <div class="project-file-info">
 
-                <strong>Planilla (.pdf)</strong>
+                <strong>Documentos (.zip)</strong>
 
                 <span class="text-muted">
 
-                    {{ getProjectFileUrl('planilla') ? 'Archivo cargado' : 'No hay archivo' }}
+                    {{ getProjectFileUrl('documentos') ? 'Archivo cargado' : 'No hay archivo' }}
 
                 </span>
 
@@ -779,11 +870,11 @@
 
                 <button class="btn btn-sm btn-outline-dark"
 
-                    (click)="openProjectFile('planilla')"
+                    (click)="openProjectFile('documentos')"
 
-                    [disabled]="!projectFileExists.planilla || checkingProjectFiles || uploadingProjectFile">
+                    [disabled]="!projectFileExists.documentos || checkingProjectFiles || uploadingProjectFile">
 
-                    Ver actual
+                    Descargar actual
 
                 </button>
 
@@ -793,13 +884,13 @@
 
                     [disabled]="uploadingProjectFile">
 
-                    {{ getProjectFileUrl('planilla') ? 'Cambiar' : 'Subir' }}
+                    {{ getProjectFileUrl('documentos') ? 'Cambiar' : 'Subir' }}
 
                 </button>
 
-                <input #modalCorteInput type="file" accept=".pdf,application/pdf"
+                <input #modalCorteInput type="file" accept=".zip,application/zip,application/x-zip-compressed"
 
-                    (change)="onProjectFileSelected($event, 'planilla')" hidden>
+                    (change)="onProjectFileSelected($event, 'documentos')" hidden>
 
             </div>
 

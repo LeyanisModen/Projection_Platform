@@ -513,6 +513,60 @@
     color: #fff;
 }
 
+.shutdown-status {
+    position: fixed;
+    top: 22px;
+    left: 50%;
+    display: grid;
+    min-width: min(520px, calc(100vw - 40px));
+    padding: 12px 22px;
+    transform: translateX(-50%);
+    border: 1px solid rgba(255, 255, 255, 0.32);
+    border-radius: 12px;
+    color: #fff;
+    font-size: 1rem;
+    font-weight: 800;
+    line-height: 1.25;
+    text-align: center;
+    z-index: 10002;
+    pointer-events: none;
+    animation: fadeInCloseStatus 0.2s ease;
+}
+
+.shutdown-status.holding {
+    gap: 9px;
+    background: rgba(127, 29, 29, 0.94);
+}
+
+.shutdown-status.shutting-down {
+    background: rgba(153, 27, 27, 0.96);
+}
+
+.shutdown-status.cancelled {
+    background: rgba(30, 41, 59, 0.92);
+}
+
+.shutdown-status.error {
+    background: rgba(220, 38, 38, 0.96);
+}
+
+.shutdown-progress {
+    display: block;
+    width: 100%;
+    height: 5px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.shutdown-progress > span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: #fef2f2;
+    transition: width 0.1s linear;
+}
+
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(-10px); }
     to { opacity: 1; transform: translateY(0); }

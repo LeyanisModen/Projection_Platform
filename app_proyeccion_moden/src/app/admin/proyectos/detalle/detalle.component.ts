@@ -61,9 +61,15 @@ export class ProyectoDetailComponent implements OnInit {
     updatingSubmoduleId: number | null = null;
     showProjectFilesModal = false;
     checkingProjectFiles = false;
-    projectFileExists = { plano: false, planilla: false };
+    projectFileExists = { plano: false, documentos: false };
     dropdownOpen = false;
+    showFerrallaChangeModal = false;
+    pendingFerrallaUrl: string | null = null;
+    changingFerralla = false;
+    ferrallaChangeError = '';
     savingProjectConfig = false;
+    craneLimitDraft: number | string | null = null;
+    projectConfigMessage = '';
     editingProjectName = false;
     projectNameDraft = '';
     savingProjectName = false;
@@ -107,6 +113,11 @@ export class ProyectoDetailComponent implements OnInit {
 
     @HostListener('document:keydown', ['$event'])
     onDocumentKeydown(event: KeyboardEvent): void {
+        if (this.showFerrallaChangeModal && event.key === 'Escape') {
+            this.cancelFerrallaChange();
+            event.preventDefault();
+            return;
+        }
         if (this.showModuleImportModal && event.key === 'Escape') {
             this.closeModuleImportSelection();
             event.preventDefault();
@@ -146,6 +157,8 @@ export class ProyectoDetailComponent implements OnInit {
             next: (data) => {
                 if (data && data.proyecto) {
                     this.proyecto = data.proyecto;
+                    this.craneLimitDraft = data.proyecto.peso_maximo_grua_kg;
+                    this.projectConfigMessage = '';
                     this.users = data.users || [];
                     this.modulos = data.modulos || [];
                     this.grupos = (data.grupos || []).sort((a, b) => a.indice - b.indice);
@@ -409,16 +422,32 @@ export class ProyectoDetailComponent implements OnInit {
         const aviso = nueva === 'AISLAR_CENTRAL_GIRADO'
             ? 'Esto rehara los bastidores separando los CENTRAL GIRADO del resto. Los movimientos manuales actuales se perderan. Continuar?'
             : 'Esto rehara los bastidores en orden secuencial. Los movimientos manuales actuales se perderan. Continuar?';
-        if (!confirm(aviso)) return;
+        this.recalculateBastidores(nueva, aviso);
+    }
+
+    recalculateCurrentBastidores(): void {
+        if (!this.proyecto) return;
+        this.recalculateBastidores(
+            this.proyecto.estrategia_bastidor,
+            'Esto rehara los bastidores con la longitud de la ferralla y el limite de grua actuales. Los movimientos manuales se perderan. Continuar?'
+        );
+    }
+
+    private recalculateBastidores(
+        estrategia: EstrategiaBastidor,
+        warning: string
+    ): void {
+        if (!this.proyecto || !this.proyectoId || !confirm(warning)) return;
 
         this.recalculatingBastidores = true;
-        this.api.recalcularBastidores(this.proyectoId, nueva).subscribe({
+        this.api.recalcularBastidores(this.proyectoId, estrategia).subscribe({
             next: (res) => {
                 if (this.proyecto) {
                     this.proyecto.estrategia_bastidor = res.estrategia;
                 }
                 this.grupos = res.grupos.sort((a, b) => a.indice - b.indice);
                 this.recalculatingBastidores = false;
+                this.projectConfigMessage = 'Bastidores recalculados con los límites actuales.';
                 this.refreshTablePreview();
                 this.cdr.detectChanges();
             },
@@ -645,21 +674,55 @@ export class ProyectoDetailComponent implements OnInit {
         });
     }
 
-    // Change project ferralla assignment
-    changeFerralla(userUrl: string | null): void {
-        if (!this.proyectoId) return;
+    requestFerrallaChange(userUrl: string | null): void {
+        this.dropdownOpen = false;
+        if (!this.proyecto || userUrl === this.proyecto.usuario) return;
+        this.pendingFerrallaUrl = userUrl;
+        this.ferrallaChangeError = '';
+        this.showFerrallaChangeModal = true;
+    }
 
-        this.loading = true;
-        this.api.updateProyecto(this.proyectoId, { usuario: userUrl }).subscribe({
+    cancelFerrallaChange(): void {
+        if (this.changingFerralla) return;
+        this.showFerrallaChangeModal = false;
+        this.pendingFerrallaUrl = null;
+        this.ferrallaChangeError = '';
+    }
+
+    confirmFerrallaChange(): void {
+        if (!this.proyectoId || !this.showFerrallaChangeModal) return;
+
+        this.changingFerralla = true;
+        this.ferrallaChangeError = '';
+        this.api.updateProyecto(this.proyectoId, { usuario: this.pendingFerrallaUrl }).subscribe({
             next: (proyecto: Proyecto) => {
                 this.proyecto = proyecto;
-                this.loading = false;
+                this.craneLimitDraft = proyecto.peso_maximo_grua_kg;
+                const rackCapacity = Number(proyecto.bastidor_longitud_cm);
+                this.grupos = this.grupos.map(group => {
+                    const overflowLongitud = group.longitud_total_cm > rackCapacity;
+                    return {
+                        ...group,
+                        capacidad_cm: rackCapacity,
+                        overflow_longitud: overflowLongitud,
+                        overflow: overflowLongitud || group.overflow_peso,
+                    };
+                });
+                this.projectConfigMessage = this.grupos.length
+                    ? 'Ferralla cambiada. Recalcula para aplicar su longitud a los grupos actuales.'
+                    : 'Ferralla cambiada.';
+                this.changingFerralla = false;
+                this.showFerrallaChangeModal = false;
+                this.pendingFerrallaUrl = null;
                 this.cdr.detectChanges();
             },
             error: (err: any) => {
                 console.error('Error updating ferralla', err);
-                this.loading = false;
-                alert('Error al cambiar la ferralla');
+                this.changingFerralla = false;
+                const fieldError = err?.error?.usuario;
+                this.ferrallaChangeError = Array.isArray(fieldError)
+                    ? fieldError.join(' ')
+                    : (fieldError || err?.error?.detail || 'No se pudo cambiar la ferralla.');
                 this.cdr.detectChanges();
             }
         });
@@ -671,29 +734,50 @@ export class ProyectoDetailComponent implements OnInit {
         return user ? (user.first_name || user.username) : 'Sin asignar';
     }
 
-    saveBastidorLongitud(): void {
+    getPendingFerrallaLabel(): string {
+        if (!this.pendingFerrallaUrl) return 'Sin asignar';
+        const user = this.users.find(candidate => candidate.url === this.pendingFerrallaUrl);
+        return user ? (user.first_name || user.username) : 'Ferralla desconocida';
+    }
+
+    saveCraneLimit(): void {
         if (!this.proyectoId || !this.proyecto) return;
 
-        const bastidor = Number(this.proyecto.bastidor_longitud_cm);
-        if (!Number.isFinite(bastidor) || bastidor <= 0) {
-            alert('La longitud del bastidor debe ser mayor que 0.');
-            this.loadData();
+        const empty = this.craneLimitDraft === null || this.craneLimitDraft === '';
+        const craneLimit = empty ? null : Number(this.craneLimitDraft);
+        if (craneLimit !== null && (!Number.isFinite(craneLimit) || craneLimit <= 0)) {
+            alert('El peso máximo de la grúa debe ser mayor que 0 o quedar vacío.');
             return;
         }
 
         this.savingProjectConfig = true;
+        this.projectConfigMessage = '';
         this.api.updateProyecto(this.proyectoId, {
-            bastidor_longitud_cm: Number(bastidor.toFixed(2))
+            peso_maximo_grua_kg: craneLimit === null ? null : Number(craneLimit.toFixed(2))
         }).subscribe({
             next: (proyecto: Proyecto) => {
                 this.proyecto = proyecto;
+                this.craneLimitDraft = proyecto.peso_maximo_grua_kg;
+                const capacity = proyecto.peso_maximo_grua_kg;
+                this.grupos = this.grupos.map(group => {
+                    const overflowPeso = capacity !== null && group.peso_total_kg > capacity;
+                    return {
+                        ...group,
+                        capacidad_peso_kg: capacity,
+                        overflow_peso: overflowPeso,
+                        overflow: group.overflow_longitud || overflowPeso,
+                    };
+                });
+                this.projectConfigMessage = this.grupos.length
+                    ? 'Guardado. Para reorganizar los bastidores actuales, usa Recalcular.'
+                    : 'Límite de grúa guardado.';
                 this.savingProjectConfig = false;
                 this.cdr.detectChanges();
             },
             error: (err: any) => {
-                console.error('Error updating bastidor length', err);
+                console.error('Error updating crane limit', err);
                 this.savingProjectConfig = false;
-                alert('Error al guardar la longitud del bastidor');
+                alert(err?.error?.peso_maximo_grua_kg?.[0] || 'Error al guardar el límite de la grúa');
                 this.cdr.detectChanges();
             }
         });
@@ -908,7 +992,7 @@ export class ProyectoDetailComponent implements OnInit {
                         `• Módulos creados: ${stats.modulos || 0}`,
                         `• Imágenes cargadas: ${stats.imagenes || 0}`,
                         `• Plano de referencia: ${stats.plano_cargado ? 'sí' : 'no'}`,
-                        `• Planilla (corte): ${stats.planilla_cargada ? 'sí' : 'no'}`,
+                        `• Documentos ZIP: ${stats.documentos_cargados ? 'sí' : 'no'}`,
                     ];
                     if (technicalDbFile) {
                         lines.push(stats.base_tecnica_actualizada
@@ -1023,24 +1107,30 @@ export class ProyectoDetailComponent implements OnInit {
 
     closeProjectFilesModal(): void {
         this.showProjectFilesModal = false;
-        this.projectFileExists = { plano: false, planilla: false };
+        this.projectFileExists = { plano: false, documentos: false };
         this.checkingProjectFiles = false;
     }
 
-    onProjectFileSelected(event: Event, fileType: 'plano' | 'planilla'): void {
+    onProjectFileSelected(event: Event, fileType: 'plano' | 'documentos'): void {
         const input = event.target as HTMLInputElement;
         const file = input.files?.[0];
         if (!file) return;
         if (!this.proyectoId) return;
 
         const fileName = file.name.toLowerCase();
-        if (!fileName.endsWith('.pdf') && file.type !== 'application/pdf') {
-            alert(`${fileType === 'plano' ? 'El plano' : 'La planilla'} debe ser un archivo PDF.`);
+        const validFile = fileType === 'plano'
+            ? fileName.endsWith('.pdf') || file.type === 'application/pdf'
+            : fileName.endsWith('.zip');
+        if (!validFile) {
+            alert(fileType === 'plano'
+                ? 'El plano debe ser un archivo PDF.'
+                : 'Los documentos deben estar en un archivo ZIP.');
             return;
         }
 
         const formData = new FormData();
-        formData.append(fileType === 'plano' ? 'plano_archivo' : 'planilla_archivo', file);
+        const fieldName = fileType === 'plano' ? 'plano_archivo' : 'documentos_archivo';
+        formData.append(fieldName, file);
 
         this.uploadingProjectFile = true;
         this.api.updateProyectoFiles(this.proyectoId, formData).subscribe({
@@ -1053,21 +1143,21 @@ export class ProyectoDetailComponent implements OnInit {
             error: (err) => {
                 console.error('Error updating project files', err);
                 this.uploadingProjectFile = false;
-                alert(err?.error?.[fileType === 'plano' ? 'plano_archivo' : 'planilla_archivo']?.[0]
+                alert(err?.error?.[fieldName]?.[0]
                     || 'No se pudo actualizar el archivo del proyecto.');
                 this.cdr.detectChanges();
             }
         });
     }
 
-    getProjectFileUrl(fileType: 'plano' | 'planilla'): string | null {
+    getProjectFileUrl(fileType: 'plano' | 'documentos'): string | null {
         const rawUrl = fileType === 'plano'
             ? this.proyecto?.plano_archivo
-            : this.proyecto?.planilla_archivo;
+            : this.proyecto?.documentos_archivo;
         return this.toAbsoluteFileUrl(rawUrl ?? null);
     }
 
-    openProjectFile(fileType: 'plano' | 'planilla'): void {
+    openProjectFile(fileType: 'plano' | 'documentos'): void {
         const canOpen = this.projectFileExists[fileType];
         if (!canOpen) return;
         const url = this.getProjectFileUrl(fileType);
@@ -1078,9 +1168,9 @@ export class ProyectoDetailComponent implements OnInit {
     private async refreshProjectFileAvailability(): Promise<void> {
         this.checkingProjectFiles = true;
         const planoUrl = this.getProjectFileUrl('plano');
-        const planillaUrl = this.getProjectFileUrl('planilla');
+        const documentosUrl = this.getProjectFileUrl('documentos');
         this.projectFileExists.plano = await this.checkFileReachable(planoUrl);
-        this.projectFileExists.planilla = await this.checkFileReachable(planillaUrl);
+        this.projectFileExists.documentos = await this.checkFileReachable(documentosUrl);
         this.checkingProjectFiles = false;
         this.cdr.detectChanges();
     }

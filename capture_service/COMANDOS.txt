@@ -22,6 +22,10 @@ C            -> abrir / cerrar calibracion.
 B            -> mostrar / ocultar fondo de cobertura.
 V            -> mostrar / ocultar cama de 15.
 W            -> mostrar / ocultar cama de 20.
+Flecha atras + Espacio + Flecha adelante durante 5 segundos -> apagar el mini-PC.
+
+El apagado solo funciona desde el player local. Si se suelta cualquier boton
+antes de completar los 5 segundos, se cancela.
 
 
 ===========================================================
