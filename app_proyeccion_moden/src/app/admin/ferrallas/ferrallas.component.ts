@@ -18,7 +18,7 @@ import {
   standalone: true,
   imports: [CommonModule, FormsModule],
   templateUrl: './ferrallas.component.html',
-  styleUrls: ['./ferrallas.component.css']
+  styleUrls: ['./ferrallas.component.css', '../admin-responsive.css']
 })
 export class FerrallasComponent implements OnInit, OnDestroy {
   private static readonly MESA_OFFLINE_AFTER_MS = 2 * 60 * 1000;

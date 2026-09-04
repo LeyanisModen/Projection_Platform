@@ -3177,6 +3177,12 @@ class ModuloViewSet(viewsets.ModelViewSet):
     serializer_class = ModuloSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+    def get_permissions(self):
+        if self.action in ('completar', 'completar_fase', 'cerrar', 'reiniciar',
+                           'create', 'update', 'partial_update', 'destroy'):
+            return [permissions.IsAdminUser()]
+        return super().get_permissions()
+
     def get_queryset(self):
         from django.db.models import Count
         queryset = _modules_with_reorder_data(
@@ -5107,10 +5113,8 @@ class ProductionStatsView(APIView):
                         }
                     add_detalle(por_mesa[manual_key], detalle)
 
-        # Expected output for the range. Stats are per ferralla, so the
-        # capacity comes from the logged user's profile. Admins with an
-        # optional proyecto= filter fall back to that project's ferralla.
-        capacidad_diaria = 12
+        # Work hours still use the camera schedule. Required output comes
+        # from current project deadlines, not the legacy nominal capacity.
         profile_user = None
         if _is_admin(request.user) and proyecto_id:
             proyecto = Proyecto.objects.select_related('usuario__profile').filter(id=proyecto_id).first()
@@ -5120,11 +5124,16 @@ class ProductionStatsView(APIView):
             profile_user = request.user
         if profile_user is not None and hasattr(profile_user, 'profile'):
             profile = profile_user.profile
-            profile_cap = profile.capacidad_diaria_modulos
-            if profile_cap:
-                capacidad_diaria = profile_cap
         else:
             profile = None
+        from api.planning import annotated_projects, demand_summary
+        planning_projects = Proyecto.objects.all()
+        if proyecto_id:
+            planning_projects = planning_projects.filter(pk=proyecto_id)
+        if not _is_admin(request.user):
+            planning_projects = planning_projects.filter(usuario=request.user)
+        planning = demand_summary(annotated_projects(planning_projects))
+        capacidad_diaria = planning['modulos_por_dia']
         working_days = _count_working_days(from_date, to_date)
         working_hours = _working_hours_in_range(
             from_date, to_date, profile, timezone.localtime(timezone.now(), current_tz)
@@ -5155,8 +5164,9 @@ class ProductionStatsView(APIView):
             'por_hora': sorted(por_hora.values(), key=lambda x: x['hora']) if single_day else None,
             'esperado': {
                 'capacidad_diaria_modulos': capacidad_diaria,
-                'modulos_esperados': capacidad_diaria * working_days,
+                'modulos_esperados': None,
             },
+            'planificacion': planning,
         })
 
 

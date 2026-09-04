@@ -1,0 +1,17 @@
+@media (max-width: 760px) {
+    :host { display: block; min-width: 0; }
+    .container, .container-fluid { width: 100%; padding: 10px; box-sizing: border-box; }
+    .page-header { flex-wrap: wrap; gap: 12px; }
+    .page-header h1 { font-size: 23px; }
+    .row { margin: 0; gap: 12px; }
+    .row > [class*="col-"] { flex: 0 0 100%; max-width: 100%; min-width: 0; padding: 0; }
+    .card-body { padding: 12px; }
+    .card-header, .section-header { flex-wrap: wrap; gap: 8px; }
+    .table-responsive { max-width: 100%; overflow-x: auto; }
+    .table-responsive table { min-width: 620px; }
+    .form-control, input:not([type=checkbox]), select, textarea { font-size: 16px; max-width: 100%; min-width: 0; }
+    .btn { min-height: 40px; }
+    .modal-dialog, .modal-content { max-width: calc(100vw - 16px); max-height: calc(100dvh - 16px); overflow: auto; }
+    .folder-input-group { flex-wrap: wrap; }
+    .folder-btn { width: 100%; }
+}

@@ -89,6 +89,12 @@
                             </small>
                         </div>
 
+                        <div class="form-group">
+                            <label for="fecha_montaje">Fecha de montaje</label>
+                            <input id="fecha_montaje" name="fecha_montaje" type="date" class="form-control" [(ngModel)]="newProject.fecha_montaje">
+                            <small class="text-muted">El objetivo diario se calculará para terminar antes de esta fecha, usando los días de trabajo de la ferralla asignada.</small>
+                        </div>
+
                         <!-- Import Progress -->
                         <div *ngIf="importing" class="import-progress mb-3">
                             <div class="progress-indicator">
@@ -230,6 +236,10 @@
                     <span *ngIf="!group.userUrl">📋</span>
                     {{ group.username }}
                 </h3>
+                <span class="planning-group-demand">
+                    Objetivo conjunto: {{ requiredDaily(group.projects) }} módulos/día
+                    @if (planningIssues(group.projects)) { <small> · {{ planningIssues(group.projects) }} proyectos requieren planificación</small> }
+                </span>
                 <span class="badge badge-count" [class.badge-warning]="!group.userUrl" [class.badge-info]="group.userUrl">
                     {{ group.projects.length }} {{ group.projects.length === 1 ? 'proyecto' : 'proyectos' }}
                 </span>
@@ -246,6 +256,10 @@
                             (keydown)="onProjectRowKeydown($event, project)">
                             <td>
                                 <div class="project-name">{{ project.nombre }}</div>
+                                <div class="project-planning-info">
+                                    @if (project.fecha_montaje) { <span>Montaje: {{ project.fecha_montaje | date:'dd/MM/yyyy' }} · </span> }
+                                    {{ planningLabel(project) }}
+                                </div>
                                 <div class="project-stats">
                                     <span *ngIf="(project.grupos_count || 0) > 0" class="stat-pill stat-grupos">
                                         <i class="fa fa-layer-group"></i>

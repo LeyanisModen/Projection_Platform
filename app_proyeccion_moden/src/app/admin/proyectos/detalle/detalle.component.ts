@@ -16,7 +16,8 @@ import {
 } from '../../../services/api.service';
 import { switchMap, forkJoin, of } from 'rxjs';
 import { environment } from '../../../../environments/environment';
-import { ProjectTablePreviewComponent } from './project-table-preview.component';
+import { ProjectControlsComponent } from './project-controls.component';
+import { RackViewOrder, rackInsertionIndex } from './rack-order.utils';
 import { ZoomableImageComponent } from '../../../shared/zoomable-image/zoomable-image.component';
 import {
     appendModuleImportCandidate,
@@ -33,11 +34,11 @@ import { getModuloPhaseAction } from './phase-action.utils';
         FormsModule,
         RouterModule,
         DragDropModule,
-        ProjectTablePreviewComponent,
+        ProjectControlsComponent,
         ZoomableImageComponent,
     ],
     templateUrl: './detalle.component.html',
-    styleUrls: ['./detalle.component.css']
+    styleUrls: ['./detalle.component.css', './detalle-responsive.css']
 })
 export class ProyectoDetailComponent implements OnInit {
     proyectoId: number | null = null;
@@ -95,7 +96,16 @@ export class ProyectoDetailComponent implements OnInit {
     selectedSecuenciaIndex = 0;
     loadingSecuencia = false;
     secuenciaImageErrors = new Set<number>();
-    tablePreviewRevision = 0;
+    rackViewOrder: RackViewOrder = 'produccion';
+
+    visibleRackModules(grupo: GrupoBastidor): GrupoBastidorModulo[] {
+        return this.rackViewOrder === 'produccion' ? [...grupo.modulos].reverse() : grupo.modulos;
+    }
+
+    onProjectControlsSaved(project: Proyecto): void {
+        this.proyecto = project;
+        this.cdr.detectChanges();
+    }
 
     constructor(
         private route: ActivatedRoute,
@@ -162,7 +172,6 @@ export class ProyectoDetailComponent implements OnInit {
                     this.users = data.users || [];
                     this.modulos = data.modulos || [];
                     this.grupos = (data.grupos || []).sort((a, b) => a.indice - b.indice);
-                    this.refreshTablePreview();
 
                     this.loading = false;
                     this.cdr.detectChanges();
@@ -297,7 +306,9 @@ export class ProyectoDetailComponent implements OnInit {
         const grupo = drop?.data;
         if (!grupo) return true;
         const firstLocked = this._firstLockedIndex(grupo, drag.data.id);
-        return firstLocked === -1 || index <= firstLocked;
+        const remainingCount = grupo.modulos.filter(m => m.id !== drag.data.id).length;
+        const canonicalIndex = rackInsertionIndex(index, remainingCount, this.rackViewOrder);
+        return firstLocked === -1 || canonicalIndex <= firstLocked;
     };
 
     onModuloDragStarted(grupo: GrupoBastidor): void {
@@ -323,7 +334,8 @@ export class ProyectoDetailComponent implements OnInit {
         const modulo = event.item.data as GrupoBastidorModulo;
         const destino = event.container.data as GrupoBastidor;
         const origen = event.previousContainer.data as GrupoBastidor;
-        const indexDestino = event.currentIndex;
+        const indexDestino = rackInsertionIndex(event.currentIndex,
+            destino.modulos.filter(m => m.id !== modulo.id).length, this.rackViewOrder);
 
         if (!this.isModuloMovible(modulo)) {
             alert(this.moduloBloqueoTitle(modulo));
@@ -346,9 +358,9 @@ export class ProyectoDetailComponent implements OnInit {
         if (sameGroup) {
             // Intra-bastidor: solo persiste si cambio realmente de posicion.
             if (event.previousIndex === event.currentIndex) return;
-            moveItemInArray(destino.modulos, event.previousIndex, indexClamped);
+            moveItemInArray(destino.modulos, destino.modulos.findIndex(m => m.id === modulo.id), indexClamped);
         } else {
-            transferArrayItem(origen.modulos, destino.modulos, event.previousIndex, indexClamped);
+            transferArrayItem(origen.modulos, destino.modulos, origen.modulos.findIndex(m => m.id === modulo.id), indexClamped);
         }
 
         this.movingModulo = true;
@@ -356,7 +368,6 @@ export class ProyectoDetailComponent implements OnInit {
             next: (grupos) => {
                 this.grupos = grupos.sort((a, b) => a.indice - b.indice);
                 this.movingModulo = false;
-                this.refreshTablePreview();
                 this.cdr.detectChanges();
             },
             error: (err) => {
@@ -381,7 +392,6 @@ export class ProyectoDetailComponent implements OnInit {
             next: (grupos) => {
                 this.grupos = grupos.sort((a, b) => a.indice - b.indice);
                 this.movingModulo = false;
-                this.refreshTablePreview();
                 this.cdr.detectChanges();
             },
             error: (err) => {
@@ -403,7 +413,6 @@ export class ProyectoDetailComponent implements OnInit {
         this.api.reorderBastidores(this.proyectoId, orden).subscribe({
             next: (grupos) => {
                 this.grupos = grupos.sort((a, b) => a.indice - b.indice);
-                this.refreshTablePreview();
                 this.cdr.detectChanges();
             },
             error: (err) => {
@@ -448,7 +457,6 @@ export class ProyectoDetailComponent implements OnInit {
                 this.grupos = res.grupos.sort((a, b) => a.indice - b.indice);
                 this.recalculatingBastidores = false;
                 this.projectConfigMessage = 'Bastidores recalculados con los límites actuales.';
-                this.refreshTablePreview();
                 this.cdr.detectChanges();
             },
             error: (err) => {
@@ -553,7 +561,6 @@ export class ProyectoDetailComponent implements OnInit {
         this.api.updateGrupoBastidor(grupo.id, { nombre: target }).subscribe({
             next: (updated) => {
                 grupo.nombre = updated.nombre;
-                this.refreshTablePreview();
                 this.cdr.detectChanges();
             },
             error: (err) => {
@@ -1530,16 +1537,6 @@ export class ProyectoDetailComponent implements OnInit {
                 this.cdr.detectChanges();
             }
         });
-    }
-
-    private refreshTablePreview(): void {
-        this.tablePreviewRevision += 1;
-    }
-
-    onPreviewGroupsChanged(grupos: GrupoBastidor[]): void {
-        this.grupos = grupos.sort((a, b) => a.indice - b.indice);
-        this.refreshTablePreview();
-        this.cdr.detectChanges();
     }
 
     getColorHex(code: string): string {

@@ -12,6 +12,7 @@ from api.models import (
 )
 from api.queue_sync import module_operational_state, module_reorderability
 from api.module_features import module_has_sd
+from api.planning import project_demand
 
 
 class FerrallaContactoSerializer(serializers.ModelSerializer):
@@ -225,6 +226,7 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
 # CORE SERIALIZERS
 # =============================================================================
 class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
+    planificacion = serializers.SerializerMethodField()
     usuario_nombre = serializers.ReadOnlyField(source='usuario.username')
     capacidad_diaria_usuario = serializers.SerializerMethodField()
     grupos_count = serializers.SerializerMethodField()
@@ -244,6 +246,7 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
         model = Proyecto
         fields = [
             "id", "url", "nombre", "usuario", "usuario_nombre",
+            "fecha_montaje", "planificacion",
             "bastidor_longitud_cm", "peso_maximo_grua_kg", "datos_tecnicos_importados",
             "datos_tecnicos_archivo", "datos_tecnicos_actualizados_at",
             "plano_archivo", "documentos_archivo", "planilla_archivo",
@@ -264,6 +267,20 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
 
     def get_bastidor_longitud_cm(self, obj):
         return obj.bastidor_longitud_efectiva_cm
+
+    def get_planificacion(self, obj):
+        return project_demand(obj)
+
+    def validate(self, attrs):
+        if 'dias_produccion' in self.initial_data:
+            raise serializers.ValidationError({
+                'dias_produccion': 'Los dias de trabajo se configuran en la ferralla, no en el proyecto.',
+            })
+        user = getattr(self.context.get('request'), 'user', None)
+        if user and not (user.is_staff or user.is_superuser):
+            if 'fecha_montaje' in attrs:
+                raise serializers.ValidationError('Solo administracion puede fijar el plazo de montaje.')
+        return attrs
 
     @staticmethod
     def _validate_pdf(value, label):
@@ -331,9 +348,10 @@ class ModuloSerializer(serializers.ModelSerializer):
             "inferior_hecho", "superior_hecho", "estado",
             "estado_operativo",
             "completado_at", "cerrado", "cerrado_at", "cerrado_by",
+            "inferior_completado_at", "superior_completado_at",
             "codigos_color", "fotos_count", "detalles_fase"
         ]
-        read_only_fields = ["completado_at", "cerrado_at", "grupo_bastidor"]
+        read_only_fields = ["completado_at", "cerrado_at", "grupo_bastidor", "inferior_completado_at", "superior_completado_at"]
 
     def get_fotos_count(self, obj):
         if hasattr(obj, '_fotos_count'):
@@ -413,6 +431,8 @@ class GrupoBastidorSerializer(serializers.ModelSerializer):
                 "inferior_hecho": m.inferior_hecho,
                 "superior_hecho": m.superior_hecho,
                 "completado_at": m.completado_at,
+                "inferior_completado_at": m.inferior_completado_at,
+                "superior_completado_at": m.superior_completado_at,
                 "inferior_en_curso": Fase.INFERIOR in fases_en_curso,
                 "superior_en_curso": Fase.SUPERIOR in fases_en_curso,
                 "cerrado": m.cerrado,

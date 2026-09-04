@@ -65,6 +65,7 @@ class EstrategiaColaSuperior(models.TextChoices):
 class Proyecto(models.Model):
     id = models.AutoField(primary_key=True)
     nombre = models.CharField(max_length=200)
+    fecha_montaje = models.DateField(null=True, blank=True)
     usuario = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='proyectos')
     bastidor_longitud_cm = models.DecimalField(
         max_digits=6,
@@ -233,6 +234,8 @@ class Modulo(models.Model):
     
     # Timestamp cuando ambas fases quedaron hechas
     completado_at = models.DateTimeField(null=True, blank=True)
+    inferior_completado_at = models.DateTimeField(null=True, blank=True)
+    superior_completado_at = models.DateTimeField(null=True, blank=True)
     superior_needed_at = models.DateTimeField(
         null=True,
         blank=True,
@@ -326,10 +329,85 @@ class Modulo(models.Model):
         elif self.estado == ModuloEstado.EN_PROGRESO and self.completado_at is not None:
             self.completado_at = None
 
+        # Stamp phase transitions even when callers use update_fields. A reset
+        # clears only its own timestamp; the other phase keeps its original date.
+        changed_dates = []
+        update_fields = kwargs.get('update_fields')
+        previous_flags = None
+        for phase in ('inferior', 'superior'):
+            flag = f'{phase}_hecho'
+            date_field = f'{phase}_completado_at'
+            if update_fields is not None and flag not in update_fields and 'estado' not in update_fields:
+                continue
+            if getattr(self, flag):
+                if getattr(self, date_field) is None:
+                    if not self._state.adding:
+                        if previous_flags is None:
+                            previous_flags = type(self).objects.filter(pk=self.pk).values(
+                                'inferior_hecho', 'superior_hecho',
+                            ).first() or {}
+                        if previous_flags.get(flag):
+                            continue
+                    setattr(self, date_field, timezone.now())
+                    changed_dates.append(date_field)
+            elif getattr(self, date_field) is not None:
+                setattr(self, date_field, None)
+                changed_dates.append(date_field)
+        if update_fields is not None and changed_dates:
+            kwargs['update_fields'] = set(update_fields) | set(changed_dates)
         super().save(*args, **kwargs)
 
     class Meta:
         db_table = 'api_modulo'
+
+
+class ProyectoCheckDefinicion(models.Model):
+    titulo = models.CharField(max_length=200)
+    activo = models.BooleanField(default=True)
+    orden = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['orden', 'id']
+
+
+class ProyectoCheckEstado(models.Model):
+    proyecto = models.ForeignKey(Proyecto, on_delete=models.CASCADE, related_name='check_estados')
+    definicion = models.ForeignKey(ProyectoCheckDefinicion, on_delete=models.PROTECT)
+    completado = models.BooleanField(default=False)
+    actualizado_at = models.DateTimeField(auto_now=True)
+    actualizado_por = models.ForeignKey(User, null=True, on_delete=models.SET_NULL)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(
+            fields=['proyecto', 'definicion'], name='unique_project_check',
+        )]
+
+
+class TrabajadorOficina(models.Model):
+    nombre = models.CharField(max_length=150)
+    activo = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['nombre', 'id']
+
+
+class EventoCalendario(models.Model):
+    class Tipo(models.TextChoices):
+        EVENTO = 'EVENTO', 'Evento'
+        VACACIONES = 'VACACIONES', 'Vacaciones'
+
+    titulo = models.CharField(max_length=200)
+    tipo = models.CharField(max_length=16, choices=Tipo.choices, default=Tipo.EVENTO)
+    inicio = models.DateField()
+    fin = models.DateField()
+    proyecto = models.ForeignKey(Proyecto, null=True, blank=True, on_delete=models.SET_NULL, related_name='eventos')
+    trabajadores = models.ManyToManyField(TrabajadorOficina, blank=True, related_name='eventos')
+    notas = models.TextField(blank=True, max_length=4000)
+    creado_por = models.ForeignKey(User, null=True, on_delete=models.SET_NULL)
+
+    class Meta:
+        ordering = ['inicio', 'id']
+        constraints = [models.CheckConstraint(condition=models.Q(fin__gte=models.F('inicio')), name='calendar_valid_dates')]
 
 
 class DetalleModuloFase(models.Model):

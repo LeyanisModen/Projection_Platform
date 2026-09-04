@@ -20,6 +20,11 @@
 
     <main class="dashboard-main infinite-scroll">
         <section class="dashboard-workspace">
+        <section class="deadline-summary" aria-label="Objetivo de fabricación">
+            <strong>Objetivo conjunto: {{ requiredDaily(proyectos) }} módulos/día</strong>
+            <span>Suma de los plazos de montaje de los proyectos asignados.</span>
+            @if (planningIssues(proyectos)) { <span class="deadline-warning">{{ planningIssues(proyectos) }} proyectos requieren revisar su planificación.</span> }
+        </section>
             @if (loadingGruposMesas || loadingMesas) {
             <div class="loading planner-loading">Cargando operativa...</div>
             } @else {
@@ -200,7 +205,6 @@
                                 <span class="stats-kpi-label">Módulos</span>
                                 <span class="stats-kpi-value">
                                     {{ statsData.totals.modulos_completados }}
-                                    <small class="stats-kpi-expected">/ {{ statsData.esperado.modulos_esperados }}</small>
                                 </span>
                             </div>
                             <div class="stats-kpi">
@@ -268,22 +272,18 @@
 
                         <h4 class="stats-subtitle">Infografía</h4>
                         <div class="weekly-charts-row">
-                                <!-- Chart 1: Módulos vs Objetivo -->
+                                <!-- Historical production; current deadline targets are shown separately. -->
                                 <div class="weekly-chart">
                                     <div class="weekly-chart-header">
-                                        <h4>Módulos vs Objetivo</h4>
+                                        <h4>Módulos fabricados</h4>
                                         <div class="weekly-legend">
                                             <span class="legend-swatch swatch-primary"></span>Fabricados
-                                            <span class="legend-swatch swatch-target"></span>Objetivo
                                         </div>
                                     </div>
                                     <div class="weekly-chart-body">
                                         @for (b of statsBuckets(); track b.key) {
                                             <div class="chart-day">
                                                 <div class="chart-bar-area">
-                                                    <div class="chart-bar chart-bar-target"
-                                                        [style.height.%]="modulosBarPct(b.meta_modulos)"
-                                                        [title]="'Objetivo: ' + b.meta_modulos + ' módulos'"></div>
                                                     <div class="chart-bar chart-bar-primary"
                                                         [style.height.%]="modulosBarPct(b.modulos_completados)"
                                                         [title]="b.label + ': ' + b.modulos_completados + ' módulos'">
@@ -422,9 +422,12 @@
                                     </svg>
                                 </button>
                             </div>
+                            @if (proyecto.modulos_count) {
+                            <div class="project-deadline"><span>{{ planningLabel(proyecto) }}</span>@if (proyecto.fecha_montaje) { <time>Montaje: {{ proyecto.fecha_montaje | date:'dd/MM/yyyy' }}</time> }</div>
+                            }
                         </div>
                         @if (proyecto.modulos_count) {
-                            <div class="project-progress-donut" [attr.title]="'Completados: ' + (proyecto.modulos_completados || 0) + '/' + proyecto.modulos_count + ' · Hoy: ' + getProyectoHoy(proyecto) + ' · Esta semana: ' + (getProyectoHoy(proyecto) + getProyectoSemana(proyecto))">
+                            <div class="project-progress-donut" [attr.title]="'Completados: ' + (proyecto.modulos_completados || 0) + '/' + proyecto.modulos_count + ' · Objetivo pendiente hoy: ' + getProyectoHoy(proyecto) + ' · Próximos 7 días: ' + (getProyectoHoy(proyecto) + getProyectoSemana(proyecto))">
                                 <svg viewBox="0 0 80 80">
                                     <!-- track base (resto pendiente) -->
                                     <circle cx="40" cy="40" r="32" fill="none" stroke="#e9ecef" stroke-width="10"/>
@@ -534,6 +537,18 @@
                                                 }
                                                 <span class="plan-modulo-estado">{{ moduloEstadoLabel(m) }}</span>
                                             </div>
+                                            <div class="plan-phase-list">
+                                                @for (phase of modulePhases; track phase) {
+                                                    <div class="plan-phase-row">
+                                                        <strong>{{ phase === 'INFERIOR' ? 'Inferior' : 'Superior' }}</strong>
+                                                        <span>{{ phaseDone(m, phase) ? 'Terminada' : 'Pendiente / en proceso' }}</span>
+                                                        @if (phaseFinishedAt(m, phase); as finished) {
+                                                            <time [attr.datetime]="finished">{{ finished | date:'dd/MM/yyyy HH:mm' }}</time>
+                                                        } @else if (phaseDone(m, phase)) { <small>Fecha no registrada</small> }
+                                                        <button type="button" (click)="requestPhaseReset(m, phase)" [disabled]="resettingPhase">Reiniciar</button>
+                                                    </div>
+                                                }
+                                            </div>
                                         </li>
                                     }
                                 </ul>
@@ -544,8 +559,23 @@
         </div>
     }
 
+    @if (phaseResetTarget; as target) {
+        <div class="modal-overlay phase-reset-overlay" (click)="cancelPhaseReset()">
+            <section class="modal-content phase-reset-modal" role="dialog" aria-modal="true" aria-labelledby="phase-reset-title"
+                (click)="$event.stopPropagation()" (keydown.escape)="cancelPhaseReset()" tabindex="-1">
+                <h3 id="phase-reset-title">Reiniciar {{ target.module.nombre }} · {{ target.phase === 'INFERIOR' ? 'Inferior' : 'Superior' }}</h3>
+                <p>Esta fase volverá a la cola para repetir su fabricación. La otra fase y las fotos anteriores se conservan.</p>
+                @if (phaseResetError) { <p role="alert">{{ phaseResetError }}</p> }
+                <div class="phase-reset-actions">
+                    <button type="button" (click)="cancelPhaseReset()" [disabled]="resettingPhase">Cancelar</button>
+                    <button type="button" (click)="confirmPhaseReset()" [disabled]="resettingPhase">{{ resettingPhase ? 'Reiniciando...' : 'Confirmar reinicio' }}</button>
+                </div>
+            </section>
+        </div>
+    }
+
     @if (showPlanFotosModal) {
-        <div class="modal-overlay" (click)="closePlanFotosModal()">
+        <div class="modal-overlay plan-fotos-overlay" (click)="closePlanFotosModal()">
             <div class="modal-content plan-fotos-modal" (click)="$event.stopPropagation()">
                 <div class="plan-modal-header">
                     <div>

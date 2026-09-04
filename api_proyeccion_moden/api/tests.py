@@ -1589,6 +1589,8 @@ class PlanningFoundationTests(APITestCase):
         return GrupoMesas.objects.get(id=response.data["id"])
 
     def test_reiniciar_modulo_limpia_colas_historicas_duplicadas(self):
+        self.user.is_staff = True
+        self.user.save(update_fields=['is_staff'])
         grupo = self._crear_grupo("Grupo Reinicio")
         mesa_inf = grupo.mesas.get(tipo="INFERIOR", indice=1)
         mesa_sup = grupo.mesas.get(tipo="SUPERIOR", indice=3)
@@ -1687,6 +1689,8 @@ class PlanningFoundationTests(APITestCase):
         )
 
     def test_completar_fase_inferior_conserva_superior_pendiente(self):
+        self.user.is_staff = True
+        self.user.save(update_fields=['is_staff'])
         grupo = self._crear_grupo("Grupo Completar INF")
         mesa_inf = grupo.mesas.get(tipo="INFERIOR", indice=1)
         mesa_sup = grupo.mesas.get(tipo="SUPERIOR", indice=3)
@@ -1737,6 +1741,8 @@ class PlanningFoundationTests(APITestCase):
         self.assertEqual(item_sup.status, MesaQueueStatus.EN_COLA)
 
     def test_completar_fase_superior_finaliza_modulo_con_inferior_hecho(self):
+        self.user.is_staff = True
+        self.user.save(update_fields=['is_staff'])
         self.modulo.inferior_hecho = True
         self.modulo.estado = ModuloEstado.EN_PROGRESO
         self.modulo.save(update_fields=["inferior_hecho", "estado"])
@@ -1755,6 +1761,8 @@ class PlanningFoundationTests(APITestCase):
         self.assertIsNotNone(self.modulo.completado_at)
 
     def test_completar_fase_rechaza_fase_desconocida(self):
+        self.user.is_staff = True
+        self.user.save(update_fields=['is_staff'])
         response = self.client.post(
             f"/api/modulos/{self.modulo.id}/completar-fase/",
             {"fase": "SD_D"},
@@ -4960,6 +4968,8 @@ class PlanningFoundationTests(APITestCase):
         self.assertFalse(self.modulo.superior_hecho)
         self.assertIsNotNone(self.modulo.superior_needed_at)
 
+        self.user.is_staff = True
+        self.user.save(update_fields=['is_staff'])
         complete_response = self.client.post(
             f"/api/modulos/{self.modulo.id}/completar-fase/",
             {"fase": "SUPERIOR"},

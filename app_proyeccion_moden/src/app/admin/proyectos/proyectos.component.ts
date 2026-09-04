@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ApiService, User, Proyecto } from '../../services/api.service';
 import { forkJoin } from 'rxjs';
 import { Router } from '@angular/router';
+import { requiredDaily, planningIssues, planningLabel } from '../../shared/project-planning';
 import {
   appendModuleImportCandidate,
   ModuleImportScanResult,
@@ -43,9 +44,12 @@ interface ProjectCreationReport {
   standalone: true,
   imports: [CommonModule, FormsModule],
   templateUrl: './proyectos.component.html',
-  styleUrls: ['./proyectos.component.css']
+  styleUrls: ['./proyectos.component.css', '../admin-responsive.css']
 })
 export class ProyectosComponent implements OnInit {
+  readonly requiredDaily = requiredDaily;
+  readonly planningIssues = planningIssues;
+  readonly planningLabel = planningLabel;
   users: User[] = [];
   projects: Proyecto[] = [];
   groupedProjects: ProjectGroup[] = [];
@@ -202,6 +206,7 @@ export class ProyectosComponent implements OnInit {
 
     const projectData: any = {
       nombre: this.newProject.nombre,
+      fecha_montaje: this.newProject.fecha_montaje || null,
       usuario: this.newProject.usuario || null,
       peso_maximo_grua_kg: Number.isFinite(rawCraneLimit) && rawCraneLimit > 0
         ? rawCraneLimit
