@@ -115,4 +115,8 @@
         right: 8px;
         bottom: 8px;
     }
+    .zoom-controls button {
+        width: 40px;
+        height: 40px;
+    }
 }

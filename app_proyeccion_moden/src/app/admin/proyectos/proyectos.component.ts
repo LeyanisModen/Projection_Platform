@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ApiService, User, Proyecto } from '../../services/api.service';
 import { forkJoin } from 'rxjs';
 import { Router } from '@angular/router';
+import { requiredDaily, planningIssues, planningLabel } from '../../shared/project-planning';
 import {
   appendModuleImportCandidate,
   ModuleImportScanResult,
@@ -22,7 +23,7 @@ interface ImportStats {
   imagenes: number;
   detalles_fase?: number;
   plano_cargado?: boolean;
-  planilla_cargada?: boolean;
+  documentos_cargados?: boolean;
   base_tecnica_actualizada?: boolean;
   modulos_omitidos?: number;
   module_errors?: Array<{
@@ -43,16 +44,19 @@ interface ProjectCreationReport {
   standalone: true,
   imports: [CommonModule, FormsModule],
   templateUrl: './proyectos.component.html',
-  styleUrls: ['./proyectos.component.css']
+  styleUrls: ['./proyectos.component.css', '../admin-responsive.css']
 })
 export class ProyectosComponent implements OnInit {
+  readonly requiredDaily = requiredDaily;
+  readonly planningIssues = planningIssues;
+  readonly planningLabel = planningLabel;
   users: User[] = [];
   projects: Proyecto[] = [];
   groupedProjects: ProjectGroup[] = [];
   loading = false;
   error = '';
   showForm = false;
-  newProject: any = { nombre: '', usuario: null };
+  newProject: any = { nombre: '', usuario: null, peso_maximo_grua_kg: null };
 
   // Folder import state
   selectedFolder: FileSystemDirectoryHandle | null = null;
@@ -198,10 +202,15 @@ export class ProyectosComponent implements OnInit {
 
   async createProyecto() {
     this.error = '';
+    const rawCraneLimit = Number(this.newProject.peso_maximo_grua_kg);
 
     const projectData: any = {
       nombre: this.newProject.nombre,
-      usuario: this.newProject.usuario || null
+      fecha_montaje: this.newProject.fecha_montaje || null,
+      usuario: this.newProject.usuario || null,
+      peso_maximo_grua_kg: Number.isFinite(rawCraneLimit) && rawCraneLimit > 0
+        ? rawCraneLimit
+        : null
     };
 
     if (!this.selectedFolder) {
@@ -243,7 +252,7 @@ export class ProyectosComponent implements OnInit {
           this.groupProjects();
           this.creationReport = { projectName, stats: result.stats };
           this.importStats = result.stats;
-          this.newProject = { nombre: '', usuario: null };
+          this.newProject = { nombre: '', usuario: null, peso_maximo_grua_kg: null };
           this.showForm = false;
           this.loading = false;
           this.importing = false;
@@ -289,8 +298,12 @@ export class ProyectosComponent implements OnInit {
     if (scan.planoFile) {
       formData.append('plano_file', scan.planoFile.file, scan.planoFile.entryName);
     }
-    if (scan.planillaFile) {
-      formData.append('planilla_file', scan.planillaFile.file, scan.planillaFile.entryName);
+    if (scan.documentosFile) {
+      formData.append(
+        'documentos_file',
+        scan.documentosFile.file,
+        scan.documentosFile.entryName
+      );
     }
     if (scan.technicalDbFile) {
       formData.append('technical_file', scan.technicalDbFile, scan.technicalDbFile.name);
@@ -328,7 +341,7 @@ export class ProyectosComponent implements OnInit {
   }
 
   private resetCreationForm(): void {
-    this.newProject = { nombre: '', usuario: null };
+    this.newProject = { nombre: '', usuario: null, peso_maximo_grua_kg: null };
     this.showForm = false;
     this.loading = false;
     this.importing = false;

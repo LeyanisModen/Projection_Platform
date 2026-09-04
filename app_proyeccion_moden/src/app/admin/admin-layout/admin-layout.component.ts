@@ -9,19 +9,12 @@ import { ApiService } from '../../services/api.service';
   template: `
     <div class="admin-container">
       <header class="admin-header">
-        <a class="brand" routerLink="/admin-dashboard/ferrallas" aria-label="Ir a Ferrallas">
+        <a class="brand" routerLink="/admin-dashboard/proyectos" aria-label="Ir a Proyectos">
           <img src="assets/logo-moden.jpg" alt="MOD:EN" class="header-logo" />
           <span class="subtitle">Administracion de la plataforma</span>
         </a>
 
         <nav class="header-nav" aria-label="Secciones de administracion">
-          <a
-            routerLink="/admin-dashboard/ferrallas"
-            routerLinkActive="active"
-            ariaCurrentWhenActive="page"
-          >
-            Ferrallas
-          </a>
           <a
             routerLink="/admin-dashboard/proyectos"
             routerLinkActive="active"
@@ -29,6 +22,14 @@ import { ApiService } from '../../services/api.service';
           >
             Proyectos
           </a>
+          <a
+            routerLink="/admin-dashboard/ferrallas"
+            routerLinkActive="active"
+            ariaCurrentWhenActive="page"
+          >
+            Ferrallas
+          </a>
+          <a routerLink="/admin-dashboard/calendario" routerLinkActive="active" ariaCurrentWhenActive="page">Calendario</a>
         </nav>
 
         <div class="header-right">
@@ -91,6 +92,7 @@ import { ApiService } from '../../services/api.service';
 
       display: block;
       height: 100vh;
+      height: 100dvh;
       overflow: hidden;
       color: var(--text-primary);
     }
@@ -265,17 +267,17 @@ import { ApiService } from '../../services/api.service';
       }
 
       .admin-header {
-        gap: 12px;
-        padding: 0 12px;
+        gap: 6px;
+        padding: 0 8px;
       }
 
       .header-logo {
-        width: 86px;
+        width: 58px;
         height: auto;
       }
 
       .header-nav {
-        gap: 14px;
+        gap: 10px;
       }
 
       .header-nav a {

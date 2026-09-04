@@ -100,6 +100,73 @@
     color: #64748b;
 }
 
+.project-logistics-card {
+    display: grid;
+    gap: 0.85rem;
+    border-left: 3px solid #0f766e !important;
+}
+
+.project-logistics-rack {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.65rem 0.75rem;
+    color: #3f4d55;
+    background: #edf7f5;
+    border-radius: 8px;
+    font-size: 0.82rem;
+}
+
+.project-logistics-rack strong {
+    color: #0f625b;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.project-logistics-field {
+    display: grid;
+    gap: 0.35rem;
+    margin: 0;
+    color: #334155;
+    font-size: 0.82rem;
+    font-weight: 600;
+}
+
+.project-logistics-input-wrap {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.project-logistics-input-wrap .project-config-input {
+    width: 100%;
+}
+
+.project-logistics-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+}
+
+.project-logistics-actions .btn {
+    flex: 1 1 140px;
+}
+
+.project-logistics-card .project-config-hint {
+    margin-top: 0;
+    line-height: 1.4;
+}
+
+.project-config-message {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.35rem;
+    color: #087443;
+    line-height: 1.35;
+}
+
 .technical-import-summary {
     margin-top: 0.9rem;
 }
@@ -223,6 +290,89 @@
 .project-files-modal-header h4 {
     margin: 0;
     font-size: 1.05rem;
+}
+
+.ferralla-change-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 2400;
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+    background: rgba(16, 25, 31, 0.68);
+    backdrop-filter: blur(3px);
+}
+
+.ferralla-change-modal {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.9rem 1rem;
+    width: min(560px, 100%);
+    padding: 1.25rem;
+    color: #1f2b33;
+    background: #fff;
+    border: 1px solid #dce3e6;
+    border-radius: 14px;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.32);
+}
+
+.ferralla-change-icon {
+    display: grid;
+    width: 42px;
+    height: 42px;
+    color: #c94c17;
+    background: #fff1e9;
+    border-radius: 50%;
+    place-items: center;
+}
+
+.ferralla-change-eyebrow {
+    display: block;
+    margin-bottom: 0.25rem;
+    color: #d9541d;
+    font-size: 0.64rem;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+}
+
+.ferralla-change-content h4 {
+    margin: 0;
+    font-size: 1.2rem;
+}
+
+.ferralla-change-content p {
+    margin: 0.65rem 0 0;
+    color: #4b5b65;
+    line-height: 1.45;
+}
+
+.ferralla-change-warning {
+    padding: 0.65rem 0.75rem;
+    background: #f5f7f8;
+    border-left: 3px solid #73818a;
+    border-radius: 5px;
+    font-size: 0.82rem;
+}
+
+.ferralla-change-error {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.4rem;
+    margin-top: 0.7rem;
+    padding: 0.6rem 0.7rem;
+    color: #9f2632;
+    background: #fff2f3;
+    border: 1px solid #efc3c7;
+    border-radius: 6px;
+    font-size: 0.82rem;
+}
+
+.ferralla-change-actions {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.55rem;
+    padding-top: 0.35rem;
 }
 
 /* Selective folder import */
@@ -1021,9 +1171,9 @@
 .grupo-bastidor-meta {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 0.35rem;
     font-size: 0.72rem;
-    white-space: nowrap;
 }
 
 .grupo-capacidad {
@@ -1040,6 +1190,17 @@
 
 .grupo-capacidad.is-overflow {
     color: #dc3545;
+    font-weight: 600;
+}
+
+.grupo-peso::before {
+    margin-right: 0.35rem;
+    color: #c7cdd2;
+    content: "·";
+}
+
+.grupo-peso.is-unknown {
+    color: #9a6700;
     font-weight: 600;
 }
 
@@ -1171,6 +1332,16 @@
 .grupo-modulo-nombre .grupo-modulo-tipo-chip {
     flex: 0 0 auto;
     margin-left: 0;
+}
+
+.grupo-modulo-completado-at {
+    display: block;
+    margin-top: 0.18rem;
+    color: #6d7880;
+    font-size: 0.66rem;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.2;
 }
 
 .grupo-modulo-actions {
@@ -2328,6 +2499,22 @@
 }
 
 @media (max-width: 700px) {
+    .ferralla-change-modal {
+        grid-template-columns: 1fr;
+    }
+
+    .ferralla-change-icon {
+        display: none;
+    }
+
+    .ferralla-change-actions {
+        grid-column: 1;
+    }
+
+    .ferralla-change-actions .btn {
+        flex: 1;
+    }
+
     .module-import-modal {
         width: 100%;
         max-height: 96vh;
@@ -2710,7 +2897,15 @@
     background: #6f42c1;
 }
 
-/* Switch de estrategia (secuencial / por tipo) */
+.module-display-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 0;
+}
+
+/* Controles segmentados de orden visual y estrategia de agrupacion. */
 .estrategia-toggle {
     display: inline-flex;
     align-items: center;
@@ -2742,6 +2937,7 @@
     font-weight: 600;
     padding: 0.18rem 0.7rem;
     border-radius: 999px;
+    white-space: nowrap;
     cursor: pointer;
     transition: background-color 0.15s ease, color 0.15s ease;
 }
@@ -2758,4 +2954,9 @@
 
 .estrategia-pill:disabled {
     cursor: not-allowed;
+}
+
+.estrategia-pill:focus-visible {
+    outline: 2px solid #d35400;
+    outline-offset: 2px;
 }

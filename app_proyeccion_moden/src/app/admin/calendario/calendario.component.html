@@ -1,0 +1,169 @@
+<header class="page-heading">
+    <div><h1>Calendario</h1><p>Montajes, eventos y disponibilidad de la oficina</p></div>
+    <div class="actions">
+        <button type="button" (click)="openTeam()">Gestionar equipo</button>
+        <button type="button" class="primary" (click)="editEvent()">Añadir evento</button>
+    </div>
+</header>
+@if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+<section class="calendar-toolbar">
+    <div class="month-nav">
+        <button type="button" (click)="changeMonth(-1)" [disabled]="loading()" [attr.aria-label]="view()==='year' ? 'Año anterior' : 'Mes anterior'">&lt;</button>
+        <h2>{{ title() }}</h2>
+        <button type="button" (click)="changeMonth(1)" [disabled]="loading()" [attr.aria-label]="view()==='year' ? 'Año siguiente' : 'Mes siguiente'">&gt;</button>
+        <button type="button" (click)="goToday()" [disabled]="loading()">Hoy</button>
+    </div>
+    <div class="view-switch" role="group" aria-label="Vista del calendario">
+        @for (option of viewOptions; track option.value) {
+            <button type="button" [class.active]="view()===option.value" [attr.aria-pressed]="view()===option.value"
+                [disabled]="loading()" (click)="setView(option.value)">{{ option.label }}</button>
+        }
+    </div>
+    <div class="filters">
+        <select aria-label="Filtrar por proyecto" [ngModel]="projectFilter()" (ngModelChange)="projectFilter.set($event)">
+            <option [ngValue]="null">Todos los proyectos</option>
+            @for (project of projects(); track project.id) { <option [ngValue]="project.id">{{ project.nombre }}</option> }
+        </select>
+        <select aria-label="Filtrar por persona" [ngModel]="workerFilter()" (ngModelChange)="workerFilter.set($event)">
+            <option [ngValue]="null">Todo el equipo</option>
+            @for (worker of workers(); track worker.id) { <option [ngValue]="worker.id">{{ worker.nombre }}</option> }
+        </select>
+        <button type="button" (click)="load()" [disabled]="loading()">{{ loading() ? 'Cargando...' : 'Actualizar' }}</button>
+    </div>
+</section>
+@if (view()==='quarter') { <p class="view-hint">Mes de referencia y los dos siguientes. Las flechas desplazan la ventana un mes.</p> }
+@if (view()==='year') { <p class="view-hint">Enero a diciembre. Pulsa el nombre de un mes para verlo en detalle.</p> }
+<div class="team-legend" aria-label="Colores del equipo">
+    @for (worker of activeWorkers(); track worker.id) {
+        <button type="button" [class.active]="workerFilter()===worker.id" [attr.aria-pressed]="workerFilter()===worker.id"
+            (click)="workerFilter.set(workerFilter()===worker.id ? null : worker.id)">
+            <span class="color-dot" [style.background-color]="colorOf(worker)" aria-hidden="true"></span>{{ worker.nombre }}
+        </button>
+    }
+    <span class="legend-note">Pulsa una persona para filtrar · Los eventos compartidos muestran todos sus colores</span>
+</div>
+<div class="calendar-layout" [class.multi-view]="view()!=='month'" [class.year-view]="view()==='year'">
+    <div class="calendar-months">
+    @for (calendar of calendars(); track calendar.key) {
+    <section class="month-grid" [attr.aria-label]="calendar.title" [attr.aria-busy]="loading()">
+        @if (view()!=='month') {
+            <h2 class="month-heading"><button type="button" [disabled]="loading()" (click)="openMonth(calendar.month)"
+                [attr.aria-label]="'Ver ' + calendar.title + ' en detalle'">{{ calendar.title }}<span aria-hidden="true">↗</span></button></h2>
+        }
+        <div class="week-heading">@for (label of weekLabels; track label) { <span class="weekday">{{ label }}</span> }</div>
+        @for (week of calendar.weeks; track week.days[0].key) {
+            <div class="calendar-week" [style.grid-template-rows]="'var(--day-header) ' + (week.lanes ? 'repeat(' + week.lanes + ', var(--event-row)) ' : '') + 'minmax(6px, 1fr)'">
+                @for (day of week.days; track day.key; let column = $index) {
+                    @if (day.current || view()==='month') {
+                    <button type="button" class="day" [style.grid-column]="column+1" [class.outside]="!day.current" [class.today]="day.key===today"
+                        [class.selected]="day.key===selected()" [attr.aria-pressed]="day.key===selected()"
+                        [attr.aria-label]="(day.key | date:'dd/MM/yyyy') + ', ' + (eventsOn(day.key).length + mountsOn(day.key).length) + ' eventos'"
+                        (click)="selected.set(day.key)">
+                        <span class="day-number">{{ day.number }}</span>
+                    </button>
+                    } @else { <span class="day outside empty-day" [style.grid-column]="column+1" aria-hidden="true"></span> }
+                }
+                @for (segment of week.segments; track segment.item.key) {
+                    <button type="button" class="event-bar" [class.continues-before]="segment.continuesBefore" [class.continues-after]="segment.continuesAfter"
+                        [class.mounting]="segment.item.mounting" [style.grid-column]="segment.column + ' / span ' + segment.span"
+                        [style.grid-row]="segment.lane+2" [style.--event-color]="segment.item.colors.length===1 ? segment.item.colors[0] : '#64748b'"
+                        [attr.aria-label]="segment.item.title + ', ' + (segment.item.start | date:'dd/MM/yyyy') + ' a ' + (segment.item.end | date:'dd/MM/yyyy') + ', ' + segment.item.people"
+                        [title]="segment.item.title + ' · ' + segment.item.people + ' · ' + (segment.item.start | date:'dd/MM/yyyy') + ' - ' + (segment.item.end | date:'dd/MM/yyyy')"
+                        (click)="selectSegment(segment)">
+                        <span class="event-tint" aria-hidden="true"></span>
+                        @if (segment.continuesBefore) { <span class="continuation" aria-hidden="true">‹</span> }
+                        <span class="event-label">{{ segment.item.title }}</span>
+                        @if (segment.continuesAfter) { <span class="continuation" aria-hidden="true">›</span> }
+                        <span class="color-strip" aria-hidden="true">@for (color of segment.item.colors; track $index) { <span [style.background-color]="color"></span> }</span>
+                    </button>
+                }
+            </div>
+        }
+    </section>
+    }
+    </div>
+    <aside class="day-agenda">
+        <h2>{{ selected() | date:'dd/MM/yyyy' }}</h2>
+        <h3>Disponibilidad de oficina</h3>
+        @if (loading()) { <p role="status">Comprobando disponibilidad...</p>
+        } @else if (error()) { <p>No se puede confirmar la disponibilidad hasta actualizar el calendario.</p>
+        } @else {
+        <div class="availability">
+            @for (worker of availability(); track worker.id) {
+                <div [class.absent]="worker.holiday"><strong><i class="color-dot" [style.background-color]="colorOf(worker)" aria-hidden="true"></i>{{ worker.nombre }}</strong><span>{{ worker.holiday ? 'De vacaciones' : 'Disponible' }}</span></div>
+            } @empty { <p>Añade personas desde Gestionar equipo.</p> }
+        </div>
+        <small>Disponibilidad según las vacaciones registradas.</small>
+        }
+        <h3>Agenda del día</h3>
+        @for (project of mountingProjects(); track project.id) {
+            <article class="agenda-event mounting">
+                <strong>Montaje · {{ project.nombre }}</strong>
+                <a [routerLink]="['/admin-dashboard/proyectos',project.id]">Ver proyecto y plazo</a>
+            </article>
+        }
+        @for (event of selectedEvents(); track event.id) {
+            <article class="agenda-event">
+                <div class="agenda-colors" aria-hidden="true">@for (color of eventColors(event); track $index) { <span [style.background-color]="color"></span> }</div>
+                <strong>{{ event.titulo }}</strong>
+                <span>{{ event.inicio | date:'dd/MM/yyyy' }} – {{ event.fin | date:'dd/MM/yyyy' }} (inclusive)</span>
+                @if (event.proyecto) { <a [routerLink]="['/admin-dashboard/proyectos',event.proyecto]">{{ projectName(event.proyecto) }}</a> }
+                @if (event.trabajadores.length) { <span>{{ workerNames(event.trabajadores) }}</span> }
+                @if (event.notas) { <p>{{ event.notas }}</p> }
+                <div class="actions"><button type="button" (click)="editEvent(event)">Editar</button><button type="button" [disabled]="busy()" (click)="removeEvent(event)">Eliminar</button></div>
+            </article>
+        }
+        @if (!selectedEvents().length && !mountingProjects().length) { <p>No hay eventos para este día.</p> }
+    </aside>
+</div>
+@if (editorOpen()) {
+    <div class="overlay" (click)="closeEditor()">
+        <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="event-title" cdkTrapFocus [cdkTrapFocusAutoCapture]="true" (click)="$event.stopPropagation()" (keydown.escape)="closeEditor()" tabindex="-1">
+            <h2 id="event-title">{{ draft.id ? 'Editar evento' : 'Nuevo evento' }}</h2>
+            <form (ngSubmit)="saveEvent()">
+                <label>Título<input name="title" [(ngModel)]="draft.titulo" maxlength="200" required /></label>
+                <label>Tipo<select name="type" [(ngModel)]="draft.tipo"><option value="EVENTO">Evento</option><option value="VACACIONES">Vacaciones</option></select></label>
+                <div class="dates"><label>Desde<input type="date" name="start" [(ngModel)]="draft.inicio" required /></label><label>Hasta (inclusive)<input type="date" name="end" [(ngModel)]="draft.fin" [min]="draft.inicio" required /></label></div>
+                <label>Proyecto<select name="project" [(ngModel)]="draft.proyecto"><option [ngValue]="null">Sin proyecto</option>@for (project of projects(); track project.id) { <option [ngValue]="project.id">{{ project.nombre }}</option> }</select></label>
+                <fieldset><legend>Personas</legend>
+                    @for (worker of workers(); track worker.id) {
+                        @if (worker.activo || draft.trabajadores.includes(worker.id)) {
+                            <label class="person-check"><input type="checkbox" [checked]="draft.trabajadores.includes(worker.id)" (change)="setWorker(worker.id,$any($event.target).checked)" /><span class="color-dot" [style.background-color]="colorOf(worker)" aria-hidden="true"></span>{{ worker.nombre }}</label>
+                        }
+                    }
+                </fieldset>
+                <label>Notas<textarea name="notes" [(ngModel)]="draft.notas" maxlength="4000" rows="3"></textarea></label>
+                @if (editorError()) { <p class="error" role="alert">{{ editorError() }}</p> }
+                <div class="actions"><button type="button" (click)="closeEditor()" [disabled]="busy()">Cancelar</button><button type="submit" class="primary" [disabled]="busy()">Guardar</button></div>
+            </form>
+        </section>
+    </div>
+}
+@if (teamOpen()) {
+    <div class="overlay" (click)="!busy() && teamOpen.set(false)">
+        <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="team-title" cdkTrapFocus [cdkTrapFocusAutoCapture]="true" (click)="$event.stopPropagation()" (keydown.escape)="!busy() && teamOpen.set(false)" tabindex="-1">
+            <h2 id="team-title">Equipo de oficina</h2>
+            @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
+            @for (worker of workers(); track worker.id) {
+                <div class="worker-row"><span class="worker-name"><i class="color-dot" [style.background-color]="colorOf(worker)" aria-hidden="true"></i>{{ worker.nombre }} {{ worker.activo ? '' : '(inactivo)' }}</span>
+                    <button type="button" [disabled]="busy()" (click)="editWorker(worker)">Editar</button>
+                    <button type="button" [disabled]="busy()" (click)="setWorkerActive(worker)">{{ worker.activo ? 'Desactivar' : 'Activar' }}</button>
+                </div>
+            }
+            <form class="worker-form" (ngSubmit)="saveWorker()">
+                <label>{{ workerId ? 'Editar persona' : 'Añadir persona' }}<input name="worker" [(ngModel)]="workerName" maxlength="150" required [disabled]="busy()" /></label>
+                <label class="worker-color-label">Color en el calendario<input type="color" name="workerColor" [(ngModel)]="workerDraftColor" [disabled]="busy()" /></label>
+                <div class="color-palette" role="group" aria-label="Colores sugeridos">
+                    @for (color of palette; track color) {
+                        <button type="button" [style.--swatch]="color" [class.chosen]="workerDraftColor===color" [attr.aria-pressed]="workerDraftColor===color"
+                            [attr.aria-label]="'Usar color ' + color" (click)="workerDraftColor=color" [disabled]="busy()"></button>
+                    }
+                </div>
+                <div class="actions"><button type="submit" class="primary" [disabled]="busy()">Guardar persona</button>
+                    @if (workerId) { <button type="button" (click)="editWorker()" [disabled]="busy()">Cancelar edición</button> }
+                </div>
+            </form>
+            <button type="button" (click)="teamOpen.set(false)" [disabled]="busy()">Cerrar</button>
+        </section>
+    </div>
+}

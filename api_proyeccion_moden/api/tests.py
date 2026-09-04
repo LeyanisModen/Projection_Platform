@@ -6,6 +6,7 @@ import sqlite3
 import tempfile
 import zipfile
 from datetime import datetime, time, timedelta
+from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
 
@@ -125,6 +126,110 @@ class PermissionAndDeviceAuthTests(APITestCase):
         self.assertEqual(response.data["count"], 2)
         self.assertEqual(len(response.data["results"]), 2)
 
+    def test_regular_user_cannot_reassign_project(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.user_a_token.key}")
+
+        response = self.client.patch(
+            f"/api/proyectos/{self.project_a.id}/",
+            {"usuario": f"http://testserver/api/users/{self.user_b.id}/"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.project_a.refresh_from_db()
+        self.assertEqual(self.project_a.usuario_id, self.user_a.id)
+
+    def test_regular_user_can_resend_unchanged_project_owner(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.user_a_token.key}")
+
+        response = self.client.patch(
+            f"/api/proyectos/{self.project_a.id}/",
+            {
+                "nombre": "Proyecto A actualizado",
+                "usuario": f"http://testserver/api/users/{self.user_a.id}/",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.project_a.refresh_from_db()
+        self.assertEqual(self.project_a.nombre, "Proyecto A actualizado")
+        self.assertEqual(self.project_a.usuario_id, self.user_a.id)
+
+    def test_admin_reassignment_checks_active_table_links(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.admin_token.key}")
+        old_group = GrupoMesas.objects.create(
+            nombre="Grupo en produccion",
+            usuario=self.user_a,
+        )
+        link = GrupoMesasProyecto.objects.create(
+            grupo_mesas=old_group,
+            proyecto=self.project_a,
+            orden=0,
+        )
+        target_url = f"http://testserver/api/users/{self.user_b.id}/"
+
+        blocked = self.client.patch(
+            f"/api/proyectos/{self.project_a.id}/",
+            {"usuario": target_url},
+            format="json",
+        )
+
+        self.assertEqual(blocked.status_code, 400)
+        self.assertIn("usuario", blocked.data)
+        self.assertIn("Grupo en produccion", str(blocked.data["usuario"]))
+        self.project_a.refresh_from_db()
+        self.assertEqual(self.project_a.usuario_id, self.user_a.id)
+
+        link.delete()
+        reserved_rack = GrupoBastidor.objects.create(
+            proyecto=self.project_a,
+            indice=1,
+            asignado_a=old_group,
+        )
+        still_blocked = self.client.patch(
+            f"/api/proyectos/{self.project_a.id}/",
+            {"usuario": target_url},
+            format="json",
+        )
+
+        self.assertEqual(still_blocked.status_code, 400)
+        self.assertIn("Grupo en produccion", str(still_blocked.data["usuario"]))
+
+        reserved_rack.asignado_a = None
+        reserved_rack.save(update_fields=["asignado_a"])
+        queued_module = Modulo.objects.create(
+            nombre="A01",
+            proyecto=self.project_a,
+        )
+        queued_item = MesaQueueItem.objects.create(
+            mesa=self.mesa_a,
+            modulo=queued_module,
+            fase="INFERIOR",
+            status=MesaQueueStatus.EN_COLA,
+            position=0,
+        )
+        queue_blocked = self.client.patch(
+            f"/api/proyectos/{self.project_a.id}/",
+            {"usuario": target_url},
+            format="json",
+        )
+
+        self.assertEqual(queue_blocked.status_code, 400)
+        self.assertIn("Mesa A", str(queue_blocked.data["usuario"]))
+
+        queued_item.status = MesaQueueStatus.HECHO
+        queued_item.save(update_fields=["status"])
+        changed = self.client.patch(
+            f"/api/proyectos/{self.project_a.id}/",
+            {"usuario": target_url},
+            format="json",
+        )
+
+        self.assertEqual(changed.status_code, 200)
+        self.project_a.refresh_from_db()
+        self.assertEqual(self.project_a.usuario_id, self.user_b.id)
+
     def test_module_image_preview_is_read_only_and_scoped_to_project_owner(self):
         module_a = Modulo.objects.create(nombre="A01", proyecto=self.project_a)
         image = Imagen.objects.create(
@@ -163,8 +268,9 @@ class PermissionAndDeviceAuthTests(APITestCase):
                 self.project_a.plano_archivo.save(
                     "plano-a.pdf", SimpleUploadedFile("plano-a.pdf", b"plano")
                 )
-                self.project_a.planilla_archivo.save(
-                    "planilla-a.pdf", SimpleUploadedFile("planilla-a.pdf", b"planilla")
+                self.project_a.documentos_archivo.save(
+                    "documentos-a.zip",
+                    SimpleUploadedFile("documentos-a.zip", b"documentos"),
                 )
                 self.project_a.fichero_datos_tecnicos.save(
                     "datos-a.db",
@@ -227,7 +333,7 @@ class PermissionAndDeviceAuthTests(APITestCase):
                 other_project_file.write_bytes(b"keep")
 
                 plano_path = Path(self.project_a.plano_archivo.path)
-                planilla_path = Path(self.project_a.planilla_archivo.path)
+                documentos_path = Path(self.project_a.documentos_archivo.path)
                 technical_path = Path(
                     self.project_a.fichero_datos_tecnicos.path
                 )
@@ -242,12 +348,12 @@ class PermissionAndDeviceAuthTests(APITestCase):
                 self.assertFalse(project_image.exists())
                 self.assertFalse(project_photo.exists())
                 self.assertFalse(plano_path.exists())
-                self.assertFalse(planilla_path.exists())
+                self.assertFalse(documentos_path.exists())
                 self.assertFalse(technical_path.exists())
                 self.assertFalse(legacy_image_path.exists())
                 self.assertTrue(other_project_file.exists())
 
-    def test_project_documents_require_pdf_and_replacements_remove_old_files(self):
+    def test_project_files_require_pdf_and_zip_and_remove_replacements(self):
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.admin_token.key}")
 
         with tempfile.TemporaryDirectory() as media_root:
@@ -256,14 +362,14 @@ class PermissionAndDeviceAuthTests(APITestCase):
                     "plano-anterior.pdf",
                     SimpleUploadedFile("plano-anterior.pdf", b"plano-anterior"),
                 )
-                self.project_a.planilla_archivo.save(
-                    "planilla-anterior.pdf",
+                self.project_a.documentos_archivo.save(
+                    "documentos-anteriores.zip",
                     SimpleUploadedFile(
-                        "planilla-anterior.pdf", b"planilla-anterior"
+                        "documentos-anteriores.zip", b"documentos-anteriores"
                     ),
                 )
                 old_plano_path = Path(self.project_a.plano_archivo.path)
-                old_planilla_path = Path(self.project_a.planilla_archivo.path)
+                old_documentos_path = Path(self.project_a.documentos_archivo.path)
 
                 invalid_response = self.client.patch(
                     f"/api/proyectos/{self.project_a.id}/",
@@ -271,8 +377,8 @@ class PermissionAndDeviceAuthTests(APITestCase):
                         "plano_archivo": SimpleUploadedFile(
                             "plano.png", b"imagen", "image/png"
                         ),
-                        "planilla_archivo": SimpleUploadedFile(
-                            "planilla.txt", b"texto", "text/plain"
+                        "documentos_archivo": SimpleUploadedFile(
+                            "documentos.pdf", b"pdf", "application/pdf"
                         ),
                     },
                     format="multipart",
@@ -280,9 +386,9 @@ class PermissionAndDeviceAuthTests(APITestCase):
 
                 self.assertEqual(invalid_response.status_code, 400)
                 self.assertIn("plano_archivo", invalid_response.data)
-                self.assertIn("planilla_archivo", invalid_response.data)
+                self.assertIn("documentos_archivo", invalid_response.data)
                 self.assertTrue(old_plano_path.exists())
-                self.assertTrue(old_planilla_path.exists())
+                self.assertTrue(old_documentos_path.exists())
 
                 with self.captureOnCommitCallbacks(execute=True):
                     valid_response = self.client.patch(
@@ -293,10 +399,10 @@ class PermissionAndDeviceAuthTests(APITestCase):
                                 b"plano-nuevo",
                                 "application/pdf",
                             ),
-                            "planilla_archivo": SimpleUploadedFile(
-                                "planilla-nueva.pdf",
-                                b"planilla-nueva",
-                                "application/pdf",
+                            "documentos_archivo": SimpleUploadedFile(
+                                "documentos-nuevos.zip",
+                                b"documentos-nuevos",
+                                "application/zip",
                             ),
                         },
                         format="multipart",
@@ -305,9 +411,13 @@ class PermissionAndDeviceAuthTests(APITestCase):
                 self.assertEqual(valid_response.status_code, 200)
                 self.project_a.refresh_from_db()
                 self.assertFalse(old_plano_path.exists())
-                self.assertFalse(old_planilla_path.exists())
+                self.assertFalse(old_documentos_path.exists())
                 self.assertTrue(Path(self.project_a.plano_archivo.path).exists())
-                self.assertTrue(Path(self.project_a.planilla_archivo.path).exists())
+                self.assertTrue(Path(self.project_a.documentos_archivo.path).exists())
+                self.assertEqual(
+                    valid_response.data["documentos_archivo"],
+                    valid_response.data["planilla_archivo"],
+                )
 
     def test_device_heartbeat_requires_valid_device_token(self):
         response = self.client.post("/api/device/heartbeat/", {}, format="json")
@@ -988,6 +1098,7 @@ class FerrallaContactosApiTests(APITestCase):
                 "first_name": "Ferralla Contactos",
                 "password": "Moden1234",
                 "password_texto_plano": "Moden1234",
+                "bastidor_longitud_cm": "132.50",
                 "contactos": [
                     {
                         "nombre": "Ana Oficina",
@@ -1021,6 +1132,8 @@ class FerrallaContactosApiTests(APITestCase):
         self.assertEqual(user.profile.coordinador, "Ana Oficina")
         self.assertEqual(user.profile.telefono, "+34 600 000 001")
         self.assertEqual(user.profile.direccion, "Calle Oficina 1")
+        self.assertEqual(user.profile.bastidor_longitud_cm, Decimal("132.50"))
+        self.assertEqual(Decimal(response.data["bastidor_longitud_cm"]), Decimal("132.50"))
         self.assertEqual(response.data["contactos"][0]["nombre"], "Ana Oficina")
         self.assertEqual(response.data["direcciones"][1]["nombre"], "Mesas")
 
@@ -1044,6 +1157,7 @@ class FerrallaContactosApiTests(APITestCase):
             {
                 "contactos": [{"nombre": "Contacto Nuevo", "cargo": "Calidad", "email": "nuevo@example.com"}],
                 "direcciones": [{"nombre": "Mallazos", "direccion": "Nave Mallazos"}],
+                "bastidor_longitud_cm": "145.25",
             },
             format="json",
         )
@@ -1055,6 +1169,36 @@ class FerrallaContactosApiTests(APITestCase):
         user.profile.refresh_from_db()
         self.assertEqual(user.profile.coordinador, "Contacto Nuevo")
         self.assertEqual(user.profile.direccion, "Nave Mallazos")
+        self.assertEqual(user.profile.bastidor_longitud_cm, Decimal("145.25"))
+
+    def test_rack_length_data_migration_uses_most_common_project_value(self):
+        from importlib import import_module
+
+        from django.apps import apps
+
+        ferralla = User.objects.create_user(
+            username="ferralla_migracion",
+            password="pass123",
+        )
+        profile = UserProfile.objects.create(
+            user=ferralla,
+            telefono="600123123",
+        )
+        for index, rack_length in enumerate(("132.00", "145.00", "132.00")):
+            Proyecto.objects.create(
+                nombre=f"Proyecto historico {index}",
+                usuario=ferralla,
+                bastidor_longitud_cm=rack_length,
+            )
+
+        migration = import_module(
+            "api.migrations.0053_project_documents_crane_and_ferralla_rack"
+        )
+        migration.seed_ferralla_rack_lengths(apps, None)
+
+        profile.refresh_from_db()
+        self.assertEqual(profile.bastidor_longitud_cm, Decimal("132.00"))
+        self.assertEqual(profile.telefono, "600123123")
 
 
 @override_settings(
@@ -1216,6 +1360,183 @@ class PlanningFoundationTests(APITestCase):
 
         self.assertEqual(detalle.capacidad_bastidor, 6)
 
+    def test_project_uses_assigned_ferralla_rack_length(self):
+        UserProfile.objects.create(
+            user=self.user,
+            bastidor_longitud_cm="96.00",
+        )
+        self.project.bastidor_longitud_cm = "20.00"
+        self.project.save(update_fields=["bastidor_longitud_cm"])
+        self.modulo.ancho_cm = "16.00"
+        self.modulo.save(update_fields=["ancho_cm"])
+        detalle = DetalleModuloFase.objects.create(
+            modulo=self.modulo,
+            fase="INFERIOR",
+        )
+
+        response = self.client.get(f"/api/proyectos/{self.project.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            Decimal(response.data["bastidor_longitud_cm"]),
+            Decimal("96.00"),
+        )
+        self.assertEqual(detalle.capacidad_bastidor, 6)
+
+    def test_bastidor_grouping_cuts_when_crane_limit_is_reached(self):
+        from api.views import _build_bastidor_groups
+
+        self.project.peso_maximo_grua_kg = "90.00"
+        self.project.save(update_fields=["peso_maximo_grua_kg"])
+        modules = [self.modulo]
+        for name in ("M-02", "M-03"):
+            modules.append(Modulo.objects.create(
+                nombre=name,
+                proyecto=self.project,
+                ancho_cm="25.00",
+            ))
+        self.modulo.ancho_cm = "25.00"
+        self.modulo.save(update_fields=["ancho_cm"])
+        for module in modules:
+            for phase in ("INFERIOR", "SUPERIOR"):
+                DetalleModuloFase.objects.create(
+                    modulo=module,
+                    fase=phase,
+                    peso_malla_final_kg="22.50",
+                )
+
+        refreshed = list(
+            self.project.modulos.prefetch_related("detalles_fase")
+        )
+        groups = _build_bastidor_groups(self.project, refreshed)
+
+        self.assertEqual(
+            [[module.nombre for module in group] for group in groups],
+            [["M-01", "M-02"], ["M-03"]],
+        )
+
+    def test_bastidor_grouping_isolates_module_with_unknown_weight(self):
+        from api.views import _build_bastidor_groups
+
+        self.project.peso_maximo_grua_kg = "100.00"
+        self.project.save(update_fields=["peso_maximo_grua_kg"])
+        self.modulo.ancho_cm = "20.00"
+        self.modulo.save(update_fields=["ancho_cm"])
+        unknown = Modulo.objects.create(
+            nombre="M-02",
+            proyecto=self.project,
+            ancho_cm="20.00",
+        )
+        last = Modulo.objects.create(
+            nombre="M-03",
+            proyecto=self.project,
+            ancho_cm="20.00",
+        )
+        DetalleModuloFase.objects.create(
+            modulo=unknown,
+            fase="INFERIOR",
+            peso_malla_final_kg="30.00",
+        )
+        for module in (self.modulo, last):
+            for phase in ("INFERIOR", "SUPERIOR"):
+                DetalleModuloFase.objects.create(
+                    modulo=module,
+                    fase=phase,
+                    peso_malla_final_kg="15.00",
+                )
+
+        refreshed = list(
+            self.project.modulos.prefetch_related("detalles_fase")
+        )
+        groups = _build_bastidor_groups(self.project, refreshed)
+
+        self.assertEqual(
+            [[module.nombre for module in group] for group in groups],
+            [["M-01"], [unknown.nombre], ["M-03"]],
+        )
+
+    def test_group_serializer_reports_limits_and_completion_date(self):
+        self.project.peso_maximo_grua_kg = "30.00"
+        self.project.save(update_fields=["peso_maximo_grua_kg"])
+        group = GrupoBastidor.objects.create(
+            proyecto=self.project,
+            indice=1,
+            nombre="Grupo pesado",
+        )
+        finished_at = timezone.make_aware(datetime(2026, 8, 18, 14, 30))
+        self.modulo.ancho_cm = "120.00"
+        self.modulo.grupo_bastidor = group
+        self.modulo.orden_intra = 1
+        self.modulo.estado = ModuloEstado.COMPLETADO
+        self.modulo.completado_at = finished_at
+        self.modulo.save()
+        for phase in ("INFERIOR", "SUPERIOR"):
+            DetalleModuloFase.objects.create(
+                modulo=self.modulo,
+                fase=phase,
+                peso_malla_final_kg="20.00",
+            )
+
+        response = self.client.get(
+            f"/api/grupos-bastidor/?proyecto={self.project.id}"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        serialized = response.data[0]
+        self.assertEqual(serialized["peso_total_kg"], 40.0)
+        self.assertEqual(serialized["capacidad_peso_kg"], 30.0)
+        self.assertTrue(serialized["overflow_longitud"])
+        self.assertTrue(serialized["overflow_peso"])
+        self.assertTrue(serialized["overflow"])
+        self.assertIsNotNone(serialized["modulos"][0]["completado_at"])
+
+    def test_recalculate_racks_rejects_module_started_on_a_table(self):
+        self.project.datos_tecnicos_importados = True
+        self.project.save(update_fields=["datos_tecnicos_importados"])
+        rack = GrupoBastidor.objects.create(
+            proyecto=self.project,
+            indice=1,
+        )
+        self.modulo.grupo_bastidor = rack
+        self.modulo.orden_intra = 1
+        self.modulo.save(update_fields=["grupo_bastidor", "orden_intra"])
+        table_group = GrupoMesas.objects.create(
+            nombre="Grupo activo",
+            usuario=self.user,
+        )
+        table = Mesa.objects.create(
+            nombre="Mesa activa",
+            usuario=self.user,
+            grupo=table_group,
+            tipo="INFERIOR",
+            indice=1,
+            current_image_index=3,
+        )
+        MesaQueueItem.objects.create(
+            mesa=table,
+            modulo=self.modulo,
+            fase="INFERIOR",
+            status=MesaQueueStatus.MOSTRANDO,
+            position=0,
+        )
+        admin = User.objects.create_user(
+            username="rack_admin",
+            password="pass123",
+            is_staff=True,
+        )
+        admin_token = Token.objects.create(user=admin)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {admin_token.key}")
+
+        response = self.client.post(
+            f"/api/proyectos/{self.project.id}/recalcular-bastidores/",
+            {"estrategia": "SECUENCIAL"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn(self.modulo.nombre, response.data["modulos_bloqueantes"])
+        self.assertTrue(GrupoBastidor.objects.filter(id=rack.id).exists())
+
     def test_crear_grupo_mesas_genera_tres_mesas_base(self):
         response = self.client.post(
             "/api/grupos-mesas/",
@@ -1268,6 +1589,8 @@ class PlanningFoundationTests(APITestCase):
         return GrupoMesas.objects.get(id=response.data["id"])
 
     def test_reiniciar_modulo_limpia_colas_historicas_duplicadas(self):
+        self.user.is_staff = True
+        self.user.save(update_fields=['is_staff'])
         grupo = self._crear_grupo("Grupo Reinicio")
         mesa_inf = grupo.mesas.get(tipo="INFERIOR", indice=1)
         mesa_sup = grupo.mesas.get(tipo="SUPERIOR", indice=3)
@@ -1366,6 +1689,8 @@ class PlanningFoundationTests(APITestCase):
         )
 
     def test_completar_fase_inferior_conserva_superior_pendiente(self):
+        self.user.is_staff = True
+        self.user.save(update_fields=['is_staff'])
         grupo = self._crear_grupo("Grupo Completar INF")
         mesa_inf = grupo.mesas.get(tipo="INFERIOR", indice=1)
         mesa_sup = grupo.mesas.get(tipo="SUPERIOR", indice=3)
@@ -1416,6 +1741,8 @@ class PlanningFoundationTests(APITestCase):
         self.assertEqual(item_sup.status, MesaQueueStatus.EN_COLA)
 
     def test_completar_fase_superior_finaliza_modulo_con_inferior_hecho(self):
+        self.user.is_staff = True
+        self.user.save(update_fields=['is_staff'])
         self.modulo.inferior_hecho = True
         self.modulo.estado = ModuloEstado.EN_PROGRESO
         self.modulo.save(update_fields=["inferior_hecho", "estado"])
@@ -1434,6 +1761,8 @@ class PlanningFoundationTests(APITestCase):
         self.assertIsNotNone(self.modulo.completado_at)
 
     def test_completar_fase_rechaza_fase_desconocida(self):
+        self.user.is_staff = True
+        self.user.save(update_fields=['is_staff'])
         response = self.client.post(
             f"/api/modulos/{self.modulo.id}/completar-fase/",
             {"fase": "SD_D"},
@@ -4639,6 +4968,8 @@ class PlanningFoundationTests(APITestCase):
         self.assertFalse(self.modulo.superior_hecho)
         self.assertIsNotNone(self.modulo.superior_needed_at)
 
+        self.user.is_staff = True
+        self.user.save(update_fields=['is_staff'])
         complete_response = self.client.post(
             f"/api/modulos/{self.modulo.id}/completar-fase/",
             {"fase": "SUPERIOR"},

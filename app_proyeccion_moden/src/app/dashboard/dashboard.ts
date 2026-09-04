@@ -7,7 +7,7 @@ import { DragDropModule, CdkDragDrop, moveItemInArray, transferArrayItem } from 
 import {
   ApiService,
   Proyecto, Modulo, Mesa, ModuloQueueItem, MesaQueueItem, Imagen, FotoFabricacion,
-  EstrategiaColaSuperior, GrupoMesas, GrupoMesasProyectoEntry, ProductionStatsResponse
+  EstrategiaColaSuperior, GrupoMesas, GrupoMesasProyectoEntry, ProductionStatsResponse, ModuloFase
 } from '../services/api.service';
 import {
   ListaMaterialesService,
@@ -21,6 +21,7 @@ import {
 import { Subject, takeUntil, interval } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { ZoomableImageComponent } from '../shared/zoomable-image/zoomable-image.component';
+import { requiredDaily, planningIssues, planningLabel } from '../shared/project-planning';
 
 // Logical entity for display and drag-drop
 interface Subfase {
@@ -36,10 +37,13 @@ interface Subfase {
   selector: 'app-dashboard',
   standalone: true,
   templateUrl: './dashboard.html',
-  styleUrl: './dashboard.css',
+  styleUrls: ['./dashboard.css', './dashboard-responsive.css'],
   imports: [CommonModule, DragDropModule, FormsModule, ZoomableImageComponent]
 })
 export class Dashboard implements OnInit, OnDestroy {
+  readonly requiredDaily = requiredDaily;
+  readonly planningIssues = planningIssues;
+  readonly planningLabel = planningLabel;
   // Sidebar State
   panelState: 'collapsed' | 'expanded' = 'expanded';
   // Data
@@ -109,6 +113,10 @@ export class Dashboard implements OnInit, OnDestroy {
   planModalProyecto: Proyecto | null = null;
   planModalModulos: Modulo[] = [];
   planModalSort: 'name' | 'completed' = 'name';
+  readonly modulePhases: ModuloFase[] = ['INFERIOR', 'SUPERIOR'];
+  phaseResetTarget: { module: Modulo; phase: ModuloFase } | null = null;
+  resettingPhase = false;
+  phaseResetError = '';
   loadingPlanModal = false;
   showPlanFotosModal = false;
   planFotosTarget: { id: number; nombre: string } | null = null;
@@ -194,11 +202,51 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   closePlanModal(): void {
+    if (this.resettingPhase) return;
+    this.phaseResetTarget = null;
     this.showPlanModal = false;
     this.planModalProyecto = null;
     this.planModalModulos = [];
     this.closePlanFotosModal();
     this.cdr.detectChanges();
+  }
+
+  phaseDone(module: Modulo, phase: ModuloFase): boolean {
+    return phase === 'INFERIOR' ? module.inferior_hecho : module.superior_hecho;
+  }
+
+  phaseFinishedAt(module: Modulo, phase: ModuloFase): string | null {
+    return (phase === 'INFERIOR' ? module.inferior_completado_at : module.superior_completado_at) || null;
+  }
+
+  requestPhaseReset(module: Modulo, phase: ModuloFase): void {
+    this.phaseResetTarget = {module, phase};
+    this.phaseResetError = '';
+  }
+
+  cancelPhaseReset(): void {
+    if (!this.resettingPhase) this.phaseResetTarget = null;
+  }
+
+  confirmPhaseReset(): void {
+    const target = this.phaseResetTarget;
+    if (!target || this.resettingPhase) return;
+    this.resettingPhase = true;
+    this.api.reiniciarFaseModulo(target.module.id, target.phase).pipe(takeUntil(this.destroy$)).subscribe({
+      next: module => {
+        this.planModalModulos = this.planModalModulos.map(m => m.id === module.id ? module : m);
+        this.phaseResetTarget = null;
+        this.resettingPhase = false;
+        this.silentRefreshProyectosAndStats();
+        this.loadMesas();
+        this.cdr.detectChanges();
+      },
+      error: error => {
+        this.phaseResetError = error?.error?.detail || 'No se pudo reiniciar esta fase.';
+        this.resettingPhase = false;
+        this.cdr.detectChanges();
+      },
+    });
   }
 
   openPlanFotosModal(modulo: Modulo, event?: Event): void {
@@ -553,9 +601,9 @@ export class Dashboard implements OnInit, OnDestroy {
     return this.planModalModulos.filter(m => m.inferior_hecho && m.superior_hecho).length;
   }
 
-  openProjectDocument(proyecto: Proyecto, type: 'plano' | 'planilla', event?: Event): void {
+  openProjectDocument(proyecto: Proyecto, type: 'plano' | 'documentos', event?: Event): void {
     event?.stopPropagation();
-    const url = type === 'plano' ? proyecto.plano_archivo : proyecto.planilla_archivo;
+    const url = type === 'plano' ? proyecto.plano_archivo : proyecto.documentos_archivo;
     if (!url) return;
     window.open(this.resolveUrl(url), '_blank', 'noopener');
   }
@@ -1411,7 +1459,9 @@ export class Dashboard implements OnInit, OnDestroy {
 
     const dayCount = Math.floor((to.getTime() - from.getTime()) / 86400000) + 1;
     const byDate = new Map(this.statsData.por_dia.map(d => [d.fecha, d]));
-    const dailyCap = this.statsData.esperado?.capacidad_diaria_modulos || 0;
+    // Historical charts show observed output. Today's changing deadline demand
+    // must not be projected backwards as if it were a historical target.
+    const dailyCap = 0;
 
     // Single-day view: show the real completion hours returned by the backend.
     // This keeps work outside the configured schedule visible and avoids empty
@@ -2295,21 +2345,20 @@ export class Dashboard implements OnInit, OnDestroy {
     const total = p.modulos_count || 0;
     const done = p.modulos_completados || 0;
     const pending = Math.max(total - done, 0);
-    // Only the project at the head of some grupo-mesas queue is actually
-    // being worked on right now; queued/free projects shouldn't show a
-    // forecast on the donut because nobody is producing them yet.
-    const isFabricando = this.proyectoEstado(p) === 'fabricando';
-    if (!isFabricando) {
-      return { total, done, hoy: 0, semana: 0, resto: pending };
+    const daily = p.planificacion?.modulos_por_dia || 0;
+    const start = this.parseIsoDate(p.planificacion?.fecha_calculo || '');
+    const codes = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
+    const activeDays = p.planificacion?.dias_produccion || [];
+    const hoy = Math.min(pending, start && activeDays.includes(codes[start.getDay()]) ? daily : 0);
+    let upcomingDays = 0;
+    if (start && p.fecha_montaje) {
+      for (let offset = 1; offset < 7; offset++) {
+        const date = new Date(start); date.setDate(start.getDate()+offset);
+        const mounting = this.parseIsoDate(p.fecha_montaje);
+        if (mounting && date < mounting && activeDays.includes(codes[date.getDay()])) upcomingDays++;
+      }
     }
-    const daily = p.capacidad_diaria_usuario || 12;
-    const doneToday = p.modulos_completados_hoy || 0;
-    // How many more can still be produced today after what's already done.
-    const remainingToday = Math.max(daily - doneToday, 0);
-    const hoy = Math.min(pending, remainingToday);
-    // Week = 5 working days; today already covers doneToday + hoy, so the
-    // rest-of-the-week slot fits at most the remaining 4 days of capacity.
-    const semana = Math.min(Math.max(pending - hoy, 0), daily * 4);
+    const semana = Math.min(Math.max(pending - hoy, 0), daily * upcomingDays);
     const resto = Math.max(pending - hoy - semana, 0);
     return { total, done, hoy, semana, resto };
   }

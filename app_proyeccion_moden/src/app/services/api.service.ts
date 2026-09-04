@@ -27,6 +27,7 @@ export interface User {
     coordinador?: string;
     password_texto_plano?: string;
     capacidad_diaria_modulos?: number;
+    bastidor_longitud_cm?: number;
     contactos?: FerrallaContacto[];
     direcciones?: FerrallaDireccion[];
 }
@@ -52,17 +53,39 @@ export type EstrategiaBastidor = 'SECUENCIAL' | 'AISLAR_CENTRAL_GIRADO';
 export type TipoModulo = '' | 'CENTRAL' | 'CENTRAL_GIRADO' | 'LADO_LARGO' | 'LADO_CORTO' | 'ESQUINA';
 export type ModuloFase = 'INFERIOR' | 'SUPERIOR';
 
+export interface PlanificacionProyecto {
+    modulos_pendientes: number;
+    dias_disponibles: number | null;
+    modulos_por_dia: number | null;
+    estado: 'COMPLETADO' | 'SIN_FECHA' | 'SIN_MODULOS' | 'SIN_FERRALLA' | 'VENCIDO' | 'SIN_DIAS' | 'PLANIFICADO';
+    fecha_calculo: string;
+    dias_produccion: string[];
+}
+export interface ProjectCheck {
+    id: number; titulo: string; completado: boolean;
+    actualizado_at: string | null; actualizado_por: string | null;
+}
+export interface CheckDefinition { id: number; titulo: string; activo: boolean; orden: number; }
+export interface OfficeWorker { id: number; nombre: string; activo: boolean; color: string; }
+export interface CalendarEvent {
+    id: number; titulo: string; tipo: 'EVENTO' | 'VACACIONES';
+    inicio: string; fin: string; proyecto: number | null; trabajadores: number[]; notas: string;
+}
+
 export interface Proyecto {
     id: number;
     url: string;
     nombre: string;
-    usuario: string;
+    fecha_montaje?: string | null;
+    planificacion?: PlanificacionProyecto;
+    usuario: string | null;
     bastidor_longitud_cm: number;
+    peso_maximo_grua_kg: number | null;
     datos_tecnicos_importados: boolean;
     datos_tecnicos_archivo?: string | null;
     datos_tecnicos_actualizados_at?: string | null;
     plano_archivo?: string | null;
-    planilla_archivo?: string | null;
+    documentos_archivo?: string | null;
     estrategia_bastidor: EstrategiaBastidor;
     capacidad_diaria_usuario?: number;
     grupos_count?: number;
@@ -80,6 +103,7 @@ export interface GrupoBastidorModulo {
     estado_operativo?: 'PENDIENTE' | 'EN_PROGRESO' | 'COMPLETADO' | 'CERRADO';
     inferior_hecho: boolean;
     superior_hecho: boolean;
+    completado_at: string | null;
     inferior_en_curso?: boolean;
     superior_en_curso?: boolean;
     cerrado: boolean;
@@ -98,6 +122,11 @@ export interface GrupoBastidor {
     modulos: GrupoBastidorModulo[];
     longitud_total_cm: number;
     capacidad_cm: number;
+    peso_total_kg: number;
+    capacidad_peso_kg: number | null;
+    peso_desconocido: boolean;
+    overflow_longitud: boolean;
+    overflow_peso: boolean;
     overflow: boolean;
 }
 
@@ -148,6 +177,8 @@ export interface Modulo {
     estado: 'PENDIENTE' | 'EN_PROGRESO' | 'COMPLETADO' | 'CERRADO';
     estado_operativo?: 'PENDIENTE' | 'EN_PROGRESO' | 'COMPLETADO' | 'CERRADO';
     completado_at: string | null;
+    inferior_completado_at?: string | null;
+    superior_completado_at?: string | null;
     cerrado: boolean;
     cerrado_at: string | null;
     cerrado_by: string | null;
@@ -430,7 +461,7 @@ export interface ProductionStatsResponse {
     por_mesa: ProductionStatsMesa[];
     por_dia: ProductionStatsDay[];
     por_hora?: ProductionStatsHour[] | null;
-    esperado: { capacidad_diaria_modulos: number; modulos_esperados: number };
+    esperado: { capacidad_diaria_modulos: number; modulos_esperados: number | null };
 }
 
 
@@ -512,7 +543,46 @@ export class ApiService {
     // =========================================================================
     getProyectos(): Observable<Proyecto[]> {
         return this.http.get<PagedResponse<Proyecto>>(`${this.baseUrl}/proyectos/`, { headers: this.getHeaders() })
-            .pipe(map(response => response.results));
+            .pipe(
+                expand(page => page.next ? this.http.get<PagedResponse<Proyecto>>(
+                    this.normalizePaginationUrl(page.next), { headers: this.getHeaders() },
+                ) : EMPTY),
+                reduce((all, page) => [...all, ...page.results], [] as Proyecto[]),
+            );
+    }
+
+    getProjectChecklist(id: number): Observable<ProjectCheck[]> {
+        return this.http.get<ProjectCheck[]>(`${this.baseUrl}/proyecto-checklist/${id}/`, { headers: this.getHeaders() });
+    }
+    setProjectCheck(projectId: number, id: number, completado: boolean): Observable<ProjectCheck[]> {
+        return this.http.patch<ProjectCheck[]>(`${this.baseUrl}/proyecto-checklist/${projectId}/checks/${id}/`, { completado }, { headers: this.getHeaders() });
+    }
+    getCheckDefinitions(): Observable<CheckDefinition[]> {
+        return this.http.get<CheckDefinition[]>(`${this.baseUrl}/check-definiciones/`, { headers: this.getHeaders() });
+    }
+    saveCheckDefinition(data: Partial<CheckDefinition>): Observable<CheckDefinition> {
+        return data.id
+            ? this.http.patch<CheckDefinition>(`${this.baseUrl}/check-definiciones/${data.id}/`, data, { headers: this.getHeaders() })
+            : this.http.post<CheckDefinition>(`${this.baseUrl}/check-definiciones/`, data, { headers: this.getHeaders() });
+    }
+    getWorkers(): Observable<OfficeWorker[]> {
+        return this.http.get<OfficeWorker[]>(`${this.baseUrl}/trabajadores/`, { headers: this.getHeaders() });
+    }
+    saveWorker(data: Partial<OfficeWorker>): Observable<OfficeWorker> {
+        return data.id
+            ? this.http.patch<OfficeWorker>(`${this.baseUrl}/trabajadores/${data.id}/`, data, { headers: this.getHeaders() })
+            : this.http.post<OfficeWorker>(`${this.baseUrl}/trabajadores/`, data, { headers: this.getHeaders() });
+    }
+    getEvents(desde: string, hasta: string): Observable<CalendarEvent[]> {
+        return this.http.get<CalendarEvent[]>(`${this.baseUrl}/eventos/`, { headers: this.getHeaders(), params: { desde, hasta } });
+    }
+    saveEvent(data: Omit<CalendarEvent, 'id'> & { id?: number }): Observable<CalendarEvent> {
+        return data.id
+            ? this.http.patch<CalendarEvent>(`${this.baseUrl}/eventos/${data.id}/`, data, { headers: this.getHeaders() })
+            : this.http.post<CalendarEvent>(`${this.baseUrl}/eventos/`, data, { headers: this.getHeaders() });
+    }
+    deleteEvent(id: number): Observable<void> {
+        return this.http.delete<void>(`${this.baseUrl}/eventos/${id}/`, { headers: this.getHeaders() });
     }
 
     getProyecto(id: number): Observable<Proyecto> {
@@ -569,7 +639,7 @@ export class ApiService {
             imagenes: number;
             detalles_fase: number;
             plano_cargado?: boolean;
-            planilla_cargada?: boolean;
+            documentos_cargados?: boolean;
             base_tecnica_actualizada?: boolean;
             modulos_omitidos?: number;
             module_errors?: Array<{
@@ -595,7 +665,7 @@ export class ApiService {
             imagenes: number;
             detalles_fase: number;
             plano_cargado?: boolean;
-            planilla_cargada?: boolean;
+            documentos_cargados?: boolean;
             base_tecnica_actualizada?: boolean;
             modulos_omitidos?: number;
             module_errors?: Array<{

@@ -55,7 +55,7 @@ export class VisorComponent implements OnInit, OnDestroy {
   // AnyDesk whether the kiosk is actually running the latest bundle
   // or a cached one. F12 is blocked in kiosk; this is the simplest
   // version probe we can offer the operator on screen.
-  readonly buildTag = '2026-08-24_projection-settle';
+  readonly buildTag = '2026-09-03_shutdown-chord';
   // Surfaces what's happening inside recoverTokenOrPair on the
   // LOADING screen so we can diagnose from AnyDesk without DevTools.
   loadingMessage: string = 'Conectando…';
@@ -162,6 +162,19 @@ export class VisorComponent implements OnInit, OnDestroy {
   browserCloseStatus: 'confirm' | 'closing' | 'error' | null = null;
   private browserCloseConfirmUntil = 0;
   private browserCloseStatusTimer: any = null;
+  private static readonly SHUTDOWN_CHORD_KEYS = new Set(['arrowleft', 'space', 'arrowright']);
+  private static readonly SHUTDOWN_CHORD_GRACE_MS = 350;
+  private static readonly SHUTDOWN_HOLD_MS = 5000;
+  shutdownStatus: 'holding' | 'shutting-down' | 'cancelled' | 'error' | null = null;
+  shutdownSecondsRemaining = 5;
+  shutdownProgressPercent = 0;
+  private shutdownChordPressedKeys = new Set<string>();
+  private pendingShutdownChordActions = new Map<string, any>();
+  private shutdownChordArmed = true;
+  private shutdownHoldStartedAt = 0;
+  private shutdownHoldTimer: any = null;
+  private shutdownCountdownTimer: any = null;
+  private shutdownStatusTimer: any = null;
 
   get isSupervisor(): boolean {
     return !!this.mesaIdForPairing;
@@ -419,6 +432,7 @@ export class VisorComponent implements OnInit, OnDestroy {
     this.clearAuthRecoveryTimer();
     this.clearSlideLockIndicator();
     this.clearBrowserCloseStatus();
+    this.clearShutdownChordState();
     this.clearCaptureSchedule();
     if (this.eventSource) this.eventSource.close();
   }
@@ -746,9 +760,9 @@ export class VisorComponent implements OnInit, OnDestroy {
   }
 
   @HostListener('window:keydown', ['$event'])
-  handleKeyboardEvent(event: KeyboardEvent) {
+  handleKeyboardEvent(event: KeyboardEvent): void {
     if (this.mode !== 'PROJECTION') return;
-    const key = event.key.toLowerCase();
+    const key = this.normalizeKeyboardKey(event.key);
 
     if (key === 'r') {
       event.preventDefault();
@@ -760,6 +774,8 @@ export class VisorComponent implements OnInit, OnDestroy {
       this.requestBrowserClose();
       return;
     }
+
+    if (this.handleShutdownChordKeyDown(key, event)) return;
 
     // A failed color check blocks navigation until the operator
     // acknowledges it with space. SPACE clears the red overlay AND
@@ -804,6 +820,223 @@ export class VisorComponent implements OnInit, OnDestroy {
       // Manual photo capture trigger (for testing)
       this.triggerPhotoCapture('foto');
     }
+  }
+
+  @HostListener('window:keyup', ['$event'])
+  handleKeyboardUp(event: KeyboardEvent): void {
+    const key = this.normalizeKeyboardKey(event.key);
+    if (this.isSupervisor || !VisorComponent.SHUTDOWN_CHORD_KEYS.has(key)) return;
+
+    event.preventDefault();
+    this.shutdownChordPressedKeys.delete(key);
+
+    if (this.shutdownStatus === 'holding') {
+      this.shutdownChordArmed = false;
+      this.cancelShutdownHold(true);
+    }
+
+    if (
+      this.shutdownChordPressedKeys.size === 0
+      && this.shutdownStatus !== 'shutting-down'
+    ) {
+      this.shutdownChordArmed = true;
+    }
+  }
+
+  @HostListener('window:blur')
+  handleWindowBlur(): void {
+    this.cancelPendingShutdownChordActions();
+    this.shutdownChordPressedKeys.clear();
+    this.shutdownChordArmed = true;
+    if (this.shutdownStatus === 'holding') {
+      this.cancelShutdownHold(true);
+    }
+  }
+
+  private normalizeKeyboardKey(key: string): string {
+    const normalized = key.toLowerCase();
+    return normalized === ' ' || normalized === 'spacebar' ? 'space' : normalized;
+  }
+
+  private handleShutdownChordKeyDown(key: string, event: KeyboardEvent): boolean {
+    if (this.isSupervisor || !VisorComponent.SHUTDOWN_CHORD_KEYS.has(key)) {
+      return false;
+    }
+
+    event.preventDefault();
+    if (event.repeat || this.shutdownChordPressedKeys.has(key)) return true;
+
+    this.shutdownChordPressedKeys.add(key);
+    if (!this.shutdownChordArmed || this.shutdownStatus === 'shutting-down') return true;
+
+    if (this.shutdownStatus === 'cancelled' || this.shutdownStatus === 'error') {
+      this.clearShutdownStatusTimer();
+      this.shutdownStatus = null;
+    }
+
+    this.scheduleStandaloneShutdownChordAction(key);
+    if (this.shutdownChordPressedKeys.size >= 2) {
+      // Two near-simultaneous buttons are treated as the beginning of the
+      // shutdown chord, not as independent navigation commands.
+      this.cancelPendingShutdownChordActions();
+    }
+    if (this.shutdownChordPressedKeys.size === VisorComponent.SHUTDOWN_CHORD_KEYS.size) {
+      this.startShutdownHold();
+    }
+    return true;
+  }
+
+  private scheduleStandaloneShutdownChordAction(key: string): void {
+    const existingTimer = this.pendingShutdownChordActions.get(key);
+    if (existingTimer) clearTimeout(existingTimer);
+
+    const timer = setTimeout(() => {
+      this.pendingShutdownChordActions.delete(key);
+      if (
+        this.shutdownStatus === 'holding'
+        || this.shutdownStatus === 'shutting-down'
+        || this.shutdownChordPressedKeys.size >= 2
+      ) {
+        return;
+      }
+      this.runStandaloneShutdownChordAction(key);
+    }, VisorComponent.SHUTDOWN_CHORD_GRACE_MS);
+    this.pendingShutdownChordActions.set(key, timer);
+  }
+
+  private runStandaloneShutdownChordAction(key: string): void {
+    if (this.mode !== 'PROJECTION') return;
+
+    if (this.checkBlock) {
+      if (key === 'space') {
+        this.clearCheckOverlay();
+        this.slideLockUntil = 0;
+        this.nextImage();
+      }
+      return;
+    }
+
+    if (this.currentIndex < 0) return;
+    if (key === 'arrowright') {
+      this.nextImage();
+    } else if (key === 'arrowleft') {
+      this.prevImage();
+    }
+  }
+
+  private startShutdownHold(): void {
+    if (!this.shutdownChordArmed || this.shutdownStatus === 'shutting-down') return;
+
+    this.clearShutdownHoldTimers();
+    this.clearShutdownStatusTimer();
+    this.shutdownStatus = 'holding';
+    this.shutdownSecondsRemaining = Math.ceil(VisorComponent.SHUTDOWN_HOLD_MS / 1000);
+    this.shutdownProgressPercent = 0;
+    this.shutdownHoldStartedAt = Date.now();
+    this.cdr.detectChanges();
+
+    this.shutdownCountdownTimer = setInterval(() => {
+      const elapsed = Date.now() - this.shutdownHoldStartedAt;
+      const remaining = Math.max(0, VisorComponent.SHUTDOWN_HOLD_MS - elapsed);
+      this.shutdownSecondsRemaining = Math.max(1, Math.ceil(remaining / 1000));
+      this.shutdownProgressPercent = Math.min(
+        100,
+        (elapsed / VisorComponent.SHUTDOWN_HOLD_MS) * 100,
+      );
+      this.cdr.detectChanges();
+    }, 100);
+
+    this.shutdownHoldTimer = setTimeout(
+      () => this.completeShutdownHold(),
+      VisorComponent.SHUTDOWN_HOLD_MS,
+    );
+  }
+
+  private completeShutdownHold(): void {
+    if (
+      this.shutdownChordPressedKeys.size !== VisorComponent.SHUTDOWN_CHORD_KEYS.size
+      || !this.shutdownChordArmed
+    ) {
+      this.cancelShutdownHold(true);
+      return;
+    }
+
+    this.clearShutdownHoldTimers();
+    this.shutdownChordArmed = false;
+    this.shutdownStatus = 'shutting-down';
+    this.shutdownSecondsRemaining = 0;
+    this.shutdownProgressPercent = 100;
+    this.cdr.detectChanges();
+    this.shutdownMiniPc();
+  }
+
+  private shutdownMiniPc(): void {
+    const headers = new HttpHeaders({ 'X-Moden-Action': 'shutdown-pc' });
+    this.http.post(
+      `${this.captureServiceUrl}/shutdown_pc`,
+      {},
+      { headers },
+    ).subscribe({
+      error: (err) => {
+        console.error('[Visor] shutdown_pc failed:', err);
+        this.shutdownStatus = 'error';
+        this.cdr.detectChanges();
+        this.scheduleShutdownStatusClear(5000);
+      },
+    });
+  }
+
+  private cancelShutdownHold(showCancelled: boolean): void {
+    this.clearShutdownHoldTimers();
+    this.shutdownHoldStartedAt = 0;
+    this.shutdownProgressPercent = 0;
+    this.shutdownSecondsRemaining = Math.ceil(VisorComponent.SHUTDOWN_HOLD_MS / 1000);
+    this.shutdownStatus = showCancelled ? 'cancelled' : null;
+    if (showCancelled) this.scheduleShutdownStatusClear(1800);
+    this.cdr.detectChanges();
+  }
+
+  private cancelPendingShutdownChordActions(): void {
+    for (const timer of this.pendingShutdownChordActions.values()) {
+      clearTimeout(timer);
+    }
+    this.pendingShutdownChordActions.clear();
+  }
+
+  private clearShutdownHoldTimers(): void {
+    if (this.shutdownHoldTimer) {
+      clearTimeout(this.shutdownHoldTimer);
+      this.shutdownHoldTimer = null;
+    }
+    if (this.shutdownCountdownTimer) {
+      clearInterval(this.shutdownCountdownTimer);
+      this.shutdownCountdownTimer = null;
+    }
+  }
+
+  private scheduleShutdownStatusClear(delayMs: number): void {
+    this.clearShutdownStatusTimer();
+    this.shutdownStatusTimer = setTimeout(() => {
+      if (this.shutdownStatus === 'shutting-down') return;
+      this.shutdownStatus = null;
+      this.cdr.detectChanges();
+    }, delayMs);
+  }
+
+  private clearShutdownStatusTimer(): void {
+    if (this.shutdownStatusTimer) {
+      clearTimeout(this.shutdownStatusTimer);
+      this.shutdownStatusTimer = null;
+    }
+  }
+
+  private clearShutdownChordState(): void {
+    this.cancelPendingShutdownChordActions();
+    this.clearShutdownHoldTimers();
+    this.clearShutdownStatusTimer();
+    this.shutdownChordPressedKeys.clear();
+    this.shutdownChordArmed = true;
+    this.shutdownStatus = null;
   }
 
   private requestBrowserClose(): void {

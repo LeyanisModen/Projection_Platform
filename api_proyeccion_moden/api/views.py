@@ -17,7 +17,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import Count, Max, Prefetch, Q
 from rest_framework import permissions, viewsets, status
 from rest_framework.decorators import action
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -149,6 +149,7 @@ ACTIVE_QUEUE_STATUSES = ['EN_COLA', 'MOSTRANDO']
 
 def _modules_with_reorder_data(queryset):
     return annotate_modules_with_sd(queryset).prefetch_related(
+        'detalles_fase',
         Prefetch(
             'mesa_queue_items',
             queryset=(
@@ -162,7 +163,11 @@ def _modules_with_reorder_data(queryset):
 
 
 def _grupos_with_reorder_data(queryset):
-    return queryset.select_related('proyecto').prefetch_related(
+    return queryset.select_related(
+        'proyecto',
+        'proyecto__usuario',
+        'proyecto__usuario__profile',
+    ).prefetch_related(
         Prefetch(
             'modulos',
             queryset=_modules_with_reorder_data(Modulo.objects.all()),
@@ -822,6 +827,30 @@ def _get_module_planning_width(modulo, fallback_length):
     return fallback_length
 
 
+def _get_project_rack_length(proyecto):
+    try:
+        value = Decimal(proyecto.bastidor_longitud_efectiva_cm)
+        return value if value > 0 else Decimal('114')
+    except (TypeError, InvalidOperation, AttributeError):
+        return Decimal('114')
+
+
+def _get_project_crane_limit(proyecto):
+    try:
+        value = Decimal(proyecto.peso_maximo_grua_kg)
+        return value if value > 0 else None
+    except (TypeError, InvalidOperation, AttributeError):
+        return None
+
+
+def _get_module_planning_weight(modulo):
+    try:
+        value = modulo.peso_total_kg
+        return Decimal(value) if value is not None else None
+    except (TypeError, InvalidOperation):
+        return None
+
+
 def _get_inferior_difficulty(modulo):
     detail = _get_prefetched_detail(modulo, 'INFERIOR')
     if not detail or detail.dificultad_fabricacion in [None, '']:
@@ -836,15 +865,16 @@ def _build_bastidor_groups(proyecto, modulos, estrategia=None):
     """Calcula los bastidores agrupando modulos por su orden natural.
 
     estrategia:
-      - 'SECUENCIAL' (default): corte solo cuando se supera la longitud.
-      - 'AISLAR_CENTRAL_GIRADO': ademas de la longitud, corta el bastidor
+      - 'SECUENCIAL' (default): corta al superar longitud o peso de grua.
+      - 'AISLAR_CENTRAL_GIRADO': ademas de los limites, corta el bastidor
         cada vez que el tipo del modulo cambia entre 'CENTRAL_GIRADO' y
         cualquier otro tipo (los CENTRAL_GIRADO viajan en bastidores propios).
+
+    Cuando el proyecto tiene limite de grua y falta el peso de un modulo,
+    ese modulo se aisla para no declarar seguro un grupo de peso desconocido.
     """
-    try:
-        bastidor_longitud = Decimal(proyecto.bastidor_longitud_cm)
-    except (TypeError, InvalidOperation):
-        bastidor_longitud = Decimal('114')
+    bastidor_longitud = _get_project_rack_length(proyecto)
+    crane_limit = _get_project_crane_limit(proyecto)
 
     if estrategia is None:
         estrategia = getattr(proyecto, 'estrategia_bastidor', 'SECUENCIAL') or 'SECUENCIAL'
@@ -856,10 +886,26 @@ def _build_bastidor_groups(proyecto, modulos, estrategia=None):
     groups = []
     current_group = []
     current_width = Decimal('0')
+    current_weight = Decimal('0')
     current_is_girado = None  # None hasta que cae el primer modulo
 
     for modulo in ordered:
         modulo_width = _get_module_planning_width(modulo, bastidor_longitud)
+        modulo_weight = (
+            _get_module_planning_weight(modulo)
+            if crane_limit is not None
+            else Decimal('0')
+        )
+
+        if crane_limit is not None and modulo_weight is None:
+            if current_group:
+                groups.append(current_group)
+            groups.append([modulo])
+            current_group = []
+            current_width = Decimal('0')
+            current_weight = Decimal('0')
+            current_is_girado = None
+            continue
 
         tipo_switch = (
             estrategia == 'AISLAR_CENTRAL_GIRADO'
@@ -867,16 +913,25 @@ def _build_bastidor_groups(proyecto, modulos, estrategia=None):
             and current_is_girado is not None
             and _is_girado(modulo) != current_is_girado
         )
-        overflow = current_group and current_width + modulo_width > bastidor_longitud
+        length_overflow = (
+            current_group and current_width + modulo_width > bastidor_longitud
+        )
+        weight_overflow = (
+            crane_limit is not None
+            and current_group
+            and current_weight + modulo_weight > crane_limit
+        )
 
-        if tipo_switch or overflow:
+        if tipo_switch or length_overflow or weight_overflow:
             groups.append(current_group)
             current_group = [modulo]
             current_width = modulo_width
+            current_weight = modulo_weight or Decimal('0')
             current_is_girado = _is_girado(modulo)
         else:
             current_group.append(modulo)
             current_width += modulo_width
+            current_weight += modulo_weight or Decimal('0')
             if current_is_girado is None:
                 current_is_girado = _is_girado(modulo)
 
@@ -931,12 +986,15 @@ def _assign_modulo_to_group_on_create(modulo):
     if not proyecto.datos_tecnicos_importados:
         return
 
-    try:
-        bastidor_longitud = Decimal(proyecto.bastidor_longitud_cm)
-    except (TypeError, InvalidOperation):
-        bastidor_longitud = Decimal('114')
+    bastidor_longitud = _get_project_rack_length(proyecto)
+    crane_limit = _get_project_crane_limit(proyecto)
 
     modulo_width = _get_module_planning_width(modulo, bastidor_longitud)
+    modulo_weight = (
+        _get_module_planning_weight(modulo)
+        if crane_limit is not None
+        else Decimal('0')
+    )
 
     ultimo_grupo = (
         proyecto.grupos_bastidor.order_by('-indice').first()
@@ -944,7 +1002,8 @@ def _assign_modulo_to_group_on_create(modulo):
     if ultimo_grupo is None:
         nuevo = GrupoBastidor.objects.create(proyecto=proyecto, indice=1, nombre='Grupo 1')
         modulo.grupo_bastidor = nuevo
-        modulo.save(update_fields=['grupo_bastidor'])
+        modulo.orden_intra = 1
+        modulo.save(update_fields=['grupo_bastidor', 'orden_intra'])
         return
 
     modulos_en_grupo = list(ultimo_grupo.modulos.all())
@@ -952,8 +1011,27 @@ def _assign_modulo_to_group_on_create(modulo):
         (_get_module_planning_width(m, bastidor_longitud) for m in modulos_en_grupo),
         Decimal('0'),
     )
+    if crane_limit is None:
+        peso_cabe = True
+    else:
+        pesos_actuales = [
+            _get_module_planning_weight(m) for m in modulos_en_grupo
+        ]
+        peso_cabe = (
+            modulo_weight is not None
+            and all(weight is not None for weight in pesos_actuales)
+            and sum(pesos_actuales, Decimal('0')) + modulo_weight <= crane_limit
+        )
+    estrategia = proyecto.estrategia_bastidor or 'SECUENCIAL'
+    tipo_cabe = not (
+        estrategia == 'AISLAR_CENTRAL_GIRADO'
+        and modulos_en_grupo
+        and (
+            modulos_en_grupo[0].tipo_modulo == 'CENTRAL_GIRADO'
+        ) != (modulo.tipo_modulo == 'CENTRAL_GIRADO')
+    )
 
-    if suma_actual + modulo_width <= bastidor_longitud:
+    if suma_actual + modulo_width <= bastidor_longitud and peso_cabe and tipo_cabe:
         modulo.grupo_bastidor = ultimo_grupo
         max_orden = ultimo_grupo.modulos.aggregate(
             mx=Max('orden_intra')
@@ -1228,7 +1306,7 @@ class ProyectoViewSet(viewsets.ModelViewSet):
     """
     API endpoint que permite ver, crear, editar y borrar proyectos.
     """
-    queryset = Proyecto.objects.select_related('usuario').all().order_by("nombre")
+    queryset = Proyecto.objects.select_related('usuario', 'usuario__profile').all().order_by("nombre")
     serializer_class = ProyectoSerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -1253,9 +1331,14 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         """
         user = self.request.user
         if user.is_staff or user.is_superuser:
-            return self._annotate_counts(Proyecto.objects.all()).order_by("nombre")
+            return self._annotate_counts(
+                Proyecto.objects.select_related('usuario', 'usuario__profile')
+            ).order_by("nombre")
         if user.is_authenticated:
-            return self._annotate_counts(Proyecto.objects.filter(usuario=user)).order_by("nombre")
+            return self._annotate_counts(
+                Proyecto.objects.filter(usuario=user)
+                .select_related('usuario', 'usuario__profile')
+            ).order_by("nombre")
         return Proyecto.objects.none()
 
     def perform_create(self, serializer):
@@ -1269,8 +1352,52 @@ class ProyectoViewSet(viewsets.ModelViewSet):
             serializer.save()
 
     def perform_update(self, serializer):
+        instance = serializer.instance
+        if 'usuario' in serializer.validated_data:
+            new_user = serializer.validated_data['usuario']
+            new_user_id = getattr(new_user, 'id', None)
+            if new_user_id != instance.usuario_id:
+                if not _is_admin(self.request.user):
+                    raise PermissionDenied(
+                        'Solo un administrador puede cambiar la ferralla de un proyecto.'
+                    )
+                linked_groups = set(
+                    instance.colas_grupos_mesas.exclude(
+                        grupo_mesas__usuario_id=new_user_id
+                    ).values_list('grupo_mesas__nombre', flat=True)
+                )
+                linked_groups.update(
+                    instance.grupos_bastidor.filter(
+                        asignado_a__isnull=False,
+                    ).exclude(
+                        asignado_a__usuario_id=new_user_id,
+                    ).values_list('asignado_a__nombre', flat=True)
+                )
+                active_queue_locations = (
+                    MesaQueueItem.objects.filter(
+                        modulo__proyecto=instance,
+                        status__in=ACTIVE_QUEUE_STATUSES,
+                    )
+                    .exclude(mesa__usuario_id=new_user_id)
+                    .values_list('mesa__grupo__nombre', 'mesa__nombre')
+                    .distinct()
+                )
+                linked_groups.update(
+                    group_name or mesa_name
+                    for group_name, mesa_name in active_queue_locations
+                )
+                if linked_groups:
+                    names = ', '.join(sorted(linked_groups))
+                    raise ValidationError({
+                        'usuario': [
+                            'No se puede cambiar la ferralla mientras el proyecto '
+                            f'siga asignado a mesas de otra ferralla: {names}. '
+                            'Retiralo primero desde Gestionar mesas.'
+                        ]
+                    })
+
         replaced_files = []
-        for field_name in ('plano_archivo', 'planilla_archivo'):
+        for field_name in ('plano_archivo', 'documentos_archivo'):
             if field_name not in serializer.validated_data:
                 continue
             current_file = getattr(serializer.instance, field_name)
@@ -1511,6 +1638,8 @@ class ProyectoViewSet(viewsets.ModelViewSet):
             'imagenes': 0,
             'detalles_fase': 0,
             'plano_cargado': False,
+            'documentos_cargados': False,
+            # Compatibility for frontends opened before this deployment.
             'planilla_cargada': False,
             'base_tecnica_actualizada': False,
             'errors': [],
@@ -1686,7 +1815,7 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         Expects multipart form with:
         - 'modulos': JSON string with the module structure
         - image files referenced by filename in the modules JSON
-        - optional 'plano_file' and 'planilla_file' PDF files
+        - optional 'plano_file' PDF and 'documentos_file' ZIP
         """
         import os
         import json
@@ -1731,7 +1860,7 @@ class ProyectoViewSet(viewsets.ModelViewSet):
                     'plano_filename', legacy_group.get('plano_filename')
                 )
                 legacy_project_data.setdefault(
-                    'planilla_filename',
+                    'documentos_filename',
                     legacy_group.get('planilla_filename')
                     or legacy_group.get('corte_filename'),
                 )
@@ -1837,42 +1966,56 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         project_data = {
             'modulos': modulos_data,
             'plano_filename': legacy_project_data.get('plano_filename'),
-            'planilla_filename': legacy_project_data.get('planilla_filename'),
+            'documentos_filename': legacy_project_data.get('documentos_filename'),
         }
 
         for project_data in [project_data]:
             try:
                 replaced_project_files = []
-                for field_name, legacy_name, model_field, stats_field, label in (
+                for field_name, legacy_name, model_field, stats_field, label, extension in (
                     (
                         'plano_file',
                         project_data.get('plano_filename'),
                         proyecto.plano_archivo,
                         'plano_cargado',
                         'plano',
+                        '.pdf',
                     ),
                     (
-                        'planilla_file',
-                        project_data.get('planilla_filename'),
-                        proyecto.planilla_archivo,
-                        'planilla_cargada',
-                        'planilla',
+                        'documentos_file',
+                        project_data.get('documentos_filename'),
+                        proyecto.documentos_archivo,
+                        'documentos_cargados',
+                        'documentos',
+                        '.zip',
                     ),
                 ):
                     uploaded_file = files.get(field_name)
+                    legacy_planilla = False
+                    if field_name == 'documentos_file' and not uploaded_file:
+                        uploaded_file = files.get('planilla_file')
+                        legacy_planilla = uploaded_file is not None
                     if not uploaded_file and legacy_name:
                         uploaded_file = files.get(legacy_name)
+                        legacy_planilla = field_name == 'documentos_file'
                     if not uploaded_file:
                         continue
-                    if os.path.splitext(uploaded_file.name)[1].lower() != '.pdf':
+                    uploaded_extension = os.path.splitext(uploaded_file.name)[1].lower()
+                    valid_extensions = {extension}
+                    if legacy_planilla:
+                        valid_extensions.add('.pdf')
+                    if uploaded_extension not in valid_extensions:
                         stats['errors'].append(
-                            f'El archivo de {label} debe ser un PDF.'
+                            f'El archivo de {label} debe ser un '
+                            f'{"PDF" if extension == ".pdf" else "ZIP"}.'
                         )
                         continue
                     if model_field and model_field.name:
                         replaced_project_files.append(model_field.name)
                     model_field.save(uploaded_file.name, uploaded_file)
                     stats[stats_field] = True
+                    if field_name == 'documentos_file':
+                        stats['planilla_cargada'] = True
 
                 if replaced_project_files:
                     transaction.on_commit(
@@ -2109,6 +2252,7 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         })
 
     @action(detail=True, methods=['post'], url_path='recalcular-bastidores')
+    @transaction.atomic
     def recalcular_bastidores(self, request, pk=None):
         """Recalcula los GrupoBastidor del proyecto con la estrategia indicada.
 
@@ -2138,9 +2282,13 @@ class ProyectoViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        bloqueantes = list(
-            proyecto.modulos.exclude(estado='PENDIENTE').values_list('nombre', flat=True)
-        )
+        project_modules = list(proyecto.modulos.all())
+        reorderability = module_reorderability_map(project_modules)
+        bloqueantes = [
+            modulo.nombre
+            for modulo in project_modules
+            if not reorderability[modulo.id][0]
+        ]
         if bloqueantes:
             return Response(
                 {
@@ -3028,6 +3176,12 @@ class ModuloViewSet(viewsets.ModelViewSet):
     queryset = Modulo.objects.prefetch_related('detalles_fase').all().order_by("id")
     serializer_class = ModuloSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_permissions(self):
+        if self.action in ('completar', 'completar_fase', 'cerrar', 'reiniciar',
+                           'create', 'update', 'partial_update', 'destroy'):
+            return [permissions.IsAdminUser()]
+        return super().get_permissions()
 
     def get_queryset(self):
         from django.db.models import Count
@@ -4959,10 +5113,8 @@ class ProductionStatsView(APIView):
                         }
                     add_detalle(por_mesa[manual_key], detalle)
 
-        # Expected output for the range. Stats are per ferralla, so the
-        # capacity comes from the logged user's profile. Admins with an
-        # optional proyecto= filter fall back to that project's ferralla.
-        capacidad_diaria = 12
+        # Work hours still use the camera schedule. Required output comes
+        # from current project deadlines, not the legacy nominal capacity.
         profile_user = None
         if _is_admin(request.user) and proyecto_id:
             proyecto = Proyecto.objects.select_related('usuario__profile').filter(id=proyecto_id).first()
@@ -4972,11 +5124,16 @@ class ProductionStatsView(APIView):
             profile_user = request.user
         if profile_user is not None and hasattr(profile_user, 'profile'):
             profile = profile_user.profile
-            profile_cap = profile.capacidad_diaria_modulos
-            if profile_cap:
-                capacidad_diaria = profile_cap
         else:
             profile = None
+        from api.planning import annotated_projects, demand_summary
+        planning_projects = Proyecto.objects.all()
+        if proyecto_id:
+            planning_projects = planning_projects.filter(pk=proyecto_id)
+        if not _is_admin(request.user):
+            planning_projects = planning_projects.filter(usuario=request.user)
+        planning = demand_summary(annotated_projects(planning_projects))
+        capacidad_diaria = planning['modulos_por_dia']
         working_days = _count_working_days(from_date, to_date)
         working_hours = _working_hours_in_range(
             from_date, to_date, profile, timezone.localtime(timezone.now(), current_tz)
@@ -5007,8 +5164,9 @@ class ProductionStatsView(APIView):
             'por_hora': sorted(por_hora.values(), key=lambda x: x['hora']) if single_day else None,
             'esperado': {
                 'capacidad_diaria_modulos': capacidad_diaria,
-                'modulos_esperados': capacidad_diaria * working_days,
+                'modulos_esperados': None,
             },
+            'planificacion': planning,
         })
 
 

@@ -4,6 +4,7 @@ from django.conf.urls.static import static
 from rest_framework import routers
 
 from api import views
+from api.office import CheckDefinitionViewSet, ProjectChecklistViewSet, WorkerViewSet, EventViewSet
 
 from django.contrib import admin
 
@@ -21,6 +22,10 @@ router.register(r"mesa-queue-items", views.MesaQueueItemViewSet)
 router.register(r"device", views.DeviceViewSet, basename="device")
 router.register(r"fotos", views.FotoFabricacionViewSet)
 router.register(r"grupos-bastidor", views.GrupoBastidorViewSet)
+router.register(r"check-definiciones", CheckDefinitionViewSet)
+router.register(r"proyecto-checklist", ProjectChecklistViewSet, basename='proyecto-checklist')
+router.register(r"trabajadores", WorkerViewSet)
+router.register(r"eventos", EventViewSet)
 
 from rest_framework.authtoken import views as drf_views
 

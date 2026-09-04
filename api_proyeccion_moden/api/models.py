@@ -1,6 +1,7 @@
 from decimal import Decimal, InvalidOperation
 from datetime import time
 
+from django.core.validators import MinValueValidator, RegexValidator
 from django.db import models
 from django.contrib.auth.models import User
 
@@ -64,12 +65,21 @@ class EstrategiaColaSuperior(models.TextChoices):
 class Proyecto(models.Model):
     id = models.AutoField(primary_key=True)
     nombre = models.CharField(max_length=200)
+    fecha_montaje = models.DateField(null=True, blank=True)
     usuario = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='proyectos')
     bastidor_longitud_cm = models.DecimalField(
         max_digits=6,
         decimal_places=2,
         default=114,
         help_text='Longitud util del bastidor para calcular capacidad por espesor.'
+    )
+    peso_maximo_grua_kg = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal('0.01'))],
+        help_text='Peso maximo que puede elevar la grua de la obra. Vacio significa sin limite configurado.',
     )
     datos_tecnicos_importados = models.BooleanField(
         default=False,
@@ -91,11 +101,11 @@ class Proyecto(models.Model):
         null=True,
         help_text='Plano PDF del proyecto.',
     )
-    planilla_archivo = models.FileField(
-        upload_to='planillas/',
+    documentos_archivo = models.FileField(
+        upload_to='documentos/',
         blank=True,
         null=True,
-        help_text='Planilla PDF del proyecto.',
+        help_text='Archivo ZIP con la documentacion del proyecto.',
     )
     estrategia_bastidor = models.CharField(
         max_length=32,
@@ -107,6 +117,23 @@ class Proyecto(models.Model):
 
     def __str__(self):
         return self.nombre
+
+    @property
+    def bastidor_longitud_efectiva_cm(self):
+        """Return the assigned ferralla's rack length, with a legacy fallback."""
+        if self.usuario_id:
+            try:
+                value = self.usuario.profile.bastidor_longitud_cm
+                value = Decimal(value)
+                if value > 0:
+                    return value
+            except (UserProfile.DoesNotExist, TypeError, InvalidOperation):
+                pass
+        try:
+            value = Decimal(self.bastidor_longitud_cm)
+            return value if value > 0 else Decimal('114')
+        except (TypeError, InvalidOperation):
+            return Decimal('114')
 
     class Meta:
         db_table = 'api_proyecto'
@@ -207,6 +234,8 @@ class Modulo(models.Model):
     
     # Timestamp cuando ambas fases quedaron hechas
     completado_at = models.DateTimeField(null=True, blank=True)
+    inferior_completado_at = models.DateTimeField(null=True, blank=True)
+    superior_completado_at = models.DateTimeField(null=True, blank=True)
     superior_needed_at = models.DateTimeField(
         null=True,
         blank=True,
@@ -238,6 +267,25 @@ class Modulo(models.Model):
 
     def __str__(self):
         return f"{self.nombre} ({self.proyecto.nombre})"
+
+    @property
+    def peso_total_kg(self):
+        """Return a safe total only when both manufacturing phases are known."""
+        detalles = getattr(self, '_prefetched_objects_cache', {}).get(
+            'detalles_fase'
+        )
+        if detalles is None:
+            detalles = self.detalles_fase.all()
+        phase_weights = {}
+        for detalle in detalles:
+            if detalle.fase not in (Fase.INFERIOR, Fase.SUPERIOR):
+                continue
+            phase_weight = detalle.peso_total_kg
+            if phase_weight is not None:
+                phase_weights[detalle.fase] = Decimal(phase_weight)
+        if set(phase_weights) != {Fase.INFERIOR, Fase.SUPERIOR}:
+            return None
+        return sum(phase_weights.values(), Decimal('0'))
 
     def actualizar_estado(self):
         """Update estado based on phase completion."""
@@ -281,10 +329,89 @@ class Modulo(models.Model):
         elif self.estado == ModuloEstado.EN_PROGRESO and self.completado_at is not None:
             self.completado_at = None
 
+        # Stamp phase transitions even when callers use update_fields. A reset
+        # clears only its own timestamp; the other phase keeps its original date.
+        changed_dates = []
+        update_fields = kwargs.get('update_fields')
+        previous_flags = None
+        for phase in ('inferior', 'superior'):
+            flag = f'{phase}_hecho'
+            date_field = f'{phase}_completado_at'
+            if update_fields is not None and flag not in update_fields and 'estado' not in update_fields:
+                continue
+            if getattr(self, flag):
+                if getattr(self, date_field) is None:
+                    if not self._state.adding:
+                        if previous_flags is None:
+                            previous_flags = type(self).objects.filter(pk=self.pk).values(
+                                'inferior_hecho', 'superior_hecho',
+                            ).first() or {}
+                        if previous_flags.get(flag):
+                            continue
+                    setattr(self, date_field, timezone.now())
+                    changed_dates.append(date_field)
+            elif getattr(self, date_field) is not None:
+                setattr(self, date_field, None)
+                changed_dates.append(date_field)
+        if update_fields is not None and changed_dates:
+            kwargs['update_fields'] = set(update_fields) | set(changed_dates)
         super().save(*args, **kwargs)
 
     class Meta:
         db_table = 'api_modulo'
+
+
+class ProyectoCheckDefinicion(models.Model):
+    titulo = models.CharField(max_length=200)
+    activo = models.BooleanField(default=True)
+    orden = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['orden', 'id']
+
+
+class ProyectoCheckEstado(models.Model):
+    proyecto = models.ForeignKey(Proyecto, on_delete=models.CASCADE, related_name='check_estados')
+    definicion = models.ForeignKey(ProyectoCheckDefinicion, on_delete=models.PROTECT)
+    completado = models.BooleanField(default=False)
+    actualizado_at = models.DateTimeField(auto_now=True)
+    actualizado_por = models.ForeignKey(User, null=True, on_delete=models.SET_NULL)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(
+            fields=['proyecto', 'definicion'], name='unique_project_check',
+        )]
+
+
+class TrabajadorOficina(models.Model):
+    nombre = models.CharField(max_length=150)
+    activo = models.BooleanField(default=True)
+    color = models.CharField(
+        max_length=7, default='#2563eb',
+        validators=[RegexValidator(r'^#[0-9a-fA-F]{6}$', 'Usa un color hexadecimal como #2563eb.')],
+    )
+
+    class Meta:
+        ordering = ['nombre', 'id']
+
+
+class EventoCalendario(models.Model):
+    class Tipo(models.TextChoices):
+        EVENTO = 'EVENTO', 'Evento'
+        VACACIONES = 'VACACIONES', 'Vacaciones'
+
+    titulo = models.CharField(max_length=200)
+    tipo = models.CharField(max_length=16, choices=Tipo.choices, default=Tipo.EVENTO)
+    inicio = models.DateField()
+    fin = models.DateField()
+    proyecto = models.ForeignKey(Proyecto, null=True, blank=True, on_delete=models.SET_NULL, related_name='eventos')
+    trabajadores = models.ManyToManyField(TrabajadorOficina, blank=True, related_name='eventos')
+    notas = models.TextField(blank=True, max_length=4000)
+    creado_por = models.ForeignKey(User, null=True, on_delete=models.SET_NULL)
+
+    class Meta:
+        ordering = ['inicio', 'id']
+        constraints = [models.CheckConstraint(condition=models.Q(fin__gte=models.F('inicio')), name='calendar_valid_dates')]
 
 
 class DetalleModuloFase(models.Model):
@@ -336,7 +463,9 @@ class DetalleModuloFase(models.Model):
     @property
     def capacidad_bastidor(self):
         try:
-            longitud_bastidor = Decimal(self.modulo.proyecto.bastidor_longitud_cm)
+            longitud_bastidor = Decimal(
+                self.modulo.proyecto.bastidor_longitud_efectiva_cm
+            )
             ancho_modulo = Decimal(self.modulo.ancho_cm or self.espesor_cm)
         except (TypeError, InvalidOperation):
             return None
@@ -789,6 +918,13 @@ class UserProfile(models.Model):
     capacidad_diaria_modulos = models.PositiveIntegerField(
         default=12,
         help_text='Modulos que la ferralla produce por dia (se reparten entre sus mesas INF).'
+    )
+    bastidor_longitud_cm = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        default=114,
+        validators=[MinValueValidator(Decimal('0.01'))],
+        help_text='Longitud util de los bastidores de esta ferralla.',
     )
     capture_active_days = models.JSONField(default=default_capture_active_days)
     capture_start_time = models.TimeField(default=time(6, 50))

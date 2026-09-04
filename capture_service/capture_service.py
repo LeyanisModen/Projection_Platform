@@ -24,6 +24,7 @@ Listens on localhost:5555. Two jobs in one process:
                                   device_token.txt so the token
                                   survives a Chrome profile reset.
      POST /close_browser      -> close Chrome kiosk on this mini-PC.
+     POST /shutdown_pc        -> shut down this Windows mini-PC.
      GET  /health             -> { "status": "ok" }
      GET  /stats              -> { documentation / counters / local
                                   disk usage }
@@ -70,6 +71,7 @@ DAY_INDEX_TO_NAME = {value: key for key, value in DAY_NAME_TO_INDEX.items()}
 
 CONTROL_ALLOWED_ORIGINS = {
     'https://moden.up.railway.app',
+    'https://calm-curiosity-staging.up.railway.app',
     'http://localhost:4200',
     'http://127.0.0.1:4200',
     'http://localhost',
@@ -1755,6 +1757,33 @@ def _close_chrome_processes():
         _set_last_error(f'close browser failed: {exc}')
 
 
+def _schedule_pc_shutdown(delay_seconds=3):
+    """Schedule a Windows shutdown and report whether it was accepted."""
+    if os.name != 'nt':
+        return False, 'PC shutdown is only supported on Windows'
+
+    try:
+        result = subprocess.run(
+            [
+                'shutdown.exe',
+                '/s',
+                '/t',
+                str(max(0, int(delay_seconds))),
+                '/f',
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except Exception as exc:
+        return False, f'shutdown command failed: {exc}'
+
+    if result.returncode != 0:
+        message = (result.stderr or result.stdout or '').strip()
+        return False, message or f'shutdown command returned {result.returncode}'
+    return True, None
+
+
 # ---------------------------------------------------------------------------
 # HTTP handler
 # ---------------------------------------------------------------------------
@@ -1820,6 +1849,8 @@ class CaptureHandler(BaseHTTPRequestHandler):
             self._handle_store_device_token()
         elif self.path == '/close_browser':
             self._handle_close_browser()
+        elif self.path == '/shutdown_pc':
+            self._handle_shutdown_pc()
         else:
             self.send_error(404)
 
@@ -1872,6 +1903,18 @@ class CaptureHandler(BaseHTTPRequestHandler):
         timer = threading.Timer(0.35, _close_chrome_processes)
         timer.daemon = True
         timer.start()
+
+    def _handle_shutdown_pc(self):
+        if not self._is_control_request_allowed('shutdown-pc'):
+            self.send_error(403, 'Forbidden')
+            return
+
+        scheduled, error = _schedule_pc_shutdown()
+        if not scheduled:
+            _set_last_error(f'shutdown pc failed: {error}')
+            self.send_error(500, error or 'Cannot shut down PC')
+            return
+        self._respond_json(200, {'status': 'shutting_down', 'delay_seconds': 3})
 
     def _handle_capture(self):
         with _camera_lock:
@@ -2010,6 +2053,7 @@ def main():
     print('[CaptureService] GET  /device_token       -> read stored pairing token')
     print('[CaptureService] POST /device_token       -> persist pairing token to disk')
     print('[CaptureService] POST /close_browser      -> close Chrome kiosk')
+    print('[CaptureService] POST /shutdown_pc        -> shut down this Windows mini-PC')
     print('[CaptureService] GET  /health             -> health check')
     print('[CaptureService] GET  /stats              -> documentation stats')
     try:

@@ -5,6 +5,8 @@ to the Chrome kiosk. Single Python process:
 
 - `POST http://127.0.0.1:5555/capture` — on-demand 4K photo for the
   visor (fires when a filename contains `_foto`, `_photo` or `_check`).
+- `POST http://127.0.0.1:5555/shutdown_pc` - protected local control used
+  only after the player detects a five-second Left + Space + Right hold.
 - `GET  http://127.0.0.1:5555/health` — 200 OK while running.
 - `GET  http://127.0.0.1:5555/stats` — documentation counters, last
   capture timestamp, local disk usage, error details.
@@ -81,6 +83,10 @@ to the Chrome kiosk. Single Python process:
    service outside the installer.
 
 ## Manual smoke test
+
+Do not call `/shutdown_pc` during a smoke test: a valid request schedules a
+real forced Windows shutdown. Test it only through the player chord after the
+new capture-service version and frontend bundle are both installed.
 
 ```powershell
 # From a terminal on the mini-PC:
