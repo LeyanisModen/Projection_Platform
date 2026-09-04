@@ -64,6 +64,21 @@ Frontend: `project-controls.component.ts`, `calendario.component.*`,
 Office endpoints are admin-only: `check-definiciones`, `proyecto-checklist`,
 `trabajadores`, `eventos`. Restart remains scoped through the module queryset.
 
+## Calendar colors and ranges
+
+Migration `0055_office_worker_color` gives existing office workers distinct colors
+from an eight-color palette (reused for larger teams), without changing their events.
+Admins can change each person's color in "Gestionar equipo", including custom
+six-digit hex colors. Colors are stored on the worker, not copied into each event,
+so edits also recolor previous events. Shared events show a stripe for each person;
+unassigned events use gray and mounting dates retain their orange styling.
+
+The month renders inclusive event ranges as one bar per week, not one chip per day.
+Bars continue across week/month boundaries, retain their lane within the visible
+month, and never overlap another event on the same day/lane. Every event remains
+visible; busy weeks grow to fit additional lanes. Mobile uses the same bars, with
+the full title, dates and people available in the selected day's agenda.
+
 ## Verification and rollout
 
 Run from `api_proyeccion_moden`:

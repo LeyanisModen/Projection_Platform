@@ -66,7 +66,7 @@ export interface ProjectCheck {
     actualizado_at: string | null; actualizado_por: string | null;
 }
 export interface CheckDefinition { id: number; titulo: string; activo: boolean; orden: number; }
-export interface OfficeWorker { id: number; nombre: string; activo: boolean; }
+export interface OfficeWorker { id: number; nombre: string; activo: boolean; color: string; }
 export interface CalendarEvent {
     id: number; titulo: string; tipo: 'EVENTO' | 'VACACIONES';
     inicio: string; fin: string; proyecto: number | null; trabajadores: number[]; notas: string;

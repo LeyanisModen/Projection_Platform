@@ -1,7 +1,7 @@
 from decimal import Decimal, InvalidOperation
 from datetime import time
 
-from django.core.validators import MinValueValidator
+from django.core.validators import MinValueValidator, RegexValidator
 from django.db import models
 from django.contrib.auth.models import User
 
@@ -386,6 +386,10 @@ class ProyectoCheckEstado(models.Model):
 class TrabajadorOficina(models.Model):
     nombre = models.CharField(max_length=150)
     activo = models.BooleanField(default=True)
+    color = models.CharField(
+        max_length=7, default='#2563eb',
+        validators=[RegexValidator(r'^#[0-9a-fA-F]{6}$', 'Usa un color hexadecimal como #2563eb.')],
+    )
 
     class Meta:
         ordering = ['nombre', 'id']

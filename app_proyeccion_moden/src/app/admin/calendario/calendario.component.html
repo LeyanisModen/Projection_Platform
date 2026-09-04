@@ -1,7 +1,7 @@
 <header class="page-heading">
     <div><h1>Calendario</h1><p>Montajes, eventos y disponibilidad de la oficina</p></div>
     <div class="actions">
-        <button type="button" (click)="teamOpen.set(true)">Gestionar equipo</button>
+        <button type="button" (click)="openTeam()">Gestionar equipo</button>
         <button type="button" class="primary" (click)="editEvent()">Añadir evento</button>
     </div>
 </header>
@@ -25,22 +25,43 @@
         <button type="button" (click)="load()" [disabled]="loading()">{{ loading() ? 'Cargando...' : 'Actualizar' }}</button>
     </div>
 </section>
+<div class="team-legend" aria-label="Colores del equipo">
+    @for (worker of activeWorkers(); track worker.id) {
+        <button type="button" [class.active]="workerFilter()===worker.id" [attr.aria-pressed]="workerFilter()===worker.id"
+            (click)="workerFilter.set(workerFilter()===worker.id ? null : worker.id)">
+            <span class="color-dot" [style.background-color]="colorOf(worker)" aria-hidden="true"></span>{{ worker.nombre }}
+        </button>
+    }
+    <span class="legend-note">Pulsa una persona para filtrar · Los eventos compartidos muestran todos sus colores</span>
+</div>
 <div class="calendar-layout">
     <section class="month-grid" aria-label="Calendario mensual" [attr.aria-busy]="loading()">
-        @for (label of weekLabels; track label) { <span class="weekday">{{ label }}</span> }
-        @for (day of days(); track day.key) {
-            <button type="button" class="day" [class.outside]="!day.current" [class.today]="day.key===today"
-                [class.selected]="day.key===selected()" [attr.aria-pressed]="day.key===selected()"
-                [attr.aria-label]="(day.key | date:'dd/MM/yyyy') + ', ' + (eventsOn(day.key).length + mountsOn(day.key).length) + ' eventos'"
-                (click)="selected.set(day.key)">
-                <span class="day-number">{{ day.number }}</span>
-                @for (project of mountsOn(day.key); track project.id) { <span class="event-chip mounting">Montaje · {{ project.nombre }}</span> }
-                @for (event of eventsOn(day.key).slice(0,3); track event.id) {
-                    <span class="event-chip" [class.holiday]="event.tipo==='VACACIONES'">{{ event.titulo }}</span>
+        <div class="week-heading">@for (label of weekLabels; track label) { <span class="weekday">{{ label }}</span> }</div>
+        @for (week of weeks(); track week.days[0].key) {
+            <div class="calendar-week" [style.grid-template-rows]="'36px repeat(' + (week.lanes || 1) + ', var(--event-row)) minmax(10px, 1fr)'">
+                @for (day of week.days; track day.key; let column = $index) {
+                    <button type="button" class="day" [style.grid-column]="column+1" [class.outside]="!day.current" [class.today]="day.key===today"
+                        [class.selected]="day.key===selected()" [attr.aria-pressed]="day.key===selected()"
+                        [attr.aria-label]="(day.key | date:'dd/MM/yyyy') + ', ' + (eventsOn(day.key).length + mountsOn(day.key).length) + ' eventos'"
+                        (click)="selected.set(day.key)">
+                        <span class="day-number">{{ day.number }}</span>
+                    </button>
                 }
-                @if (eventsOn(day.key).length>3) { <small>+{{ eventsOn(day.key).length-3 }}</small> }
-                <span class="mobile-count">{{ eventsOn(day.key).length + mountsOn(day.key).length || '' }}</span>
-            </button>
+                @for (segment of week.segments; track segment.item.key) {
+                    <button type="button" class="event-bar" [class.continues-before]="segment.continuesBefore" [class.continues-after]="segment.continuesAfter"
+                        [class.mounting]="segment.item.mounting" [style.grid-column]="segment.column + ' / span ' + segment.span"
+                        [style.grid-row]="segment.lane+2" [style.--event-color]="segment.item.colors.length===1 ? segment.item.colors[0] : '#64748b'"
+                        [attr.aria-label]="segment.item.title + ', ' + (segment.item.start | date:'dd/MM/yyyy') + ' a ' + (segment.item.end | date:'dd/MM/yyyy') + ', ' + segment.item.people"
+                        [title]="segment.item.title + ' · ' + segment.item.people + ' · ' + (segment.item.start | date:'dd/MM/yyyy') + ' - ' + (segment.item.end | date:'dd/MM/yyyy')"
+                        (click)="selectSegment(segment)">
+                        <span class="event-tint" aria-hidden="true"></span>
+                        @if (segment.continuesBefore) { <span class="continuation" aria-hidden="true">‹</span> }
+                        <span class="event-label">{{ segment.item.title }}</span>
+                        @if (segment.continuesAfter) { <span class="continuation" aria-hidden="true">›</span> }
+                        <span class="color-strip" aria-hidden="true">@for (color of segment.item.colors; track $index) { <span [style.background-color]="color"></span> }</span>
+                    </button>
+                }
+            </div>
         }
     </section>
     <aside class="day-agenda">
@@ -51,7 +72,7 @@
         } @else {
         <div class="availability">
             @for (worker of availability(); track worker.id) {
-                <div [class.absent]="worker.holiday"><strong>{{ worker.nombre }}</strong><span>{{ worker.holiday ? 'De vacaciones' : 'Disponible' }}</span></div>
+                <div [class.absent]="worker.holiday"><strong><i class="color-dot" [style.background-color]="colorOf(worker)" aria-hidden="true"></i>{{ worker.nombre }}</strong><span>{{ worker.holiday ? 'De vacaciones' : 'Disponible' }}</span></div>
             } @empty { <p>Añade personas desde Gestionar equipo.</p> }
         </div>
         <small>Disponibilidad según las vacaciones registradas.</small>
@@ -64,7 +85,8 @@
             </article>
         }
         @for (event of selectedEvents(); track event.id) {
-            <article class="agenda-event" [class.holiday]="event.tipo==='VACACIONES'">
+            <article class="agenda-event">
+                <div class="agenda-colors" aria-hidden="true">@for (color of eventColors(event); track $index) { <span [style.background-color]="color"></span> }</div>
                 <strong>{{ event.titulo }}</strong>
                 <span>{{ event.inicio | date:'dd/MM/yyyy' }} – {{ event.fin | date:'dd/MM/yyyy' }} (inclusive)</span>
                 @if (event.proyecto) { <a [routerLink]="['/admin-dashboard/proyectos',event.proyecto]">{{ projectName(event.proyecto) }}</a> }
@@ -88,7 +110,7 @@
                 <fieldset><legend>Personas</legend>
                     @for (worker of workers(); track worker.id) {
                         @if (worker.activo || draft.trabajadores.includes(worker.id)) {
-                            <label class="person-check"><input type="checkbox" [checked]="draft.trabajadores.includes(worker.id)" (change)="setWorker(worker.id,$any($event.target).checked)" />{{ worker.nombre }}</label>
+                            <label class="person-check"><input type="checkbox" [checked]="draft.trabajadores.includes(worker.id)" (change)="setWorker(worker.id,$any($event.target).checked)" /><span class="color-dot" [style.background-color]="colorOf(worker)" aria-hidden="true"></span>{{ worker.nombre }}</label>
                         }
                     }
                 </fieldset>
@@ -105,12 +127,24 @@
             <h2 id="team-title">Equipo de oficina</h2>
             @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
             @for (worker of workers(); track worker.id) {
-                <div class="worker-row"><span>{{ worker.nombre }} {{ worker.activo ? '' : '(inactivo)' }}</span>
-                    <button type="button" (click)="workerId=worker.id;workerName=worker.nombre">Editar</button>
+                <div class="worker-row"><span class="worker-name"><i class="color-dot" [style.background-color]="colorOf(worker)" aria-hidden="true"></i>{{ worker.nombre }} {{ worker.activo ? '' : '(inactivo)' }}</span>
+                    <button type="button" [disabled]="busy()" (click)="editWorker(worker)">Editar</button>
                     <button type="button" [disabled]="busy()" (click)="setWorkerActive(worker)">{{ worker.activo ? 'Desactivar' : 'Activar' }}</button>
                 </div>
             }
-            <form (ngSubmit)="saveWorker()"><label>{{ workerId ? 'Editar nombre' : 'Añadir persona' }}<input name="worker" [(ngModel)]="workerName" maxlength="150" required /></label><button type="submit" class="primary" [disabled]="busy()">Guardar persona</button></form>
+            <form class="worker-form" (ngSubmit)="saveWorker()">
+                <label>{{ workerId ? 'Editar persona' : 'Añadir persona' }}<input name="worker" [(ngModel)]="workerName" maxlength="150" required [disabled]="busy()" /></label>
+                <label class="worker-color-label">Color en el calendario<input type="color" name="workerColor" [(ngModel)]="workerDraftColor" [disabled]="busy()" /></label>
+                <div class="color-palette" role="group" aria-label="Colores sugeridos">
+                    @for (color of palette; track color) {
+                        <button type="button" [style.--swatch]="color" [class.chosen]="workerDraftColor===color" [attr.aria-pressed]="workerDraftColor===color"
+                            [attr.aria-label]="'Usar color ' + color" (click)="workerDraftColor=color" [disabled]="busy()"></button>
+                    }
+                </div>
+                <div class="actions"><button type="submit" class="primary" [disabled]="busy()">Guardar persona</button>
+                    @if (workerId) { <button type="button" (click)="editWorker()" [disabled]="busy()">Cancelar edición</button> }
+                </div>
+            </form>
             <button type="button" (click)="teamOpen.set(false)" [disabled]="busy()">Cerrar</button>
         </section>
     </div>

@@ -101,6 +101,44 @@ class OfficePlanningTests(APITestCase):
         self.assertEqual(self.client.patch(url, {'trabajadores': []}, format='json').status_code, 400)
         self.assertEqual(EventoCalendario.objects.get().creado_por_id, self.admin.pk)
 
+    def test_worker_color_is_saved_normalized_and_preserved_on_other_edits(self):
+        response = self.client.post('/api/trabajadores/', {'nombre': 'Ana', 'color': '#BE185D'}, format='json')
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['color'], '#be185d')
+        url = f"/api/trabajadores/{response.data['id']}/"
+        self.assertEqual(self.client.patch(url, {'color': '#0f766e'}, format='json').data['color'], '#0f766e')
+        self.assertEqual(self.client.patch(url, {'activo': False}, format='json').data['color'], '#0f766e')
+        self.assertEqual(self.client.get('/api/trabajadores/').data[0]['color'], '#0f766e')
+
+    def test_worker_color_validation_and_permissions(self):
+        worker = TrabajadorOficina.objects.create(nombre='Ana')
+        url = f'/api/trabajadores/{worker.pk}/'
+        for color in ('red', '#abc', '#1234567', '', 'url(example)', None):
+            self.assertEqual(self.client.patch(url, {'color': color}, format='json').status_code, 400)
+        self.client.force_authenticate(self.factory)
+        self.assertEqual(self.client.patch(url, {'color': '#123456'}, format='json').status_code, 403)
+
+    def test_default_worker_colors_use_available_palette(self):
+        first = self.client.post('/api/trabajadores/', {'nombre': 'Ana'}, format='json')
+        second = self.client.post('/api/trabajadores/', {'nombre': 'Luis'}, format='json')
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(second.status_code, 201)
+        self.assertNotEqual(first.data['color'], second.data['color'])
+
+    def test_color_backfill_keeps_workers_and_events(self):
+        from types import SimpleNamespace
+        from django.db import connection
+        worker1 = TrabajadorOficina.objects.create(nombre='Ana')
+        worker2 = TrabajadorOficina.objects.create(nombre='Luis')
+        event = EventoCalendario.objects.create(titulo='Vacaciones', inicio=date(2026, 9, 1), fin=date(2026, 9, 3))
+        event.trabajadores.add(worker1, worker2)
+        migration = import_module('api.migrations.0055_office_worker_color')
+        migration.assign_existing_colors(apps, SimpleNamespace(connection=connection))
+        worker1.refresh_from_db()
+        worker2.refresh_from_db()
+        self.assertNotEqual(worker1.color, worker2.color)
+        self.assertEqual(event.trabajadores.count(), 2)
+
     def test_events_use_inclusive_overlap_filters_and_project_link(self):
         response = self.client.post('/api/eventos/', {'titulo': 'Reunion', 'inicio': '2026-08-30', 'fin': '2026-09-02', 'proyecto': self.project.pk}, format='json')
         self.assertEqual(response.status_code, 201)

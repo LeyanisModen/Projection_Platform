@@ -5,6 +5,7 @@ import { RouterLink } from '@angular/router';
 import { A11yModule } from '@angular/cdk/a11y';
 import { forkJoin } from 'rxjs';
 import { ApiService, CalendarEvent, OfficeWorker, Proyecto } from '../../services/api.service';
+import { CalendarItem, CalendarSegment, calendarWeeks, nextWorkerColor, workerColor, WORKER_COLORS } from './calendar-layout';
 
 function localDate(date: Date): string {
     return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
@@ -37,6 +38,10 @@ export class CalendarioComponent {
     draft: Omit<CalendarEvent, 'id'> & {id?:number} = this.newDraft();
     workerName = '';
     workerId: number | null = null;
+    workerDraftColor = WORKER_COLORS[0];
+    readonly palette = WORKER_COLORS;
+    readonly colorOf = (worker: OfficeWorker) => workerColor(worker.color, worker.id);
+    readonly activeWorkers = computed(() => this.workers().filter(worker => worker.activo));
 
     readonly title = computed(() => this.month().toLocaleDateString('es-ES', {month:'long',year:'numeric'}));
     readonly days = computed(() => {
@@ -51,6 +56,22 @@ export class CalendarioComponent {
         (this.projectFilter() === null || e.proyecto === this.projectFilter()) &&
         (this.workerFilter() === null || e.trabajadores.includes(this.workerFilter()!)),
     ));
+    readonly weeks = computed(() => {
+        const items: CalendarItem[] = this.filteredEvents().map(event => ({
+            key: `event-${event.id}`, title: event.titulo, start: event.inicio, end: event.fin,
+            colors: this.eventColors(event), people: this.workerNames(event.trabajadores), mounting: false,
+        }));
+        if (this.workerFilter() === null) {
+            for (const project of this.projects()) {
+                if (project.fecha_montaje && (this.projectFilter() === null || project.id === this.projectFilter())) {
+                    items.push({key: `mount-${project.id}`, title: `Montaje · ${project.nombre}`,
+                        start: project.fecha_montaje, end: project.fecha_montaje,
+                        colors: ['#b45309'], people: '', mounting: true});
+                }
+            }
+        }
+        return calendarWeeks(this.days(), items);
+    });
     readonly selectedEvents = computed(() => this.eventsOn(this.selected()));
     readonly mountingProjects = computed(() => this.projects().filter(p =>
         p.fecha_montaje === this.selected() && (this.projectFilter() === null || p.id === this.projectFilter()) && this.workerFilter() === null,
@@ -85,6 +106,21 @@ export class CalendarioComponent {
     }
     projectName(id: number | null): string { return this.projects().find(p => p.id===id)?.nombre || ''; }
     workerNames(ids: number[]): string { return this.workers().filter(w => ids.includes(w.id)).map(w => w.nombre).join(', '); }
+    eventColors(event: CalendarEvent): string[] {
+        const colors = this.workers().filter(worker => event.trabajadores.includes(worker.id)).map(this.colorOf);
+        return colors.length ? colors : ['#64748b'];
+    }
+    selectSegment(segment: CalendarSegment): void {
+        if (this.selected() < segment.start || this.selected() > segment.end) {
+            this.selected.set(segment.start);
+        }
+    }
+    openTeam(): void { this.editWorker(); this.teamOpen.set(true); }
+    editWorker(worker?: OfficeWorker): void {
+        this.workerId = worker?.id ?? null;
+        this.workerName = worker?.nombre ?? '';
+        this.workerDraftColor = worker ? this.colorOf(worker) : nextWorkerColor(this.workers().map(this.colorOf));
+    }
     private newDraft(): Omit<CalendarEvent,'id'> {
         return {titulo:'', tipo:'EVENTO', inicio:this.selected(), fin:this.selected(), proyecto:null, trabajadores:[], notas:''};
     }
@@ -121,8 +157,11 @@ export class CalendarioComponent {
     saveWorker(): void {
         if (!this.workerName.trim() || this.busy()) return;
         this.busy.set(true);
-        this.api.saveWorker({...(this.workerId ? {id:this.workerId} : {}),nombre:this.workerName.trim()}).subscribe({
-            next: () => { this.workerName=''; this.workerId=null; this.busy.set(false); this.load(); },
+        this.api.saveWorker({...(this.workerId ? {id:this.workerId} : {}),nombre:this.workerName.trim(),color:this.workerDraftColor}).subscribe({
+            next: worker => {
+                this.workers.update(workers => [...workers.filter(w => w.id !== worker.id), worker].sort((a,b) => a.nombre.localeCompare(b.nombre)));
+                this.editWorker(); this.busy.set(false);
+            },
             error: () => { this.busy.set(false); this.error.set('No se pudo guardar la persona.'); },
         });
     }

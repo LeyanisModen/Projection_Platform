@@ -66,7 +66,17 @@ class ProjectChecklistViewSet(viewsets.GenericViewSet):
 class WorkerSerializer(serializers.ModelSerializer):
     class Meta:
         model = TrabajadorOficina
-        fields = ['id', 'nombre', 'activo']
+        fields = ['id', 'nombre', 'activo', 'color']
+
+    def validate_color(self, value):
+        return value.lower()
+
+    def create(self, validated_data):
+        if 'color' not in validated_data:
+            palette = ('#2563eb', '#b45309', '#0f766e', '#be185d', '#7c3aed', '#4d7c0f', '#0369a1', '#b91c1c')
+            used = list(TrabajadorOficina.objects.values_list('color', flat=True))
+            validated_data['color'] = min(palette, key=used.count)
+        return super().create(validated_data)
 
 
 class WorkerViewSet(viewsets.ModelViewSet):
