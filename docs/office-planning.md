@@ -79,6 +79,16 @@ month, and never overlap another event on the same day/lane. Every event remains
 visible; busy weeks grow to fit additional lanes. Mobile uses the same bars, with
 the full title, dates and people available in the selected day's agenda.
 
+The view selector offers a month, a rolling three-month window, and January to
+December of the reference year. The quarter starts at the reference month (initially
+the current month); its arrows move one month, not one fixed calendar quarter.
+Annual arrows move one year. "Hoy" returns to the current date without changing
+the selected view. Month headings open that month in detail and retain filters.
+Multi-month views hide padding dates and clip bars to the actual month, keeping
+continuation indicators and full original dates. One events request covers the
+whole selected period; older in-flight loads are cancelled. No new migration is
+needed for the additional views.
+
 ## Verification and rollout
 
 Run from `api_proyeccion_moden`:

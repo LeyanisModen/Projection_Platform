@@ -1,15 +1,12 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { A11yModule } from '@angular/cdk/a11y';
-import { forkJoin } from 'rxjs';
+import { forkJoin, Subscription } from 'rxjs';
 import { ApiService, CalendarEvent, OfficeWorker, Proyecto } from '../../services/api.service';
-import { CalendarItem, CalendarSegment, calendarWeeks, nextWorkerColor, workerColor, WORKER_COLORS } from './calendar-layout';
-
-function localDate(date: Date): string {
-    return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
-}
+import { CalendarItem, CalendarSegment, CalendarView, calendarMonths, calendarRange, calendarWeeks, localDate, monthDays, nextWorkerColor, workerColor, WORKER_COLORS } from './calendar-layout';
 
 @Component({
     selector: 'app-calendario',
@@ -20,7 +17,13 @@ function localDate(date: Date): string {
 })
 export class CalendarioComponent {
     private readonly api = inject(ApiService);
+    private readonly destroyRef = inject(DestroyRef);
+    private loadSubscription?: Subscription;
     readonly month = signal(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+    readonly view = signal<CalendarView>('month');
+    readonly viewOptions: {value: CalendarView; label: string}[] = [
+        {value: 'month', label: 'Mensual'}, {value: 'quarter', label: 'Trimestral'}, {value: 'year', label: 'Anual'},
+    ];
     readonly selected = signal(localDate(new Date()));
     readonly today = localDate(new Date());
     readonly events = signal<CalendarEvent[]>([]);
@@ -43,20 +46,19 @@ export class CalendarioComponent {
     readonly colorOf = (worker: OfficeWorker) => workerColor(worker.color, worker.id);
     readonly activeWorkers = computed(() => this.workers().filter(worker => worker.activo));
 
-    readonly title = computed(() => this.month().toLocaleDateString('es-ES', {month:'long',year:'numeric'}));
-    readonly days = computed(() => {
-        const first = this.month();
-        const start = new Date(first.getFullYear(), first.getMonth(), 1 - ((first.getDay()+6)%7));
-        return Array.from({length:42}, (_, i) => {
-            const date = new Date(start.getFullYear(), start.getMonth(), start.getDate()+i);
-            return {key:localDate(date), number:date.getDate(), current:date.getMonth()===first.getMonth()};
-        });
+    readonly visibleMonths = computed(() => calendarMonths(this.month(), this.view()));
+    readonly range = computed(() => calendarRange(this.month(), this.view()));
+    readonly title = computed(() => {
+        const months = this.visibleMonths();
+        if (this.view() === 'year') return String(this.month().getFullYear());
+        const label = (date: Date) => date.toLocaleDateString('es-ES', {month: 'long', year: 'numeric'});
+        return this.view() === 'quarter' ? `${label(months[0])} - ${label(months[2])}` : label(months[0]);
     });
     readonly filteredEvents = computed(() => this.events().filter(e =>
         (this.projectFilter() === null || e.proyecto === this.projectFilter()) &&
         (this.workerFilter() === null || e.trabajadores.includes(this.workerFilter()!)),
     ));
-    readonly weeks = computed(() => {
+    readonly calendarItems = computed(() => {
         const items: CalendarItem[] = this.filteredEvents().map(event => ({
             key: `event-${event.id}`, title: event.titulo, start: event.inicio, end: event.fin,
             colors: this.eventColors(event), people: this.workerNames(event.trabajadores), mounting: false,
@@ -70,8 +72,13 @@ export class CalendarioComponent {
                 }
             }
         }
-        return calendarWeeks(this.days(), items);
+        return items;
     });
+    readonly calendars = computed(() => this.visibleMonths().map(month => ({
+        key: localDate(month), month,
+        title: month.toLocaleDateString('es-ES', {month: 'long', year: 'numeric'}),
+        weeks: calendarWeeks(monthDays(month, this.view() !== 'month'), this.calendarItems(), this.view() !== 'month'),
+    })));
     readonly selectedEvents = computed(() => this.eventsOn(this.selected()));
     readonly mountingProjects = computed(() => this.projects().filter(p =>
         p.fecha_montaje === this.selected() && (this.projectFilter() === null || p.id === this.projectFilter()) && this.workerFilter() === null,
@@ -83,9 +90,13 @@ export class CalendarioComponent {
 
     constructor() { this.load(); }
     load(): void {
+        this.loadSubscription?.unsubscribe();
         this.loading.set(true); this.error.set('');
-        const days = this.days();
-        forkJoin({events:this.api.getEvents(days[0].key, days[41].key), projects:this.api.getProyectos(), workers:this.api.getWorkers()}).subscribe({
+        this.events.set([]);
+        const range = this.range();
+        if (this.selected() < range.start || this.selected() > range.end) this.selected.set(localDate(this.month()));
+        this.loadSubscription = forkJoin({events:this.api.getEvents(range.start, range.end), projects:this.api.getProyectos(), workers:this.api.getWorkers()})
+            .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
             next: data => { this.events.set(data.events); this.projects.set(data.projects); this.workers.set(data.workers); this.loading.set(false); },
             error: () => { this.error.set('No se pudo cargar el calendario. Pulsa actualizar para reintentar.'); this.loading.set(false); },
         });
@@ -93,10 +104,22 @@ export class CalendarioComponent {
     changeMonth(offset: number): void {
         if (this.loading()) return;
         const current = this.month();
-        const next = new Date(current.getFullYear(), current.getMonth()+offset, 1);
+        const step = this.view() === 'year' ? 12 : 1;
+        const next = new Date(current.getFullYear(), current.getMonth()+offset*step, 1);
         this.month.set(next); this.selected.set(localDate(next)); this.load();
     }
+    setView(view: CalendarView): void {
+        if (this.loading() || view === this.view()) return;
+        this.view.set(view); this.load();
+    }
+    openMonth(month: Date): void {
+        if (this.loading()) return;
+        this.month.set(month); this.view.set('month');
+        if (!this.selected().startsWith(localDate(month).slice(0, 7))) this.selected.set(localDate(month));
+        this.load();
+    }
     goToday(): void {
+        if (this.loading()) return;
         this.month.set(new Date(new Date().getFullYear(),new Date().getMonth(),1));
         this.selected.set(this.today); this.load();
     }

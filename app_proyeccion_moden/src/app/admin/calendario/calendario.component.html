@@ -8,10 +8,16 @@
 @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
 <section class="calendar-toolbar">
     <div class="month-nav">
-        <button type="button" (click)="changeMonth(-1)" [disabled]="loading()" aria-label="Mes anterior">&lt;</button>
+        <button type="button" (click)="changeMonth(-1)" [disabled]="loading()" [attr.aria-label]="view()==='year' ? 'Año anterior' : 'Mes anterior'">&lt;</button>
         <h2>{{ title() }}</h2>
-        <button type="button" (click)="changeMonth(1)" [disabled]="loading()" aria-label="Mes siguiente">&gt;</button>
+        <button type="button" (click)="changeMonth(1)" [disabled]="loading()" [attr.aria-label]="view()==='year' ? 'Año siguiente' : 'Mes siguiente'">&gt;</button>
         <button type="button" (click)="goToday()" [disabled]="loading()">Hoy</button>
+    </div>
+    <div class="view-switch" role="group" aria-label="Vista del calendario">
+        @for (option of viewOptions; track option.value) {
+            <button type="button" [class.active]="view()===option.value" [attr.aria-pressed]="view()===option.value"
+                [disabled]="loading()" (click)="setView(option.value)">{{ option.label }}</button>
+        }
     </div>
     <div class="filters">
         <select aria-label="Filtrar por proyecto" [ngModel]="projectFilter()" (ngModelChange)="projectFilter.set($event)">
@@ -25,6 +31,8 @@
         <button type="button" (click)="load()" [disabled]="loading()">{{ loading() ? 'Cargando...' : 'Actualizar' }}</button>
     </div>
 </section>
+@if (view()==='quarter') { <p class="view-hint">Mes de referencia y los dos siguientes. Las flechas desplazan la ventana un mes.</p> }
+@if (view()==='year') { <p class="view-hint">Enero a diciembre. Pulsa el nombre de un mes para verlo en detalle.</p> }
 <div class="team-legend" aria-label="Colores del equipo">
     @for (worker of activeWorkers(); track worker.id) {
         <button type="button" [class.active]="workerFilter()===worker.id" [attr.aria-pressed]="workerFilter()===worker.id"
@@ -34,18 +42,26 @@
     }
     <span class="legend-note">Pulsa una persona para filtrar · Los eventos compartidos muestran todos sus colores</span>
 </div>
-<div class="calendar-layout">
-    <section class="month-grid" aria-label="Calendario mensual" [attr.aria-busy]="loading()">
+<div class="calendar-layout" [class.multi-view]="view()!=='month'" [class.year-view]="view()==='year'">
+    <div class="calendar-months">
+    @for (calendar of calendars(); track calendar.key) {
+    <section class="month-grid" [attr.aria-label]="calendar.title" [attr.aria-busy]="loading()">
+        @if (view()!=='month') {
+            <h2 class="month-heading"><button type="button" [disabled]="loading()" (click)="openMonth(calendar.month)"
+                [attr.aria-label]="'Ver ' + calendar.title + ' en detalle'">{{ calendar.title }}<span aria-hidden="true">↗</span></button></h2>
+        }
         <div class="week-heading">@for (label of weekLabels; track label) { <span class="weekday">{{ label }}</span> }</div>
-        @for (week of weeks(); track week.days[0].key) {
-            <div class="calendar-week" [style.grid-template-rows]="'36px repeat(' + (week.lanes || 1) + ', var(--event-row)) minmax(10px, 1fr)'">
+        @for (week of calendar.weeks; track week.days[0].key) {
+            <div class="calendar-week" [style.grid-template-rows]="'var(--day-header) ' + (week.lanes ? 'repeat(' + week.lanes + ', var(--event-row)) ' : '') + 'minmax(6px, 1fr)'">
                 @for (day of week.days; track day.key; let column = $index) {
+                    @if (day.current || view()==='month') {
                     <button type="button" class="day" [style.grid-column]="column+1" [class.outside]="!day.current" [class.today]="day.key===today"
                         [class.selected]="day.key===selected()" [attr.aria-pressed]="day.key===selected()"
                         [attr.aria-label]="(day.key | date:'dd/MM/yyyy') + ', ' + (eventsOn(day.key).length + mountsOn(day.key).length) + ' eventos'"
                         (click)="selected.set(day.key)">
                         <span class="day-number">{{ day.number }}</span>
                     </button>
+                    } @else { <span class="day outside empty-day" [style.grid-column]="column+1" aria-hidden="true"></span> }
                 }
                 @for (segment of week.segments; track segment.item.key) {
                     <button type="button" class="event-bar" [class.continues-before]="segment.continuesBefore" [class.continues-after]="segment.continuesAfter"
@@ -64,6 +80,8 @@
             </div>
         }
     </section>
+    }
+    </div>
     <aside class="day-agenda">
         <h2>{{ selected() | date:'dd/MM/yyyy' }}</h2>
         <h3>Disponibilidad de oficina</h3>

@@ -28,6 +28,16 @@ describe('CalendarioComponent', () => {
     });
     afterEach(() => http.verify());
 
+    function finishLoad(start: string, end: string, data = events): void {
+        const request = http.expectOne(r => r.url === '/api/eventos/');
+        expect(request.request.params.get('desde')).toBe(start);
+        expect(request.request.params.get('hasta')).toBe(end);
+        request.flush(data);
+        http.expectOne('/api/proyectos/').flush({results: [], next: null, count: 0});
+        http.expectOne('/api/trabajadores/').flush(workers);
+        fixture.detectChanges();
+    }
+
     it('renders weekly bars instead of daily copies, with all participants colors', () => {
         const bars: NodeListOf<HTMLElement> = fixture.nativeElement.querySelectorAll('.event-bar');
         expect(bars.length).toBe(3);
@@ -63,5 +73,76 @@ describe('CalendarioComponent', () => {
         fixture.componentInstance.openTeam(); fixture.detectChanges();
         expect(fixture.nativeElement.querySelector('input[type=color]')).not.toBeNull();
         expect(fixture.nativeElement.querySelectorAll('.color-palette button').length).toBe(8);
+    });
+
+    it('loads the entire rolling quarter in one request and moves one month at a time', () => {
+        const component = fixture.componentInstance;
+        component.setView('quarter');
+        finishLoad('2026-09-01', '2026-11-30');
+        expect(fixture.nativeElement.querySelectorAll('.month-grid').length).toBe(3);
+        expect(component.calendars().map(c => c.key)).toEqual(['2026-09-01','2026-10-01','2026-11-01']);
+        expect(fixture.nativeElement.querySelectorAll('button.day.outside').length).toBe(0);
+        component.changeMonth(1);
+        finishLoad('2026-10-01', '2026-12-31');
+        component.changeMonth(1);
+        finishLoad('2026-11-01', '2027-01-31');
+    });
+
+    it('renders all months in annual view and navigates by year', () => {
+        const component = fixture.componentInstance;
+        component.setView('year');
+        finishLoad('2026-01-01', '2026-12-31');
+        expect(fixture.nativeElement.querySelectorAll('.month-grid').length).toBe(12);
+        expect(fixture.nativeElement.querySelectorAll('button.day').length).toBe(365);
+        component.changeMonth(1);
+        finishLoad('2027-01-01', '2027-12-31');
+        expect(component.title()).toBe('2027');
+        component.changeMonth(-1);
+        finishLoad('2026-01-01', '2026-12-31');
+    });
+
+    it('preserves filters and selected dates when opening a month from annual view', () => {
+        const component = fixture.componentInstance;
+        component.workerFilter.set(1);
+        component.setView('year');
+        finishLoad('2026-01-01', '2026-12-31');
+        component.selected.set('2026-10-12');
+        component.openMonth(new Date(2026, 9, 1));
+        finishLoad('2026-09-28', '2026-11-08');
+        expect(component.view()).toBe('month');
+        expect(component.selected()).toBe('2026-10-12');
+        expect(component.workerFilter()).toBe(1);
+        expect(fixture.nativeElement.querySelectorAll('.month-grid').length).toBe(1);
+    });
+
+    it('shows availability in later months of a quarter', () => {
+        const component = fixture.componentInstance;
+        component.setView('quarter');
+        finishLoad('2026-09-01', '2026-11-30', [{...events[0], inicio: '2026-11-10', fin: '2026-11-20'}]);
+        component.selected.set('2026-11-15'); fixture.detectChanges();
+        expect(component.availability().find(w => w.id === 1)?.holiday).toBe(true);
+        expect(component.selectedEvents()).toHaveLength(1);
+    });
+
+    it('returns to today without leaving the chosen view', () => {
+        const component = fixture.componentInstance;
+        component.setView('quarter'); finishLoad('2026-09-01', '2026-11-30');
+        component.month.set(new Date(2030, 0, 1));
+        component.goToday();
+        finishLoad(component.range().start, component.range().end);
+        expect(component.view()).toBe('quarter');
+        expect(component.selected()).toBe(component.today);
+        expect(component.month().getFullYear()).toBe(new Date().getFullYear());
+    });
+
+    it('cancels older loads so stale responses cannot overwrite the current range', () => {
+        const component = fixture.componentInstance;
+        component.setView('year');
+        const oldEvents = http.expectOne(r => r.url === '/api/eventos/');
+        const oldProjects = http.expectOne('/api/proyectos/');
+        const oldWorkers = http.expectOne('/api/trabajadores/');
+        component.load();
+        expect(oldEvents.cancelled && oldProjects.cancelled && oldWorkers.cancelled).toBe(true);
+        finishLoad('2026-01-01', '2026-12-31');
     });
 });

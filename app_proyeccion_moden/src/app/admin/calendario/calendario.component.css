@@ -1,4 +1,4 @@
-:host { display: block; color: #27374a; --line: #dce3eb; --orange: #ed6a19; --muted: #62748a; --event-row: 28px; }
+:host { display: block; color: #27374a; --line: #dce3eb; --orange: #ed6a19; --muted: #62748a; --event-row: 28px; --day-header: 36px; }
 * { box-sizing: border-box; }
 .page-heading, .calendar-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 22px; }
 h1 { font-size: 27px; margin: 0; }
@@ -15,6 +15,22 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .month-nav h2 { text-transform: capitalize; min-width: 155px; text-align: center; }
 .filters select { max-width: 230px; }
 .calendar-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 20px; align-items: start; }
+.calendar-months { display: grid; gap: 16px; min-width: 0; align-items: start; }
+.multi-view .calendar-months { grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr)); }
+.multi-view .calendar-week { min-height: 86px; }
+.multi-view .day { padding: 4px; }
+.year-view { --day-header: 29px; --event-row: 26px; }
+.year-view .calendar-week { min-height: 44px; }
+.year-view .weekday { padding: 8px 0; }
+.year-view .month-heading button { padding: 10px 12px; }
+.month-heading button { display: flex; justify-content: space-between; width: 100%; align-items: center; border: 0; border-radius: 0; padding: 13px 14px; text-align: left; font-weight: 600; text-transform: capitalize; background: #f8fafc; }
+.month-heading button span { color: var(--muted); }
+.month-heading button:hover { background: #fff4ea; }
+.view-switch { display: inline-flex; padding: 3px; border: 1px solid var(--line); border-radius: 9px; background: white; }
+.view-switch button { border-color: transparent; padding: 8px 12px; }
+.view-switch button.active { color: #98440d; background: #fff0e3; border-color: #ffd6b7; }
+.view-hint { margin: -10px 0 20px; font-size: 12px; }
+.empty-day { cursor: default; }
 .team-legend { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: -6px 0 18px; }
 .team-legend button { display: inline-flex; align-items: center; gap: 7px; padding: 6px 10px; border-radius: 20px; }
 .team-legend button.active { border-color: var(--orange); background: #fff8f1; }
@@ -70,6 +86,10 @@ legend { font-size: 13px; }
 .color-palette button { width: 36px; height: 36px; min-height: 36px; padding: 0; border-radius: 50%; background: var(--swatch); border: 4px solid white; box-shadow: 0 0 0 1px var(--line); }
 .color-palette button.chosen { box-shadow: 0 0 0 2px #27374a; }
 .error { color: #b12f20; background: #fff2ec; padding: 10px; border-radius: 6px; }
+@media (max-width: 1550px) {
+    .calendar-layout.multi-view { grid-template-columns: minmax(0, 1fr); }
+    .multi-view .availability { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+}
 @media (max-width: 1100px) {
     .calendar-layout { grid-template-columns: minmax(0, 1fr); }
     .calendar-week { min-height: 104px; }
@@ -96,4 +116,6 @@ legend { font-size: 13px; }
     .worker-name { flex-basis: 100%; }
     .month-nav { gap: 5px; }
     .legend-note { flex-basis: 100%; line-height: 1.5; }
+    .month-nav h2 { min-width: 0; max-width: 185px; font-size: 15px; }
+    .year-view { --event-row: 32px; }
 }
