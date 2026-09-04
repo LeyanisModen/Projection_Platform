@@ -2897,7 +2897,15 @@
     background: #6f42c1;
 }
 
-/* Switch de estrategia (secuencial / por tipo) */
+.module-display-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 0;
+}
+
+/* Controles segmentados de orden visual y estrategia de agrupacion. */
 .estrategia-toggle {
     display: inline-flex;
     align-items: center;
@@ -2929,6 +2937,7 @@
     font-weight: 600;
     padding: 0.18rem 0.7rem;
     border-radius: 999px;
+    white-space: nowrap;
     cursor: pointer;
     transition: background-color 0.15s ease, color 0.15s ease;
 }
@@ -2945,4 +2954,9 @@
 
 .estrategia-pill:disabled {
     cursor: not-allowed;
+}
+
+.estrategia-pill:focus-visible {
+    outline: 2px solid #d35400;
+    outline-offset: 2px;
 }
