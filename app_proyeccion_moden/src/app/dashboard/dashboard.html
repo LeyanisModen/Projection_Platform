@@ -537,15 +537,18 @@
                                                 }
                                                 <span class="plan-modulo-estado">{{ moduloEstadoLabel(m) }}</span>
                                             </div>
-                                            <div class="plan-phase-list">
+                                            <div class="plan-phase-list" role="group" [attr.aria-label]="'Fases de ' + m.nombre">
                                                 @for (phase of modulePhases; track phase) {
                                                     <div class="plan-phase-row">
-                                                        <strong>{{ phase === 'INFERIOR' ? 'Inferior' : 'Superior' }}</strong>
-                                                        <span>{{ phaseDone(m, phase) ? 'Terminada' : 'Pendiente / en proceso' }}</span>
-                                                        @if (phaseFinishedAt(m, phase); as finished) {
-                                                            <time [attr.datetime]="finished">{{ finished | date:'dd/MM/yyyy HH:mm' }}</time>
-                                                        } @else if (phaseDone(m, phase)) { <small>Fecha no registrada</small> }
-                                                        <button type="button" (click)="requestPhaseReset(m, phase)" [disabled]="resettingPhase">Reiniciar</button>
+                                                        <div class="plan-phase-details">
+                                                            <strong>{{ phase === 'INFERIOR' ? 'Inferior' : 'Superior' }}</strong>
+                                                            <span>{{ phaseDone(m, phase) ? 'Terminada' : 'Pendiente / en proceso' }}</span>
+                                                            @if (phaseFinishedAt(m, phase); as finished) {
+                                                                <time [attr.datetime]="finished">{{ finished | date:'dd/MM/yyyy HH:mm' }}</time>
+                                                            } @else if (phaseDone(m, phase)) { <small>Fecha no registrada</small> }
+                                                        </div>
+                                                        <button type="button" (click)="requestPhaseReset(m, phase)" [disabled]="resettingPhase"
+                                                            [attr.aria-label]="'Reiniciar fase ' + (phase === 'INFERIOR' ? 'inferior' : 'superior') + ' de ' + m.nombre">Reiniciar</button>
                                                     </div>
                                                 }
                                             </div>
