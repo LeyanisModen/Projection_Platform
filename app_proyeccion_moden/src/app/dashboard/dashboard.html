@@ -204,11 +204,12 @@
                                 <span class="stats-kpi-label">Módulos</span>
                                 <span class="stats-kpi-value">
                                     {{ statsData.totals.modulos_completados }}
+                                    <span class="stats-module-target"
+                                          title="Objetivo del período según los pendientes a su inicio, los plazos de montaje actuales y los días laborables de la ferralla.">/ {{ statsPeriodTarget() ?? '?' }}</span>
                                 </span>
-                                <span class="stats-kpi-subtext stats-daily-target"
-                                      title="Ritmo necesario desde hoy hasta las fechas de montaje, sumando todos los proyectos asignados y usando los días laborables de la ferralla. No es el objetivo histórico del período seleccionado.">
-                                    @if (statsDailyTarget() !== null) {
-                                        Objetivo actual: <strong>{{ statsDailyTarget() }} módulos/día</strong>
+                                <span class="stats-kpi-subtext stats-target-label">
+                                    @if (statsPeriodTarget() !== null) {
+                                        Fabricados / objetivo del período
                                     } @else {
                                         Objetivo pendiente de planificación
                                     }
@@ -245,12 +246,12 @@
 
                         @if (statsPlanningIssues() > 0) {
                             <p class="stats-planning-warning" role="note">
-                                {{ statsPlanningIssues() }} proyecto(s) requieren revisar su fecha de montaje o sus días disponibles.
+                                {{ statsPlanningIssues() }} proyecto(s) no tienen un objetivo calculable en este período. Revisa su fecha de montaje, sus módulos y sus días disponibles.
                                 El objetivo solo incluye los proyectos con planificación calculable.
                             </p>
                         }
                         @if (statsData.totals.fases_completadas === 0 && statsData.totals.modulos_completados === 0) {
-                            <div class="stats-empty">No hay producción registrada en el rango seleccionado. El objetivo diario sigue visible para planificar el trabajo.</div>
+                            <div class="stats-empty">No hay producción registrada en el rango seleccionado. El objetivo sigue visible para planificar el trabajo.</div>
                         } @else {
                         <h4 class="stats-subtitle">Detalle por mesa</h4>
                         <table class="stats-table">

@@ -43,14 +43,39 @@ There is no nominal 12/day fallback. Missing dates, exhausted deadlines or no
 remaining working days show warnings instead of an invented feasible rate.
 Public holidays and office vacations do not automatically stop factory production.
 
-Historical production charts show actual output only. A changing current deadline
-target must not be retroactively presented as a historical target.
-The client dashboard shows current daily demand inside the statistics module KPI,
-not in a banner above production. Summary cards remain visible with zero output,
-including before any table starts work. Only empty detail tables/charts are hidden.
-The demand comes from the statistics API's factory-wide planning summary, not the
-currently selected project or active table queues. Missing/unworkable deadlines
-remain warnings within statistics; an unavailable demand is not displayed as zero.
+The client dashboard's Modules KPI shows `completed / period target` (e.g. `3 / 9`),
+not current daily demand as a separate subtitle or a banner above production.
+Both numbers cover the selected inclusive date range: today, week to date or month
+to date. Summary cards remain visible with zero output, including before any table
+starts work. Only empty detail tables/charts are hidden. Historical production
+charts continue to show actual output only, without a daily-target line.
+
+`esperado.modulos_esperados` reconstructs a target for that range from the current
+project plans. For each assigned project, take its modules minus completions before
+the range's first local midnight, and calculate the daily demand over its factory
+working days from that start up to (excluding) mounting. Multiply by the working
+days within the selected range before mounting, and cap at those outstanding
+modules. Sum every assigned project's result, including projects not in table
+queues. The optional project API filter also scopes this calculation; the selected
+project in the dashboard does not narrow factory-wide statistics.
+
+Completions within the period increase the numerator without reducing its target:
+`3 / 9` must not become `3 / 6`. A finished project retains its target when viewing
+the period in which it finished. Dates use the same local timezone as statistics.
+Legacy completed modules without a completion date are treated as already done.
+No working days in the selected range means zero target, provided the project has
+working days available before mounting. Missing or exhausted deadlines at the
+range's start, empty projects and missing factory schedules are reported through
+`esperado.proyectos_sin_objetivo`; an entirely uncalculable target shows `?`, not zero.
+When only some projects are calculable, their sum is shown with a partial-target
+warning. These range-specific warnings take precedence over current daily-demand
+warnings, since a historical range may still have a valid target.
+
+This is a recalculation with current deadlines, assignments, modules and schedules,
+NOT a stored historical planning snapshot. Editing any of those or restarting a
+module can change reconstructed targets. There is no project/module creation date
+to infer a historical production start, so calculation starts at the range boundary.
+No migration, production-data rewrite or new scheduled task is needed.
 Request failures are shown separately from a successful response with no output.
 Legacy capacity fields remain in the schema/API for compatibility, but new UI
 planning no longer uses them.

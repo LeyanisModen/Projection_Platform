@@ -44,7 +44,7 @@ describe('Dashboard', () => {
           modulos_por_hora: 0, kg_por_hora: 0,
         },
         por_mesa: [], por_dia: [],
-        esperado: {capacidad_diaria_modulos: 9, modulos_esperados: null},
+        esperado: {capacidad_diaria_modulos: 9, modulos_esperados: 9, proyectos_sin_objetivo: 0},
         planificacion: {modulos_por_dia: 9, modulos_hoy: 9, sin_planificar: 0, urgentes: 0, proyectos: []},
       };
       component.statsData = stats;
@@ -52,24 +52,25 @@ describe('Dashboard', () => {
       component.statsTo = stats.range.to;
     });
 
-    it('shows all six zero-valued KPIs and daily demand before production starts', () => {
+    it('shows all six zero-valued KPIs and the period target before production starts', () => {
       render();
       expect(fixture.nativeElement.querySelectorAll('.stats-kpi').length).toBe(6);
-      expect(text('.stats-kpi-value')).toBe('0');
-      expect(text('.stats-daily-target')).toBe('Objetivo actual: 9 módulos/día');
+      expect(text('.stats-kpi-value')).toBe('0 / 9');
+      expect(text('.stats-target-label')).toBe('Fabricados / objetivo del período');
       expect(text('.stats-empty')).toContain('No hay producción registrada');
       expect(fixture.nativeElement.querySelector('.stats-table')).toBeNull();
       expect(fixture.nativeElement.querySelector('.weekly-charts-row')).toBeNull();
       expect(fixture.nativeElement.querySelector('.deadline-summary')).toBeNull();
-      expect(fixture.nativeElement.querySelector('#estadisticas-section .stats-daily-target')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('#estadisticas-section .stats-module-target')).not.toBeNull();
     });
 
-    it('keeps current demand separate from historical production totals', () => {
+    it('compares historical production with the target for that period, not daily demand', () => {
       stats.totals.modulos_completados = 53;
       stats.totals.fases_completadas = 106;
+      stats.esperado.modulos_esperados = 64;
       render();
-      expect(text('.stats-kpi-value')).toBe('53');
-      expect(text('.stats-daily-target')).toBe('Objetivo actual: 9 módulos/día');
+      expect(text('.stats-kpi-value')).toBe('53 / 64');
+      expect(text('.stats-target-label')).toBe('Fabricados / objetivo del período');
       expect(fixture.nativeElement.querySelector('.stats-table')).not.toBeNull();
       expect(fixture.nativeElement.querySelector('.weekly-charts-row')).not.toBeNull();
       expect(fixture.nativeElement.querySelector('.stats-empty')).toBeNull();
@@ -80,33 +81,56 @@ describe('Dashboard', () => {
       component.gruposMesas = [];
       component.selectedProyecto = {id: 1, planificacion: {modulos_por_dia: 3}} as Proyecto;
       stats.esperado.capacidad_diaria_modulos = 12;
+      stats.planificacion!.modulos_por_dia = 12;
       stats.planificacion!.modulos_hoy = 0;
       render();
-      expect(component.statsDailyTarget()).toBe(9);
-      expect(text('.stats-daily-target')).toContain('9 módulos/día');
+      expect(component.statsPeriodTarget()).toBe(9);
+      expect(text('.stats-kpi-value')).toBe('0 / 9');
+    });
+
+    it('advances actual production without subtracting it from the period target', () => {
+      stats.totals.modulos_completados = 3;
+      render();
+      expect(text('.stats-kpi-value')).toBe('3 / 9');
+      stats.totals.modulos_completados = 11;
+      render();
+      expect(text('.stats-kpi-value')).toBe('11 / 9');
+    });
+
+    it('keeps a historical target even when current deadlines have elapsed', () => {
+      stats.planificacion!.modulos_por_dia = 0;
+      stats.planificacion!.urgentes = 1;
+      render();
+      expect(text('.stats-kpi-value')).toBe('0 / 9');
+      expect(fixture.nativeElement.querySelector('.stats-planning-warning')).toBeNull();
     });
 
     it('shows a pending target instead of a misleading zero for unplannable projects', () => {
       stats.planificacion!.modulos_por_dia = 0;
       stats.planificacion!.sin_planificar = 1;
       stats.planificacion!.urgentes = 1;
+      stats.esperado.modulos_esperados = null;
+      stats.esperado.proyectos_sin_objetivo = 2;
       render();
-      expect(component.statsDailyTarget()).toBeNull();
-      expect(text('.stats-daily-target')).toBe('Objetivo pendiente de planificación');
+      expect(component.statsPeriodTarget()).toBeNull();
+      expect(text('.stats-kpi-value')).toBe('0 / ?');
+      expect(text('.stats-target-label')).toBe('Objetivo pendiente de planificación');
       expect(text('.stats-planning-warning')).toContain('2 proyecto(s)');
     });
 
     it('keeps the calculable demand visible alongside planning warnings', () => {
       stats.planificacion!.sin_planificar = 1;
+      stats.esperado.proyectos_sin_objetivo = 1;
       render();
-      expect(text('.stats-daily-target')).toContain('9 módulos/día');
+      expect(text('.stats-kpi-value')).toBe('0 / 9');
       expect(text('.stats-planning-warning')).toContain('1 proyecto(s)');
     });
 
     it('shows zero demand when no projects need more production', () => {
       stats.planificacion!.modulos_por_dia = 0;
+      stats.esperado.modulos_esperados = 0;
       render();
-      expect(text('.stats-daily-target')).toBe('Objetivo actual: 0 módulos/día');
+      expect(text('.stats-kpi-value')).toBe('0 / 0');
       expect(fixture.nativeElement.querySelector('.stats-planning-warning')).toBeNull();
     });
 
@@ -124,7 +148,7 @@ describe('Dashboard', () => {
       render();
       expect(request).toHaveBeenCalledTimes(2);
       expect(fixture.nativeElement.querySelector('.stats-error')).toBeNull();
-      expect(text('.stats-daily-target')).toContain('9 módulos/día');
+      expect(text('.stats-kpi-value')).toBe('0 / 9');
     });
 
     it('labels retained statistics as stale after a failed silent refresh', () => {
