@@ -45,6 +45,13 @@ Public holidays and office vacations do not automatically stop factory productio
 
 Historical production charts show actual output only. A changing current deadline
 target must not be retroactively presented as a historical target.
+The client dashboard shows current daily demand inside the statistics module KPI,
+not in a banner above production. Summary cards remain visible with zero output,
+including before any table starts work. Only empty detail tables/charts are hidden.
+The demand comes from the statistics API's factory-wide planning summary, not the
+currently selected project or active table queues. Missing/unworkable deadlines
+remain warnings within statistics; an unavailable demand is not displayed as zero.
+Request failures are shown separately from a successful response with no output.
 Legacy capacity fields remain in the schema/API for compatibility, but new UI
 planning no longer uses them.
 
@@ -129,10 +136,21 @@ agenda continues to consider events as well as vacations.
 `Imprimir / PDF` opens the browser's print dialog for the current loaded view and
 filters. Print styles release the admin scroll containers, remove navigation,
 forms and the day sidebar, and include the period, filters and color legend.
-The vacation summary uses a compact three-column A4 portrait layout; ordinary
-multi-month views print separate months. Loading/error states disable the print
+Both annual views use a compact three-column A4 portrait layout (four rows of
+months). The rolling quarter stacks compact months without forced page breaks.
+A typical four-person calendar fits on one sheet; busy months grow naturally
+and move to another page rather than clipping event labels or hiding dates.
+The monthly view keeps its larger detail layout. Loading/error states disable the print
 button. Browser checks use mocked data and generated PDFs; a physical printer
 and its color settings still need user acceptance.
+
+Print regression checks: explicitly emulate `print` media before generating a
+Playwright PDF (a previous `screen` media override otherwise masks print styles).
+Verify twelve month headings and every day in annual output, all event labels,
+the team legend, and no admin navigation. With four people and three overlapping
+September entries, monthly/quarterly/annual/vacation PDFs each use one A4 page.
+A stress case with four overlapping events in every month uses four pages and
+preserves all twelve months and all 48 additional event labels.
 
 ## Verification and rollout
 

@@ -20,11 +20,6 @@
 
     <main class="dashboard-main infinite-scroll">
         <section class="dashboard-workspace">
-        <section class="deadline-summary" aria-label="Objetivo de fabricación">
-            <strong>Objetivo conjunto: {{ requiredDaily(proyectos) }} módulos/día</strong>
-            <span>Suma de los plazos de montaje de los proyectos asignados.</span>
-            @if (planningIssues(proyectos)) { <span class="deadline-warning">{{ planningIssues(proyectos) }} proyectos requieren revisar su planificación.</span> }
-        </section>
             @if (loadingGruposMesas || loadingMesas) {
             <div class="loading planner-loading">Cargando operativa...</div>
             } @else {
@@ -194,17 +189,29 @@
                             </label>
                         </div>
                     </div>
+                    @if (statsError) {
+                        <div class="stats-error" role="alert">
+                            {{ statsError }}
+                            <button type="button" class="period-chip" (click)="loadStats()">Reintentar</button>
+                        </div>
+                    }
                     @if (loadingStats) {
                         <div class="stats-loading">Cargando…</div>
-                    } @else if (!statsData || statsData.totals.fases_completadas === 0) {
-                        <div class="stats-empty">No hay producción registrada en el rango seleccionado.</div>
-                    } @else {
+                    } @else if (statsData) {
                         <!-- Shared KPIs -->
                         <div class="stats-kpi-row">
                             <div class="stats-kpi">
                                 <span class="stats-kpi-label">Módulos</span>
                                 <span class="stats-kpi-value">
                                     {{ statsData.totals.modulos_completados }}
+                                </span>
+                                <span class="stats-kpi-subtext stats-daily-target"
+                                      title="Ritmo necesario desde hoy hasta las fechas de montaje, sumando todos los proyectos asignados y usando los días laborables de la ferralla. No es el objetivo histórico del período seleccionado.">
+                                    @if (statsDailyTarget() !== null) {
+                                        Objetivo actual: <strong>{{ statsDailyTarget() }} módulos/día</strong>
+                                    } @else {
+                                        Objetivo pendiente de planificación
+                                    }
                                 </span>
                             </div>
                             <div class="stats-kpi">
@@ -236,6 +243,15 @@
                             </div>
                         </div>
 
+                        @if (statsPlanningIssues() > 0) {
+                            <p class="stats-planning-warning" role="note">
+                                {{ statsPlanningIssues() }} proyecto(s) requieren revisar su fecha de montaje o sus días disponibles.
+                                El objetivo solo incluye los proyectos con planificación calculable.
+                            </p>
+                        }
+                        @if (statsData.totals.fases_completadas === 0 && statsData.totals.modulos_completados === 0) {
+                            <div class="stats-empty">No hay producción registrada en el rango seleccionado. El objetivo diario sigue visible para planificar el trabajo.</div>
+                        } @else {
                         <h4 class="stats-subtitle">Detalle por mesa</h4>
                         <table class="stats-table">
                             <thead>
@@ -345,6 +361,7 @@
                                     </div>
                                 </div>
                             </div>
+                        }
                     }
                 </div>
             </section>
