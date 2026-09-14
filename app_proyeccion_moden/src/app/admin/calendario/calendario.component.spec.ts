@@ -43,18 +43,20 @@ describe('CalendarioComponent', () => {
         fixture.detectChanges();
     }
 
-    it('renders weekly bars instead of daily copies, with all participants colors', () => {
+    it('reserves weekly bars for events, with all participants colors', () => {
         const bars: NodeListOf<HTMLElement> = fixture.nativeElement.querySelectorAll('.event-bar');
-        expect(bars.length).toBe(3);
-        expect(bars[0].style.gridColumn).toContain('span 7');
+        expect(bars.length).toBe(1);
+        expect(bars[0].style.gridColumn).toContain('span 3');
         const shared = Array.from(bars).find(b => b.textContent?.includes('Trabajo conjunto'))!;
         expect(shared.querySelectorAll('.color-strip span').length).toBe(2);
         expect(shared.getAttribute('aria-label')).toContain('Ana, Luis');
     });
     it('selects the bar date to show the daily agenda', () => {
+        fixture.componentInstance.selected.set('2026-09-01');
         const bar: HTMLButtonElement = fixture.nativeElement.querySelector('.event-bar');
         bar.click(); fixture.detectChanges();
-        expect(fixture.componentInstance.selected()).toBe('2026-09-07');
+        expect(fixture.componentInstance.selected()).toBe('2026-09-15');
+        expect(fixture.nativeElement.querySelector('.day-agenda').textContent).toContain('Trabajo conjunto');
         expect(fixture.nativeElement.querySelector('.day-agenda').textContent).toContain('Vacaciones de Ana');
     });
     it('filters without losing the colors of the shared event', () => {
@@ -62,17 +64,83 @@ describe('CalendarioComponent', () => {
         expect(fixture.nativeElement.querySelectorAll('.event-bar').length).toBe(1);
         expect(fixture.nativeElement.querySelectorAll('.event-bar .color-strip span').length).toBe(2);
     });
-    it('persists a new color and recolors existing bars without altering events', () => {
+    it('persists a new color and recolors shading and events without altering their data', () => {
         const component = fixture.componentInstance;
         component.editWorker(workers[0]); component.workerDraftColor = '#2563eb'; component.saveWorker();
         const request = http.expectOne('/api/trabajadores/1/');
         expect(request.request.method).toBe('PATCH');
         expect(request.request.body).toEqual({id: 1, nombre: 'Ana', color: '#2563eb'});
         request.flush({...workers[0], color: '#2563eb'}); fixture.detectChanges();
-        const bar: HTMLElement = fixture.nativeElement.querySelector('.event-bar');
-        expect(bar.style.getPropertyValue('--event-color')).toBe('#2563eb');
+        const stripe: HTMLElement = fixture.nativeElement.querySelector('.event-bar .color-strip span');
+        const shade: HTMLElement = fixture.nativeElement.querySelector('.vacation-shading span');
+        expect(stripe.style.backgroundColor).toBe('rgb(37, 99, 235)');
+        expect(shade.style.backgroundColor).toBe('rgb(37, 99, 235)');
         expect(component.events()).toEqual(events);
         expect(component.workerId).toBeNull();
+    });
+
+    it('shades every inclusive vacation day without consuming event lanes', () => {
+        const days: NodeListOf<HTMLElement> = fixture.nativeElement.querySelectorAll('button.day.has-vacations');
+        expect(days).toHaveLength(10);
+        expect(days[0].getAttribute('aria-label')).toContain('07/09/2026, Vacaciones de Ana, 0 eventos');
+        expect(days[9].getAttribute('aria-label')).toContain('16/09/2026, Vacaciones de Ana, 1 eventos');
+        expect(days[0].querySelector('.vacation-shading')?.getAttribute('aria-hidden')).toBe('true');
+        expect(fixture.componentInstance.calendars()[0].weeks[1].lanes).toBe(0);
+        expect(fixture.componentInstance.calendarItems().some(item => item.key === 'event-1')).toBe(false);
+    });
+
+    it('shows each overlapping vacation worker once and keeps the shared event above them', () => {
+        const component = fixture.componentInstance;
+        component.events.set([...events,
+            {...events[0], id: 3, trabajadores: [2], inicio: '2026-09-15'},
+            {...events[0], id: 4, inicio: '2026-09-15'},
+        ]);
+        fixture.detectChanges();
+        const day: HTMLElement = fixture.nativeElement.querySelector('button.day[aria-label^="15/09/2026"]');
+        expect(day.querySelectorAll('.vacation-shading span')).toHaveLength(2);
+        expect(day.title).toBe('Vacaciones de Ana, Luis');
+        expect(day.getAttribute('aria-label')).toContain('1 eventos');
+        expect(fixture.nativeElement.querySelectorAll('.event-bar')).toHaveLength(1);
+        component.workerFilter.set(2); fixture.detectChanges();
+        expect(day.querySelectorAll('.vacation-shading span')).toHaveLength(1);
+        expect(day.title).toBe('Vacaciones de Luis');
+        expect(fixture.nativeElement.querySelectorAll('.event-bar .color-strip span')).toHaveLength(2);
+    });
+
+    it('opens vacation details and editing from a shaded day', () => {
+        const component = fixture.componentInstance;
+        const day: HTMLButtonElement = fixture.nativeElement.querySelector('button.day[aria-label^="07/09/2026"]');
+        day.click(); fixture.detectChanges();
+        expect(component.selected()).toBe('2026-09-07');
+        expect(fixture.nativeElement.querySelector('.day-agenda').textContent).toContain('Vacaciones de Ana');
+        fixture.nativeElement.querySelector('.agenda-event button').click();
+        http.expectOne(r => r.url === '/api/eventos/' && r.method === 'GET').flush(events);
+        expect(component.editorOpen()).toBe(true);
+        expect(component.draft.tipo).toBe('VACACIONES');
+        expect(component.draft.id).toBe(1);
+    });
+
+    it('keeps project filters on calendar content without changing actual availability', () => {
+        const component = fixture.componentInstance;
+        component.events.set([events[0], {...events[1], proyecto: 7}]);
+        component.selected.set('2026-09-15');
+        component.projectFilter.set(7); fixture.detectChanges();
+        expect(fixture.nativeElement.querySelectorAll('.vacation-shading')).toHaveLength(0);
+        expect(fixture.nativeElement.querySelectorAll('.event-bar')).toHaveLength(1);
+        expect(component.availability()[0].holiday).toBe(true);
+        component.projectFilter.set(null); fixture.detectChanges();
+        expect(fixture.nativeElement.querySelectorAll('.vacation-shading')).toHaveLength(10);
+    });
+
+    it('shades neighboring dates in month view but only actual month cells in compact views', () => {
+        const component = fixture.componentInstance;
+        const boundary = [{...events[0], inicio: '2026-08-31', fin: '2026-09-02'}];
+        component.events.set(boundary); fixture.detectChanges();
+        expect(fixture.nativeElement.querySelectorAll('.vacation-shading')).toHaveLength(3);
+        expect(fixture.nativeElement.querySelector('.day.outside .vacation-shading')).not.toBeNull();
+        component.setView('quarter'); finishLoad('2026-09-01', '2026-11-30', boundary);
+        expect(fixture.nativeElement.querySelectorAll('.vacation-shading')).toHaveLength(2);
+        expect(fixture.nativeElement.querySelector('.empty-day .vacation-shading')).toBeNull();
     });
     it('offers a color selector when adding a person', () => {
         fixture.componentInstance.openTeam(); fixture.detectChanges();

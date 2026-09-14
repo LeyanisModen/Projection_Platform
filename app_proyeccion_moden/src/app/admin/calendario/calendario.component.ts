@@ -89,7 +89,7 @@ export class CalendarioComponent {
         this.workerFilter() === null ? 'Todo el equipo' : this.workerNames([this.workerFilter()!]),
     ].join(' · '));
     readonly calendarItems = computed(() => {
-        const items: CalendarItem[] = this.filteredEvents().map(event => ({
+        const items: CalendarItem[] = this.filteredEvents().filter(event => event.tipo !== 'VACACIONES').map(event => ({
             key: `event-${event.id}`, title: this.eventTitle(event), start: event.inicio, end: event.fin,
             colors: this.eventColors(event), people: this.workerNames(event.trabajadores), mounting: false,
         }));
@@ -106,15 +106,21 @@ export class CalendarioComponent {
     });
     readonly calendars = computed(() => {
         const compact = this.view() !== 'month';
-        const holidays = this.holidayView();
         const workers = this.workers().filter(worker => this.workerFilter() === null || this.workerFilter() === worker.id);
         return this.visibleMonths().map(month => ({
             key: localDate(month), month,
             title: month.toLocaleDateString('es-ES', {month: 'long', year: 'numeric'}),
-            weeks: calendarWeeks(monthDays(month, compact), holidays ? [] : this.calendarItems(), compact)
+            weeks: calendarWeeks(monthDays(month, compact), this.calendarItems(), compact)
                 .map(week => ({...week, days: week.days.map(day => {
-                    const ids = new Set(holidays && day.current ? this.eventsOn(day.key).flatMap(event => event.trabajadores) : []);
-                    return {...day, vacationWorkers: workers.filter(worker => ids.has(worker.id))};
+                    const dayEvents = day.current || !compact ? this.eventsOn(day.key) : [];
+                    const vacations = dayEvents.filter(event => event.tipo === 'VACACIONES');
+                    const ids = new Set(vacations.flatMap(event => event.trabajadores));
+                    const vacationWorkers = workers.filter(worker => ids.has(worker.id));
+                    return {
+                        ...day, vacationWorkers,
+                        vacationLabel: vacationWorkers.length ? `Vacaciones de ${this.namesOf(vacationWorkers)}` : 'Sin vacaciones',
+                        eventCount: dayEvents.length - vacations.length + this.mountsOn(day.key).length,
+                    };
                 })})),
         }));
     });

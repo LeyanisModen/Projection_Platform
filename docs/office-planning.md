@@ -105,11 +105,21 @@ six-digit hex colors. Colors are stored on the worker, not copied into each even
 so edits also recolor previous events. Shared events show a stripe for each person;
 unassigned events use gray and mounting dates retain their orange styling.
 
-The month renders inclusive event ranges as one bar per week, not one chip per day.
-Bars continue across week/month boundaries, retain their lane within the visible
-month, and never overlap another event on the same day/lane. Every event remains
-visible; busy weeks grow to fit additional lanes. Mobile uses the same bars, with
-the full title, dates and people available in the selected day's agenda.
+Vacation ranges shade the whole background of each inclusive day instead of
+occupying event lanes. Overlapping people appear as separate translucent horizontal
+bands, with each person included once per day even if their vacation records
+overlap. Dates and event buttons remain above the tint and clickable. The day's
+accessible label and tooltip name the absent people; selecting it keeps the
+vacation dates, notes, editing and deletion available in the agenda. Changing a
+worker's color updates both shading and event bars without editing event records.
+
+Events and mounting dates remain one bar per week, not one chip per day. Bars
+continue across week/month boundaries, retain their lane within the visible month,
+and never overlap another event on the same day/lane. Titles wrap up to three lines
+in the month and two in compact views; rows grow to fit instead of clipping the
+next event. The full title remains available in the tooltip and selected day's
+agenda. Printing removes the line limit. Calendar project/person filters retain
+their existing scope, while actual office availability remains unfiltered.
 
 The view selector offers a month, a rolling three-month window, and January to
 December of the reference year. The quarter starts at the reference month (initially
@@ -151,8 +161,8 @@ person selection or saving, including while the overlap check is loading or has
 failed. Failed checks are shown as unknown with a retry action, not as available.
 These warnings apply to both event and vacation tabs and use full days, not hours.
 
-The extra `Vacaciones anual` view displays all twelve months with colored daily
-marks, including overlaps, and a team legend. It respects the person filter but
+The extra `Vacaciones anual` view displays all twelve months with shaded daily
+cells, including overlaps, and a team legend. It respects the person filter but
 ignores the project filter (which is retained on return to the normal calendar).
 Inactive people with visible historical vacations remain in the legend. Events
 and mounting dates are excluded from this summary, but availability in the day
@@ -171,11 +181,14 @@ and its color settings still need user acceptance.
 
 Print regression checks: explicitly emulate `print` media before generating a
 Playwright PDF (a previous `screen` media override otherwise masks print styles).
-Verify twelve month headings and every day in annual output, all event labels,
-the team legend, and no admin navigation. With four people and three overlapping
-September entries, monthly/quarterly/annual/vacation PDFs each use one A4 page.
-A stress case with four overlapping events in every month uses four pages and
-preserves all twelve months and all 48 additional event labels.
+Verify twelve month headings and every day in annual output, all non-vacation
+event labels, vacation shading, the team legend, and no admin navigation. With
+four people, two overlapping September vacations and a shared event,
+monthly/quarterly/annual/vacation PDFs each use one A4 page. A stress case with
+four additional overlapping short events in every month uses two pages for the
+year and preserves all twelve months and all 48 additional event labels. Long
+single-day titles can also cause extra pages, rather than truncating their text;
+the vacation-only annual summary remains one page for these fixtures.
 
 ## Verification and rollout
 
