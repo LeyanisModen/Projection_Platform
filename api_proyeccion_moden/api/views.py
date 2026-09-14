@@ -5126,7 +5126,7 @@ class ProductionStatsView(APIView):
             profile = profile_user.profile
         else:
             profile = None
-        from api.planning import annotated_projects, demand_summary
+        from api.planning import annotated_projects, demand_summary, period_target_summary
         planning_projects = Proyecto.objects.all()
         if proyecto_id:
             planning_projects = planning_projects.filter(pk=proyecto_id)
@@ -5164,7 +5164,7 @@ class ProductionStatsView(APIView):
             'por_hora': sorted(por_hora.values(), key=lambda x: x['hora']) if single_day else None,
             'esperado': {
                 'capacidad_diaria_modulos': capacidad_diaria,
-                'modulos_esperados': None,
+                **period_target_summary(planning_projects, from_date, to_date),
             },
             'planificacion': planning,
         })

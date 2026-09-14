@@ -1,5 +1,6 @@
 """Deadline demand using the assigned factory's configured working days."""
 import math
+from datetime import datetime, time, timedelta
 
 from django.db.models import Count, Q
 from django.utils import timezone
@@ -82,4 +83,45 @@ def demand_summary(projects, today=None):
         'sin_planificar': sum(r['estado'] in ('SIN_FECHA', 'SIN_MODULOS', 'SIN_FERRALLA') for r in rows),
         'urgentes': sum(r['estado'] in ('VENCIDO', 'SIN_DIAS') for r in rows),
         'proyectos': rows,
+    }
+
+
+def period_target_summary(projects, start, end):
+    """Reconstruct the period's target using current deadlines and workdays.
+
+    Completions on/after its first local midnight stay in the baseline so
+    producing a module increases progress without decreasing the denominator.
+    This is a recalculated target, not a stored historical planning snapshot.
+    """
+    start_at = timezone.make_aware(datetime.combine(start, time.min))
+    done_before = Q(modulos__completado_at__lt=start_at) | Q(
+        modulos__estado__in=['COMPLETADO', 'CERRADO'],
+        modulos__completado_at__isnull=True,
+    )
+    projects = projects.select_related('usuario__profile').annotate(
+        _period_total=Count('modulos', distinct=True),
+        _period_done_before=Count('modulos', distinct=True, filter=done_before),
+    )
+    target = 0
+    unknown = 0
+    for project in projects:
+        if project._period_total == 0:
+            unknown += 1
+            continue
+        remaining = max(0, project._period_total - project._period_done_before)
+        if not remaining:
+            continue
+        deadline = project.fecha_montaje
+        days = factory_production_days(project)
+        available = production_day_count(start, deadline, days) if deadline else 0
+        if not project.usuario_id or not available:
+            unknown += 1
+            continue
+        covered = production_day_count(start, min(end + timedelta(days=1), deadline), days)
+        daily = (remaining + available - 1) // available
+        target += min(remaining, daily * covered)
+    return {
+        'modulos_esperados': target if target or not unknown else None,
+        'proyectos_sin_objetivo': unknown,
+        'fecha_referencia': start.isoformat(),
     }

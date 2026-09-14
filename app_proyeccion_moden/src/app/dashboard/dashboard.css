@@ -1481,8 +1481,10 @@
   margin-top: 2px;
 }
 
-.stats-daily-target strong {
-  color: #964308;
+.stats-module-target {
+  color: #62748a;
+  font-size: 1.05rem;
+  font-weight: 500;
 }
 
 .stats-planning-warning,

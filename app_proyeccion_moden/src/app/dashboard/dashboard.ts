@@ -1382,17 +1382,16 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   statsPlanningIssues(): number {
+    const unknown = this.statsData?.esperado.proyectos_sin_objetivo;
+    if (unknown !== undefined) return unknown;
     const planning = this.statsData?.planificacion;
     return planning
       ? planning.sin_planificar + planning.urgentes
       : planningIssues(this.proyectos);
   }
 
-  statsDailyTarget(): number | null {
-    const target = this.statsData?.planificacion?.modulos_por_dia
-      ?? this.statsData?.esperado.capacidad_diaria_modulos
-      ?? null;
-    return target === 0 && this.statsPlanningIssues() > 0 ? null : target;
+  statsPeriodTarget(): number | null {
+    return this.statsData?.esperado.modulos_esperados ?? null;
   }
 
   selectStatsPreset(preset: 'day' | 'week' | 'month'): void {
