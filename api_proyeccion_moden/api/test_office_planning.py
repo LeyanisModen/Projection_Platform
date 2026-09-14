@@ -101,6 +101,18 @@ class OfficePlanningTests(APITestCase):
         self.assertEqual(self.client.patch(url, {'trabajadores': []}, format='json').status_code, 400)
         self.assertEqual(EventoCalendario.objects.get().creado_por_id, self.admin.pk)
 
+    def test_overlapping_office_entries_remain_allowed_for_the_same_person(self):
+        worker = TrabajadorOficina.objects.create(nombre='Ana')
+        data = {'inicio': '2026-09-10', 'fin': '2026-09-12', 'trabajadores': [worker.pk]}
+        vacation = self.client.post('/api/eventos/', {**data, 'tipo': 'VACACIONES'}, format='json')
+        first = self.client.post('/api/eventos/', {**data, 'titulo': 'Visita'}, format='json')
+        second = self.client.post('/api/eventos/', {**data, 'titulo': 'Entrega'}, format='json')
+        self.assertEqual([vacation.status_code, first.status_code, second.status_code], [201, 201, 201])
+        response = self.client.patch(f"/api/eventos/{first.data['id']}/", {'fin': '2026-09-15'}, format='json')
+        self.assertEqual(response.status_code, 200)
+        overlaps = self.client.get('/api/eventos/?desde=2026-09-12&hasta=2026-09-12').data
+        self.assertCountEqual([event['id'] for event in overlaps], [vacation.data['id'], first.data['id'], second.data['id']])
+
     def test_worker_color_is_saved_normalized_and_preserved_on_other_edits(self):
         response = self.client.post('/api/trabajadores/', {'nombre': 'Ana', 'color': '#BE185D'}, format='json')
         self.assertEqual(response.status_code, 201)
@@ -109,6 +121,57 @@ class OfficePlanningTests(APITestCase):
         self.assertEqual(self.client.patch(url, {'color': '#0f766e'}, format='json').data['color'], '#0f766e')
         self.assertEqual(self.client.patch(url, {'activo': False}, format='json').data['color'], '#0f766e')
         self.assertEqual(self.client.get('/api/trabajadores/').data[0]['color'], '#0f766e')
+
+    def test_vacation_title_is_generated_without_manual_title_or_project(self):
+        worker = TrabajadorOficina.objects.create(nombre='Ana')
+        response = self.client.post('/api/eventos/', {
+            'tipo': 'VACACIONES', 'inicio': '2026-09-10', 'fin': '2026-09-10',
+            'trabajadores': [worker.pk], 'proyecto': self.project.pk, 'notas': 'Viaje familiar',
+        }, format='json')
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['titulo'], 'Vacaciones de Ana')
+        self.assertIsNone(response.data['proyecto'])
+        event = EventoCalendario.objects.get(pk=response.data['id'])
+        self.assertEqual(event.titulo, 'Vacaciones de Ana')
+        self.assertEqual(event.notas, 'Viaje familiar')
+
+    def test_event_title_remains_required_but_project_and_people_are_optional(self):
+        data = {'inicio': '2026-09-10', 'fin': '2026-09-10'}
+        for title in ({}, {'titulo': ''}, {'titulo': '   '}):
+            response = self.client.post('/api/eventos/', {**data, **title}, format='json')
+            self.assertEqual(response.status_code, 400)
+            self.assertIn('titulo', response.data)
+        response = self.client.post('/api/eventos/', {**data, 'titulo': 'Entrega'}, format='json')
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['trabajadores'], [])
+        self.assertIsNone(response.data['proyecto'])
+        self.assertEqual(self.client.patch(f"/api/eventos/{response.data['id']}/", {'titulo': ''}, format='json').status_code, 400)
+
+    def test_vacation_edit_keeps_multiple_people_and_reflects_name_changes(self):
+        ana = TrabajadorOficina.objects.create(nombre='Ana')
+        luis = TrabajadorOficina.objects.create(nombre='Luis')
+        event = EventoCalendario.objects.create(titulo='Titulo antiguo', tipo='VACACIONES', inicio=date(2026, 9, 1), fin=date(2026, 9, 3))
+        event.trabajadores.add(ana, luis)
+        url = f'/api/eventos/{event.pk}/'
+        response = self.client.patch(url, {'notas': 'Conservadas'}, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['titulo'], 'Vacaciones de Ana, Luis')
+        self.assertCountEqual(response.data['trabajadores'], [ana.pk, luis.pk])
+        self.client.patch(f'/api/trabajadores/{ana.pk}/', {'nombre': 'Ana Maria'}, format='json')
+        self.assertEqual(self.client.get(url).data['titulo'], 'Vacaciones de Ana Maria, Luis')
+        response = self.client.patch(url, {'trabajadores': [luis.pk]}, format='json')
+        self.assertEqual(response.data['titulo'], 'Vacaciones de Luis')
+        self.assertEqual(response.data['notas'], 'Conservadas')
+
+    def test_converting_an_event_to_vacations_enforces_workers_and_generates_title(self):
+        event = EventoCalendario.objects.create(titulo='Visita', inicio=date(2026, 9, 1), fin=date(2026, 9, 3), proyecto=self.project)
+        url = f'/api/eventos/{event.pk}/'
+        self.assertEqual(self.client.patch(url, {'tipo': 'VACACIONES'}, format='json').status_code, 400)
+        worker = TrabajadorOficina.objects.create(nombre='Ana')
+        response = self.client.patch(url, {'tipo': 'VACACIONES', 'trabajadores': [worker.pk]}, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['titulo'], 'Vacaciones de Ana')
+        self.assertIsNone(response.data['proyecto'])
 
     def test_worker_color_validation_and_permissions(self):
         worker = TrabajadorOficina.objects.create(nombre='Ana')
