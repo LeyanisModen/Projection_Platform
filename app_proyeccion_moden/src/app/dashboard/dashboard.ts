@@ -21,7 +21,7 @@ import {
 import { Subject, takeUntil, interval } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { ZoomableImageComponent } from '../shared/zoomable-image/zoomable-image.component';
-import { requiredDaily, planningIssues, planningLabel } from '../shared/project-planning';
+import { planningIssues, planningLabel } from '../shared/project-planning';
 
 // Logical entity for display and drag-drop
 interface Subfase {
@@ -41,8 +41,6 @@ interface Subfase {
   imports: [CommonModule, DragDropModule, FormsModule, ZoomableImageComponent]
 })
 export class Dashboard implements OnInit, OnDestroy {
-  readonly requiredDaily = requiredDaily;
-  readonly planningIssues = planningIssues;
   readonly planningLabel = planningLabel;
   // Sidebar State
   panelState: 'collapsed' | 'expanded' = 'expanded';
@@ -72,6 +70,8 @@ export class Dashboard implements OnInit, OnDestroy {
   // Stats State
   statsData: ProductionStatsResponse | null = null;
   loadingStats = false;
+  statsError = '';
+  private statsRequestId = 0;
   statsPreset: 'day' | 'week' | 'month' | 'custom' = 'day';
   statsFrom: string = '';
   statsTo: string = '';
@@ -1350,6 +1350,8 @@ export class Dashboard implements OnInit, OnDestroy {
    * flash 'Cargando…' every 20s when data already exists.
    */
   loadStats(silent: boolean = false): void {
+    if (silent && this.loadingStats) return;
+    const requestId = ++this.statsRequestId;
     if (!this.statsFrom || !this.statsTo) {
       // Defaults: today → today
       const today = this.toLocalIsoDate(new Date());
@@ -1357,19 +1359,40 @@ export class Dashboard implements OnInit, OnDestroy {
       this.statsTo = today;
     }
     if (!silent || !this.statsData) this.loadingStats = true;
+    if (!silent) this.statsData = null;
+    this.statsError = '';
     this.api.getProductionStats({ from: this.statsFrom, to: this.statsTo })
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (res) => {
+          if (requestId !== this.statsRequestId) return;
           this.statsData = res;
           this.loadingStats = false;
           this.cdr.detectChanges();
         },
         error: () => {
+          if (requestId !== this.statsRequestId) return;
           this.loadingStats = false;
+          this.statsError = this.statsData
+            ? 'No se han podido actualizar las estadísticas. Se muestran los últimos datos disponibles.'
+            : 'No se han podido cargar las estadísticas. Inténtalo de nuevo.';
           this.cdr.detectChanges();
         }
       });
+  }
+
+  statsPlanningIssues(): number {
+    const planning = this.statsData?.planificacion;
+    return planning
+      ? planning.sin_planificar + planning.urgentes
+      : planningIssues(this.proyectos);
+  }
+
+  statsDailyTarget(): number | null {
+    const target = this.statsData?.planificacion?.modulos_por_dia
+      ?? this.statsData?.esperado.capacidad_diaria_modulos
+      ?? null;
+    return target === 0 && this.statsPlanningIssues() > 0 ? null : target;
   }
 
   selectStatsPreset(preset: 'day' | 'week' | 'month'): void {

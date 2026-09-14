@@ -163,8 +163,7 @@ legend { font-size: 13px; }
     .team-legend { margin: 0 0 4mm; gap: 2mm; }
     .team-legend button { padding: 1mm 2mm; font-size: 8pt; min-height: 0; }
     .team-legend button.active { background: white; border-color: var(--line); }
-    .month-grid { break-after: page; border-radius: 2mm; margin-bottom: 3mm; }
-    .month-grid:last-child { break-after: auto; }
+    .month-grid { border-radius: 2mm; margin-bottom: 3mm; }
     .calendar-week { break-inside: avoid; min-height: 25mm; }
     .month-heading button { min-height: 0; padding: 2mm; font-size: 12pt; }
     .month-heading button span { display: none; }
@@ -173,13 +172,26 @@ legend { font-size: 13px; }
     .event-label { white-space: normal; overflow: visible; font-size: 8pt; }
     .calendar-layout:not(.holiday-view) { --event-row: auto; }
     .event-bar { min-height: 7mm; overflow: visible; }
-    .holiday-view .calendar-months { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3mm; }
-    .holiday-view .month-grid { break-inside: avoid; break-after: auto; margin: 0; }
-    .holiday-view .month-heading button { font-size: 9pt; padding: 1.5mm; }
+    .multi-view { --day-header: 5mm; }
+    .multi-view .month-grid { break-inside: avoid; }
+    .multi-view .calendar-week { min-height: 8mm; }
+    .multi-view .weekday { font-size: 8pt; padding: 1mm 0; }
+    .multi-view .day { min-height: 0; padding: .5mm; }
+    .multi-view .day-number { width: auto; height: 4mm; font-size: 8pt; }
+    /* Pack the year instead of forcing twelve mostly empty pages. */
+    .year-view { --day-header: 4mm; }
+    .year-view .calendar-months { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3mm; }
+    .year-view .month-grid { margin: 0; }
+    .year-view .month-heading button { font-size: 9pt; padding: 1.5mm; }
+    .year-view .calendar-week { min-height: 6mm; }
+    .year-view .weekday { font-size: 7pt; }
+    .year-view .day-number { height: 3.5mm; font-size: 7pt; }
+    .year-view .event-bar { min-height: 3.5mm; margin: 0 .5mm .5mm; padding: .5mm .5mm 1mm; gap: .3mm; }
+    .year-view .event-label { font-size: 6pt; overflow-wrap: anywhere; }
+    .year-view .color-strip { height: .5mm; }
+    .year-view .continuation { font-size: 6pt; }
     .holiday-view .calendar-week { grid-template-rows: minmax(6mm, auto) !important; min-height: 6mm; }
-    .holiday-view .weekday { font-size: 7pt; padding: 1mm 0; }
     .holiday-view .day { min-height: 0; padding: .5mm; gap: 0; }
-    .holiday-view .day-number { width: auto; height: 3.5mm; font-size: 7pt; }
     .holiday-view .vacation-marks { gap: .3mm; min-height: 1mm; }
     .holiday-view .vacation-marks span { height: 1mm; flex-basis: 1mm; }
 }

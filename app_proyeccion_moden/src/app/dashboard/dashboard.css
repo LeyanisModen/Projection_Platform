@@ -1481,6 +1481,24 @@
   margin-top: 2px;
 }
 
+.stats-daily-target strong {
+  color: #964308;
+}
+
+.stats-planning-warning,
+.stats-error {
+  color: #964308;
+  font-size: 0.8rem;
+  margin: 0;
+}
+
+.stats-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
 .stats-table {
   width: 100%;
   border-collapse: collapse;

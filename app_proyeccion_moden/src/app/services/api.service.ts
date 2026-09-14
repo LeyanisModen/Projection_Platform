@@ -462,6 +462,13 @@ export interface ProductionStatsResponse {
     por_dia: ProductionStatsDay[];
     por_hora?: ProductionStatsHour[] | null;
     esperado: { capacidad_diaria_modulos: number; modulos_esperados: number | null };
+    planificacion?: {
+        modulos_por_dia: number;
+        modulos_hoy: number;
+        sin_planificar: number;
+        urgentes: number;
+        proyectos: Array<PlanificacionProyecto & { id: number; nombre: string; fecha_montaje: string | null }>;
+    };
 }
 
 

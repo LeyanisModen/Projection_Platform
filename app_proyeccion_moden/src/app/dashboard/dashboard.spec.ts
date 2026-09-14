@@ -1,7 +1,9 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { Dashboard } from './dashboard';
-import { Mesa, Modulo, Proyecto, ProductionStatsBucket, ProductionStatsResponse } from '../services/api.service';
+import { ApiService, Mesa, Modulo, Proyecto, ProductionStatsBucket, ProductionStatsResponse } from '../services/api.service';
+import { of, Subject, throwError } from 'rxjs';
+import { vi } from 'vitest';
 
 describe('Dashboard', () => {
   let component: Dashboard;
@@ -20,6 +22,134 @@ describe('Dashboard', () => {
 
   it('should create', () => {
     expect(component).toBeTruthy();
+  });
+
+  describe('production summary and deadline demand', () => {
+    let stats: ProductionStatsResponse;
+    const render = () => {
+      fixture.changeDetectorRef.markForCheck();
+      fixture.detectChanges();
+    };
+    const text = (selector: string): string =>
+      fixture.nativeElement.querySelector(selector)?.textContent.replace(/\s+/g, ' ').trim() || '';
+
+    beforeEach(() => {
+      stats = {
+        range: {from: '2026-09-01', to: '2026-09-14', working_days: 10},
+        totals: {
+          fases_completadas: 0, modulos_completados: 0, peso_malla_inicial_kg: 0,
+          peso_malla_final_kg: 0, desperdicio_kg: 0, cantidad_cortes: 0,
+          cantidad_refuerzos: 0, cantidad_zunchos: 0, cantidad_separadores: 0,
+          cantidad_punzos: 0, dificultad_total: 0, horas_productivas: 0,
+          modulos_por_hora: 0, kg_por_hora: 0,
+        },
+        por_mesa: [], por_dia: [],
+        esperado: {capacidad_diaria_modulos: 9, modulos_esperados: null},
+        planificacion: {modulos_por_dia: 9, modulos_hoy: 9, sin_planificar: 0, urgentes: 0, proyectos: []},
+      };
+      component.statsData = stats;
+      component.statsFrom = stats.range.from;
+      component.statsTo = stats.range.to;
+    });
+
+    it('shows all six zero-valued KPIs and daily demand before production starts', () => {
+      render();
+      expect(fixture.nativeElement.querySelectorAll('.stats-kpi').length).toBe(6);
+      expect(text('.stats-kpi-value')).toBe('0');
+      expect(text('.stats-daily-target')).toBe('Objetivo actual: 9 módulos/día');
+      expect(text('.stats-empty')).toContain('No hay producción registrada');
+      expect(fixture.nativeElement.querySelector('.stats-table')).toBeNull();
+      expect(fixture.nativeElement.querySelector('.weekly-charts-row')).toBeNull();
+      expect(fixture.nativeElement.querySelector('.deadline-summary')).toBeNull();
+      expect(fixture.nativeElement.querySelector('#estadisticas-section .stats-daily-target')).not.toBeNull();
+    });
+
+    it('keeps current demand separate from historical production totals', () => {
+      stats.totals.modulos_completados = 53;
+      stats.totals.fases_completadas = 106;
+      render();
+      expect(text('.stats-kpi-value')).toBe('53');
+      expect(text('.stats-daily-target')).toBe('Objetivo actual: 9 módulos/día');
+      expect(fixture.nativeElement.querySelector('.stats-table')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('.weekly-charts-row')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('.stats-empty')).toBeNull();
+    });
+
+    it('uses factory-wide demand even with no projects in table queues or the project list', () => {
+      component.proyectos = [];
+      component.gruposMesas = [];
+      component.selectedProyecto = {id: 1, planificacion: {modulos_por_dia: 3}} as Proyecto;
+      stats.esperado.capacidad_diaria_modulos = 12;
+      stats.planificacion!.modulos_hoy = 0;
+      render();
+      expect(component.statsDailyTarget()).toBe(9);
+      expect(text('.stats-daily-target')).toContain('9 módulos/día');
+    });
+
+    it('shows a pending target instead of a misleading zero for unplannable projects', () => {
+      stats.planificacion!.modulos_por_dia = 0;
+      stats.planificacion!.sin_planificar = 1;
+      stats.planificacion!.urgentes = 1;
+      render();
+      expect(component.statsDailyTarget()).toBeNull();
+      expect(text('.stats-daily-target')).toBe('Objetivo pendiente de planificación');
+      expect(text('.stats-planning-warning')).toContain('2 proyecto(s)');
+    });
+
+    it('keeps the calculable demand visible alongside planning warnings', () => {
+      stats.planificacion!.sin_planificar = 1;
+      render();
+      expect(text('.stats-daily-target')).toContain('9 módulos/día');
+      expect(text('.stats-planning-warning')).toContain('1 proyecto(s)');
+    });
+
+    it('shows zero demand when no projects need more production', () => {
+      stats.planificacion!.modulos_por_dia = 0;
+      render();
+      expect(text('.stats-daily-target')).toBe('Objetivo actual: 0 módulos/día');
+      expect(fixture.nativeElement.querySelector('.stats-planning-warning')).toBeNull();
+    });
+
+    it('does not present a failed request as zero production and allows retry', () => {
+      const request = vi.spyOn(TestBed.inject(ApiService), 'getProductionStats')
+        .mockReturnValueOnce(throwError(() => new Error('unavailable')))
+        .mockReturnValueOnce(of(stats));
+      component.loadStats();
+      render();
+      expect(component.statsData).toBeNull();
+      expect(fixture.nativeElement.querySelector('.stats-kpi')).toBeNull();
+      expect(fixture.nativeElement.querySelector('.stats-empty')).toBeNull();
+      expect(text('.stats-error')).toContain('No se han podido cargar');
+      (fixture.nativeElement.querySelector('.stats-error button') as HTMLButtonElement).click();
+      render();
+      expect(request).toHaveBeenCalledTimes(2);
+      expect(fixture.nativeElement.querySelector('.stats-error')).toBeNull();
+      expect(text('.stats-daily-target')).toContain('9 módulos/día');
+    });
+
+    it('labels retained statistics as stale after a failed silent refresh', () => {
+      vi.spyOn(TestBed.inject(ApiService), 'getProductionStats')
+        .mockReturnValue(throwError(() => new Error('unavailable')));
+      component.loadStats(true);
+      render();
+      expect(component.statsData).toBe(stats);
+      expect(text('.stats-error')).toContain('últimos datos disponibles');
+      expect(fixture.nativeElement.querySelectorAll('.stats-kpi').length).toBe(6);
+    });
+
+    it('ignores responses for an older selected period', () => {
+      const oldRequest = new Subject<ProductionStatsResponse>();
+      const newRequest = new Subject<ProductionStatsResponse>();
+      vi.spyOn(TestBed.inject(ApiService), 'getProductionStats')
+        .mockReturnValueOnce(oldRequest).mockReturnValueOnce(newRequest);
+      component.loadStats();
+      component.statsFrom = '2026-09-14';
+      component.loadStats();
+      newRequest.next(stats);
+      oldRequest.error(new Error('old range failed'));
+      expect(component.statsData).toBe(stats);
+      expect(component.statsError).toBe('');
+    });
   });
 
   it('uses inherited factory weekdays for today and the coming week', () => {
