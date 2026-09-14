@@ -17,7 +17,7 @@
   definitions rather than deleting them, so prior completion marks can be restored.
 - Admin Calendar shows project events, mounting dates and office vacations.
   Office workers are independent of login accounts. Events use inclusive date
-  ranges (whole days). Availability means no recorded vacation for that day,
+  ranges (whole days). Availability means no recorded vacation or assigned event for that day,
   not a guarantee of attendance. Inactive workers keep historical events.
 
 ## Deadline rules
@@ -88,6 +88,51 @@ Multi-month views hide padding dates and clip bars to the actual month, keeping
 continuation indicators and full original dates. One events request covers the
 whole selected period; older in-flight loads are cancelled. No new migration is
 needed for the additional views.
+
+## Event editor and printing
+
+The editor has separate Event and Vacation tabs. Events require a title and date
+range, with optional project, people and description. Assigning people to an event
+marks them as out of office on every inclusive day of its range. Vacations require
+at least one person, dates and optional notes, but no manual title or project.
+The API generates `Vacaciones de <names>` and returns the current names on reads;
+existing multi-person vacations remain editable. Their stored legacy titles are
+not rewritten until saved. Vacation saves clear project association. No schema
+migration or deletion of existing events is needed.
+
+Availability uses all loaded events, regardless of project/person filters. A
+vacation takes precedence over the out-of-office label when both overlap.
+This is still a whole-day calendar, not an hourly attendance register. Office
+events and vacations do not alter the working days of a factory or its targets.
+
+An inline person editor adds a name and color without closing the event dialog.
+It selects the new person automatically, retaining existing selections and draft
+fields. Saving a person persists that person independently of saving/cancelling
+the event; the dialog explains this. The event cannot be submitted while that
+inline editor is open or a save request is pending.
+
+The person picker shows advisory overlaps (vacations and other events, inclusive
+dates) for the entire draft range. Its separate GET request ignores calendar
+filters, also covers months outside the current view, excludes the event being
+edited, and is cancelled on date changes or closing the dialog. It never blocks
+person selection or saving, including while the overlap check is loading or has
+failed. Failed checks are shown as unknown with a retry action, not as available.
+These warnings apply to both event and vacation tabs and use full days, not hours.
+
+The extra `Vacaciones anual` view displays all twelve months with colored daily
+marks, including overlaps, and a team legend. It respects the person filter but
+ignores the project filter (which is retained on return to the normal calendar).
+Inactive people with visible historical vacations remain in the legend. Events
+and mounting dates are excluded from this summary, but availability in the day
+agenda continues to consider events as well as vacations.
+
+`Imprimir / PDF` opens the browser's print dialog for the current loaded view and
+filters. Print styles release the admin scroll containers, remove navigation,
+forms and the day sidebar, and include the period, filters and color legend.
+The vacation summary uses a compact three-column A4 portrait layout; ordinary
+multi-month views print separate months. Loading/error states disable the print
+button. Browser checks use mocked data and generated PDFs; a physical printer
+and its color settings still need user acceptance.
 
 ## Verification and rollout
 

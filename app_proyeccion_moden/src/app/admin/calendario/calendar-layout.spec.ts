@@ -31,6 +31,14 @@ describe('calendar periods', () => {
         expect(monthDays(new Date(2027, 1, 1))).toHaveLength(42);
         expect(calendarRange(new Date(2026, 8, 1), 'month')).toEqual({start: '2026-08-31', end: '2026-10-11'});
     });
+    it('uses the complete year including leap day for the vacation summary', () => {
+        const months = calendarMonths(new Date(2028, 8, 1), 'holidays');
+        expect(months).toHaveLength(12);
+        expect(calendarRange(new Date(2028, 8, 1), 'holidays')).toEqual({start: '2028-01-01', end: '2028-12-31'});
+        const days = months.flatMap(month => monthDays(month, true).filter(day => day.current));
+        expect(days).toHaveLength(366);
+        expect(days.some(day => day.key === '2028-02-29')).toBe(true);
+    });
     it('clips multi-month bars to each actual month without losing continuation or duplicating dates', () => {
         const item = event('a', '2026-09-29', '2026-10-03');
         const september = calendarWeeks(monthDays(new Date(2026, 8, 1), true), [item], true).flatMap(w => w.segments);

@@ -88,6 +88,8 @@ class WorkerViewSet(viewsets.ModelViewSet):
 
 
 class EventSerializer(serializers.ModelSerializer):
+    titulo = serializers.CharField(required=False, allow_blank=True, max_length=200)
+
     class Meta:
         model = EventoCalendario
         fields = ['id', 'titulo', 'tipo', 'inicio', 'fin', 'proyecto', 'trabajadores', 'notas']
@@ -102,11 +104,27 @@ class EventSerializer(serializers.ModelSerializer):
             workers = list(self.instance.trabajadores.all()) if self.instance else []
         if value('tipo') == EventoCalendario.Tipo.VACACIONES and not workers:
             raise serializers.ValidationError({'trabajadores': 'Selecciona al menos una persona.'})
+        if value('tipo') == EventoCalendario.Tipo.VACACIONES:
+            attrs['titulo'] = self.vacation_title(workers)
+            attrs['proyecto'] = None
+        elif not (value('titulo') or '').strip():
+            raise serializers.ValidationError({'titulo': 'Indica un titulo para el evento.'})
         if any(not w.activo for w in workers):
             existing = set(self.instance.trabajadores.values_list('id', flat=True)) if self.instance else set()
             if any(not w.activo and w.id not in existing for w in workers):
                 raise serializers.ValidationError({'trabajadores': 'No se pueden asignar personas inactivas.'})
         return attrs
+
+    @staticmethod
+    def vacation_title(workers):
+        names = ', '.join(worker.nombre for worker in sorted(workers, key=lambda w: (w.nombre, w.pk)))
+        return f'Vacaciones de {names}'[:200]
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if instance.tipo == EventoCalendario.Tipo.VACACIONES:
+            data['titulo'] = self.vacation_title(instance.trabajadores.all())
+        return data
 
 
 class EventViewSet(viewsets.ModelViewSet):

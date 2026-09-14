@@ -34,3 +34,22 @@ body {
     border-color: var(--moden-primary) !important;
     opacity: 0.55;
 }
+
+/* Release the admin's scrolling containers when printing a calendar. */
+@media print {
+    @page moden-calendar { size: A4 portrait; margin: 10mm; }
+    body:has(app-calendario) { page: moden-calendar; }
+    html:has(app-calendario), body:has(app-calendario), body:has(app-calendario) app-admin-layout,
+    body:has(app-calendario) .admin-container, body:has(app-calendario) .admin-content {
+        height: auto !important;
+        width: auto !important;
+        min-width: 0 !important;
+        min-height: 0 !important;
+        max-height: none !important;
+        overflow: visible !important;
+        display: block !important;
+        background: white !important;
+        padding: 0 !important;
+    }
+    body:has(app-calendario) .admin-header { display: none !important; }
+}
