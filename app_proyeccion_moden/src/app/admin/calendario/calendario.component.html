@@ -37,7 +37,7 @@
 </section>
 @if (view()==='quarter') { <p class="view-hint">Mes de referencia y los dos siguientes. Las flechas desplazan la ventana un mes.</p> }
 @if (view()==='year') { <p class="view-hint">Enero a diciembre. Pulsa el nombre de un mes para verlo en detalle.</p> }
-@if (holidayView()) { <p class="view-hint">Vacaciones de todo el año, sin eventos ni montajes. Cada marca de color representa a una persona; pulsa un día para ver quién está de vacaciones. Listo para imprimir o guardar en PDF.</p> }
+@if (holidayView()) { <p class="view-hint">Vacaciones de todo el año, sin eventos ni montajes. El fondo de cada día muestra los colores de quienes están de vacaciones; pulsa un día para ver el detalle. Listo para imprimir o guardar en PDF.</p> }
 <div class="team-legend" aria-label="Colores del equipo">
     @for (worker of legendWorkers(); track worker.id) {
         <button type="button" [class.active]="workerFilter()===worker.id" [attr.aria-pressed]="workerFilter()===worker.id"
@@ -45,7 +45,7 @@
             <span class="color-dot" [style.background-color]="colorOf(worker)" aria-hidden="true"></span>{{ worker.nombre }}
         </button>
     }
-    <span class="legend-note">Pulsa una persona para filtrar · {{ holidayView() ? 'Si coinciden vacaciones, se muestran todos sus colores' : 'Los eventos compartidos muestran todos sus colores' }}</span>
+    <span class="legend-note">Pulsa una persona para filtrar · {{ holidayView() ? 'Si coinciden vacaciones, se muestran todos sus colores' : 'Fondos: vacaciones · Barras: eventos y montajes' }}</span>
 </div>
 <div class="calendar-layout" [class.multi-view]="view()!=='month'" [class.year-view]="annualView()" [class.holiday-view]="holidayView()">
     <div class="calendar-months">
@@ -57,21 +57,21 @@
         }
         <div class="week-heading">@for (label of weekLabels; track label) { <span class="weekday">{{ label }}</span> }</div>
         @for (week of calendar.weeks; track week.days[0].key) {
-            <div class="calendar-week" [style.grid-template-rows]="'var(--day-header) ' + (week.lanes ? 'repeat(' + week.lanes + ', var(--event-row)) ' : '') + 'minmax(6px, 1fr)'">
+            <div class="calendar-week" [style.grid-template-rows]="'var(--day-header) ' + (week.lanes ? 'repeat(' + week.lanes + ', minmax(var(--event-row), auto)) ' : '') + 'minmax(6px, 1fr)'">
                 @for (day of week.days; track day.key; let column = $index) {
                     @if (day.current || view()==='month') {
                     <button type="button" class="day" [style.grid-column]="column+1" [class.outside]="!day.current" [class.today]="day.key===today"
                         [class.selected]="day.key===selected()" [attr.aria-pressed]="day.key===selected()"
                         [class.has-vacations]="day.vacationWorkers.length > 0"
-                        [attr.aria-label]="(day.key | date:'dd/MM/yyyy') + ', ' + (holidayView() ? (day.vacationWorkers.length ? 'Vacaciones de ' + namesOf(day.vacationWorkers) : 'Sin vacaciones') : (eventsOn(day.key).length + mountsOn(day.key).length) + ' eventos')"
-                        [title]="holidayView() ? (day.vacationWorkers.length ? 'Vacaciones de ' + namesOf(day.vacationWorkers) : 'Sin vacaciones') : ''"
+                        [attr.aria-label]="(day.key | date:'dd/MM/yyyy') + ', ' + day.vacationLabel + (holidayView() ? '' : ', ' + day.eventCount + ' eventos')"
+                        [title]="day.vacationWorkers.length ? day.vacationLabel : ''"
                         (click)="selected.set(day.key)">
-                        <span class="day-number">{{ day.number }}</span>
                         @if (day.vacationWorkers.length) {
-                            <span class="vacation-marks" aria-hidden="true">@for (worker of day.vacationWorkers; track worker.id) {
-                                <span [style.background-color]="colorOf(worker)" [title]="worker.nombre"></span>
+                            <span class="vacation-shading" aria-hidden="true">@for (worker of day.vacationWorkers; track worker.id) {
+                                <span [style.background-color]="colorOf(worker)"></span>
                             }</span>
                         }
+                        <span class="day-number">{{ day.number }}</span>
                     </button>
                     } @else { <span class="day outside empty-day" [style.grid-column]="column+1" aria-hidden="true"></span> }
                 }
