@@ -207,13 +207,6 @@
                                     <span class="stats-module-target"
                                           title="Objetivo del período según los pendientes a su inicio, los plazos de montaje actuales y los días laborables de la ferralla.">/ {{ statsPeriodTarget() ?? '?' }}</span>
                                 </span>
-                                <span class="stats-kpi-subtext stats-target-label">
-                                    @if (statsPeriodTarget() !== null) {
-                                        Fabricados / objetivo del período
-                                    } @else {
-                                        Objetivo pendiente de planificación
-                                    }
-                                </span>
                             </div>
                             <div class="stats-kpi">
                                 <span class="stats-kpi-label">Paneles producidos</span>

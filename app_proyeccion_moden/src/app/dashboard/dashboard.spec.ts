@@ -56,7 +56,7 @@ describe('Dashboard', () => {
       render();
       expect(fixture.nativeElement.querySelectorAll('.stats-kpi').length).toBe(6);
       expect(text('.stats-kpi-value')).toBe('0 / 9');
-      expect(text('.stats-target-label')).toBe('Fabricados / objetivo del período');
+      expect(text('.stats-kpi')).toBe('Módulos 0 / 9');
       expect(text('.stats-empty')).toContain('No hay producción registrada');
       expect(fixture.nativeElement.querySelector('.stats-table')).toBeNull();
       expect(fixture.nativeElement.querySelector('.weekly-charts-row')).toBeNull();
@@ -70,7 +70,7 @@ describe('Dashboard', () => {
       stats.esperado.modulos_esperados = 64;
       render();
       expect(text('.stats-kpi-value')).toBe('53 / 64');
-      expect(text('.stats-target-label')).toBe('Fabricados / objetivo del período');
+      expect(text('.stats-kpi')).toBe('Módulos 53 / 64');
       expect(fixture.nativeElement.querySelector('.stats-table')).not.toBeNull();
       expect(fixture.nativeElement.querySelector('.weekly-charts-row')).not.toBeNull();
       expect(fixture.nativeElement.querySelector('.stats-empty')).toBeNull();
@@ -114,7 +114,7 @@ describe('Dashboard', () => {
       render();
       expect(component.statsPeriodTarget()).toBeNull();
       expect(text('.stats-kpi-value')).toBe('0 / ?');
-      expect(text('.stats-target-label')).toBe('Objetivo pendiente de planificación');
+      expect(text('.stats-kpi')).toBe('Módulos 0 / ?');
       expect(text('.stats-planning-warning')).toContain('2 proyecto(s)');
     });
 
