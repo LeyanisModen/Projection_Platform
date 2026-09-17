@@ -6,7 +6,7 @@
         <button type="button" class="primary" (click)="editEvent()">Añadir evento</button>
     </div>
 </header>
-<div class="print-heading"><h1>{{ holidayView() ? 'Vacaciones del equipo' : 'Calendario' }} · {{ title() }}</h1><p>{{ printFilters() }}</p></div>
+<div class="print-heading"><h1>Calendario · {{ title() }}</h1><p>{{ printFilters() }}</p></div>
 @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
 <section class="calendar-toolbar">
     <div class="month-nav">
@@ -22,12 +22,10 @@
         }
     </div>
     <div class="filters">
-        @if (!holidayView()) {
         <select aria-label="Filtrar por proyecto" [ngModel]="projectFilter()" (ngModelChange)="projectFilter.set($event)">
             <option [ngValue]="null">Todos los proyectos</option>
             @for (project of projects(); track project.id) { <option [ngValue]="project.id">{{ project.nombre }}</option> }
         </select>
-        }
         <select aria-label="Filtrar por persona" [ngModel]="workerFilter()" (ngModelChange)="workerFilter.set($event)">
             <option [ngValue]="null">Todo el equipo</option>
             @for (worker of workers(); track worker.id) { <option [ngValue]="worker.id">{{ worker.nombre }}</option> }
@@ -37,7 +35,6 @@
 </section>
 @if (view()==='quarter') { <p class="view-hint">Mes de referencia y los dos siguientes. Las flechas desplazan la ventana un mes.</p> }
 @if (view()==='year') { <p class="view-hint">Enero a diciembre. Pulsa el nombre de un mes para verlo en detalle.</p> }
-@if (holidayView()) { <p class="view-hint">Vacaciones de todo el año, sin eventos ni montajes. El fondo de cada día muestra los colores de quienes están de vacaciones; pulsa un día para ver el detalle. Listo para imprimir o guardar en PDF.</p> }
 <div class="team-legend" aria-label="Colores del equipo">
     @for (worker of legendWorkers(); track worker.id) {
         <button type="button" [class.active]="workerFilter()===worker.id" [attr.aria-pressed]="workerFilter()===worker.id"
@@ -45,9 +42,9 @@
             <span class="color-dot" [style.background-color]="colorOf(worker)" aria-hidden="true"></span>{{ worker.nombre }}
         </button>
     }
-    <span class="legend-note">Pulsa una persona para filtrar · {{ holidayView() ? 'Si coinciden vacaciones, se muestran todos sus colores' : 'Fondos: vacaciones · Barras: eventos, montajes y fechas límite de control' }}</span>
+    <span class="legend-note">Pulsa una persona para filtrar · Fondos: vacaciones (si coinciden varias personas, se apilan sus colores) · Barras: eventos, montajes y fechas límite de control</span>
 </div>
-<div class="calendar-layout" [class.multi-view]="view()!=='month'" [class.year-view]="annualView()" [class.holiday-view]="holidayView()">
+<div class="calendar-layout" [class.multi-view]="view()!=='month'" [class.year-view]="annualView()">
     <div class="calendar-months">
     @for (calendar of calendars(); track calendar.key) {
     <section class="month-grid" [attr.aria-label]="calendar.title" [attr.aria-busy]="loading()">
@@ -63,7 +60,7 @@
                     <button type="button" class="day" [style.grid-column]="column+1" [class.outside]="!day.current" [class.today]="day.key===today"
                         [class.selected]="day.key===selected()" [attr.aria-pressed]="day.key===selected()"
                         [class.has-vacations]="day.vacationWorkers.length > 0"
-                        [attr.aria-label]="(day.key | date:'dd/MM/yyyy') + ', ' + day.vacationLabel + (holidayView() ? '' : ', ' + day.eventCount + ' eventos')"
+                        [attr.aria-label]="(day.key | date:'dd/MM/yyyy') + ', ' + day.vacationLabel + ', ' + day.eventCount + ' eventos'"
                         [title]="day.vacationWorkers.length ? day.vacationLabel : ''"
                         (click)="selected.set(day.key)">
                         @if (day.vacationWorkers.length) {

@@ -1,12 +1,12 @@
 export const WORKER_COLORS = ['#2563eb', '#b45309', '#0f766e', '#be185d', '#7c3aed', '#4d7c0f', '#0369a1', '#b91c1c'];
-export type CalendarView = 'month' | 'quarter' | 'year' | 'holidays';
+export type CalendarView = 'month' | 'quarter' | 'year';
 
 export function localDate(date: Date): string {
     return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
 }
 
 export function calendarMonths(anchor: Date, view: CalendarView): Date[] {
-    const annual = view === 'year' || view === 'holidays';
+    const annual = view === 'year';
     const start = annual ? 0 : anchor.getMonth();
     const count = annual ? 12 : view === 'quarter' ? 3 : 1;
     return Array.from({length: count}, (_, i) => new Date(anchor.getFullYear(), start + i, 1));

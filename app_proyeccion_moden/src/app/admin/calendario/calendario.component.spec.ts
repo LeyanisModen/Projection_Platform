@@ -340,22 +340,18 @@ describe('CalendarioComponent', () => {
         expect(component.newPersonName).toBe('Clara');
     });
 
-    it('shows a compact vacation year with overlapping colors, independent of project filters', () => {
+    it('shows a compact year with stacked vacation colors', () => {
         const component = fixture.componentInstance;
-        component.projectFilter.set(99); component.setView('holidays');
+        component.setView('year');
         finishLoad('2026-01-01', '2026-12-31', [...events, {...events[0], id: 3, trabajadores: [2], inicio: '2026-09-15'}]);
         expect(fixture.nativeElement.querySelectorAll('.month-grid')).toHaveLength(12);
-        expect(fixture.nativeElement.querySelectorAll('.event-bar')).toHaveLength(0);
         expect(fixture.nativeElement.querySelectorAll('button.day')).toHaveLength(365);
         const day = component.calendars().flatMap(c => c.weeks).flatMap(w => w.days).find(d => d.key==='2026-09-15' && d.current)!;
         expect(day.vacationWorkers.map(w => w.id)).toEqual([1,2]);
-        expect(component.calendarItems().some(item => item.title === 'Trabajo conjunto')).toBe(false);
-        component.workerFilter.set(2); fixture.detectChanges();
-        expect(component.legendWorkers().map(w => w.id)).toEqual([2]);
+        expect(component.viewOptions.map(o => o.value)).toEqual(['month', 'quarter', 'year']);
         component.changeMonth(1); finishLoad('2027-01-01', '2027-12-31');
         expect(component.title()).toBe('2027');
         component.setView('month'); finishLoad('2027-08-30', '2027-10-10');
-        expect(component.projectFilter()).toBe(99);
     });
 
     it('prints only a loaded calendar with no open editor', () => {
@@ -374,7 +370,7 @@ describe('CalendarioComponent', () => {
     it('includes historical inactive people, deduplicates overlapping holidays and clips year boundaries', () => {
         const component = fixture.componentInstance;
         component.workers.set([...workers, {id: 3, nombre: 'Clara', activo: false, color: '#2563eb'}]);
-        component.view.set('holidays');
+        component.view.set('year');
         component.events.set([
             {...events[0], trabajadores: [1,3], inicio: '2025-12-29', fin: '2026-01-02'},
             {...events[0], id: 3, inicio: '2026-01-01', fin: '2026-01-02'},
