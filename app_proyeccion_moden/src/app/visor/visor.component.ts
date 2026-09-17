@@ -479,7 +479,10 @@ export class VisorComponent implements OnInit, OnDestroy {
           this.persistTokenLocally(res.device_token);
           this.pairingPollSub?.unsubscribe();
           this.enterProjectionMode();
-        } else if (res.status === 'EXPIRED') {
+        } else if (res.status === 'EXPIRED' || res.status === 'PAIRED') {
+          // PAIRED without a token means the backend has nothing left for
+          // this code (already consumed, mesa unbound or re-paired). Keep
+          // polling it would never resolve; start a fresh pairing instead.
           this.pairingPollSub?.unsubscribe();
           this.requestPairingCode();
         }

@@ -859,6 +859,11 @@ class Mesa(models.Model):
 
     # Device Pairing (PoC)
     device_token_hash = models.CharField(max_length=128, null=True, blank=True, unique=True)
+    # Raw token handed to the mini-PC right after pairing. It lives here only
+    # until the device authenticates once with it (see
+    # DeviceViewSet._authenticate_device), so a lost /device/status response
+    # over bad Wi-Fi can be retried without re-pairing.
+    pending_device_token = models.CharField(max_length=128, null=True, blank=True)
     pairing_code = models.CharField(max_length=10, null=True, blank=True)
     pairing_code_expires_at = models.DateTimeField(null=True, blank=True)
     mapper_enabled = models.BooleanField(default=False)

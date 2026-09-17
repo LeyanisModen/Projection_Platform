@@ -647,7 +647,8 @@ class PermissionAndDeviceAuthTests(APITestCase):
         self.assertEqual(second_status.data["device_token"], token)
 
         self.mesa_a.refresh_from_db()
-        self.assertTrue(self.mesa_a.last_error.startswith("PENDING_TOKEN:"))
+        self.assertEqual(self.mesa_a.pending_device_token, token)
+        self.assertIsNone(self.mesa_a.last_error)
 
         heartbeat = self.client.post(
             "/api/device/heartbeat/",
@@ -658,7 +659,7 @@ class PermissionAndDeviceAuthTests(APITestCase):
         self.assertEqual(heartbeat.status_code, 200)
 
         self.mesa_a.refresh_from_db()
-        self.assertIsNone(self.mesa_a.last_error)
+        self.assertIsNone(self.mesa_a.pending_device_token)
 
     def test_direct_mesa_pairing_keeps_token_retrievable_until_device_authenticates(self):
         self.mesa_a.pairing_code = "MESA03"
@@ -692,8 +693,79 @@ class PermissionAndDeviceAuthTests(APITestCase):
         self.assertEqual(heartbeat.status_code, 200)
 
         self.mesa_a.refresh_from_db()
-        self.assertIsNone(self.mesa_a.last_error)
+        self.assertIsNone(self.mesa_a.pending_device_token)
         self.assertIsNone(self.mesa_a.pairing_code)
+
+    def test_status_expires_when_paired_session_token_was_already_consumed(self):
+        session = PairingSession.objects.create(
+            pairing_code="USED01",
+            expires_at=timezone.now() + timedelta(minutes=1),
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.user_a_token.key}")
+        self.client.post(
+            "/api/device/pair/",
+            {"mesa_id": self.mesa_a.id, "pairing_code": "USED01"},
+            format="json",
+        )
+        self.client.credentials()
+        token = self.client.get("/api/device/status/?code=USED01").data["device_token"]
+        self.client.post("/api/device/heartbeat/", {}, format="json", HTTP_AUTHORIZATION=f"Bearer {token}")
+
+        # The visor only reacts to PAIRED+token or EXPIRED; PAIRED without a
+        # token used to leave it polling forever.
+        again = self.client.get("/api/device/status/?code=USED01")
+        self.assertEqual(again.data["status"], "EXPIRED")
+        self.assertNotIn("device_token", again.data)
+        self.assertTrue(PairingSession.objects.filter(pk=session.pk).exists())
+
+    def test_unbind_removes_pairing_sessions_of_the_mesa(self):
+        PairingSession.objects.create(
+            pairing_code="OLD001",
+            expires_at=timezone.now() + timedelta(minutes=1),
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.user_a_token.key}")
+        self.client.post(
+            "/api/device/pair/",
+            {"mesa_id": self.mesa_a.id, "pairing_code": "OLD001"},
+            format="json",
+        )
+        unbind = self.client.post("/api/device/unbind/", {"mesa_id": self.mesa_a.id}, format="json")
+        self.assertEqual(unbind.status_code, 200)
+        self.assertFalse(PairingSession.objects.filter(mesa=self.mesa_a).exists())
+        self.mesa_a.refresh_from_db()
+        self.assertIsNone(self.mesa_a.device_token_hash)
+        self.assertIsNone(self.mesa_a.pending_device_token)
+
+        self.client.credentials()
+        status = self.client.get("/api/device/status/?code=OLD001")
+        self.assertEqual(status.data["status"], "EXPIRED")
+
+    def test_init_purges_stale_pairing_sessions(self):
+        now = timezone.now()
+        stale_unpaired = PairingSession.objects.create(
+            pairing_code="STALE1", expires_at=now - timedelta(hours=2),
+        )
+        fresh_unpaired = PairingSession.objects.create(
+            pairing_code="FRESH1", expires_at=now - timedelta(minutes=5),
+        )
+        stale_paired = PairingSession.objects.create(
+            pairing_code="STALE2", expires_at=now - timedelta(days=2),
+            device_token_hash="abc", mesa=self.mesa_a,
+        )
+        recent_paired = PairingSession.objects.create(
+            pairing_code="RECNT2", expires_at=now - timedelta(hours=3),
+            device_token_hash="def", mesa=self.mesa_a,
+        )
+
+        response = self.client.post("/api/device/init/", {}, format="json")
+        self.assertEqual(response.status_code, 200)
+
+        alive = set(PairingSession.objects.values_list("pairing_code", flat=True))
+        self.assertNotIn(stale_unpaired.pairing_code, alive)
+        self.assertNotIn(stale_paired.pairing_code, alive)
+        self.assertIn(fresh_unpaired.pairing_code, alive)
+        self.assertIn(recent_paired.pairing_code, alive)
+        self.assertIn(response.data["pairing_code"], alive)
 
 
 @override_settings(

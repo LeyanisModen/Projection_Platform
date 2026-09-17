@@ -38,11 +38,11 @@ Leyenda de estado: `[ ]` pendiente · `[~]` en curso · `[x]` cerrado · `[-]` d
 - **Plan:** vista de media propia que acepte (a) token de usuario DRF, (b) token de dispositivo de mesa, ambos vía cookie same-origin que el frontend fija al hacer login / al emparejar, además de `Authorization`. Aplicar la misma regla de propietario que `ImagenViewSet`/`FotoFabricacionViewSet` para `imagenes/`, `fotos/`, `planos/`, `documentos/`, `datos_tecnicos/`. Los dispositivos (mesas) pueden leer cualquier media que el planner les asigne. Devolver los `FileField` como URL relativa para que todo pase por nginx y lleve la cookie.
 - **Verificación obligatoria antes de dar por cerrado:** player proyectando, visor supervisor, previsualizador del detalle, modal de fotos, plano PDF y ZIP de documentos desde dashboard, todo con sesión real en staging.
 
-### 1.2 Token de dispositivo en crudo dentro de `mesa.last_error` — `[ ]`
+### 1.2 Token de dispositivo en crudo dentro de `mesa.last_error` — `[x]`
 
 - **Dónde:** `views.py` `DeviceViewSet.pair` (`PENDING_TOKEN:<raw>`), `status`, `_authenticate_device`.
 - **Problema:** un secreto en un campo de errores. Hoy no se filtra (el serializer no expone `last_error`), pero cualquier log/admin futuro lo sacaría.
-- **Plan:** campo dedicado `Mesa.pending_device_token` (+ `pending_device_token_expires_at`), migración, y limpiar al autenticar igual que hoy. Comportamiento idéntico para el mini-PC.
+- **Hecho (2026-09-17):** campo `Mesa.pending_device_token` (migración `0056`, que además traslada cualquier `PENDING_TOKEN:` en vuelo). `last_error` vuelve a ser solo un campo de errores. Mismo comportamiento para el mini-PC: `/device/status` sigue devolviendo el token hasta la primera petición autenticada.
 
 ### 1.3 `CSRF_TRUSTED_ORIGINS` con wildcard `https://*.railway.app` — `[x]`
 
@@ -68,16 +68,16 @@ Leyenda de estado: `[ ]` pendiente · `[~]` en curso · `[x]` cerrado · `[-]` d
 
 ## 2. Bugs concretos
 
-### 2.1 `PairingSession` nunca se purga — `[ ]`
+### 2.1 `PairingSession` nunca se purga — `[x]`
 
 - **Dónde:** `DeviceViewSet.init` crea una fila por código; el visor pide código nuevo cada vez que caduca (2 min).
 - **Efecto:** ~720 filas/día por mini-PC sin emparejar, para siempre.
-- **Plan:** en `init`, borrar sesiones caducadas (sin mesa asignada o con más de N horas) antes de crear la nueva. Sin cron: la limpieza va en la propia petición.
+- **Hecho (2026-09-17):** `init` borra sesiones sin emparejar caducadas hace más de 1 h y sesiones emparejadas caducadas hace más de 1 día, antes de crear la nueva. Sin cron. Test `test_init_purges_stale_pairing_sessions`.
 
-### 2.2 Estado muerto tras `unbind` (`PAIRED` sin token) — `[ ]`
+### 2.2 Estado muerto tras `unbind` (`PAIRED` sin token) — `[x]`
 
 - **Dónde:** `DeviceViewSet.unbind` no borra las `PairingSession` que apuntan a la mesa; `status` devuelve `{'status': 'PAIRED'}` sin `device_token`; `visor.component.ts` solo actúa ante `PAIRED` con token o `EXPIRED` → sondeo infinito cada 3 s.
-- **Plan:** (a) `unbind` borra las sesiones de esa mesa; (b) `status` responde `EXPIRED` cuando la sesión está enlazada pero el token ya no está pendiente; (c) el visor trata `PAIRED` sin token como `EXPIRED` y pide código nuevo. Test de regresión backend.
+- **Hecho (2026-09-17):** (a) `unbind` y `revoke` borran las `PairingSession` de la mesa; (b) `status` responde `EXPIRED` cuando el token ya se consumió o la mesa se desvinculó; (c) el visor trata `PAIRED` sin token como `EXPIRED` y pide código nuevo. Tests `test_status_expires_when_paired_session_token_was_already_consumed` y `test_unbind_removes_pairing_sessions_of_the_mesa`.
 
 ### 2.3 Capture service monohilo — `[ ]`
 
@@ -90,10 +90,10 @@ Leyenda de estado: `[ ]` pendiente · `[~]` en curso · `[x]` cerrado · `[-]` d
 - **Dónde:** `Config.__init__` (`3840×2160`) vs `config.ini.example` (`1920×1080` con la explicación del cuelgue).
 - **Plan:** default en código a `1920×1080`. Los `config.ini` existentes no cambian.
 
-### 2.5 `mark_done` del dispositivo sin transacción — `[ ]`
+### 2.5 `mark_done` del dispositivo sin transacción — `[x]`
 
 - **Dónde:** `DeviceViewSet.mark_done`, también `set_index`.
-- **Plan:** `transaction.atomic` + `select_for_update` sobre la mesa, igual que `queue_sync.py`.
+- **Hecho (2026-09-17):** `mark_done` y `set_index` bloquean la mesa (y los items en `mark_done`) dentro de `transaction.atomic`. En SQLite `select_for_update` es no-op; el efecto real es en PostgreSQL.
 
 ---
 

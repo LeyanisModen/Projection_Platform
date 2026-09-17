@@ -5332,9 +5332,23 @@ class DeviceViewSet(viewsets.ViewSet):
             except PairingSession.DoesNotExist:
                 pass
         
+        # Housekeeping: an unpaired mini-PC asks for a fresh code every time
+        # the previous one expires (2 min), so without this the table grows
+        # forever. Unpaired sessions go after one hour; paired ones are kept
+        # for a day so a device with bad Wi-Fi can still fetch its token.
+        now = timezone.now()
+        PairingSession.objects.filter(
+            device_token_hash__isnull=True,
+            expires_at__lt=now - timezone.timedelta(hours=1),
+        ).delete()
+        PairingSession.objects.filter(
+            device_token_hash__isnull=False,
+            expires_at__lt=now - timezone.timedelta(days=1),
+        ).delete()
+
         # Generate new session
         code = secrets.token_hex(3).upper()
-        expires_at = timezone.now() + timezone.timedelta(minutes=2)
+        expires_at = now + timezone.timedelta(minutes=2)
         session = PairingSession.objects.create(
             pairing_code=code,
             expires_at=expires_at,
@@ -5366,9 +5380,8 @@ class DeviceViewSet(viewsets.ViewSet):
             # token until the mini-PC proves it received it by making an
             # authenticated request. Bad Wi-Fi can lose the first status
             # response; clearing here would strand the device in pairing.
-            if mesa.last_error and mesa.last_error.startswith("PENDING_TOKEN:"):
-                token = mesa.last_error.split(":", 1)[1]
-                return Response({'status': 'PAIRED', 'device_token': token, 'mesa_id': mesa.id})
+            if mesa.pending_device_token:
+                return Response({'status': 'PAIRED', 'device_token': mesa.pending_device_token, 'mesa_id': mesa.id})
 
             if mesa.pairing_code_expires_at and mesa.pairing_code_expires_at < timezone.now():
                 return Response({'status': 'EXPIRED'})
@@ -5385,15 +5398,22 @@ class DeviceViewSet(viewsets.ViewSet):
         if session.device_token_hash and session.mesa:
             # Token was generated. Return it idempotently until the
             # device authenticates successfully; then _authenticate_device
-            # clears the temporary raw token from mesa.last_error.
-            if session.mesa.last_error and session.mesa.last_error.startswith("PENDING_TOKEN:"):
-                token = session.mesa.last_error.split(":", 1)[1]
+            # clears mesa.pending_device_token.
+            if session.mesa.pending_device_token:
                 if session.mesa.device_token_hash != session.device_token_hash:
                     session.mesa.device_token_hash = session.device_token_hash
                     session.mesa.save(update_fields=['device_token_hash'])
-                return Response({'status': 'PAIRED', 'device_token': token, 'mesa_id': session.mesa.id})
-            
-            return Response({'status': 'PAIRED', 'mesa_id': session.mesa.id})  # Token already retrieved
+                return Response({
+                    'status': 'PAIRED',
+                    'device_token': session.mesa.pending_device_token,
+                    'mesa_id': session.mesa.id,
+                })
+
+            # The token was already consumed (or the mesa was unbound or
+            # re-paired). A device still polling this code has nothing left
+            # to fetch, so tell it to start over instead of answering PAIRED
+            # without a token, which the visor would poll forever.
+            return Response({'status': 'EXPIRED'})
 
         if session.expires_at < timezone.now():
             return Response({'status': 'EXPIRED'})
@@ -5453,8 +5473,8 @@ class DeviceViewSet(viewsets.ViewSet):
         # Save token to Mesa
         mesa.device_token_hash = token_hash
         # Store raw token temporarily for retrieval by device (via status endpoint)
-        mesa.last_error = f"PENDING_TOKEN:{raw_token}"
-        update_fields = ['device_token_hash', 'last_error']
+        mesa.pending_device_token = raw_token
+        update_fields = ['device_token_hash', 'pending_device_token']
         if not using_mesa_code:
             mesa.pairing_code = None
             mesa.pairing_code_expires_at = None
@@ -5474,6 +5494,8 @@ class DeviceViewSet(viewsets.ViewSet):
         Unbind a device from a Mesa. Called from Dashboard.
         Requires: mesa_id
         """
+        from api.models import PairingSession
+
         mesa_id = request.data.get('mesa_id')
         if not mesa_id:
             return Response({'detail': 'mesa_id required'}, status=400)
@@ -5489,12 +5511,19 @@ class DeviceViewSet(viewsets.ViewSet):
         if not mesa.device_token_hash:
             return Response({'detail': 'Mesa has no linked device'}, status=400)
         
-        # Clear device link
+        # Clear device link. Sessions that pointed at this mesa go too:
+        # otherwise a device still polling one of those codes would be told
+        # it is PAIRED with no token to fetch.
         mesa.device_token_hash = None
+        mesa.pending_device_token = None
         mesa.pairing_code = None
-        mesa.last_error = None
-        mesa.save(update_fields=['device_token_hash', 'pairing_code', 'last_error'])
-        
+        mesa.pairing_code_expires_at = None
+        mesa.save(update_fields=[
+            'device_token_hash', 'pending_device_token',
+            'pairing_code', 'pairing_code_expires_at',
+        ])
+        PairingSession.objects.filter(mesa=mesa).delete()
+
         return Response({'status': 'ok'})
 
     @action(detail=False, methods=['post'])
@@ -5602,15 +5631,18 @@ class DeviceViewSet(viewsets.ViewSet):
             return Response({'detail': 'Unauthorized'}, status=401)
             
         index = request.data.get('index')
-        if index is not None:
-            try:
-                mesa.current_image_index = int(index)
-            except (TypeError, ValueError):
-                return Response({'detail': 'Index must be an integer'}, status=400)
+        if index is None:
+            return Response({'detail': 'Index required'}, status=400)
+        try:
+            index = int(index)
+        except (TypeError, ValueError):
+            return Response({'detail': 'Index must be an integer'}, status=400)
+        with transaction.atomic():
+            mesa = Mesa.objects.select_for_update().get(pk=mesa.pk)
+            mesa.current_image_index = index
             mesa.save(update_fields=['current_image_index', 'ultima_actualizacion'])
             register_superior_demand_for_mesa(mesa)
-            return Response({'status': 'ok', 'index': mesa.current_image_index})
-        return Response({'detail': 'Index required'}, status=400)
+        return Response({'status': 'ok', 'index': mesa.current_image_index})
 
     @action(detail=False, methods=['get'], renderer_classes=[ServerSentEventRenderer])
     def stream(self, request):
@@ -5712,23 +5744,34 @@ class DeviceViewSet(viewsets.ViewSet):
 
         from api.models import MesaQueueStatus
 
-        current_item = mesa.queue_items.filter(status=MesaQueueStatus.MOSTRANDO).first()
-        if not current_item:
-            return Response({'detail': 'No item currently showing'}, status=404)
+        # Player and supervisor can both finish the same item; lock the mesa
+        # so only one of them promotes the next one (same discipline as
+        # queue_sync.py).
+        with transaction.atomic():
+            mesa = Mesa.objects.select_for_update().get(pk=mesa.pk)
+            current_item = (
+                mesa.queue_items.select_for_update()
+                .filter(status=MesaQueueStatus.MOSTRANDO).first()
+            )
+            if not current_item:
+                return Response({'detail': 'No item currently showing'}, status=404)
 
-        current_item.marcar_hecho(user=None)
+            current_item.marcar_hecho(user=None)
 
-        next_item = mesa.queue_items.filter(status=MesaQueueStatus.EN_COLA).order_by('position').first()
-        if next_item:
-            next_item.status = MesaQueueStatus.MOSTRANDO
-            next_item.save(update_fields=['status'])
-            mesa.imagen_actual = next_item.imagen
-            mesa.current_image_index = 0
-        else:
-            mesa.imagen_actual = None
-            mesa.current_image_index = 0
-        mesa.save(update_fields=['imagen_actual', 'current_image_index'])
-        reconcile_superior_queue_if_adaptive(mesa.grupo)
+            next_item = (
+                mesa.queue_items.select_for_update()
+                .filter(status=MesaQueueStatus.EN_COLA).order_by('position').first()
+            )
+            if next_item:
+                next_item.status = MesaQueueStatus.MOSTRANDO
+                next_item.save(update_fields=['status'])
+                mesa.imagen_actual = next_item.imagen
+                mesa.current_image_index = 0
+            else:
+                mesa.imagen_actual = None
+                mesa.current_image_index = 0
+            mesa.save(update_fields=['imagen_actual', 'current_image_index'])
+            reconcile_superior_queue_if_adaptive(mesa.grupo)
 
         return Response({'status': 'ok'})
 
@@ -6006,6 +6049,7 @@ class DeviceViewSet(viewsets.ViewSet):
         # User request: "POST /api/device/revoke ... Protect with X-Setup-Key"
         
         import os
+        from api.models import PairingSession
 
         setup_key = request.headers.get('X-Setup-Key')
         expected_setup_key = os.environ.get('DEVICE_SETUP_KEY')
@@ -6020,9 +6064,11 @@ class DeviceViewSet(viewsets.ViewSet):
         try:
             mesa = Mesa.objects.get(id=mesa_id)
             mesa.device_token_hash = None
+            mesa.pending_device_token = None
             mesa.pairing_code = None
-            mesa.last_error = None
+            mesa.pairing_code_expires_at = None
             mesa.save()
+            PairingSession.objects.filter(mesa=mesa).delete()
             return Response({'status': 'revoked'})
         except Mesa.DoesNotExist:
             return Response({'detail': 'Mesa not found'}, status=404)
@@ -6058,15 +6104,15 @@ class DeviceViewSet(viewsets.ViewSet):
                 flush=True,
             )
 
-        if mesa is not None and mesa.last_error and mesa.last_error.startswith("PENDING_TOKEN:"):
+        if mesa is not None and mesa.pending_device_token:
             # The device has now authenticated with the pending token, so
             # it is safe to remove the temporary raw token and any pairing
             # code. Until this point /device/status remains idempotent for
             # poor network links where the first token response is lost.
-            mesa.last_error = None
+            mesa.pending_device_token = None
             mesa.pairing_code = None
             mesa.pairing_code_expires_at = None
-            mesa.save(update_fields=['last_error', 'pairing_code', 'pairing_code_expires_at'])
+            mesa.save(update_fields=['pending_device_token', 'pairing_code', 'pairing_code_expires_at'])
 
         return mesa
 
