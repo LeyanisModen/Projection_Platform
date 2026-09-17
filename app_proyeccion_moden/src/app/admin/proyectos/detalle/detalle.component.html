@@ -233,9 +233,10 @@
                         <small *ngIf="importing" class="import-progress-inline text-primary">{{ importProgress }}</small>
                     </div>
                     <div class="module-display-controls">
-                        <div class="estrategia-toggle rack-view-toggle" role="group" aria-label="Orden de los bastidores"
+                        <div class="estrategia-toggle rack-view-toggle"
                             [class.is-busy]="isDraggingModulo || isDraggingBastidor || movingModulo">
-                            <small class="estrategia-label">Orden:</small>
+                            <span class="estrategia-label">Orden</span>
+                            <div class="segmented" role="group" aria-label="Orden de los bastidores">
                             <button type="button" class="estrategia-pill"
                                 [class.active]="rackViewOrder === 'produccion'"
                                 [attr.aria-pressed]="rackViewOrder === 'produccion'"
@@ -252,11 +253,13 @@
                                 title="Ver los módulos en orden de transporte, sin modificar los bastidores">
                                 Transporte
                             </button>
+                            </div>
                         </div>
 
                         <!-- Switch de estrategia de agrupacion -->
                         <div *ngIf="proyecto && grupos.length > 0" class="estrategia-toggle" [class.is-busy]="recalculatingBastidores">
-                            <small class="estrategia-label">Agrupar:</small>
+                            <span class="estrategia-label">Agrupar</span>
+                            <div class="segmented" role="group" aria-label="Agrupación de bastidores">
                             <button type="button"
                                 class="estrategia-pill"
                                 [class.active]="proyecto.estrategia_bastidor === 'SECUENCIAL'"
@@ -273,12 +276,7 @@
                                 title="Aislar los central girado en bastidores propios">
                                 Por tipo
                             </button>
-                        </div>
-
-                        <div class="legend d-flex align-items-center">
-                            <small class="mr-2 font-weight-bold text-uppercase" style="font-size: 0.7rem;">Estados:</small>
-                            <span class="badge badge-pendiente mr-2">Pendiente</span>
-                            <span class="badge badge-completado">Completado</span>
+                            </div>
                         </div>
                     </div>
                 </div>

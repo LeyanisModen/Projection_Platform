@@ -77,12 +77,12 @@ import { ApiService, CheckDefinition } from '../../services/api.service';
         </section>
     `,
     styles: `
-        :host{display:block;color:#27374a;--line:#dce3eb;--orange:#ed6a19;--muted:#62748a}
+        :host{display:block;max-width:900px;margin:0 auto;color:#27374a;--line:#dce3eb;--orange:#ed6a19;--muted:#62748a}
         *{box-sizing:border-box}
         .page-heading{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:22px}
         h1{font-size:27px;margin:0}p{color:var(--muted);font-size:13px;line-height:1.5;max-width:70ch}
         .error{color:#b3341a}.empty{margin:14px 0 4px}
-        .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:18px;max-width:900px}
+        .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:18px}
         button,input{font:inherit;font-size:13px;border:1px solid var(--line);border-radius:7px;padding:9px 12px;background:#fff;color:inherit;min-width:0}
         button{cursor:pointer}button:disabled{opacity:.5;cursor:default}
         button:focus-visible,input:focus-visible{outline:2px solid var(--orange);outline-offset:2px}

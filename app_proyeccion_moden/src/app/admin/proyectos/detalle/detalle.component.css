@@ -2973,14 +2973,21 @@
     min-width: 0;
 }
 
-/* Controles segmentados de orden visual y estrategia de agrupacion. */
+/* Controles segmentados de orden visual y estrategia de agrupacion.
+   Mismo lenguaje que el selector de vistas del calendario. */
 .estrategia-toggle {
     display: inline-flex;
     align-items: center;
-    gap: 0.35rem;
-    background: #f1f3f5;
-    border-radius: 999px;
-    padding: 0.2rem 0.4rem;
+    gap: 0.5rem;
+}
+
+.segmented {
+    display: inline-flex;
+    padding: 3px;
+    gap: 2px;
+    background: #fff;
+    border: 1px solid #dce3eb;
+    border-radius: 9px;
 }
 
 .estrategia-toggle.is-busy {
@@ -2989,35 +2996,32 @@
 }
 
 .estrategia-label {
-    color: #6c757d;
-    font-weight: 600;
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    margin-right: 0.2rem;
+    color: #62748a;
+    font-size: 0.8rem;
 }
 
 .estrategia-pill {
-    border: none;
+    border: 1px solid transparent;
     background: transparent;
-    color: #495057;
-    font-size: 0.78rem;
-    font-weight: 600;
-    padding: 0.18rem 0.7rem;
-    border-radius: 999px;
+    color: #27374a;
+    font-size: 0.8rem;
+    font-weight: 500;
+    padding: 0.3rem 0.75rem;
+    border-radius: 6px;
     white-space: nowrap;
     cursor: pointer;
     transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 .estrategia-pill:hover:not(.active):not(:disabled) {
-    background: rgba(253, 126, 20, 0.12);
-    color: #d35400;
+    background: #f6f8fa;
 }
 
 .estrategia-pill.active {
-    background: #fd7e14;
-    color: #fff;
+    color: #98440d;
+    background: #fff0e3;
+    border-color: #ffd6b7;
+    font-weight: 600;
 }
 
 .estrategia-pill:disabled {

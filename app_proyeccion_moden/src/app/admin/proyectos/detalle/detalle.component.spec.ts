@@ -46,7 +46,7 @@ describe('Project detail rack order switch', () => {
     }
 
     it('defaults to fabrication order with an accessible selected option', () => {
-        expect(fixture.nativeElement.querySelector('.rack-view-toggle').getAttribute('role')).toBe('group');
+        expect(fixture.nativeElement.querySelector('.rack-view-toggle .segmented').getAttribute('role')).toBe('group');
         expect(buttons().map(button => button.getAttribute('aria-pressed'))).toEqual(['true', 'false']);
         expect(buttons()[0].classList.contains('active')).toBe(true);
         expect(visibleNames()).toEqual(['A03', 'A02', 'A01']);
