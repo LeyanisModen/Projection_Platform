@@ -32,7 +32,7 @@ import { ApiService, Proyecto, ProjectCheck, ProjectCheckAttachment } from '../.
                     } @else { <span>Falta la fecha de montaje.</span> }
                 </div>
             }
-            @if (deadlineMessage()) { <p role="status">{{ deadlineMessage() }}</p> }
+            @if (deadlineMessage()) { <p role="alert" class="urgent">{{ deadlineMessage() }}</p> }
         </section>
 
         <section class="control-card">
@@ -230,7 +230,7 @@ export class ProjectControlsComponent {
         if (this.saving()) return;
         this.saving.set(true); this.deadlineMessage.set('');
         this.api.updateProyecto(this.project().id, {fecha_montaje:this.date() || null}).subscribe({
-            next: project => { this.saved.emit(project); this.saving.set(false); this.deadlineMessage.set('Guardado.'); },
+            next: project => { this.saved.emit(project); this.saving.set(false); },
             error: () => { this.saving.set(false); this.deadlineMessage.set('No se pudo guardar el plazo.'); },
         });
     }

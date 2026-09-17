@@ -712,12 +712,17 @@
     min-width: 0;
 }
 
+/* Misma altura de caja que el boton "+" para que queden centrados entre si. */
+.modules-title h3 {
+    line-height: 28px;
+}
+
 .add-modules-btn {
     display: inline-grid;
     place-items: center;
     width: 28px;
     height: 28px;
-    padding: 0;
+    padding: 0 0 2px; /* el glifo "+" cae un poco bajo en esta fuente */
     border: 0;
     border-radius: 50%;
     background: var(--moden-primary);

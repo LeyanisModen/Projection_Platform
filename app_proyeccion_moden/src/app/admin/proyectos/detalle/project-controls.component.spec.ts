@@ -65,6 +65,17 @@ describe('ProjectControlsComponent factory schedule', () => {
         expect(request.request.method).toBe('PATCH');
         expect(request.request.body).toEqual({fecha_montaje: '2026-10-04'});
         request.flush({...project, fecha_montaje: '2026-10-04'});
+        fixture.detectChanges();
+        // El exito no se anuncia: el plazo recalculado ya lo muestra.
+        expect(fixture.nativeElement.querySelector('[role=status], [role=alert]')).toBeNull();
+    });
+
+    it('only reports when saving the date fails', () => {
+        fixture.componentInstance.date.set('2026-10-04');
+        fixture.componentInstance.saveDeadline();
+        http.expectOne('/api/proyectos/7/').flush({detail: 'boom'}, {status: 500, statusText: 'Server Error'});
+        fixture.detectChanges();
+        expect(fixture.nativeElement.querySelector('[role=alert]')?.textContent).toContain('No se pudo guardar');
     });
 
     it('reloads the checklist and the date when the project input changes', () => {
