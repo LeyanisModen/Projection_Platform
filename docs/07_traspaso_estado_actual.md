@@ -257,7 +257,6 @@ proyection_platform/
 | `src/app/admin/ferrallas/` | Usuarios, grupos, mesas, pairing y captura remota |
 | `src/app/admin/proyectos/` | Lista y creación de proyectos |
 | `src/app/admin/proyectos/detalle/` | Importación, bastidores, fases y previews |
-| `project-table-preview.component.*` | Simulación de mesas y reordenación teórica |
 | `module-import.utils.ts` | Selección múltiple y validación previa de MOD-* |
 | `phase-action.utils.ts` | Decide completar o reiniciar una fase |
 | `src/app/shared/zoomable-image/` | Zoom/pan reutilizable para fotos |
@@ -347,8 +346,6 @@ añadir una regresión para el caso nuevo.
 - Reaplicación automática de datos técnicos a módulos añadidos después.
 - PDF de plano y PDF de planilla detectados por nombre.
 - Previsualizador de imágenes sin alterar fabricación.
-- Previsualizador de mesas virtuales.
-- Reordenación desde mesas virtuales inferiores; superior solo lectura.
 - Checkbox para ocultar bastidores completamente terminados.
 - Nombre de proyecto editable con foco automático.
 - Eliminación de módulos con confirmación y limpieza de media.
@@ -848,6 +845,10 @@ Capture service: usar `config.ini`/config remota. No versionar `config.ini`,
 - Recarga automática agresiva de Chrome: ya rompió pairing/sesión.
 - Borrado local por antigüedad sin comprobar copia equivalente en Drive.
 - Reordenación directa de la cola superior.
+- Rehacer el previsualizador de mesas virtuales tal como estaba: se retiró de
+  la interfaz y su código se borró en septiembre de 2026 porque no resolvía el
+  problema que se esperaba. Si vuelve, debe estar conectado a las mesas reales
+  de la ferralla, no simular una configuración teórica.
 - Movimiento de módulos que ya superaron la segunda imagen.
 - Convertir una planta en subentidad: se decidió que cada planta sea proyecto.
 

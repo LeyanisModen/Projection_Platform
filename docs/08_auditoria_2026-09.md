@@ -205,6 +205,24 @@ Leyenda de estado: `[ ]` pendiente · `[~]` en curso · `[x]` cerrado · `[-]` d
 - La imagen Docker del frontend no se construyó en local (Docker Desktop apagado); `npm ci` se validó contra el lockfile. El deploy de staging es la prueba real.
 - Los mini-PC recibirán `2026-09-17.1` por el actualizador automático (04:15) cuando el cambio llegue a `deploy`.
 
+## Código muerto retirado (17/09/2026)
+
+- **SSR** (`server.ts`, `main.server.ts`, `app.config.server.ts`,
+  `app.routes.server.ts` y 4 dependencias): nunca se construía.
+- **SSE** (`DeviceViewSet.stream`, `ServerSentEventRenderer`, `connectToSSE()`,
+  flag `enableDeviceSSE`): siempre estuvo apagado.
+- **Previsualizador de mesas virtuales**: se había retirado de la interfaz en
+  el commit `83b9e02` pero sus ficheros seguían en el repo sin que nadie los
+  referenciara. Se borraron `project-table-preview.component.{ts,html,css,spec}`
+  (1211 líneas), `getProyectoMesasPreview()` y sus interfaces en
+  `api.service.ts`, la clase CSS huérfana `.project-table-preview-row`, la
+  acción `preview_mesas` del backend y sus tests. Decisión de la usuaria: la
+  funcionalidad no resolvía el problema esperado; si vuelve será conectada a
+  las mesas reales de la ferralla. Anotado en `docs/07` §9.3.
+- Se **conserva** el parámetro `include_completed` de
+  `_build_plan_sequences`: solo lo usaba el preview, pero es el planificador
+  real y tocar sus ramas no compensa el riesgo.
+
 ## Depuración de staging (17/09/2026)
 
 La BD de staging era copia de producción, con cinco proyectos, pero el volumen
