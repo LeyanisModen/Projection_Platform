@@ -104,24 +104,26 @@ Leyenda de estado: `[ ]` pendiente · `[~]` en curso · `[x]` cerrado · `[-]` d
 - `Dockerfile` `CMD`, `Procfile`, `railway.json` `startCommand`. Railway usa `railway.json`.
 - **Hecho (2026-09-17):** `Procfile` eliminado; `CMD` del Dockerfile = `startCommand` de `railway.json` (collectstatic + gunicorn, sin `migrate`); `docker-compose.yml` lanza `migrate` en el `command` del backend.
 
-### 3.2 Frontend construye con `npm install` — `[ ]`
+### 3.2 Frontend construye con `npm install` — `[x]`
 
-- **Plan:** `npm ci` en `app_proyeccion_moden/Dockerfile`.
+- **Hecho (2026-09-17):** `npm ci` en `app_proyeccion_moden/Dockerfile`; imagen construida en local para comprobarlo.
 
-### 3.3 Producción como fallback por defecto — `[ ]`
+### 3.3 Producción como fallback por defecto — `[x]`
 
 - `app_proyeccion_moden/Dockerfile` (`BACKEND_ORIGIN`/`BACKEND_HOST` de producción) y `capture_service.py` (`remote_config_url` de producción).
-- **Plan frontend:** mantener los defaults (Railway necesita que el contenedor arranque sin variables) pero **registrar en el log de nginx al arrancar** qué backend está usando, para que un staging mal configurado se detecte. Cambiarlo a vacío rompería un deploy sin variables; descartado.
-- **Plan capture service:** se mantiene (los mini-PC son de producción por definición); documentado en `config.ini.example`.
+- **Decisión (2026-09-17):** se mantienen los defaults. Verificado con `railway variables` que **staging y producción tienen `BACKEND_ORIGIN`/`BACKEND_HOST` explícitos** apuntando cada uno a su backend por red privada (`http://projectionplatform.railway.internal:8000`), así que el default del Dockerfile no se usa en ningún entorno desplegado. Comprobación rápida cuando haya dudas: `railway variables -e staging -s calm-curiosity --kv | grep BACKEND`.
+- Capture service: se mantiene el default de producción (los mini-PC son de producción por definición).
 
 ### 3.4 `.gitattributes` con `merge=ours` en Dockerfiles/nginx/compose — `[x]`
 
 - **Efecto:** un cambio en `develop` en esos ficheros no llega a `deploy` al mergear.
 - **Hecho (2026-09-17):** `.gitattributes` vacío. Los ficheros coincidían entre `develop` y `deploy` al retirarlas.
 
-### 3.5 Sin `healthcheckPath` en Railway — `[ ]`
+### 3.5 Sin `healthcheckPath` en Railway — `[~]`
 
-- **Plan:** endpoint `GET /api/health/` (AllowAny, comprueba BD) y `location = /health` en nginx; `healthcheckPath` en `railway.json` del backend y del frontend. **Requisito:** el backend debe aceptar `Host: healthcheck.railway.app` → comprobar `ALLOWED_HOSTS` en Railway antes de activarlo.
+- **Hecho en código (2026-09-17):** `GET /api/health/` (`api/health.py`, AllowAny, `SELECT 1`; 503 si la BD no responde) y `location = /health` en nginx (no depende del backend). `healthcheckPath` en `api_proyeccion_moden/railway.json` (`/api/health/`) y en el nuevo `app_proyeccion_moden/railway.json` (`/health`), timeout 300 s.
+- Producción tiene `ALLOWED_HOSTS=projectionplatform-production.up.railway.app,moden.up.railway.app`; `settings.py` añade `healthcheck.railway.app` automáticamente cuando corre en Railway, así que no hay que tocar variables.
+- **Pendiente para cerrar:** primer deploy en staging con el healthcheck activo; ver en el log del deploy que pasa antes de fusionar a `deploy`.
 
 ### 3.6 Menores — `[x]`
 

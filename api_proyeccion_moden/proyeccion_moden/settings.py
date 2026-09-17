@@ -41,6 +41,12 @@ ALLOWED_HOSTS = [host.strip() for host in os.environ.get('ALLOWED_HOSTS', '*').s
 _on_railway = bool(os.environ.get('RAILWAY_ENVIRONMENT_NAME') or os.environ.get('RAILWAY_ENVIRONMENT'))
 HTTPS_ONLY = os.environ.get('HTTPS_ONLY', str(_on_railway)) == 'True'
 
+# Railway's deploy healthcheck calls /api/health/ with this Host header.
+# Production pins ALLOWED_HOSTS to its public domains, so add it here rather
+# than relying on someone remembering to edit the variable.
+if _on_railway and '*' not in ALLOWED_HOSTS and 'healthcheck.railway.app' not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append('healthcheck.railway.app')
+
 REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated'

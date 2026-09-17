@@ -2,7 +2,9 @@
 FROM node:22-alpine as build
 WORKDIR /app
 COPY package*.json ./
-RUN npm install
+# npm ci: install exactly package-lock.json so two builds of the same commit
+# produce the same bundle (a failed frontend build once took production down).
+RUN npm ci
 COPY . .
 RUN npm run build -- --configuration=production
 

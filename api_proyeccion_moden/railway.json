@@ -1,6 +1,8 @@
 {
   "$schema": "https://railway.com/railway.schema.json",
   "deploy": {
+    "healthcheckPath": "/api/health/",
+    "healthcheckTimeout": 300,
     "preDeployCommand": [
       "python manage.py migrate --noinput"
     ],
