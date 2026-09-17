@@ -488,7 +488,7 @@
 
 .module-type.is-rotated {
     color: #fff;
-    background: #7652c8;
+    background: var(--moden-primary);
 }
 
 .source-group {

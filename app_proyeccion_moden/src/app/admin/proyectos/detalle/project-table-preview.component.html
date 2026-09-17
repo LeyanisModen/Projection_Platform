@@ -126,7 +126,8 @@
                                                 <strong [title]="modulo.tiene_sd ? modulo.nombre + ' · Incluye extensores SD' : modulo.nombre">{{ modulo.nombre }}</strong>
                                                 @if (tipoModuloLabel(modulo)) {
                                                     <span class="module-type"
-                                                        [class.is-rotated]="modulo.tipo_modulo === 'CENTRAL_GIRADO'">
+                                                        [class.is-rotated]="modulo.tipo_modulo === 'CENTRAL_GIRADO'"
+                                                        [title]="tipoModuloFullLabel(modulo)">
                                                         {{ tipoModuloLabel(modulo) }}
                                                     </span>
                                                 }
@@ -167,7 +168,8 @@
                                     </span>
                                     @if (tipoModuloLabel(modulo)) {
                                         <span class="module-type"
-                                            [class.is-rotated]="modulo.tipo_modulo === 'CENTRAL_GIRADO'">
+                                            [class.is-rotated]="modulo.tipo_modulo === 'CENTRAL_GIRADO'"
+                                            [title]="tipoModuloFullLabel(modulo)">
                                             {{ tipoModuloLabel(modulo) }}
                                         </span>
                                     }

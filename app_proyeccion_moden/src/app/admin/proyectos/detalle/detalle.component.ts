@@ -479,7 +479,9 @@ export class ProyectoDetailComponent implements OnInit {
     tipoModuloLabel(tipo: GrupoBastidorModulo['tipo_modulo']): string {
         switch (tipo) {
             case 'CENTRAL': return 'C';
-            case 'CENTRAL_GIRADO': return 'CG';
+            // 'G' a secas: ningun otro tipo empieza por G, y 'CG' ocupaba
+            // demasiado en el chip junto al nombre del modulo.
+            case 'CENTRAL_GIRADO': return 'G';
             case 'LADO_LARGO': return 'LL';
             case 'LADO_CORTO': return 'LC';
             case 'ESQUINA': return 'E';

@@ -2894,7 +2894,7 @@
 
 .grupo-modulo-tipo-chip.tipo-girado {
     color: #fff;
-    background: #6f42c1;
+    background: var(--moden-primary);
 }
 
 .module-display-controls {

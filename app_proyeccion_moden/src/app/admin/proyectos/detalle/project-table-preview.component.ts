@@ -252,11 +252,24 @@ export class ProjectTablePreviewComponent {
     tipoModuloLabel(modulo: ProyectoMesaPreviewModulo): string {
         switch (modulo.tipo_modulo) {
             case 'CENTRAL': return 'C';
-            case 'CENTRAL_GIRADO': return 'CG';
+            // Igual que en el detalle: 'G' a secas. Aqui convive con el chip
+            // 'G<n>' del bastidor, asi que el tooltip da el nombre completo.
+            case 'CENTRAL_GIRADO': return 'G';
             case 'LADO_LARGO': return 'LL';
             case 'LADO_CORTO': return 'LC';
             case 'ESQUINA': return 'E';
             default: return '';
+        }
+    }
+
+    tipoModuloFullLabel(modulo: ProyectoMesaPreviewModulo): string {
+        switch (modulo.tipo_modulo) {
+            case 'CENTRAL': return 'Central';
+            case 'CENTRAL_GIRADO': return 'Central girado';
+            case 'LADO_LARGO': return 'Lado largo';
+            case 'LADO_CORTO': return 'Lado corto';
+            case 'ESQUINA': return 'Esquina';
+            default: return 'Sin tipo';
         }
     }
 
