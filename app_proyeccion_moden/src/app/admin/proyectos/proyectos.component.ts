@@ -145,6 +145,22 @@ export class ProyectosComponent implements OnInit {
     this.creationReport = null;
   }
 
+  /**
+   * Drop the chosen folder and go back to creating the project empty.
+   * Without this, touching "Examinar..." locked the form: a folder with no
+   * valid module leaves the submit button disabled and there was no way
+   * back other than cancelling the whole form.
+   */
+  clearSelectedFolder(): void {
+    this.selectedFolder = null;
+    this.folderName = '';
+    this.folderScan = null;
+    this.importStats = null;
+    this.error = '';
+    this.importProgress = '';
+    this.cdr.detectChanges();
+  }
+
   async selectFolder() {
     try {
       const dirHandle = await (window as any).showDirectoryPicker();
@@ -172,9 +188,10 @@ export class ProyectosComponent implements OnInit {
       this.importProgress = '';
 
       if (this.validFolderModules.length === 0) {
-        this.error = this.folderScan.candidates.length
+        const detalle = this.folderScan.candidates.length
           ? 'No hay ningun modulo valido. Corrige las incidencias indicadas antes de crear el proyecto.'
           : 'No se encontraron carpetas de modulos en la carpeta seleccionada.';
+        this.error = `${detalle} Si quieres crear el proyecto vacio e importar mas tarde, usa "Quitar carpeta".`;
       }
       this.cdr.detectChanges();
     } catch (err: any) {
