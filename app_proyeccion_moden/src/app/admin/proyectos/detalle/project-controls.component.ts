@@ -12,11 +12,11 @@ import { ApiService, Proyecto, ProjectCheck, ProjectCheckAttachment } from '../.
     template: `
         <section class="control-card">
             <h3>Plazo de montaje</h3>
-            <p>La fabricación debe quedar lista antes del día de montaje.</p>
-            <label for="mounting-date">Fecha de montaje</label>
-            <input id="mounting-date" type="date" [ngModel]="date()" (ngModelChange)="date.set($event)" />
-            <p class="factory-schedule">Jornada de la ferralla: <strong>{{ workingDaysLabel() }}</strong>.<br>
-                Los días se modifican en «Horario y cámaras» de la ferralla, no en este proyecto.</p>
+            <div class="deadline-row">
+                <input id="mounting-date" type="date" aria-label="Fecha de montaje" [ngModel]="date()" (ngModelChange)="date.set($event)"
+                    (keydown.enter)="saveDeadline()" />
+                <button type="button" class="primary" [disabled]="saving() || date() === (project().fecha_montaje || '')" (click)="saveDeadline()">Guardar</button>
+            </div>
             @if (project().planificacion; as plan) {
                 <div class="demand" [class.urgent]="plan.estado === 'VENCIDO' || plan.estado === 'SIN_DIAS'">
                     @if (plan.estado === 'PLANIFICADO') {
@@ -32,7 +32,6 @@ import { ApiService, Proyecto, ProjectCheck, ProjectCheckAttachment } from '../.
                     } @else { <span>Falta la fecha de montaje.</span> }
                 </div>
             }
-            <button type="button" class="primary" [disabled]="saving()" (click)="saveDeadline()">Guardar plazo</button>
             @if (deadlineMessage()) { <p role="status">{{ deadlineMessage() }}</p> }
         </section>
 
@@ -157,8 +156,8 @@ import { ApiService, Proyecto, ProjectCheck, ProjectCheckAttachment } from '../.
         input:not([type=checkbox]){box-sizing:border-box;width:100%;min-width:0;border:1px solid #cfd7e1;border-radius:6px;padding:9px;font:inherit;margin:6px 0 10px}
         button{border:1px solid #ccd6df;background:#fff;border-radius:6px;padding:8px 10px;cursor:pointer;color:inherit;font:inherit;font-size:12px}button:disabled{opacity:.5;cursor:default}
         button:focus-visible,input:focus-visible{outline:2px solid #e9691d;outline-offset:2px}
-        .primary{background:#fff1e6;border-color:#ed894a;color:#a74508;width:100%}.secondary{width:100%;margin-top:12px}
-        .factory-schedule{line-height:1.6}
+        .primary{background:#fff1e6;border-color:#ed894a;color:#a74508}.secondary{width:100%;margin-top:12px}
+        .deadline-row{display:flex;gap:8px;align-items:stretch}.deadline-row input{flex:1 1 auto;margin:0}.deadline-row .primary{flex:0 0 auto;padding:8px 16px}
         .demand{display:grid;gap:4px;padding:12px;background:#f3f6f8;border-radius:6px;margin:12px 0}.demand span{font-size:12px}.urgent{color:#b3341a}
         .progress-row{display:flex;align-items:center;gap:12px}
         .progress{flex:1 1 auto;height:10px;background:#edf0f4;border-radius:999px;overflow:hidden}
@@ -212,13 +211,6 @@ export class ProjectControlsComponent {
     readonly completed = computed(() => this.checks().filter(c => c.completado).length);
     readonly percent = computed(() => this.checks().length ? Math.round(this.completed() / this.checks().length * 100) : 0);
     readonly nextPending = computed(() => this.checks().find(c => !c.completado) ?? null);
-    readonly workingDaysLabel = computed(() => {
-        if (this.project().planificacion?.estado === 'SIN_FERRALLA') return 'sin ferralla asignada';
-        const labels: Record<string, string> = {
-            MON:'lunes', TUE:'martes', WED:'miércoles', THU:'jueves', FRI:'viernes', SAT:'sábado', SUN:'domingo',
-        };
-        return (this.project().planificacion?.dias_produccion || []).map(day => labels[day] || day).join(', ') || 'sin días configurados';
-    });
     constructor() {
         effect(() => {
             const project = this.project();
@@ -238,7 +230,7 @@ export class ProjectControlsComponent {
         if (this.saving()) return;
         this.saving.set(true); this.deadlineMessage.set('');
         this.api.updateProyecto(this.project().id, {fecha_montaje:this.date() || null}).subscribe({
-            next: project => { this.saved.emit(project); this.saving.set(false); this.deadlineMessage.set('Plazo guardado.'); },
+            next: project => { this.saved.emit(project); this.saving.set(false); this.deadlineMessage.set('Guardado.'); },
             error: () => { this.saving.set(false); this.deadlineMessage.set('No se pudo guardar el plazo.'); },
         });
     }

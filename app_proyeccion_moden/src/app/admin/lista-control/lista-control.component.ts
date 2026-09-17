@@ -18,8 +18,7 @@ import { ApiService, CheckDefinition } from '../../services/api.service';
         <header class="page-heading">
             <div>
                 <h1>Lista de control</h1>
-                <p>Pasos que recibe cada proyecto nuevo. Cada proyecto guarda su propia copia:
-                    cambiar esta lista no modifica los proyectos que ya existen.</p>
+                <p>Pasos que recibe cada proyecto nuevo.</p>
             </div>
         </header>
 

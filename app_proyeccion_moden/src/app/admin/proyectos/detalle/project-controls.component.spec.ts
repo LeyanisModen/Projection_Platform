@@ -40,11 +40,22 @@ describe('ProjectControlsComponent factory schedule', () => {
 
     afterEach(() => http.verify());
 
-    it('shows inherited days as information, not editable project controls', () => {
+    it('keeps the date and the save button on one row, without schedule controls or explanations', () => {
         const element: HTMLElement = fixture.nativeElement;
-        expect(element.querySelector('.factory-schedule')?.textContent).toContain('sábado, domingo');
-        expect(element.querySelector('.factory-schedule button')).toBeNull();
+        const row = element.querySelector('.deadline-row')!;
+        expect(row.querySelector('input[type=date]')).not.toBeNull();
+        expect(row.querySelector('button.primary')?.textContent?.trim()).toBe('Guardar');
+        expect(element.querySelector('.factory-schedule')).toBeNull();
         expect(element.querySelector('.days')).toBeNull();
+        expect(element.textContent).not.toContain('Jornada de la ferralla');
+    });
+
+    it('only enables save when the date actually changed', () => {
+        const button = fixture.nativeElement.querySelector('.deadline-row button.primary') as HTMLButtonElement;
+        expect(button.disabled).toBe(true);
+        fixture.componentInstance.date.set('2026-10-04');
+        fixture.detectChanges();
+        expect(button.disabled).toBe(false);
     });
 
     it('sends only the mounting date without changing the factory schedule', () => {
@@ -56,13 +67,11 @@ describe('ProjectControlsComponent factory schedule', () => {
         request.flush({...project, fecha_montaje: '2026-10-04'});
     });
 
-    it('updates inherited days when the project is reassigned', () => {
-        fixture.componentRef.setInput('project', {
-            ...project, planificacion: {...project.planificacion, dias_produccion: ['MON', 'WED']},
-        });
+    it('reloads the checklist and the date when the project input changes', () => {
+        fixture.componentRef.setInput('project', {...project, fecha_montaje: '2026-11-02'});
         fixture.detectChanges();
         http.expectOne('/api/proyecto-checklist/7/').flush([]);
-        expect(fixture.componentInstance.workingDaysLabel()).toBe('lunes, miércoles');
+        expect(fixture.componentInstance.date()).toBe('2026-11-02');
     });
 });
 
