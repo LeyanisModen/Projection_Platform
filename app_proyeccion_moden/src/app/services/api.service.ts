@@ -1004,6 +1004,13 @@ export class ApiService {
         return this.http.get<MesaQueueItem[]>(`${this.baseUrl}/mesas/${id}/queue_items/`, { headers: this.getHeaders() });
     }
 
+    /** Queues of several mesas in one request, keyed by mesa id (as string). */
+    getMesasQueues(ids: number[]): Observable<Record<string, MesaQueueItem[]>> {
+        const params: { [param: string]: string } = {};
+        if (ids.length) params['ids'] = ids.join(',');
+        return this.http.get<Record<string, MesaQueueItem[]>>(`${this.baseUrl}/mesas/colas/`, { headers: this.getHeaders(), params });
+    }
+
     /**
      * Link a device to a Mesa using a pairing code.
      * This is used from the Dashboard to pair Mini-PCs showing a code.

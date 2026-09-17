@@ -3555,6 +3555,37 @@ class ImagenViewSet(viewsets.ModelViewSet):
         return queryset
 
 
+def _promote_next_if_idle(mesa):
+    """If the mesa shows nothing but has EN_COLA work, show the first item.
+
+    Same transition as MesaQueueItemViewSet.mostrar and DeviceViewSet.mark_done,
+    taken under the mesa row lock so the dashboard poll, the player poll and
+    a supervisor click cannot promote two different items. Returns the
+    promoted item or None.
+    """
+    from api.models import MesaQueueStatus
+
+    with transaction.atomic():
+        locked = Mesa.objects.select_for_update().get(pk=mesa.pk)
+        if locked.queue_items.filter(status=MesaQueueStatus.MOSTRANDO).exists():
+            return None
+        next_item = (
+            locked.queue_items.select_for_update()
+            .filter(status=MesaQueueStatus.EN_COLA).order_by('position').first()
+        )
+        if next_item is None:
+            return None
+        next_item.status = MesaQueueStatus.MOSTRANDO
+        next_item.save(update_fields=['status'])
+        locked.imagen_actual = next_item.imagen
+        locked.current_image_index = 0
+        locked.save(update_fields=['imagen_actual', 'current_image_index'])
+        # Keep the caller's instance in sync without another query.
+        mesa.imagen_actual = locked.imagen_actual
+        mesa.current_image_index = 0
+        return next_item
+
+
 class MesaViewSet(viewsets.ModelViewSet):
     """
     API endpoint para gestionar mesas y asignación de imágenes.
@@ -3599,11 +3630,9 @@ class MesaViewSet(viewsets.ModelViewSet):
 
         return super().destroy(request, *args, **kwargs)
 
-    @action(detail=True, methods=['get'])
-    def queue_items(self, request, pk=None):
-        """Get the work queue for a desk."""
-        mesa = self.get_object()
-        items = (
+    @staticmethod
+    def _queue_items_queryset(mesa):
+        return (
             mesa.queue_items
             .select_related('mesa', 'modulo', 'imagen')
             .prefetch_related(
@@ -3619,11 +3648,42 @@ class MesaViewSet(viewsets.ModelViewSet):
             .all()
             .order_by('position')
         )
+
+    @action(detail=True, methods=['get'])
+    def queue_items(self, request, pk=None):
+        """Get the work queue for a desk."""
+        mesa = self.get_object()
         scale = _compute_dificultad_scale(request.user)
         serializer = MesaQueueItemSerializer(
-            items, many=True, context={'request': request, 'dificultad_scale': scale}
+            self._queue_items_queryset(mesa), many=True,
+            context={'request': request, 'dificultad_scale': scale},
         )
         return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def colas(self, request):
+        """Queues of every visible mesa in one response: {mesa_id: [items]}.
+
+        The dashboard polls this every 5 s instead of one request per mesa.
+        Optional ?ids=1,2,3 restricts the set. Before serialising, any mesa
+        with nothing MOSTRANDO gets its first EN_COLA item promoted; that is
+        the "auto-advance" the browser used to do from the poll, now done
+        once and atomically on the server.
+        """
+        mesas = self.get_queryset()
+        raw_ids = request.query_params.get('ids')
+        if raw_ids:
+            ids = [int(value) for value in raw_ids.split(',') if value.strip().isdigit()]
+            mesas = mesas.filter(id__in=ids)
+        scale = _compute_dificultad_scale(request.user)
+        payload = {}
+        for mesa in mesas:
+            _promote_next_if_idle(mesa)
+            payload[str(mesa.id)] = MesaQueueItemSerializer(
+                self._queue_items_queryset(mesa), many=True,
+                context={'request': request, 'dificultad_scale': scale},
+            ).data
+        return Response(payload)
 
     @action(detail=True, methods=['get'])
     def current_item(self, request, pk=None):
@@ -5650,6 +5710,11 @@ class DeviceViewSet(viewsets.ViewSet):
             return Response({'detail': 'Unauthorized'}, status=401)
 
         from api.models import MesaQueueStatus
+
+        # The player heals itself: if nothing is showing but work is queued
+        # (fresh plan, replan), take the first item without waiting for a
+        # dashboard poll to do it.
+        _promote_next_if_idle(mesa)
 
         item = mesa.queue_items.select_related(
             'modulo', 'modulo__proyecto', 'imagen', 'mesa'

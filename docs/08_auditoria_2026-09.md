@@ -136,16 +136,16 @@ Leyenda de estado: `[ ]` pendiente · `[~]` en curso · `[x]` cerrado · `[-]` d
 
 ## 4. Arquitectura y rendimiento
 
-### 4.1 Dashboard: una petición por mesa cada 5 s — `[ ]`
+### 4.1 Dashboard: una petición por mesa cada 5 s — `[x]`
 
 - **Dónde:** `dashboard.ts` `pollMesasQueue`.
-- **Plan:** endpoint agregado `GET /api/grupos-mesas/{id}/colas/` que devuelva las colas de todas las mesas del grupo en una respuesta; el dashboard consume ese endpoint. Mantener el formato de item idéntico al de `mesas/{id}/queue_items/`.
+- **Hecho (2026-09-17):** `GET /api/mesas/colas/[?ids=1,2]` devuelve `{mesa_id: [items]}` para las mesas visibles del usuario, con el mismo serializer/contexto que `mesas/{id}/queue_items/`. `pollMesasQueue()` del dashboard hace una única petición y aplica la misma lógica por mesa (`applyPolledQueue`). Tests en `api/test_mesa_queues_bulk.py`.
 
-### 4.2 Auto-avance de cola en el navegador — `[ ]`
+### 4.2 Auto-avance de cola en el navegador — `[x]`
 
 - **Dónde:** `dashboard.ts` `pollMesasQueue` → `mostrarItem()` si el primer item está `EN_COLA`.
 - **Problema:** compite con `device/mark_done`, que ya promueve en servidor. Depende de que haya una pestaña abierta.
-- **Plan:** consolidar en backend (promover al crear/replanificar colas cuando la mesa no tiene `MOSTRANDO`); dejar el auto-avance del dashboard como red de seguridad hasta verificar en staging, luego retirarlo.
+- **Hecho (2026-09-17):** `_promote_next_if_idle(mesa)` en backend, bajo `select_for_update` de la mesa: si no hay `MOSTRANDO` y hay `EN_COLA`, promueve el primero (misma transición que `mostrar`/`mark_done`). Se ejecuta en `GET /api/mesas/colas/` (sustituye al auto-avance del navegador) y en `GET /api/device/current_item/`, de modo que **el player se recupera solo** aunque nadie tenga el dashboard abierto. El auto-avance del dashboard queda como red de seguridad (normalmente nunca se dispara); retirarlo tras un ciclo en producción.
 
 ### 4.3 SSR configurado pero no usado — `[x]`
 

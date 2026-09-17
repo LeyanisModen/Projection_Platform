@@ -1008,62 +1008,62 @@ export class Dashboard implements OnInit, OnDestroy {
     // Skip polling during cross-mesa transfers to avoid DOM conflicts
     if (this.mesas.length === 0 || this.transferInProgress) return;
 
-    this.mesas.forEach(mesa => {
-      this.api.getMesaQueueItems(mesa.id)
-        .pipe(takeUntil(this.destroy$))
-        .subscribe({
-          next: (items) => {
-            // Logic for Auto-Advance
-            // If the queue has items, and the FIRST item is 'EN_COLA' (Pending),
-            // it means the previous 'MOSTRANDO' item has finished (it's gone from the list).
-            // We should automatically promote this new first item to 'MOSTRANDO'.
+    // One request for every mesa instead of one per mesa. The backend also
+    // promotes the first EN_COLA item of any idle mesa before answering, so
+    // the auto-advance below only fires if that somehow did not happen.
+    const mesaIds = this.mesas.map(mesa => mesa.id);
+    this.api.getMesasQueues(mesaIds)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (queues) => {
+          this.mesas.forEach(mesa => {
+            const items = queues[String(mesa.id)];
+            if (items) this.applyPolledQueue(mesa, items);
+          });
+          this.cdr.detectChanges();
+        },
+        error: (err) => mesaIds.forEach(id => this.logQueueError(id, 'polling', err))
+      });
+  }
 
-            // 1. Filter active items (API might return HECHO depending on implementation, but typically filtered)
-            // FORCE SORT: MOSTRANDO always first
-            const activeItems = items
-              .filter(i => i.status !== 'HECHO')
-              .sort((a, b) => {
-                if (a.status === 'MOSTRANDO') return -1;
-                if (b.status === 'MOSTRANDO') return 1;
-                return a.position - b.position;
-              });
+  private applyPolledQueue(mesa: Mesa, items: MesaQueueItem[]): void {
+    // 1. Filter active items (API might return HECHO depending on implementation, but typically filtered)
+    // FORCE SORT: MOSTRANDO always first
+    const activeItems = items
+      .filter(i => i.status !== 'HECHO')
+      .sort((a, b) => {
+        if (a.status === 'MOSTRANDO') return -1;
+        if (b.status === 'MOSTRANDO') return 1;
+        return a.position - b.position;
+      });
 
-            // 2. Check overlap with local state to avoid UI jitter, but crucial for logic
-            // Update the map
-            this.mesaQueueItems.set(mesa.id, activeItems);
+    // 2. Update the map
+    this.mesaQueueItems.set(mesa.id, activeItems);
 
-            // 3. Clear STALE assignments for this mesa
-            // We need to remove any assignment in `subfaseAssignedToMesa` that points to this mesa
-            // BUT is not in the new `items` list (meaning it finished or was deleted).
-            // This fixes the "Proyectando..." stuck status.
-            for (let [key, val] of this.subfaseAssignedToMesa) {
-              if (val.mesaName === mesa.nombre) {
-                // Check if this subfase (key) is still in the current items list
-                // Key format: "moduloId-FASE"
-                const stillExists = items.some(i => `${i.modulo}-${i.fase}` === key && i.status !== 'HECHO');
-                if (!stillExists) {
-                  this.subfaseAssignedToMesa.delete(key);
-                }
-              }
-            }
+    // 3. Clear STALE assignments for this mesa: anything in
+    // `subfaseAssignedToMesa` pointing at this mesa that is no longer in the
+    // list finished or was deleted. This fixes the "Proyectando..." stuck status.
+    for (let [key, val] of this.subfaseAssignedToMesa) {
+      if (val.mesaName === mesa.nombre) {
+        // Key format: "moduloId-FASE"
+        const stillExists = items.some(i => `${i.modulo}-${i.fase}` === key && i.status !== 'HECHO');
+        if (!stillExists) {
+          this.subfaseAssignedToMesa.delete(key);
+        }
+      }
+    }
 
-            // 4. Check for AUTO-ADVANCE condition
-            if (activeItems.length > 0) {
-              const firstItem = activeItems[0];
-              if (firstItem.status === 'EN_COLA') {
-                console.log(`[Dashboard] Auto-Advancing Mesa ${mesa.nombre} -> Showing ${firstItem.modulo_nombre}`);
-                this.mostrarItem(firstItem);
-              }
-            }
+    // 4. Auto-advance fallback (the server normally did this already)
+    if (activeItems.length > 0) {
+      const firstItem = activeItems[0];
+      if (firstItem.status === 'EN_COLA') {
+        console.log(`[Dashboard] Auto-Advancing Mesa ${mesa.nombre} -> Showing ${firstItem.modulo_nombre}`);
+        this.mostrarItem(firstItem);
+      }
+    }
 
-            // 5. Update assignment tracking (for dots) with NEW items
-            this.updateAssignmentTracking(mesa, items);
-
-            this.cdr.detectChanges();
-          },
-          error: (err) => this.logQueueError(mesa.id, 'polling', err)
-        });
-    });
+    // 5. Update assignment tracking (for dots) with NEW items
+    this.updateAssignmentTracking(mesa, items);
   }
 
   private logQueueError(mesaId: number, context: 'polling' | 'loading', err: any): void {
