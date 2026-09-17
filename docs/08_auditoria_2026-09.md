@@ -30,14 +30,16 @@ Leyenda de estado: `[ ]` pendiente · `[~]` en curso · `[x]` cerrado · `[-]` d
 
 ## 1. Seguridad
 
-### 1.1 `/media/` se sirve sin autenticación — `[~]`
+### 1.1 `/media/` se sirve sin autenticación — `[x]`
 
 - **Dónde:** `api_proyeccion_moden/proyeccion_moden/urls.py` (`re_path` a `django.views.static.serve`), `app_proyeccion_moden/nginx.conf` (`location ^~ /media/`).
 - **Problema:** las rutas son adivinables (`/media/imagenes/{proyecto}/{modulo}/…`, `/media/fotos/{proyecto}/{modulo}/…`) y cualquiera sin sesión las lee. El aislamiento por ferralla de la API no aplica aquí. `serve` además no está pensado para producción.
 - **Restricción:** las imágenes se cargan con `<img src>` y `new Image()`, que no pueden enviar cabecera `Authorization`. La solución no puede cambiar las URLs almacenadas en BD (`Imagen.url`, `FotoFabricacion.url` guardan `/media/...` relativo).
 - **Plan:** vista de media propia que acepte (a) token de usuario DRF, (b) token de dispositivo de mesa, ambos vía cookie same-origin que el frontend fija al hacer login / al emparejar, además de `Authorization`. Aplicar la misma regla de propietario que `ImagenViewSet`/`FotoFabricacionViewSet` para `imagenes/`, `fotos/`, `planos/`, `documentos/`, `datos_tecnicos/`. Los dispositivos (mesas) pueden leer cualquier media que el planner les asigne. Devolver los `FileField` como URL relativa para que todo pase por nginx y lleve la cookie.
 - **Hecho en código (2026-09-17):** `api/media_access.py` sustituye a `django.views.static.serve` directo. Acepta `Authorization: Token …` (usuario), `Authorization: Bearer …` (mesa) y las cookies same-origin `moden_auth` / `moden_device` con `path=/media/`. Las cookies las escribe el backend: el login (`/api/token-auth/`) y `MediaCookieMiddleware` en cualquier respuesta autenticada (usuario o dispositivo), solo cuando falta o cambió. `logout()` del frontend borra `moden_auth`. Reglas: staff → todo; ferralla → `imagenes/<pid>`, `fotos/<pid>` y `planos/`, `documentos/`, `datos_tecnicos/` de sus proyectos; mesa emparejada → todo lo que le asigne el planner; `cortes/` (legado) solo staff. Los `FileField` de proyecto se devuelven como ruta relativa para que el PDF/ZIP pase por nginx y lleve la cookie. **Interruptor de emergencia:** `MEDIA_REQUIRE_AUTH=False` en Railway devuelve el comportamiento público anterior sin redeploy de código. 16 tests en `api/test_media_access.py`.
-- **Verificación pendiente para cerrar:** en staging, con sesión real: player proyectando tras reinicio del kiosk, visor supervisor, previsualizador del detalle, modal de fotos, plano PDF y ZIP de documentos desde el dashboard.
+- **Verificado en staging (17/09/2026):** con sesión real de administración, el previsualizador de secuencia del detalle carga las 19 imágenes del módulo (0 fallidas, sin el mensaje "El archivo no se puede abrir"); `fetch` de una imagen del proyecto devuelve 200 `image/jpeg` con `Cache-Control: private`. Sin credencial, `/media/` responde 401.
+- **Los 404 que se vieron al principio no venían de este cambio:** la BD de staging es copia de producción pero el volumen nunca tuvo las imágenes de los proyectos 66/67/69/70 (0 de 1548 en disco). Solo el proyecto 73 tenía sus ficheros. Se depuró staging (ver más abajo).
+- **Pendiente de una pasada manual:** player proyectando tras reinicio del kiosk y modal de fotos (staging no tiene fotos de fabricación históricas).
 
 ### 1.2 Token de dispositivo en crudo dentro de `mesa.last_error` — `[x]`
 
@@ -202,6 +204,23 @@ Leyenda de estado: `[ ]` pendiente · `[~]` en curso · `[x]` cerrado · `[-]` d
 - **4.7** — decidir mecanismo de tareas programadas (auditoría de media huérfana, capacidad del volumen, backup).
 - La imagen Docker del frontend no se construyó en local (Docker Desktop apagado); `npm ci` se validó contra el lockfile. El deploy de staging es la prueba real.
 - Los mini-PC recibirán `2026-09-17.1` por el actualizador automático (04:15) cuando el cambio llegue a `deploy`.
+
+## Depuración de staging (17/09/2026)
+
+La BD de staging era copia de producción, con cinco proyectos, pero el volumen
+solo tenía los ficheros de uno. Eso producía 404 en todos los visores de los
+otros cuatro y hacía inútil la mayor parte de los datos.
+
+Se dejó **un único proyecto de prueba**, `VALDEBEBAS946_B5_P10` (id 73, 43
+módulos, 1678 imágenes, todas en disco, con su grupo de 3 mesas y 86 items de
+cola). Se borraron `Esnabide_test`, `Valdebebas_B5_P7_MODEN`,
+`Valdebebas_B5_P7` y `prueba_warning` (5112 filas en cascada), previo simulacro
+en transacción revertida. No quedaron módulos, imágenes ni fotos huérfanas; el
+volumen queda en 229 MB con un solo directorio `imagenes/73`. Los grupos de
+mesas de las otras dos ferrallas se conservan con `proyecto_actual` a null, por
+si se quieren para pruebas de emparejamiento.
+
+Producción no se tocó.
 
 ## Orden de ejecución
 
