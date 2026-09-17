@@ -30,8 +30,20 @@ describe('ListaControlComponent', () => {
         const rows = Array.from(element.querySelectorAll('.step'));
         expect(rows.map(r => r.querySelector('.position')?.textContent?.trim())).toEqual(['1', '2']);
         expect(rows.map(r => r.querySelector('.title')?.childNodes[0]?.textContent?.trim())).toEqual(['Planos entregados', 'Aprobación equivalencias']);
-        expect(rows[0].querySelectorAll('.badge').length).toBe(0);
-        expect(Array.from(rows[1].querySelectorAll('.badge')).map(b => b.textContent?.trim())).toEqual(['fecha', 'documento']);
+        expect(rows[0].querySelectorAll('.flag-icons i').length).toBe(0);
+        expect(Array.from(rows[1].querySelectorAll('.flag-icons i')).map(i => i.getAttribute('title'))).toEqual(['Con fecha límite', 'Con documento de confirmación']);
+    });
+
+    it('los iconos de fecha y documento funcionan como interruptores', () => {
+        const [fecha, doc] = Array.from(fixture.nativeElement.querySelectorAll('.add-row .flag-toggle')) as HTMLButtonElement[];
+        expect(fecha.getAttribute('aria-pressed')).toBe('false');
+        fecha.click(); fixture.detectChanges();
+        expect(fixture.componentInstance.newRequiereFecha()).toBe(true);
+        expect(fecha.classList.contains('on')).toBe(true);
+        expect(fecha.getAttribute('aria-pressed')).toBe('true');
+        fecha.click(); fixture.detectChanges();
+        expect(fixture.componentInstance.newRequiereFecha()).toBe(false);
+        expect(doc.classList.contains('on')).toBe(false);
     });
 
     it('añade un paso al final y limpia el campo', () => {

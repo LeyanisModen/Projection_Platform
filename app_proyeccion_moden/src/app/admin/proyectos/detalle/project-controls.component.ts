@@ -131,11 +131,15 @@ import { ApiService, Proyecto, ProjectCheck, ProjectCheckAttachment } from '../.
                         <div class="add-check-row">
                             <input id="new-project-check" name="newCheck" maxlength="200" [ngModel]="newTitle()" (ngModelChange)="newTitle.set($event)"
                                 placeholder="Ej.: Acta de inicio firmada" [disabled]="busyCheck() !== null" />
+                            <div class="flag-toggles" role="group" aria-label="Qué necesita el paso">
+                                <button type="button" class="flag-toggle" [class.on]="newRequiereFecha()" [attr.aria-pressed]="newRequiereFecha()"
+                                    (click)="newRequiereFecha.set(!newRequiereFecha())" [disabled]="busyCheck() !== null"
+                                    title="Con fecha límite" aria-label="Con fecha límite"><i class="fa fa-calendar" aria-hidden="true"></i></button>
+                                <button type="button" class="flag-toggle" [class.on]="newRequiereDocumento()" [attr.aria-pressed]="newRequiereDocumento()"
+                                    (click)="newRequiereDocumento.set(!newRequiereDocumento())" [disabled]="busyCheck() !== null"
+                                    title="Con documento de confirmación" aria-label="Con documento de confirmación"><i class="fa fa-file-text-o" aria-hidden="true"></i></button>
+                            </div>
                             <button type="submit" [disabled]="busyCheck() !== null || !newTitle().trim()">Añadir</button>
-                        </div>
-                        <div class="flags" role="group" aria-label="Qué necesita el paso">
-                            <label class="flag"><input type="checkbox" name="newDate" [ngModel]="newRequiereFecha()" (ngModelChange)="newRequiereFecha.set($event)" [disabled]="busyCheck() !== null" /> Con fecha límite</label>
-                            <label class="flag"><input type="checkbox" name="newDoc" [ngModel]="newRequiereDocumento()" (ngModelChange)="newRequiereDocumento.set($event)" [disabled]="busyCheck() !== null" /> Con documento de confirmación</label>
                         </div>
                     </form>
 
@@ -180,12 +184,11 @@ import { ApiService, Proyecto, ProjectCheck, ProjectCheckAttachment } from '../.
         .doc a{color:#243446;text-decoration:none;overflow-wrap:anywhere}.doc a:hover{text-decoration:underline}.doc small{margin:0}
         .doc-remove{padding:0 6px;font-size:14px}
         .attach{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#af4a13;cursor:pointer;width:fit-content}.attach input{display:none}.attach.is-busy{opacity:.6;cursor:progress}
-        .flags{display:flex;gap:16px;flex-wrap:wrap;margin-top:8px}.flag{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#67758a;cursor:pointer}
-        .flag input{width:15px;height:15px;margin:0;accent-color:#ef6815}
+        .flag-toggles{display:inline-flex;gap:4px;flex:0 0 auto}.flag-toggle{display:inline-grid;place-items:center;width:38px;min-width:38px;min-height:36px;padding:0;color:#9aa6b4;background:#fff;border:1px solid #dce3eb;border-radius:7px;font-size:15px;cursor:pointer;transition:color .15s,background-color .15s,border-color .15s}.flag-toggle:hover:not(:disabled){color:#27374a}.flag-toggle.on{color:#fff;background:#ed6a19;border-color:#ed6a19}.flag-toggle:disabled{opacity:.5;cursor:default}.flag-icons{display:inline-flex;gap:6px;margin-left:8px;color:#c2570e;font-size:13px;vertical-align:middle}
         .check-title{display:block;font-size:13px}.origin{display:inline-block;margin-top:3px;font-size:11px;color:#98440d;background:#fff0e3;border-radius:10px;padding:1px 7px}
         .check-row small{display:block;margin-top:4px}.check-empty{padding:12px 0;font-size:13px;color:#67758a}
         .remove{flex:0 0 auto;padding:2px 8px;font-size:16px;line-height:1;color:#8a96a3}.remove:hover:not(:disabled){color:#b3341a;border-color:#f1c9bf}
-        .add-check{margin-top:16px}.add-check-row{display:flex;gap:8px;align-items:flex-start}.add-check-row input{margin-bottom:0}
+        .add-check{margin-top:16px}.add-check-row{display:flex;gap:8px;align-items:stretch;margin-top:6px}.add-check-row input{margin-bottom:0}
         .checklist-footer{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px}.checklist-footer span{font-size:12px;color:#67758a}
         .text-button{border:0;padding:6px 0;color:#af4a13}
         @media(max-width:600px){input:not([type=checkbox]){font-size:16px}button{min-height:42px}.remove{min-height:32px}}
