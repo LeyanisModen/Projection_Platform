@@ -120,11 +120,12 @@ Leyenda de estado: `[ ]` pendiente · `[~]` en curso · `[x]` cerrado · `[-]` d
 - **Efecto:** un cambio en `develop` en esos ficheros no llega a `deploy` al mergear.
 - **Hecho (2026-09-17):** `.gitattributes` vacío. Los ficheros coincidían entre `develop` y `deploy` al retirarlas.
 
-### 3.5 Sin `healthcheckPath` en Railway — `[~]`
+### 3.5 Sin `healthcheckPath` en Railway — `[x]`
 
 - **Hecho en código (2026-09-17):** `GET /api/health/` (`api/health.py`, AllowAny, `SELECT 1`; 503 si la BD no responde) y `location = /health` en nginx (no depende del backend). `healthcheckPath` en `api_proyeccion_moden/railway.json` (`/api/health/`) y en el nuevo `app_proyeccion_moden/railway.json` (`/health`), timeout 300 s.
 - Producción tiene `ALLOWED_HOSTS=projectionplatform-production.up.railway.app,moden.up.railway.app`; `settings.py` añade `healthcheck.railway.app` automáticamente cuando corre en Railway, así que no hay que tocar variables.
-- **Pendiente para cerrar:** primer deploy en staging con el healthcheck activo; ver en el log del deploy que pasa antes de fusionar a `deploy`.
+- **Verificado en staging (17/09/2026):** el primer deploy con `healthcheckPath` **falló** (Railway no obtuvo 200 en 300 s y, al tener volumen, paró el contenedor anterior: staging estuvo caído unos minutos). Causa: Railway comprueba contra el puerto de la variable `PORT`, que el backend no tenía definida (gunicorn escucha fijo en 8000). Arreglo: `PORT=8000` en el servicio backend (puesta en **staging y producción**, esta última con `--skip-deploys`) y `/api/health/` forzado a JSON (`6e17bf6`). Segundo deploy en `SUCCESS`; `/api/health/` responde `{"status":"ok","database":"ok"}` por el dominio público y por el proxy del frontend.
+- **Regla:** cualquier servicio nuevo con healthcheck necesita `PORT` definida en Railway.
 
 ### 3.6 Menores — `[x]`
 
@@ -196,7 +197,7 @@ Leyenda de estado: `[ ]` pendiente · `[~]` en curso · `[x]` cerrado · `[-]` d
 
 **Queda abierto:**
 
-- **1.1 y 3.5 — verificar en staging** tras el push de `develop`: (a) el deploy pasa el healthcheck en backend y frontend; (b) player proyectando tras reiniciar el kiosk; (c) visor supervisor; (d) previsualizador del detalle; (e) modal de fotos; (f) plano PDF y ZIP desde el dashboard. Si algo de `/media/` falla y no se localiza rápido: `MEDIA_REQUIRE_AUTH=False` en el backend de Railway.
+- **1.1 — verificar en staging con sesión real** (3.5 ya verificado: healthcheck en verde en backend y frontend; sin credencial `/media/` y `/api/` devuelven 401): (b) player proyectando tras reiniciar el kiosk; (c) visor supervisor; (d) previsualizador del detalle; (e) modal de fotos; (f) plano PDF y ZIP desde el dashboard. Si algo de `/media/` falla y no se localiza rápido: `MEDIA_REQUIRE_AUTH=False` en el backend de Railway.
 - **4.6** — ejecutar la suite contra PostgreSQL antes de fusionar a `deploy` (`docker compose up db` + `DATABASE_URL`).
 - **4.7** — decidir mecanismo de tareas programadas (auditoría de media huérfana, capacidad del volumen, backup).
 - La imagen Docker del frontend no se construyó en local (Docker Desktop apagado); `npm ci` se validó contra el lockfile. El deploy de staging es la prueba real.
