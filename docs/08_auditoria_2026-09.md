@@ -44,19 +44,19 @@ Leyenda de estado: `[ ]` pendiente · `[~]` en curso · `[x]` cerrado · `[-]` d
 - **Problema:** un secreto en un campo de errores. Hoy no se filtra (el serializer no expone `last_error`), pero cualquier log/admin futuro lo sacaría.
 - **Plan:** campo dedicado `Mesa.pending_device_token` (+ `pending_device_token_expires_at`), migración, y limpiar al autenticar igual que hoy. Comportamiento idéntico para el mini-PC.
 
-### 1.3 `CSRF_TRUSTED_ORIGINS` con wildcard `https://*.railway.app` — `[ ]`
+### 1.3 `CSRF_TRUSTED_ORIGINS` con wildcard `https://*.railway.app` — `[x]`
 
 - **Dónde:** `settings.py`.
 - **Problema:** confía en cualquier app de Railway. La API con `TokenAuthentication` está exenta de CSRF; el riesgo real es `/admin/` (sesión).
-- **Plan:** dejar solo los dominios concretos de producción y staging, configurables por variable `CSRF_TRUSTED_ORIGINS`.
+- **Hecho (2026-09-17):** solo dominios concretos (producción + staging), sobreescribibles con la variable `CSRF_TRUSTED_ORIGINS` (lista separada por comas).
 
-### 1.4 `scripts/django/ensure_admin.py` resetea el superusuario a `admin` — `[ ]`
+### 1.4 `scripts/django/ensure_admin.py` resetea el superusuario a `admin` — `[x]`
 
-- **Plan:** abortar si `DJANGO_SUPERUSER_PASSWORD` no está definida. No cambiar nada más del script.
+- **Hecho (2026-09-17):** aborta con `exit 1` si `DJANGO_SUPERUSER_PASSWORD` no está definida.
 
-### 1.5 Cabeceras/cookies seguras (`check --deploy`) — `[ ]`
+### 1.5 Cabeceras/cookies seguras (`check --deploy`) — `[x]`
 
-- **Plan:** `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE`, `SECURE_HSTS_SECONDS` (empezar bajo), `SECURE_SSL_REDIRECT` **solo** cuando `DEBUG=False` y detrás de proxy HTTPS (Railway). En local con `runserver` HTTP no deben activarse. W009 (SECRET_KEY insegura) solo aplica al fallback local; en Railway la variable existe.
+- **Hecho (2026-09-17):** `HTTPS_ONLY` se activa solo cuando Railway inyecta `RAILWAY_ENVIRONMENT_NAME` (o con la variable `HTTPS_ONLY=True`); con él van `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE` y `SECURE_HSTS_SECONDS=3600`. `SECURE_CONTENT_TYPE_NOSNIFF` siempre. `SECURE_SSL_REDIRECT` queda **deliberadamente apagado**: nginx reenvía `X-Forwarded-Proto=http` por la red privada y provocaría bucle; Railway ya fuerza HTTPS en el borde. W009 solo aplica al fallback local.
 
 ### 1.6 Capture service: control asimétrico — `[ ]`
 
@@ -99,10 +99,10 @@ Leyenda de estado: `[ ]` pendiente · `[~]` en curso · `[x]` cerrado · `[-]` d
 
 ## 3. Configuración y despliegue
 
-### 3.1 Tres comandos de arranque divergentes — `[ ]`
+### 3.1 Tres comandos de arranque divergentes — `[x]`
 
 - `Dockerfile` `CMD`, `Procfile`, `railway.json` `startCommand`. Railway usa `railway.json`.
-- **Plan:** eliminar `Procfile`; alinear `CMD` del Dockerfile con `railway.json` (sin `migrate` en arranque, que va en `preDeployCommand`). Para Docker local, `docker-compose.yml` pasa a lanzar `migrate` explícitamente.
+- **Hecho (2026-09-17):** `Procfile` eliminado; `CMD` del Dockerfile = `startCommand` de `railway.json` (collectstatic + gunicorn, sin `migrate`); `docker-compose.yml` lanza `migrate` en el `command` del backend.
 
 ### 3.2 Frontend construye con `npm install` — `[ ]`
 
@@ -114,20 +114,20 @@ Leyenda de estado: `[ ]` pendiente · `[~]` en curso · `[x]` cerrado · `[-]` d
 - **Plan frontend:** mantener los defaults (Railway necesita que el contenedor arranque sin variables) pero **registrar en el log de nginx al arrancar** qué backend está usando, para que un staging mal configurado se detecte. Cambiarlo a vacío rompería un deploy sin variables; descartado.
 - **Plan capture service:** se mantiene (los mini-PC son de producción por definición); documentado en `config.ini.example`.
 
-### 3.4 `.gitattributes` con `merge=ours` en Dockerfiles/nginx/compose — `[ ]`
+### 3.4 `.gitattributes` con `merge=ours` en Dockerfiles/nginx/compose — `[x]`
 
 - **Efecto:** un cambio en `develop` en esos ficheros no llega a `deploy` al mergear.
-- **Plan:** eliminar las reglas. Hoy los ficheros coinciden entre ramas.
+- **Hecho (2026-09-17):** `.gitattributes` vacío. Los ficheros coincidían entre `develop` y `deploy` al retirarlas.
 
 ### 3.5 Sin `healthcheckPath` en Railway — `[ ]`
 
 - **Plan:** endpoint `GET /api/health/` (AllowAny, comprueba BD) y `location = /health` en nginx; `healthcheckPath` en `railway.json` del backend y del frontend. **Requisito:** el backend debe aceptar `Host: healthcheck.railway.app` → comprobar `ALLOWED_HOSTS` en Railway antes de activarlo.
 
-### 3.6 Menores — `[ ]`
+### 3.6 Menores — `[x]`
 
-- `api_proyeccion_moden/requirements.txt` en UTF-16 → UTF-8.
-- `.pg_pass` y `.pg_service.conf` versionados → sacar de git, añadir a `.gitignore`.
-- `.gitignore` lista `docker-compose.yml` aunque está trackeado → quitar la regla.
+- `api_proyeccion_moden/requirements.txt` en UTF-16 → UTF-8. **Hecho.**
+- `.pg_pass` y `.pg_service.conf` versionados → fuera de git (siguen en disco, ignorados). **Hecho.**
+- `.gitignore` listaba `docker-compose.yml` aunque está trackeado → regla retirada. **Hecho.**
 
 ---
 
