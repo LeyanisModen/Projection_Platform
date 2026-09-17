@@ -38,6 +38,11 @@ PROJECT_FILE_FIELDS = {
 }
 # Folders laid out as <folder>/<proyecto_id>/<modulo_id>/<file>.
 PROJECT_SCOPED_FOLDERS = ('imagenes', 'fotos')
+# 'controles/<proyecto_id>/<check_id>/<file>' (documentos de la lista de
+# control) is deliberately NOT project-scoped: the checklist is staff-only,
+# so its attachments are too (non-staff falls through to False below).
+# A paired mini-PC only ever needs the projection images and its own photos.
+DEVICE_FOLDERS = ('imagenes', 'fotos')
 
 
 def cookie_kwargs():
@@ -109,7 +114,10 @@ def protected_media(request, path):
         user, mesa = resolve_principal(request)
         if user is None and mesa is None:
             return JsonResponse({'detail': 'Authentication required'}, status=401)
-        allowed = mesa is not None or (user is not None and user_may_read(user, rel_path))
+        allowed = (
+            (mesa is not None and rel_path.split('/')[0] in DEVICE_FOLDERS)
+            or (user is not None and user_may_read(user, rel_path))
+        )
         if not allowed:
             return JsonResponse({'detail': 'Forbidden'}, status=403)
 

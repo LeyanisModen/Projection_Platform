@@ -4,14 +4,18 @@ from unittest.mock import patch
 
 from django.apps import apps
 from django.contrib.auth.models import User
-from django.test import SimpleTestCase
+from django.core.files.storage import default_storage
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import SimpleTestCase, override_settings
 from django.utils import timezone
+from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
 from .models import (
     EventoCalendario, Mesa, MesaQueueItem, Modulo, Proyecto,
-    ProyectoCheckDefinicion, TrabajadorOficina, UserProfile,
+    ProyectoCheckAdjunto, ProyectoCheckDefinicion, TrabajadorOficina, UserProfile,
 )
+from .office import CHECK_ATTACHMENT_MAX_BYTES
 from .planning import DAY_CODES, demand_summary, production_day_count, project_demand
 
 
@@ -34,6 +38,11 @@ class ProductionDayTests(SimpleTestCase):
             self.assertEqual(production_day_count(start, start + timedelta(days=span), active), expected)
 
 
+import tempfile
+_MEDIA_TMP = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+
+
+@override_settings(MEDIA_ROOT=_MEDIA_TMP.name, MEDIA_REQUIRE_AUTH=True)
 class OfficePlanningTests(APITestCase):
     def setUp(self):
         self.admin = User.objects.create_user('office-admin', is_staff=True)
@@ -143,6 +152,96 @@ class OfficePlanningTests(APITestCase):
 
         self.assertEqual(self.client.post('/api/check-definiciones/reorder/', {'ids': [a.pk, b.pk]}, format='json').status_code, 400)
         self.assertEqual(self.client.post('/api/check-definiciones/reorder/', {'ids': [a.pk, a.pk, b.pk]}, format='json').status_code, 400)
+
+    # ------------------------------------------------------------------
+    # Fechas limite y documentos de confirmacion por paso
+    # ------------------------------------------------------------------
+    def test_master_flags_are_copied_when_seeding(self):
+        ProyectoCheckDefinicion.objects.create(titulo='Aprobacion equivalencias', requiere_fecha=True, requiere_documento=True)
+        ProyectoCheckDefinicion.objects.create(titulo='Planos entregados')
+        rows = self.client.post(f'/api/proyecto-checklist/{self.project.pk}/sembrar/').data['checks']
+        by_title = {r['titulo']: r for r in rows}
+        self.assertTrue(by_title['Aprobacion equivalencias']['requiere_fecha'])
+        self.assertTrue(by_title['Aprobacion equivalencias']['requiere_documento'])
+        self.assertFalse(by_title['Planos entregados']['requiere_fecha'])
+        self.assertIsNone(by_title['Aprobacion equivalencias']['fecha_limite'])
+        self.assertEqual(by_title['Aprobacion equivalencias']['adjuntos'], [])
+
+    def test_manual_step_can_declare_date_and_document_and_set_deadline(self):
+        response = self.client.post(
+            f'/api/proyecto-checklist/{self.project.pk}/checks/',
+            {'titulo': 'Grua contratada', 'requiere_fecha': True, 'fecha_limite': '2026-10-05'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201)
+        row = response.data[0]
+        self.assertTrue(row['requiere_fecha'])
+        self.assertFalse(row['requiere_documento'])
+        self.assertEqual(row['fecha_limite'], '2026-10-05')
+
+    def test_deadline_is_dropped_when_step_does_not_require_a_date(self):
+        row = self.client.post(f'/api/proyecto-checklist/{self.project.pk}/checks/', {'titulo': 'Sin fecha', 'fecha_limite': '2026-10-05'}, format='json').data[0]
+        self.assertIsNone(row['fecha_limite'], 'sin requiere_fecha no se guarda fecha')
+
+        url = f'/api/proyecto-checklist/{self.project.pk}/checks/{row["id"]}/'
+        with_date = self.client.patch(url, {'requiere_fecha': True, 'fecha_limite': '2026-10-05'}, format='json').data[0]
+        self.assertEqual(with_date['fecha_limite'], '2026-10-05')
+        cleared = self.client.patch(url, {'requiere_fecha': False}, format='json').data[0]
+        self.assertIsNone(cleared['fecha_limite'], 'quitar la fecha requerida limpia la fecha limite')
+
+    def test_deadlines_feed_the_calendar_within_a_range(self):
+        for titulo, fecha in [('Antes', '2026-09-30'), ('Dentro', '2026-10-10'), ('Despues', '2026-11-02')]:
+            self.client.post(f'/api/proyecto-checklist/{self.project.pk}/checks/', {'titulo': titulo, 'requiere_fecha': True, 'fecha_limite': fecha}, format='json')
+        self.client.post(f'/api/proyecto-checklist/{self.project2.pk}/checks/', {'titulo': 'Otro proyecto', 'requiere_fecha': True, 'fecha_limite': '2026-10-20'}, format='json')
+        self.client.post(f'/api/proyecto-checklist/{self.project.pk}/checks/', {'titulo': 'Sin fecha', 'requiere_fecha': True}, format='json')
+
+        response = self.client.get('/api/proyecto-checklist/vencimientos/?desde=2026-10-01&hasta=2026-10-31')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([(r['titulo'], r['fecha_limite'], r['proyecto_nombre']) for r in response.data],
+                         [('Dentro', '2026-10-10', 'P1'), ('Otro proyecto', '2026-10-20', 'P2')])
+        self.assertFalse(response.data[0]['completado'])
+        self.assertEqual(self.client.get('/api/proyecto-checklist/vencimientos/?desde=mal').status_code, 400)
+        self.assertEqual(len(self.client.get('/api/proyecto-checklist/vencimientos/').data), 4, 'sin rango devuelve todas las fechas')
+
+    def test_attachments_upload_list_download_and_delete(self):
+        row = self.client.post(f'/api/proyecto-checklist/{self.project.pk}/checks/', {'titulo': 'Aprobacion', 'requiere_documento': True}, format='json').data[0]
+        url = f'/api/proyecto-checklist/{self.project.pk}/checks/{row["id"]}/adjuntos/'
+
+        upload = self.client.post(url, {'archivo': SimpleUploadedFile('aprobacion planos.pdf', b'%PDF-1.4 ok', content_type='application/pdf')}, format='multipart')
+        self.assertEqual(upload.status_code, 201)
+        adjunto = upload.data[0]['adjuntos'][0]
+        self.assertEqual(adjunto['nombre_original'], 'aprobacion planos.pdf')
+        self.assertEqual(adjunto['tamano'], 11)
+        self.assertEqual(adjunto['subido_por'], self.admin.username)
+        self.assertTrue(adjunto['url'].startswith(f'/media/controles/{self.project.pk}/{row["id"]}/'), adjunto['url'])
+
+        # /media/ autentica por cabecera Token o cookie, no por force_authenticate.
+        served = self.client.get(adjunto['url'], HTTP_AUTHORIZATION=f'Token {Token.objects.get_or_create(user=self.admin)[0].key}')
+        self.assertEqual(served.status_code, 200)
+        served.close()
+
+        self.assertEqual(self.client.post(url, {}, format='multipart').status_code, 400)
+
+        deleted = self.client.delete(f'{url}{adjunto["id"]}/')
+        self.assertEqual(deleted.status_code, 200)
+        self.assertEqual(deleted.data[0]['adjuntos'], [])
+        self.assertFalse(default_storage.exists(f'controles/{self.project.pk}/{row["id"]}/aprobacion planos.pdf'))
+
+    def test_deleting_a_step_removes_its_attachment_files(self):
+        row = self.client.post(f'/api/proyecto-checklist/{self.project.pk}/checks/', {'titulo': 'Con doc', 'requiere_documento': True}, format='json').data[0]
+        self.client.post(f'/api/proyecto-checklist/{self.project.pk}/checks/{row["id"]}/adjuntos/', {'archivo': SimpleUploadedFile('ok.txt', b'x')}, format='multipart')
+        stored = ProyectoCheckAdjunto.objects.get().archivo.name
+        self.assertTrue(default_storage.exists(stored))
+        self.client.delete(f'/api/proyecto-checklist/{self.project.pk}/checks/{row["id"]}/')
+        self.assertFalse(default_storage.exists(stored))
+        self.assertEqual(ProyectoCheckAdjunto.objects.count(), 0)
+
+    def test_attachment_size_limit(self):
+        row = self.client.post(f'/api/proyecto-checklist/{self.project.pk}/checks/', {'titulo': 'Grande'}, format='json').data[0]
+        too_big = SimpleUploadedFile('grande.bin', b'0' * (CHECK_ATTACHMENT_MAX_BYTES + 1))
+        response = self.client.post(f'/api/proyecto-checklist/{self.project.pk}/checks/{row["id"]}/adjuntos/', {'archivo': too_big}, format='multipart')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('20 MB', str(response.data))
 
     def test_office_data_is_admin_only(self):
         self.client.force_authenticate(self.factory)

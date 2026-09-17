@@ -31,6 +31,10 @@ import { ApiService, CheckDefinition } from '../../services/api.service';
                 <input id="new-step" name="newStep" maxlength="200" [ngModel]="newTitle()" (ngModelChange)="newTitle.set($event)"
                     placeholder="Ej.: Aprobación de planos de equivalencia" [disabled]="busy()" />
                 <button type="submit" class="primary" [disabled]="busy() || !newTitle().trim()">Añadir paso</button>
+                <div class="flags" role="group" aria-label="Qué necesita el paso">
+                    <label class="flag"><input type="checkbox" name="newDate" [ngModel]="newRequiereFecha()" (ngModelChange)="newRequiereFecha.set($event)" [disabled]="busy()" /> Con fecha límite</label>
+                    <label class="flag"><input type="checkbox" name="newDoc" [ngModel]="newRequiereDocumento()" (ngModelChange)="newRequiereDocumento.set($event)" [disabled]="busy()" /> Con documento de confirmación</label>
+                </div>
             </form>
 
             @if (loading()) { <p>Cargando lista...</p> }
@@ -43,15 +47,24 @@ import { ApiService, CheckDefinition } from '../../services/api.service';
                     <li class="step" [class.editing]="editingId() === step.id">
                         <span class="position">{{ i + 1 }}</span>
                         @if (editingId() === step.id) {
-                            <input class="title-input" [attr.aria-label]="'Título del paso ' + (i + 1)" maxlength="200"
-                                [ngModel]="editTitle()" (ngModelChange)="editTitle.set($event)"
-                                (keydown.enter)="saveEdit(step)" (keydown.escape)="cancelEdit()" [disabled]="busy()" />
+                            <div class="edit-block">
+                                <input class="title-input" [attr.aria-label]="'Título del paso ' + (i + 1)" maxlength="200"
+                                    [ngModel]="editTitle()" (ngModelChange)="editTitle.set($event)"
+                                    (keydown.enter)="saveEdit(step)" (keydown.escape)="cancelEdit()" [disabled]="busy()" />
+                                <div class="flags">
+                                    <label class="flag"><input type="checkbox" [ngModel]="editRequiereFecha()" (ngModelChange)="editRequiereFecha.set($event)" [disabled]="busy()" /> Con fecha límite</label>
+                                    <label class="flag"><input type="checkbox" [ngModel]="editRequiereDocumento()" (ngModelChange)="editRequiereDocumento.set($event)" [disabled]="busy()" /> Con documento de confirmación</label>
+                                </div>
+                            </div>
                             <div class="row-actions">
                                 <button type="button" [disabled]="busy() || !editTitle().trim()" (click)="saveEdit(step)">Guardar</button>
                                 <button type="button" [disabled]="busy()" (click)="cancelEdit()">Cancelar</button>
                             </div>
                         } @else {
-                            <span class="title">{{ step.titulo }}</span>
+                            <span class="title">{{ step.titulo }}
+                                @if (step.requiere_fecha) { <span class="badge" title="Este paso lleva fecha límite">fecha</span> }
+                                @if (step.requiere_documento) { <span class="badge" title="Este paso lleva documento de confirmación">documento</span> }
+                            </span>
                             <div class="row-actions">
                                 <button type="button" [disabled]="busy() || first" (click)="move(i, -1)" aria-label="Subir">&uarr;</button>
                                 <button type="button" [disabled]="busy() || last" (click)="move(i, 1)" aria-label="Bajar">&darr;</button>
@@ -76,7 +89,11 @@ import { ApiService, CheckDefinition } from '../../services/api.service';
         button:focus-visible,input:focus-visible{outline:2px solid var(--orange);outline-offset:2px}
         .primary{background:var(--orange);color:#fff;border-color:var(--orange)}
         .danger{color:#b3341a;border-color:#f1c9bf}
-        .add-row{display:flex;gap:8px;flex-wrap:wrap}.add-row input{flex:1 1 320px}
+        .add-row{display:flex;gap:8px;flex-wrap:wrap}.add-row input:not([type=checkbox]){flex:1 1 320px}
+        .flags{flex-basis:100%;display:flex;gap:16px;flex-wrap:wrap;margin-top:2px}.flag{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);cursor:pointer}
+        .flag input{width:15px;height:15px;padding:0;accent-color:var(--orange)}
+        .edit-block{flex:1 1 auto;min-width:0;display:grid;gap:6px}
+        .badge{display:inline-block;margin-left:6px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:#98440d;background:#fff0e3;border-radius:10px;padding:1px 7px;vertical-align:middle}
         .steps{list-style:none;margin:16px 0 0;padding:0}
         .step{display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid #edf0f4}
         .position{flex:0 0 28px;height:28px;display:grid;place-items:center;border-radius:50%;background:#fff0e3;color:#98440d;font-weight:700;font-size:12px}
@@ -94,8 +111,12 @@ export class ListaControlComponent {
     readonly busy = signal(false);
     readonly error = signal('');
     readonly newTitle = signal('');
+    readonly newRequiereFecha = signal(false);
+    readonly newRequiereDocumento = signal(false);
     readonly editingId = signal<number | null>(null);
     readonly editTitle = signal('');
+    readonly editRequiereFecha = signal(false);
+    readonly editRequiereDocumento = signal(false);
 
     constructor() {
         this.load();
@@ -121,15 +142,19 @@ export class ListaControlComponent {
     add(): void {
         const titulo = this.newTitle().trim();
         if (!titulo) return;
-        this.run(this.api.saveCheckDefinition({ titulo }), row => {
+        this.run(this.api.saveCheckDefinition({
+            titulo, requiere_fecha: this.newRequiereFecha(), requiere_documento: this.newRequiereDocumento(),
+        }), row => {
             this.steps.update(rows => [...rows, row]);
-            this.newTitle.set('');
+            this.newTitle.set(''); this.newRequiereFecha.set(false); this.newRequiereDocumento.set(false);
         }, 'No se pudo añadir el paso.');
     }
 
     startEdit(step: CheckDefinition): void {
         this.editingId.set(step.id);
         this.editTitle.set(step.titulo);
+        this.editRequiereFecha.set(step.requiere_fecha);
+        this.editRequiereDocumento.set(step.requiere_documento);
     }
 
     cancelEdit(): void {
@@ -140,8 +165,14 @@ export class ListaControlComponent {
     saveEdit(step: CheckDefinition): void {
         const titulo = this.editTitle().trim();
         if (!titulo) return;
-        if (titulo === step.titulo) { this.cancelEdit(); return; }
-        this.run(this.api.saveCheckDefinition({ id: step.id, titulo }), row => {
+        const unchanged = titulo === step.titulo
+            && this.editRequiereFecha() === step.requiere_fecha
+            && this.editRequiereDocumento() === step.requiere_documento;
+        if (unchanged) { this.cancelEdit(); return; }
+        this.run(this.api.saveCheckDefinition({
+            id: step.id, titulo,
+            requiere_fecha: this.editRequiereFecha(), requiere_documento: this.editRequiereDocumento(),
+        }), row => {
             this.steps.update(rows => rows.map(r => r.id === row.id ? row : r));
             this.cancelEdit();
         }, 'No se pudo guardar el paso.');

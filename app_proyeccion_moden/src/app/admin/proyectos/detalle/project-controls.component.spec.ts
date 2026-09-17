@@ -4,11 +4,13 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ProjectCheck, Proyecto } from '../../../services/api.service';
 import { ProjectControlsComponent } from './project-controls.component';
 
-const check = (id: number, titulo: string, completado = false, origen: ProjectCheck['origen'] = 'PLANTILLA'): ProjectCheck => ({
+const check = (id: number, titulo: string, completado = false, origen: ProjectCheck['origen'] = 'PLANTILLA', extra: Partial<ProjectCheck> = {}): ProjectCheck => ({
     id, titulo, orden: id, origen, completado,
+    requiere_fecha: false, requiere_documento: false, fecha_limite: null, adjuntos: [],
     completado_at: completado ? '2026-09-17T10:00:00Z' : null,
     completado_por: completado ? 'moden' : null,
     creado_at: '2026-09-01T00:00:00Z',
+    ...extra,
 });
 
 describe('ProjectControlsComponent factory schedule', () => {
@@ -124,10 +126,68 @@ describe('ProjectControlsComponent lista de control', () => {
         fixture.componentInstance.addCheck();
         const request = http.expectOne('/api/proyecto-checklist/7/checks/');
         expect(request.request.method).toBe('POST');
-        expect(request.request.body).toEqual({ titulo: 'Grúa contratada' });
+        expect(request.request.body).toEqual({ titulo: 'Grúa contratada', requiere_fecha: false, requiere_documento: false });
         request.flush([check(1, 'Planos entregados', true), check(4, 'Grúa contratada', false, 'MANUAL')]);
         expect(fixture.componentInstance.newTitle()).toBe('');
         expect(fixture.componentInstance.checks().length).toBe(2);
+    });
+
+    it('un paso con fecha muestra el selector, marca vencido y guarda la fecha con PATCH', () => {
+        fixture.componentInstance.checks.set([
+            check(9, 'Replanteo verificado', false, 'PLANTILLA', { requiere_fecha: true, fecha_limite: '2000-01-01' }),
+        ]);
+        fixture.componentInstance.openList();
+        fixture.detectChanges();
+        const element: HTMLElement = fixture.nativeElement;
+        const dateInput = element.querySelector('#deadline-9') as HTMLInputElement;
+        expect(dateInput.value).toBe('2000-01-01');
+        expect(element.querySelector('.check-row')?.classList.contains('is-overdue')).toBe(true);
+        expect(element.querySelector('.warn')?.textContent).toContain('Vencido');
+
+        dateInput.value = '2099-12-31';
+        dateInput.dispatchEvent(new Event('change'));
+        const request = http.expectOne('/api/proyecto-checklist/7/checks/9/');
+        expect(request.request.method).toBe('PATCH');
+        expect(request.request.body).toEqual({ fecha_limite: '2099-12-31' });
+        request.flush([check(9, 'Replanteo verificado', false, 'PLANTILLA', { requiere_fecha: true, fecha_limite: '2099-12-31' })]);
+        fixture.detectChanges();
+        expect(element.querySelector('.check-row')?.classList.contains('is-overdue')).toBe(false);
+    });
+
+    it('un paso con documento muestra adjuntar, lista los adjuntos y avisa si se completó sin ellos', () => {
+        fixture.componentInstance.checks.set([
+            check(5, 'Aprobación equivalencias', true, 'PLANTILLA', { requiere_documento: true }),
+            check(6, 'Planos', false, 'PLANTILLA', { requiere_documento: true, adjuntos: [
+                { id: 1, nombre_original: 'aprobacion.pdf', tamano: 2048, url: '/media/controles/7/6/aprobacion.pdf', subido_at: '2026-09-17T10:00:00Z', subido_por: 'moden' },
+            ] }),
+        ]);
+        fixture.componentInstance.openList();
+        fixture.detectChanges();
+        const element: HTMLElement = fixture.nativeElement;
+        expect(element.querySelectorAll('.attach').length).toBe(2);
+        expect(element.querySelector('.check-row .warn')?.textContent).toContain('Completado sin documento');
+        const link = element.querySelector('.doc a') as HTMLAnchorElement;
+        expect(link.getAttribute('href')).toBe('/media/controles/7/6/aprobacion.pdf');
+        expect(element.querySelector('.doc small')?.textContent).toContain('2 KB');
+    });
+
+    it('subir un documento envía multipart y sustituye la lista', () => {
+        fixture.componentInstance.checks.set([check(6, 'Planos', false, 'PLANTILLA', { requiere_documento: true })]);
+        fixture.componentInstance.openList();
+        fixture.detectChanges();
+        const file = new File(['%PDF'], 'ok.pdf', { type: 'application/pdf' });
+        const input = fixture.nativeElement.querySelector('.attach input[type=file]') as HTMLInputElement;
+        Object.defineProperty(input, 'files', { value: [file] });
+        input.dispatchEvent(new Event('change'));
+        const request = http.expectOne('/api/proyecto-checklist/7/checks/6/adjuntos/');
+        expect(request.request.method).toBe('POST');
+        expect(request.request.body instanceof FormData).toBe(true);
+        expect((request.request.body as FormData).get('archivo')).toBeInstanceOf(File);
+        request.flush([check(6, 'Planos', false, 'PLANTILLA', { requiere_documento: true, adjuntos: [
+            { id: 2, nombre_original: 'ok.pdf', tamano: 4, url: '/media/controles/7/6/ok.pdf', subido_at: '2026-09-17T10:00:00Z', subido_por: 'moden' },
+        ] })]);
+        expect(fixture.componentInstance.uploadingFor()).toBeNull();
+        expect(fixture.componentInstance.checks()[0].adjuntos.length).toBe(1);
     });
 
     it('trae los pasos que faltan de la lista maestra e informa de cuántos', () => {

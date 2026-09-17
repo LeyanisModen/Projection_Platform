@@ -161,8 +161,9 @@ Routers/API principales:
 - `/api/mesas/colas/` (colas de todas las mesas visibles en una respuesta).
 - `/api/health/`.
 - Oficina (solo staff): `check-definiciones` (lista maestra, con `reorder/`),
-  `proyecto-checklist/<id>/` (+ `checks/`, `checks/<id>/`, `sembrar/`),
-  `trabajadores`, `eventos` (`api/office.py`).
+  `proyecto-checklist/<id>/` (+ `checks/`, `checks/<id>/`,
+  `checks/<id>/adjuntos[/<id>]/`, `sembrar/`), `proyecto-checklist/vencimientos/`
+  (fechas límite para el calendario), `trabajadores`, `eventos` (`api/office.py`).
 
 ### 3.4 Servicio local de los mini-PCs
 
@@ -280,7 +281,7 @@ proyection_platform/
 | `api/planning.py` | Cálculo de demanda/planificación por proyecto |
 | `api/tests.py` | Suite principal de permisos, importación, colas y planner |
 | `api/test_*.py` | Detector de colores, oficina, objetivos, salud, media, colas en bloque |
-| `api/migrations/` | Migraciones `0001` a `0057_project_checklist_per_project` |
+| `api/migrations/` | Migraciones `0001` a `0058_checklist_dates_and_attachments` |
 | `api/management/commands/` | Reconciliar, sincronizar, resetear y simular |
 | `proyeccion_moden/settings.py` | DB, auth, CORS, media y límites de subida |
 | `proyeccion_moden/urls.py` | Router REST y endpoints agregados |
@@ -350,7 +351,9 @@ añadir una regresión para el caso nuevo.
 - Lista de control por proyecto: se siembra desde la lista maestra (pantalla
   «Lista de control» del admin) al crear el proyecto; barra de progreso y
   modal en el detalle; pasos propios por proyecto; quién y cuándo completó
-  cada paso. Solo Moden. Ver `docs/office-planning.md`.
+  cada paso. Cada paso declara si lleva fecha límite (visible en el
+  calendario) y/o documento de confirmación (adjuntos en
+  `media/controles/`, solo Moden). Ver `docs/office-planning.md`.
 - Eliminación de módulos con confirmación y limpieza de media.
 - Empaquetado de nuevos módulos en bastidores, no uno por bastidor.
 - Proyectos sin entidad `Planta`; cada planta es un proyecto independiente.

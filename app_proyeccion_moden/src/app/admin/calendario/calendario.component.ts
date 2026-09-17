@@ -5,7 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { A11yModule } from '@angular/cdk/a11y';
 import { forkJoin, Subscription } from 'rxjs';
-import { ApiService, CalendarEvent, OfficeWorker, Proyecto } from '../../services/api.service';
+import { ApiService, CalendarEvent, CheckDeadline, OfficeWorker, Proyecto } from '../../services/api.service';
 import { CalendarItem, CalendarSegment, CalendarView, calendarMonths, calendarRange, calendarWeeks, localDate, monthDays, nextWorkerColor, workerColor, WORKER_COLORS } from './calendar-layout';
 
 @Component({
@@ -28,6 +28,7 @@ export class CalendarioComponent {
     ];
     readonly selected = signal(localDate(new Date()));
     readonly today = localDate(new Date());
+    readonly deadlines = signal<CheckDeadline[]>([]);
     readonly events = signal<CalendarEvent[]>([]);
     readonly projects = signal<Proyecto[]>([]);
     readonly workers = signal<OfficeWorker[]>([]);
@@ -101,6 +102,12 @@ export class CalendarioComponent {
                         colors: ['#b45309'], people: '', mounting: true});
                 }
             }
+            for (const deadline of this.filteredDeadlines()) {
+                items.push({key: `control-${deadline.id}`, title: `${deadline.completado ? '✓ ' : ''}Control · ${deadline.proyecto_nombre} · ${deadline.titulo}`,
+                    start: deadline.fecha_limite, end: deadline.fecha_limite,
+                    colors: [deadline.completado ? '#2f9e5b' : '#0f766e'], people: '', mounting: false,
+                    control: true, done: deadline.completado});
+            }
         }
         return items;
     });
@@ -119,12 +126,17 @@ export class CalendarioComponent {
                     return {
                         ...day, vacationWorkers,
                         vacationLabel: vacationWorkers.length ? `Vacaciones de ${this.namesOf(vacationWorkers)}` : 'Sin vacaciones',
-                        eventCount: dayEvents.length - vacations.length + this.mountsOn(day.key).length,
+                        eventCount: dayEvents.length - vacations.length + this.mountsOn(day.key).length + this.deadlinesOn(day.key).length,
                     };
                 })})),
         }));
     });
+    readonly filteredDeadlines = computed(() => this.deadlines().filter(d =>
+        this.projectFilter() === null || d.proyecto === this.projectFilter(),
+    ));
     readonly selectedEvents = computed(() => this.eventsOn(this.selected()));
+    readonly selectedDeadlines = computed(() => this.holidayView() || this.workerFilter() !== null
+        ? [] : this.filteredDeadlines().filter(d => d.fecha_limite === this.selected()));
     readonly mountingProjects = computed(() => this.projects().filter(p =>
         !this.holidayView() && p.fecha_montaje === this.selected() && (this.projectFilter() === null || p.id === this.projectFilter()) && this.workerFilter() === null,
     ));
@@ -141,9 +153,11 @@ export class CalendarioComponent {
         this.events.set([]);
         const range = this.range();
         if (this.selected() < range.start || this.selected() > range.end) this.selected.set(localDate(this.month()));
-        this.loadSubscription = forkJoin({events:this.api.getEvents(range.start, range.end), projects:this.api.getProyectos(), workers:this.api.getWorkers()})
-            .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-            next: data => { this.events.set(data.events); this.projects.set(data.projects); this.workers.set(data.workers); this.loading.set(false); },
+        this.loadSubscription = forkJoin({
+            events: this.api.getEvents(range.start, range.end), projects: this.api.getProyectos(), workers: this.api.getWorkers(),
+            deadlines: this.api.getCheckDeadlines(range.start, range.end),
+        }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+            next: data => { this.events.set(data.events); this.projects.set(data.projects); this.workers.set(data.workers); this.deadlines.set(data.deadlines); this.loading.set(false); },
             error: () => { this.error.set('No se pudo cargar el calendario. Pulsa actualizar para reintentar.'); this.loading.set(false); },
         });
     }
@@ -170,6 +184,9 @@ export class CalendarioComponent {
         this.selected.set(this.today); this.load();
     }
     eventsOn(day: string): CalendarEvent[] { return this.filteredEvents().filter(e => e.inicio <= day && e.fin >= day); }
+    deadlinesOn(day: string): CheckDeadline[] {
+        return this.holidayView() || this.workerFilter() !== null ? [] : this.filteredDeadlines().filter(d => d.fecha_limite === day);
+    }
     mountsOn(day: string): Proyecto[] {
         return this.holidayView() ? [] : this.projects().filter(p => p.fecha_montaje === day && (this.projectFilter() === null || this.projectFilter()===p.id) && this.workerFilter()===null);
     }

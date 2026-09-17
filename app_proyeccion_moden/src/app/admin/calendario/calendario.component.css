@@ -67,6 +67,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .availability .absent { background: #fff2e8; }
 .availability .absent span { color: #a14b10; }
 .mounting { background: #fff0e3; color: #944009; }
+.control { background: #e6f3f3; color: #0f5a5c; }
+.control.done { background: #edf7f0; color: #256b42; }
+.control.done .event-label { text-decoration: line-through; opacity: .8; }
 .agenda-event { display: grid; gap: 8px; margin: 12px 0; padding: 12px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; overflow-wrap: anywhere; }
 .agenda-event span { font-size: 11px; }
 .agenda-event a { color: inherit; }

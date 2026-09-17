@@ -7,10 +7,14 @@ from django.utils import timezone
 from rest_framework import serializers, viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
-from .models import (Proyecto, ProyectoCheck, ProyectoCheckDefinicion,
-                     TrabajadorOficina, EventoCalendario)
+from .models import (Proyecto, ProyectoCheck, ProyectoCheckAdjunto,
+                     ProyectoCheckDefinicion, TrabajadorOficina, EventoCalendario)
+
+# Documento de confirmacion por paso: correos exportados, PDF, capturas...
+CHECK_ATTACHMENT_MAX_BYTES = 20 * 1024 * 1024
 
 
 # ---------------------------------------------------------------------------
@@ -19,7 +23,7 @@ from .models import (Proyecto, ProyectoCheck, ProyectoCheckDefinicion,
 class CheckDefinitionSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProyectoCheckDefinicion
-        fields = ['id', 'titulo', 'orden']
+        fields = ['id', 'titulo', 'orden', 'requiere_fecha', 'requiere_documento']
         extra_kwargs = {'orden': {'required': False}}
 
     def validate_titulo(self, value):
@@ -69,9 +73,9 @@ def _clave_titulo(titulo):
 def sembrar_checklist(proyecto):
     """Copia al proyecto los pasos de la plantilla que aun no tiene (por titulo).
 
-    Se llama al crear el proyecto y desde el boton «Anadir pasos de la
-    plantilla». Los pasos nuevos se anaden al final para no reordenar los que
-    ya existen. Devuelve cuantos se han creado.
+    Se llama al crear el proyecto y desde el boton «Traer los pasos de la
+    lista maestra». Los pasos nuevos se anaden al final para no reordenar los
+    que ya existen. Devuelve cuantos se han creado.
     """
     existentes = {_clave_titulo(t) for t in proyecto.checks.values_list('titulo', flat=True)}
     siguiente = (proyecto.checks.aggregate(m=Max('orden'))['m'] or 0) + 1
@@ -83,6 +87,8 @@ def sembrar_checklist(proyecto):
         nuevos.append(ProyectoCheck(
             proyecto=proyecto, titulo=definicion.titulo, orden=siguiente,
             origen=ProyectoCheck.Origen.PLANTILLA,
+            requiere_fecha=definicion.requiere_fecha,
+            requiere_documento=definicion.requiere_documento,
         ))
         siguiente += 1
     if nuevos:
@@ -90,12 +96,33 @@ def sembrar_checklist(proyecto):
     return len(nuevos)
 
 
+class ProjectCheckAttachmentSerializer(serializers.ModelSerializer):
+    url = serializers.SerializerMethodField()
+    subido_por = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ProyectoCheckAdjunto
+        fields = ['id', 'nombre_original', 'tamano', 'url', 'subido_at', 'subido_por']
+
+    def get_url(self, obj):
+        # Ruta relativa: pasa por el nginx del frontend con la cookie de /media/.
+        return obj.archivo.url if obj.archivo else None
+
+    def get_subido_por(self, obj):
+        return obj.subido_por.get_username() if obj.subido_por else None
+
+
 class ProjectCheckSerializer(serializers.ModelSerializer):
     completado_por = serializers.SerializerMethodField()
+    adjuntos = ProjectCheckAttachmentSerializer(many=True, read_only=True)
 
     class Meta:
         model = ProyectoCheck
-        fields = ['id', 'titulo', 'orden', 'origen', 'completado', 'completado_at', 'completado_por', 'creado_at']
+        fields = [
+            'id', 'titulo', 'orden', 'origen',
+            'requiere_fecha', 'requiere_documento', 'fecha_limite',
+            'completado', 'completado_at', 'completado_por', 'creado_at', 'adjuntos',
+        ]
         read_only_fields = ['orden', 'origen', 'completado_at', 'completado_por', 'creado_at']
 
     def get_completado_por(self, obj):
@@ -107,28 +134,75 @@ class ProjectCheckSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('Indica un titulo para el paso.')
         return value
 
+    def validate(self, attrs):
+        # Sin fecha requerida no hay fecha limite: se limpia para que no quede
+        # una fecha fantasma en el calendario.
+        requiere = attrs.get('requiere_fecha', getattr(self.instance, 'requiere_fecha', False))
+        if not requiere:
+            attrs['fecha_limite'] = None
+        return attrs
+
 
 class ProjectChecklistViewSet(viewsets.GenericViewSet):
-    """GET lista, POST checks/ (manual), PATCH/DELETE checks/<id>/, POST sembrar/.
+    """GET lista, POST checks/ (manual), PATCH/DELETE checks/<id>/, POST sembrar/,
+    POST/DELETE checks/<id>/adjuntos[/<id>]/, GET vencimientos/.
 
     Todas las mutaciones devuelven la lista completa para que el front la
     sustituya sin recomponer estado.
     """
     queryset = Proyecto.objects.all()
     permission_classes = [permissions.IsAdminUser]
+    parser_classes = [JSONParser, FormParser, MultiPartParser]
 
     def _rows(self, project):
         return ProjectCheckSerializer(
-            project.checks.select_related('completado_por'), many=True,
+            project.checks.select_related('completado_por').prefetch_related('adjuntos__subido_por'),
+            many=True,
         ).data
+
+    def _check_or_400(self, project, check_id):
+        check = project.checks.filter(pk=check_id).first()
+        if check is None:
+            raise ValidationError('Este paso ya no existe en el proyecto.')
+        return check
 
     def retrieve(self, request, pk=None):
         return Response(self._rows(self.get_object()))
 
+    @action(detail=False, methods=['get'])
+    def vencimientos(self, request):
+        """Pasos con fecha limite dentro de [desde, hasta], para el calendario."""
+        bounds = {}
+        for param, lookup in [('desde', 'fecha_limite__gte'), ('hasta', 'fecha_limite__lte')]:
+            raw = request.query_params.get(param)
+            if raw:
+                try:
+                    bounds[lookup] = date.fromisoformat(raw)
+                except ValueError:
+                    raise ValidationError({param: 'Usa una fecha AAAA-MM-DD.'})
+        rows = (
+            ProyectoCheck.objects.filter(fecha_limite__isnull=False, **bounds)
+            .select_related('proyecto')
+            .order_by('fecha_limite', 'proyecto_id', 'orden')
+        )
+        return Response([{
+            'id': row.id,
+            'proyecto': row.proyecto_id,
+            'proyecto_nombre': row.proyecto.nombre,
+            'titulo': row.titulo,
+            'fecha_limite': row.fecha_limite.isoformat(),
+            'completado': row.completado,
+        } for row in rows])
+
     @action(detail=True, methods=['post'], url_path='checks')
     def add_check(self, request, pk=None):
         project = self.get_object()
-        data = ProjectCheckSerializer(data={'titulo': request.data.get('titulo', '')})
+        data = ProjectCheckSerializer(data={
+            'titulo': request.data.get('titulo', ''),
+            'requiere_fecha': request.data.get('requiere_fecha', False),
+            'requiere_documento': request.data.get('requiere_documento', False),
+            'fecha_limite': request.data.get('fecha_limite') or None,
+        })
         data.is_valid(raise_exception=True)
         if _clave_titulo(data.validated_data['titulo']) in {
             _clave_titulo(t) for t in project.checks.values_list('titulo', flat=True)
@@ -136,8 +210,8 @@ class ProjectChecklistViewSet(viewsets.GenericViewSet):
             raise ValidationError({'titulo': 'Este proyecto ya tiene un paso con ese titulo.'})
         siguiente = (project.checks.aggregate(m=Max('orden'))['m'] or 0) + 1
         ProyectoCheck.objects.create(
-            proyecto=project, titulo=data.validated_data['titulo'], orden=siguiente,
-            origen=ProyectoCheck.Origen.MANUAL,
+            proyecto=project, orden=siguiente, origen=ProyectoCheck.Origen.MANUAL,
+            **data.validated_data,
         )
         return Response(self._rows(project), status=status.HTTP_201_CREATED)
 
@@ -145,11 +219,11 @@ class ProjectChecklistViewSet(viewsets.GenericViewSet):
     @transaction.atomic
     def check(self, request, pk=None, check_id=None):
         project = self.get_object()
-        check = project.checks.filter(pk=check_id).first()
-        if check is None:
-            raise ValidationError('Este paso ya no existe en el proyecto.')
+        check = self._check_or_400(project, check_id)
 
         if request.method == 'DELETE':
+            for adjunto in check.adjuntos.all():
+                adjunto.archivo.delete(save=False)
             check.delete()
             return Response(self._rows(project))
 
@@ -163,6 +237,32 @@ class ProjectChecklistViewSet(viewsets.GenericViewSet):
                 check.completado_at = None
                 check.completado_por = None
         data.save()
+        return Response(self._rows(project))
+
+    @action(detail=True, methods=['post'], url_path=r'checks/(?P<check_id>\d+)/adjuntos')
+    def add_attachment(self, request, pk=None, check_id=None):
+        project = self.get_object()
+        check = self._check_or_400(project, check_id)
+        archivo = request.FILES.get('archivo')
+        if archivo is None:
+            raise ValidationError({'archivo': 'Adjunta un fichero.'})
+        if archivo.size > CHECK_ATTACHMENT_MAX_BYTES:
+            raise ValidationError({'archivo': 'El fichero supera los 20 MB.'})
+        ProyectoCheckAdjunto.objects.create(
+            paso=check, archivo=archivo, nombre_original=archivo.name[:255],
+            tamano=archivo.size, subido_por=request.user,
+        )
+        return Response(self._rows(project), status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['delete'], url_path=r'checks/(?P<check_id>\d+)/adjuntos/(?P<attachment_id>\d+)')
+    def delete_attachment(self, request, pk=None, check_id=None, attachment_id=None):
+        project = self.get_object()
+        check = self._check_or_400(project, check_id)
+        adjunto = check.adjuntos.filter(pk=attachment_id).first()
+        if adjunto is None:
+            raise ValidationError('Este documento ya no existe.')
+        adjunto.archivo.delete(save=False)
+        adjunto.delete()
         return Response(self._rows(project))
 
     @action(detail=True, methods=['post'])

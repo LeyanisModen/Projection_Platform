@@ -224,9 +224,23 @@ producción y en staging. Se rediseñó según lo que la usuaria esperaba:
   quita `activo` de la maestra). Solo staff.
 - Tests: 8 backend en `test_office_planning.py`, 11 frontend.
 
-**Fases pendientes acordadas:** (2) fecha límite por paso visible en el
-calendario; (3) adjuntos de confirmación por paso (correo de aprobación, PDF)
-con la autenticación de `/media/`.
+**Fases 2 y 3 (mismo día), rediseñadas a propuesta de la usuaria:** en vez
+de que todos los pasos tengan fecha y adjuntos, **cada paso declara qué
+necesita** al crearlo (en la maestra o en el proyecto): «Con fecha límite» y/o
+«Con documento de confirmación». Con eso, en la lista del proyecto:
+
+- Paso con fecha: selector de fecha en la fila, aviso «Vencido» o «Sin
+  fecha», y la fecha aparece en el **calendario** como «Control · proyecto ·
+  paso» (verde con ✓ al completarse) y en la agenda del día con enlace al
+  proyecto. Endpoint `proyecto-checklist/vencimientos/?desde&hasta`.
+- Paso con documento: botón «Adjuntar documento de confirmación», lista de
+  adjuntos con descarga (vía `/media/` con la cookie de usuario), tamaño,
+  quién y cuándo, y borrado. Aviso «Completado sin documento» si se marca sin
+  adjuntar. `media/controles/<proyecto>/<check>/`, 20 MB por fichero,
+  **solo staff** (ni el dueño del proyecto ni un mini-PC emparejado).
+- De paso se cerró un hueco de `media_access`: una mesa emparejada podía
+  leer cualquier carpeta; ahora solo `imagenes/` y `fotos/`.
+- Migración `0058`. Tests: +7 backend (oficina), +2 (media), +5 frontend.
 
 ## Código muerto retirado (17/09/2026)
 

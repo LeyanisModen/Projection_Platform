@@ -139,6 +139,20 @@ class MediaAccessTests(APITestCase):
         for url in (self.image_a, self.foto_b):
             self.assertEqual(self._get(url).status_code, 200, url)
 
+    def test_device_only_reads_images_and_photos(self):
+        # Checklist attachments (and project PDFs) are staff material; a
+        # paired mini-PC must not be able to fetch them even with a token.
+        control = self._write(f'controles/{self.project_b.id}/4/aprobacion.pdf')
+        self.client.cookies[DEVICE_COOKIE] = self.device_token
+        self.assertEqual(self._get(control).status_code, 403)
+        self.assertEqual(self._get(self.plano_a).status_code, 403)
+        self.assertEqual(self._get(self.image_a).status_code, 200)
+
+    def test_checklist_attachments_are_staff_only(self):
+        control = self._write(f'controles/{self.project_a.id}/4/aprobacion.pdf')
+        self.assertEqual(self._get(control, HTTP_AUTHORIZATION=f'Token {self.token_a.key}').status_code, 403, 'ni el dueno del proyecto')
+        self.assertEqual(self._get(control, HTTP_AUTHORIZATION=f'Token {self.token_admin.key}').status_code, 200)
+
     def test_device_bearer_header_reads_media(self):
         response = self._get(self.image_a, HTTP_AUTHORIZATION=f'Bearer {self.device_token}')
         self.assertEqual(response.status_code, 200)

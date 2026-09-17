@@ -20,8 +20,16 @@
   re-copies missing ones by title). Editing or deleting master steps never
   touches seeded projects. Completing a step records who and when; unmarking
   clears both. The project detail shows a progress bar and opens the list in
-  a modal. Staff only. Planned next phases: per-step due dates shown in the
-  calendar, then attachments (approval emails, PDFs) per step.
+  a modal. Staff only.
+- Each step declares what it needs, on the master list and on the project
+  copy (`requiere_fecha`, `requiere_documento`): a due date (`fecha_limite`,
+  shown in the admin calendar as a read-only "Control" item and in the day
+  agenda, green with a check mark once completed) and/or confirmation
+  documents (`ProyectoCheckAdjunto`, stored under
+  `media/controles/<proyecto>/<check>/`, 20 MB each, staff-only through
+  `/media/`; a paired mini-PC can only read `imagenes/` and `fotos/`).
+  Clearing `requiere_fecha` clears the due date. Completing a step that
+  requires a document without one is allowed but flagged in the list.
 - Admin Calendar shows project events, mounting dates and office vacations.
   Office workers are independent of login accounts. Events use inclusive date
   ranges (whole days). Availability means no recorded vacation or assigned event for that day,

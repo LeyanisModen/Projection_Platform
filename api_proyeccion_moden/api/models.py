@@ -370,12 +370,21 @@ class ProyectoCheckDefinicion(models.Model):
     """
     titulo = models.CharField(max_length=200)
     orden = models.PositiveIntegerField(default=0)
+    # Que necesita el paso: una fecha limite (visible en el calendario) y/o un
+    # documento de confirmacion (correo de aprobacion, PDF...). Se copian al
+    # proyecto al sembrar; alli deciden que controles muestra cada fila.
+    requiere_fecha = models.BooleanField(default=False)
+    requiere_documento = models.BooleanField(default=False)
 
     class Meta:
         ordering = ['orden', 'id']
 
     def __str__(self):
         return self.titulo
+
+
+def _check_attachment_path(instance, filename):
+    return f'controles/{instance.paso.proyecto_id}/{instance.paso_id}/{filename}'
 
 
 class ProyectoCheck(models.Model):
@@ -389,6 +398,9 @@ class ProyectoCheck(models.Model):
     titulo = models.CharField(max_length=200)
     orden = models.PositiveIntegerField(default=0)
     origen = models.CharField(max_length=10, choices=Origen.choices, default=Origen.MANUAL)
+    requiere_fecha = models.BooleanField(default=False)
+    requiere_documento = models.BooleanField(default=False)
+    fecha_limite = models.DateField(null=True, blank=True)
     completado = models.BooleanField(default=False)
     # Quien confirmo el paso y cuando. Se vacian al desmarcarlo.
     completado_at = models.DateTimeField(null=True, blank=True)
@@ -399,10 +411,35 @@ class ProyectoCheck(models.Model):
 
     class Meta:
         ordering = ['orden', 'id']
-        indexes = [models.Index(fields=['proyecto', 'completado'])]
+        indexes = [
+            models.Index(fields=['proyecto', 'completado']),
+            models.Index(fields=['fecha_limite']),
+        ]
 
     def __str__(self):
         return f'{self.proyecto_id}: {self.titulo}'
+
+
+class ProyectoCheckAdjunto(models.Model):
+    """Documento de confirmacion de un paso (correo de aprobacion, PDF...).
+
+    Vive en media/controles/<proyecto>/<check>/ y solo lo sirve /media/ a
+    staff (api/media_access.py), igual que la lista de control.
+    """
+    paso = models.ForeignKey(ProyectoCheck, on_delete=models.CASCADE, related_name='adjuntos')
+    archivo = models.FileField(upload_to=_check_attachment_path, max_length=500)
+    nombre_original = models.CharField(max_length=255)
+    tamano = models.PositiveIntegerField(default=0)
+    subido_at = models.DateTimeField(auto_now_add=True)
+    subido_por = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL, related_name='+',
+    )
+
+    class Meta:
+        ordering = ['subido_at', 'id']
+
+    def __str__(self):
+        return self.nombre_original
 
 
 class TrabajadorOficina(models.Model):

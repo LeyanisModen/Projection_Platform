@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { A11yModule } from '@angular/cdk/a11y';
 import { Observable } from 'rxjs';
-import { ApiService, Proyecto, ProjectCheck } from '../../../services/api.service';
+import { ApiService, Proyecto, ProjectCheck, ProjectCheckAttachment } from '../../../services/api.service';
 
 @Component({
     selector: 'app-project-controls',
@@ -76,16 +76,49 @@ import { ApiService, Proyecto, ProjectCheck } from '../../../services/api.servic
 
                     <ol class="check-list">
                         @for (check of checks(); track check.id) {
-                            <li class="check-row" [class.is-done]="check.completado">
+                            <li class="check-row" [class.is-done]="check.completado" [class.is-overdue]="isOverdue(check)">
                                 <input type="checkbox" [id]="'check-' + check.id" [checked]="check.completado"
                                     [disabled]="busyCheck() !== null" (change)="toggleCheck(check, $event)" />
-                                <label [for]="'check-' + check.id">
-                                    <span class="check-title">{{ check.titulo }}</span>
-                                    @if (check.origen === 'MANUAL') { <span class="origin">añadido en este proyecto</span> }
-                                    @if (check.completado && check.completado_at) {
-                                        <small>{{ check.completado_at | date:'dd/MM/yy HH:mm' }} · {{ check.completado_por }}</small>
+                                <div class="check-body">
+                                    <label [for]="'check-' + check.id">
+                                        <span class="check-title">{{ check.titulo }}</span>
+                                        @if (check.origen === 'MANUAL') { <span class="origin">añadido en este proyecto</span> }
+                                        @if (check.completado && check.completado_at) {
+                                            <small>{{ check.completado_at | date:'dd/MM/yy HH:mm' }} · {{ check.completado_por }}</small>
+                                        }
+                                    </label>
+
+                                    @if (check.requiere_fecha) {
+                                        <div class="check-date">
+                                            <label [for]="'deadline-' + check.id">Fecha límite</label>
+                                            <input type="date" [id]="'deadline-' + check.id" [value]="check.fecha_limite || ''"
+                                                [disabled]="busyCheck() !== null" (change)="setDeadline(check, $event)" />
+                                            @if (!check.completado && isOverdue(check)) { <span class="warn">Vencido</span> }
+                                            @else if (!check.completado && !check.fecha_limite) { <span class="hint">Sin fecha</span> }
+                                        </div>
                                     }
-                                </label>
+
+                                    @if (check.requiere_documento) {
+                                        <div class="check-docs">
+                                            @for (doc of check.adjuntos; track doc.id) {
+                                                <div class="doc">
+                                                    <a [href]="doc.url" target="_blank" rel="noopener" [title]="'Abrir ' + doc.nombre_original">
+                                                        <i class="fa fa-paperclip" aria-hidden="true"></i> {{ doc.nombre_original }}
+                                                    </a>
+                                                    <small>{{ formatSize(doc.tamano) }} · {{ doc.subido_at | date:'dd/MM/yy' }} · {{ doc.subido_por }}</small>
+                                                    <button type="button" class="remove doc-remove" [disabled]="busyCheck() !== null"
+                                                        (click)="removeAttachment(check, doc)" [attr.aria-label]="'Quitar ' + doc.nombre_original">&times;</button>
+                                                </div>
+                                            }
+                                            <label class="attach" [class.is-busy]="uploadingFor() === check.id">
+                                                <input type="file" [disabled]="busyCheck() !== null" (change)="attach(check, $event)" />
+                                                <i class="fa fa-upload" aria-hidden="true"></i>
+                                                {{ uploadingFor() === check.id ? 'Subiendo…' : (check.adjuntos.length ? 'Adjuntar otro documento' : 'Adjuntar documento de confirmación') }}
+                                            </label>
+                                            @if (check.completado && !check.adjuntos.length) { <span class="warn">Completado sin documento</span> }
+                                        </div>
+                                    }
+                                </div>
                                 <button type="button" class="remove" [disabled]="busyCheck() !== null"
                                     (click)="removeCheck(check)" [attr.aria-label]="'Eliminar ' + check.titulo">&times;</button>
                             </li>
@@ -100,6 +133,10 @@ import { ApiService, Proyecto, ProjectCheck } from '../../../services/api.servic
                             <input id="new-project-check" name="newCheck" maxlength="200" [ngModel]="newTitle()" (ngModelChange)="newTitle.set($event)"
                                 placeholder="Ej.: Acta de inicio firmada" [disabled]="busyCheck() !== null" />
                             <button type="submit" [disabled]="busyCheck() !== null || !newTitle().trim()">Añadir</button>
+                        </div>
+                        <div class="flags" role="group" aria-label="Qué necesita el paso">
+                            <label class="flag"><input type="checkbox" name="newDate" [ngModel]="newRequiereFecha()" (ngModelChange)="newRequiereFecha.set($event)" [disabled]="busyCheck() !== null" /> Con fecha límite</label>
+                            <label class="flag"><input type="checkbox" name="newDoc" [ngModel]="newRequiereDocumento()" (ngModelChange)="newRequiereDocumento.set($event)" [disabled]="busyCheck() !== null" /> Con documento de confirmación</label>
                         </div>
                     </form>
 
@@ -133,8 +170,19 @@ import { ApiService, Proyecto, ProjectCheck } from '../../../services/api.servic
         .dialog-close{font-size:20px;line-height:1;padding:4px 10px}
         .check-list{list-style:none;margin:14px 0 0;padding:0}
         .check-row{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid #edf0f4}
-        .check-row input{width:18px;height:18px;flex-shrink:0;margin-top:2px;accent-color:#ef6815}
-        .check-row label{flex:1 1 auto;min-width:0;cursor:pointer;overflow-wrap:anywhere}.check-row.is-done .check-title{color:#67758a;text-decoration:line-through}
+        .check-row>input[type=checkbox]{width:18px;height:18px;flex-shrink:0;margin-top:2px;accent-color:#ef6815}
+        .check-body{flex:1 1 auto;min-width:0;display:grid;gap:6px}
+        .check-row label{min-width:0;cursor:pointer;overflow-wrap:anywhere}.check-row.is-done .check-title{color:#67758a;text-decoration:line-through}
+        .check-row.is-overdue:not(.is-done) .check-title{color:#b3341a}
+        .check-date{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.check-date label{font-size:12px;color:#67758a;cursor:default}
+        .check-date input[type=date]{width:auto;margin:0;padding:5px 8px;font-size:12px}
+        .warn{font-size:11px;font-weight:700;color:#b3341a;background:#fdecea;border-radius:10px;padding:2px 8px}.hint{font-size:11px;color:#98440d;background:#fff0e3;border-radius:10px;padding:2px 8px}
+        .check-docs{display:grid;gap:4px}.doc{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px}
+        .doc a{color:#243446;text-decoration:none;overflow-wrap:anywhere}.doc a:hover{text-decoration:underline}.doc small{margin:0}
+        .doc-remove{padding:0 6px;font-size:14px}
+        .attach{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#af4a13;cursor:pointer;width:fit-content}.attach input{display:none}.attach.is-busy{opacity:.6;cursor:progress}
+        .flags{display:flex;gap:16px;flex-wrap:wrap;margin-top:8px}.flag{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#67758a;cursor:pointer}
+        .flag input{width:15px;height:15px;margin:0;accent-color:#ef6815}
         .check-title{display:block;font-size:13px}.origin{display:inline-block;margin-top:3px;font-size:11px;color:#98440d;background:#fff0e3;border-radius:10px;padding:1px 7px}
         .check-row small{display:block;margin-top:4px}.check-empty{padding:12px 0;font-size:13px;color:#67758a}
         .remove{flex:0 0 auto;padding:2px 8px;font-size:16px;line-height:1;color:#8a96a3}.remove:hover:not(:disabled){color:#b3341a;border-color:#f1c9bf}
@@ -156,6 +204,9 @@ export class ProjectControlsComponent {
     readonly busyCheck = signal<number | null>(null);
     readonly checkError = signal('');
     readonly newTitle = signal('');
+    readonly newRequiereFecha = signal(false);
+    readonly newRequiereDocumento = signal(false);
+    readonly uploadingFor = signal<number | null>(null);
     readonly listOpen = signal(false);
     readonly seedMessage = signal('');
     readonly completed = computed(() => this.checks().filter(c => c.completado).length);
@@ -198,8 +249,8 @@ export class ProjectControlsComponent {
         if (this.busyCheck() !== null) return;
         this.busyCheck.set(busyId); this.checkError.set('');
         request.subscribe({
-            next: rows => { this.checks.set(rows); this.busyCheck.set(null); after?.(); },
-            error: () => { this.checkError.set(message); this.busyCheck.set(null); },
+            next: rows => { this.checks.set(rows); this.busyCheck.set(null); this.uploadingFor.set(null); after?.(); },
+            error: () => { this.checkError.set(message); this.busyCheck.set(null); this.uploadingFor.set(null); },
         });
     }
     toggleCheck(check: ProjectCheck, event: Event): void {
@@ -213,7 +264,40 @@ export class ProjectControlsComponent {
     addCheck(): void {
         const titulo = this.newTitle().trim();
         if (!titulo) return;
-        this.mutate(this.api.addProjectCheck(this.project().id, titulo), -1, 'No se pudo añadir el paso. Comprueba que no exista ya.', () => this.newTitle.set(''));
+        this.mutate(this.api.addProjectCheck(this.project().id, {
+            titulo, requiere_fecha: this.newRequiereFecha(), requiere_documento: this.newRequiereDocumento(),
+        }), -1, 'No se pudo añadir el paso. Comprueba que no exista ya.', () => {
+            this.newTitle.set(''); this.newRequiereFecha.set(false); this.newRequiereDocumento.set(false);
+        });
+    }
+    isOverdue(check: ProjectCheck): boolean {
+        if (!check.fecha_limite || check.completado) return false;
+        const today = new Date();
+        const local = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        return check.fecha_limite < local;
+    }
+    setDeadline(check: ProjectCheck, event: Event): void {
+        const value = (event.target as HTMLInputElement).value || null;
+        if (value === check.fecha_limite) return;
+        this.mutate(this.api.updateProjectCheck(this.project().id, check.id, { fecha_limite: value }), check.id, 'No se pudo guardar la fecha límite.');
+    }
+    attach(check: ProjectCheck, event: Event): void {
+        const input = event.target as HTMLInputElement;
+        const file = input.files?.[0];
+        input.value = '';
+        if (!file || this.busyCheck() !== null) return;
+        if (file.size > 20 * 1024 * 1024) { this.checkError.set('El documento supera los 20 MB.'); return; }
+        this.uploadingFor.set(check.id);
+        this.mutate(this.api.uploadProjectCheckAttachment(this.project().id, check.id, file), check.id, 'No se pudo subir el documento.', () => this.uploadingFor.set(null));
+    }
+    removeAttachment(check: ProjectCheck, doc: ProjectCheckAttachment): void {
+        if (!confirm(`Quitar «${doc.nombre_original}» de este paso?`)) return;
+        this.mutate(this.api.deleteProjectCheckAttachment(this.project().id, check.id, doc.id), check.id, 'No se pudo quitar el documento.');
+    }
+    formatSize(bytes: number): string {
+        if (bytes < 1024) return `${bytes} B`;
+        if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+        return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
     }
     removeCheck(check: ProjectCheck): void {
         const detail = check.completado ? ' Se perderá la marca de completado.' : '';

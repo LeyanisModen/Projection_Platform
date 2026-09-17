@@ -61,16 +61,34 @@ export interface PlanificacionProyecto {
     fecha_calculo: string;
     dias_produccion: string[];
 }
+/** Documento de confirmación adjunto a un paso (correo de aprobación, PDF...). */
+export interface ProjectCheckAttachment {
+    id: number; nombre_original: string; tamano: number; url: string | null;
+    subido_at: string; subido_por: string | null;
+}
 /** Un paso de la lista de control de un proyecto concreto. */
 export interface ProjectCheck {
     id: number; titulo: string; orden: number;
     origen: 'PLANTILLA' | 'MANUAL';
+    /** Qué necesita el paso; decide qué controles muestra su fila. */
+    requiere_fecha: boolean; requiere_documento: boolean;
+    fecha_limite: string | null;
     completado: boolean;
     completado_at: string | null; completado_por: string | null;
     creado_at: string;
+    adjuntos: ProjectCheckAttachment[];
 }
 /** Paso de la lista maestra (pantalla «Lista de control»); siembra los proyectos nuevos. */
-export interface CheckDefinition { id: number; titulo: string; orden: number; }
+export interface CheckDefinition {
+    id: number; titulo: string; orden: number;
+    requiere_fecha: boolean; requiere_documento: boolean;
+}
+/** Paso con fecha límite, tal como lo consume el calendario. */
+export interface CheckDeadline {
+    id: number; proyecto: number; proyecto_nombre: string; titulo: string;
+    fecha_limite: string; completado: boolean;
+}
+export type NewProjectCheck = Pick<ProjectCheck, 'titulo'> & Partial<Pick<ProjectCheck, 'requiere_fecha' | 'requiere_documento' | 'fecha_limite'>>;
 export interface OfficeWorker { id: number; nombre: string; activo: boolean; color: string; }
 export interface CalendarEvent {
     id: number; titulo: string; tipo: 'EVENTO' | 'VACACIONES';
@@ -544,10 +562,10 @@ export class ApiService {
     getProjectChecklist(id: number): Observable<ProjectCheck[]> {
         return this.http.get<ProjectCheck[]>(`${this.baseUrl}/proyecto-checklist/${id}/`, { headers: this.getHeaders() });
     }
-    addProjectCheck(projectId: number, titulo: string): Observable<ProjectCheck[]> {
-        return this.http.post<ProjectCheck[]>(`${this.baseUrl}/proyecto-checklist/${projectId}/checks/`, { titulo }, { headers: this.getHeaders() });
+    addProjectCheck(projectId: number, data: NewProjectCheck): Observable<ProjectCheck[]> {
+        return this.http.post<ProjectCheck[]>(`${this.baseUrl}/proyecto-checklist/${projectId}/checks/`, data, { headers: this.getHeaders() });
     }
-    updateProjectCheck(projectId: number, id: number, data: Partial<Pick<ProjectCheck, 'completado' | 'titulo'>>): Observable<ProjectCheck[]> {
+    updateProjectCheck(projectId: number, id: number, data: Partial<Pick<ProjectCheck, 'completado' | 'titulo' | 'requiere_fecha' | 'requiere_documento' | 'fecha_limite'>>): Observable<ProjectCheck[]> {
         return this.http.patch<ProjectCheck[]>(`${this.baseUrl}/proyecto-checklist/${projectId}/checks/${id}/`, data, { headers: this.getHeaders() });
     }
     deleteProjectCheck(projectId: number, id: number): Observable<ProjectCheck[]> {
@@ -556,6 +574,18 @@ export class ApiService {
     /** Copia al proyecto los pasos de la lista maestra que aún no tiene. */
     seedProjectChecklist(projectId: number): Observable<{ creados: number; checks: ProjectCheck[] }> {
         return this.http.post<{ creados: number; checks: ProjectCheck[] }>(`${this.baseUrl}/proyecto-checklist/${projectId}/sembrar/`, {}, { headers: this.getHeaders() });
+    }
+    uploadProjectCheckAttachment(projectId: number, checkId: number, file: File): Observable<ProjectCheck[]> {
+        const form = new FormData();
+        form.append('archivo', file, file.name);
+        return this.http.post<ProjectCheck[]>(`${this.baseUrl}/proyecto-checklist/${projectId}/checks/${checkId}/adjuntos/`, form, { headers: this.getHeaders() });
+    }
+    deleteProjectCheckAttachment(projectId: number, checkId: number, attachmentId: number): Observable<ProjectCheck[]> {
+        return this.http.delete<ProjectCheck[]>(`${this.baseUrl}/proyecto-checklist/${projectId}/checks/${checkId}/adjuntos/${attachmentId}/`, { headers: this.getHeaders() });
+    }
+    /** Pasos con fecha límite dentro del rango, para el calendario. */
+    getCheckDeadlines(desde: string, hasta: string): Observable<CheckDeadline[]> {
+        return this.http.get<CheckDeadline[]>(`${this.baseUrl}/proyecto-checklist/vencimientos/`, { headers: this.getHeaders(), params: { desde, hasta } });
     }
 
     // --- Lista de control maestra ---

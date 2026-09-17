@@ -77,7 +77,7 @@
                 }
                 @for (segment of week.segments; track segment.item.key) {
                     <button type="button" class="event-bar" [class.continues-before]="segment.continuesBefore" [class.continues-after]="segment.continuesAfter"
-                        [class.mounting]="segment.item.mounting" [style.grid-column]="segment.column + ' / span ' + segment.span"
+                        [class.mounting]="segment.item.mounting" [class.control]="segment.item.control" [class.done]="segment.item.done" [style.grid-column]="segment.column + ' / span ' + segment.span"
                         [style.grid-row]="segment.lane+2" [style.--event-color]="segment.item.colors.length===1 ? segment.item.colors[0] : '#64748b'"
                         [attr.aria-label]="segment.item.title + ', ' + (segment.item.start | date:'dd/MM/yyyy') + ' a ' + (segment.item.end | date:'dd/MM/yyyy') + ', ' + segment.item.people"
                         [title]="segment.item.title + ' · ' + segment.item.people + ' · ' + (segment.item.start | date:'dd/MM/yyyy') + ' - ' + (segment.item.end | date:'dd/MM/yyyy')"
@@ -114,6 +114,13 @@
                 <a [routerLink]="['/admin-dashboard/proyectos',project.id]">Ver proyecto y plazo</a>
             </article>
         }
+        @for (deadline of selectedDeadlines(); track deadline.id) {
+            <article class="agenda-event control" [class.done]="deadline.completado">
+                <strong>{{ deadline.completado ? 'Completado' : 'Fecha límite' }} · {{ deadline.titulo }}</strong>
+                <span>{{ deadline.proyecto_nombre }}</span>
+                <a [routerLink]="['/admin-dashboard/proyectos',deadline.proyecto]">Ver lista de control del proyecto</a>
+            </article>
+        }
         @for (event of selectedEvents(); track event.id) {
             <article class="agenda-event">
                 <div class="agenda-colors" aria-hidden="true">@for (color of eventColors(event); track $index) { <span [style.background-color]="color"></span> }</div>
@@ -125,7 +132,7 @@
                 <div class="actions"><button type="button" (click)="editEvent(event)">Editar</button><button type="button" [disabled]="busy()" (click)="removeEvent(event)">Eliminar</button></div>
             </article>
         }
-        @if (!selectedEvents().length && !mountingProjects().length) { <p>No hay eventos para este día.</p> }
+        @if (!selectedEvents().length && !mountingProjects().length && !selectedDeadlines().length) { <p>No hay eventos para este día.</p> }
     </aside>
 </div>
 @if (editorOpen()) {

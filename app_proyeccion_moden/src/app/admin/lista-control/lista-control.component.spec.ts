@@ -17,8 +17,8 @@ describe('ListaControlComponent', () => {
         fixture = TestBed.createComponent(ListaControlComponent);
         fixture.detectChanges();
         http.expectOne('/api/check-definiciones/').flush([
-            { id: 1, titulo: 'Planos entregados', orden: 1 },
-            { id: 2, titulo: 'Aprobación equivalencias', orden: 2 },
+            { id: 1, titulo: 'Planos entregados', orden: 1, requiere_fecha: false, requiere_documento: false },
+            { id: 2, titulo: 'Aprobación equivalencias', orden: 2, requiere_fecha: true, requiere_documento: true },
         ]);
         fixture.detectChanges();
     });
@@ -29,25 +29,29 @@ describe('ListaControlComponent', () => {
         const element: HTMLElement = fixture.nativeElement;
         const rows = Array.from(element.querySelectorAll('.step'));
         expect(rows.map(r => r.querySelector('.position')?.textContent?.trim())).toEqual(['1', '2']);
-        expect(rows.map(r => r.querySelector('.title')?.textContent?.trim())).toEqual(['Planos entregados', 'Aprobación equivalencias']);
+        expect(rows.map(r => r.querySelector('.title')?.childNodes[0]?.textContent?.trim())).toEqual(['Planos entregados', 'Aprobación equivalencias']);
+        expect(rows[0].querySelectorAll('.badge').length).toBe(0);
+        expect(Array.from(rows[1].querySelectorAll('.badge')).map(b => b.textContent?.trim())).toEqual(['fecha', 'documento']);
     });
 
     it('añade un paso al final y limpia el campo', () => {
         fixture.componentInstance.newTitle.set(' Acta de inicio ');
+        fixture.componentInstance.newRequiereDocumento.set(true);
         fixture.componentInstance.add();
         const request = http.expectOne('/api/check-definiciones/');
         expect(request.request.method).toBe('POST');
-        expect(request.request.body).toEqual({ titulo: 'Acta de inicio' });
-        request.flush({ id: 3, titulo: 'Acta de inicio', orden: 3 });
+        expect(request.request.body).toEqual({ titulo: 'Acta de inicio', requiere_fecha: false, requiere_documento: true });
+        request.flush({ id: 3, titulo: 'Acta de inicio', orden: 3, requiere_fecha: false, requiere_documento: true });
         expect(fixture.componentInstance.steps().map(s => s.id)).toEqual([1, 2, 3]);
         expect(fixture.componentInstance.newTitle()).toBe('');
+        expect(fixture.componentInstance.newRequiereDocumento()).toBe(false);
     });
 
     it('reordena enviando la lista completa de ids', () => {
         fixture.componentInstance.move(1, -1);
         const request = http.expectOne('/api/check-definiciones/reorder/');
         expect(request.request.body).toEqual({ ids: [2, 1] });
-        request.flush([{ id: 2, titulo: 'Aprobación equivalencias', orden: 1 }, { id: 1, titulo: 'Planos entregados', orden: 2 }]);
+        request.flush([{ id: 2, titulo: 'Aprobación equivalencias', orden: 1, requiere_fecha: true, requiere_documento: true }, { id: 1, titulo: 'Planos entregados', orden: 2, requiere_fecha: false, requiere_documento: false }]);
         expect(fixture.componentInstance.steps().map(s => s.id)).toEqual([2, 1]);
     });
 
@@ -74,7 +78,8 @@ describe('ListaControlComponent', () => {
         fixture.componentInstance.saveEdit(step);
         const request = http.expectOne('/api/check-definiciones/2/');
         expect(request.request.method).toBe('PATCH');
-        request.flush({ id: 2, titulo: 'Aprobación de planos de equivalencia', orden: 2 });
+        expect(request.request.body).toEqual({ id: 2, titulo: 'Aprobación de planos de equivalencia', requiere_fecha: true, requiere_documento: true });
+        request.flush({ id: 2, titulo: 'Aprobación de planos de equivalencia', orden: 2, requiere_fecha: true, requiere_documento: true });
         expect(fixture.componentInstance.editingId()).toBeNull();
         expect(fixture.componentInstance.steps()[1].titulo).toBe('Aprobación de planos de equivalencia');
     });

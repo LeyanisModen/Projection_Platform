@@ -41,6 +41,9 @@ export interface CalendarItem {
     colors: string[];
     people: string;
     mounting: boolean;
+    /** Fecha límite de un paso de la lista de control (solo lectura aquí). */
+    control?: boolean;
+    done?: boolean;
 }
 export interface CalendarSegment {
     item: CalendarItem;
