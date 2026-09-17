@@ -210,28 +210,6 @@
                 </ul>
             </div>
 
-            <!-- Importar modulos desde carpeta local -->
-            <div class="project-config-card mb-3 p-3 bg-white rounded border">
-                <div class="project-config-header">
-                    <div>
-                        <label class="d-block mb-1">Importar módulos</label>
-                        <small class="text-muted">Selecciona la carpeta común y elige cuáles de sus módulos quieres cargar.</small>
-                    </div>
-                </div>
-                <div class="project-config-controls mt-2">
-                    <button class="btn btn-sm btn-secondary w-100" (click)="importModulesFromFolder()"
-                        [disabled]="importing">
-                        {{ importing ? 'Importando...' : 'Seleccionar módulos' }}
-                    </button>
-                </div>
-                <div class="mt-2 text-primary small" *ngIf="importing">
-                    <div class="d-flex align-items-center">
-                        <div class="spinner spinner-sm mr-2"></div>
-                        <small>{{ importProgress }}</small>
-                    </div>
-                </div>
-            </div>
-
         </div>
 
 
@@ -243,7 +221,17 @@
             <div class="card h-100" *ngIf="modulos.length > 0; else noProjectModules">
 
                 <div class="card-header d-flex justify-content-between align-items-center flex-wrap" style="gap: 0.75rem;">
-                    <h3 class="mb-0">Módulos del Proyecto</h3>
+                    <div class="modules-title">
+                        <h3 class="mb-0">Módulos del Proyecto</h3>
+                        <button type="button" class="add-modules-btn" (click)="importModulesFromFolder()"
+                            [disabled]="importing" [class.is-busy]="importing"
+                            title="Importar módulos desde una carpeta"
+                            aria-label="Importar módulos desde una carpeta">
+                            <span *ngIf="!importing" aria-hidden="true">+</span>
+                            <span *ngIf="importing" class="spinner spinner-sm" aria-hidden="true"></span>
+                        </button>
+                        <small *ngIf="importing" class="import-progress-inline text-primary">{{ importProgress }}</small>
+                    </div>
                     <div class="module-display-controls">
                         <div class="estrategia-toggle rack-view-toggle" role="group" aria-label="Orden de los bastidores"
                             [class.is-busy]="isDraggingModulo || isDraggingBastidor || movingModulo">
@@ -539,8 +527,15 @@
             <ng-template #noProjectModules>
                 <div
                     class="card h-100 d-flex align-items-center justify-content-center p-5 text-muted bg-light border-dashed">
-                    <h3>Aún no hay módulos</h3>
-                    <p>Importa la carpeta del proyecto usando el botón "Seleccionar módulos" de la izquierda.</p>
+                    <button type="button" class="add-modules-btn is-large" (click)="importModulesFromFolder()"
+                        [disabled]="importing" [class.is-busy]="importing"
+                        aria-label="Importar módulos desde una carpeta">
+                        <span *ngIf="!importing" aria-hidden="true">+</span>
+                        <span *ngIf="importing" class="spinner" aria-hidden="true"></span>
+                    </button>
+                    <h3 class="mt-3">Aún no hay módulos</h3>
+                    <p *ngIf="!importing">Pulsa <strong>+</strong> para elegir la carpeta del proyecto y los módulos que quieres cargar.</p>
+                    <p *ngIf="importing" class="text-primary">{{ importProgress }}</p>
                 </div>
             </ng-template>
 

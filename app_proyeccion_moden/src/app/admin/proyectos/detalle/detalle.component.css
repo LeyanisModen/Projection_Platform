@@ -704,6 +704,64 @@
     font-size: 1.1rem;
 }
 
+/* Boton "+" para importar modulos, junto al titulo de la tarjeta. */
+.modules-title {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    min-width: 0;
+}
+
+.add-modules-btn {
+    display: inline-grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: var(--moden-primary);
+    color: #fff;
+    font-size: 1.25rem;
+    font-weight: 600;
+    line-height: 1;
+    cursor: pointer;
+    transition: background-color 0.15s ease, transform 0.15s ease;
+}
+
+.add-modules-btn:hover:not(:disabled) {
+    background: var(--moden-primary-dark);
+    transform: scale(1.06);
+}
+
+.add-modules-btn:focus-visible {
+    outline: 2px solid var(--moden-primary);
+    outline-offset: 2px;
+}
+
+.add-modules-btn:disabled {
+    opacity: 0.6;
+    cursor: progress;
+}
+
+.add-modules-btn.is-large {
+    width: 64px;
+    height: 64px;
+    font-size: 2.4rem;
+}
+
+.add-modules-btn .spinner {
+    border-color: rgba(255, 255, 255, 0.35);
+    border-top-color: #fff;
+}
+
+.import-progress-inline {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 320px;
+}
+
 /* List Group (Plants) */
 .list-group {
     display: flex;
