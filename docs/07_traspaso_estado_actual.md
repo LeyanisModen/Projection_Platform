@@ -1,8 +1,8 @@
 # Traspaso del proyecto Moden
 
-Estado verificado: **20 de agosto de 2026**  
+Estado verificado: **20 de agosto de 2026**, actualizado el **17 de septiembre de 2026** tras la auditoría técnica (`docs/08_auditoria_2026-09.md`).  
 Repositorio: `LeyanisModen/Projection_Platform`  
-Commit funcional de referencia: `b297565` (`feat: permitir scroll en colas de mesas`)  
+Commit funcional de referencia: `b297565` (`feat: permitir scroll en colas de mesas`); los cambios de septiembre están descritos en `docs/08_auditoria_2026-09.md`.  
 Rama de trabajo recomendada: `develop`  
 Producción: `deploy`
 
@@ -24,11 +24,11 @@ idea inicial.
 | Rama `deploy` | `b297565`, sincronizada con `origin/deploy` |
 | Railway staging | Frontend, backend y PostgreSQL en `SUCCESS` |
 | Railway producción | Frontend, backend y PostgreSQL en `SUCCESS` |
-| Pruebas backend | 106 correctas |
-| Pruebas frontend | 30 correctas |
-| Pruebas capture service | 30 correctas |
-| Build Angular producción | Correcto, con dos warnings de presupuesto |
-| Versión capture service | `2026-08-14.1` |
+| Pruebas backend (17/09/2026) | 196 correctas |
+| Pruebas frontend (17/09/2026) | 113 correctas |
+| Pruebas capture service (17/09/2026) | 42 correctas |
+| Build Angular producción (17/09/2026) | Correcto; bundle inicial 355 kB, un warning (`dashboard.css` 53 kB > 50 kB) |
+| Versión capture service | `2026-09-17.1` |
 | Worktree al iniciar este traspaso | Limpio salvo `temp/`, local y no versionado |
 
 ## 1. Objetivo general del proyecto
@@ -65,7 +65,7 @@ Los problemas principales que resuelve son:
 | --- | --- |
 | Proyectar el plano correcto en cada paso | Player kiosk con secuencia ordenada por módulo/fase |
 | Coordinar varias mesas | Planner y colas `MesaQueueItem` |
-| Mantener supervisor y player sincronizados | Índice actual y estado compartidos por API/SSE |
+| Mantener supervisor y player sincronizados | Índice actual y estado compartidos por API (polling) |
 | Evitar perder emparejamientos al reiniciar | Token persistido en navegador y en disco local |
 | Rehacer una fase o módulo | Reinicio por fase o completo, con sufijo `-R` |
 | Añadir módulos durante producción | Reconciliación automática de colas |
@@ -104,6 +104,12 @@ flowchart LR
 - Vitest a través de `ng test`.
 - Nginx Alpine en producción.
 - La app usa rutas relativas `/api` y `/media`; Nginx las reenvía al backend.
+- Solo el login va en el bundle inicial: `dashboard`, `visor`, `mapper` y
+  `admin` se cargan bajo demanda (`loadComponent`/`loadChildren`).
+- No hay SSR ni SSE: el estado se sincroniza por polling HTTP.
+- Solo el login va en el bundle inicial: `dashboard`, `visor`, `mapper` y
+  `admin` se cargan bajo demanda (`loadComponent`/`loadChildren`).
+- No hay SSR ni SSE: el estado se sincroniza por polling HTTP.
 - `index.html` y las rutas SPA llevan `no-store`; assets versionados pueden
   cachearse un año.
 - El frontend no conoce directamente la URL pública del backend.
@@ -131,6 +137,12 @@ Rutas principales:
 - Pillow, OpenCV headless y NumPy para imágenes y detección.
 - Autenticación de usuarios con `TokenAuthentication` de DRF.
 - Autenticación separada de dispositivos con token de mesa hasheado.
+- `/media/` exige credencial (usuario o dispositivo, por cabecera o por las
+  cookies same-origin `moden_auth`/`moden_device`); ver `api/media_access.py`.
+- `GET /api/health/` para el healthcheck de Railway.
+- `/media/` exige credencial (usuario o dispositivo, por cabecera o por las
+  cookies same-origin `moden_auth`/`moden_device`); ver `api/media_access.py`.
+- `GET /api/health/` para el healthcheck de Railway.
 - Archivos en volumen persistente Railway montado en `/app/media`.
 - Migraciones automáticas con `python manage.py migrate --noinput` en
   `preDeployCommand`.
@@ -144,6 +156,14 @@ Routers/API principales:
 - `grupos-bastidor` para mover y ordenar módulos/bastidores.
 - `/api/stats/production/`.
 - `/api/lista-materiales/general/`.
+- `/api/mesas/colas/` (colas de todas las mesas visibles en una respuesta).
+- `/api/health/`.
+- Oficina (solo staff): `check-definiciones`, `proyecto-checklist`,
+  `trabajadores`, `eventos` (`api/office.py`).
+- `/api/mesas/colas/` (colas de todas las mesas visibles en una respuesta).
+- `/api/health/`.
+- Oficina (solo staff): `check-definiciones`, `proyecto-checklist`,
+  `trabajadores`, `eventos` (`api/office.py`).
 
 ### 3.4 Servicio local de los mini-PCs
 
@@ -256,9 +276,13 @@ proyection_platform/
 | `api/module_features.py` | Detección de módulos con `SD_S`/`SD_D` |
 | `api/project_media.py` | Borrado seguro de media sin referencias |
 | `api/color_detection.py` | Detector OpenCV de cintas de colores |
+| `api/media_access.py` | Autenticación y reglas de propietario para `/media/` |
+| `api/health.py` | Endpoint de salud |
+| `api/office.py` | Checklist de proyecto, trabajadores y calendario de oficina |
+| `api/planning.py` | Cálculo de demanda/planificación por proyecto |
 | `api/tests.py` | Suite principal de permisos, importación, colas y planner |
-| `api/test_color_detection.py` | Pruebas del detector de colores |
-| `api/migrations/` | Migraciones `0001` a `0050_remove_planta` |
+| `api/test_*.py` | Detector de colores, oficina, objetivos, salud, media, colas en bloque |
+| `api/migrations/` | Migraciones `0001` a `0056_mesa_pending_device_token` |
 | `api/management/commands/` | Reconciliar, sincronizar, resetear y simular |
 | `proyeccion_moden/settings.py` | DB, auth, CORS, media y límites de subida |
 | `proyeccion_moden/urls.py` | Router REST y endpoints agregados |
@@ -280,7 +304,8 @@ añadir una regresión para el caso nuevo.
 | `update-capture-service.ps1` | Actualizador automático desde `deploy` |
 | `player-watchdog.ps1` | Recupera servicio, kiosk y foco |
 | `start-player.bat` | Arranque compatible/legado |
-| `test_sharpness.py` | 30 pruebas de cámara, horarios, Drive y almacenamiento |
+| `test_sharpness.py` | Pruebas de cámara, horarios, Drive y almacenamiento |
+| `test_control_actions.py` | Pruebas de orígenes permitidos, token y apagado |
 | `README.md` | Operación del servicio |
 | `SETUP_MINIPC.md` | Instalación completa del equipo |
 | `PUESTA_EN_MARCHA_FABRICA.txt` | Bloques listos para copiar/pegar en fábrica |
@@ -524,6 +549,40 @@ La contraseña real de Django sigue hasheada. Se conserva además
 soporte. Solo se muestra a staff. Es una concesión de seguridad consciente que
 debe revisarse si aumenta el número de administradores.
 
+### 6.14 Media autenticada sin cambiar URLs
+
+Las imágenes se cargan con `<img src>`, que no puede enviar `Authorization`.
+Por eso `/media/` acepta además dos cookies same-origin con `path=/media/`
+que escribe el propio backend (login y cualquier respuesta autenticada):
+`moden_auth` (token de usuario) y `moden_device` (token de mesa). Las URLs
+guardadas en BD no cambian. Reglas en `api/media_access.py`. Interruptor de
+emergencia: `MEDIA_REQUIRE_AUTH=False`.
+
+### 6.15 Auto-avance de cola en servidor
+
+Cuando una mesa no muestra nada pero tiene items `EN_COLA`, el backend
+promueve el primero (`_promote_next_if_idle`) bajo bloqueo de fila. Se ejecuta
+al servir `GET /api/mesas/colas/` y `GET /api/device/current_item/`, así que
+el player se recupera solo aunque nadie tenga el dashboard abierto. El
+auto-avance del dashboard sigue existiendo como red de seguridad.
+
+### 6.14 Media autenticada sin cambiar URLs
+
+Las imágenes se cargan con `<img src>`, que no puede enviar `Authorization`.
+Por eso `/media/` acepta además dos cookies same-origin con `path=/media/`
+que escribe el propio backend (login y cualquier respuesta autenticada):
+`moden_auth` (token de usuario) y `moden_device` (token de mesa). Las URLs
+guardadas en BD no cambian. Reglas en `api/media_access.py`. Interruptor de
+emergencia: `MEDIA_REQUIRE_AUTH=False`.
+
+### 6.15 Auto-avance de cola en servidor
+
+Cuando una mesa no muestra nada pero tiene items `EN_COLA`, el backend
+promueve el primero (`_promote_next_if_idle`) bajo bloqueo de fila. Se ejecuta
+al servir `GET /api/mesas/colas/` y `GET /api/device/current_item/`, así que
+el player se recupera solo aunque nadie tenga el dashboard abierto. El
+auto-avance del dashboard sigue existiendo como red de seguridad.
+
 ## 7. Modelo de datos, variables y cálculos
 
 ### 7.1 Enumeraciones principales
@@ -688,6 +747,10 @@ Backend, sin guardar valores en Git:
 - `ALLOWED_HOSTS`.
 - `DATABASE_URL`, o variables `POSTGRES_*`.
 - `CORS_ALLOW_ALL_ORIGINS` si se necesita de forma excepcional.
+- `CSRF_TRUSTED_ORIGINS` (lista separada por comas) si cambia el dominio.
+- `HTTPS_ONLY` (por defecto activo cuando Railway inyecta
+  `RAILWAY_ENVIRONMENT_NAME`): cookies `Secure` y HSTS.
+- `MEDIA_REQUIRE_AUTH` (por defecto `True`).
 - `WEB_CONCURRENCY` y `GUNICORN_THREADS`.
 
 Frontend Railway:
@@ -704,10 +767,9 @@ Capture service: usar `config.ini`/config remota. No versionar `config.ini`,
 
 ### 8.1 Riesgos operativos prioritarios
 
-1. Railway no tiene `healthcheckPath` configurado para frontend o backend. Un
-   build frontend fallido dejó producción fuera de servicio y las colas de
-   despliegue demoraron la recuperación. Hoy todo está en `SUCCESS`, pero falta
-   una comprobación automática de salud antes de considerar un deploy válido.
+1. ~~Railway no tenía `healthcheckPath`~~ Resuelto en septiembre de 2026:
+   `/api/health/` y `/health` con `healthcheckPath` en ambos `railway.json`.
+   Pendiente ver el primer deploy en staging con el healthcheck activo.
 2. El volumen media de producción ocupa ~2,37 GB de 5 GB. Ya se eliminaron
    aproximadamente 1,81 GB de huérfanos antiguos y el borrado actual intenta
    limpiar referencias, pero no hay auditoría periódica automática.
@@ -724,8 +786,8 @@ Capture service: usar `config.ini`/config remota. No versionar `config.ini`,
 
 ### 8.2 Deuda técnica
 
-- Build Angular correcto pero bundle inicial 655,69 kB supera presupuesto de
-  500 kB; `dashboard.css` ocupa 51,53 kB frente a presupuesto de 50 kB.
+- Bundle inicial 355 kB (dentro del presupuesto de 500 kB desde que las rutas
+  son lazy); `dashboard.css` sigue en 53 kB frente a presupuesto de 50 kB.
 - `api/views.py` supera 6.000 líneas y mezcla importación, planner, fotos,
   materiales y estadísticas.
 - `api/tests.py` es también monolítico; conviene dividir por dominio.
@@ -734,9 +796,11 @@ Capture service: usar `config.ini`/config remota. No versionar `config.ini`,
   memoria; `dashboard.ts` conserva un TODO para persistirlo.
 - Media se sirve desde Django y un volumen local. A mayor escala conviene
   almacenamiento de objetos y URLs firmadas.
-- `ALLOWED_HOSTS` cae a `*`, existe una `SECRET_KEY` insegura de fallback y los
-  orígenes CSRF incluyen wildcards Railway. Producción usa variables, pero hay
-  que endurecer defaults antes de abrir el sistema a terceros.
+- `ALLOWED_HOSTS` cae a `*` en local y existe una `SECRET_KEY` insegura de
+  fallback; en Railway ambas vienen por variable. Los wildcards CSRF ya se
+  retiraron.
+- Los tests corren en SQLite y producción es PostgreSQL (`select_for_update`
+  es no-op en SQLite).
 - `password_texto_plano` es una decisión operativa con riesgo inherente.
 - Parte de los markdown antiguos presenta mojibake al leerlos con determinadas
   codepages de Windows.
@@ -766,7 +830,7 @@ Capture service: usar `config.ini`/config remota. No versionar `config.ini`,
 
 ### 9.2 Recomendadas por operación
 
-1. Health endpoints y healthchecks Railway para frontend/backend.
+1. ~~Health endpoints y healthchecks Railway~~ Hecho (septiembre de 2026).
 2. Script de smoke test post-deploy que compruebe frontend, API, media y login
    sin escribir datos de producción.
 3. Auditor programado de media huérfana con modo informe antes de borrar.
@@ -789,7 +853,22 @@ Capture service: usar `config.ini`/config remota. No versionar `config.ini`,
 
 ## 10. Últimos cambios realizados
 
-Commits más recientes, de nuevo a antiguo:
+Septiembre de 2026 (auditoría; detalle por punto en
+`docs/08_auditoria_2026-09.md`):
+
+- `/media/` autenticado por usuario o dispositivo (cookies same-origin).
+- Emparejamiento sin estados muertos: purga de `PairingSession`, `EXPIRED`
+  cuando el token ya se consumió, token pendiente en campo propio.
+- `mark_done`/`set_index` atómicos; auto-avance de cola en servidor y
+  endpoint agregado `/api/mesas/colas/`.
+- Capture service `2026-09-17.1`: servidor multihilo, default FullHD,
+  control de orígenes en `/device_token`, `/close_browser`, `/shutdown_pc`.
+- Healthchecks de Railway, `npm ci`, cookies seguras, CSRF sin wildcards,
+  `Procfile` y `merge=ours` eliminados.
+- Frontend sin SSR ni SSE; rutas lazy (bundle inicial 355 kB).
+- Calendario/planificación de oficina (`api/office.py`, `admin/calendario/`).
+
+Commits de referencia anteriores, de nuevo a antiguo:
 
 | Commit | Cambio |
 | --- | --- |
@@ -870,7 +949,7 @@ cd api_proyeccion_moden
 .\venv\Scripts\python.exe manage.py test
 ```
 
-Resultado verificado: `106 tests`, `OK`.
+Resultado verificado (17/09/2026): `196 tests`, `OK`.
 
 ### 11.4 Frontend
 
@@ -894,8 +973,8 @@ npm test -- --watch=false
 npm run build
 ```
 
-Resultados verificados: `30 tests` y build correcto con los dos warnings de
-tamaño descritos en la sección 8.
+Resultados verificados (17/09/2026): `113 tests` y build correcto con el
+warning de `dashboard.css` descrito en la sección 8.
 
 ### 11.5 Capture service en un equipo de desarrollo
 
@@ -917,10 +996,10 @@ curl.exe http://127.0.0.1:5555/stats
 Pruebas sin cámara real:
 
 ```powershell
-python -m unittest test_sharpness.py
+python -m unittest test_sharpness test_control_actions
 ```
 
-Resultado verificado: `30 tests`, `OK`.
+Resultado verificado (17/09/2026): `42 tests`, `OK`.
 
 Para instalar o recuperar un mini-PC real, no improvisar comandos: usar
 `capture_service/PUESTA_EN_MARCHA_FABRICA.txt`, `SETUP_MINIPC.md` y

@@ -172,16 +172,35 @@ Leyenda de estado: `[ ]` pendiente · `[~]` en curso · `[x]` cerrado · `[-]` d
 
 ## 5. Documentación
 
-### 5.1 `docs/07_traspaso_estado_actual.md` desfasado — `[ ]`
+### 5.1 `docs/07_traspaso_estado_actual.md` desfasado — `[x]`
 
-- Tests 106/30 → 169/113; migraciones hasta `0050` → `0055`; capture service `2026-08-14.1` → `2026-09-03.1`; falta el módulo de oficina (`api/office.py`, calendario, checklist, trabajadores) y el cierre de la lista de materiales.
+- **Hecho (2026-09-17):** cifras actualizadas (196/113/42 tests, bundle 355 kB, capture service `2026-09-17.1`, migraciones hasta `0056`), nuevas secciones 6.14 (media autenticada) y 6.15 (auto-avance en servidor), variables de entorno nuevas, riesgos 8.1/9.2 marcados como resueltos y resumen de cambios de septiembre en la sección 10.
 
-### 5.2 `docs/06_lista_compra_propuesta.md` describe un diseño que no es el implementado — `[ ]`
+### 5.2 `docs/06_lista_compra_propuesta.md` describe un diseño que no es el implementado — `[x]`
 
 - La lista de materiales se resolvió leyendo las tablas de piezas del `.db` técnico del proyecto (`_read_materiales_tables`), no con la tabla externa `MaterialModulo`.
-- **Plan:** cabecera de "histórico/superado" apuntando a la implementación real.
+- **Hecho (2026-09-17):** cabecera de "histórico / superado" con la implementación real y los endpoints.
 
 ---
+
+## Estado al cierre de la sesión (17/09/2026)
+
+| Comprobación | Resultado |
+| --- | --- |
+| Tests backend | 196 OK |
+| Tests frontend | 113 OK |
+| Tests capture service | 42 OK |
+| Build Angular producción | OK, bundle inicial 354,95 kB, solo warning de `dashboard.css` |
+| Comprobación en navegador (local) | login → imagen propia 200 y `<img>` cargada; carpeta ajena 403; tras logout 401 |
+| Commits en `develop` | 8 commits, uno por bloque, sin push |
+
+**Queda abierto:**
+
+- **1.1 y 3.5 — verificar en staging** tras el push de `develop`: (a) el deploy pasa el healthcheck en backend y frontend; (b) player proyectando tras reiniciar el kiosk; (c) visor supervisor; (d) previsualizador del detalle; (e) modal de fotos; (f) plano PDF y ZIP desde el dashboard. Si algo de `/media/` falla y no se localiza rápido: `MEDIA_REQUIRE_AUTH=False` en el backend de Railway.
+- **4.6** — ejecutar la suite contra PostgreSQL antes de fusionar a `deploy` (`docker compose up db` + `DATABASE_URL`).
+- **4.7** — decidir mecanismo de tareas programadas (auditoría de media huérfana, capacidad del volumen, backup).
+- La imagen Docker del frontend no se construyó en local (Docker Desktop apagado); `npm ci` se validó contra el lockfile. El deploy de staging es la prueba real.
+- Los mini-PC recibirán `2026-09-17.1` por el actualizador automático (04:15) cuando el cambio llegue a `deploy`.
 
 ## Orden de ejecución
 
