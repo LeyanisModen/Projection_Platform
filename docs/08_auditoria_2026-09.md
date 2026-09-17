@@ -146,18 +146,18 @@ Leyenda de estado: `[ ]` pendiente · `[~]` en curso · `[x]` cerrado · `[-]` d
 - **Problema:** compite con `device/mark_done`, que ya promueve en servidor. Depende de que haya una pestaña abierta.
 - **Plan:** consolidar en backend (promover al crear/replanificar colas cuando la mesa no tiene `MOSTRANDO`); dejar el auto-avance del dashboard como red de seguridad hasta verificar en staging, luego retirarlo.
 
-### 4.3 SSR configurado pero no usado — `[ ]`
+### 4.3 SSR configurado pero no usado — `[x]`
 
-- **Plan:** eliminar `src/server.ts`, `src/main.server.ts`, `app.config.server.ts`, `app.routes.server.ts`, y las dependencias `@angular/ssr`, `@angular/platform-server`, `express`, `@types/express`. Mover `http-server` a `devDependencies`. Retirar el script `serve:ssr:*`.
+- **Hecho (2026-09-17):** eliminados los cuatro ficheros SSR y las dependencias `@angular/ssr`, `@angular/platform-server`, `express`, `@types/express`; `http-server` pasa a `devDependencies`; script `serve:ssr:*` retirado. `package-lock.json` regenerado.
 
-### 4.4 Bundle inicial 682 kB — `[ ]`
+### 4.4 Bundle inicial 682 kB — `[x]`
 
-- **Plan:** `loadComponent` para `dashboard`, `visor`, `mapper` en `app.routes.ts` (admin ya es lazy). El player deja de descargar el dashboard.
+- **Hecho (2026-09-17):** `loadComponent` para `dashboard`, `visor` (ambas rutas) y `mapper`. Bundle inicial **681,89 kB → 354,66 kB** (93 kB transferidos); desaparece el warning de presupuesto inicial. Queda solo el de `dashboard.css` (53,42 kB frente a 50 kB).
 
-### 4.5 SSE muerto — `[ ]`
+### 4.5 SSE muerto — `[x]`
 
 - `enableDeviceSSE: false` en ambos entornos; `DeviceViewSet.stream` sin uso.
-- **Plan:** retirar el endpoint y el flag (el polling es el mecanismo real y probado). Actualizar `docs/07`.
+- **Hecho (2026-09-17):** retirados `DeviceViewSet.stream`, `ServerSentEventRenderer`, `connectToSSE()` del visor y el flag `enableDeviceSSE`. El polling (estado cada 2 s en player / 1 s en supervisor, item cada 5 s / 2 s) es el único mecanismo.
 
 ### 4.6 Tests en SQLite, producción en PostgreSQL — `[ ]`
 

@@ -434,7 +434,6 @@ export class VisorComponent implements OnInit, OnDestroy {
     this.clearBrowserCloseStatus();
     this.clearShutdownChordState();
     this.clearCaptureSchedule();
-    if (this.eventSource) this.eventSource.close();
   }
 
   requestPairingCode(): void {
@@ -519,69 +518,6 @@ export class VisorComponent implements OnInit, OnDestroy {
       headers = headers.set('Authorization', `Token ${token}`);
     }
     return headers;
-  }
-
-  private eventSource: EventSource | null = null;
-  private lastSseErrorLogAt = 0;
-
-  connectToSSE(): void {
-    if (this.isSupervisor) {
-      return;
-    }
-
-    if (this.eventSource) this.eventSource.close();
-
-    // Fallback for supervisor: pass mesa_id if no token
-    let url = '';
-    if (this.deviceToken) {
-      url = `${this.apiUrl}stream/?token=${this.deviceToken}`;
-    } else if (this.mesaIdForPairing) {
-      url = `${this.apiUrl}stream/?mesa_id=${this.mesaIdForPairing}`;
-    } else {
-      console.warn('[Visor] Skipping SSE connection (No Token/MesaId)');
-      return;
-    }
-
-    this.eventSource = new EventSource(url);
-
-    this.eventSource.onmessage = (event) => {
-      try {
-        const payload = JSON.parse(event.data);
-        if (payload.type === 'calibration') {
-          const syncedIndex = this.reconcileRemoteIndex(payload.data.current_image_index);
-          if (this.mesaState) {
-            this.mesaState = {
-              ...this.mesaState,
-              calibration_json: payload.data.corners ? { corners: payload.data.corners } : this.mesaState.calibration_json,
-              mapper_enabled: payload.data.mapper_enabled,
-              current_image_index: syncedIndex ?? this.mesaState.current_image_index
-            };
-          } else {
-            this.mesaState = payload.data as any;
-          }
-
-          const previousIndex = this.currentIndex;
-          if (syncedIndex !== null && syncedIndex !== this.currentIndex) {
-            this.currentIndex = syncedIndex;
-          }
-          this.cdr.detectChanges();
-          if (!this.isSupervisor && syncedIndex !== null && syncedIndex !== previousIndex) {
-            this.checkPhotoTrigger();
-          }
-        }
-      } catch (e) {
-        console.error('[Visor] SSE Parse Error:', e);
-      }
-    };
-
-    this.eventSource.onerror = () => {
-      const now = Date.now();
-      // EventSource reconnects automatically; keep logs throttled.
-      if (now - this.lastSseErrorLogAt > 30000) {
-        console.warn('[Visor] SSE disconnected/reconnecting...');
-        this.lastSseErrorLogAt = now;
-      }
-    };
   }
 
   get projectedImage(): string | null {
@@ -1936,10 +1872,6 @@ export class VisorComponent implements OnInit, OnDestroy {
       }
     });
 
-    if (!this.isSupervisor && environment.enableDeviceSSE) {
-      this.connectToSSE();
-    }
-
     const itemPollMs = this.isSupervisor ? 2000 : 5000;
     this.itemPollSub = interval(itemPollMs).pipe(
       startWith(0),
@@ -2169,10 +2101,6 @@ export class VisorComponent implements OnInit, OnDestroy {
     this.recoveryDebug = `401 desde ${source}. Reintentando con el token guardado antes de desvincular.`;
     this.cdr.detectChanges();
 
-    if (this.eventSource) {
-      this.eventSource.close();
-      this.eventSource = null;
-    }
     this.statePollSub?.unsubscribe();
     this.itemPollSub?.unsubscribe();
     this.heartbeatSub?.unsubscribe();

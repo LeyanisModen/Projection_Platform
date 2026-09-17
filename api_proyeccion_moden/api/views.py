@@ -62,8 +62,6 @@ from django.utils import timezone
 from rest_framework.authtoken.views import ObtainAuthToken
 from rest_framework.authtoken.models import Token
 
-from rest_framework import renderers
-
 
 logger = logging.getLogger(__name__)
 
@@ -225,13 +223,6 @@ def _ferralla_capture_config_payload(user, mesas=None):
             for mesa in mesas
         ],
     }
-
-
-class ServerSentEventRenderer(renderers.BaseRenderer):
-    media_type = 'text/event-stream'
-    format = 'txt'
-    def render(self, data, accepted_media_type=None, renderer_context=None):
-        return data
 
 
 def _canonicalize_key(value):
@@ -5643,65 +5634,6 @@ class DeviceViewSet(viewsets.ViewSet):
             mesa.save(update_fields=['current_image_index', 'ultima_actualizacion'])
             register_superior_demand_for_mesa(mesa)
         return Response({'status': 'ok', 'index': mesa.current_image_index})
-
-    @action(detail=False, methods=['get'], renderer_classes=[ServerSentEventRenderer])
-    def stream(self, request):
-        """
-        Server-Sent Events (SSE) stream for real-time updates.
-        """
-        mesa = self._authenticate_device(request)
-        if not mesa:
-            return Response({'detail': 'Unauthorized'}, status=401)
-            
-        import time
-        import json
-        from django.http import StreamingHttpResponse
-        
-        def event_stream():
-            last_check = mesa.ultima_actualizacion
-            
-            # Send initial state immediately
-            initial_data = {
-                'type': 'calibration',
-                'data': {
-                    'corners': mesa.calibration_json.get('corners') if mesa.calibration_json else None,
-                    'mapper_enabled': mesa.mapper_enabled,
-                    'current_image_index': mesa.current_image_index
-                }
-            }
-            yield f"data: {json.dumps(initial_data)}\n\n"
-            
-            last_ping = time.time()
-            
-            while True:
-                # Refresh from DB to check for updates
-                mesa.refresh_from_db()
-                
-                if mesa.ultima_actualizacion > last_check:
-                    last_check = mesa.ultima_actualizacion
-                    payload = {
-                        'type': 'calibration',
-                        'data': {
-                            'corners': mesa.calibration_json.get('corners') if mesa.calibration_json else None,
-                            'mapper_enabled': mesa.mapper_enabled,
-                            'current_image_index': mesa.current_image_index
-                        }
-                    }
-                    yield f"data: {json.dumps(payload)}\n\n"
-                
-                # Keep-Alive
-                now = time.time()
-                if now - last_ping > 15:
-                    yield ": keep-alive\n\n"
-                    last_ping = now
-
-                # Check updates at a lower rate to reduce DB pressure
-                time.sleep(1.0)
-
-        response = StreamingHttpResponse(event_stream(), content_type='text/event-stream')
-        response['Cache-Control'] = 'no-cache'
-        response['X-Accel-Buffering'] = 'no'  # Disable Nginx buffering
-        return response
 
     @action(detail=False, methods=['get'])
     def current_item(self, request):
