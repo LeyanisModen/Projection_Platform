@@ -45,7 +45,7 @@
             <span class="color-dot" [style.background-color]="colorOf(worker)" aria-hidden="true"></span>{{ worker.nombre }}
         </button>
     }
-    <span class="legend-note">Pulsa una persona para filtrar · {{ holidayView() ? 'Si coinciden vacaciones, se muestran todos sus colores' : 'Fondos: vacaciones · Barras: eventos y montajes' }}</span>
+    <span class="legend-note">Pulsa una persona para filtrar · {{ holidayView() ? 'Si coinciden vacaciones, se muestran todos sus colores' : 'Fondos: vacaciones · Barras: eventos, montajes y fechas límite de control' }}</span>
 </div>
 <div class="calendar-layout" [class.multi-view]="view()!=='month'" [class.year-view]="annualView()" [class.holiday-view]="holidayView()">
     <div class="calendar-months">

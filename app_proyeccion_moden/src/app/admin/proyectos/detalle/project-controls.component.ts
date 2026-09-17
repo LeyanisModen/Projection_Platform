@@ -84,7 +84,7 @@ import { ApiService, Proyecto, ProjectCheck, ProjectCheckAttachment } from '../.
                                         <span class="check-title">{{ check.titulo }}</span>
                                         @if (check.origen === 'MANUAL') { <span class="origin">añadido en este proyecto</span> }
                                         @if (check.completado && check.completado_at) {
-                                            <small>{{ check.completado_at | date:'dd/MM/yy HH:mm' }} · {{ check.completado_por }}</small>
+                                            <small>{{ check.completado_at | date:'dd/MM/yy HH:mm' }}@if (check.completado_por) { · {{ check.completado_por }}}</small>
                                         }
                                     </label>
 
@@ -105,7 +105,7 @@ import { ApiService, Proyecto, ProjectCheck, ProjectCheckAttachment } from '../.
                                                     <a [href]="doc.url" target="_blank" rel="noopener" [title]="'Abrir ' + doc.nombre_original">
                                                         <i class="fa fa-paperclip" aria-hidden="true"></i> {{ doc.nombre_original }}
                                                     </a>
-                                                    <small>{{ formatSize(doc.tamano) }} · {{ doc.subido_at | date:'dd/MM/yy' }} · {{ doc.subido_por }}</small>
+                                                    <small>{{ formatSize(doc.tamano) }} · {{ doc.subido_at | date:'dd/MM/yy' }}@if (doc.subido_por) { · {{ doc.subido_por }}}</small>
                                                     <button type="button" class="remove doc-remove" [disabled]="busyCheck() !== null"
                                                         (click)="removeAttachment(check, doc)" [attr.aria-label]="'Quitar ' + doc.nombre_original">&times;</button>
                                                 </div>
