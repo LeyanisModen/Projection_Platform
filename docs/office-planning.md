@@ -12,9 +12,16 @@
   to canonical transport indices and retains locks around work already started.
 - Photo modals use the full viewport on narrow screens, with touch-sized controls
   below the image. Existing pinch/drag zoom remains available.
-- Global checklist definitions are shared by all existing/future projects.
-  Completion, editor and last-update time are independent per project. Archive
-  definitions rather than deleting them, so prior completion marks can be restored.
+- Project checklist (September 2026 redesign; no data existed before it):
+  the admin page "Lista de control" holds a master list of steps. Creating a
+  project copies the master steps into `ProyectoCheck` rows owned by that
+  project; from then on the project's list is independent (add project-only
+  steps, delete any step, "Traer los pasos de la lista maestra que falten"
+  re-copies missing ones by title). Editing or deleting master steps never
+  touches seeded projects. Completing a step records who and when; unmarking
+  clears both. The project detail shows a progress bar and opens the list in
+  a modal. Staff only. Planned next phases: per-step due dates shown in the
+  calendar, then attachments (approval emails, PDFs) per step.
 - Admin Calendar shows project events, mounting dates and office vacations.
   Office workers are independent of login accounts. Events use inclusive date
   ranges (whole days). Availability means no recorded vacation or assigned event for that day,

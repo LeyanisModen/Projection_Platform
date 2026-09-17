@@ -1315,6 +1315,10 @@ class ProyectoViewSet(viewsets.ModelViewSet):
                 filter=Q(modulos__estado__in=['COMPLETADO', 'CERRADO']),
                 distinct=True,
             ),
+            _checks_total=Count('checks', distinct=True),
+            _checks_completados=Count(
+                'checks', filter=Q(checks__completado=True), distinct=True,
+            ),
         )
 
     def get_queryset(self):
@@ -1340,11 +1344,15 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         """Assign current user as project owner if not provided."""
         if not _is_admin(self.request.user):
             serializer.save(usuario=self.request.user)
-            return
-        if 'usuario' not in serializer.validated_data:
+        elif 'usuario' not in serializer.validated_data:
             serializer.save(usuario=self.request.user)
         else:
             serializer.save()
+        # Every new project starts with a copy of the master checklist
+        # (api/office.py). Both creation paths (plain POST and
+        # create-with-structure) go through here.
+        from api.office import sembrar_checklist
+        sembrar_checklist(serializer.instance)
 
     def perform_update(self, serializer):
         instance = serializer.instance

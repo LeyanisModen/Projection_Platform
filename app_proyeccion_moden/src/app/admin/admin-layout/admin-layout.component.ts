@@ -30,6 +30,7 @@ import { ApiService } from '../../services/api.service';
             Ferrallas
           </a>
           <a routerLink="/admin-dashboard/calendario" routerLinkActive="active" ariaCurrentWhenActive="page">Calendario</a>
+          <a routerLink="/admin-dashboard/lista-control" routerLinkActive="active" ariaCurrentWhenActive="page">Lista de control</a>
         </nav>
 
         <div class="header-right">

@@ -61,11 +61,16 @@ export interface PlanificacionProyecto {
     fecha_calculo: string;
     dias_produccion: string[];
 }
+/** Un paso de la lista de control de un proyecto concreto. */
 export interface ProjectCheck {
-    id: number; titulo: string; completado: boolean;
-    actualizado_at: string | null; actualizado_por: string | null;
+    id: number; titulo: string; orden: number;
+    origen: 'PLANTILLA' | 'MANUAL';
+    completado: boolean;
+    completado_at: string | null; completado_por: string | null;
+    creado_at: string;
 }
-export interface CheckDefinition { id: number; titulo: string; activo: boolean; orden: number; }
+/** Paso de la lista maestra (pantalla «Lista de control»); siembra los proyectos nuevos. */
+export interface CheckDefinition { id: number; titulo: string; orden: number; }
 export interface OfficeWorker { id: number; nombre: string; activo: boolean; color: string; }
 export interface CalendarEvent {
     id: number; titulo: string; tipo: 'EVENTO' | 'VACACIONES';
@@ -92,6 +97,8 @@ export interface Proyecto {
     modulos_count?: number;
     modulos_completados?: number;
     modulos_completados_hoy?: number;
+    checks_total?: number;
+    checks_completados?: number;
 }
 
 export interface GrupoBastidorModulo {
@@ -533,12 +540,25 @@ export class ApiService {
             );
     }
 
+    // --- Lista de control de un proyecto (todas las mutaciones devuelven la lista completa) ---
     getProjectChecklist(id: number): Observable<ProjectCheck[]> {
         return this.http.get<ProjectCheck[]>(`${this.baseUrl}/proyecto-checklist/${id}/`, { headers: this.getHeaders() });
     }
-    setProjectCheck(projectId: number, id: number, completado: boolean): Observable<ProjectCheck[]> {
-        return this.http.patch<ProjectCheck[]>(`${this.baseUrl}/proyecto-checklist/${projectId}/checks/${id}/`, { completado }, { headers: this.getHeaders() });
+    addProjectCheck(projectId: number, titulo: string): Observable<ProjectCheck[]> {
+        return this.http.post<ProjectCheck[]>(`${this.baseUrl}/proyecto-checklist/${projectId}/checks/`, { titulo }, { headers: this.getHeaders() });
     }
+    updateProjectCheck(projectId: number, id: number, data: Partial<Pick<ProjectCheck, 'completado' | 'titulo'>>): Observable<ProjectCheck[]> {
+        return this.http.patch<ProjectCheck[]>(`${this.baseUrl}/proyecto-checklist/${projectId}/checks/${id}/`, data, { headers: this.getHeaders() });
+    }
+    deleteProjectCheck(projectId: number, id: number): Observable<ProjectCheck[]> {
+        return this.http.delete<ProjectCheck[]>(`${this.baseUrl}/proyecto-checklist/${projectId}/checks/${id}/`, { headers: this.getHeaders() });
+    }
+    /** Copia al proyecto los pasos de la lista maestra que aún no tiene. */
+    seedProjectChecklist(projectId: number): Observable<{ creados: number; checks: ProjectCheck[] }> {
+        return this.http.post<{ creados: number; checks: ProjectCheck[] }>(`${this.baseUrl}/proyecto-checklist/${projectId}/sembrar/`, {}, { headers: this.getHeaders() });
+    }
+
+    // --- Lista de control maestra ---
     getCheckDefinitions(): Observable<CheckDefinition[]> {
         return this.http.get<CheckDefinition[]>(`${this.baseUrl}/check-definiciones/`, { headers: this.getHeaders() });
     }
@@ -546,6 +566,12 @@ export class ApiService {
         return data.id
             ? this.http.patch<CheckDefinition>(`${this.baseUrl}/check-definiciones/${data.id}/`, data, { headers: this.getHeaders() })
             : this.http.post<CheckDefinition>(`${this.baseUrl}/check-definiciones/`, data, { headers: this.getHeaders() });
+    }
+    deleteCheckDefinition(id: number): Observable<void> {
+        return this.http.delete<void>(`${this.baseUrl}/check-definiciones/${id}/`, { headers: this.getHeaders() });
+    }
+    reorderCheckDefinitions(ids: number[]): Observable<CheckDefinition[]> {
+        return this.http.post<CheckDefinition[]>(`${this.baseUrl}/check-definiciones/reorder/`, { ids }, { headers: this.getHeaders() });
     }
     getWorkers(): Observable<OfficeWorker[]> {
         return this.http.get<OfficeWorker[]>(`${this.baseUrl}/trabajadores/`, { headers: this.getHeaders() });

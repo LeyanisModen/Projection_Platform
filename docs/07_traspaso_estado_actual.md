@@ -348,6 +348,10 @@ añadir una regresión para el caso nuevo.
 - Previsualizador de imágenes sin alterar fabricación.
 - Checkbox para ocultar bastidores completamente terminados.
 - Nombre de proyecto editable con foco automático.
+- Lista de control por proyecto: se siembra desde la lista maestra (pantalla
+  «Lista de control» del admin) al crear el proyecto; barra de progreso y
+  modal en el detalle; pasos propios por proyecto; quién y cuándo completó
+  cada paso. Solo Moden. Ver `docs/office-planning.md`.
 - Eliminación de módulos con confirmación y limpieza de media.
 - Empaquetado de nuevos módulos en bastidores, no uno por bastidor.
 - Proyectos sin entidad `Planta`; cada planta es un proyecto independiente.

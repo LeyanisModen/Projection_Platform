@@ -362,25 +362,47 @@ class Modulo(models.Model):
 
 
 class ProyectoCheckDefinicion(models.Model):
+    """Paso de la lista de control maestra (pantalla «Lista de control»).
+
+    Al crear un proyecto se copian estos pasos a ProyectoCheck. A partir de ahi
+    cada proyecto es dueno de su lista: cambiar o borrar aqui no toca los
+    proyectos ya sembrados.
+    """
     titulo = models.CharField(max_length=200)
-    activo = models.BooleanField(default=True)
     orden = models.PositiveIntegerField(default=0)
 
     class Meta:
         ordering = ['orden', 'id']
 
+    def __str__(self):
+        return self.titulo
 
-class ProyectoCheckEstado(models.Model):
-    proyecto = models.ForeignKey(Proyecto, on_delete=models.CASCADE, related_name='check_estados')
-    definicion = models.ForeignKey(ProyectoCheckDefinicion, on_delete=models.PROTECT)
+
+class ProyectoCheck(models.Model):
+    """Un paso de control de un proyecto concreto."""
+
+    class Origen(models.TextChoices):
+        PLANTILLA = 'PLANTILLA', 'Plantilla'
+        MANUAL = 'MANUAL', 'Manual'
+
+    proyecto = models.ForeignKey(Proyecto, on_delete=models.CASCADE, related_name='checks')
+    titulo = models.CharField(max_length=200)
+    orden = models.PositiveIntegerField(default=0)
+    origen = models.CharField(max_length=10, choices=Origen.choices, default=Origen.MANUAL)
     completado = models.BooleanField(default=False)
-    actualizado_at = models.DateTimeField(auto_now=True)
-    actualizado_por = models.ForeignKey(User, null=True, on_delete=models.SET_NULL)
+    # Quien confirmo el paso y cuando. Se vacian al desmarcarlo.
+    completado_at = models.DateTimeField(null=True, blank=True)
+    completado_por = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL, related_name='+',
+    )
+    creado_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        constraints = [models.UniqueConstraint(
-            fields=['proyecto', 'definicion'], name='unique_project_check',
-        )]
+        ordering = ['orden', 'id']
+        indexes = [models.Index(fields=['proyecto', 'completado'])]
+
+    def __str__(self):
+        return f'{self.proyecto_id}: {self.titulo}'
 
 
 class TrabajadorOficina(models.Model):

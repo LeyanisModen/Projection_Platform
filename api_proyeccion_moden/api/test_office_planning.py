@@ -10,7 +10,7 @@ from rest_framework.test import APITestCase
 
 from .models import (
     EventoCalendario, Mesa, MesaQueueItem, Modulo, Proyecto,
-    ProyectoCheckDefinicion, ProyectoCheckEstado, TrabajadorOficina, UserProfile,
+    ProyectoCheckDefinicion, TrabajadorOficina, UserProfile,
 )
 from .planning import DAY_CODES, demand_summary, production_day_count, project_demand
 
@@ -48,40 +48,101 @@ class OfficePlanningTests(APITestCase):
     def create_module(self, project=None, **kwargs):
         return Modulo.objects.create(nombre='A01', proyecto=project or self.project, **kwargs)
 
-    def test_global_checks_appear_in_existing_and_future_projects(self):
-        response = self.client.post('/api/check-definiciones/', {'titulo': 'Planos entregados'}, format='json')
+    # ------------------------------------------------------------------
+    # Lista de control: plantilla maestra + copia por proyecto
+    # ------------------------------------------------------------------
+    def _rows(self, project):
+        return self.client.get(f'/api/proyecto-checklist/{project.pk}/').data
+
+    def test_new_project_is_seeded_from_master_list_in_order(self):
+        ProyectoCheckDefinicion.objects.create(titulo='Planos entregados', orden=2)
+        ProyectoCheckDefinicion.objects.create(titulo='Aprobacion equivalencias', orden=1)
+
+        response = self.client.post('/api/proyectos/', {'nombre': 'Nuevo'}, format='json')
         self.assertEqual(response.status_code, 201)
-        definition = response.data['id']
-        future = Proyecto.objects.create(nombre='Future', usuario=self.factory)
-        for project in [self.project, self.project2, future]:
-            rows = self.client.get(f'/api/proyecto-checklist/{project.pk}/').data
-            self.assertEqual([(r['id'], r['completado']) for r in rows], [(definition, False)])
+        self.assertEqual(response.data['checks_total'], 2)
+        self.assertEqual(response.data['checks_completados'], 0)
 
-    def test_check_state_is_independent_and_records_editor(self):
+        rows = self._rows(Proyecto.objects.get(pk=response.data['id']))
+        self.assertEqual([r['titulo'] for r in rows], ['Aprobacion equivalencias', 'Planos entregados'])
+        self.assertTrue(all(r['origen'] == 'PLANTILLA' and not r['completado'] for r in rows))
+
+    def test_master_list_changes_do_not_touch_seeded_projects(self):
         definition = ProyectoCheckDefinicion.objects.create(titulo='Entrega')
-        url = f'/api/proyecto-checklist/{self.project.pk}/checks/{definition.pk}/'
-        response = self.client.patch(url, {'completado': True}, format='json')
+        self.assertEqual(self.client.post(f'/api/proyecto-checklist/{self.project.pk}/sembrar/').data['creados'], 1)
+
+        self.assertEqual(self.client.patch(f'/api/check-definiciones/{definition.pk}/', {'titulo': 'Entrega final'}, format='json').status_code, 200)
+        self.assertEqual(self.client.delete(f'/api/check-definiciones/{definition.pk}/').status_code, 204)
+
+        self.assertEqual([r['titulo'] for r in self._rows(self.project)], ['Entrega'])
+        self.assertEqual(self._rows(self.project2), [])
+
+    def test_sembrar_only_adds_missing_steps_and_appends_at_the_end(self):
+        ProyectoCheckDefinicion.objects.create(titulo='Planos', orden=1)
+        self.client.post(f'/api/proyecto-checklist/{self.project.pk}/checks/', {'titulo': 'Paso manual'}, format='json')
+        ProyectoCheckDefinicion.objects.create(titulo='  planos  ', orden=2)  # duplicado por titulo
+        ProyectoCheckDefinicion.objects.create(titulo='Acta', orden=3)
+
+        response = self.client.post(f'/api/proyecto-checklist/{self.project.pk}/sembrar/')
+        self.assertEqual(response.data['creados'], 2)
+        self.assertEqual([r['titulo'] for r in response.data['checks']], ['Paso manual', 'Planos', 'Acta'])
+
+        self.assertEqual(self.client.post(f'/api/proyecto-checklist/{self.project.pk}/sembrar/').data['creados'], 0)
+
+    def test_manual_step_is_project_only_and_rejects_duplicates(self):
+        url = f'/api/proyecto-checklist/{self.project.pk}/checks/'
+        response = self.client.post(url, {'titulo': '  Acta de inicio  '}, format='json')
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data[0]['titulo'], 'Acta de inicio')
+        self.assertEqual(response.data[0]['origen'], 'MANUAL')
+
+        self.assertEqual(self.client.post(url, {'titulo': 'acta de inicio'}, format='json').status_code, 400)
+        self.assertEqual(self.client.post(url, {'titulo': '   '}, format='json').status_code, 400)
+        self.assertEqual(self._rows(self.project2), [])
+        self.assertEqual(ProyectoCheckDefinicion.objects.count(), 0)
+
+    def test_completing_records_who_and_when_and_unmarking_clears_them(self):
+        ProyectoCheckDefinicion.objects.create(titulo='Entrega')
+        check = self.client.post(f'/api/proyecto-checklist/{self.project.pk}/sembrar/').data['checks'][0]
+        url = f'/api/proyecto-checklist/{self.project.pk}/checks/{check["id"]}/'
+
+        done = self.client.patch(url, {'completado': True}, format='json')
+        self.assertEqual(done.status_code, 200)
+        self.assertTrue(done.data[0]['completado'])
+        self.assertEqual(done.data[0]['completado_por'], self.admin.username)
+        self.assertIsNotNone(done.data[0]['completado_at'])
+
+        project = self.client.get(f'/api/proyectos/{self.project.pk}/').data
+        self.assertEqual((project['checks_completados'], project['checks_total']), (1, 1))
+
+        again = self.client.patch(url, {'titulo': 'Entrega firmada'}, format='json').data[0]
+        self.assertEqual(again['titulo'], 'Entrega firmada')
+        self.assertEqual(again['completado_por'], self.admin.username, 'editar el titulo no cambia quien lo completo')
+
+        undone = self.client.patch(url, {'completado': False}, format='json').data[0]
+        self.assertFalse(undone['completado'])
+        self.assertIsNone(undone['completado_por'])
+        self.assertIsNone(undone['completado_at'])
+
+    def test_project_step_can_be_deleted_and_unknown_step_is_rejected(self):
+        check = self.client.post(f'/api/proyecto-checklist/{self.project.pk}/checks/', {'titulo': 'Temporal'}, format='json').data[0]
+        self.assertEqual(self.client.delete(f'/api/proyecto-checklist/{self.project.pk}/checks/{check["id"]}/').data, [])
+        self.assertEqual(self.client.patch(f'/api/proyecto-checklist/{self.project.pk}/checks/{check["id"]}/', {'completado': True}, format='json').status_code, 400)
+        self.assertEqual(self.client.patch(f'/api/proyecto-checklist/{self.project2.pk}/checks/{check["id"]}/', {'completado': True}, format='json').status_code, 400)
+
+    def test_master_list_reorder_requires_every_id_once(self):
+        a = ProyectoCheckDefinicion.objects.create(titulo='A')
+        b = ProyectoCheckDefinicion.objects.create(titulo='B')
+        c = self.client.post('/api/check-definiciones/', {'titulo': 'C'}, format='json').data
+        self.assertGreater(c['orden'], max(a.orden, b.orden), 'un paso nuevo va al final')
+
+        response = self.client.post('/api/check-definiciones/reorder/', {'ids': [c['id'], a.pk, b.pk]}, format='json')
         self.assertEqual(response.status_code, 200)
-        self.assertTrue(response.data[0]['completado'])
-        self.assertEqual(response.data[0]['actualizado_por'], self.admin.username)
-        self.assertIsNotNone(response.data[0]['actualizado_at'])
-        self.assertFalse(self.client.get(f'/api/proyecto-checklist/{self.project2.pk}/').data[0]['completado'])
-        self.client.patch(url, {'completado': False}, format='json')
-        self.assertEqual(ProyectoCheckEstado.objects.count(), 1)
-        self.assertFalse(ProyectoCheckEstado.objects.get().completado)
+        self.assertEqual([r['titulo'] for r in response.data], ['C', 'A', 'B'])
+        self.assertEqual([r['titulo'] for r in self.client.get('/api/check-definiciones/').data], ['C', 'A', 'B'])
 
-    def test_archiving_and_restoring_definition_preserves_states(self):
-        definition = ProyectoCheckDefinicion.objects.create(titulo='Entrega')
-        ProyectoCheckEstado.objects.create(proyecto=self.project, definicion=definition, completado=True)
-        url = f'/api/check-definiciones/{definition.pk}/'
-        self.assertEqual(self.client.patch(url, {'activo': False}, format='json').status_code, 200)
-        self.assertEqual(self.client.get(f'/api/proyecto-checklist/{self.project.pk}/').data, [])
-        self.assertEqual(self.client.patch(f'/api/proyecto-checklist/{self.project.pk}/checks/{definition.pk}/', {'completado': False}, format='json').status_code, 400)
-        self.client.patch(url, {'activo': True, 'titulo': 'Entrega confirmada'}, format='json')
-        row = self.client.get(f'/api/proyecto-checklist/{self.project.pk}/').data[0]
-        self.assertEqual(row['titulo'], 'Entrega confirmada')
-        self.assertTrue(row['completado'])
-        self.assertEqual(self.client.delete(url).status_code, 405)
+        self.assertEqual(self.client.post('/api/check-definiciones/reorder/', {'ids': [a.pk, b.pk]}, format='json').status_code, 400)
+        self.assertEqual(self.client.post('/api/check-definiciones/reorder/', {'ids': [a.pk, a.pk, b.pk]}, format='json').status_code, 400)
 
     def test_office_data_is_admin_only(self):
         self.client.force_authenticate(self.factory)
@@ -89,6 +150,8 @@ class OfficePlanningTests(APITestCase):
             self.assertEqual(self.client.get(url).status_code, 403, url)
         self.assertEqual(self.client.post('/api/eventos/', {}).status_code, 403)
         self.assertEqual(self.client.post('/api/check-definiciones/', {'titulo': 'No'}).status_code, 403)
+        self.assertEqual(self.client.post(f'/api/proyecto-checklist/{self.project.pk}/checks/', {'titulo': 'No'}).status_code, 403)
+        self.assertEqual(self.client.post(f'/api/proyecto-checklist/{self.project.pk}/sembrar/').status_code, 403)
 
     def test_vacations_require_worker_and_valid_range(self):
         data = {'titulo': 'Vacaciones', 'tipo': 'VACACIONES', 'inicio': '2026-09-10', 'fin': '2026-09-12'}

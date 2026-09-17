@@ -234,6 +234,10 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
     modulos_count = serializers.SerializerMethodField()
     modulos_completados = serializers.SerializerMethodField()
     modulos_completados_hoy = serializers.SerializerMethodField()
+    # Progreso de la lista de control (api/office.py); alimenta la barra del
+    # detalle sin una peticion extra.
+    checks_total = serializers.SerializerMethodField()
+    checks_completados = serializers.SerializerMethodField()
     datos_tecnicos_archivo = serializers.SerializerMethodField()
     bastidor_longitud_cm = serializers.SerializerMethodField()
     # Rolling-deploy compatibility for an older frontend still in service.
@@ -254,7 +258,7 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
             "estrategia_bastidor",
             "capacidad_diaria_usuario",
             "grupos_count", "modulos_count", "modulos_completados",
-            "modulos_completados_hoy",
+            "modulos_completados_hoy", "checks_total", "checks_completados",
         ]
         extra_kwargs = {
             'usuario': {'required': False, 'allow_null': True},
@@ -334,6 +338,14 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
         if cached is not None:
             return cached
         return obj.modulos.filter(estado__in=['COMPLETADO', 'CERRADO']).count()
+
+    def get_checks_total(self, obj):
+        cached = getattr(obj, '_checks_total', None)
+        return cached if cached is not None else obj.checks.count()
+
+    def get_checks_completados(self, obj):
+        cached = getattr(obj, '_checks_completados', None)
+        return cached if cached is not None else obj.checks.filter(completado=True).count()
 
     def get_modulos_completados_hoy(self, obj):
         from django.utils import timezone
