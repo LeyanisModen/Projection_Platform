@@ -182,6 +182,8 @@ describe('ProjectControlsComponent lista de control', () => {
         const request = http.expectOne('/api/proyecto-checklist/7/checks/6/adjuntos/');
         expect(request.request.method).toBe('POST');
         expect(request.request.body instanceof FormData).toBe(true);
+        // Con Content-Type application/json el backend intenta leer JSON y devuelve 400.
+        expect(request.request.headers.get('Content-Type')).toBeNull();
         expect((request.request.body as FormData).get('archivo')).toBeInstanceOf(File);
         request.flush([check(6, 'Planos', false, 'PLANTILLA', { requiere_documento: true, adjuntos: [
             { id: 2, nombre_original: 'ok.pdf', tamano: 4, url: '/media/controles/7/6/ok.pdf', subido_at: '2026-09-17T10:00:00Z', subido_por: 'moden' },

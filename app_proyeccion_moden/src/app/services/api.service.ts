@@ -578,7 +578,8 @@ export class ApiService {
     uploadProjectCheckAttachment(projectId: number, checkId: number, file: File): Observable<ProjectCheck[]> {
         const form = new FormData();
         form.append('archivo', file, file.name);
-        return this.http.post<ProjectCheck[]>(`${this.baseUrl}/proyecto-checklist/${projectId}/checks/${checkId}/adjuntos/`, form, { headers: this.getHeaders() });
+        // Sin Content-Type fijo: el navegador pone el boundary del multipart (como updateProyectoFiles).
+        return this.http.post<ProjectCheck[]>(`${this.baseUrl}/proyecto-checklist/${projectId}/checks/${checkId}/adjuntos/`, form, { headers: this.getAuthHeaders() });
     }
     deleteProjectCheckAttachment(projectId: number, checkId: number, attachmentId: number): Observable<ProjectCheck[]> {
         return this.http.delete<ProjectCheck[]>(`${this.baseUrl}/proyecto-checklist/${projectId}/checks/${checkId}/adjuntos/${attachmentId}/`, { headers: this.getHeaders() });
