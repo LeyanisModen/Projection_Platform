@@ -8,6 +8,7 @@ to a broken container.
 from django.db import connection
 from django.db.utils import OperationalError
 from rest_framework import permissions
+from rest_framework.renderers import JSONRenderer
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -15,6 +16,10 @@ from rest_framework.views import APIView
 class HealthView(APIView):
     authentication_classes = []
     permission_classes = [permissions.AllowAny]
+    # Always JSON: the browsable renderer would try to render a template
+    # (static files, manifest) for a text/html Accept header, and a 500 here
+    # fails the deploy.
+    renderer_classes = [JSONRenderer]
     # Railway hits this with Host: healthcheck.railway.app; settings.py adds
     # that host to ALLOWED_HOSTS when running on Railway.
 
