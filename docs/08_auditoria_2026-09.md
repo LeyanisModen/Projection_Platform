@@ -58,11 +58,11 @@ Leyenda de estado: `[ ]` pendiente · `[~]` en curso · `[x]` cerrado · `[-]` d
 
 - **Hecho (2026-09-17):** `HTTPS_ONLY` se activa solo cuando Railway inyecta `RAILWAY_ENVIRONMENT_NAME` (o con la variable `HTTPS_ONLY=True`); con él van `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE` y `SECURE_HSTS_SECONDS=3600`. `SECURE_CONTENT_TYPE_NOSNIFF` siempre. `SECURE_SSL_REDIRECT` queda **deliberadamente apagado**: nginx reenvía `X-Forwarded-Proto=http` por la red privada y provocaría bucle; Railway ya fuerza HTTPS en el borde. W009 solo aplica al fallback local.
 
-### 1.6 Capture service: control asimétrico — `[ ]`
+### 1.6 Capture service: control asimétrico — `[x]`
 
 - **Dónde:** `capture_service.py` `_is_control_request_allowed`, `do_GET /device_token`, `_cors`.
 - **Problema:** `/close_browser` y `/shutdown_pc` pasan si **no** hay cabecera `Origin`; `GET /device_token` responde con `Access-Control-Allow-Origin: *` sin ninguna validación.
-- **Plan:** exigir `Origin` en la allowlist para los endpoints de control; en `/device_token` devolver CORS solo para orígenes de la allowlist (reflejar el `Origin` permitido en vez de `*`). Mantener `*` en `/capture`, `/stats`, `/health` para no romper nada. Allowlist ampliable desde `config.ini` (`[service] allowed_origins`) por si cambia el dominio del frontend.
+- **Hecho (2026-09-17, capture service `2026-09-17.1`):** `/close_browser` y `/shutdown_pc` exigen `Origin` en la allowlist **y** `X-Moden-Action`. `GET/POST /device_token` responde 403 a orígenes desconocidos y refleja el `Origin` permitido en CORS (sin `*`); sin cabecera `Origin` (curl local) sigue funcionando. `/capture`, `/stats` y `/health` mantienen `*`. Allowlist ampliable con `[service] allowed_origins` en `config.ini`. Tests en `test_control_actions.py`.
 
 ---
 
@@ -79,16 +79,16 @@ Leyenda de estado: `[ ]` pendiente · `[~]` en curso · `[x]` cerrado · `[-]` d
 - **Dónde:** `DeviceViewSet.unbind` no borra las `PairingSession` que apuntan a la mesa; `status` devuelve `{'status': 'PAIRED'}` sin `device_token`; `visor.component.ts` solo actúa ante `PAIRED` con token o `EXPIRED` → sondeo infinito cada 3 s.
 - **Hecho (2026-09-17):** (a) `unbind` y `revoke` borran las `PairingSession` de la mesa; (b) `status` responde `EXPIRED` cuando el token ya se consumió o la mesa se desvinculó; (c) el visor trata `PAIRED` sin token como `EXPIRED` y pide código nuevo. Tests `test_status_expires_when_paired_session_token_was_already_consumed` y `test_unbind_removes_pairing_sessions_of_the_mesa`.
 
-### 2.3 Capture service monohilo — `[ ]`
+### 2.3 Capture service monohilo — `[x]`
 
 - **Dónde:** `capture_service.py` `HTTPServer` en `main()`.
 - **Efecto:** un `/capture` (1,5–3 s de estabilización) bloquea `/health` y `/stats`; el watchdog usa timeout de 3 s.
-- **Plan:** `ThreadingHTTPServer`. `_camera_lock` ya serializa el acceso a la cámara.
+- **Hecho (2026-09-17):** `ThreadingHTTPServer` con `daemon_threads`. `_camera_lock` (RLock) sigue serializando la cámara; `_stats_lock` protege las estadísticas.
 
-### 2.4 Default de captura en código es 4K (cuelga el driver) — `[ ]`
+### 2.4 Default de captura en código es 4K (cuelga el driver) — `[x]`
 
 - **Dónde:** `Config.__init__` (`3840×2160`) vs `config.ini.example` (`1920×1080` con la explicación del cuelgue).
-- **Plan:** default en código a `1920×1080`. Los `config.ini` existentes no cambian.
+- **Hecho (2026-09-17):** default en código `1920×1080` con el motivo comentado. Los `config.ini` existentes no cambian. Test `test_default_capture_resolution_is_fullhd`.
 
 ### 2.5 `mark_done` del dispositivo sin transacción — `[x]`
 

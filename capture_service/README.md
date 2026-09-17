@@ -3,10 +3,18 @@
 HTTP service + documentation loop that runs on every mesa mini-PC next
 to the Chrome kiosk. Single Python process:
 
-- `POST http://127.0.0.1:5555/capture` — on-demand 4K photo for the
+- `POST http://127.0.0.1:5555/capture` — on-demand FullHD photo for the
   visor (fires when a filename contains `_foto`, `_photo` or `_check`).
-- `POST http://127.0.0.1:5555/shutdown_pc` - protected local control used
-  only after the player detects a five-second Left + Space + Right hold.
+- `GET/POST http://127.0.0.1:5555/device_token` — pairing token mirrored
+  to disk. Only answers to the allowlisted frontend origins (or to a local
+  caller with no `Origin` header).
+- `POST http://127.0.0.1:5555/close_browser` / `/shutdown_pc` — control
+  endpoints. Both require an allowlisted `Origin` **and** the
+  `X-Moden-Action` header; `/shutdown_pc` is used only after the player
+  detects a five-second Left + Space + Right hold. Extra origins can be
+  added with `[service] allowed_origins` in `config.ini`.
+- The HTTP server is threaded: a `/capture` waiting for exposure to settle
+  no longer blocks `/health` or `/stats`.
 - `GET  http://127.0.0.1:5555/health` — 200 OK while running.
 - `GET  http://127.0.0.1:5555/stats` — documentation counters, last
   capture timestamp, local disk usage, error details.
