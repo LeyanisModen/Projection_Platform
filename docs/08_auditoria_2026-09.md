@@ -205,6 +205,29 @@ Leyenda de estado: `[ ]` pendiente · `[~]` en curso · `[x]` cerrado · `[-]` d
 - La imagen Docker del frontend no se construyó en local (Docker Desktop apagado); `npm ci` se validó contra el lockfile. El deploy de staging es la prueba real.
 - Los mini-PC recibirán `2026-09-17.1` por el actualizador automático (04:15) cuando el cambio llegue a `deploy`.
 
+## Lista de control por proyecto (17/09/2026, fase 1)
+
+La checklist que existía (lista global compartida por todos los proyectos,
+sin barra, sin fechas ni adjuntos) no se había usado nunca: 0 filas en
+producción y en staging. Se rediseñó según lo que la usuaria esperaba:
+
+- **Lista maestra** en una pantalla propia del admin (`/admin-dashboard/lista-control`):
+  añadir, editar, reordenar y eliminar pasos. Es la plantilla.
+- **Copia por proyecto** al crearlo (`sembrar_checklist` en `perform_create`,
+  cubre el alta vacía y la importación). Cada proyecto es dueño de su lista:
+  pasos propios, borrar cualquiera, «Traer los pasos de la lista maestra que
+  falten». Cambiar la maestra no toca los proyectos ya sembrados.
+- **Barra de progreso + botón** en el detalle; la lista se abre en un modal.
+  `checks_total`/`checks_completados` viajan en el serializer del proyecto.
+- Completar registra quién y cuándo; desmarcar lo limpia.
+- Migración `0057` (sustituye `ProyectoCheckEstado` por `ProyectoCheck`,
+  quita `activo` de la maestra). Solo staff.
+- Tests: 8 backend en `test_office_planning.py`, 11 frontend.
+
+**Fases pendientes acordadas:** (2) fecha límite por paso visible en el
+calendario; (3) adjuntos de confirmación por paso (correo de aprobación, PDF)
+con la autenticación de `/media/`.
+
 ## Código muerto retirado (17/09/2026)
 
 - **SSR** (`server.ts`, `main.server.ts`, `app.config.server.ts`,

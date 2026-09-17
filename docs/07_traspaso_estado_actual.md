@@ -126,6 +126,8 @@ Rutas principales:
 | `/admin-dashboard/ferrallas` | Gestión Moden de ferrallas y mesas |
 | `/admin-dashboard/proyectos` | Gestión Moden de proyectos |
 | `/admin-dashboard/proyectos/:id` | Detalle, importación, bastidores y previews |
+| `/admin-dashboard/calendario` | Calendario de oficina |
+| `/admin-dashboard/lista-control` | Lista de control maestra (plantilla de checks) |
 
 ### 3.3 Backend
 
@@ -158,11 +160,8 @@ Routers/API principales:
 - `/api/lista-materiales/general/`.
 - `/api/mesas/colas/` (colas de todas las mesas visibles en una respuesta).
 - `/api/health/`.
-- Oficina (solo staff): `check-definiciones`, `proyecto-checklist`,
-  `trabajadores`, `eventos` (`api/office.py`).
-- `/api/mesas/colas/` (colas de todas las mesas visibles en una respuesta).
-- `/api/health/`.
-- Oficina (solo staff): `check-definiciones`, `proyecto-checklist`,
+- Oficina (solo staff): `check-definiciones` (lista maestra, con `reorder/`),
+  `proyecto-checklist/<id>/` (+ `checks/`, `checks/<id>/`, `sembrar/`),
   `trabajadores`, `eventos` (`api/office.py`).
 
 ### 3.4 Servicio local de los mini-PCs
@@ -281,7 +280,7 @@ proyection_platform/
 | `api/planning.py` | Cálculo de demanda/planificación por proyecto |
 | `api/tests.py` | Suite principal de permisos, importación, colas y planner |
 | `api/test_*.py` | Detector de colores, oficina, objetivos, salud, media, colas en bloque |
-| `api/migrations/` | Migraciones `0001` a `0056_mesa_pending_device_token` |
+| `api/migrations/` | Migraciones `0001` a `0057_project_checklist_per_project` |
 | `api/management/commands/` | Reconciliar, sincronizar, resetear y simular |
 | `proyeccion_moden/settings.py` | DB, auth, CORS, media y límites de subida |
 | `proyeccion_moden/urls.py` | Router REST y endpoints agregados |
