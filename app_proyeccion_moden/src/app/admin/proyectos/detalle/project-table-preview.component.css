@@ -384,6 +384,14 @@
     opacity: 0.72;
 }
 
+/* Igual que en el detalle: bloqueado, la 'G' usa el chip neutro para que se
+   lea lo mismo que la 'C'. */
+.virtual-queue-item.is-locked .module-type.is-rotated {
+    color: #65737d;
+    background: #eef2f4;
+    filter: none;
+}
+
 .drag-handle {
     display: grid;
     width: 22px;

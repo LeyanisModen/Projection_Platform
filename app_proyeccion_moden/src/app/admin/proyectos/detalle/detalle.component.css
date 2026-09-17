@@ -2752,6 +2752,15 @@
     filter: grayscale(1);
 }
 
+/* Bloqueado: el chip de girado vuelve al aspecto neutro del resto de tipos.
+   Con el naranja de fondo, el grayscale lo dejaba gris sobre gris y la 'G'
+   no se leia. El candado ya indica que el modulo esta bloqueado. */
+.grupo-modulo-item.is-not-movable .grupo-modulo-tipo-chip.tipo-girado {
+    color: #858e95;
+    background: #e9ecef;
+    filter: none;
+}
+
 .grupo-modulo-item.has-sd .grupo-modulo-nombre-texto,
 .grupo-modulo-drag-preview.has-sd .grupo-modulo-nombre {
     color: #b54718;
