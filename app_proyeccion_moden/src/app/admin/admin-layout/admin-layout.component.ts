@@ -161,6 +161,7 @@ import { ApiService } from '../../services/api.service';
       font-size: 0.95rem;
       font-weight: 600;
       text-decoration: none;
+      white-space: nowrap;
       transition: color 160ms ease;
     }
 

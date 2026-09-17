@@ -93,7 +93,7 @@ describe('ProjectControlsComponent lista de control', () => {
         expect(fixture.componentInstance.percent()).toBe(33);
         expect(element.querySelector('.progress-label')?.textContent?.trim()).toBe('1 / 3');
         expect(element.querySelector('.next-step')?.textContent).toContain('Aprobación equivalencias');
-        expect(element.querySelector('.modal')).toBeNull();
+        expect(element.querySelector('.checklist-dialog')).toBeNull();
     });
 
     it('abre la lista en un modal con los pasos y su origen', () => {

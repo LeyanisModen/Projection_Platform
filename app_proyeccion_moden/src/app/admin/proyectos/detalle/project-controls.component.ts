@@ -57,15 +57,15 @@ import { ApiService, Proyecto, ProjectCheck } from '../../../services/api.servic
         </section>
 
         @if (listOpen()) {
-            <div class="modal-backdrop" (click)="closeList()">
-                <div class="modal" role="dialog" aria-modal="true" aria-labelledby="checklist-title"
+            <div class="checklist-backdrop" (click)="closeList()">
+                <div class="checklist-dialog" role="dialog" aria-modal="true" aria-labelledby="checklist-title"
                     cdkTrapFocus cdkTrapFocusAutoCapture (click)="$event.stopPropagation()" (keydown.escape)="closeList()">
-                    <header class="modal-header">
+                    <header class="checklist-header">
                         <div>
                             <h3 id="checklist-title">Lista de control · {{ project().nombre }}</h3>
                             <p>{{ completed() }} de {{ checks().length }} pasos completados</p>
                         </div>
-                        <button type="button" class="close" (click)="closeList()" aria-label="Cerrar">&times;</button>
+                        <button type="button" class="dialog-close" (click)="closeList()" aria-label="Cerrar">&times;</button>
                     </header>
 
                     @if (checks().length) {
@@ -103,7 +103,7 @@ import { ApiService, Proyecto, ProjectCheck } from '../../../services/api.servic
                         </div>
                     </form>
 
-                    <footer class="modal-footer">
+                    <footer class="checklist-footer">
                         <button type="button" class="text-button" [disabled]="busyCheck() !== null" (click)="seedFromMaster()">
                             Traer los pasos de la lista maestra que falten
                         </button>
@@ -127,10 +127,10 @@ import { ApiService, Proyecto, ProjectCheck } from '../../../services/api.servic
         .progress{flex:1 1 auto;height:10px;background:#edf0f4;border-radius:999px;overflow:hidden}
         .progress-fill{height:100%;background:#ef6815;border-radius:999px;transition:width .25s ease}.progress-fill.done{background:#2f9e5b}
         .progress-label{font-size:14px;white-space:nowrap}.next-step{margin:8px 0 0}
-        .modal-backdrop{position:fixed;inset:0;background:rgba(20,28,40,.45);display:grid;place-items:center;padding:16px;z-index:1000}
-        .modal{background:#fff;border-radius:12px;width:min(640px,100%);max-height:calc(100vh - 32px);overflow:auto;padding:20px;box-shadow:0 20px 50px rgba(0,0,0,.25);color:#243446}
-        .modal-header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px}.modal-header h3{margin:0 0 4px}.modal-header p{margin:0}
-        .close{font-size:20px;line-height:1;padding:4px 10px}
+        .checklist-backdrop{position:fixed;inset:0;background:rgba(20,28,40,.45);display:grid;place-items:center;padding:16px;z-index:1000}
+        .checklist-dialog{background:#fff;border-radius:12px;width:min(640px,100%);max-height:calc(100vh - 32px);overflow:auto;padding:20px;box-shadow:0 20px 50px rgba(0,0,0,.25);color:#243446}
+        .checklist-header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px}.checklist-header h3{margin:0 0 4px}.checklist-header p{margin:0}
+        .dialog-close{font-size:20px;line-height:1;padding:4px 10px}
         .check-list{list-style:none;margin:14px 0 0;padding:0}
         .check-row{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid #edf0f4}
         .check-row input{width:18px;height:18px;flex-shrink:0;margin-top:2px;accent-color:#ef6815}
@@ -139,7 +139,7 @@ import { ApiService, Proyecto, ProjectCheck } from '../../../services/api.servic
         .check-row small{display:block;margin-top:4px}.check-empty{padding:12px 0;font-size:13px;color:#67758a}
         .remove{flex:0 0 auto;padding:2px 8px;font-size:16px;line-height:1;color:#8a96a3}.remove:hover:not(:disabled){color:#b3341a;border-color:#f1c9bf}
         .add-check{margin-top:16px}.add-check-row{display:flex;gap:8px;align-items:flex-start}.add-check-row input{margin-bottom:0}
-        .modal-footer{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px}.modal-footer span{font-size:12px;color:#67758a}
+        .checklist-footer{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px}.checklist-footer span{font-size:12px;color:#67758a}
         .text-button{border:0;padding:6px 0;color:#af4a13}
         @media(max-width:600px){input:not([type=checkbox]){font-size:16px}button{min-height:42px}.remove{min-height:32px}}
     `,
