@@ -87,7 +87,13 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'api.media_access.MediaCookieMiddleware',
 ]
+
+# /media/ requires a user or device credential (header or same-origin cookie,
+# see api/media_access.py). Set MEDIA_REQUIRE_AUTH=False to fall back to the
+# previous public behaviour in an emergency.
+MEDIA_REQUIRE_AUTH = os.environ.get('MEDIA_REQUIRE_AUTH', 'True') == 'True'
 
 # CORS Settings
 CORS_ALLOW_ALL_ORIGINS = os.environ.get('CORS_ALLOW_ALL_ORIGINS', 'False') == 'True'

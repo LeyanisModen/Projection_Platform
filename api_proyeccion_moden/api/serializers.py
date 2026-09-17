@@ -1,5 +1,6 @@
 import os
 from decimal import Decimal
+from urllib.parse import urlsplit
 
 from django.contrib.auth.models import User
 from rest_framework import serializers
@@ -259,6 +260,18 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
             'usuario': {'required': False, 'allow_null': True},
             'datos_tecnicos_importados': {'read_only': True},
         }
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # DRF renders FileFields as absolute URLs on the backend host. The
+        # browser must fetch media through the frontend's nginx (same origin)
+        # so the /media/ auth cookie travels with the request, so keep the
+        # path only. Also removes the http/https mixed-content edge case.
+        for field in ('plano_archivo', 'documentos_archivo', 'planilla_archivo'):
+            value = data.get(field)
+            if isinstance(value, str) and '://' in value:
+                data[field] = urlsplit(value).path
+        return data
 
     def get_datos_tecnicos_archivo(self, obj):
         if not obj.fichero_datos_tecnicos:

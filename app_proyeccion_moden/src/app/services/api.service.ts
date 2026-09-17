@@ -507,6 +507,10 @@ export class ApiService {
     logout(): void {
         localStorage.removeItem('auth_token');
         localStorage.removeItem('auth_username');
+        // The backend sets a /media/ cookie with the token so <img src> can
+        // authenticate; drop it too so images stop loading after logout.
+        const secure = typeof location !== 'undefined' && location.protocol === 'https:' ? '; Secure' : '';
+        document.cookie = `moden_auth=; Max-Age=0; path=/media/; SameSite=Lax${secure}`;
     }
 
     getUsername(): string | null {

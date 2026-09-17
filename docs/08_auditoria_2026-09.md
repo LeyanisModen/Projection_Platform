@@ -30,13 +30,14 @@ Leyenda de estado: `[ ]` pendiente · `[~]` en curso · `[x]` cerrado · `[-]` d
 
 ## 1. Seguridad
 
-### 1.1 `/media/` se sirve sin autenticación — `[ ]`
+### 1.1 `/media/` se sirve sin autenticación — `[~]`
 
 - **Dónde:** `api_proyeccion_moden/proyeccion_moden/urls.py` (`re_path` a `django.views.static.serve`), `app_proyeccion_moden/nginx.conf` (`location ^~ /media/`).
 - **Problema:** las rutas son adivinables (`/media/imagenes/{proyecto}/{modulo}/…`, `/media/fotos/{proyecto}/{modulo}/…`) y cualquiera sin sesión las lee. El aislamiento por ferralla de la API no aplica aquí. `serve` además no está pensado para producción.
 - **Restricción:** las imágenes se cargan con `<img src>` y `new Image()`, que no pueden enviar cabecera `Authorization`. La solución no puede cambiar las URLs almacenadas en BD (`Imagen.url`, `FotoFabricacion.url` guardan `/media/...` relativo).
 - **Plan:** vista de media propia que acepte (a) token de usuario DRF, (b) token de dispositivo de mesa, ambos vía cookie same-origin que el frontend fija al hacer login / al emparejar, además de `Authorization`. Aplicar la misma regla de propietario que `ImagenViewSet`/`FotoFabricacionViewSet` para `imagenes/`, `fotos/`, `planos/`, `documentos/`, `datos_tecnicos/`. Los dispositivos (mesas) pueden leer cualquier media que el planner les asigne. Devolver los `FileField` como URL relativa para que todo pase por nginx y lleve la cookie.
-- **Verificación obligatoria antes de dar por cerrado:** player proyectando, visor supervisor, previsualizador del detalle, modal de fotos, plano PDF y ZIP de documentos desde dashboard, todo con sesión real en staging.
+- **Hecho en código (2026-09-17):** `api/media_access.py` sustituye a `django.views.static.serve` directo. Acepta `Authorization: Token …` (usuario), `Authorization: Bearer …` (mesa) y las cookies same-origin `moden_auth` / `moden_device` con `path=/media/`. Las cookies las escribe el backend: el login (`/api/token-auth/`) y `MediaCookieMiddleware` en cualquier respuesta autenticada (usuario o dispositivo), solo cuando falta o cambió. `logout()` del frontend borra `moden_auth`. Reglas: staff → todo; ferralla → `imagenes/<pid>`, `fotos/<pid>` y `planos/`, `documentos/`, `datos_tecnicos/` de sus proyectos; mesa emparejada → todo lo que le asigne el planner; `cortes/` (legado) solo staff. Los `FileField` de proyecto se devuelven como ruta relativa para que el PDF/ZIP pase por nginx y lleve la cookie. **Interruptor de emergencia:** `MEDIA_REQUIRE_AUTH=False` en Railway devuelve el comportamiento público anterior sin redeploy de código. 16 tests en `api/test_media_access.py`.
+- **Verificación pendiente para cerrar:** en staging, con sesión real: player proyectando tras reinicio del kiosk, visor supervisor, previsualizador del detalle, modal de fotos, plano PDF y ZIP de documentos desde el dashboard.
 
 ### 1.2 Token de dispositivo en crudo dentro de `mesa.last_error` — `[x]`
 

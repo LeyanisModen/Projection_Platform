@@ -1189,13 +1189,17 @@ class CustomAuthToken(ObtainAuthToken):
         serializer.is_valid(raise_exception=True)
         user = serializer.validated_data['user']
         token, created = Token.objects.get_or_create(user=user)
-        return Response({
+        response = Response({
             'token': token.key,
             'user_id': user.pk,
             'username': user.username,
             'is_staff': user.is_staff,
             'is_superuser': user.is_superuser
         })
+        # Same-origin cookie so <img src="/media/..."> can authenticate.
+        from api.media_access import set_user_cookie
+        set_user_cookie(response, token.key)
+        return response
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -6024,6 +6028,9 @@ class DeviceViewSet(viewsets.ViewSet):
 
         token_hash = hashlib.sha256(token.encode()).hexdigest()
         mesa = Mesa.objects.filter(device_token_hash=token_hash).first()
+        if mesa is not None:
+            # Lets MediaCookieMiddleware hand the kiosk its /media/ cookie.
+            request._request.moden_device_token = token
 
         # Temporary auth tracing for the recurring re-pair loop on the
         # mini-PC. Logs only the first 8 chars of the token + the hash
