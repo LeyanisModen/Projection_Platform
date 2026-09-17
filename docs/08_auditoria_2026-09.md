@@ -1,0 +1,192 @@
+# Auditoría técnica — septiembre 2026
+
+Fecha de auditoría: **17 de septiembre de 2026**
+Base auditada: `develop` @ `9952047` (`feat: sombrear vacaciones y ajustar titulos del calendario`)
+Alcance: backend Django, frontend Angular, capture service, despliegue Railway, docs.
+
+Este documento es la lista de trabajo derivada de la auditoría. Cada punto lleva
+su estado; cuando se cierra uno se marca aquí y, si cambia el comportamiento del
+sistema, se refleja también en `docs/07_traspaso_estado_actual.md`.
+
+Regla de oro para todos los arreglos: **nada deja de funcionar como funciona
+hoy**. Si una mejora rompe un flujo real (player, visor, dashboard, importación),
+se busca otra variante o se descarta.
+
+Leyenda de estado: `[ ]` pendiente · `[~]` en curso · `[x]` cerrado · `[-]` descartado (con motivo)
+
+## Estado verificado al iniciar
+
+| Comprobación | Resultado |
+| --- | --- |
+| Tests backend (`manage.py test`, SQLite) | 169 OK |
+| Tests frontend (`ng test`) | 113 OK en 16 ficheros |
+| Tests capture service (`unittest`) | 32 OK |
+| Build Angular producción | OK, 2 warnings de presupuesto |
+| Bundle inicial | 681,89 kB raw / 159 kB transferidos |
+| `manage.py check --deploy` | 5 warnings (W004, W008, W009, W012, W016) |
+| `develop` vs `origin/deploy` | Sin diferencias de contenido |
+
+---
+
+## 1. Seguridad
+
+### 1.1 `/media/` se sirve sin autenticación — `[ ]`
+
+- **Dónde:** `api_proyeccion_moden/proyeccion_moden/urls.py` (`re_path` a `django.views.static.serve`), `app_proyeccion_moden/nginx.conf` (`location ^~ /media/`).
+- **Problema:** las rutas son adivinables (`/media/imagenes/{proyecto}/{modulo}/…`, `/media/fotos/{proyecto}/{modulo}/…`) y cualquiera sin sesión las lee. El aislamiento por ferralla de la API no aplica aquí. `serve` además no está pensado para producción.
+- **Restricción:** las imágenes se cargan con `<img src>` y `new Image()`, que no pueden enviar cabecera `Authorization`. La solución no puede cambiar las URLs almacenadas en BD (`Imagen.url`, `FotoFabricacion.url` guardan `/media/...` relativo).
+- **Plan:** vista de media propia que acepte (a) token de usuario DRF, (b) token de dispositivo de mesa, ambos vía cookie same-origin que el frontend fija al hacer login / al emparejar, además de `Authorization`. Aplicar la misma regla de propietario que `ImagenViewSet`/`FotoFabricacionViewSet` para `imagenes/`, `fotos/`, `planos/`, `documentos/`, `datos_tecnicos/`. Los dispositivos (mesas) pueden leer cualquier media que el planner les asigne. Devolver los `FileField` como URL relativa para que todo pase por nginx y lleve la cookie.
+- **Verificación obligatoria antes de dar por cerrado:** player proyectando, visor supervisor, previsualizador del detalle, modal de fotos, plano PDF y ZIP de documentos desde dashboard, todo con sesión real en staging.
+
+### 1.2 Token de dispositivo en crudo dentro de `mesa.last_error` — `[ ]`
+
+- **Dónde:** `views.py` `DeviceViewSet.pair` (`PENDING_TOKEN:<raw>`), `status`, `_authenticate_device`.
+- **Problema:** un secreto en un campo de errores. Hoy no se filtra (el serializer no expone `last_error`), pero cualquier log/admin futuro lo sacaría.
+- **Plan:** campo dedicado `Mesa.pending_device_token` (+ `pending_device_token_expires_at`), migración, y limpiar al autenticar igual que hoy. Comportamiento idéntico para el mini-PC.
+
+### 1.3 `CSRF_TRUSTED_ORIGINS` con wildcard `https://*.railway.app` — `[ ]`
+
+- **Dónde:** `settings.py`.
+- **Problema:** confía en cualquier app de Railway. La API con `TokenAuthentication` está exenta de CSRF; el riesgo real es `/admin/` (sesión).
+- **Plan:** dejar solo los dominios concretos de producción y staging, configurables por variable `CSRF_TRUSTED_ORIGINS`.
+
+### 1.4 `scripts/django/ensure_admin.py` resetea el superusuario a `admin` — `[ ]`
+
+- **Plan:** abortar si `DJANGO_SUPERUSER_PASSWORD` no está definida. No cambiar nada más del script.
+
+### 1.5 Cabeceras/cookies seguras (`check --deploy`) — `[ ]`
+
+- **Plan:** `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE`, `SECURE_HSTS_SECONDS` (empezar bajo), `SECURE_SSL_REDIRECT` **solo** cuando `DEBUG=False` y detrás de proxy HTTPS (Railway). En local con `runserver` HTTP no deben activarse. W009 (SECRET_KEY insegura) solo aplica al fallback local; en Railway la variable existe.
+
+### 1.6 Capture service: control asimétrico — `[ ]`
+
+- **Dónde:** `capture_service.py` `_is_control_request_allowed`, `do_GET /device_token`, `_cors`.
+- **Problema:** `/close_browser` y `/shutdown_pc` pasan si **no** hay cabecera `Origin`; `GET /device_token` responde con `Access-Control-Allow-Origin: *` sin ninguna validación.
+- **Plan:** exigir `Origin` en la allowlist para los endpoints de control; en `/device_token` devolver CORS solo para orígenes de la allowlist (reflejar el `Origin` permitido en vez de `*`). Mantener `*` en `/capture`, `/stats`, `/health` para no romper nada. Allowlist ampliable desde `config.ini` (`[service] allowed_origins`) por si cambia el dominio del frontend.
+
+---
+
+## 2. Bugs concretos
+
+### 2.1 `PairingSession` nunca se purga — `[ ]`
+
+- **Dónde:** `DeviceViewSet.init` crea una fila por código; el visor pide código nuevo cada vez que caduca (2 min).
+- **Efecto:** ~720 filas/día por mini-PC sin emparejar, para siempre.
+- **Plan:** en `init`, borrar sesiones caducadas (sin mesa asignada o con más de N horas) antes de crear la nueva. Sin cron: la limpieza va en la propia petición.
+
+### 2.2 Estado muerto tras `unbind` (`PAIRED` sin token) — `[ ]`
+
+- **Dónde:** `DeviceViewSet.unbind` no borra las `PairingSession` que apuntan a la mesa; `status` devuelve `{'status': 'PAIRED'}` sin `device_token`; `visor.component.ts` solo actúa ante `PAIRED` con token o `EXPIRED` → sondeo infinito cada 3 s.
+- **Plan:** (a) `unbind` borra las sesiones de esa mesa; (b) `status` responde `EXPIRED` cuando la sesión está enlazada pero el token ya no está pendiente; (c) el visor trata `PAIRED` sin token como `EXPIRED` y pide código nuevo. Test de regresión backend.
+
+### 2.3 Capture service monohilo — `[ ]`
+
+- **Dónde:** `capture_service.py` `HTTPServer` en `main()`.
+- **Efecto:** un `/capture` (1,5–3 s de estabilización) bloquea `/health` y `/stats`; el watchdog usa timeout de 3 s.
+- **Plan:** `ThreadingHTTPServer`. `_camera_lock` ya serializa el acceso a la cámara.
+
+### 2.4 Default de captura en código es 4K (cuelga el driver) — `[ ]`
+
+- **Dónde:** `Config.__init__` (`3840×2160`) vs `config.ini.example` (`1920×1080` con la explicación del cuelgue).
+- **Plan:** default en código a `1920×1080`. Los `config.ini` existentes no cambian.
+
+### 2.5 `mark_done` del dispositivo sin transacción — `[ ]`
+
+- **Dónde:** `DeviceViewSet.mark_done`, también `set_index`.
+- **Plan:** `transaction.atomic` + `select_for_update` sobre la mesa, igual que `queue_sync.py`.
+
+---
+
+## 3. Configuración y despliegue
+
+### 3.1 Tres comandos de arranque divergentes — `[ ]`
+
+- `Dockerfile` `CMD`, `Procfile`, `railway.json` `startCommand`. Railway usa `railway.json`.
+- **Plan:** eliminar `Procfile`; alinear `CMD` del Dockerfile con `railway.json` (sin `migrate` en arranque, que va en `preDeployCommand`). Para Docker local, `docker-compose.yml` pasa a lanzar `migrate` explícitamente.
+
+### 3.2 Frontend construye con `npm install` — `[ ]`
+
+- **Plan:** `npm ci` en `app_proyeccion_moden/Dockerfile`.
+
+### 3.3 Producción como fallback por defecto — `[ ]`
+
+- `app_proyeccion_moden/Dockerfile` (`BACKEND_ORIGIN`/`BACKEND_HOST` de producción) y `capture_service.py` (`remote_config_url` de producción).
+- **Plan frontend:** mantener los defaults (Railway necesita que el contenedor arranque sin variables) pero **registrar en el log de nginx al arrancar** qué backend está usando, para que un staging mal configurado se detecte. Cambiarlo a vacío rompería un deploy sin variables; descartado.
+- **Plan capture service:** se mantiene (los mini-PC son de producción por definición); documentado en `config.ini.example`.
+
+### 3.4 `.gitattributes` con `merge=ours` en Dockerfiles/nginx/compose — `[ ]`
+
+- **Efecto:** un cambio en `develop` en esos ficheros no llega a `deploy` al mergear.
+- **Plan:** eliminar las reglas. Hoy los ficheros coinciden entre ramas.
+
+### 3.5 Sin `healthcheckPath` en Railway — `[ ]`
+
+- **Plan:** endpoint `GET /api/health/` (AllowAny, comprueba BD) y `location = /health` en nginx; `healthcheckPath` en `railway.json` del backend y del frontend. **Requisito:** el backend debe aceptar `Host: healthcheck.railway.app` → comprobar `ALLOWED_HOSTS` en Railway antes de activarlo.
+
+### 3.6 Menores — `[ ]`
+
+- `api_proyeccion_moden/requirements.txt` en UTF-16 → UTF-8.
+- `.pg_pass` y `.pg_service.conf` versionados → sacar de git, añadir a `.gitignore`.
+- `.gitignore` lista `docker-compose.yml` aunque está trackeado → quitar la regla.
+
+---
+
+## 4. Arquitectura y rendimiento
+
+### 4.1 Dashboard: una petición por mesa cada 5 s — `[ ]`
+
+- **Dónde:** `dashboard.ts` `pollMesasQueue`.
+- **Plan:** endpoint agregado `GET /api/grupos-mesas/{id}/colas/` que devuelva las colas de todas las mesas del grupo en una respuesta; el dashboard consume ese endpoint. Mantener el formato de item idéntico al de `mesas/{id}/queue_items/`.
+
+### 4.2 Auto-avance de cola en el navegador — `[ ]`
+
+- **Dónde:** `dashboard.ts` `pollMesasQueue` → `mostrarItem()` si el primer item está `EN_COLA`.
+- **Problema:** compite con `device/mark_done`, que ya promueve en servidor. Depende de que haya una pestaña abierta.
+- **Plan:** consolidar en backend (promover al crear/replanificar colas cuando la mesa no tiene `MOSTRANDO`); dejar el auto-avance del dashboard como red de seguridad hasta verificar en staging, luego retirarlo.
+
+### 4.3 SSR configurado pero no usado — `[ ]`
+
+- **Plan:** eliminar `src/server.ts`, `src/main.server.ts`, `app.config.server.ts`, `app.routes.server.ts`, y las dependencias `@angular/ssr`, `@angular/platform-server`, `express`, `@types/express`. Mover `http-server` a `devDependencies`. Retirar el script `serve:ssr:*`.
+
+### 4.4 Bundle inicial 682 kB — `[ ]`
+
+- **Plan:** `loadComponent` para `dashboard`, `visor`, `mapper` en `app.routes.ts` (admin ya es lazy). El player deja de descargar el dashboard.
+
+### 4.5 SSE muerto — `[ ]`
+
+- `enableDeviceSSE: false` en ambos entornos; `DeviceViewSet.stream` sin uso.
+- **Plan:** retirar el endpoint y el flag (el polling es el mecanismo real y probado). Actualizar `docs/07`.
+
+### 4.6 Tests en SQLite, producción en PostgreSQL — `[ ]`
+
+- **Plan:** documentar cómo ejecutar la suite contra Postgres local (`docker compose up db` + `DATABASE_URL`) y hacerlo al menos antes de cada merge a `deploy`.
+
+### 4.7 Sin tareas programadas — `[ ]`
+
+- Purga de `PairingSession` (se resuelve en 2.1 sin cron), auditoría de media huérfana, aviso de capacidad de volumen, backup. Pendiente de decidir mecanismo (Railway cron service o comando manual documentado).
+
+---
+
+## 5. Documentación
+
+### 5.1 `docs/07_traspaso_estado_actual.md` desfasado — `[ ]`
+
+- Tests 106/30 → 169/113; migraciones hasta `0050` → `0055`; capture service `2026-08-14.1` → `2026-09-03.1`; falta el módulo de oficina (`api/office.py`, calendario, checklist, trabajadores) y el cierre de la lista de materiales.
+
+### 5.2 `docs/06_lista_compra_propuesta.md` describe un diseño que no es el implementado — `[ ]`
+
+- La lista de materiales se resolvió leyendo las tablas de piezas del `.db` técnico del proyecto (`_read_materiales_tables`), no con la tabla externa `MaterialModulo`.
+- **Plan:** cabecera de "histórico/superado" apuntando a la implementación real.
+
+---
+
+## Orden de ejecución
+
+1. Bloque config/seguridad de bajo riesgo: 1.3, 1.4, 1.5, 3.1, 3.4, 3.6.
+2. Emparejamiento y concurrencia: 2.1, 2.2, 2.5, 1.2.
+3. Capture service: 2.3, 2.4, 1.6 (+ bump de `VERSION`).
+4. Salud de despliegue: 3.5, 3.2, 3.3.
+5. Frontend: 4.3, 4.4, 4.5.
+6. Media autenticada: 1.1.
+7. Dashboard: 4.1, 4.2.
+8. Docs: 5.1, 5.2, y cierre de este documento.
