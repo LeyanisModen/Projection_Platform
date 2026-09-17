@@ -108,6 +108,15 @@ class MediaAccessTests(APITestCase):
         response = self._get(self.legacy, HTTP_AUTHORIZATION=f'Token {self.token_a.key}')
         self.assertEqual(response.status_code, 403)
 
+    def test_file_names_with_spaces_and_parentheses_are_served(self):
+        # Real imports carry names like "Planta 1_D10_INF_JPG(SP)_07.jpg".
+        url = self._write(f'imagenes/{self.project_a.id}/7/PROY MODULO (SP) FOTO INTERM.jpg')
+        encoded = url.replace(' ', '%20').replace('(', '%28').replace(')', '%29')
+        response = self.client.get(encoded, HTTP_AUTHORIZATION=f'Token {self.token_a.key}')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self._read(response), b'binary')
+        response.close()
+
     def test_missing_file_for_owner_is_404_not_403(self):
         response = self.client.get(
             f'/media/imagenes/{self.project_a.id}/7/missing.png',
