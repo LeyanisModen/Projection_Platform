@@ -1,6 +1,7 @@
 import { Component, OnInit, OnDestroy, ChangeDetectorRef, HostListener } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute } from '@angular/router';
 import {
   ApiService,
   CaptureConfigStatus,
@@ -72,11 +73,20 @@ export class FerrallasComponent implements OnInit, OnDestroy {
 
   constructor(
     private api: ApiService,
-    private cdr: ChangeDetectorRef
+    private cdr: ChangeDetectorRef,
+    private route: ActivatedRoute
   ) { }
 
   ngOnInit(): void {
     this.loadUsers();
+  }
+
+  /** ?usuario=<id> abre esa ferralla directamente (enlace desde un proyecto). */
+  private selectUserFromQueryParams(): void {
+    const raw = this.route.snapshot.queryParamMap.get('usuario');
+    if (!raw) return;
+    const target = this.users.find(user => user.id === Number(raw));
+    if (target) this.selectedUser = target;
   }
 
   ngOnDestroy(): void {
@@ -89,6 +99,7 @@ export class FerrallasComponent implements OnInit, OnDestroy {
       next: (data) => {
         this.users = data;
         this.loading = false;
+        this.selectUserFromQueryParams();
         this.cdr.detectChanges();
       },
       error: (err: any) => {
