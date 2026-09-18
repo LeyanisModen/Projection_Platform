@@ -204,15 +204,40 @@
     min-width: 0;
 }
 
-/* Longitud de bastidor editable en la ficha de la ferralla. */
-.rack-length {
+/* Panel "Configuracion de la ferralla": mismo estilo que el de camaras. */
+.ferralla-settings-content {
+    display: grid;
+    gap: 0.35rem;
+    padding: 0.7rem 1rem 0.8rem;
+}
+
+.ferralla-setting-row {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 0.4rem;
+    gap: 0.5rem;
+    font-size: 0.86rem;
 }
 
-.rack-length .rack-input {
+.ferralla-setting-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: #334155;
+    font-weight: 600;
+}
+
+.ferralla-setting-value {
+    color: #1f2d3d;
+    font-size: 0.95rem;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.ferralla-setting-unit {
+    color: #647184;
+}
+
+.ferralla-setting-row .rack-input {
     width: 96px;
     height: 30px;
     padding: 0 0.5rem;

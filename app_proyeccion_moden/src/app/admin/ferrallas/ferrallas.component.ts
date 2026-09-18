@@ -93,7 +93,8 @@ export class FerrallasComponent implements OnInit, OnDestroy {
     if (this.selectedUser) return;
     const raw = this.route.snapshot.queryParamMap.get('usuario');
     const requested = raw ? this.users.find(user => user.id === Number(raw)) : null;
-    this.selectedUser = requested || this.users[0] || null;
+    const target = requested || this.users[0];
+    if (target) this.openUser(target);
   }
 
   // --- Longitud de bastidor editable desde la ficha ---
@@ -218,24 +219,37 @@ export class FerrallasComponent implements OnInit, OnDestroy {
     return !!user?.direcciones?.length;
   }
 
+  /** Clic en la lista: abre la ferralla o, si ya estaba abierta, la cierra. */
   selectUser(user: User) {
+    if (this.selectedUser?.id === user.id) {
+      this.closeUser();
+    } else {
+      this.openUser(user);
+    }
+  }
+
+  private openUser(user: User): void {
     this.editingRack = false;
     this.rackError = '';
-    this.selectedUser = this.selectedUser?.id === user.id ? null : user;
+    this.selectedUser = user;
     this.showForm = false;
     this.showAddMesaForm = false;
+    this.loadGruposMesas(user.id);
+    this.loadCaptureConfig(user.id);
+    this.startMesaAutoRefresh();
+  }
 
-    if (this.selectedUser) {
-      this.loadGruposMesas(this.selectedUser.id);
-      this.loadCaptureConfig(this.selectedUser.id);
-      this.startMesaAutoRefresh();
-    } else {
-      this.gruposMesas = [];
-      this.captureConfig = null;
-      this.captureConfigError = '';
-      this.captureConfigMessage = '';
-      this.clearMesaAutoRefresh();
-    }
+  private closeUser(): void {
+    this.editingRack = false;
+    this.rackError = '';
+    this.selectedUser = null;
+    this.showForm = false;
+    this.showAddMesaForm = false;
+    this.gruposMesas = [];
+    this.captureConfig = null;
+    this.captureConfigError = '';
+    this.captureConfigMessage = '';
+    this.clearMesaAutoRefresh();
   }
 
   loadCaptureConfig(userId: number, silent = false): void {
