@@ -23,10 +23,11 @@ COPY . .
 # Exponer el puerto de Django
 EXPOSE 8000
 
-# Aplicar migraciones + collectstatic + arrancar gunicorn
-CMD python manage.py migrate --noinput && \
-    python manage.py collectstatic --noinput && \
-    gunicorn proyeccion_moden.wsgi \
+# Mismo arranque que railway.json (startCommand). Las migraciones NO van
+# aqui: en Railway corren en preDeployCommand y en docker-compose las lanza
+# el `command` del servicio backend.
+CMD python manage.py collectstatic --noinput && \
+    exec gunicorn proyeccion_moden.wsgi \
         --bind [::]:${PORT:-8000} \
         --workers=${WEB_CONCURRENCY:-2} \
         --threads=${GUNICORN_THREADS:-4} \

@@ -4,6 +4,7 @@ from django.conf.urls.static import static
 from rest_framework import routers
 
 from api import views
+from api.health import HealthView
 from api.office import CheckDefinitionViewSet, ProjectChecklistViewSet, WorkerViewSet, EventViewSet
 
 from django.contrib import admin
@@ -32,6 +33,7 @@ from rest_framework.authtoken import views as drf_views
 # Wire up our API using automatic URL routing.
 # Additionally, we include login URLs for the browsable API.
 urlpatterns = [
+    path("api/health/", HealthView.as_view(), name="health"),
     path("api/", include(router.urls)),
     path("api-auth/", include("rest_framework.urls", namespace="rest_framework")),
     path("api/token-auth/", views.CustomAuthToken.as_view()),
@@ -49,18 +51,13 @@ urlpatterns = [
     path("admin/", admin.site.urls),
 ]
 
-# Serve media files in development
+# Media is served by Django in every environment (Railway volume mounted at
+# MEDIA_ROOT, proxied by the frontend's nginx). api.media_access checks the
+# user/device credential before handing the file to django.views.static.serve.
 from django.urls import re_path
-from django.views.static import serve
+from api.media_access import protected_media
 
-# Serve media files in development AND production (since we don't have separate media server)
 urlpatterns += [
-    re_path(r'^media/(?P<path>.*)$', serve, {
-        'document_root': settings.MEDIA_ROOT,
-    }),
+    re_path(r'^media/(?P<path>.*)$', protected_media, name='media'),
 ]
-
-if settings.DEBUG:
-    # Static is handled by WhiteNoise in prod, but media needs manual serving here
-    pass
 

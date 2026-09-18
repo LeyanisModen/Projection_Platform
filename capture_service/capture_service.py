@@ -53,7 +53,7 @@ import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, time as dtime
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 
 import cv2
@@ -69,6 +69,9 @@ DAY_NAME_TO_INDEX = {
 }
 DAY_INDEX_TO_NAME = {value: key for key, value in DAY_NAME_TO_INDEX.items()}
 
+# Browser origins allowed to (a) read/write the pairing token and (b) hit
+# the control endpoints (/close_browser, /shutdown_pc). Extend per PC with
+# [service] allowed_origins in config.ini if the frontend domain changes.
 CONTROL_ALLOWED_ORIGINS = {
     'https://moden.up.railway.app',
     'https://calm-curiosity-staging.up.railway.app',
@@ -79,11 +82,21 @@ CONTROL_ALLOWED_ORIGINS = {
 }
 
 
+def _allowed_origins():
+    extra = getattr(CONFIG, 'allowed_origins', None) if 'CONFIG' in globals() else None
+    return CONTROL_ALLOWED_ORIGINS | set(extra or ())
+
+
 class Config:
     def __init__(self, path: Path):
-        self.capture_width = 3840
-        self.capture_height = 2160
+        # FullHD, not 4K: the OBSBOT Tiny UVC driver can hang in read() when
+        # asked for 3840x2160 right after opening. This is the value a PC
+        # falls back to if config.ini is missing or damaged, so it must be
+        # the safe one.
+        self.capture_width = 1920
+        self.capture_height = 1080
         self.jpeg_quality = 95
+        self.allowed_origins = set()
         # Factory cameras are mounted on vertical posts and deliver the UVC
         # frame upside-down for our table reference. Keep this configurable so
         # a bench setup can opt out with image_rotation = 0.
@@ -189,6 +202,11 @@ class Config:
             self.capture_width = s.getint('capture_width', self.capture_width)
             self.capture_height = s.getint('capture_height', self.capture_height)
             self.jpeg_quality = s.getint('jpeg_quality', self.jpeg_quality)
+            self.allowed_origins = {
+                origin.strip().rstrip('/')
+                for origin in s.get('allowed_origins', '').split(',')
+                if origin.strip()
+            }
             self.capture_settle_min_seconds = max(
                 0.0,
                 s.getfloat(
@@ -1789,8 +1807,17 @@ def _schedule_pc_shutdown(delay_seconds=3):
 # ---------------------------------------------------------------------------
 class CaptureHandler(BaseHTTPRequestHandler):
 
-    def _cors(self):
-        self.send_header('Access-Control-Allow-Origin', '*')
+    def _cors(self, restricted=False):
+        # Camera/stats/health stay open to any origin so a frontend on a new
+        # domain never loses photos. The pairing token and the control
+        # endpoints only answer to the allowlisted origins.
+        if restricted:
+            origin = self.headers.get('Origin', '')
+            if origin:
+                self.send_header('Access-Control-Allow-Origin', origin)
+                self.send_header('Vary', 'Origin')
+        else:
+            self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS')
         # X-Filename is sent by the visor on /save_debug_image; if it
         # isn't whitelisted here Chrome rejects the preflight and the
@@ -1836,7 +1863,10 @@ class CaptureHandler(BaseHTTPRequestHandler):
             payload['capture_interval_seconds'] = CONFIG.interval_seconds
             self._respond_json(200, payload)
         elif self.path == '/device_token':
-            self._respond_json(200, {'device_token': _read_stored_token()})
+            if not self._origin_allowed():
+                self.send_error(403, 'Forbidden')
+                return
+            self._respond_json(200, {'device_token': _read_stored_token()}, restricted=True)
         else:
             self.send_error(404)
 
@@ -1855,6 +1885,12 @@ class CaptureHandler(BaseHTTPRequestHandler):
             self.send_error(404)
 
     def _handle_store_device_token(self):
+        if not self._origin_allowed():
+            self.send_error(403, 'Forbidden')
+            return
+        self._store_device_token()
+
+    def _store_device_token(self):
         """Persist the device pairing token to disk so it survives a
         Chrome profile reset / Local Storage wipe. Body is the raw
         token as text/plain (a short opaque string). An empty body
@@ -1880,17 +1916,28 @@ class CaptureHandler(BaseHTTPRequestHandler):
             except OSError as exc:
                 self.send_error(500, f'Cannot clear token: {exc}')
                 return
-            self._respond_json(200, {'status': 'cleared'})
+            self._respond_json(200, {'status': 'cleared'}, restricted=True)
             return
         if _write_stored_token(token):
-            self._respond_json(200, {'status': 'ok'})
+            self._respond_json(200, {'status': 'ok'}, restricted=True)
         else:
             self.send_error(500, 'Cannot persist token')
 
+    def _origin_allowed(self) -> bool:
+        """True for allowlisted browser origins and for local callers that
+        send no Origin at all (curl/PowerShell on the same PC, which can read
+        device_token.txt directly anyway). A browser always sends Origin on
+        a cross-origin request, so an unknown site never passes."""
+        origin = self.headers.get('Origin', '')
+        return not origin or origin in _allowed_origins()
+
     def _is_control_request_allowed(self, expected_action: str) -> bool:
+        # Control actions (close kiosk, shut down the PC) require BOTH an
+        # allowlisted Origin and the action header: a request with no Origin
+        # is not a visor and must not be able to power the machine off.
         origin = self.headers.get('Origin', '')
         action = self.headers.get('X-Moden-Action', '')
-        if origin and origin not in CONTROL_ALLOWED_ORIGINS:
+        if not origin or origin not in _allowed_origins():
             return False
         return action == expected_action
 
@@ -2001,12 +2048,12 @@ class CaptureHandler(BaseHTTPRequestHandler):
             'path': str(dest_path),
         })
 
-    def _respond_json(self, status, payload):
+    def _respond_json(self, status, payload, restricted=False):
         body = json.dumps(payload, default=str).encode('utf-8')
         self.send_response(status)
         self.send_header('Content-Type', 'application/json')
         self.send_header('Content-Length', str(len(body)))
-        self._cors()
+        self._cors(restricted=restricted)
         self.end_headers()
         self.wfile.write(body)
 
@@ -2046,9 +2093,13 @@ def main():
     )
     sync_thread.start()
 
-    server = HTTPServer((CONFIG.host, CONFIG.port), CaptureHandler)
+    # Threaded: a /capture holds the camera for up to ~3 s while exposure
+    # settles, and the watchdog's /health (3 s timeout) must not queue
+    # behind it. _camera_lock keeps the camera itself single-access.
+    server = ThreadingHTTPServer((CONFIG.host, CONFIG.port), CaptureHandler)
+    server.daemon_threads = True
     print(f'[CaptureService] Listening on http://{CONFIG.host}:{CONFIG.port}')
-    print('[CaptureService] POST /capture            -> take a 4K photo')
+    print('[CaptureService] POST /capture            -> take a photo')
     print('[CaptureService] POST /save_debug_image   -> persist a debug image to Drive')
     print('[CaptureService] GET  /device_token       -> read stored pairing token')
     print('[CaptureService] POST /device_token       -> persist pairing token to disk')

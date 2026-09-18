@@ -22,6 +22,13 @@ services:
       - ./api_proyeccion_moden:/app
     ports:
       - "8000:8000"
+    # Railway migra en preDeployCommand; en local lo hacemos aqui para que
+    # el Dockerfile tenga un unico comando de arranque.
+    command: >
+      sh -c "python manage.py migrate --noinput
+      && python manage.py collectstatic --noinput
+      && exec gunicorn proyeccion_moden.wsgi --bind [::]:8000
+      --workers=2 --threads=4 --timeout=120 --keep-alive=5 --log-file=-"
     environment:
       - POSTGRES_DB=proyeccion_moden
       - POSTGRES_USER=postgres

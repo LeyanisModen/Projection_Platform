@@ -62,8 +62,6 @@ from django.utils import timezone
 from rest_framework.authtoken.views import ObtainAuthToken
 from rest_framework.authtoken.models import Token
 
-from rest_framework import renderers
-
 
 logger = logging.getLogger(__name__)
 
@@ -225,13 +223,6 @@ def _ferralla_capture_config_payload(user, mesas=None):
             for mesa in mesas
         ],
     }
-
-
-class ServerSentEventRenderer(renderers.BaseRenderer):
-    media_type = 'text/event-stream'
-    format = 'txt'
-    def render(self, data, accepted_media_type=None, renderer_context=None):
-        return data
 
 
 def _canonicalize_key(value):
@@ -1198,13 +1189,17 @@ class CustomAuthToken(ObtainAuthToken):
         serializer.is_valid(raise_exception=True)
         user = serializer.validated_data['user']
         token, created = Token.objects.get_or_create(user=user)
-        return Response({
+        response = Response({
             'token': token.key,
             'user_id': user.pk,
             'username': user.username,
             'is_staff': user.is_staff,
             'is_superuser': user.is_superuser
         })
+        # Same-origin cookie so <img src="/media/..."> can authenticate.
+        from api.media_access import set_user_cookie
+        set_user_cookie(response, token.key)
+        return response
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -1320,6 +1315,10 @@ class ProyectoViewSet(viewsets.ModelViewSet):
                 filter=Q(modulos__estado__in=['COMPLETADO', 'CERRADO']),
                 distinct=True,
             ),
+            _checks_total=Count('checks', distinct=True),
+            _checks_completados=Count(
+                'checks', filter=Q(checks__completado=True), distinct=True,
+            ),
         )
 
     def get_queryset(self):
@@ -1345,11 +1344,15 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         """Assign current user as project owner if not provided."""
         if not _is_admin(self.request.user):
             serializer.save(usuario=self.request.user)
-            return
-        if 'usuario' not in serializer.validated_data:
+        elif 'usuario' not in serializer.validated_data:
             serializer.save(usuario=self.request.user)
         else:
             serializer.save()
+        # Every new project starts with a copy of the master checklist
+        # (api/office.py). Both creation paths (plain POST and
+        # create-with-structure) go through here.
+        from api.office import sembrar_checklist
+        sembrar_checklist(serializer.instance)
 
     def perform_update(self, serializer):
         instance = serializer.instance
@@ -1536,100 +1539,6 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         ).order_by('id')
         serializer = ModuloSerializer(modulos, many=True, context={'request': request})
         return Response(serializer.data)
-
-    @action(detail=True, methods=['get'], url_path='preview-mesas')
-    def preview_mesas(self, request, pk=None):
-        """Simula el orden completo del proyecto sin crear colas reales."""
-        proyecto = self.get_object()
-
-        def parse_count(name, default, maximum):
-            raw_value = request.query_params.get(name, default)
-            try:
-                value = int(raw_value)
-            except (TypeError, ValueError):
-                raise ValidationError({name: 'Debe ser un numero entero.'})
-            if value < 1 or value > maximum:
-                raise ValidationError({name: f'Debe estar entre 1 y {maximum}.'})
-            return value
-
-        num_inferiores = parse_count('inferiores', 2, 4)
-        num_superiores = parse_count('superiores', 1, 2)
-
-        # La misma funcion construye las colas reales. En modo preview se
-        # incluyen todas las fases, con independencia del avance productivo.
-        plan_data = GrupoMesasViewSet._build_plan_sequences(
-            proyecto,
-            num_inferiores=num_inferiores,
-            include_completed=True,
-        )
-        superior_sequences = _distribute_superior_sequence(
-            plan_data['superior_sequence'], num_superiores,
-        )
-        reorderability = module_reorderability_map(proyecto.modulos.all())
-        sd_module_ids = set(
-            annotate_modules_with_sd(proyecto.modulos.all())
-            .filter(tiene_sd=True)
-            .values_list('id', flat=True)
-        )
-
-        def serialize_module(modulo, position):
-            group_index = plan_data['module_group_map'].get(modulo.id)
-            persisted_group = modulo.grupo_bastidor
-            movible, motivo_bloqueo = reorderability[modulo.id]
-            return {
-                'id': modulo.id,
-                'nombre': modulo.nombre,
-                'tipo_modulo': modulo.tipo_modulo,
-                'estado': modulo.estado,
-                'tiene_sd': modulo.id in sd_module_ids,
-                'movible': movible,
-                'motivo_bloqueo': motivo_bloqueo,
-                'position': position,
-                'group_id': persisted_group.id if persisted_group else None,
-                'group_index': group_index,
-                'group_name': (
-                    persisted_group.nombre
-                    if persisted_group and persisted_group.nombre
-                    else f'Grupo {group_index}'
-                ),
-            }
-
-        queues = []
-        for index, sequence in enumerate(plan_data['inferior_sequences'], start=1):
-            queues.append({
-                'key': f'INF-{index}',
-                'nombre': f'Mesa inferior {index}',
-                'tipo': MesaTipo.INFERIOR,
-                'indice': index,
-                'modulos': [
-                    serialize_module(modulo, position)
-                    for position, modulo in enumerate(sequence, start=1)
-                ],
-            })
-
-        for index, sequence in enumerate(superior_sequences, start=1):
-            queues.append({
-                'key': f'SUP-{index}',
-                'nombre': f'Mesa superior {index}',
-                'tipo': MesaTipo.SUPERIOR,
-                'indice': index,
-                'modulos': [
-                    serialize_module(modulo, position)
-                    for position, modulo in enumerate(sequence, start=1)
-                ],
-            })
-
-        return Response({
-            'project_id': proyecto.id,
-            'project_name': proyecto.nombre,
-            'read_only': True,
-            'configuration': {
-                'inferiores': num_inferiores,
-                'superiores': num_superiores,
-            },
-            'total_modules': proyecto.modulos.count(),
-            'queues': queues,
-        })
 
     @staticmethod
     def _new_import_stats():
@@ -3560,6 +3469,37 @@ class ImagenViewSet(viewsets.ModelViewSet):
         return queryset
 
 
+def _promote_next_if_idle(mesa):
+    """If the mesa shows nothing but has EN_COLA work, show the first item.
+
+    Same transition as MesaQueueItemViewSet.mostrar and DeviceViewSet.mark_done,
+    taken under the mesa row lock so the dashboard poll, the player poll and
+    a supervisor click cannot promote two different items. Returns the
+    promoted item or None.
+    """
+    from api.models import MesaQueueStatus
+
+    with transaction.atomic():
+        locked = Mesa.objects.select_for_update().get(pk=mesa.pk)
+        if locked.queue_items.filter(status=MesaQueueStatus.MOSTRANDO).exists():
+            return None
+        next_item = (
+            locked.queue_items.select_for_update()
+            .filter(status=MesaQueueStatus.EN_COLA).order_by('position').first()
+        )
+        if next_item is None:
+            return None
+        next_item.status = MesaQueueStatus.MOSTRANDO
+        next_item.save(update_fields=['status'])
+        locked.imagen_actual = next_item.imagen
+        locked.current_image_index = 0
+        locked.save(update_fields=['imagen_actual', 'current_image_index'])
+        # Keep the caller's instance in sync without another query.
+        mesa.imagen_actual = locked.imagen_actual
+        mesa.current_image_index = 0
+        return next_item
+
+
 class MesaViewSet(viewsets.ModelViewSet):
     """
     API endpoint para gestionar mesas y asignación de imágenes.
@@ -3604,11 +3544,9 @@ class MesaViewSet(viewsets.ModelViewSet):
 
         return super().destroy(request, *args, **kwargs)
 
-    @action(detail=True, methods=['get'])
-    def queue_items(self, request, pk=None):
-        """Get the work queue for a desk."""
-        mesa = self.get_object()
-        items = (
+    @staticmethod
+    def _queue_items_queryset(mesa):
+        return (
             mesa.queue_items
             .select_related('mesa', 'modulo', 'imagen')
             .prefetch_related(
@@ -3624,11 +3562,42 @@ class MesaViewSet(viewsets.ModelViewSet):
             .all()
             .order_by('position')
         )
+
+    @action(detail=True, methods=['get'])
+    def queue_items(self, request, pk=None):
+        """Get the work queue for a desk."""
+        mesa = self.get_object()
         scale = _compute_dificultad_scale(request.user)
         serializer = MesaQueueItemSerializer(
-            items, many=True, context={'request': request, 'dificultad_scale': scale}
+            self._queue_items_queryset(mesa), many=True,
+            context={'request': request, 'dificultad_scale': scale},
         )
         return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def colas(self, request):
+        """Queues of every visible mesa in one response: {mesa_id: [items]}.
+
+        The dashboard polls this every 5 s instead of one request per mesa.
+        Optional ?ids=1,2,3 restricts the set. Before serialising, any mesa
+        with nothing MOSTRANDO gets its first EN_COLA item promoted; that is
+        the "auto-advance" the browser used to do from the poll, now done
+        once and atomically on the server.
+        """
+        mesas = self.get_queryset()
+        raw_ids = request.query_params.get('ids')
+        if raw_ids:
+            ids = [int(value) for value in raw_ids.split(',') if value.strip().isdigit()]
+            mesas = mesas.filter(id__in=ids)
+        scale = _compute_dificultad_scale(request.user)
+        payload = {}
+        for mesa in mesas:
+            _promote_next_if_idle(mesa)
+            payload[str(mesa.id)] = MesaQueueItemSerializer(
+                self._queue_items_queryset(mesa), many=True,
+                context={'request': request, 'dificultad_scale': scale},
+            ).data
+        return Response(payload)
 
     @action(detail=True, methods=['get'])
     def current_item(self, request, pk=None):
@@ -5332,9 +5301,23 @@ class DeviceViewSet(viewsets.ViewSet):
             except PairingSession.DoesNotExist:
                 pass
         
+        # Housekeeping: an unpaired mini-PC asks for a fresh code every time
+        # the previous one expires (2 min), so without this the table grows
+        # forever. Unpaired sessions go after one hour; paired ones are kept
+        # for a day so a device with bad Wi-Fi can still fetch its token.
+        now = timezone.now()
+        PairingSession.objects.filter(
+            device_token_hash__isnull=True,
+            expires_at__lt=now - timezone.timedelta(hours=1),
+        ).delete()
+        PairingSession.objects.filter(
+            device_token_hash__isnull=False,
+            expires_at__lt=now - timezone.timedelta(days=1),
+        ).delete()
+
         # Generate new session
         code = secrets.token_hex(3).upper()
-        expires_at = timezone.now() + timezone.timedelta(minutes=2)
+        expires_at = now + timezone.timedelta(minutes=2)
         session = PairingSession.objects.create(
             pairing_code=code,
             expires_at=expires_at,
@@ -5366,9 +5349,8 @@ class DeviceViewSet(viewsets.ViewSet):
             # token until the mini-PC proves it received it by making an
             # authenticated request. Bad Wi-Fi can lose the first status
             # response; clearing here would strand the device in pairing.
-            if mesa.last_error and mesa.last_error.startswith("PENDING_TOKEN:"):
-                token = mesa.last_error.split(":", 1)[1]
-                return Response({'status': 'PAIRED', 'device_token': token, 'mesa_id': mesa.id})
+            if mesa.pending_device_token:
+                return Response({'status': 'PAIRED', 'device_token': mesa.pending_device_token, 'mesa_id': mesa.id})
 
             if mesa.pairing_code_expires_at and mesa.pairing_code_expires_at < timezone.now():
                 return Response({'status': 'EXPIRED'})
@@ -5385,15 +5367,22 @@ class DeviceViewSet(viewsets.ViewSet):
         if session.device_token_hash and session.mesa:
             # Token was generated. Return it idempotently until the
             # device authenticates successfully; then _authenticate_device
-            # clears the temporary raw token from mesa.last_error.
-            if session.mesa.last_error and session.mesa.last_error.startswith("PENDING_TOKEN:"):
-                token = session.mesa.last_error.split(":", 1)[1]
+            # clears mesa.pending_device_token.
+            if session.mesa.pending_device_token:
                 if session.mesa.device_token_hash != session.device_token_hash:
                     session.mesa.device_token_hash = session.device_token_hash
                     session.mesa.save(update_fields=['device_token_hash'])
-                return Response({'status': 'PAIRED', 'device_token': token, 'mesa_id': session.mesa.id})
-            
-            return Response({'status': 'PAIRED', 'mesa_id': session.mesa.id})  # Token already retrieved
+                return Response({
+                    'status': 'PAIRED',
+                    'device_token': session.mesa.pending_device_token,
+                    'mesa_id': session.mesa.id,
+                })
+
+            # The token was already consumed (or the mesa was unbound or
+            # re-paired). A device still polling this code has nothing left
+            # to fetch, so tell it to start over instead of answering PAIRED
+            # without a token, which the visor would poll forever.
+            return Response({'status': 'EXPIRED'})
 
         if session.expires_at < timezone.now():
             return Response({'status': 'EXPIRED'})
@@ -5453,8 +5442,8 @@ class DeviceViewSet(viewsets.ViewSet):
         # Save token to Mesa
         mesa.device_token_hash = token_hash
         # Store raw token temporarily for retrieval by device (via status endpoint)
-        mesa.last_error = f"PENDING_TOKEN:{raw_token}"
-        update_fields = ['device_token_hash', 'last_error']
+        mesa.pending_device_token = raw_token
+        update_fields = ['device_token_hash', 'pending_device_token']
         if not using_mesa_code:
             mesa.pairing_code = None
             mesa.pairing_code_expires_at = None
@@ -5474,6 +5463,8 @@ class DeviceViewSet(viewsets.ViewSet):
         Unbind a device from a Mesa. Called from Dashboard.
         Requires: mesa_id
         """
+        from api.models import PairingSession
+
         mesa_id = request.data.get('mesa_id')
         if not mesa_id:
             return Response({'detail': 'mesa_id required'}, status=400)
@@ -5489,12 +5480,19 @@ class DeviceViewSet(viewsets.ViewSet):
         if not mesa.device_token_hash:
             return Response({'detail': 'Mesa has no linked device'}, status=400)
         
-        # Clear device link
+        # Clear device link. Sessions that pointed at this mesa go too:
+        # otherwise a device still polling one of those codes would be told
+        # it is PAIRED with no token to fetch.
         mesa.device_token_hash = None
+        mesa.pending_device_token = None
         mesa.pairing_code = None
-        mesa.last_error = None
-        mesa.save(update_fields=['device_token_hash', 'pairing_code', 'last_error'])
-        
+        mesa.pairing_code_expires_at = None
+        mesa.save(update_fields=[
+            'device_token_hash', 'pending_device_token',
+            'pairing_code', 'pairing_code_expires_at',
+        ])
+        PairingSession.objects.filter(mesa=mesa).delete()
+
         return Response({'status': 'ok'})
 
     @action(detail=False, methods=['post'])
@@ -5602,74 +5600,18 @@ class DeviceViewSet(viewsets.ViewSet):
             return Response({'detail': 'Unauthorized'}, status=401)
             
         index = request.data.get('index')
-        if index is not None:
-            try:
-                mesa.current_image_index = int(index)
-            except (TypeError, ValueError):
-                return Response({'detail': 'Index must be an integer'}, status=400)
+        if index is None:
+            return Response({'detail': 'Index required'}, status=400)
+        try:
+            index = int(index)
+        except (TypeError, ValueError):
+            return Response({'detail': 'Index must be an integer'}, status=400)
+        with transaction.atomic():
+            mesa = Mesa.objects.select_for_update().get(pk=mesa.pk)
+            mesa.current_image_index = index
             mesa.save(update_fields=['current_image_index', 'ultima_actualizacion'])
             register_superior_demand_for_mesa(mesa)
-            return Response({'status': 'ok', 'index': mesa.current_image_index})
-        return Response({'detail': 'Index required'}, status=400)
-
-    @action(detail=False, methods=['get'], renderer_classes=[ServerSentEventRenderer])
-    def stream(self, request):
-        """
-        Server-Sent Events (SSE) stream for real-time updates.
-        """
-        mesa = self._authenticate_device(request)
-        if not mesa:
-            return Response({'detail': 'Unauthorized'}, status=401)
-            
-        import time
-        import json
-        from django.http import StreamingHttpResponse
-        
-        def event_stream():
-            last_check = mesa.ultima_actualizacion
-            
-            # Send initial state immediately
-            initial_data = {
-                'type': 'calibration',
-                'data': {
-                    'corners': mesa.calibration_json.get('corners') if mesa.calibration_json else None,
-                    'mapper_enabled': mesa.mapper_enabled,
-                    'current_image_index': mesa.current_image_index
-                }
-            }
-            yield f"data: {json.dumps(initial_data)}\n\n"
-            
-            last_ping = time.time()
-            
-            while True:
-                # Refresh from DB to check for updates
-                mesa.refresh_from_db()
-                
-                if mesa.ultima_actualizacion > last_check:
-                    last_check = mesa.ultima_actualizacion
-                    payload = {
-                        'type': 'calibration',
-                        'data': {
-                            'corners': mesa.calibration_json.get('corners') if mesa.calibration_json else None,
-                            'mapper_enabled': mesa.mapper_enabled,
-                            'current_image_index': mesa.current_image_index
-                        }
-                    }
-                    yield f"data: {json.dumps(payload)}\n\n"
-                
-                # Keep-Alive
-                now = time.time()
-                if now - last_ping > 15:
-                    yield ": keep-alive\n\n"
-                    last_ping = now
-
-                # Check updates at a lower rate to reduce DB pressure
-                time.sleep(1.0)
-
-        response = StreamingHttpResponse(event_stream(), content_type='text/event-stream')
-        response['Cache-Control'] = 'no-cache'
-        response['X-Accel-Buffering'] = 'no'  # Disable Nginx buffering
-        return response
+        return Response({'status': 'ok', 'index': mesa.current_image_index})
 
     @action(detail=False, methods=['get'])
     def current_item(self, request):
@@ -5682,6 +5624,11 @@ class DeviceViewSet(viewsets.ViewSet):
             return Response({'detail': 'Unauthorized'}, status=401)
 
         from api.models import MesaQueueStatus
+
+        # The player heals itself: if nothing is showing but work is queued
+        # (fresh plan, replan), take the first item without waiting for a
+        # dashboard poll to do it.
+        _promote_next_if_idle(mesa)
 
         item = mesa.queue_items.select_related(
             'modulo', 'modulo__proyecto', 'imagen', 'mesa'
@@ -5712,23 +5659,34 @@ class DeviceViewSet(viewsets.ViewSet):
 
         from api.models import MesaQueueStatus
 
-        current_item = mesa.queue_items.filter(status=MesaQueueStatus.MOSTRANDO).first()
-        if not current_item:
-            return Response({'detail': 'No item currently showing'}, status=404)
+        # Player and supervisor can both finish the same item; lock the mesa
+        # so only one of them promotes the next one (same discipline as
+        # queue_sync.py).
+        with transaction.atomic():
+            mesa = Mesa.objects.select_for_update().get(pk=mesa.pk)
+            current_item = (
+                mesa.queue_items.select_for_update()
+                .filter(status=MesaQueueStatus.MOSTRANDO).first()
+            )
+            if not current_item:
+                return Response({'detail': 'No item currently showing'}, status=404)
 
-        current_item.marcar_hecho(user=None)
+            current_item.marcar_hecho(user=None)
 
-        next_item = mesa.queue_items.filter(status=MesaQueueStatus.EN_COLA).order_by('position').first()
-        if next_item:
-            next_item.status = MesaQueueStatus.MOSTRANDO
-            next_item.save(update_fields=['status'])
-            mesa.imagen_actual = next_item.imagen
-            mesa.current_image_index = 0
-        else:
-            mesa.imagen_actual = None
-            mesa.current_image_index = 0
-        mesa.save(update_fields=['imagen_actual', 'current_image_index'])
-        reconcile_superior_queue_if_adaptive(mesa.grupo)
+            next_item = (
+                mesa.queue_items.select_for_update()
+                .filter(status=MesaQueueStatus.EN_COLA).order_by('position').first()
+            )
+            if next_item:
+                next_item.status = MesaQueueStatus.MOSTRANDO
+                next_item.save(update_fields=['status'])
+                mesa.imagen_actual = next_item.imagen
+                mesa.current_image_index = 0
+            else:
+                mesa.imagen_actual = None
+                mesa.current_image_index = 0
+            mesa.save(update_fields=['imagen_actual', 'current_image_index'])
+            reconcile_superior_queue_if_adaptive(mesa.grupo)
 
         return Response({'status': 'ok'})
 
@@ -6006,6 +5964,7 @@ class DeviceViewSet(viewsets.ViewSet):
         # User request: "POST /api/device/revoke ... Protect with X-Setup-Key"
         
         import os
+        from api.models import PairingSession
 
         setup_key = request.headers.get('X-Setup-Key')
         expected_setup_key = os.environ.get('DEVICE_SETUP_KEY')
@@ -6020,9 +5979,11 @@ class DeviceViewSet(viewsets.ViewSet):
         try:
             mesa = Mesa.objects.get(id=mesa_id)
             mesa.device_token_hash = None
+            mesa.pending_device_token = None
             mesa.pairing_code = None
-            mesa.last_error = None
+            mesa.pairing_code_expires_at = None
             mesa.save()
+            PairingSession.objects.filter(mesa=mesa).delete()
             return Response({'status': 'revoked'})
         except Mesa.DoesNotExist:
             return Response({'detail': 'Mesa not found'}, status=404)
@@ -6046,6 +6007,9 @@ class DeviceViewSet(viewsets.ViewSet):
 
         token_hash = hashlib.sha256(token.encode()).hexdigest()
         mesa = Mesa.objects.filter(device_token_hash=token_hash).first()
+        if mesa is not None:
+            # Lets MediaCookieMiddleware hand the kiosk its /media/ cookie.
+            request._request.moden_device_token = token
 
         # Temporary auth tracing for the recurring re-pair loop on the
         # mini-PC. Logs only the first 8 chars of the token + the hash
@@ -6058,15 +6022,15 @@ class DeviceViewSet(viewsets.ViewSet):
                 flush=True,
             )
 
-        if mesa is not None and mesa.last_error and mesa.last_error.startswith("PENDING_TOKEN:"):
+        if mesa is not None and mesa.pending_device_token:
             # The device has now authenticated with the pending token, so
             # it is safe to remove the temporary raw token and any pairing
             # code. Until this point /device/status remains idempotent for
             # poor network links where the first token response is lost.
-            mesa.last_error = None
+            mesa.pending_device_token = None
             mesa.pairing_code = None
             mesa.pairing_code_expires_at = None
-            mesa.save(update_fields=['last_error', 'pairing_code', 'pairing_code_expires_at'])
+            mesa.save(update_fields=['pending_device_token', 'pairing_code', 'pairing_code_expires_at'])
 
         return mesa
 

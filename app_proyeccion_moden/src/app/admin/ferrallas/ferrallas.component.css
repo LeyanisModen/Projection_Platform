@@ -204,6 +204,134 @@
     min-width: 0;
 }
 
+/* Panel "Configuracion de la ferralla": la ficha siempre editable. */
+.ficha-form {
+    display: grid;
+    gap: 0.7rem;
+    padding: 0.8rem 1rem 0;
+}
+
+.ficha-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.6rem 0.8rem;
+}
+
+.ficha-span-2 {
+    grid-column: 1 / -1;
+}
+
+.ficha-form .ficha-field .form-control {
+    width: 100%;
+}
+
+.ficha-inline {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.ficha-inline .form-control {
+    flex: 1 1 auto;
+}
+
+.ficha-inline .ficha-number {
+    flex: 0 0 96px;
+    text-align: right;
+}
+
+.ficha-unit {
+    color: #647184;
+    font-size: 0.8rem;
+    white-space: nowrap;
+}
+
+.ficha-section {
+    display: grid;
+    gap: 0.4rem;
+}
+
+.ficha-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: #5e6a7a;
+    font-size: 0.62rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.ficha-contact,
+.ficha-address {
+    display: grid;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.45rem 0.55rem;
+    background: #fff;
+    border: 1px solid #dbe4ee;
+    border-radius: 7px;
+}
+
+.ficha-contact {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 30px;
+}
+
+.ficha-contact .ficha-remove {
+    grid-row: 1 / span 2;
+    grid-column: 3;
+}
+
+.ficha-address {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) 30px;
+}
+
+.ficha-contact .form-control,
+.ficha-address .form-control {
+    height: 32px;
+    padding: 0.2rem 0.45rem;
+    font-size: 0.8rem;
+}
+
+.ficha-icon-btn {
+    display: inline-grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    color: #6c757d;
+    background: #fff;
+    border: 1px solid #ced4da;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.ficha-icon-btn:hover:not(:disabled) {
+    color: #a74508;
+    border-color: #ed894a;
+}
+
+.ficha-icon-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.ficha-remove:hover:not(:disabled) {
+    color: #dc3545;
+    border-color: #dc3545;
+}
+
+.ficha-form .capture-config-footer {
+    margin: 0.2rem -1rem 0;
+}
+
+.ficha-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
 .inline-field label,
 .capacity-row label {
     flex: 0 0 auto;

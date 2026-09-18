@@ -6,7 +6,7 @@
         <button type="button" class="primary" (click)="editEvent()">Añadir evento</button>
     </div>
 </header>
-<div class="print-heading"><h1>{{ holidayView() ? 'Vacaciones del equipo' : 'Calendario' }} · {{ title() }}</h1><p>{{ printFilters() }}</p></div>
+<div class="print-heading"><h1>Calendario · {{ title() }}</h1><p>{{ printFilters() }}</p></div>
 @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
 <section class="calendar-toolbar">
     <div class="month-nav">
@@ -22,12 +22,10 @@
         }
     </div>
     <div class="filters">
-        @if (!holidayView()) {
         <select aria-label="Filtrar por proyecto" [ngModel]="projectFilter()" (ngModelChange)="projectFilter.set($event)">
             <option [ngValue]="null">Todos los proyectos</option>
             @for (project of projects(); track project.id) { <option [ngValue]="project.id">{{ project.nombre }}</option> }
         </select>
-        }
         <select aria-label="Filtrar por persona" [ngModel]="workerFilter()" (ngModelChange)="workerFilter.set($event)">
             <option [ngValue]="null">Todo el equipo</option>
             @for (worker of workers(); track worker.id) { <option [ngValue]="worker.id">{{ worker.nombre }}</option> }
@@ -37,7 +35,6 @@
 </section>
 @if (view()==='quarter') { <p class="view-hint">Mes de referencia y los dos siguientes. Las flechas desplazan la ventana un mes.</p> }
 @if (view()==='year') { <p class="view-hint">Enero a diciembre. Pulsa el nombre de un mes para verlo en detalle.</p> }
-@if (holidayView()) { <p class="view-hint">Vacaciones de todo el año, sin eventos ni montajes. El fondo de cada día muestra los colores de quienes están de vacaciones; pulsa un día para ver el detalle. Listo para imprimir o guardar en PDF.</p> }
 <div class="team-legend" aria-label="Colores del equipo">
     @for (worker of legendWorkers(); track worker.id) {
         <button type="button" [class.active]="workerFilter()===worker.id" [attr.aria-pressed]="workerFilter()===worker.id"
@@ -45,9 +42,9 @@
             <span class="color-dot" [style.background-color]="colorOf(worker)" aria-hidden="true"></span>{{ worker.nombre }}
         </button>
     }
-    <span class="legend-note">Pulsa una persona para filtrar · {{ holidayView() ? 'Si coinciden vacaciones, se muestran todos sus colores' : 'Fondos: vacaciones · Barras: eventos y montajes' }}</span>
+    <span class="legend-note">Pulsa una persona para filtrar · Fondos: vacaciones (si coinciden varias personas, se apilan sus colores) · Barras: eventos, montajes y fechas límite de control</span>
 </div>
-<div class="calendar-layout" [class.multi-view]="view()!=='month'" [class.year-view]="annualView()" [class.holiday-view]="holidayView()">
+<div class="calendar-layout" [class.multi-view]="view()!=='month'" [class.year-view]="annualView()">
     <div class="calendar-months">
     @for (calendar of calendars(); track calendar.key) {
     <section class="month-grid" [attr.aria-label]="calendar.title" [attr.aria-busy]="loading()">
@@ -63,7 +60,7 @@
                     <button type="button" class="day" [style.grid-column]="column+1" [class.outside]="!day.current" [class.today]="day.key===today"
                         [class.selected]="day.key===selected()" [attr.aria-pressed]="day.key===selected()"
                         [class.has-vacations]="day.vacationWorkers.length > 0"
-                        [attr.aria-label]="(day.key | date:'dd/MM/yyyy') + ', ' + day.vacationLabel + (holidayView() ? '' : ', ' + day.eventCount + ' eventos')"
+                        [attr.aria-label]="(day.key | date:'dd/MM/yyyy') + ', ' + day.vacationLabel + ', ' + day.eventCount + ' eventos'"
                         [title]="day.vacationWorkers.length ? day.vacationLabel : ''"
                         (click)="selected.set(day.key)">
                         @if (day.vacationWorkers.length) {
@@ -77,7 +74,7 @@
                 }
                 @for (segment of week.segments; track segment.item.key) {
                     <button type="button" class="event-bar" [class.continues-before]="segment.continuesBefore" [class.continues-after]="segment.continuesAfter"
-                        [class.mounting]="segment.item.mounting" [style.grid-column]="segment.column + ' / span ' + segment.span"
+                        [class.mounting]="segment.item.mounting" [class.control]="segment.item.control" [class.done]="segment.item.done" [style.grid-column]="segment.column + ' / span ' + segment.span"
                         [style.grid-row]="segment.lane+2" [style.--event-color]="segment.item.colors.length===1 ? segment.item.colors[0] : '#64748b'"
                         [attr.aria-label]="segment.item.title + ', ' + (segment.item.start | date:'dd/MM/yyyy') + ' a ' + (segment.item.end | date:'dd/MM/yyyy') + ', ' + segment.item.people"
                         [title]="segment.item.title + ' · ' + segment.item.people + ' · ' + (segment.item.start | date:'dd/MM/yyyy') + ' - ' + (segment.item.end | date:'dd/MM/yyyy')"
@@ -114,6 +111,13 @@
                 <a [routerLink]="['/admin-dashboard/proyectos',project.id]">Ver proyecto y plazo</a>
             </article>
         }
+        @for (deadline of selectedDeadlines(); track deadline.id) {
+            <article class="agenda-event control" [class.done]="deadline.completado">
+                <strong>{{ deadline.completado ? 'Completado' : 'Fecha límite' }} · {{ deadline.titulo }}</strong>
+                <span>{{ deadline.proyecto_nombre }}</span>
+                <a [routerLink]="['/admin-dashboard/proyectos',deadline.proyecto]">Ver lista de control del proyecto</a>
+            </article>
+        }
         @for (event of selectedEvents(); track event.id) {
             <article class="agenda-event">
                 <div class="agenda-colors" aria-hidden="true">@for (color of eventColors(event); track $index) { <span [style.background-color]="color"></span> }</div>
@@ -125,7 +129,7 @@
                 <div class="actions"><button type="button" (click)="editEvent(event)">Editar</button><button type="button" [disabled]="busy()" (click)="removeEvent(event)">Eliminar</button></div>
             </article>
         }
-        @if (!selectedEvents().length && !mountingProjects().length) { <p>No hay eventos para este día.</p> }
+        @if (!selectedEvents().length && !mountingProjects().length && !selectedDeadlines().length) { <p>No hay eventos para este día.</p> }
     </aside>
 </div>
 @if (editorOpen()) {

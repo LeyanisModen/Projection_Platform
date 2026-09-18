@@ -1,6 +1,7 @@
 import { Component, OnInit, OnDestroy, ChangeDetectorRef, HostListener } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute } from '@angular/router';
 import {
   ApiService,
   CaptureConfigStatus,
@@ -12,6 +13,15 @@ import {
   GrupoMesaResumen,
   User,
 } from '../../services/api.service';
+
+interface FichaDraft {
+  first_name: string;
+  username: string;
+  password: string;
+  bastidor_longitud_cm: number | string;
+  contactos: FerrallaContacto[];
+  direcciones: FerrallaDireccion[];
+}
 
 @Component({
   selector: 'app-ferrallas',
@@ -39,9 +49,13 @@ export class FerrallasComponent implements OnInit, OnDestroy {
   error = '';
   showForm = false;
   newUser: any = this.getEmptyUserForm();
-  isEditing = false;
-  editingId: number | null = null;
   selectedUser: User | null = null;
+  /** Copia editable de la ferralla seleccionada (panel "Configuracion de la ferralla"). */
+  ficha: FichaDraft | null = null;
+  private fichaBaseline = '';
+  savingFicha = false;
+  fichaError = '';
+  fichaMessage = '';
 
   gruposMesas: GrupoMesas[] = [];
   loadingMesas = false;
@@ -72,11 +86,140 @@ export class FerrallasComponent implements OnInit, OnDestroy {
 
   constructor(
     private api: ApiService,
-    private cdr: ChangeDetectorRef
+    private cdr: ChangeDetectorRef,
+    private route: ActivatedRoute
   ) { }
 
   ngOnInit(): void {
     this.loadUsers();
+  }
+
+  /**
+   * Al abrir la pantalla se muestra una ferralla ya seleccionada: la que pida
+   * ?usuario=<id> (enlace desde un proyecto) o, si no, la primera de la lista.
+   */
+  private selectInitialUser(): void {
+    if (this.selectedUser) return;
+    const raw = this.route.snapshot.queryParamMap.get('usuario');
+    const requested = raw ? this.users.find(user => user.id === Number(raw)) : null;
+    const target = requested || this.users[0];
+    if (target) this.openUser(target);
+  }
+
+  // --- Ficha editable de la ferralla seleccionada ---
+  private buildFicha(user: User): FichaDraft {
+    return {
+      first_name: user.first_name || '',
+      username: user.username || '',
+      password: '',
+      bastidor_longitud_cm: user.bastidor_longitud_cm || 114,
+      contactos: this.getEditableContactos(user),
+      direcciones: this.getEditableDirecciones(user),
+    };
+  }
+
+  private resetFicha(user: User | null): void {
+    this.ficha = user ? this.buildFicha(user) : null;
+    this.fichaBaseline = this.ficha ? this.fichaSnapshot(this.ficha) : '';
+    this.fichaError = '';
+    this.fichaMessage = '';
+  }
+
+  private fichaSnapshot(ficha: FichaDraft): string {
+    return JSON.stringify({
+      first_name: (ficha.first_name || '').trim(),
+      username: (ficha.username || '').trim(),
+      password: ficha.password || '',
+      bastidor_longitud_cm: Number(ficha.bastidor_longitud_cm),
+      contactos: this.normalizeContactos(ficha.contactos || []),
+      direcciones: this.normalizeDirecciones(ficha.direcciones || []),
+    });
+  }
+
+  get fichaDirty(): boolean {
+    return !!this.ficha && this.fichaSnapshot(this.ficha) !== this.fichaBaseline;
+  }
+
+  addFichaContacto(): void {
+    if (!this.ficha) return;
+    this.ficha.contactos = [...this.ficha.contactos, { nombre: '', cargo: '', telefono: '', email: '' }];
+  }
+
+  removeFichaContacto(index: number): void {
+    if (!this.ficha) return;
+    this.ficha.contactos = this.ficha.contactos.filter((_, i) => i !== index);
+  }
+
+  addFichaDireccion(): void {
+    if (!this.ficha) return;
+    this.ficha.direcciones = [...this.ficha.direcciones, { nombre: '', direccion: '' }];
+  }
+
+  removeFichaDireccion(index: number): void {
+    if (!this.ficha) return;
+    this.ficha.direcciones = this.ficha.direcciones.filter((_, i) => i !== index);
+  }
+
+  generateFichaPassword(): void {
+    if (!this.ficha) return;
+    this.ficha.password = Math.random().toString(36).slice(-8);
+  }
+
+  discardFicha(): void {
+    this.resetFicha(this.selectedUser);
+    this.cdr.detectChanges();
+  }
+
+  saveFicha(): void {
+    if (!this.selectedUser || !this.ficha || this.savingFicha) return;
+    const ficha = this.ficha;
+    const bastidor = Number(ficha.bastidor_longitud_cm);
+    this.fichaMessage = '';
+    if (!ficha.username.trim()) {
+      this.fichaError = 'El usuario es obligatorio.';
+      this.cdr.detectChanges();
+      return;
+    }
+    if (!Number.isFinite(bastidor) || bastidor <= 0) {
+      this.fichaError = 'Indica una longitud de bastidor mayor que 0.';
+      this.cdr.detectChanges();
+      return;
+    }
+
+    const payload: any = {
+      first_name: ficha.first_name.trim(),
+      username: ficha.username.trim(),
+      bastidor_longitud_cm: Number(bastidor.toFixed(2)),
+      contactos: this.normalizeContactos(ficha.contactos),
+      direcciones: this.normalizeDirecciones(ficha.direcciones),
+    };
+    if (ficha.password) {
+      payload.password = ficha.password;
+      payload.password_texto_plano = ficha.password;
+    }
+
+    const id = this.selectedUser.id;
+    this.savingFicha = true;
+    this.fichaError = '';
+    this.api.updateUser(id, payload).subscribe({
+      next: (updatedUser: User) => {
+        const index = this.users.findIndex(user => user.id === id);
+        if (index !== -1) this.users[index] = updatedUser;
+        if (this.selectedUser?.id === id) {
+          this.selectedUser = updatedUser;
+          this.resetFicha(updatedUser);
+        }
+        this.savingFicha = false;
+        this.fichaMessage = 'Guardado';
+        this.cdr.detectChanges();
+      },
+      error: (err: any) => {
+        console.error('Error updating user', err);
+        this.fichaError = this.extractErrorMessage(err, 'No se pudo guardar la ferralla.');
+        this.savingFicha = false;
+        this.cdr.detectChanges();
+      },
+    });
   }
 
   ngOnDestroy(): void {
@@ -89,6 +232,7 @@ export class FerrallasComponent implements OnInit, OnDestroy {
       next: (data) => {
         this.users = data;
         this.loading = false;
+        this.selectInitialUser();
         this.cdr.detectChanges();
       },
       error: (err: any) => {
@@ -110,8 +254,6 @@ export class FerrallasComponent implements OnInit, OnDestroy {
 
   resetForm() {
     this.newUser = this.getEmptyUserForm();
-    this.isEditing = false;
-    this.editingId = null;
   }
 
   private getEmptyUserForm() {
@@ -156,22 +298,35 @@ export class FerrallasComponent implements OnInit, OnDestroy {
     return !!user?.direcciones?.length;
   }
 
+  /** Clic en la lista: abre la ferralla o, si ya estaba abierta, la cierra. */
   selectUser(user: User) {
-    this.selectedUser = this.selectedUser?.id === user.id ? null : user;
+    if (this.selectedUser?.id === user.id) {
+      this.closeUser();
+    } else {
+      this.openUser(user);
+    }
+  }
+
+  private openUser(user: User): void {
+    this.selectedUser = user;
+    this.resetFicha(user);
     this.showForm = false;
     this.showAddMesaForm = false;
+    this.loadGruposMesas(user.id);
+    this.loadCaptureConfig(user.id);
+    this.startMesaAutoRefresh();
+  }
 
-    if (this.selectedUser) {
-      this.loadGruposMesas(this.selectedUser.id);
-      this.loadCaptureConfig(this.selectedUser.id);
-      this.startMesaAutoRefresh();
-    } else {
-      this.gruposMesas = [];
-      this.captureConfig = null;
-      this.captureConfigError = '';
-      this.captureConfigMessage = '';
-      this.clearMesaAutoRefresh();
-    }
+  private closeUser(): void {
+    this.selectedUser = null;
+    this.resetFicha(null);
+    this.showForm = false;
+    this.showAddMesaForm = false;
+    this.gruposMesas = [];
+    this.captureConfig = null;
+    this.captureConfigError = '';
+    this.captureConfigMessage = '';
+    this.clearMesaAutoRefresh();
   }
 
   loadCaptureConfig(userId: number, silent = false): void {
@@ -602,24 +757,7 @@ export class FerrallasComponent implements OnInit, OnDestroy {
   }
 
   saveUser() {
-    if (this.isEditing && this.editingId) {
-      this.updateUser(this.editingId);
-    } else {
-      this.createUser();
-    }
-  }
-
-  editUser(user: User) {
-    this.newUser = {
-      ...user,
-      password: '',
-      bastidor_longitud_cm: user.bastidor_longitud_cm || 114,
-      contactos: this.getEditableContactos(user),
-      direcciones: this.getEditableDirecciones(user)
-    };
-    this.isEditing = true;
-    this.editingId = user.id;
-    this.showForm = true;
+    this.createUser();
   }
 
   private getEditableContactos(user: User): FerrallaContacto[] {
@@ -717,41 +855,12 @@ export class FerrallasComponent implements OnInit, OnDestroy {
     });
   }
 
-  updateUser(id: number) {
-    this.loading = true;
-    const payload = this.buildUserPayload();
-    if (!payload.password) {
-      delete payload.password;
-      delete payload.password_texto_plano;
-    } else {
-      payload.password_texto_plano = payload.password;
-    }
-
-    this.api.updateUser(id, payload).subscribe({
-      next: (updatedUser: User) => {
-        const index = this.users.findIndex(u => u.id === id);
-        if (index !== -1) {
-          this.users[index] = updatedUser;
-        }
-        if (this.selectedUser?.id === id) {
-          this.selectedUser = updatedUser;
-        }
-        this.resetForm();
-        this.showForm = false;
-        this.loading = false;
-        this.cdr.detectChanges();
-      },
-      error: (err: any) => {
-        console.error('Error updating user', err);
-        this.handleError(err, 'Error actualizando usuario');
-        this.loading = false;
-        this.cdr.detectChanges();
-      }
-    });
+  private handleError(err: any, defaultMsg: string) {
+    this.error = this.extractErrorMessage(err, defaultMsg);
   }
 
-  private handleError(err: any, defaultMsg: string) {
-    if (err.error && typeof err.error === 'object') {
+  private extractErrorMessage(err: any, defaultMsg: string): string {
+    if (err?.error && typeof err.error === 'object') {
       let messages: string[] = [];
       for (const key in err.error) {
         if (Object.prototype.hasOwnProperty.call(err.error, key)) {
@@ -764,10 +873,9 @@ export class FerrallasComponent implements OnInit, OnDestroy {
           }
         }
       }
-      this.error = messages.length > 0 ? messages.join('\n') : defaultMsg;
-    } else {
-      this.error = defaultMsg;
+      return messages.length > 0 ? messages.join('\n') : defaultMsg;
     }
+    return defaultMsg;
   }
 
   confirmDelete(user: User) {
@@ -799,14 +907,10 @@ export class FerrallasComponent implements OnInit, OnDestroy {
   generateUsername(name: string) {
     if (!name) return;
 
-    if (!this.isEditing) {
-      const username = name.toLowerCase()
-        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^a-z0-9\s]/g, '')
-        .replace(/\s+/g, '_');
-
-      this.newUser.username = username;
-    }
+    this.newUser.username = name.toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9\s]/g, '')
+      .replace(/\s+/g, '_');
   }
 
   getMesaRoleLabel(mesa: GrupoMesaResumen): string {

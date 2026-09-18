@@ -362,25 +362,84 @@ class Modulo(models.Model):
 
 
 class ProyectoCheckDefinicion(models.Model):
+    """Paso de la lista de control maestra (pantalla «Lista de control»).
+
+    Al crear un proyecto se copian estos pasos a ProyectoCheck. A partir de ahi
+    cada proyecto es dueno de su lista: cambiar o borrar aqui no toca los
+    proyectos ya sembrados.
+    """
     titulo = models.CharField(max_length=200)
-    activo = models.BooleanField(default=True)
     orden = models.PositiveIntegerField(default=0)
+    # Que necesita el paso: una fecha limite (visible en el calendario) y/o un
+    # documento de confirmacion (correo de aprobacion, PDF...). Se copian al
+    # proyecto al sembrar; alli deciden que controles muestra cada fila.
+    requiere_fecha = models.BooleanField(default=False)
+    requiere_documento = models.BooleanField(default=False)
 
     class Meta:
         ordering = ['orden', 'id']
 
+    def __str__(self):
+        return self.titulo
 
-class ProyectoCheckEstado(models.Model):
-    proyecto = models.ForeignKey(Proyecto, on_delete=models.CASCADE, related_name='check_estados')
-    definicion = models.ForeignKey(ProyectoCheckDefinicion, on_delete=models.PROTECT)
+
+def _check_attachment_path(instance, filename):
+    return f'controles/{instance.paso.proyecto_id}/{instance.paso_id}/{filename}'
+
+
+class ProyectoCheck(models.Model):
+    """Un paso de control de un proyecto concreto."""
+
+    class Origen(models.TextChoices):
+        PLANTILLA = 'PLANTILLA', 'Plantilla'
+        MANUAL = 'MANUAL', 'Manual'
+
+    proyecto = models.ForeignKey(Proyecto, on_delete=models.CASCADE, related_name='checks')
+    titulo = models.CharField(max_length=200)
+    orden = models.PositiveIntegerField(default=0)
+    origen = models.CharField(max_length=10, choices=Origen.choices, default=Origen.MANUAL)
+    requiere_fecha = models.BooleanField(default=False)
+    requiere_documento = models.BooleanField(default=False)
+    fecha_limite = models.DateField(null=True, blank=True)
     completado = models.BooleanField(default=False)
-    actualizado_at = models.DateTimeField(auto_now=True)
-    actualizado_por = models.ForeignKey(User, null=True, on_delete=models.SET_NULL)
+    # Quien confirmo el paso y cuando. Se vacian al desmarcarlo.
+    completado_at = models.DateTimeField(null=True, blank=True)
+    completado_por = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL, related_name='+',
+    )
+    creado_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        constraints = [models.UniqueConstraint(
-            fields=['proyecto', 'definicion'], name='unique_project_check',
-        )]
+        ordering = ['orden', 'id']
+        indexes = [
+            models.Index(fields=['proyecto', 'completado']),
+            models.Index(fields=['fecha_limite']),
+        ]
+
+    def __str__(self):
+        return f'{self.proyecto_id}: {self.titulo}'
+
+
+class ProyectoCheckAdjunto(models.Model):
+    """Documento de confirmacion de un paso (correo de aprobacion, PDF...).
+
+    Vive en media/controles/<proyecto>/<check>/ y solo lo sirve /media/ a
+    staff (api/media_access.py), igual que la lista de control.
+    """
+    paso = models.ForeignKey(ProyectoCheck, on_delete=models.CASCADE, related_name='adjuntos')
+    archivo = models.FileField(upload_to=_check_attachment_path, max_length=500)
+    nombre_original = models.CharField(max_length=255)
+    tamano = models.PositiveIntegerField(default=0)
+    subido_at = models.DateTimeField(auto_now_add=True)
+    subido_por = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL, related_name='+',
+    )
+
+    class Meta:
+        ordering = ['subido_at', 'id']
+
+    def __str__(self):
+        return self.nombre_original
 
 
 class TrabajadorOficina(models.Model):
@@ -859,6 +918,11 @@ class Mesa(models.Model):
 
     # Device Pairing (PoC)
     device_token_hash = models.CharField(max_length=128, null=True, blank=True, unique=True)
+    # Raw token handed to the mini-PC right after pairing. It lives here only
+    # until the device authenticates once with it (see
+    # DeviceViewSet._authenticate_device), so a lost /device/status response
+    # over bad Wi-Fi can be retried without re-pairing.
+    pending_device_token = models.CharField(max_length=128, null=True, blank=True)
     pairing_code = models.CharField(max_length=10, null=True, blank=True)
     pairing_code_expires_at = models.DateTimeField(null=True, blank=True)
     mapper_enabled = models.BooleanField(default=False)

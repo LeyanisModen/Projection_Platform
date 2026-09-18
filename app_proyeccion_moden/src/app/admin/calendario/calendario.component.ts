@@ -5,7 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { A11yModule } from '@angular/cdk/a11y';
 import { forkJoin, Subscription } from 'rxjs';
-import { ApiService, CalendarEvent, OfficeWorker, Proyecto } from '../../services/api.service';
+import { ApiService, CalendarEvent, CheckDeadline, OfficeWorker, Proyecto } from '../../services/api.service';
 import { CalendarItem, CalendarSegment, CalendarView, calendarMonths, calendarRange, calendarWeeks, localDate, monthDays, nextWorkerColor, workerColor, WORKER_COLORS } from './calendar-layout';
 
 @Component({
@@ -24,10 +24,10 @@ export class CalendarioComponent {
     readonly view = signal<CalendarView>('month');
     readonly viewOptions: {value: CalendarView; label: string}[] = [
         {value: 'month', label: 'Mensual'}, {value: 'quarter', label: 'Trimestral'}, {value: 'year', label: 'Anual'},
-        {value: 'holidays', label: 'Vacaciones anual'},
     ];
     readonly selected = signal(localDate(new Date()));
     readonly today = localDate(new Date());
+    readonly deadlines = signal<CheckDeadline[]>([]);
     readonly events = signal<CalendarEvent[]>([]);
     readonly projects = signal<Proyecto[]>([]);
     readonly workers = signal<OfficeWorker[]>([]);
@@ -65,8 +65,7 @@ export class CalendarioComponent {
     readonly palette = WORKER_COLORS;
     readonly colorOf = (worker: OfficeWorker) => workerColor(worker.color, worker.id);
     readonly activeWorkers = computed(() => this.workers().filter(worker => worker.activo));
-    readonly annualView = computed(() => this.view() === 'year' || this.view() === 'holidays');
-    readonly holidayView = computed(() => this.view() === 'holidays');
+    readonly annualView = computed(() => this.view() === 'year');
 
     readonly visibleMonths = computed(() => calendarMonths(this.month(), this.view()));
     readonly range = computed(() => calendarRange(this.month(), this.view()));
@@ -77,15 +76,14 @@ export class CalendarioComponent {
         return this.view() === 'quarter' ? `${label(months[0])} - ${label(months[2])}` : label(months[0]);
     });
     readonly filteredEvents = computed(() => this.events().filter(e =>
-        (this.holidayView() ? e.tipo === 'VACACIONES' : this.projectFilter() === null || e.proyecto === this.projectFilter()) &&
+        (this.projectFilter() === null || e.proyecto === this.projectFilter()) &&
         (this.workerFilter() === null || e.trabajadores.includes(this.workerFilter()!)),
     ));
     readonly legendWorkers = computed(() => this.workers().filter(worker =>
-        (worker.activo || this.filteredEvents().some(event => event.trabajadores.includes(worker.id))) &&
-        (!this.holidayView() || this.workerFilter() === null || worker.id === this.workerFilter()),
+        worker.activo || this.filteredEvents().some(event => event.trabajadores.includes(worker.id)),
     ));
     readonly printFilters = computed(() => [
-        this.holidayView() ? 'Solo vacaciones' : this.projectFilter() === null ? 'Todos los proyectos' : this.projectName(this.projectFilter()),
+        this.projectFilter() === null ? 'Todos los proyectos' : this.projectName(this.projectFilter()),
         this.workerFilter() === null ? 'Todo el equipo' : this.workerNames([this.workerFilter()!]),
     ].join(' · '));
     readonly calendarItems = computed(() => {
@@ -93,13 +91,19 @@ export class CalendarioComponent {
             key: `event-${event.id}`, title: this.eventTitle(event), start: event.inicio, end: event.fin,
             colors: this.eventColors(event), people: this.workerNames(event.trabajadores), mounting: false,
         }));
-        if (this.workerFilter() === null && !this.holidayView()) {
+        if (this.workerFilter() === null) {
             for (const project of this.projects()) {
                 if (project.fecha_montaje && (this.projectFilter() === null || project.id === this.projectFilter())) {
                     items.push({key: `mount-${project.id}`, title: `Montaje · ${project.nombre}`,
                         start: project.fecha_montaje, end: project.fecha_montaje,
                         colors: ['#b45309'], people: '', mounting: true});
                 }
+            }
+            for (const deadline of this.filteredDeadlines()) {
+                items.push({key: `control-${deadline.id}`, title: `${deadline.completado ? '✓ ' : ''}Control · ${deadline.proyecto_nombre} · ${deadline.titulo}`,
+                    start: deadline.fecha_limite, end: deadline.fecha_limite,
+                    colors: [deadline.completado ? '#2f9e5b' : '#0f766e'], people: '', mounting: false,
+                    control: true, done: deadline.completado});
             }
         }
         return items;
@@ -119,14 +123,19 @@ export class CalendarioComponent {
                     return {
                         ...day, vacationWorkers,
                         vacationLabel: vacationWorkers.length ? `Vacaciones de ${this.namesOf(vacationWorkers)}` : 'Sin vacaciones',
-                        eventCount: dayEvents.length - vacations.length + this.mountsOn(day.key).length,
+                        eventCount: dayEvents.length - vacations.length + this.mountsOn(day.key).length + this.deadlinesOn(day.key).length,
                     };
                 })})),
         }));
     });
+    readonly filteredDeadlines = computed(() => this.deadlines().filter(d =>
+        this.projectFilter() === null || d.proyecto === this.projectFilter(),
+    ));
     readonly selectedEvents = computed(() => this.eventsOn(this.selected()));
+    readonly selectedDeadlines = computed(() => this.workerFilter() !== null
+        ? [] : this.filteredDeadlines().filter(d => d.fecha_limite === this.selected()));
     readonly mountingProjects = computed(() => this.projects().filter(p =>
-        !this.holidayView() && p.fecha_montaje === this.selected() && (this.projectFilter() === null || p.id === this.projectFilter()) && this.workerFilter() === null,
+        p.fecha_montaje === this.selected() && (this.projectFilter() === null || p.id === this.projectFilter()) && this.workerFilter() === null,
     ));
     readonly availability = computed(() => this.workers().filter(w => w.activo).map(worker => ({
         ...worker,
@@ -141,9 +150,11 @@ export class CalendarioComponent {
         this.events.set([]);
         const range = this.range();
         if (this.selected() < range.start || this.selected() > range.end) this.selected.set(localDate(this.month()));
-        this.loadSubscription = forkJoin({events:this.api.getEvents(range.start, range.end), projects:this.api.getProyectos(), workers:this.api.getWorkers()})
-            .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-            next: data => { this.events.set(data.events); this.projects.set(data.projects); this.workers.set(data.workers); this.loading.set(false); },
+        this.loadSubscription = forkJoin({
+            events: this.api.getEvents(range.start, range.end), projects: this.api.getProyectos(), workers: this.api.getWorkers(),
+            deadlines: this.api.getCheckDeadlines(range.start, range.end),
+        }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+            next: data => { this.events.set(data.events); this.projects.set(data.projects); this.workers.set(data.workers); this.deadlines.set(data.deadlines); this.loading.set(false); },
             error: () => { this.error.set('No se pudo cargar el calendario. Pulsa actualizar para reintentar.'); this.loading.set(false); },
         });
     }
@@ -170,8 +181,11 @@ export class CalendarioComponent {
         this.selected.set(this.today); this.load();
     }
     eventsOn(day: string): CalendarEvent[] { return this.filteredEvents().filter(e => e.inicio <= day && e.fin >= day); }
+    deadlinesOn(day: string): CheckDeadline[] {
+        return this.workerFilter() !== null ? [] : this.filteredDeadlines().filter(d => d.fecha_limite === day);
+    }
     mountsOn(day: string): Proyecto[] {
-        return this.holidayView() ? [] : this.projects().filter(p => p.fecha_montaje === day && (this.projectFilter() === null || this.projectFilter()===p.id) && this.workerFilter()===null);
+        return this.projects().filter(p => p.fecha_montaje === day && (this.projectFilter() === null || this.projectFilter()===p.id) && this.workerFilter()===null);
     }
     eventTitle(event: Pick<CalendarEvent, 'titulo' | 'tipo' | 'trabajadores'>): string {
         return event.tipo === 'VACACIONES' ? `Vacaciones de ${this.workerNames(event.trabajadores) || 'la persona seleccionada'}` : event.titulo;

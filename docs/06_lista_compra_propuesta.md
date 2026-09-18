@@ -1,7 +1,14 @@
 # Propuesta — Lista de compra por proyecto y general
 
 Fecha: 2026-04-27
-Estado: borrador para revisión interna antes de pasar al compañero de BD.
+Estado: **histórico / superado**. La lista de materiales se implementó de otra
+forma: el importador lee las tablas de piezas (`refuerzos`,
+`barras_solape_zunchos`, `zunchos`, `separadores`, `punzonamientos`) del propio
+`.db` técnico del proyecto (`_read_materiales_tables` en `api/views.py`) y las
+guarda en `MaterialPieza`; las marcas van en `MaterialInformado`. No se usa la
+tabla externa `MaterialModulo` descrita aquí. Endpoints reales:
+`/api/proyectos/<id>/lista-materiales/` y `/api/lista-materiales/general/`.
+Se conserva como registro del razonamiento original.
 
 ## 1. Objetivo
 

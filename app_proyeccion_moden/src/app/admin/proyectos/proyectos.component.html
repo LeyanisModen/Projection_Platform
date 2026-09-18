@@ -50,9 +50,14 @@
                                     [disabled]="importing">
                                     Examinar...
                                 </button>
+                                <button type="button" class="btn btn-secondary folder-btn" *ngIf="selectedFolder"
+                                    (click)="clearSelectedFolder()" [disabled]="importing">
+                                    Quitar carpeta
+                                </button>
                             </div>
                             <small class="text-muted folder-guidance">Organice sus archivos según la estructura esperada
-                                de la derecha antes de seleccionar la carpeta.</small>
+                                de la derecha antes de seleccionar la carpeta. La carpeta es opcional: sin carpeta se
+                                crea el proyecto vacío y los módulos se importan después desde su detalle.</small>
                             <div class="tree-legend">
                                 <span class="legend-required">■</span> Nombres obligatorios (deben coincidir
                                 exactamente)

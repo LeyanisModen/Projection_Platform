@@ -479,7 +479,9 @@ export class ProyectoDetailComponent implements OnInit {
     tipoModuloLabel(tipo: GrupoBastidorModulo['tipo_modulo']): string {
         switch (tipo) {
             case 'CENTRAL': return 'C';
-            case 'CENTRAL_GIRADO': return 'CG';
+            // 'G' a secas: ningun otro tipo empieza por G, y 'CG' ocupaba
+            // demasiado en el chip junto al nombre del modulo.
+            case 'CENTRAL_GIRADO': return 'G';
             case 'LADO_LARGO': return 'LL';
             case 'LADO_CORTO': return 'LC';
             case 'ESQUINA': return 'E';
@@ -747,7 +749,28 @@ export class ProyectoDetailComponent implements OnInit {
         return user ? (user.first_name || user.username) : 'Ferralla desconocida';
     }
 
-    saveCraneLimit(): void {
+    /** Id de la ferralla asignada, para enlazar a su ficha. */
+    get proyectoUsuarioId(): number | null {
+        const url = this.proyecto?.usuario;
+        if (!url) return null;
+        const match = /\/users\/(\d+)\//.exec(url);
+        return match ? Number(match[1]) : null;
+    }
+
+    /**
+     * Guarda la carga maxima y, si el proyecto ya tiene bastidores, los rehace
+     * con ella. Sin bastidores todavia solo guarda: el limite se aplicara a los
+     * que se creen al importar modulos.
+     */
+    applyCraneLimit(): void {
+        this.saveCraneLimit(() => {
+            if (this.grupos.length && this.proyecto?.datos_tecnicos_importados) {
+                this.recalculateCurrentBastidores();
+            }
+        });
+    }
+
+    saveCraneLimit(afterSave?: () => void): void {
         if (!this.proyectoId || !this.proyecto) return;
 
         const empty = this.craneLimitDraft === null || this.craneLimitDraft === '';
@@ -775,11 +798,12 @@ export class ProyectoDetailComponent implements OnInit {
                         overflow: group.overflow_longitud || overflowPeso,
                     };
                 });
-                this.projectConfigMessage = this.grupos.length
-                    ? 'Guardado. Para reorganizar los bastidores actuales, usa Recalcular.'
-                    : 'Límite de grúa guardado.';
+                // Sin bastidores todavia se avisa de que ya queda guardado; si
+                // los hay, el recalculo posterior pone su propio mensaje.
+                this.projectConfigMessage = this.grupos.length ? '' : 'Límite de grúa guardado.';
                 this.savingProjectConfig = false;
                 this.cdr.detectChanges();
+                afterSave?.();
             },
             error: (err: any) => {
                 console.error('Error updating crane limit', err);

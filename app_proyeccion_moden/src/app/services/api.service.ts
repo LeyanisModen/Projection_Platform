@@ -61,11 +61,34 @@ export interface PlanificacionProyecto {
     fecha_calculo: string;
     dias_produccion: string[];
 }
-export interface ProjectCheck {
-    id: number; titulo: string; completado: boolean;
-    actualizado_at: string | null; actualizado_por: string | null;
+/** Documento de confirmación adjunto a un paso (correo de aprobación, PDF...). */
+export interface ProjectCheckAttachment {
+    id: number; nombre_original: string; tamano: number; url: string | null;
+    subido_at: string; subido_por: string | null;
 }
-export interface CheckDefinition { id: number; titulo: string; activo: boolean; orden: number; }
+/** Un paso de la lista de control de un proyecto concreto. */
+export interface ProjectCheck {
+    id: number; titulo: string; orden: number;
+    origen: 'PLANTILLA' | 'MANUAL';
+    /** Qué necesita el paso; decide qué controles muestra su fila. */
+    requiere_fecha: boolean; requiere_documento: boolean;
+    fecha_limite: string | null;
+    completado: boolean;
+    completado_at: string | null; completado_por: string | null;
+    creado_at: string;
+    adjuntos: ProjectCheckAttachment[];
+}
+/** Paso de la lista maestra (pantalla «Lista de control»); siembra los proyectos nuevos. */
+export interface CheckDefinition {
+    id: number; titulo: string; orden: number;
+    requiere_fecha: boolean; requiere_documento: boolean;
+}
+/** Paso con fecha límite, tal como lo consume el calendario. */
+export interface CheckDeadline {
+    id: number; proyecto: number; proyecto_nombre: string; titulo: string;
+    fecha_limite: string; completado: boolean;
+}
+export type NewProjectCheck = Pick<ProjectCheck, 'titulo'> & Partial<Pick<ProjectCheck, 'requiere_fecha' | 'requiere_documento' | 'fecha_limite'>>;
 export interface OfficeWorker { id: number; nombre: string; activo: boolean; color: string; }
 export interface CalendarEvent {
     id: number; titulo: string; tipo: 'EVENTO' | 'VACACIONES';
@@ -92,6 +115,8 @@ export interface Proyecto {
     modulos_count?: number;
     modulos_completados?: number;
     modulos_completados_hoy?: number;
+    checks_total?: number;
+    checks_completados?: number;
 }
 
 export interface GrupoBastidorModulo {
@@ -128,40 +153,6 @@ export interface GrupoBastidor {
     overflow_longitud: boolean;
     overflow_peso: boolean;
     overflow: boolean;
-}
-
-export interface ProyectoMesaPreviewModulo {
-    id: number;
-    nombre: string;
-    tipo_modulo: TipoModulo;
-    estado: 'PENDIENTE' | 'EN_PROGRESO' | 'COMPLETADO' | 'CERRADO';
-    tiene_sd: boolean;
-    movible?: boolean;
-    motivo_bloqueo?: string | null;
-    position: number;
-    group_id: number | null;
-    group_index: number | null;
-    group_name: string;
-}
-
-export interface ProyectoMesaPreviewQueue {
-    key: string;
-    nombre: string;
-    tipo: ModuloFase;
-    indice: number;
-    modulos: ProyectoMesaPreviewModulo[];
-}
-
-export interface ProyectoMesasPreview {
-    project_id: number;
-    project_name: string;
-    read_only: true;
-    configuration: {
-        inferiores: number;
-        superiores: number;
-    };
-    total_modules: number;
-    queues: ProyectoMesaPreviewQueue[];
 }
 
 export interface Modulo {
@@ -507,6 +498,10 @@ export class ApiService {
     logout(): void {
         localStorage.removeItem('auth_token');
         localStorage.removeItem('auth_username');
+        // The backend sets a /media/ cookie with the token so <img src> can
+        // authenticate; drop it too so images stop loading after logout.
+        const secure = typeof location !== 'undefined' && location.protocol === 'https:' ? '; Secure' : '';
+        document.cookie = `moden_auth=; Max-Age=0; path=/media/; SameSite=Lax${secure}`;
     }
 
     getUsername(): string | null {
@@ -563,12 +558,38 @@ export class ApiService {
             );
     }
 
+    // --- Lista de control de un proyecto (todas las mutaciones devuelven la lista completa) ---
     getProjectChecklist(id: number): Observable<ProjectCheck[]> {
         return this.http.get<ProjectCheck[]>(`${this.baseUrl}/proyecto-checklist/${id}/`, { headers: this.getHeaders() });
     }
-    setProjectCheck(projectId: number, id: number, completado: boolean): Observable<ProjectCheck[]> {
-        return this.http.patch<ProjectCheck[]>(`${this.baseUrl}/proyecto-checklist/${projectId}/checks/${id}/`, { completado }, { headers: this.getHeaders() });
+    addProjectCheck(projectId: number, data: NewProjectCheck): Observable<ProjectCheck[]> {
+        return this.http.post<ProjectCheck[]>(`${this.baseUrl}/proyecto-checklist/${projectId}/checks/`, data, { headers: this.getHeaders() });
     }
+    updateProjectCheck(projectId: number, id: number, data: Partial<Pick<ProjectCheck, 'completado' | 'titulo' | 'requiere_fecha' | 'requiere_documento' | 'fecha_limite'>>): Observable<ProjectCheck[]> {
+        return this.http.patch<ProjectCheck[]>(`${this.baseUrl}/proyecto-checklist/${projectId}/checks/${id}/`, data, { headers: this.getHeaders() });
+    }
+    deleteProjectCheck(projectId: number, id: number): Observable<ProjectCheck[]> {
+        return this.http.delete<ProjectCheck[]>(`${this.baseUrl}/proyecto-checklist/${projectId}/checks/${id}/`, { headers: this.getHeaders() });
+    }
+    /** Copia al proyecto los pasos de la lista maestra que aún no tiene. */
+    seedProjectChecklist(projectId: number): Observable<{ creados: number; checks: ProjectCheck[] }> {
+        return this.http.post<{ creados: number; checks: ProjectCheck[] }>(`${this.baseUrl}/proyecto-checklist/${projectId}/sembrar/`, {}, { headers: this.getHeaders() });
+    }
+    uploadProjectCheckAttachment(projectId: number, checkId: number, file: File): Observable<ProjectCheck[]> {
+        const form = new FormData();
+        form.append('archivo', file, file.name);
+        // Sin Content-Type fijo: el navegador pone el boundary del multipart (como updateProyectoFiles).
+        return this.http.post<ProjectCheck[]>(`${this.baseUrl}/proyecto-checklist/${projectId}/checks/${checkId}/adjuntos/`, form, { headers: this.getAuthHeaders() });
+    }
+    deleteProjectCheckAttachment(projectId: number, checkId: number, attachmentId: number): Observable<ProjectCheck[]> {
+        return this.http.delete<ProjectCheck[]>(`${this.baseUrl}/proyecto-checklist/${projectId}/checks/${checkId}/adjuntos/${attachmentId}/`, { headers: this.getHeaders() });
+    }
+    /** Pasos con fecha límite dentro del rango, para el calendario. */
+    getCheckDeadlines(desde: string, hasta: string): Observable<CheckDeadline[]> {
+        return this.http.get<CheckDeadline[]>(`${this.baseUrl}/proyecto-checklist/vencimientos/`, { headers: this.getHeaders(), params: { desde, hasta } });
+    }
+
+    // --- Lista de control maestra ---
     getCheckDefinitions(): Observable<CheckDefinition[]> {
         return this.http.get<CheckDefinition[]>(`${this.baseUrl}/check-definiciones/`, { headers: this.getHeaders() });
     }
@@ -576,6 +597,12 @@ export class ApiService {
         return data.id
             ? this.http.patch<CheckDefinition>(`${this.baseUrl}/check-definiciones/${data.id}/`, data, { headers: this.getHeaders() })
             : this.http.post<CheckDefinition>(`${this.baseUrl}/check-definiciones/`, data, { headers: this.getHeaders() });
+    }
+    deleteCheckDefinition(id: number): Observable<void> {
+        return this.http.delete<void>(`${this.baseUrl}/check-definiciones/${id}/`, { headers: this.getHeaders() });
+    }
+    reorderCheckDefinitions(ids: number[]): Observable<CheckDefinition[]> {
+        return this.http.post<CheckDefinition[]>(`${this.baseUrl}/check-definiciones/reorder/`, { ids }, { headers: this.getHeaders() });
     }
     getWorkers(): Observable<OfficeWorker[]> {
         return this.http.get<OfficeWorker[]>(`${this.baseUrl}/trabajadores/`, { headers: this.getHeaders() });
@@ -603,23 +630,6 @@ export class ApiService {
 
     getProyectoModulos(id: number): Observable<Modulo[]> {
         return this.http.get<Modulo[]>(`${this.baseUrl}/proyectos/${id}/modulos/`, { headers: this.getHeaders() });
-    }
-
-    getProyectoMesasPreview(
-        id: number,
-        inferiores = 2,
-        superiores = 1,
-    ): Observable<ProyectoMesasPreview> {
-        return this.http.get<ProyectoMesasPreview>(
-            `${this.baseUrl}/proyectos/${id}/preview-mesas/`,
-            {
-                headers: this.getHeaders(),
-                params: {
-                    inferiores: String(inferiores),
-                    superiores: String(superiores),
-                },
-            },
-        );
     }
 
     getProyectoQueueItems(id: number): Observable<ModuloQueueItem[]> {
@@ -998,6 +1008,13 @@ export class ApiService {
 
     getMesaQueueItems(id: number): Observable<MesaQueueItem[]> {
         return this.http.get<MesaQueueItem[]>(`${this.baseUrl}/mesas/${id}/queue_items/`, { headers: this.getHeaders() });
+    }
+
+    /** Queues of several mesas in one request, keyed by mesa id (as string). */
+    getMesasQueues(ids: number[]): Observable<Record<string, MesaQueueItem[]>> {
+        const params: { [param: string]: string } = {};
+        if (ids.length) params['ids'] = ids.join(',');
+        return this.http.get<Record<string, MesaQueueItem[]>>(`${this.baseUrl}/mesas/colas/`, { headers: this.getHeaders(), params });
     }
 
     /**

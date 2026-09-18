@@ -1,5 +1,6 @@
 import os
 from decimal import Decimal
+from urllib.parse import urlsplit
 
 from django.contrib.auth.models import User
 from rest_framework import serializers
@@ -233,6 +234,10 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
     modulos_count = serializers.SerializerMethodField()
     modulos_completados = serializers.SerializerMethodField()
     modulos_completados_hoy = serializers.SerializerMethodField()
+    # Progreso de la lista de control (api/office.py); alimenta la barra del
+    # detalle sin una peticion extra.
+    checks_total = serializers.SerializerMethodField()
+    checks_completados = serializers.SerializerMethodField()
     datos_tecnicos_archivo = serializers.SerializerMethodField()
     bastidor_longitud_cm = serializers.SerializerMethodField()
     # Rolling-deploy compatibility for an older frontend still in service.
@@ -253,12 +258,24 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
             "estrategia_bastidor",
             "capacidad_diaria_usuario",
             "grupos_count", "modulos_count", "modulos_completados",
-            "modulos_completados_hoy",
+            "modulos_completados_hoy", "checks_total", "checks_completados",
         ]
         extra_kwargs = {
             'usuario': {'required': False, 'allow_null': True},
             'datos_tecnicos_importados': {'read_only': True},
         }
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # DRF renders FileFields as absolute URLs on the backend host. The
+        # browser must fetch media through the frontend's nginx (same origin)
+        # so the /media/ auth cookie travels with the request, so keep the
+        # path only. Also removes the http/https mixed-content edge case.
+        for field in ('plano_archivo', 'documentos_archivo', 'planilla_archivo'):
+            value = data.get(field)
+            if isinstance(value, str) and '://' in value:
+                data[field] = urlsplit(value).path
+        return data
 
     def get_datos_tecnicos_archivo(self, obj):
         if not obj.fichero_datos_tecnicos:
@@ -321,6 +338,14 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
         if cached is not None:
             return cached
         return obj.modulos.filter(estado__in=['COMPLETADO', 'CERRADO']).count()
+
+    def get_checks_total(self, obj):
+        cached = getattr(obj, '_checks_total', None)
+        return cached if cached is not None else obj.checks.count()
+
+    def get_checks_completados(self, obj):
+        cached = getattr(obj, '_checks_completados', None)
+        return cached if cached is not None else obj.checks.filter(completado=True).count()
 
     def get_modulos_completados_hoy(self, obj):
         from django.utils import timezone

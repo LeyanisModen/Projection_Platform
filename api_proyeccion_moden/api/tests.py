@@ -647,7 +647,8 @@ class PermissionAndDeviceAuthTests(APITestCase):
         self.assertEqual(second_status.data["device_token"], token)
 
         self.mesa_a.refresh_from_db()
-        self.assertTrue(self.mesa_a.last_error.startswith("PENDING_TOKEN:"))
+        self.assertEqual(self.mesa_a.pending_device_token, token)
+        self.assertIsNone(self.mesa_a.last_error)
 
         heartbeat = self.client.post(
             "/api/device/heartbeat/",
@@ -658,7 +659,7 @@ class PermissionAndDeviceAuthTests(APITestCase):
         self.assertEqual(heartbeat.status_code, 200)
 
         self.mesa_a.refresh_from_db()
-        self.assertIsNone(self.mesa_a.last_error)
+        self.assertIsNone(self.mesa_a.pending_device_token)
 
     def test_direct_mesa_pairing_keeps_token_retrievable_until_device_authenticates(self):
         self.mesa_a.pairing_code = "MESA03"
@@ -692,8 +693,79 @@ class PermissionAndDeviceAuthTests(APITestCase):
         self.assertEqual(heartbeat.status_code, 200)
 
         self.mesa_a.refresh_from_db()
-        self.assertIsNone(self.mesa_a.last_error)
+        self.assertIsNone(self.mesa_a.pending_device_token)
         self.assertIsNone(self.mesa_a.pairing_code)
+
+    def test_status_expires_when_paired_session_token_was_already_consumed(self):
+        session = PairingSession.objects.create(
+            pairing_code="USED01",
+            expires_at=timezone.now() + timedelta(minutes=1),
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.user_a_token.key}")
+        self.client.post(
+            "/api/device/pair/",
+            {"mesa_id": self.mesa_a.id, "pairing_code": "USED01"},
+            format="json",
+        )
+        self.client.credentials()
+        token = self.client.get("/api/device/status/?code=USED01").data["device_token"]
+        self.client.post("/api/device/heartbeat/", {}, format="json", HTTP_AUTHORIZATION=f"Bearer {token}")
+
+        # The visor only reacts to PAIRED+token or EXPIRED; PAIRED without a
+        # token used to leave it polling forever.
+        again = self.client.get("/api/device/status/?code=USED01")
+        self.assertEqual(again.data["status"], "EXPIRED")
+        self.assertNotIn("device_token", again.data)
+        self.assertTrue(PairingSession.objects.filter(pk=session.pk).exists())
+
+    def test_unbind_removes_pairing_sessions_of_the_mesa(self):
+        PairingSession.objects.create(
+            pairing_code="OLD001",
+            expires_at=timezone.now() + timedelta(minutes=1),
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.user_a_token.key}")
+        self.client.post(
+            "/api/device/pair/",
+            {"mesa_id": self.mesa_a.id, "pairing_code": "OLD001"},
+            format="json",
+        )
+        unbind = self.client.post("/api/device/unbind/", {"mesa_id": self.mesa_a.id}, format="json")
+        self.assertEqual(unbind.status_code, 200)
+        self.assertFalse(PairingSession.objects.filter(mesa=self.mesa_a).exists())
+        self.mesa_a.refresh_from_db()
+        self.assertIsNone(self.mesa_a.device_token_hash)
+        self.assertIsNone(self.mesa_a.pending_device_token)
+
+        self.client.credentials()
+        status = self.client.get("/api/device/status/?code=OLD001")
+        self.assertEqual(status.data["status"], "EXPIRED")
+
+    def test_init_purges_stale_pairing_sessions(self):
+        now = timezone.now()
+        stale_unpaired = PairingSession.objects.create(
+            pairing_code="STALE1", expires_at=now - timedelta(hours=2),
+        )
+        fresh_unpaired = PairingSession.objects.create(
+            pairing_code="FRESH1", expires_at=now - timedelta(minutes=5),
+        )
+        stale_paired = PairingSession.objects.create(
+            pairing_code="STALE2", expires_at=now - timedelta(days=2),
+            device_token_hash="abc", mesa=self.mesa_a,
+        )
+        recent_paired = PairingSession.objects.create(
+            pairing_code="RECNT2", expires_at=now - timedelta(hours=3),
+            device_token_hash="def", mesa=self.mesa_a,
+        )
+
+        response = self.client.post("/api/device/init/", {}, format="json")
+        self.assertEqual(response.status_code, 200)
+
+        alive = set(PairingSession.objects.values_list("pairing_code", flat=True))
+        self.assertNotIn(stale_unpaired.pairing_code, alive)
+        self.assertNotIn(stale_paired.pairing_code, alive)
+        self.assertIn(fresh_unpaired.pairing_code, alive)
+        self.assertIn(recent_paired.pairing_code, alive)
+        self.assertIn(response.data["pairing_code"], alive)
 
 
 @override_settings(
@@ -2749,7 +2821,7 @@ class PlanningFoundationTests(APITestCase):
         peer.refresh_from_db()
         self.assertLess(self.modulo.orden_intra, peer.orden_intra)
 
-    def test_modulo_iniciado_se_bloquea_en_bastidor_preview_y_api(self):
+    def test_modulo_iniciado_se_bloquea_en_bastidor_y_api(self):
         grupo = self._crear_grupo("Grupo Modulo Iniciado")
         mesa_inf = grupo.mesas.get(tipo="INFERIOR", indice=1)
         mesa_sup = grupo.mesas.get(tipo="SUPERIOR", indice=3)
@@ -2839,19 +2911,6 @@ class PlanningFoundationTests(APITestCase):
             modulo=self.modulo,
             status=MesaQueueStatus.EN_COLA,
         ).update(status=MesaQueueStatus.MOSTRANDO)
-
-        preview_response = self.client.get(
-            f"/api/proyectos/{self.project.id}/preview-mesas/"
-        )
-        self.assertEqual(preview_response.status_code, 200)
-        preview_items = [
-            item
-            for queue in preview_response.data["queues"]
-            for item in queue["modulos"]
-            if item["id"] == self.modulo.id
-        ]
-        self.assertTrue(preview_items)
-        self.assertTrue(all(not item["movible"] for item in preview_items))
 
         move_response = self.client.post(
             "/api/grupos-bastidor/move-modulo/",
@@ -4339,141 +4398,6 @@ class PlanningFoundationTests(APITestCase):
 
         self.assertNotIn("mallazo_inf", rows)
         self.assertNotIn("mallazo_sup", rows)
-
-    def test_preview_mesas_reutiliza_orden_real_sin_crear_colas(self):
-        grupo_1 = GrupoBastidor.objects.create(
-            proyecto=self.project,
-            indice=1,
-            nombre="Bastidor inicial",
-        )
-        grupo_2 = GrupoBastidor.objects.create(
-            proyecto=self.project,
-            indice=2,
-            nombre="Bastidor final",
-        )
-
-        self.modulo.nombre = "A01"
-        self.modulo.grupo_bastidor = grupo_1
-        self.modulo.orden_intra = 1
-        self.modulo.inferior_hecho = True
-        self.modulo.superior_hecho = True
-        self.modulo.cerrado = True
-        self.modulo.estado = "CERRADO"
-        self.modulo.save()
-
-        Imagen.objects.create(
-            modulo=self.modulo,
-            fase="SUPERIOR",
-            orden=1,
-            url="/media/imagenes/P1/A01/MOD_A01_SD_S_01.png",
-        )
-
-        modulo_sd_d = Modulo.objects.create(
-            nombre="A02",
-            proyecto=self.project,
-            grupo_bastidor=grupo_1,
-            orden_intra=2,
-        )
-        Imagen.objects.create(
-            modulo=modulo_sd_d,
-            fase="SUPERIOR",
-            orden=1,
-            url="/media/imagenes/P1/A02/MOD_A02_SD_D_01.png",
-        )
-        modulo_normal = Modulo.objects.create(
-            nombre="B01",
-            proyecto=self.project,
-            grupo_bastidor=grupo_2,
-            orden_intra=1,
-        )
-
-        grupos_before = GrupoMesas.objects.count()
-        queue_items_before = MesaQueueItem.objects.count()
-
-        groups_response = self.client.get(
-            f"/api/grupos-bastidor/?proyecto={self.project.id}"
-        )
-        self.assertEqual(groups_response.status_code, 200)
-        serialized_groups = {
-            item["id"]: item
-            for group in groups_response.data
-            for item in group["modulos"]
-        }
-        self.assertTrue(serialized_groups[self.modulo.id]["tiene_sd"])
-        self.assertTrue(serialized_groups[modulo_sd_d.id]["tiene_sd"])
-        self.assertFalse(serialized_groups[modulo_normal.id]["tiene_sd"])
-
-        response = self.client.get(
-            f"/api/proyectos/{self.project.id}/preview-mesas/"
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertTrue(response.data["read_only"])
-        self.assertEqual(response.data["configuration"], {
-            "inferiores": 2,
-            "superiores": 1,
-        })
-        self.assertEqual(response.data["total_modules"], 3)
-
-        queues = {queue["key"]: queue for queue in response.data["queues"]}
-        self.assertEqual(
-            [item["nombre"] for item in queues["INF-1"]["modulos"]],
-            ["A02", "A01"],
-        )
-        self.assertEqual(
-            [item["nombre"] for item in queues["INF-2"]["modulos"]],
-            ["B01"],
-        )
-        self.assertEqual(
-            [item["nombre"] for item in queues["SUP-1"]["modulos"]],
-            ["A02", "B01", "A01"],
-        )
-        self.assertEqual(
-            queues["INF-1"]["modulos"][0]["group_name"],
-            "Bastidor inicial",
-        )
-        self.assertEqual(
-            queues["INF-1"]["modulos"][0]["group_id"],
-            grupo_1.id,
-        )
-        self.assertEqual(
-            queues["INF-1"]["modulos"][0]["estado"],
-            "PENDIENTE",
-        )
-        self.assertEqual(
-            queues["INF-1"]["modulos"][1]["estado"],
-            "CERRADO",
-        )
-        preview_items = [
-            item
-            for queue in queues.values()
-            for item in queue["modulos"]
-        ]
-        self.assertTrue(all(
-            item["tiene_sd"]
-            for item in preview_items
-            if item["id"] == self.modulo.id
-        ))
-        self.assertTrue(all(
-            item["tiene_sd"]
-            for item in preview_items
-            if item["id"] == modulo_sd_d.id
-        ))
-        self.assertTrue(all(
-            not item["tiene_sd"]
-            for item in preview_items
-            if item["id"] == modulo_normal.id
-        ))
-
-        self.assertEqual(GrupoMesas.objects.count(), grupos_before)
-        self.assertEqual(MesaQueueItem.objects.count(), queue_items_before)
-        self.modulo.refresh_from_db()
-        self.assertTrue(self.modulo.cerrado)
-
-        invalid_response = self.client.get(
-            f"/api/proyectos/{self.project.id}/preview-mesas/?inferiores=0"
-        )
-        self.assertEqual(invalid_response.status_code, 400)
 
     def test_planificar_grupo_crea_colas_automaticas(self):
         self.project.bastidor_longitud_cm = 20

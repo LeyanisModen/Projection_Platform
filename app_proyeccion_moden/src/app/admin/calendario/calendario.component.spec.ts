@@ -2,7 +2,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { CalendarEvent, OfficeWorker } from '../../services/api.service';
+import { CalendarEvent, OfficeWorker, CheckDeadline} from '../../services/api.service';
 import { CalendarioComponent } from './calendario.component';
 
 describe('CalendarioComponent', () => {
@@ -24,6 +24,7 @@ describe('CalendarioComponent', () => {
         http.expectOne(r => r.url === '/api/eventos/').flush(events);
         http.expectOne('/api/proyectos/').flush({results: [], next: null, count: 0});
         http.expectOne('/api/trabajadores/').flush(workers);
+        http.expectOne(r => r.url === '/api/proyecto-checklist/vencimientos/').flush([]);
         fixture.detectChanges();
     });
     afterEach(() => http.verify());
@@ -33,13 +34,17 @@ describe('CalendarioComponent', () => {
         http.expectOne(r => r.url === '/api/eventos/' && r.method === 'GET').flush(events);
     }
 
-    function finishLoad(start: string, end: string, data = events): void {
+    function finishLoad(start: string, end: string, data = events, deadlines: CheckDeadline[] = []): void {
         const request = http.expectOne(r => r.url === '/api/eventos/');
         expect(request.request.params.get('desde')).toBe(start);
         expect(request.request.params.get('hasta')).toBe(end);
         request.flush(data);
         http.expectOne('/api/proyectos/').flush({results: [], next: null, count: 0});
         http.expectOne('/api/trabajadores/').flush(workers);
+        const deadlinesRequest = http.expectOne(r => r.url === '/api/proyecto-checklist/vencimientos/');
+        expect(deadlinesRequest.request.params.get('desde')).toBe(start);
+        expect(deadlinesRequest.request.params.get('hasta')).toBe(end);
+        deadlinesRequest.flush(deadlines);
         fixture.detectChanges();
     }
 
@@ -208,14 +213,39 @@ describe('CalendarioComponent', () => {
         expect(component.month().getFullYear()).toBe(new Date().getFullYear());
     });
 
+    it('muestra las fechas límite de la lista de control en la rejilla y en la agenda del día', () => {
+        const component = fixture.componentInstance;
+        component.load();
+        finishLoad('2026-08-31', '2026-10-11', events, [
+            {id: 5, proyecto: 3, proyecto_nombre: 'Valdebebas', titulo: 'Aprobación equivalencias', fecha_limite: '2026-09-10', completado: false},
+            {id: 6, proyecto: 3, proyecto_nombre: 'Valdebebas', titulo: 'Planos entregados', fecha_limite: '2026-09-10', completado: true},
+        ]);
+        const bars = Array.from(fixture.nativeElement.querySelectorAll('.event-bar.control')) as HTMLElement[];
+        expect(bars.map(b => b.querySelector('.event-label')?.textContent?.trim())).toEqual([
+            'Control · Valdebebas · Aprobación equivalencias', '✓ Control · Valdebebas · Planos entregados',
+        ]);
+        expect(bars[1].classList.contains('done')).toBe(true);
+
+        const day: HTMLButtonElement = fixture.nativeElement.querySelector('button.day[aria-label^="10/09/2026"]');
+        day.click(); fixture.detectChanges();
+        const agenda = fixture.nativeElement.querySelector('.day-agenda').textContent;
+        expect(agenda).toContain('Fecha límite · Aprobación equivalencias');
+        expect(agenda).toContain('Completado · Planos entregados');
+        expect(fixture.nativeElement.querySelector('.agenda-event.control a').getAttribute('href')).toBe('/admin-dashboard/proyectos/3');
+
+        component.projectFilter.set(99); fixture.detectChanges();
+        expect(fixture.nativeElement.querySelectorAll('.event-bar.control').length).toBe(0);
+    });
+
     it('cancels older loads so stale responses cannot overwrite the current range', () => {
         const component = fixture.componentInstance;
         component.setView('year');
         const oldEvents = http.expectOne(r => r.url === '/api/eventos/');
         const oldProjects = http.expectOne('/api/proyectos/');
         const oldWorkers = http.expectOne('/api/trabajadores/');
+        const oldDeadlines = http.expectOne(r => r.url === '/api/proyecto-checklist/vencimientos/');
         component.load();
-        expect(oldEvents.cancelled && oldProjects.cancelled && oldWorkers.cancelled).toBe(true);
+        expect(oldEvents.cancelled && oldProjects.cancelled && oldWorkers.cancelled && oldDeadlines.cancelled).toBe(true);
         finishLoad('2026-01-01', '2026-12-31');
     });
 
@@ -310,22 +340,18 @@ describe('CalendarioComponent', () => {
         expect(component.newPersonName).toBe('Clara');
     });
 
-    it('shows a compact vacation year with overlapping colors, independent of project filters', () => {
+    it('shows a compact year with stacked vacation colors', () => {
         const component = fixture.componentInstance;
-        component.projectFilter.set(99); component.setView('holidays');
+        component.setView('year');
         finishLoad('2026-01-01', '2026-12-31', [...events, {...events[0], id: 3, trabajadores: [2], inicio: '2026-09-15'}]);
         expect(fixture.nativeElement.querySelectorAll('.month-grid')).toHaveLength(12);
-        expect(fixture.nativeElement.querySelectorAll('.event-bar')).toHaveLength(0);
         expect(fixture.nativeElement.querySelectorAll('button.day')).toHaveLength(365);
         const day = component.calendars().flatMap(c => c.weeks).flatMap(w => w.days).find(d => d.key==='2026-09-15' && d.current)!;
         expect(day.vacationWorkers.map(w => w.id)).toEqual([1,2]);
-        expect(component.calendarItems().some(item => item.title === 'Trabajo conjunto')).toBe(false);
-        component.workerFilter.set(2); fixture.detectChanges();
-        expect(component.legendWorkers().map(w => w.id)).toEqual([2]);
+        expect(component.viewOptions.map(o => o.value)).toEqual(['month', 'quarter', 'year']);
         component.changeMonth(1); finishLoad('2027-01-01', '2027-12-31');
         expect(component.title()).toBe('2027');
         component.setView('month'); finishLoad('2027-08-30', '2027-10-10');
-        expect(component.projectFilter()).toBe(99);
     });
 
     it('prints only a loaded calendar with no open editor', () => {
@@ -344,7 +370,7 @@ describe('CalendarioComponent', () => {
     it('includes historical inactive people, deduplicates overlapping holidays and clips year boundaries', () => {
         const component = fixture.componentInstance;
         component.workers.set([...workers, {id: 3, nombre: 'Clara', activo: false, color: '#2563eb'}]);
-        component.view.set('holidays');
+        component.view.set('year');
         component.events.set([
             {...events[0], trabajadores: [1,3], inicio: '2025-12-29', fin: '2026-01-02'},
             {...events[0], id: 3, inicio: '2026-01-01', fin: '2026-01-02'},

@@ -11,8 +11,15 @@ from django.contrib.auth.models import User
 
 def ensure_admin():
     username = os.environ.get('DJANGO_SUPERUSER_USERNAME', 'Moden')
-    password = os.environ.get('DJANGO_SUPERUSER_PASSWORD', 'admin')
+    password = os.environ.get('DJANGO_SUPERUSER_PASSWORD')
     email = os.environ.get('DJANGO_SUPERUSER_EMAIL', 'admin@example.com')
+
+    # This script RESETS the password of an existing superuser. Never fall
+    # back to a default: run against the wrong DATABASE_URL it would leave
+    # production with a well-known admin password.
+    if not password:
+        print("ERROR: define DJANGO_SUPERUSER_PASSWORD antes de ejecutar este script.")
+        sys.exit(1)
 
     print(f"--- Checking Admin User: {username} ---")
 

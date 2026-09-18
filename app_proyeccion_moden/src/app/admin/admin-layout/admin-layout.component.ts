@@ -30,6 +30,7 @@ import { ApiService } from '../../services/api.service';
             Ferrallas
           </a>
           <a routerLink="/admin-dashboard/calendario" routerLinkActive="active" ariaCurrentWhenActive="page">Calendario</a>
+          <a routerLink="/admin-dashboard/lista-control" routerLinkActive="active" ariaCurrentWhenActive="page">Lista de control</a>
         </nav>
 
         <div class="header-right">
@@ -160,6 +161,7 @@ import { ApiService } from '../../services/api.service';
       font-size: 0.95rem;
       font-weight: 600;
       text-decoration: none;
+      white-space: nowrap;
       transition: color 160ms ease;
     }
 

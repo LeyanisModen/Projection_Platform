@@ -14,6 +14,7 @@ export const ADMIN_ROUTES: Routes = [
             { path: 'proyectos', component: ProyectosComponent, title: 'Admin - Proyectos' },
             { path: 'ferrallas', component: FerrallasComponent, title: 'Admin - Ferrallas' },
             { path: 'calendario', loadComponent: () => import('./calendario/calendario.component').then(m => m.CalendarioComponent), title: 'Admin - Calendario' },
+            { path: 'lista-control', loadComponent: () => import('./lista-control/lista-control.component').then(m => m.ListaControlComponent), title: 'Admin - Lista de control' },
             {
                 path: 'proyectos/:id',
                 loadComponent: () => import('./proyectos/detalle/detalle.component').then(m => m.ProyectoDetailComponent),

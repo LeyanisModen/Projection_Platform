@@ -12,9 +12,24 @@
   to canonical transport indices and retains locks around work already started.
 - Photo modals use the full viewport on narrow screens, with touch-sized controls
   below the image. Existing pinch/drag zoom remains available.
-- Global checklist definitions are shared by all existing/future projects.
-  Completion, editor and last-update time are independent per project. Archive
-  definitions rather than deleting them, so prior completion marks can be restored.
+- Project checklist (September 2026 redesign; no data existed before it):
+  the admin page "Lista de control" holds a master list of steps. Creating a
+  project copies the master steps into `ProyectoCheck` rows owned by that
+  project; from then on the project's list is independent (add project-only
+  steps, delete any step, "Traer los pasos de la lista maestra que falten"
+  re-copies missing ones by title). Editing or deleting master steps never
+  touches seeded projects. Completing a step records who and when; unmarking
+  clears both. The project detail shows a progress bar and opens the list in
+  a modal. Staff only.
+- Each step declares what it needs, on the master list and on the project
+  copy (`requiere_fecha`, `requiere_documento`): a due date (`fecha_limite`,
+  shown in the admin calendar as a read-only "Control" item and in the day
+  agenda, green with a check mark once completed) and/or confirmation
+  documents (`ProyectoCheckAdjunto`, stored under
+  `media/controles/<proyecto>/<check>/`, 20 MB each, staff-only through
+  `/media/`; a paired mini-PC can only read `imagenes/` and `fotos/`).
+  Clearing `requiere_fecha` clears the due date. Completing a step that
+  requires a document without one is allowed but flagged in the list.
 - Admin Calendar shows project events, mounting dates and office vacations.
   Office workers are independent of login accounts. Events use inclusive date
   ranges (whole days). Availability means no recorded vacation or assigned event for that day,
@@ -161,17 +176,18 @@ person selection or saving, including while the overlap check is loading or has
 failed. Failed checks are shown as unknown with a retry action, not as available.
 These warnings apply to both event and vacation tabs and use full days, not hours.
 
-The extra `Vacaciones anual` view displays all twelve months with shaded daily
-cells, including overlaps, and a team legend. It respects the person filter but
-ignores the project filter (which is retained on return to the normal calendar).
-Inactive people with visible historical vacations remain in the legend. Events
-and mounting dates are excluded from this summary, but availability in the day
-agenda continues to consider events as well as vacations.
+The `Anual` view displays all twelve months with shaded daily cells for
+vacations (overlapping people stack their colors), a team legend that keeps
+inactive people with visible historical vacations, plus event bars, mounting
+dates and checklist due dates. The former separate `Vacaciones anual` view was
+removed in September 2026 as redundant. Vacation shading is drawn inset inside
+each day cell (margin and rounded corners) so the day grid stays visible when a
+whole week is shaded.
 
 `Imprimir / PDF` opens the browser's print dialog for the current loaded view and
 filters. Print styles release the admin scroll containers, remove navigation,
 forms and the day sidebar, and include the period, filters and color legend.
-Both annual views use a compact three-column A4 portrait layout (four rows of
+The annual view uses a compact three-column A4 portrait layout (four rows of
 months). The rolling quarter stacks compact months without forced page breaks.
 A typical four-person calendar fits on one sheet; busy months grow naturally
 and move to another page rather than clipping event labels or hiding dates.

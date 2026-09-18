@@ -8,7 +8,7 @@ from django.conf import settings
 from django.core.files.storage import default_storage
 from django.db.models import Q
 
-from api.models import FotoFabricacion, Imagen, Proyecto
+from api.models import FotoFabricacion, Imagen, Proyecto, ProyectoCheckAdjunto
 
 
 logger = logging.getLogger(__name__)
@@ -42,6 +42,11 @@ def collect_project_media(project):
         Imagen.objects.filter(modulo__proyecto=project)
         .exclude(archivo='')
         .exclude(archivo__isnull=True)
+        .values_list('archivo', flat=True)
+    )
+    storage_files.update(
+        ProyectoCheckAdjunto.objects.filter(paso__proyecto=project)
+        .exclude(archivo='')
         .values_list('archivo', flat=True)
     )
 
@@ -114,6 +119,7 @@ def _storage_file_is_referenced(file_name):
             | Q(fichero_datos_tecnicos=file_name)
         ).exists()
         or Imagen.objects.filter(archivo=file_name).exists()
+        or ProyectoCheckAdjunto.objects.filter(archivo=file_name).exists()
     )
 
 
@@ -146,6 +152,7 @@ def _directory_has_references(relative_directory):
             Q(archivo__startswith=prefix) | Q(url__startswith=url_prefix)
         ).exists()
         or FotoFabricacion.objects.filter(url__startswith=url_prefix).exists()
+        or ProyectoCheckAdjunto.objects.filter(archivo__startswith=prefix).exists()
     )
 
 
@@ -162,7 +169,7 @@ def delete_project_media(snapshot):
             if local_path and local_path.is_file():
                 local_path.unlink()
 
-        for category in ('imagenes', 'fotos'):
+        for category in ('imagenes', 'fotos', 'controles'):
             relative_directory = f'{category}/{snapshot.project_id}'
             if _directory_has_references(relative_directory):
                 logger.warning(

@@ -101,37 +101,36 @@
             <div class="project-config-card project-logistics-card mb-3 p-3 bg-white rounded border">
                 <div class="project-config-header">
                     <label class="d-block mb-1">Límites de transporte</label>
-                    <small class="text-muted">
-                        El bastidor pertenece a la ferralla; la carga máxima depende de la grúa de este proyecto.
-                    </small>
                 </div>
-                <div class="project-logistics-rack">
-                    <span>Longitud útil del bastidor</span>
-                    <strong>{{ proyecto.bastidor_longitud_cm | number:'1.0-2' }} cm</strong>
+                <div class="project-logistics-row">
+                    <span class="logistics-label">Longitud útil del bastidor</span>
+                    <strong class="logistics-value">{{ proyecto.bastidor_longitud_cm | number:'1.0-2' }} cm</strong>
+                    <a class="logistics-action" [routerLink]="['/admin-dashboard/ferrallas']"
+                        [queryParams]="proyectoUsuarioId ? {usuario: proyectoUsuarioId} : {}"
+                        title="La longitud es de la ferralla: abrir su ficha para cambiarla"
+                        aria-label="Abrir la ficha de la ferralla para cambiar la longitud del bastidor">
+                        <i class="fa fa-external-link" aria-hidden="true"></i>
+                    </a>
                 </div>
-                <label class="project-logistics-field" for="crane-limit">
-                    <span>Carga máxima de grúa</span>
-                    <span class="project-logistics-input-wrap">
-                        <input id="crane-limit" type="number" class="project-config-input"
+                <div class="project-logistics-row">
+                    <label class="logistics-label" for="crane-limit">Carga máxima de grúa</label>
+                    <span class="crane-input-wrap">
+                        <input id="crane-limit" type="number" class="project-config-input crane-input"
                             [(ngModel)]="craneLimitDraft" min="0.01" step="0.01"
-                            placeholder="Sin límite" [disabled]="savingProjectConfig">
+                            placeholder="Sin límite" [disabled]="savingProjectConfig || recalculatingBastidores">
                         <span class="project-config-unit">kg</span>
                     </span>
-                </label>
-                <div class="project-logistics-actions">
-                    <button type="button" class="btn btn-sm btn-outline-primary"
-                        (click)="saveCraneLimit()" [disabled]="savingProjectConfig">
-                        {{ savingProjectConfig ? 'Guardando...' : 'Guardar límite' }}
-                    </button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary"
-                        (click)="recalculateCurrentBastidores()"
-                        [disabled]="recalculatingBastidores || !proyecto.datos_tecnicos_importados || !grupos.length">
-                        {{ recalculatingBastidores ? 'Recalculando...' : 'Recalcular bastidores' }}
+                    <button type="button" class="logistics-action"
+                        (click)="applyCraneLimit()"
+                        [disabled]="savingProjectConfig || recalculatingBastidores"
+                        [title]="grupos.length ? 'Guardar la carga y rehacer los bastidores con ella' : 'Guardar la carga; se aplicará a los bastidores que se creen'"
+                        aria-label="Guardar la carga máxima y recalcular los bastidores">
+                        <i class="fa" aria-hidden="true"
+                            [class.fa-refresh]="!savingProjectConfig && !recalculatingBastidores"
+                            [class.fa-spinner]="savingProjectConfig || recalculatingBastidores"
+                            [class.fa-spin]="savingProjectConfig || recalculatingBastidores"></i>
                     </button>
                 </div>
-                <small class="project-config-hint">
-                    Los módulos sin peso completo se aíslan y los que exceden el límite por sí solos se marcan. Los cambios se aplican automáticamente a grupos nuevos; recalcular rehace los existentes y solo se permite si siguen pendientes.
-                </small>
                 <small class="project-config-message" *ngIf="projectConfigMessage">
                     <i class="fa fa-check-circle" aria-hidden="true"></i> {{ projectConfigMessage }}
                 </small>
@@ -144,11 +143,8 @@
                             Datos técnicos del proyecto
                             <i *ngIf="proyecto.datos_tecnicos_importados" class="fa fa-check-circle text-success ml-1" title="Datos técnicos importados"></i>
                         </label>
-                        <small class="text-muted" *ngIf="!proyecto.datos_tecnicos_importados">Importa un JSON, CSV o SQLite (.db) con ancho de módulo, espesores, pesos y dificultad. Al importar se calcularán los grupos de bastidor.</small>
-                        <small class="text-muted d-block" *ngIf="proyecto.datos_tecnicos_importados">
-                            La base guardada se aplicará automáticamente a los módulos que importes después.
-                        </small>
-                        <small class="text-muted d-block mt-1" *ngIf="proyecto.datos_tecnicos_archivo">
+                        <small class="text-muted" *ngIf="!proyecto.datos_tecnicos_importados">Admite JSON, CSV o SQLite (.db).</small>
+                        <small class="text-muted d-block" *ngIf="proyecto.datos_tecnicos_archivo">
                             Base vigente: {{ proyecto.datos_tecnicos_archivo }}
                             <ng-container *ngIf="proyecto.datos_tecnicos_actualizados_at">
                                 · {{ proyecto.datos_tecnicos_actualizados_at | date:'dd/MM/yyyy HH:mm' }}
@@ -210,28 +206,6 @@
                 </ul>
             </div>
 
-            <!-- Importar modulos desde carpeta local -->
-            <div class="project-config-card mb-3 p-3 bg-white rounded border">
-                <div class="project-config-header">
-                    <div>
-                        <label class="d-block mb-1">Importar módulos</label>
-                        <small class="text-muted">Selecciona la carpeta común y elige cuáles de sus módulos quieres cargar.</small>
-                    </div>
-                </div>
-                <div class="project-config-controls mt-2">
-                    <button class="btn btn-sm btn-secondary w-100" (click)="importModulesFromFolder()"
-                        [disabled]="importing">
-                        {{ importing ? 'Importando...' : 'Seleccionar módulos' }}
-                    </button>
-                </div>
-                <div class="mt-2 text-primary small" *ngIf="importing">
-                    <div class="d-flex align-items-center">
-                        <div class="spinner spinner-sm mr-2"></div>
-                        <small>{{ importProgress }}</small>
-                    </div>
-                </div>
-            </div>
-
         </div>
 
 
@@ -243,11 +217,22 @@
             <div class="card h-100" *ngIf="modulos.length > 0; else noProjectModules">
 
                 <div class="card-header d-flex justify-content-between align-items-center flex-wrap" style="gap: 0.75rem;">
-                    <h3 class="mb-0">Módulos del Proyecto</h3>
+                    <div class="modules-title">
+                        <h3 class="mb-0">Módulos del Proyecto</h3>
+                        <button type="button" class="add-modules-btn" (click)="importModulesFromFolder()"
+                            [disabled]="importing" [class.is-busy]="importing"
+                            title="Importar módulos desde una carpeta"
+                            aria-label="Importar módulos desde una carpeta">
+                            <span *ngIf="!importing" aria-hidden="true">+</span>
+                            <span *ngIf="importing" class="spinner spinner-sm" aria-hidden="true"></span>
+                        </button>
+                        <small *ngIf="importing" class="import-progress-inline text-primary">{{ importProgress }}</small>
+                    </div>
                     <div class="module-display-controls">
-                        <div class="estrategia-toggle rack-view-toggle" role="group" aria-label="Orden de los bastidores"
+                        <div class="estrategia-toggle rack-view-toggle"
                             [class.is-busy]="isDraggingModulo || isDraggingBastidor || movingModulo">
-                            <small class="estrategia-label">Orden:</small>
+                            <span class="estrategia-label">Orden</span>
+                            <div class="segmented" role="group" aria-label="Orden de los bastidores">
                             <button type="button" class="estrategia-pill"
                                 [class.active]="rackViewOrder === 'produccion'"
                                 [attr.aria-pressed]="rackViewOrder === 'produccion'"
@@ -264,11 +249,13 @@
                                 title="Ver los módulos en orden de transporte, sin modificar los bastidores">
                                 Transporte
                             </button>
+                            </div>
                         </div>
 
                         <!-- Switch de estrategia de agrupacion -->
                         <div *ngIf="proyecto && grupos.length > 0" class="estrategia-toggle" [class.is-busy]="recalculatingBastidores">
-                            <small class="estrategia-label">Agrupar:</small>
+                            <span class="estrategia-label">Agrupar</span>
+                            <div class="segmented" role="group" aria-label="Agrupación de bastidores">
                             <button type="button"
                                 class="estrategia-pill"
                                 [class.active]="proyecto.estrategia_bastidor === 'SECUENCIAL'"
@@ -285,12 +272,7 @@
                                 title="Aislar los central girado en bastidores propios">
                                 Por tipo
                             </button>
-                        </div>
-
-                        <div class="legend d-flex align-items-center">
-                            <small class="mr-2 font-weight-bold text-uppercase" style="font-size: 0.7rem;">Estados:</small>
-                            <span class="badge badge-pendiente mr-2">Pendiente</span>
-                            <span class="badge badge-completado">Completado</span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -539,8 +521,15 @@
             <ng-template #noProjectModules>
                 <div
                     class="card h-100 d-flex align-items-center justify-content-center p-5 text-muted bg-light border-dashed">
-                    <h3>Aún no hay módulos</h3>
-                    <p>Importa la carpeta del proyecto usando el botón "Seleccionar módulos" de la izquierda.</p>
+                    <button type="button" class="add-modules-btn is-large" (click)="importModulesFromFolder()"
+                        [disabled]="importing" [class.is-busy]="importing"
+                        aria-label="Importar módulos desde una carpeta">
+                        <span *ngIf="!importing" aria-hidden="true">+</span>
+                        <span *ngIf="importing" class="spinner" aria-hidden="true"></span>
+                    </button>
+                    <h3 class="mt-3">Aún no hay módulos</h3>
+                    <p *ngIf="!importing">Pulsa <strong>+</strong> para elegir la carpeta del proyecto y los módulos que quieres cargar.</p>
+                    <p *ngIf="importing" class="text-primary">{{ importProgress }}</p>
                 </div>
             </ng-template>
 

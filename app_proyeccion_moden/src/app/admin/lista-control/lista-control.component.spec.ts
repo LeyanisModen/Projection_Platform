@@ -1,0 +1,98 @@
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { vi } from 'vitest';
+import { ListaControlComponent } from './lista-control.component';
+
+describe('ListaControlComponent', () => {
+    let fixture: ComponentFixture<ListaControlComponent>;
+    let http: HttpTestingController;
+
+    beforeEach(async () => {
+        await TestBed.configureTestingModule({
+            imports: [ListaControlComponent],
+            providers: [provideHttpClient(), provideHttpClientTesting()],
+        }).compileComponents();
+        http = TestBed.inject(HttpTestingController);
+        fixture = TestBed.createComponent(ListaControlComponent);
+        fixture.detectChanges();
+        http.expectOne('/api/check-definiciones/').flush([
+            { id: 1, titulo: 'Planos entregados', orden: 1, requiere_fecha: false, requiere_documento: false },
+            { id: 2, titulo: 'Aprobación equivalencias', orden: 2, requiere_fecha: true, requiere_documento: true },
+        ]);
+        fixture.detectChanges();
+    });
+
+    afterEach(() => http.verify());
+
+    it('lista los pasos numerados en orden', () => {
+        const element: HTMLElement = fixture.nativeElement;
+        const rows = Array.from(element.querySelectorAll('.step'));
+        expect(rows.map(r => r.querySelector('.position')?.textContent?.trim())).toEqual(['1', '2']);
+        expect(rows.map(r => r.querySelector('.title')?.childNodes[0]?.textContent?.trim())).toEqual(['Planos entregados', 'Aprobación equivalencias']);
+        expect(rows[0].querySelectorAll('.flag-icons i').length).toBe(0);
+        expect(Array.from(rows[1].querySelectorAll('.flag-icons i')).map(i => i.getAttribute('title'))).toEqual(['Con fecha límite', 'Con documento de confirmación']);
+    });
+
+    it('los iconos de fecha y documento funcionan como interruptores', () => {
+        const [fecha, doc] = Array.from(fixture.nativeElement.querySelectorAll('.add-row .flag-toggle')) as HTMLButtonElement[];
+        expect(fecha.getAttribute('aria-pressed')).toBe('false');
+        fecha.click(); fixture.detectChanges();
+        expect(fixture.componentInstance.newRequiereFecha()).toBe(true);
+        expect(fecha.classList.contains('on')).toBe(true);
+        expect(fecha.getAttribute('aria-pressed')).toBe('true');
+        fecha.click(); fixture.detectChanges();
+        expect(fixture.componentInstance.newRequiereFecha()).toBe(false);
+        expect(doc.classList.contains('on')).toBe(false);
+    });
+
+    it('añade un paso al final y limpia el campo', () => {
+        fixture.componentInstance.newTitle.set(' Acta de inicio ');
+        fixture.componentInstance.newRequiereDocumento.set(true);
+        fixture.componentInstance.add();
+        const request = http.expectOne('/api/check-definiciones/');
+        expect(request.request.method).toBe('POST');
+        expect(request.request.body).toEqual({ titulo: 'Acta de inicio', requiere_fecha: false, requiere_documento: true });
+        request.flush({ id: 3, titulo: 'Acta de inicio', orden: 3, requiere_fecha: false, requiere_documento: true });
+        expect(fixture.componentInstance.steps().map(s => s.id)).toEqual([1, 2, 3]);
+        expect(fixture.componentInstance.newTitle()).toBe('');
+        expect(fixture.componentInstance.newRequiereDocumento()).toBe(false);
+    });
+
+    it('reordena enviando la lista completa de ids', () => {
+        fixture.componentInstance.move(1, -1);
+        const request = http.expectOne('/api/check-definiciones/reorder/');
+        expect(request.request.body).toEqual({ ids: [2, 1] });
+        request.flush([{ id: 2, titulo: 'Aprobación equivalencias', orden: 1, requiere_fecha: true, requiere_documento: true }, { id: 1, titulo: 'Planos entregados', orden: 2, requiere_fecha: false, requiere_documento: false }]);
+        expect(fixture.componentInstance.steps().map(s => s.id)).toEqual([2, 1]);
+    });
+
+    it('no intenta mover fuera de los límites', () => {
+        fixture.componentInstance.move(0, -1);
+        http.expectNone('/api/check-definiciones/reorder/');
+    });
+
+    it('elimina tras confirmar y avisa de que los proyectos ya sembrados lo conservan', () => {
+        const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+        fixture.componentInstance.remove(fixture.componentInstance.steps()[0]);
+        expect(confirmSpy.mock.calls[0][0]).toContain('conservan');
+        const request = http.expectOne('/api/check-definiciones/1/');
+        expect(request.request.method).toBe('DELETE');
+        request.flush(null);
+        expect(fixture.componentInstance.steps().map(s => s.id)).toEqual([2]);
+        confirmSpy.mockRestore();
+    });
+
+    it('edita el título en línea y guarda con PATCH', () => {
+        const step = fixture.componentInstance.steps()[1];
+        fixture.componentInstance.startEdit(step);
+        fixture.componentInstance.editTitle.set('Aprobación de planos de equivalencia');
+        fixture.componentInstance.saveEdit(step);
+        const request = http.expectOne('/api/check-definiciones/2/');
+        expect(request.request.method).toBe('PATCH');
+        expect(request.request.body).toEqual({ id: 2, titulo: 'Aprobación de planos de equivalencia', requiere_fecha: true, requiere_documento: true });
+        request.flush({ id: 2, titulo: 'Aprobación de planos de equivalencia', orden: 2, requiere_fecha: true, requiere_documento: true });
+        expect(fixture.componentInstance.editingId()).toBeNull();
+        expect(fixture.componentInstance.steps()[1].titulo).toBe('Aprobación de planos de equivalencia');
+    });
+});

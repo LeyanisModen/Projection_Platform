@@ -34,6 +34,19 @@ DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
 ALLOWED_HOSTS = [host.strip() for host in os.environ.get('ALLOWED_HOSTS', '*').split(',') if host.strip()]
 
+# Railway injects RAILWAY_ENVIRONMENT_NAME in every deployed container. We use
+# it to switch on the HTTPS-only cookie flags without breaking local
+# `runserver`/docker-compose over plain HTTP (DEBUG defaults to False there).
+# Override explicitly with HTTPS_ONLY=True/False if needed.
+_on_railway = bool(os.environ.get('RAILWAY_ENVIRONMENT_NAME') or os.environ.get('RAILWAY_ENVIRONMENT'))
+HTTPS_ONLY = os.environ.get('HTTPS_ONLY', str(_on_railway)) == 'True'
+
+# Railway's deploy healthcheck calls /api/health/ with this Host header.
+# Production pins ALLOWED_HOSTS to its public domains, so add it here rather
+# than relying on someone remembering to edit the variable.
+if _on_railway and '*' not in ALLOWED_HOSTS and 'healthcheck.railway.app' not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append('healthcheck.railway.app')
+
 REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated'
@@ -74,25 +87,51 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'api.media_access.MediaCookieMiddleware',
 ]
+
+# /media/ requires a user or device credential (header or same-origin cookie,
+# see api/media_access.py). Set MEDIA_REQUIRE_AUTH=False to fall back to the
+# previous public behaviour in an emergency.
+MEDIA_REQUIRE_AUTH = os.environ.get('MEDIA_REQUIRE_AUTH', 'True') == 'True'
 
 # CORS Settings
 CORS_ALLOW_ALL_ORIGINS = os.environ.get('CORS_ALLOW_ALL_ORIGINS', 'False') == 'True'
 CORS_ALLOWED_ORIGINS = [
     "https://moden.up.railway.app",
+    "https://calm-curiosity-staging.up.railway.app",
     "http://localhost:4200",
     "http://localhost:80",
 ]
 CORS_ALLOW_CREDENTIALS = True
 
-# CSRF Settings for Railway
+# CSRF trusted origins. Only the concrete frontend/backend domains: a
+# wildcard on *.railway.app would trust any Railway app, and the only
+# session-authenticated surface is /admin/. Override with a comma-separated
+# CSRF_TRUSTED_ORIGINS variable when the domain changes.
 CSRF_TRUSTED_ORIGINS = [
-    "https://moden.up.railway.app",
-    "https://projectionplatform-production.up.railway.app",
-    "https://*.railway.app", 
-    "https://*.up.railway.app"
+    origin.strip()
+    for origin in os.environ.get(
+        'CSRF_TRUSTED_ORIGINS',
+        ','.join([
+            "https://moden.up.railway.app",
+            "https://projectionplatform-production.up.railway.app",
+            "https://calm-curiosity-staging.up.railway.app",
+            "https://projectionplatform-staging.up.railway.app",
+        ]),
+    ).split(',')
+    if origin.strip()
 ]
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+# HTTPS-only hardening (see docs/08_auditoria_2026-09.md, 1.5). Railway
+# terminates TLS at its edge and always redirects to HTTPS, so
+# SECURE_SSL_REDIRECT stays off: enabling it behind the nginx private-network
+# proxy would loop, because nginx forwards X-Forwarded-Proto=http.
+SESSION_COOKIE_SECURE = HTTPS_ONLY
+CSRF_COOKIE_SECURE = HTTPS_ONLY
+SECURE_HSTS_SECONDS = 3600 if HTTPS_ONLY else 0
+SECURE_CONTENT_TYPE_NOSNIFF = True
 
 ROOT_URLCONF = 'proyeccion_moden.urls'
 

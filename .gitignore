@@ -35,8 +35,10 @@ Thumbs.db
 
 # --- Documentation ---
 docs/E04*
-app_proyeccion_moden/public/
-docker-compose.yml
+
+# --- Credenciales locales de PostgreSQL (nunca versionar) ---
+api_proyeccion_moden/proyeccion_moden/.pg_pass
+api_proyeccion_moden/proyeccion_moden/.pg_service.conf
 
 # --- Local-only (per-project DBs, personal cheatsheets) ---
 docs/*.db
