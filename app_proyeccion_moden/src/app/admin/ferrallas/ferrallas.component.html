@@ -8,7 +8,7 @@
 
     <div class="card mb-4 ferralla-form-card" *ngIf="showForm">
         <div class="card-header">
-            <h2>{{ isEditing ? 'Editar Ferralla' : 'Nueva Ferralla' }}</h2>
+            <h2>Nueva Ferralla</h2>
         </div>
         <div class="card-body">
             <form (ngSubmit)="saveUser()" #userForm="ngForm" autocomplete="off">
@@ -29,7 +29,7 @@
                         <div class="input-group d-flex flex-nowrap">
                             <input type="text" id="password" name="password" class="form-control"
                                 [(ngModel)]="newUser.password" placeholder="Contrasena" autocomplete="off"
-                                [required]="!isEditing">
+                                required>
                             <div class="input-group-append">
                                 <button type="button" class="btn btn-outline-secondary text-nowrap"
                                     (click)="generateFormPassword()" title="Generar contrasena">
@@ -128,7 +128,7 @@
 
                 <div class="form-actions mt-3">
                     <button type="submit" class="btn btn-success" [disabled]="!userForm.form.valid || loading">
-                        {{ isEditing ? 'Actualizar' : 'Crear' }}
+                        Crear
                     </button>
                     <button type="button" class="btn btn-secondary ml-2" (click)="toggleForm()">Cancelar</button>
                 </div>
@@ -163,10 +163,6 @@
                                         title="Credenciales">
                                         <i class="fa fa-key"></i>
                                     </button>
-                                    <button class="btn btn-link btn-sm text-info p-1"
-                                        (click)="editUser(user); $event.stopPropagation()" title="Editar">
-                                        <i class="fa fa-pencil"></i>
-                                    </button>
                                     <button class="btn btn-link btn-sm text-danger p-1"
                                         (click)="confirmDelete(user); $event.stopPropagation()" title="Eliminar">
                                         <i class="fa fa-trash-o"></i>
@@ -185,78 +181,120 @@
 
         <div class="ferralla-detail-col">
             <div class="card shadow-sm" *ngIf="selectedUser">
-                <div class="card-header border-bottom py-3 px-3">
-                    <h5 class="mb-2">{{ selectedUser.first_name || selectedUser.username }}</h5>
-                    <div class="text-muted small">
-                        <div class="detail-list" *ngIf="hasContactos(selectedUser); else legacyContactInfo">
-                            <div class="detail-block" *ngFor="let contacto of selectedUser.contactos">
-                                <strong>{{ contacto.nombre || 'Contacto' }}</strong>
-                                <span *ngIf="contacto.cargo">({{ contacto.cargo }})</span>
-                                <span *ngIf="contacto.telefono">Tel: {{ contacto.telefono }}</span>
-                                <span *ngIf="contacto.email">{{ contacto.email }}</span>
-                            </div>
-                        </div>
-                        <ng-template #legacyContactInfo>
-                            <div class="mb-1">
-                                <div class="row">
-                                    <div class="col-sm-6" *ngIf="selectedUser.coordinador"><strong>Coordinador:</strong>
-                                        {{ selectedUser.coordinador }}</div>
-                                    <div class="col-sm-6" *ngIf="selectedUser.telefono"><strong>Tel:</strong> {{
-                                        selectedUser.telefono }}</div>
-                                </div>
-                            </div>
-                            <div class="mb-1" *ngIf="selectedUser.email">
-                                <strong>Email:</strong> {{ selectedUser.email }}
-                            </div>
-                        </ng-template>
-                        <div class="detail-list mt-2" *ngIf="hasDirecciones(selectedUser); else legacyDireccionInfo">
-                            <div class="detail-block" *ngFor="let direccion of selectedUser.direcciones">
-                                <strong>{{ direccion.nombre || 'Direccion' }}:</strong>
-                                <span>{{ direccion.direccion }}</span>
-                            </div>
-                        </div>
-                        <ng-template #legacyDireccionInfo>
-                            <div class="mb-1" *ngIf="selectedUser.direccion">
-                                <strong>Direccion:</strong> {{ selectedUser.direccion }}
-                            </div>
-                        </ng-template>
-                    </div>
-                </div>
                 <div class="card-body p-3">
-                    <section class="capture-config-panel mb-3">
+                    <section class="capture-config-panel mb-3" *ngIf="ficha as f">
                         <div class="capture-config-header">
                             <div>
                                 <span class="capture-config-kicker">CONFIGURACION DE LA FERRALLA</span>
-                                <h6>Bastidores</h6>
+                                <h6>{{ selectedUser.first_name || selectedUser.username }}</h6>
                             </div>
                         </div>
-                        <div class="ferralla-settings-content">
-                            <div class="ferralla-setting-row">
-                                <span class="ferralla-setting-label">Longitud útil</span>
-                                <ng-container *ngIf="!editingRack">
-                                    <strong class="ferralla-setting-value">
-                                        {{ (selectedUser.bastidor_longitud_cm || 114) | number:'1.0-2' }} cm
-                                    </strong>
-                                    <button type="button" class="rack-edit-btn" (click)="startRackEdit()"
-                                        title="Cambiar la longitud útil del bastidor"
-                                        aria-label="Cambiar la longitud útil del bastidor">
-                                        <i class="fa fa-pencil" aria-hidden="true"></i>
+                        <form class="ficha-form" (ngSubmit)="saveFicha()" autocomplete="off">
+                            <div class="ficha-grid">
+                                <label class="capture-field ficha-field ficha-span-2">
+                                    <span>Nombre</span>
+                                    <input type="text" class="form-control" name="ficha_first_name"
+                                        [(ngModel)]="f.first_name" [disabled]="savingFicha">
+                                </label>
+                                <label class="capture-field ficha-field">
+                                    <span>Usuario</span>
+                                    <input type="text" class="form-control" name="ficha_username"
+                                        [(ngModel)]="f.username" [disabled]="savingFicha" required>
+                                </label>
+                                <label class="capture-field ficha-field">
+                                    <span>Contrasena</span>
+                                    <div class="ficha-inline">
+                                        <input type="text" class="form-control" name="ficha_password"
+                                            placeholder="Sin cambios" autocomplete="new-password"
+                                            [(ngModel)]="f.password" [disabled]="savingFicha">
+                                        <button type="button" class="ficha-icon-btn" (click)="generateFichaPassword()"
+                                            [disabled]="savingFicha" title="Generar contrasena"
+                                            aria-label="Generar contrasena">
+                                            <i class="fa fa-refresh" aria-hidden="true"></i>
+                                        </button>
+                                    </div>
+                                </label>
+                                <label class="capture-field ficha-field">
+                                    <span>Bastidor</span>
+                                    <div class="ficha-inline">
+                                        <input type="number" class="form-control ficha-number" name="ficha_bastidor"
+                                            min="0.01" step="0.01" required
+                                            aria-label="Longitud util del bastidor en centimetros"
+                                            [(ngModel)]="f.bastidor_longitud_cm" [disabled]="savingFicha">
+                                        <span class="ficha-unit">cm utiles</span>
+                                    </div>
+                                </label>
+                            </div>
+
+                            <div class="ficha-section">
+                                <div class="ficha-section-header">
+                                    <span>Contactos</span>
+                                    <button type="button" class="ficha-icon-btn" (click)="addFichaContacto()"
+                                        [disabled]="savingFicha" title="Anadir contacto" aria-label="Anadir contacto">
+                                        <i class="fa fa-plus" aria-hidden="true"></i>
                                     </button>
-                                </ng-container>
-                                <ng-container *ngIf="editingRack">
-                                    <input type="number" class="form-control rack-input" min="0.01" step="0.01"
-                                        aria-label="Longitud útil del bastidor en centímetros"
-                                        [(ngModel)]="rackDraft" [disabled]="savingRack"
-                                        (keydown.enter)="saveRackLength()" (keydown.escape)="cancelRackEdit()">
-                                    <span class="ferralla-setting-unit">cm</span>
-                                    <button type="button" class="btn btn-sm btn-primary" (click)="saveRackLength()"
-                                        [disabled]="savingRack">{{ savingRack ? 'Guardando...' : 'Guardar' }}</button>
-                                    <button type="button" class="btn btn-sm btn-light" (click)="cancelRackEdit()"
-                                        [disabled]="savingRack">Cancelar</button>
-                                </ng-container>
+                                </div>
+                                <div class="ficha-contact" *ngFor="let contacto of f.contactos; let i = index">
+                                    <input type="text" class="form-control" [name]="'ficha_contacto_nombre_' + i"
+                                        placeholder="Nombre" [(ngModel)]="contacto.nombre" [disabled]="savingFicha">
+                                    <input type="text" class="form-control" [name]="'ficha_contacto_cargo_' + i"
+                                        placeholder="Cargo" [(ngModel)]="contacto.cargo" [disabled]="savingFicha">
+                                    <input type="text" class="form-control" [name]="'ficha_contacto_telefono_' + i"
+                                        placeholder="Telefono" autocomplete="new-password"
+                                        [(ngModel)]="contacto.telefono" [disabled]="savingFicha">
+                                    <input type="text" class="form-control" [name]="'ficha_contacto_email_' + i"
+                                        placeholder="Email" autocomplete="new-password"
+                                        [(ngModel)]="contacto.email" [disabled]="savingFicha">
+                                    <button type="button" class="ficha-icon-btn ficha-remove"
+                                        (click)="removeFichaContacto(i)" [disabled]="savingFicha"
+                                        title="Quitar contacto" aria-label="Quitar contacto">
+                                        <i class="fa fa-trash-o" aria-hidden="true"></i>
+                                    </button>
+                                </div>
                             </div>
-                            <div class="text-danger small" role="alert" *ngIf="rackError">{{ rackError }}</div>
-                        </div>
+
+                            <div class="ficha-section">
+                                <div class="ficha-section-header">
+                                    <span>Direcciones</span>
+                                    <button type="button" class="ficha-icon-btn" (click)="addFichaDireccion()"
+                                        [disabled]="savingFicha" title="Anadir direccion" aria-label="Anadir direccion">
+                                        <i class="fa fa-plus" aria-hidden="true"></i>
+                                    </button>
+                                </div>
+                                <div class="ficha-address" *ngFor="let direccion of f.direcciones; let i = index">
+                                    <input type="text" class="form-control" [name]="'ficha_direccion_nombre_' + i"
+                                        placeholder="Nombre" [(ngModel)]="direccion.nombre" [disabled]="savingFicha">
+                                    <input type="text" class="form-control" [name]="'ficha_direccion_texto_' + i"
+                                        placeholder="Direccion" autocomplete="new-password"
+                                        [(ngModel)]="direccion.direccion" [disabled]="savingFicha">
+                                    <button type="button" class="ficha-icon-btn ficha-remove"
+                                        (click)="removeFichaDireccion(i)" [disabled]="savingFicha"
+                                        title="Quitar direccion" aria-label="Quitar direccion">
+                                        <i class="fa fa-trash-o" aria-hidden="true"></i>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="capture-config-footer">
+                                <div class="capture-config-feedback">
+                                    <span class="text-success" *ngIf="fichaMessage">
+                                        <i class="fa fa-check-circle"></i> {{ fichaMessage }}
+                                    </span>
+                                    <span class="text-danger" role="alert" *ngIf="fichaError">
+                                        <i class="fa fa-exclamation-circle"></i> {{ fichaError }}
+                                    </span>
+                                </div>
+                                <div class="ficha-actions">
+                                    <button type="button" class="btn btn-light btn-sm" (click)="discardFicha()"
+                                        *ngIf="fichaDirty && !savingFicha">Descartar</button>
+                                    <button type="submit" class="btn btn-primary btn-sm"
+                                        [disabled]="savingFicha || !fichaDirty">
+                                        <i class="fa" [ngClass]="savingFicha ? 'fa-spinner fa-spin' : 'fa-save'"></i>
+                                        Guardar
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
                     </section>
 
                     <section class="capture-config-panel mb-3">

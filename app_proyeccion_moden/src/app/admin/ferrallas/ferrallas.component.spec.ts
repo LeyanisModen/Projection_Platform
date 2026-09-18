@@ -65,44 +65,65 @@ describe('FerrallasComponent', () => {
         fixture.destroy();
     });
 
-    it('guarda la longitud del bastidor desde la ficha y refresca la lista', () => {
+    it('la ficha arranca sin cambios y solo se puede guardar cuando algo cambia', () => {
         const {http, fixture} = setup();
         http.expectOne('/api/users/').flush({results: [user(3, 'ferralia', 114)], next: null, count: 1});
         fixture.detectChanges();
         flushFerrallaDetail(http, 3);
         const component = fixture.componentInstance;
 
-        component.startRackEdit();
-        expect(component.rackDraft).toBe(114);
-        component.rackDraft = 120.5;
-        component.saveRackLength();
-
-        const request = http.expectOne('/api/users/3/');
-        expect(request.request.method).toBe('PATCH');
-        expect(request.request.body).toEqual({bastidor_longitud_cm: 120.5});
-        request.flush(user(3, 'ferralia', 120.5));
-
-        expect(component.editingRack).toBe(false);
-        expect(component.selectedUser?.bastidor_longitud_cm).toBe(120.5);
-        expect(component.users[0].bastidor_longitud_cm).toBe(120.5);
+        expect(component.fichaDirty).toBe(false);
+        component.ficha!.bastidor_longitud_cm = 120.5;
+        expect(component.fichaDirty).toBe(true);
+        component.discardFicha();
+        expect(component.fichaDirty).toBe(false);
+        expect(component.ficha?.bastidor_longitud_cm).toBe(114);
         http.verify();
         fixture.destroy();
     });
 
-    it('rechaza longitudes no positivas sin llamar a la API', () => {
+    it('guarda la ficha completa con PATCH y refresca la lista', () => {
         const {http, fixture} = setup();
         http.expectOne('/api/users/').flush({results: [user(3, 'ferralia', 114)], next: null, count: 1});
         fixture.detectChanges();
         flushFerrallaDetail(http, 3);
         const component = fixture.componentInstance;
 
-        component.startRackEdit();
-        component.rackDraft = 0;
-        component.saveRackLength();
+        component.ficha!.first_name = 'Ferralia SL';
+        component.ficha!.bastidor_longitud_cm = 120.5;
+        component.addFichaContacto();
+        component.ficha!.contactos[0].nombre = 'Ana';
+        component.ficha!.contactos[0].telefono = ' 600 ';
+        component.saveFicha();
+
+        const request = http.expectOne('/api/users/3/');
+        expect(request.request.method).toBe('PATCH');
+        expect(request.request.body).toEqual({
+            first_name: 'Ferralia SL', username: 'ferralia', bastidor_longitud_cm: 120.5,
+            contactos: [{nombre: 'Ana', cargo: '', telefono: '600', email: '', orden: 0}],
+            direcciones: [],
+        });
+        request.flush({...user(3, 'ferralia', 120.5), first_name: 'Ferralia SL'});
+
+        expect(component.fichaDirty).toBe(false);
+        expect(component.selectedUser?.bastidor_longitud_cm).toBe(120.5);
+        expect(component.users[0].first_name).toBe('Ferralia SL');
+        http.verify();
+        fixture.destroy();
+    });
+
+    it('rechaza bastidor no positivo sin llamar a la API', () => {
+        const {http, fixture} = setup();
+        http.expectOne('/api/users/').flush({results: [user(3, 'ferralia', 114)], next: null, count: 1});
+        fixture.detectChanges();
+        flushFerrallaDetail(http, 3);
+        const component = fixture.componentInstance;
+
+        component.ficha!.bastidor_longitud_cm = 0;
+        component.saveFicha();
 
         http.expectNone('/api/users/3/');
-        expect(component.rackError).toContain('mayor que 0');
-        expect(component.editingRack).toBe(true);
+        expect(component.fichaError).toContain('mayor que 0');
         http.verify();
         fixture.destroy();
     });

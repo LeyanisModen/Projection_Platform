@@ -14,6 +14,15 @@ import {
   User,
 } from '../../services/api.service';
 
+interface FichaDraft {
+  first_name: string;
+  username: string;
+  password: string;
+  bastidor_longitud_cm: number | string;
+  contactos: FerrallaContacto[];
+  direcciones: FerrallaDireccion[];
+}
+
 @Component({
   selector: 'app-ferrallas',
   standalone: true,
@@ -40,9 +49,13 @@ export class FerrallasComponent implements OnInit, OnDestroy {
   error = '';
   showForm = false;
   newUser: any = this.getEmptyUserForm();
-  isEditing = false;
-  editingId: number | null = null;
   selectedUser: User | null = null;
+  /** Copia editable de la ferralla seleccionada (panel "Configuracion de la ferralla"). */
+  ficha: FichaDraft | null = null;
+  private fichaBaseline = '';
+  savingFicha = false;
+  fichaError = '';
+  fichaMessage = '';
 
   gruposMesas: GrupoMesas[] = [];
   loadingMesas = false;
@@ -50,10 +63,6 @@ export class FerrallasComponent implements OnInit, OnDestroy {
   captureConfig: FerrallaCaptureConfig | null = null;
   loadingCaptureConfig = false;
   savingCaptureConfig = false;
-  editingRack = false;
-  savingRack = false;
-  rackDraft: number | string = 114;
-  rackError = '';
   captureConfigError = '';
   captureConfigMessage = '';
 
@@ -97,45 +106,117 @@ export class FerrallasComponent implements OnInit, OnDestroy {
     if (target) this.openUser(target);
   }
 
-  // --- Longitud de bastidor editable desde la ficha ---
-  startRackEdit(): void {
-    if (!this.selectedUser) return;
-    this.rackDraft = this.selectedUser.bastidor_longitud_cm ?? 114;
-    this.rackError = '';
-    this.editingRack = true;
+  // --- Ficha editable de la ferralla seleccionada ---
+  private buildFicha(user: User): FichaDraft {
+    return {
+      first_name: user.first_name || '',
+      username: user.username || '',
+      password: '',
+      bastidor_longitud_cm: user.bastidor_longitud_cm || 114,
+      contactos: this.getEditableContactos(user),
+      direcciones: this.getEditableDirecciones(user),
+    };
+  }
+
+  private resetFicha(user: User | null): void {
+    this.ficha = user ? this.buildFicha(user) : null;
+    this.fichaBaseline = this.ficha ? this.fichaSnapshot(this.ficha) : '';
+    this.fichaError = '';
+    this.fichaMessage = '';
+  }
+
+  private fichaSnapshot(ficha: FichaDraft): string {
+    return JSON.stringify({
+      first_name: (ficha.first_name || '').trim(),
+      username: (ficha.username || '').trim(),
+      password: ficha.password || '',
+      bastidor_longitud_cm: Number(ficha.bastidor_longitud_cm),
+      contactos: this.normalizeContactos(ficha.contactos || []),
+      direcciones: this.normalizeDirecciones(ficha.direcciones || []),
+    });
+  }
+
+  get fichaDirty(): boolean {
+    return !!this.ficha && this.fichaSnapshot(this.ficha) !== this.fichaBaseline;
+  }
+
+  addFichaContacto(): void {
+    if (!this.ficha) return;
+    this.ficha.contactos = [...this.ficha.contactos, { nombre: '', cargo: '', telefono: '', email: '' }];
+  }
+
+  removeFichaContacto(index: number): void {
+    if (!this.ficha) return;
+    this.ficha.contactos = this.ficha.contactos.filter((_, i) => i !== index);
+  }
+
+  addFichaDireccion(): void {
+    if (!this.ficha) return;
+    this.ficha.direcciones = [...this.ficha.direcciones, { nombre: '', direccion: '' }];
+  }
+
+  removeFichaDireccion(index: number): void {
+    if (!this.ficha) return;
+    this.ficha.direcciones = this.ficha.direcciones.filter((_, i) => i !== index);
+  }
+
+  generateFichaPassword(): void {
+    if (!this.ficha) return;
+    this.ficha.password = Math.random().toString(36).slice(-8);
+  }
+
+  discardFicha(): void {
+    this.resetFicha(this.selectedUser);
     this.cdr.detectChanges();
   }
 
-  cancelRackEdit(): void {
-    this.editingRack = false;
-    this.rackError = '';
-    this.cdr.detectChanges();
-  }
-
-  saveRackLength(): void {
-    if (!this.selectedUser || this.savingRack) return;
-    const value = Number(this.rackDraft);
-    if (!Number.isFinite(value) || value <= 0) {
-      this.rackError = 'Indica una longitud mayor que 0.';
+  saveFicha(): void {
+    if (!this.selectedUser || !this.ficha || this.savingFicha) return;
+    const ficha = this.ficha;
+    const bastidor = Number(ficha.bastidor_longitud_cm);
+    this.fichaMessage = '';
+    if (!ficha.username.trim()) {
+      this.fichaError = 'El usuario es obligatorio.';
       this.cdr.detectChanges();
       return;
     }
+    if (!Number.isFinite(bastidor) || bastidor <= 0) {
+      this.fichaError = 'Indica una longitud de bastidor mayor que 0.';
+      this.cdr.detectChanges();
+      return;
+    }
+
+    const payload: any = {
+      first_name: ficha.first_name.trim(),
+      username: ficha.username.trim(),
+      bastidor_longitud_cm: Number(bastidor.toFixed(2)),
+      contactos: this.normalizeContactos(ficha.contactos),
+      direcciones: this.normalizeDirecciones(ficha.direcciones),
+    };
+    if (ficha.password) {
+      payload.password = ficha.password;
+      payload.password_texto_plano = ficha.password;
+    }
+
     const id = this.selectedUser.id;
-    this.savingRack = true;
-    this.rackError = '';
-    this.api.updateUser(id, {bastidor_longitud_cm: Number(value.toFixed(2))}).subscribe({
+    this.savingFicha = true;
+    this.fichaError = '';
+    this.api.updateUser(id, payload).subscribe({
       next: (updatedUser: User) => {
         const index = this.users.findIndex(user => user.id === id);
         if (index !== -1) this.users[index] = updatedUser;
-        if (this.selectedUser?.id === id) this.selectedUser = updatedUser;
-        this.savingRack = false;
-        this.editingRack = false;
+        if (this.selectedUser?.id === id) {
+          this.selectedUser = updatedUser;
+          this.resetFicha(updatedUser);
+        }
+        this.savingFicha = false;
+        this.fichaMessage = 'Guardado';
         this.cdr.detectChanges();
       },
       error: (err: any) => {
-        console.error('Error updating rack length', err);
-        this.rackError = err?.error?.bastidor_longitud_cm?.[0] || 'No se pudo guardar la longitud.';
-        this.savingRack = false;
+        console.error('Error updating user', err);
+        this.fichaError = this.extractErrorMessage(err, 'No se pudo guardar la ferralla.');
+        this.savingFicha = false;
         this.cdr.detectChanges();
       },
     });
@@ -173,8 +254,6 @@ export class FerrallasComponent implements OnInit, OnDestroy {
 
   resetForm() {
     this.newUser = this.getEmptyUserForm();
-    this.isEditing = false;
-    this.editingId = null;
   }
 
   private getEmptyUserForm() {
@@ -229,9 +308,8 @@ export class FerrallasComponent implements OnInit, OnDestroy {
   }
 
   private openUser(user: User): void {
-    this.editingRack = false;
-    this.rackError = '';
     this.selectedUser = user;
+    this.resetFicha(user);
     this.showForm = false;
     this.showAddMesaForm = false;
     this.loadGruposMesas(user.id);
@@ -240,9 +318,8 @@ export class FerrallasComponent implements OnInit, OnDestroy {
   }
 
   private closeUser(): void {
-    this.editingRack = false;
-    this.rackError = '';
     this.selectedUser = null;
+    this.resetFicha(null);
     this.showForm = false;
     this.showAddMesaForm = false;
     this.gruposMesas = [];
@@ -680,24 +757,7 @@ export class FerrallasComponent implements OnInit, OnDestroy {
   }
 
   saveUser() {
-    if (this.isEditing && this.editingId) {
-      this.updateUser(this.editingId);
-    } else {
-      this.createUser();
-    }
-  }
-
-  editUser(user: User) {
-    this.newUser = {
-      ...user,
-      password: '',
-      bastidor_longitud_cm: user.bastidor_longitud_cm || 114,
-      contactos: this.getEditableContactos(user),
-      direcciones: this.getEditableDirecciones(user)
-    };
-    this.isEditing = true;
-    this.editingId = user.id;
-    this.showForm = true;
+    this.createUser();
   }
 
   private getEditableContactos(user: User): FerrallaContacto[] {
@@ -795,41 +855,12 @@ export class FerrallasComponent implements OnInit, OnDestroy {
     });
   }
 
-  updateUser(id: number) {
-    this.loading = true;
-    const payload = this.buildUserPayload();
-    if (!payload.password) {
-      delete payload.password;
-      delete payload.password_texto_plano;
-    } else {
-      payload.password_texto_plano = payload.password;
-    }
-
-    this.api.updateUser(id, payload).subscribe({
-      next: (updatedUser: User) => {
-        const index = this.users.findIndex(u => u.id === id);
-        if (index !== -1) {
-          this.users[index] = updatedUser;
-        }
-        if (this.selectedUser?.id === id) {
-          this.selectedUser = updatedUser;
-        }
-        this.resetForm();
-        this.showForm = false;
-        this.loading = false;
-        this.cdr.detectChanges();
-      },
-      error: (err: any) => {
-        console.error('Error updating user', err);
-        this.handleError(err, 'Error actualizando usuario');
-        this.loading = false;
-        this.cdr.detectChanges();
-      }
-    });
+  private handleError(err: any, defaultMsg: string) {
+    this.error = this.extractErrorMessage(err, defaultMsg);
   }
 
-  private handleError(err: any, defaultMsg: string) {
-    if (err.error && typeof err.error === 'object') {
+  private extractErrorMessage(err: any, defaultMsg: string): string {
+    if (err?.error && typeof err.error === 'object') {
       let messages: string[] = [];
       for (const key in err.error) {
         if (Object.prototype.hasOwnProperty.call(err.error, key)) {
@@ -842,10 +873,9 @@ export class FerrallasComponent implements OnInit, OnDestroy {
           }
         }
       }
-      this.error = messages.length > 0 ? messages.join('\n') : defaultMsg;
-    } else {
-      this.error = defaultMsg;
+      return messages.length > 0 ? messages.join('\n') : defaultMsg;
     }
+    return defaultMsg;
   }
 
   confirmDelete(user: User) {
@@ -877,14 +907,10 @@ export class FerrallasComponent implements OnInit, OnDestroy {
   generateUsername(name: string) {
     if (!name) return;
 
-    if (!this.isEditing) {
-      const username = name.toLowerCase()
-        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^a-z0-9\s]/g, '')
-        .replace(/\s+/g, '_');
-
-      this.newUser.username = username;
-    }
+    this.newUser.username = name.toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9\s]/g, '')
+      .replace(/\s+/g, '_');
   }
 
   getMesaRoleLabel(mesa: GrupoMesaResumen): string {
