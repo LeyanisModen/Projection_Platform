@@ -221,7 +221,7 @@
     grid-column: 1 / -1;
 }
 
-.ficha-field .form-control {
+.ficha-form .ficha-field .form-control {
     width: 100%;
 }
 
