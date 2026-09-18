@@ -50,6 +50,10 @@ export class FerrallasComponent implements OnInit, OnDestroy {
   captureConfig: FerrallaCaptureConfig | null = null;
   loadingCaptureConfig = false;
   savingCaptureConfig = false;
+  editingRack = false;
+  savingRack = false;
+  rackDraft: number | string = 114;
+  rackError = '';
   captureConfigError = '';
   captureConfigMessage = '';
 
@@ -81,12 +85,59 @@ export class FerrallasComponent implements OnInit, OnDestroy {
     this.loadUsers();
   }
 
-  /** ?usuario=<id> abre esa ferralla directamente (enlace desde un proyecto). */
-  private selectUserFromQueryParams(): void {
+  /**
+   * Al abrir la pantalla se muestra una ferralla ya seleccionada: la que pida
+   * ?usuario=<id> (enlace desde un proyecto) o, si no, la primera de la lista.
+   */
+  private selectInitialUser(): void {
+    if (this.selectedUser) return;
     const raw = this.route.snapshot.queryParamMap.get('usuario');
-    if (!raw) return;
-    const target = this.users.find(user => user.id === Number(raw));
-    if (target) this.selectedUser = target;
+    const requested = raw ? this.users.find(user => user.id === Number(raw)) : null;
+    this.selectedUser = requested || this.users[0] || null;
+  }
+
+  // --- Longitud de bastidor editable desde la ficha ---
+  startRackEdit(): void {
+    if (!this.selectedUser) return;
+    this.rackDraft = this.selectedUser.bastidor_longitud_cm ?? 114;
+    this.rackError = '';
+    this.editingRack = true;
+    this.cdr.detectChanges();
+  }
+
+  cancelRackEdit(): void {
+    this.editingRack = false;
+    this.rackError = '';
+    this.cdr.detectChanges();
+  }
+
+  saveRackLength(): void {
+    if (!this.selectedUser || this.savingRack) return;
+    const value = Number(this.rackDraft);
+    if (!Number.isFinite(value) || value <= 0) {
+      this.rackError = 'Indica una longitud mayor que 0.';
+      this.cdr.detectChanges();
+      return;
+    }
+    const id = this.selectedUser.id;
+    this.savingRack = true;
+    this.rackError = '';
+    this.api.updateUser(id, {bastidor_longitud_cm: Number(value.toFixed(2))}).subscribe({
+      next: (updatedUser: User) => {
+        const index = this.users.findIndex(user => user.id === id);
+        if (index !== -1) this.users[index] = updatedUser;
+        if (this.selectedUser?.id === id) this.selectedUser = updatedUser;
+        this.savingRack = false;
+        this.editingRack = false;
+        this.cdr.detectChanges();
+      },
+      error: (err: any) => {
+        console.error('Error updating rack length', err);
+        this.rackError = err?.error?.bastidor_longitud_cm?.[0] || 'No se pudo guardar la longitud.';
+        this.savingRack = false;
+        this.cdr.detectChanges();
+      },
+    });
   }
 
   ngOnDestroy(): void {
@@ -99,7 +150,7 @@ export class FerrallasComponent implements OnInit, OnDestroy {
       next: (data) => {
         this.users = data;
         this.loading = false;
-        this.selectUserFromQueryParams();
+        this.selectInitialUser();
         this.cdr.detectChanges();
       },
       error: (err: any) => {
@@ -168,6 +219,8 @@ export class FerrallasComponent implements OnInit, OnDestroy {
   }
 
   selectUser(user: User) {
+    this.editingRack = false;
+    this.rackError = '';
     this.selectedUser = this.selectedUser?.id === user.id ? null : user;
     this.showForm = false;
     this.showAddMesaForm = false;

@@ -204,6 +204,41 @@
     min-width: 0;
 }
 
+/* Longitud de bastidor editable en la ficha de la ferralla. */
+.rack-length {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.rack-length .rack-input {
+    width: 96px;
+    height: 30px;
+    padding: 0 0.5rem;
+    font-size: 0.86rem;
+    text-align: right;
+}
+
+.rack-edit-btn {
+    display: inline-grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    color: #6c757d;
+    background: #fff;
+    border: 1px solid #ced4da;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.rack-edit-btn:hover {
+    color: #a74508;
+    border-color: #ed894a;
+}
+
 .inline-field label,
 .capacity-row label {
     flex: 0 0 auto;

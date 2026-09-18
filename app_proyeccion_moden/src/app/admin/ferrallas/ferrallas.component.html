@@ -188,10 +188,29 @@
                 <div class="card-header border-bottom py-3 px-3">
                     <h5 class="mb-2">{{ selectedUser.first_name || selectedUser.username }}</h5>
                     <div class="text-muted small">
-                        <div class="mb-2">
+                        <div class="mb-2 rack-length">
                             <strong>Bastidores:</strong>
-                            {{ (selectedUser.bastidor_longitud_cm || 114) | number:'1.0-2' }} cm útiles
+                            <ng-container *ngIf="!editingRack">
+                                <span>{{ (selectedUser.bastidor_longitud_cm || 114) | number:'1.0-2' }} cm útiles</span>
+                                <button type="button" class="rack-edit-btn" (click)="startRackEdit()"
+                                    title="Cambiar la longitud útil del bastidor"
+                                    aria-label="Cambiar la longitud útil del bastidor">
+                                    <i class="fa fa-pencil" aria-hidden="true"></i>
+                                </button>
+                            </ng-container>
+                            <ng-container *ngIf="editingRack">
+                                <input type="number" class="form-control rack-input" min="0.01" step="0.01"
+                                    aria-label="Longitud útil del bastidor en centímetros"
+                                    [(ngModel)]="rackDraft" [disabled]="savingRack"
+                                    (keydown.enter)="saveRackLength()" (keydown.escape)="cancelRackEdit()">
+                                <span>cm</span>
+                                <button type="button" class="btn btn-sm btn-primary" (click)="saveRackLength()"
+                                    [disabled]="savingRack">{{ savingRack ? 'Guardando...' : 'Guardar' }}</button>
+                                <button type="button" class="btn btn-sm btn-light" (click)="cancelRackEdit()"
+                                    [disabled]="savingRack">Cancelar</button>
+                            </ng-container>
                         </div>
+                        <div class="text-danger small mb-2" role="alert" *ngIf="rackError">{{ rackError }}</div>
                         <div class="detail-list" *ngIf="hasContactos(selectedUser); else legacyContactInfo">
                             <div class="detail-block" *ngFor="let contacto of selectedUser.contactos">
                                 <strong>{{ contacto.nombre || 'Contacto' }}</strong>
