@@ -124,39 +124,38 @@
     white-space: nowrap;
 }
 
-.project-logistics-field {
-    display: grid;
-    gap: 0.35rem;
+/* Carga de grua: campo corto y los dos botones al lado mientras quepan. */
+.project-logistics-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.45rem;
+}
+
+.crane-label {
+    flex-basis: 100%;
     margin: 0;
     color: #334155;
     font-size: 0.82rem;
     font-weight: 600;
 }
 
-.project-logistics-input-wrap {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+.crane-input-wrap {
+    display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.35rem;
 }
 
-.project-logistics-input-wrap .project-config-input {
-    width: 100%;
+.crane-input {
+    width: 96px;
+    height: 34px;
+    font-size: 0.9rem;
 }
 
-.project-logistics-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.45rem;
-}
-
-.project-logistics-actions .btn {
-    flex: 1 1 140px;
-}
-
-.project-logistics-card .project-config-hint {
-    margin-top: 0;
-    line-height: 1.4;
+.project-logistics-row .btn {
+    height: 34px;
+    padding: 0 0.75rem;
+    white-space: nowrap;
 }
 
 .project-config-message {
