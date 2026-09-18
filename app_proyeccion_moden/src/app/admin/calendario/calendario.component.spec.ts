@@ -166,6 +166,20 @@ describe('CalendarioComponent', () => {
         finishLoad('2026-11-01', '2027-01-31');
     });
 
+    it('jumps to any month from the picker, keeping the quarter window', () => {
+        const component = fixture.componentInstance;
+        component.setView('quarter');
+        finishLoad('2026-09-01', '2026-11-30');
+        expect(fixture.nativeElement.querySelector('input.month-jump').value).toBe('2026-09');
+        component.goToMonth('2027-03');
+        finishLoad('2027-03-01', '2027-05-31');
+        expect(component.calendars().map(c => c.key)).toEqual(['2027-03-01','2027-04-01','2027-05-01']);
+        expect(component.selected()).toBe('2027-03-01');
+        component.goToMonth('');
+        component.goToMonth('2027-03');
+        http.expectNone(r => r.url === '/api/eventos/');
+    });
+
     it('renders all months in annual view and navigates by year', () => {
         const component = fixture.componentInstance;
         component.setView('year');

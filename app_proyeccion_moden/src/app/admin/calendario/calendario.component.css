@@ -13,6 +13,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .primary { background: var(--orange); color: white; border-color: var(--orange); }
 .actions, .month-nav, .filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .month-nav h2 { text-transform: capitalize; min-width: 155px; text-align: center; }
+.month-jump { padding: 7px 8px; width: 150px; }
 .filters select { max-width: 230px; }
 .calendar-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 20px; align-items: start; }
 .calendar-months { display: grid; gap: 16px; min-width: 0; align-items: start; }

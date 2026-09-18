@@ -66,6 +66,7 @@ export class CalendarioComponent {
     readonly colorOf = (worker: OfficeWorker) => workerColor(worker.color, worker.id);
     readonly activeWorkers = computed(() => this.workers().filter(worker => worker.activo));
     readonly annualView = computed(() => this.view() === 'year');
+    readonly monthInputValue = computed(() => localDate(this.month()).slice(0, 7));
 
     readonly visibleMonths = computed(() => calendarMonths(this.month(), this.view()));
     readonly range = computed(() => calendarRange(this.month(), this.view()));
@@ -174,6 +175,14 @@ export class CalendarioComponent {
         this.month.set(month); this.view.set('month');
         if (!this.selected().startsWith(localDate(month).slice(0, 7))) this.selected.set(localDate(month));
         this.load();
+    }
+    /** Salto directo desde el selector de mes (YYYY-MM); en trimestral es el primer mes de la ventana. */
+    goToMonth(value: string): void {
+        const match = /^(\d{4})-(\d{2})$/.exec(value || '');
+        if (!match || this.loading()) return;
+        const next = new Date(Number(match[1]), Number(match[2]) - 1, 1);
+        if (next.getTime() === this.month().getTime()) return;
+        this.month.set(next); this.selected.set(localDate(next)); this.load();
     }
     goToday(): void {
         if (this.loading()) return;
