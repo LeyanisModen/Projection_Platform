@@ -200,7 +200,7 @@ Leyenda de estado: `[ ]` pendiente · `[~]` en curso · `[x]` cerrado · `[-]` d
 **Queda abierto:**
 
 - **1.1 — verificar en staging con sesión real** (3.5 ya verificado: healthcheck en verde en backend y frontend; sin credencial `/media/` y `/api/` devuelven 401): (b) player proyectando tras reiniciar el kiosk; (c) visor supervisor; (d) previsualizador del detalle; (e) modal de fotos; (f) plano PDF y ZIP desde el dashboard. Si algo de `/media/` falla y no se localiza rápido: `MEDIA_REQUIRE_AUTH=False` en el backend de Railway.
-- **4.6** — ejecutar la suite contra PostgreSQL antes de fusionar a `deploy` (`docker compose up db` + `DATABASE_URL`).
+- **4.6** — ejecutar la suite contra PostgreSQL antes de fusionar a `deploy` (`docker compose up db` + `DATABASE_URL`). **Release 2026-09-18 (`14a7a01`) salió sin este paso:** el intento por `railway ssh` se cortó (WebSocket) y el intento local contra `DATABASE_PUBLIC_URL` de staging dio errores sin analizar y se canceló; dejó la base `test_railway` en el Postgres de staging (borrar o dejar que Django la reutilice). Sigue pendiente para el próximo release.
 - **4.7** — decidir mecanismo de tareas programadas (auditoría de media huérfana, capacidad del volumen, backup).
 - La imagen Docker del frontend no se construyó en local (Docker Desktop apagado); `npm ci` se validó contra el lockfile. El deploy de staging es la prueba real.
 - Los mini-PC recibirán `2026-09-17.1` por el actualizador automático (04:15) cuando el cambio llegue a `deploy`.
