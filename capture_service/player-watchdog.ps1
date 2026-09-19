@@ -9,6 +9,13 @@
   it. An isolated Chrome profile prevents personal profiles, account prompts
   and normal Chrome windows from replacing the production kiosk.
 
+  Second screen (optional, automatic): when Windows reports two displays the
+  player goes to the display that is NOT the Windows main display (the
+  projector) and a read-only mirror (/monitor) opens on the main display (the
+  monitor at operator height). With a single display nothing changes: no extra
+  Chrome, same arguments, same checks. Creating the file .single_screen next
+  to this script disables the second screen without touching anything else.
+
   -Once performs a single check for manual recovery.
   -Resume clears the temporary pause created when Q closes the browser.
 #>
@@ -40,6 +47,18 @@ $pauseMarker = Join-Path $Root '.player_pause'
 $kioskProfile = 'C:\moden\chrome-kiosk-profile'
 $kioskCache = 'C:\moden\chrome-kiosk-cache'
 $playerUrl = 'https://moden.up.railway.app/player'
+# Second screen. The profile path must not contain $kioskProfile as a
+# substring: the kiosk is recognised by matching that path on the command line.
+$monitorProfile = 'C:\moden\chrome-monitor-profile'
+$monitorCache = 'C:\moden\chrome-monitor-cache'
+$monitorUrl = 'https://moden.up.railway.app/monitor'
+$singleScreenMarker = Join-Path $Root '.single_screen'
+$monitorReopenMinutes = 10
+$monitorWasRunning = $false
+$monitorReopenAfter = [datetime]::MinValue
+$dualScreenActive = $false
+$displayApiReady = $false
+$screenMoveAttempts = @{}
 $logPath = Join-Path $Root 'logs\player-watchdog.log'
 $captureErrorLog = Join-Path $Root 'logs\capture-service-error.log'
 $captureHealthFailures = 0
@@ -171,6 +190,134 @@ namespace ModenPlayer
     }
 }
 '@
+}
+
+# Display enumeration lives in its own type and its own try/catch: if it
+# cannot be compiled the watchdog keeps working exactly as a single-screen one.
+try {
+    if (-not ('ModenPlayer.Displays' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+
+namespace ModenPlayer
+{
+    public class DisplayInfo
+    {
+        public int Left;
+        public int Top;
+        public int Width;
+        public int Height;
+        public bool Primary;
+    }
+
+    public static class Displays
+    {
+        private const uint MONITORINFOF_PRIMARY = 1;
+        private const uint MONITOR_DEFAULTTONEAREST = 2;
+        private const uint SWP_NOZORDER = 0x0004;
+        private const uint SWP_NOACTIVATE = 0x0010;
+        private static readonly IntPtr PER_MONITOR_AWARE_V2 = new IntPtr(-4);
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct RECT { public int Left, Top, Right, Bottom; }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct MONITORINFO
+        {
+            public int cbSize;
+            public RECT rcMonitor;
+            public RECT rcWork;
+            public uint dwFlags;
+        }
+
+        private delegate bool MonitorEnumProc(
+            IntPtr monitor, IntPtr hdc, ref RECT rect, IntPtr data);
+
+        [DllImport("user32.dll")]
+        private static extern bool EnumDisplayMonitors(
+            IntPtr hdc, IntPtr clip, MonitorEnumProc callback, IntPtr data);
+
+        [DllImport("user32.dll")]
+        private static extern bool GetMonitorInfo(IntPtr monitor, ref MONITORINFO info);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr MonitorFromWindow(IntPtr window, uint flags);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool SetWindowPos(
+            IntPtr window, IntPtr insertAfter, int x, int y, int cx, int cy, uint flags);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
+
+        // Physical pixels on every display, whatever scaling each one uses.
+        private static void UsePhysicalPixels()
+        {
+            try { SetThreadDpiAwarenessContext(PER_MONITOR_AWARE_V2); }
+            catch (EntryPointNotFoundException) { }
+        }
+
+        private static bool TryGetInfo(IntPtr monitor, out MONITORINFO info)
+        {
+            info = new MONITORINFO();
+            info.cbSize = Marshal.SizeOf(typeof(MONITORINFO));
+            return GetMonitorInfo(monitor, ref info);
+        }
+
+        public static DisplayInfo[] GetDisplays()
+        {
+            UsePhysicalPixels();
+            List<DisplayInfo> displays = new List<DisplayInfo>();
+            MonitorEnumProc callback = delegate(
+                IntPtr monitor, IntPtr hdc, ref RECT rect, IntPtr data)
+            {
+                MONITORINFO info;
+                if (TryGetInfo(monitor, out info))
+                {
+                    DisplayInfo display = new DisplayInfo();
+                    display.Left = info.rcMonitor.Left;
+                    display.Top = info.rcMonitor.Top;
+                    display.Width = info.rcMonitor.Right - info.rcMonitor.Left;
+                    display.Height = info.rcMonitor.Bottom - info.rcMonitor.Top;
+                    display.Primary = (info.dwFlags & MONITORINFOF_PRIMARY) != 0;
+                    displays.Add(display);
+                }
+                return true;
+            };
+            EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, callback, IntPtr.Zero);
+            GC.KeepAlive(callback);
+            return displays.ToArray();
+        }
+
+        public static bool IsWindowOn(IntPtr window, DisplayInfo display)
+        {
+            UsePhysicalPixels();
+            MONITORINFO info;
+            IntPtr monitor = MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST);
+            return monitor != IntPtr.Zero
+                && TryGetInfo(monitor, out info)
+                && info.rcMonitor.Left == display.Left
+                && info.rcMonitor.Top == display.Top;
+        }
+
+        public static bool MoveWindowTo(IntPtr window, DisplayInfo display)
+        {
+            UsePhysicalPixels();
+            return SetWindowPos(
+                window, IntPtr.Zero,
+                display.Left, display.Top, display.Width, display.Height,
+                SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+    }
+}
+'@
+    }
+    $displayApiReady = $true
+} catch {
+    $displayApiReady = $false
 }
 
 function Write-WatchdogLog([string]$Message) {
@@ -419,7 +566,134 @@ function Test-PlayerMaintenance {
     return $false
 }
 
-function Start-Kiosk([string]$ChromeExecutable) {
+# Returns $null for "behave as a single-screen mini-PC" (one display, the
+# .single_screen switch, or any problem reading the displays). Otherwise the
+# projector (first display that is not the Windows main one) and the monitor.
+function Get-DualScreenLayout {
+    $layout = $null
+    try {
+        if ($script:displayApiReady -and -not (Test-Path $singleScreenMarker)) {
+            $displays = [ModenPlayer.Displays]::GetDisplays()
+            if ($displays.Length -ge 2) {
+                $monitor = $null
+                $projector = $null
+                foreach ($display in $displays) {
+                    if ($display.Primary -and -not $monitor) {
+                        $monitor = $display
+                    } elseif (-not $display.Primary -and -not $projector) {
+                        $projector = $display
+                    }
+                }
+                if ($monitor -and $projector) {
+                    $layout = @{ Monitor = $monitor; Projector = $projector }
+                }
+            }
+        }
+    } catch {
+        $layout = $null
+    }
+
+    $active = $null -ne $layout
+    if ($active -ne $script:dualScreenActive) {
+        $script:dualScreenActive = $active
+        if ($active) {
+            Write-WatchdogLog (
+                "Second screen detected: player on " +
+                "$($layout.Projector.Left),$($layout.Projector.Top) " +
+                "$($layout.Projector.Width)x$($layout.Projector.Height); monitor view on " +
+                "$($layout.Monitor.Left),$($layout.Monitor.Top) " +
+                "$($layout.Monitor.Width)x$($layout.Monitor.Height)."
+            )
+        } else {
+            Write-WatchdogLog 'Single screen: monitor view disabled.'
+        }
+    }
+    return $layout
+}
+
+function Set-ChromeOnDisplay([object[]]$ChromeRoots, [object]$Display, [string]$Label) {
+    $windowHandle = Get-KioskWindowHandle $ChromeRoots
+    if ($windowHandle -eq [IntPtr]::Zero) {
+        return
+    }
+    if ([ModenPlayer.Displays]::IsWindowOn($windowHandle, $Display)) {
+        $script:screenMoveAttempts[$Label] = 0
+        return
+    }
+    $moved = [ModenPlayer.Displays]::MoveWindowTo($windowHandle, $Display)
+    $attempts = 1 + [int]$script:screenMoveAttempts[$Label]
+    $script:screenMoveAttempts[$Label] = $attempts
+    if ($attempts -eq 1 -or $attempts % 30 -eq 0) {
+        Write-WatchdogLog (
+            "$Label moved to the display at $($Display.Left),$($Display.Top) " +
+            "(attempt $attempts, accepted=$moved)."
+        )
+    }
+}
+
+function Start-MonitorView([string]$ChromeExecutable, [object]$Display) {
+    New-Item -Path $monitorProfile -ItemType Directory -Force | Out-Null
+    New-Item -Path $monitorCache -ItemType Directory -Force | Out-Null
+
+    $arguments = @(
+        '--kiosk',
+        "--window-position=$($Display.Left),$($Display.Top)",
+        '--noerrdialogs',
+        '--no-first-run',
+        '--no-default-browser-check',
+        '--disable-background-networking',
+        '--disable-sync',
+        '--disable-translate',
+        '--disable-session-crashed-bubble',
+        '--disable-features=TranslateUI,CalculateNativeWinOcclusion,SigninInterception',
+        '--disable-pinch',
+        '--overscroll-history-navigation=0',
+        '--profile-directory=Default',
+        "--user-data-dir=$monitorProfile",
+        "--disk-cache-dir=$monitorCache",
+        '--disk-cache-size=67108864',
+        $monitorUrl
+    )
+    Start-Process -FilePath $ChromeExecutable -ArgumentList $arguments
+    Write-WatchdogLog 'Monitor view started on the main display.'
+}
+
+# Only called with two displays. Keeps the player on the projector and the
+# read-only mirror on the monitor. If somebody closes the mirror to use the
+# mini-PC, it stays closed for $monitorReopenMinutes.
+function Repair-MonitorView(
+    [string]$ChromeExecutable,
+    [hashtable]$Layout,
+    [object[]]$KioskRoots,
+    [object[]]$MonitorRoots,
+    [bool]$PlayerWasMissing
+) {
+    Set-ChromeOnDisplay $KioskRoots $Layout.Projector 'Player'
+
+    if ($MonitorRoots.Count -gt 0) {
+        $script:monitorWasRunning = $true
+        Set-ChromeOnDisplay $MonitorRoots $Layout.Monitor 'Monitor view'
+        return
+    }
+
+    if ($script:monitorWasRunning -and $PlayerWasMissing) {
+        # Every Chrome disappeared at once (crash, update, taskkill): that is
+        # not somebody closing the monitor view, so bring it straight back.
+        $script:monitorWasRunning = $false
+    }
+    if ($script:monitorWasRunning) {
+        $script:monitorWasRunning = $false
+        $script:monitorReopenAfter = (Get-Date).AddMinutes($monitorReopenMinutes)
+        Write-WatchdogLog "Monitor view was closed; reopening it in $monitorReopenMinutes minutes."
+        return
+    }
+    if ((Get-Date) -lt $script:monitorReopenAfter) {
+        return
+    }
+    Start-MonitorView $ChromeExecutable $Layout.Monitor
+}
+
+function Start-Kiosk([string]$ChromeExecutable, [object]$Display = $null) {
     New-Item -Path $kioskProfile -ItemType Directory -Force | Out-Null
     New-Item -Path $kioskCache -ItemType Directory -Force | Out-Null
 
@@ -442,12 +716,18 @@ function Start-Kiosk([string]$ChromeExecutable) {
         '--media-cache-size=134217728',
         $playerUrl
     )
+    if ($Display) {
+        # Two displays: open straight on the projector.
+        $arguments = @("--window-position=$($Display.Left),$($Display.Top)") + $arguments
+    }
     Start-Process -FilePath $ChromeExecutable -ArgumentList $arguments
     Write-WatchdogLog 'Chrome kiosk started with the isolated MODEN profile.'
 }
 
 function Repair-Kiosk {
     if (Test-PlayerPause) {
+        # Q closed every Chrome on purpose: not a "monitor view was closed".
+        $script:monitorWasRunning = $false
         return
     }
 
@@ -457,13 +737,30 @@ function Repair-Kiosk {
         return
     }
 
+    # $null with a single display: everything below then runs as it always has.
+    $layout = Get-DualScreenLayout
+    $projector = $null
+    if ($layout) {
+        $projector = $layout.Projector
+    }
+
     $profilePattern = [regex]::Escape($kioskProfile)
+    $monitorPattern = [regex]::Escape($monitorProfile)
     $roots = @(Get-RootChromeProcesses)
     $kioskRoots = @($roots | Where-Object {
         $_.CommandLine -and $_.CommandLine -match $profilePattern
     })
+    $monitorRoots = @()
+    if ($layout) {
+        $monitorRoots = @($roots | Where-Object {
+            $_.CommandLine -and $_.CommandLine -match $monitorPattern
+        })
+    }
+    # With a single display the monitor view is one more stray Chrome, so
+    # unplugging the second screen closes it on the next check.
     $strayRoots = @($roots | Where-Object {
-        -not $_.CommandLine -or $_.CommandLine -notmatch $profilePattern
+        (-not $_.CommandLine -or $_.CommandLine -notmatch $profilePattern) -and
+        -not ($layout -and $_.CommandLine -and $_.CommandLine -match $monitorPattern)
     })
 
     foreach ($process in $strayRoots) {
@@ -471,16 +768,30 @@ function Repair-Kiosk {
         Stop-ChromeTree $process.ProcessId
     }
 
+    $playerWasMissing = $kioskRoots.Count -eq 0
     if ($kioskRoots.Count -eq 0) {
         if ($strayRoots.Count -gt 0) {
             Start-Sleep -Seconds 1
         }
-        Start-Kiosk $chrome
+        Start-Kiosk $chrome $projector
         Start-Sleep -Seconds 2
         $roots = @(Get-RootChromeProcesses)
         $kioskRoots = @($roots | Where-Object {
             $_.CommandLine -and $_.CommandLine -match $profilePattern
         })
+    }
+
+    if ($layout) {
+        try {
+            Repair-MonitorView $chrome $layout $kioskRoots $monitorRoots $playerWasMissing
+        } catch {
+            Write-WatchdogLog "Monitor view check failed: $($_.Exception.Message)"
+        }
+        if ((Get-Date) -lt $script:monitorReopenAfter) {
+            # Somebody closed the monitor view to use the mini-PC: do not pull
+            # the keyboard back to the player until the view returns.
+            return
+        }
     }
 
     Repair-KioskFocus $kioskRoots

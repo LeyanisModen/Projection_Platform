@@ -254,6 +254,54 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File 'C:\moden\capture_servic
 
 
 ===========================================================
+SEGUNDA PANTALLA (MONITOR A LA ALTURA DEL OPERARIO)
+===========================================================
+
+Es automatico: no hay nada que instalar ni configurar en MODEN.
+
+  - Con UNA pantalla el mini-PC funciona exactamente igual que siempre.
+  - Con DOS pantallas el player se va a la pantalla que NO es la principal de
+    Windows (el proyector) y en la principal se abre una vista de solo lectura
+    de lo que se esta proyectando (https://moden.up.railway.app/monitor).
+
+Al conectar el monitor:
+
+  1. Ajustes -> Sistema -> Pantalla -> "Extender estas pantallas" (no duplicar).
+  2. Selecciona el MONITOR y marca "Convertir en la pantalla principal".
+     El proyector debe quedar como pantalla secundaria.
+  3. Escala al 100 % en las dos pantallas.
+  4. Espera 10-20 segundos: el watchdog lo detecta solo, sin reiniciar.
+
+Si alguna ventana queda en la pantalla equivocada: clic en ella y
+Win + Mayus + Flecha izquierda/derecha la pasa a la otra pantalla.
+
+Usar el mini-PC desde el monitor: cierra la vista del monitor con Alt+F4.
+Se queda cerrada 10 minutos (y el teclado no vuelve al player en ese tiempo);
+el proyector sigue proyectando. Para cerrar todo, Q en el player como siempre.
+
+Desactivar la segunda pantalla en un mini-PC (vuelve al modo de una pantalla):
+
+New-Item -ItemType File -Force 'C:\moden\capture_service\.single_screen'
+
+Volver a activarla:
+
+Remove-Item 'C:\moden\capture_service\.single_screen'
+
+Que ha hecho el watchdog (pantallas detectadas, ventanas movidas):
+
+Get-Content 'C:\moden\capture_service\logs\player-watchdog.log' -Tail 30
+
+Probar en UN solo mini-PC una version que aun no esta publicada para todos
+(la rama develop), sin esperar a la noche:
+
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File 'C:\moden\capture_service\update-capture-service.ps1' -GitHubBranch develop -Force
+
+Volver a la version publicada (rama deploy):
+
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File 'C:\moden\capture_service\update-capture-service.ps1' -Force -AllowDowngrade
+
+
+===========================================================
 PASO 2 BIS -- SI PYTHON NO QUEDA EN PATH
 ===========================================================
 

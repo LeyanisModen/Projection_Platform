@@ -22,6 +22,12 @@ export const routes: Routes = [{
   title: 'Visor Player',
 },
 {
+  // Second screen of a mini-PC: read-only mirror of the player (see MonitorComponent).
+  path: 'monitor',
+  loadComponent: () => import('./monitor/monitor.component').then(m => m.MonitorComponent),
+  title: 'Monitor Mesa',
+},
+{
   path: 'dashboard',
   loadComponent: () => import('./dashboard/dashboard').then(m => m.Dashboard),
   title: 'Dashboard',
