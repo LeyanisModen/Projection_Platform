@@ -417,6 +417,19 @@ Atajos actuales:
 | `Space` | Reconocer fallo/no cámara y continuar el flujo de check |
 | `Q`, `Q` | Cerrar kiosk con pausa de mantenimiento |
 
+#### Segunda pantalla del mini-PC (2026-09-19, pendiente de prueba en fábrica)
+
+Un mini-PC puede llevar un monitor a la altura del operario además del proyector. Es automático y vive en `capture_service/player-watchdog.ps1`:
+
+- **Una pantalla:** nada cambia (mismos argumentos de Chrome, mismos procesos, mismas comprobaciones).
+- **Dos pantallas:** el player va a la pantalla que **no** es la principal de Windows (proyector) y en la principal se abre `/monitor` en un segundo Chrome con perfil propio (`C:\moden\chrome-monitor-profile`; la ruta no puede contener la del perfil kiosk porque el kiosk se reconoce por subcadena). Se detecta en cada ciclo de 10 s, sin reiniciar. Al desenchufar la pantalla la vista del monitor pasa a ser un Chrome "stray" y se cierra sola.
+- La detección va en un tipo C# y un `try/catch` aparte: si falla, el watchdog se comporta como de una pantalla. El fichero `.single_screen` junto al script la desactiva.
+- Cerrar la vista del monitor (Alt+F4) la deja cerrada 10 minutos y en ese tiempo el watchdog no devuelve el foco al player, para poder usar el mini-PC desde ese monitor. Si mueren todos los Chrome a la vez no cuenta como cierre deliberado.
+- `/monitor` (`app/monitor/`) es un componente **aislado del player y de solo lectura**: toma el token de `http://127.0.0.1:5555/device_token`, consulta `device/state/` y `device/current_item/` y pinta el paso proyectado, módulo, fase y estado del check. No empareja, no manda heartbeat, no escribe nada. Ante un 401 vuelve a leer el token (el player se habrá re-emparejado).
+- Tests: `capture_service/test_player_watchdog.ps1` (16 escenarios de decisión, sin lanzar Chrome) y `monitor.component.spec.ts`.
+- **Despliegue escalonado:** `capture_service/VERSION` no se subió a propósito, así que los mini-PC no reciben el watchdog nuevo aunque esté en `deploy`. Para probarlo en uno: `update-capture-service.ps1 -GitHubBranch develop -Force` (ver `COMANDOS.txt`, sección "SEGUNDA PANTALLA"). Cuando esté validado, subir `VERSION` y fusionar a `deploy` lo lleva a todos a las 04:15.
+- Sin verificar todavía en hardware real: colocación de las ventanas con `--window-position` y `SetWindowPos` (hay respaldo manual con Win+Mayús+Flecha) y comportamiento con escalas de pantalla distintas del 100 %.
+
 ### 5.6 Cámara, fotos y documentación
 
 - Captura requerida en FullHD con JPEG 95.

@@ -1,0 +1,31 @@
+<div class="monitor">
+    @if (waiting()) {
+    <div class="monitor-message">
+        <div class="spinner" aria-hidden="true"></div>
+        <p>Esperando al player de esta mesa…</p>
+    </div>
+    } @else {
+    <header class="monitor-bar">
+        <span class="mesa-name">{{ state()?.nombre || 'Mesa ' + state()?.id }}</span>
+        @if (item(); as current) {
+        <span class="item-name">{{ current.modulo_nombre }} · {{ current.fase }}</span>
+        }
+        <span class="spacer"></span>
+        @if (state()?.blackout) { <span class="chip">Proyección en negro</span> }
+        @if (state()?.locked) { <span class="chip">Bloqueada</span> }
+        @if (check() === 'success') { <span class="chip ok">Check OK</span> }
+        @if (check() === 'error') { <span class="chip ko">Check fallido</span> }
+        @if (check() === 'no_camera') { <span class="chip ko">Sin cámara</span> }
+        @if (stepLabel()) { <span class="step">{{ stepLabel() }}</span> }
+    </header>
+    <main class="monitor-stage">
+        @if (adjusting()) {
+        <p class="monitor-note">Ajuste del proyector en curso</p>
+        } @else if (imageUrl(); as url) {
+        <img [src]="url" alt="Paso que se está proyectando en la mesa">
+        } @else {
+        <p class="monitor-note">Sin trabajo en curso</p>
+        }
+    </main>
+    }
+</div>
