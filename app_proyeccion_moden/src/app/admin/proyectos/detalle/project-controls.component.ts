@@ -86,10 +86,11 @@ import { ApiService, Proyecto, ProjectCheck, ProjectCheckAttachment } from '../.
                                     [title]="isWaiting(check) ? 'Antes: ' + check.requisitos_pendientes.join(', ') : ''" />
                                 <div class="check-body">
                                     <label [for]="'check-' + check.id">
-                                        <span class="check-title">{{ check.titulo }}</span>
-                                        @if (check.bloquea_produccion) {
-                                            <i class="fa fa-lock lock-icon" title="Bloquea producción" aria-label="Bloquea producción"></i>
-                                        }
+                                        <span class="check-title">{{ check.titulo }}
+                                            @if (check.bloquea_produccion) {
+                                                <i class="fa fa-lock lock-icon" title="Bloquea producción" aria-label="Bloquea producción"></i>
+                                            }
+                                        </span>
                                         @if (check.origen === 'MANUAL') { <span class="origin">añadido en este proyecto</span> }
                                         @if (isWaiting(check)) {
                                             <small class="waiting"><i class="fa fa-link" aria-hidden="true"></i> Antes: {{ check.requisitos_pendientes.join(', ') }}</small>
