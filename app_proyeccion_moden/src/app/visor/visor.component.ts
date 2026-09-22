@@ -141,11 +141,18 @@ export class VisorComponent implements OnInit, OnDestroy {
   // 5-second lock between slides so the operator reads the caption before
   // moving on (many consecutive slides only change the title text).
   private static readonly SLIDE_LOCK_MS = 5000;
+  // A press that lands while the slide is locked is dropped and keeps the
+  // lock alive this long: the operator has to stop hammering the button and
+  // press once. Without it, the first press after the lock expired went
+  // through, so holding a burst advanced a slide every 5 s and closed the
+  // module from its last slide.
+  private static readonly SLIDE_LOCK_REARM_MS = 1500;
   // After a local next/prev/calibration toggle we briefly treat the local
   // index as authoritative so a poll already in flight can't paint the
   // previous slide back on screen for a split second.
   private static readonly INDEX_SYNC_GRACE_MS = 1500;
   private slideLockUntil = 0;
+  private finishingItem = false;
   slideLockRemainingMs = 0;
   readonly slideLockDots = [0, 1, 2, 3, 4];
   private slideLockTimer: any = null;
@@ -1128,7 +1135,15 @@ export class VisorComponent implements OnInit, OnDestroy {
       this.clearSimplePhotoCaptureError();
     }
     if (!continuingAfterPhotoError && this.shouldApplySlideLock() && Date.now() < this.slideLockUntil) {
-      this.updateSlideLockIndicator();
+      this.slideLockUntil = Math.max(
+        this.slideLockUntil,
+        Date.now() + VisorComponent.SLIDE_LOCK_REARM_MS,
+      );
+      if (!this.slideLockTimer) {
+        this.startSlideLockIndicator();
+      } else {
+        this.updateSlideLockIndicator();
+      }
       return;
     }
     // While a _check capture is in flight, freeze the navigation: the
@@ -1281,18 +1296,25 @@ export class VisorComponent implements OnInit, OnDestroy {
   }
 
   finishActiveItem(): void {
-    if (!this.activeItem) return;
+    // One close per module: a second request while the first is in flight
+    // would mark the module the backend has just promoted as done too.
+    if (!this.activeItem || this.finishingItem) return;
+    this.finishingItem = true;
     if (this.isSupervisor) {
       this.http.post(`/api/mesa-queue-items/${this.activeItem.id}/marcar_hecho/`, {}, { headers: this.getUserAuthHeaders() })
         .subscribe({
           next: () => {
+            this.finishingItem = false;
             this.activeItem = null;
             this.images = [];
             this.currentIndex = 0;
             this.cdr.detectChanges();
             this.checkActiveItem();
           },
-          error: (err) => console.error('[Visor] Error finishing item:', err)
+          error: (err) => {
+            this.finishingItem = false;
+            console.error('[Visor] Error finishing item:', err);
+          }
         });
       return;
     }
@@ -1300,13 +1322,20 @@ export class VisorComponent implements OnInit, OnDestroy {
     this.http.post(`${this.apiUrl}mark_done/`, {}, { headers: this.getAuthHeaders() })
       .subscribe({
         next: () => {
+          this.finishingItem = false;
+          // The next module starts locked too, so the tail of a burst
+          // cannot skip its first slide.
+          this.slideLockUntil = Date.now() + VisorComponent.SLIDE_LOCK_MS;
           this.activeItem = null;
           this.images = [];
           this.currentIndex = 0;
           this.cdr.detectChanges();
           this.checkActiveItem();
         },
-        error: (err) => console.error('[Visor] Error finishing item (device):', err)
+        error: (err) => {
+          this.finishingItem = false;
+          console.error('[Visor] Error finishing item (device):', err);
+        }
       });
   }
 

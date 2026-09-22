@@ -64,8 +64,11 @@ describe('MonitorComponent', () => {
         expect(element.textContent).toContain('Mesa 2');
         expect(element.textContent).toContain('M-101');
         expect(element.textContent).toContain('2 / 2');
+        // Every image of the module is fetched ahead of the player's next step.
+        expect(fixture.componentInstance['preloaded'].map((img: HTMLImageElement) => img.getAttribute('src')))
+            .toEqual(['/media/imagenes/1/a.jpg', '/media/imagenes/1/b.jpg']);
 
-        vi.advanceTimersByTime(2000);
+        vi.advanceTimersByTime(1000);
         http.expectOne('/api/device/state/').flush(state(0, {check_overlay: 'error'}));
         fixture.detectChanges();
         expect(element.querySelector('img')?.getAttribute('src')).toBe('/media/imagenes/1/a.jpg');
@@ -94,12 +97,12 @@ describe('MonitorComponent', () => {
         http.expectOne('/api/device/current_item/').flush(item);
         fixture.detectChanges();
 
-        vi.advanceTimersByTime(2000);
+        vi.advanceTimersByTime(1000);
         http.expectOne('/api/device/state/').error(new ProgressEvent('error'));
         fixture.detectChanges();
         expect(fixture.nativeElement.querySelector('img')?.getAttribute('src')).toBe('/media/imagenes/1/a.jpg');
 
-        vi.advanceTimersByTime(2000);
+        vi.advanceTimersByTime(1000);
         http.expectOne('/api/device/state/').flush({detail: 'Unauthorized'}, {status: 401, statusText: 'Unauthorized'});
         fixture.detectChanges();
         expect(fixture.nativeElement.textContent).toContain('Esperando al player');

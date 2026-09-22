@@ -41,7 +41,7 @@ interface MonitorItem {
 })
 export class MonitorComponent implements OnInit, OnDestroy {
   private static readonly TOKEN_RETRY_MS = 5000;
-  private static readonly STATE_POLL_MS = 2000;
+  private static readonly STATE_POLL_MS = 1000;
   private static readonly ITEM_POLL_MS = 5000;
 
   private readonly http = inject(HttpClient);
@@ -49,6 +49,8 @@ export class MonitorComponent implements OnInit, OnDestroy {
   private readonly apiUrl = `${environment.apiUrl}/device/`;
 
   private token: string | null = null;
+  private preloadedItemId: number | null = null;
+  private preloaded: HTMLImageElement[] = [];
   private tokenSub: Subscription | null = null;
   private stateSub: Subscription | null = null;
   private itemSub: Subscription | null = null;
@@ -124,7 +126,23 @@ export class MonitorComponent implements OnInit, OnDestroy {
     ).subscribe(item => {
       if (item === undefined) return;
       this.item.set(item);
+      this.preloadImages(item);
     });
+  }
+
+  /**
+   * The player switches slides locally and we only learn about it on the next
+   * poll; having every image of the module already in cache keeps that the
+   * only delay. Runs once per item, not on every 5 s refresh.
+   */
+  private preloadImages(item: MonitorItem | null): void {
+    const id = item?.id ?? null;
+    if (id === this.preloadedItemId) return;
+    this.preloadedItemId = id;
+    this.preloaded = (item?.images ?? [])
+      .map(image => image?.url || image?.src || '')
+      .filter(Boolean)
+      .map(url => { const img = new Image(); img.src = url; return img; });
   }
 
   private stopPolling(): void {
