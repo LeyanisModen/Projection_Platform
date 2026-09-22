@@ -17,8 +17,8 @@ describe('ListaControlComponent', () => {
         fixture = TestBed.createComponent(ListaControlComponent);
         fixture.detectChanges();
         http.expectOne('/api/check-definiciones/').flush([
-            { id: 1, titulo: 'Planos entregados', orden: 1, requiere_fecha: false, requiere_documento: false },
-            { id: 2, titulo: 'Aprobación equivalencias', orden: 2, requiere_fecha: true, requiere_documento: true },
+            { id: 1, titulo: 'Planos entregados', orden: 1, requiere_fecha: false, requiere_documento: false, dias_antes_montaje: null, bloquea_produccion: false, requisitos: [] },
+            { id: 2, titulo: 'Aprobación equivalencias', orden: 2, requiere_fecha: true, requiere_documento: true, dias_antes_montaje: 21, bloquea_produccion: true, requisitos: [1] },
         ]);
         fixture.detectChanges();
     });
@@ -31,7 +31,10 @@ describe('ListaControlComponent', () => {
         expect(rows.map(r => r.querySelector('.position')?.textContent?.trim())).toEqual(['1', '2']);
         expect(rows.map(r => r.querySelector('.title')?.childNodes[0]?.textContent?.trim())).toEqual(['Planos entregados', 'Aprobación equivalencias']);
         expect(rows[0].querySelectorAll('.flag-icons i').length).toBe(0);
-        expect(Array.from(rows[1].querySelectorAll('.flag-icons i')).map(i => i.getAttribute('title'))).toEqual(['Con fecha límite', 'Con documento de confirmación']);
+        expect(Array.from(rows[1].querySelectorAll('.flag-icons i')).map(i => i.getAttribute('title')))
+            .toEqual(['Fecha límite: 21 días antes del montaje', 'Con documento de confirmación', 'Bloquea producción']);
+        expect(rows[1].querySelector('.days-badge')?.textContent?.trim()).toBe('D−21');
+        expect(rows[1].querySelector('.requisitos-hint')?.textContent).toContain('Planos entregados');
     });
 
     it('los iconos de fecha y documento funcionan como interruptores', () => {
@@ -52,8 +55,8 @@ describe('ListaControlComponent', () => {
         fixture.componentInstance.add();
         const request = http.expectOne('/api/check-definiciones/');
         expect(request.request.method).toBe('POST');
-        expect(request.request.body).toEqual({ titulo: 'Acta de inicio', requiere_fecha: false, requiere_documento: true });
-        request.flush({ id: 3, titulo: 'Acta de inicio', orden: 3, requiere_fecha: false, requiere_documento: true });
+        expect(request.request.body).toEqual({ titulo: 'Acta de inicio', requiere_fecha: false, requiere_documento: true, dias_antes_montaje: null, bloquea_produccion: false });
+        request.flush({ id: 3, titulo: 'Acta de inicio', orden: 3, requiere_fecha: false, requiere_documento: true, dias_antes_montaje: null, bloquea_produccion: false, requisitos: [] });
         expect(fixture.componentInstance.steps().map(s => s.id)).toEqual([1, 2, 3]);
         expect(fixture.componentInstance.newTitle()).toBe('');
         expect(fixture.componentInstance.newRequiereDocumento()).toBe(false);
@@ -63,7 +66,7 @@ describe('ListaControlComponent', () => {
         fixture.componentInstance.move(1, -1);
         const request = http.expectOne('/api/check-definiciones/reorder/');
         expect(request.request.body).toEqual({ ids: [2, 1] });
-        request.flush([{ id: 2, titulo: 'Aprobación equivalencias', orden: 1, requiere_fecha: true, requiere_documento: true }, { id: 1, titulo: 'Planos entregados', orden: 2, requiere_fecha: false, requiere_documento: false }]);
+        request.flush([{ id: 2, titulo: 'Aprobación equivalencias', orden: 1, requiere_fecha: true, requiere_documento: true, dias_antes_montaje: 21, bloquea_produccion: true, requisitos: [1] }, { id: 1, titulo: 'Planos entregados', orden: 2, requiere_fecha: false, requiere_documento: false, dias_antes_montaje: null, bloquea_produccion: false, requisitos: [] }]);
         expect(fixture.componentInstance.steps().map(s => s.id)).toEqual([2, 1]);
     });
 
@@ -90,9 +93,35 @@ describe('ListaControlComponent', () => {
         fixture.componentInstance.saveEdit(step);
         const request = http.expectOne('/api/check-definiciones/2/');
         expect(request.request.method).toBe('PATCH');
-        expect(request.request.body).toEqual({ id: 2, titulo: 'Aprobación de planos de equivalencia', requiere_fecha: true, requiere_documento: true });
-        request.flush({ id: 2, titulo: 'Aprobación de planos de equivalencia', orden: 2, requiere_fecha: true, requiere_documento: true });
+        expect(request.request.body).toEqual({ id: 2, titulo: 'Aprobación de planos de equivalencia', requiere_fecha: true, requiere_documento: true, dias_antes_montaje: 21, bloquea_produccion: true, requisitos: [1] });
+        request.flush({ id: 2, titulo: 'Aprobación de planos de equivalencia', orden: 2, requiere_fecha: true, requiere_documento: true, dias_antes_montaje: 21, bloquea_produccion: true, requisitos: [1] });
         expect(fixture.componentInstance.editingId()).toBeNull();
         expect(fixture.componentInstance.steps()[1].titulo).toBe('Aprobación de planos de equivalencia');
+    });
+
+    it('el plazo en días sólo se envía con fecha límite y los requisitos se marcan como chips', () => {
+        const step = fixture.componentInstance.steps()[0];
+        fixture.componentInstance.startEdit(step);
+        fixture.detectChanges();
+        const chips = Array.from(fixture.nativeElement.querySelectorAll('.req-chip')) as HTMLButtonElement[];
+        expect(chips.map(c => c.textContent?.trim())).toEqual(['Aprobación equivalencias']);
+        chips[0].click(); fixture.detectChanges();
+        fixture.componentInstance.toggleEditFecha();
+        fixture.componentInstance.editDias.set(30);
+        fixture.componentInstance.editBloquea.set(true);
+        fixture.componentInstance.saveEdit(step);
+        const request = http.expectOne('/api/check-definiciones/1/');
+        expect(request.request.body).toEqual({ id: 1, titulo: 'Planos entregados', requiere_fecha: true, requiere_documento: false, dias_antes_montaje: 30, bloquea_produccion: true, requisitos: [2] });
+        request.flush({ ...step, requiere_fecha: true, dias_antes_montaje: 30, bloquea_produccion: true, requisitos: [2] });
+
+        // Quitar la fecha límite descarta el plazo aunque quedara escrito.
+        const updated = fixture.componentInstance.steps()[0];
+        fixture.componentInstance.startEdit(updated);
+        fixture.componentInstance.toggleEditFecha();
+        fixture.componentInstance.saveEdit(updated);
+        const second = http.expectOne('/api/check-definiciones/1/');
+        expect(second.request.body.requiere_fecha).toBe(false);
+        expect(second.request.body.dias_antes_montaje).toBeNull();
+        second.flush({ ...updated, requiere_fecha: false, dias_antes_montaje: null });
     });
 });

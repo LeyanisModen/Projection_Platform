@@ -759,6 +759,16 @@ export class Dashboard implements OnInit, OnDestroy {
    * pendientes son expulsados por _plan_cola en el backend al replan,
    * asi que no tiene sentido ofrecerlos. */
   proyectosDisponibles(grupo: GrupoMesas | null): Proyecto[] {
+    return this.proyectosConPendientes(grupo).filter(p => !p.produccion_bloqueada);
+  }
+
+  /** Proyectos con validaciones previas sin completar (geometria, equivalencias...):
+   * Moden aun no los ha liberado para fabricar, asi que no se ofrecen. */
+  proyectosBloqueados(grupo: GrupoMesas | null): Proyecto[] {
+    return this.proyectosConPendientes(grupo).filter(p => !!p.produccion_bloqueada);
+  }
+
+  private proyectosConPendientes(grupo: GrupoMesas | null): Proyecto[] {
     const all = grupo
       ? this.proyectos.filter(p => !new Set(grupo.proyectos_cola.map(e => e.proyecto)).has(p.id))
       : this.proyectos;

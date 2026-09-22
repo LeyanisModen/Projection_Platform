@@ -231,6 +231,17 @@ describe('Dashboard', () => {
     expect(buckets.every(bucket => bucket.meta_modulos === 0)).toBe(true);
   });
 
+  it('keeps projects with pending validations out of the add-to-queue list', () => {
+    component.proyectos = [
+      { id: 1, nombre: 'Libre', modulos_count: 4, modulos_completados: 0, produccion_bloqueada: false } as Proyecto,
+      { id: 2, nombre: 'Bloqueado', modulos_count: 4, modulos_completados: 0, produccion_bloqueada: true } as Proyecto,
+      { id: 3, nombre: 'Terminado', modulos_count: 4, modulos_completados: 4, produccion_bloqueada: true } as Proyecto,
+    ];
+
+    expect(component.proyectosDisponibles(null).map(p => p.nombre)).toEqual(['Libre']);
+    expect(component.proyectosBloqueados(null).map(p => p.nombre)).toEqual(['Bloqueado']);
+  });
+
   it('orders project modules naturally by name by default', () => {
     component.planModalModulos = [
       { id: 10, nombre: 'A10', completado_at: null } as Modulo,

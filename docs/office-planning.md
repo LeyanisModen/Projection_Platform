@@ -30,6 +30,25 @@
   `/media/`; a paired mini-PC can only read `imagenes/` and `fotos/`).
   Clearing `requiere_fecha` clears the due date. Completing a step that
   requires a document without one is allowed but flagged in the list.
+- Validation gates (2026-09-22, from the office's "D-day" process; D is the
+  mounting date `fecha_montaje`):
+  - `dias_antes_montaje` on a master step (implies `requiere_fecha`) makes the
+    project copy compute `fecha_limite = D - days` when seeding, and
+    `recalcular_fechas_checklist` recomputes it whenever D changes, only for
+    steps that are still pending and carry a relative deadline (completed
+    steps and hand-set dates are left alone; no D means no date). Shown as
+    `D−30` in the master list and the project modal.
+  - `requisitos` (M2M on the definition, copied by title to the project) are
+    prerequisites: PATCH `completado=true` is refused with the pending titles
+    until they are done, and the modal disables the checkbox with the same
+    hint. `requisitos_pendientes` comes in every project row.
+  - `bloquea_produccion` marks validations the client must have before
+    fabricating (geometry, equivalences, technical justifications). While
+    any is pending, `Proyecto.produccion_bloqueada` is true: the client
+    dashboard leaves the project out of the "Gestionar" add-to-queue list
+    (with a "Pendiente de validación con Moden" note) and `cola/add` answers
+    400 naming the missing steps, so a direct call cannot bypass it. The
+    admin project card shows "Sin producción hasta completar: ...".
 - Admin Calendar shows project events, mounting dates and office vacations.
   Office workers are independent of login accounts. Events use inclusive date
   ranges (whole days). Availability means no recorded vacation or assigned event for that day,

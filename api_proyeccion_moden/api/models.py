@@ -2,6 +2,8 @@ from decimal import Decimal, InvalidOperation
 from datetime import time
 
 from django.core.validators import MinValueValidator, RegexValidator
+from datetime import timedelta
+
 from django.db import models
 from django.contrib.auth.models import User
 
@@ -375,6 +377,16 @@ class ProyectoCheckDefinicion(models.Model):
     # proyecto al sembrar; alli deciden que controles muestra cada fila.
     requiere_fecha = models.BooleanField(default=False)
     requiere_documento = models.BooleanField(default=False)
+    # Plazo relativo al dia de montaje (D): la fecha limite del proyecto se
+    # calcula como fecha_montaje - dias. Vacio = la fecha se pone a mano.
+    dias_antes_montaje = models.PositiveIntegerField(null=True, blank=True)
+    # Sin este paso completado el proyecto no se puede meter en produccion
+    # (no se ofrece en «Gestionar» del dashboard del cliente).
+    bloquea_produccion = models.BooleanField(default=False)
+    # Pasos que deben estar completados antes de poder marcar este.
+    requisitos = models.ManyToManyField(
+        'self', symmetrical=False, blank=True, related_name='dependientes',
+    )
 
     class Meta:
         ordering = ['orden', 'id']
@@ -401,6 +413,14 @@ class ProyectoCheck(models.Model):
     requiere_fecha = models.BooleanField(default=False)
     requiere_documento = models.BooleanField(default=False)
     fecha_limite = models.DateField(null=True, blank=True)
+    # Copiados de la plantilla al sembrar. Con dias_antes_montaje la fecha
+    # limite se recalcula al cambiar la fecha de montaje mientras el paso
+    # siga pendiente.
+    dias_antes_montaje = models.PositiveIntegerField(null=True, blank=True)
+    bloquea_produccion = models.BooleanField(default=False)
+    requisitos = models.ManyToManyField(
+        'self', symmetrical=False, blank=True, related_name='dependientes',
+    )
     completado = models.BooleanField(default=False)
     # Quien confirmo el paso y cuando. Se vacian al desmarcarlo.
     completado_at = models.DateTimeField(null=True, blank=True)
@@ -418,6 +438,12 @@ class ProyectoCheck(models.Model):
 
     def __str__(self):
         return f'{self.proyecto_id}: {self.titulo}'
+
+    @staticmethod
+    def fecha_limite_para(fecha_montaje, dias_antes_montaje):
+        if fecha_montaje is None or dias_antes_montaje is None:
+            return None
+        return fecha_montaje - timedelta(days=dias_antes_montaje)
 
 
 class ProyectoCheckAdjunto(models.Model):

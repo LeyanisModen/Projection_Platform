@@ -1094,6 +1094,16 @@
   font-size: 0.88rem;
 }
 
+.gestionar-bloqueados {
+  margin-top: 8px;
+  font-style: normal;
+}
+
+.gestionar-bloqueados i {
+  margin-right: 4px;
+  color: #c2570e;
+}
+
 .cola-list {
   list-style: none;
   margin: 0;

@@ -12,7 +12,7 @@ from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
 from .models import (
-    EventoCalendario, Mesa, MesaQueueItem, Modulo, Proyecto,
+    EventoCalendario, GrupoMesas, Mesa, MesaQueueItem, Modulo, Proyecto,
     ProyectoCheckAdjunto, ProyectoCheckDefinicion, TrabajadorOficina, UserProfile,
 )
 from .office import CHECK_ATTACHMENT_MAX_BYTES
@@ -166,6 +166,101 @@ class OfficePlanningTests(APITestCase):
         self.assertFalse(by_title['Planos entregados']['requiere_fecha'])
         self.assertIsNone(by_title['Aprobacion equivalencias']['fecha_limite'])
         self.assertEqual(by_title['Aprobacion equivalencias']['adjuntos'], [])
+
+    # ------------------------------------------------------------------
+    # Plazos relativos a D, requisitos entre pasos y bloqueo de produccion
+    # ------------------------------------------------------------------
+    def test_relative_deadline_is_computed_from_mounting_date_when_seeding(self):
+        ProyectoCheckDefinicion.objects.create(titulo='Geometria y armados', dias_antes_montaje=30)
+        ProyectoCheckDefinicion.objects.create(titulo='Sin plazo', requiere_fecha=True)
+        with_date = Proyecto.objects.create(nombre='Con D', usuario=self.factory, fecha_montaje=date(2026, 11, 20))
+        without_date = Proyecto.objects.create(nombre='Sin D', usuario=self.factory)
+        for project in (with_date, without_date):
+            self.client.post(f'/api/proyecto-checklist/{project.pk}/sembrar/')
+        rows = {r['titulo']: r for r in self._rows(with_date)}
+        self.assertEqual(rows['Geometria y armados']['fecha_limite'], '2026-10-21')
+        self.assertEqual(rows['Geometria y armados']['dias_antes_montaje'], 30)
+        self.assertTrue(rows['Geometria y armados']['requiere_fecha'])
+        self.assertIsNone(rows['Sin plazo']['fecha_limite'])
+        rows = {r['titulo']: r for r in self._rows(without_date)}
+        self.assertIsNone(rows['Geometria y armados']['fecha_limite'])
+
+    def test_master_relative_deadline_forces_date_flag(self):
+        row = self.client.post('/api/check-definiciones/', {'titulo': 'Equivalencias', 'dias_antes_montaje': 21}).data
+        self.assertTrue(row['requiere_fecha'])
+        self.assertEqual(row['dias_antes_montaje'], 21)
+
+    def test_changing_mounting_date_recalculates_pending_relative_steps_only(self):
+        ProyectoCheckDefinicion.objects.create(titulo='Geometria', dias_antes_montaje=30)
+        ProyectoCheckDefinicion.objects.create(titulo='Equivalencias', dias_antes_montaje=21)
+        ProyectoCheckDefinicion.objects.create(titulo='Manual', requiere_fecha=True)
+        self.project.fecha_montaje = date(2026, 11, 20)
+        self.project.save()
+        self.client.post(f'/api/proyecto-checklist/{self.project.pk}/sembrar/')
+        rows = {r['titulo']: r for r in self._rows(self.project)}
+        self.client.patch(f'/api/proyecto-checklist/{self.project.pk}/checks/{rows["Geometria"]["id"]}/', {'completado': True})
+        self.client.patch(f'/api/proyecto-checklist/{self.project.pk}/checks/{rows["Manual"]["id"]}/', {'fecha_limite': '2026-10-01'})
+
+        self.client.patch(f'/api/proyectos/{self.project.pk}/', {'fecha_montaje': '2026-12-04'})
+
+        rows = {r['titulo']: r for r in self._rows(self.project)}
+        self.assertEqual(rows['Equivalencias']['fecha_limite'], '2026-11-13')
+        self.assertEqual(rows['Geometria']['fecha_limite'], '2026-10-21', 'completed steps keep their date')
+        self.assertEqual(rows['Manual']['fecha_limite'], '2026-10-01', 'hand-set dates are not touched')
+
+        self.client.patch(f'/api/proyectos/{self.project.pk}/', {'fecha_montaje': None}, format='json')
+        rows = {r['titulo']: r for r in self._rows(self.project)}
+        self.assertIsNone(rows['Equivalencias']['fecha_limite'])
+
+    def test_step_cannot_be_completed_before_its_prerequisites(self):
+        geometria = ProyectoCheckDefinicion.objects.create(titulo='Geometria')
+        ingenieria = ProyectoCheckDefinicion.objects.create(titulo='Ingenieria definitiva')
+        ingenieria.requisitos.add(geometria)
+        self.client.post(f'/api/proyecto-checklist/{self.project.pk}/sembrar/')
+        rows = {r['titulo']: r for r in self._rows(self.project)}
+        self.assertEqual(rows['Ingenieria definitiva']['requisitos'], [rows['Geometria']['id']])
+        self.assertEqual(rows['Ingenieria definitiva']['requisitos_pendientes'], ['Geometria'])
+
+        url = f'/api/proyecto-checklist/{self.project.pk}/checks/{rows["Ingenieria definitiva"]["id"]}/'
+        response = self.client.patch(url, {'completado': True})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('Geometria', response.data['completado'])
+
+        self.client.patch(f'/api/proyecto-checklist/{self.project.pk}/checks/{rows["Geometria"]["id"]}/', {'completado': True})
+        response = self.client.patch(url, {'completado': True})
+        self.assertEqual(response.status_code, 200)
+        rows = {r['titulo']: r for r in response.data}
+        self.assertTrue(rows['Ingenieria definitiva']['completado'])
+        self.assertEqual(rows['Ingenieria definitiva']['requisitos_pendientes'], [])
+
+    def test_master_step_cannot_require_itself(self):
+        step = ProyectoCheckDefinicion.objects.create(titulo='Solo')
+        response = self.client.patch(f'/api/check-definiciones/{step.pk}/', {'requisitos': [step.pk]}, format='json')
+        self.assertEqual(response.status_code, 400)
+
+    def test_blocking_steps_keep_project_out_of_production(self):
+        ProyectoCheckDefinicion.objects.create(titulo='Geometria', bloquea_produccion=True)
+        ProyectoCheckDefinicion.objects.create(titulo='Fotos', bloquea_produccion=False)
+        self.client.post(f'/api/proyecto-checklist/{self.project.pk}/sembrar/')
+        self.create_module()
+
+        listed = {p['id']: p for p in self.client.get('/api/proyectos/').data['results']}
+        self.assertTrue(listed[self.project.pk]['produccion_bloqueada'])
+        self.assertEqual(listed[self.project.pk]['checks_bloqueantes_pendientes'], 1)
+        self.assertFalse(listed[self.project2.pk]['produccion_bloqueada'])
+
+        grupo = GrupoMesas.objects.create(nombre='G', usuario=self.factory)
+        self.client.force_authenticate(self.factory)
+        response = self.client.post(f'/api/grupos-mesas/{grupo.pk}/cola/add/', {'proyecto': self.project.pk})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('Geometria', response.data['detail'])
+
+        self.client.force_authenticate(self.admin)
+        rows = {r['titulo']: r for r in self._rows(self.project)}
+        self.client.patch(f'/api/proyecto-checklist/{self.project.pk}/checks/{rows["Geometria"]["id"]}/', {'completado': True})
+        self.client.force_authenticate(self.factory)
+        response = self.client.post(f'/api/grupos-mesas/{grupo.pk}/cola/add/', {'proyecto': self.project.pk})
+        self.assertEqual(response.status_code, 200, response.data)
 
     def test_manual_step_can_declare_date_and_document_and_set_deadline(self):
         response = self.client.post(

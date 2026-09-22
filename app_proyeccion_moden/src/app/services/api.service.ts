@@ -73,6 +73,12 @@ export interface ProjectCheck {
     /** Qué necesita el paso; decide qué controles muestra su fila. */
     requiere_fecha: boolean; requiere_documento: boolean;
     fecha_limite: string | null;
+    /** Plazo relativo al montaje (D − días); la fecha se recalcula si cambia D. */
+    dias_antes_montaje: number | null;
+    /** Sin este paso el proyecto no entra en producción (no se ofrece en Gestionar). */
+    bloquea_produccion: boolean;
+    /** Ids de los pasos que deben completarse antes; títulos de los que aún faltan. */
+    requisitos: number[]; requisitos_pendientes: string[];
     completado: boolean;
     completado_at: string | null; completado_por: string | null;
     creado_at: string;
@@ -82,6 +88,9 @@ export interface ProjectCheck {
 export interface CheckDefinition {
     id: number; titulo: string; orden: number;
     requiere_fecha: boolean; requiere_documento: boolean;
+    dias_antes_montaje: number | null;
+    bloquea_produccion: boolean;
+    requisitos: number[];
 }
 /** Paso con fecha límite, tal como lo consume el calendario. */
 export interface CheckDeadline {
@@ -117,6 +126,9 @@ export interface Proyecto {
     modulos_completados_hoy?: number;
     checks_total?: number;
     checks_completados?: number;
+    checks_bloqueantes_pendientes?: number;
+    /** Validaciones bloqueantes sin completar: el cliente no puede fabricarlo aún. */
+    produccion_bloqueada?: boolean;
 }
 
 export interface GrupoBastidorModulo {

@@ -21,9 +21,16 @@ CHECK_ATTACHMENT_MAX_BYTES = 20 * 1024 * 1024
 # Lista de control maestra (plantilla)
 # ---------------------------------------------------------------------------
 class CheckDefinitionSerializer(serializers.ModelSerializer):
+    requisitos = serializers.PrimaryKeyRelatedField(
+        many=True, required=False, queryset=ProyectoCheckDefinicion.objects.all(),
+    )
+
     class Meta:
         model = ProyectoCheckDefinicion
-        fields = ['id', 'titulo', 'orden', 'requiere_fecha', 'requiere_documento']
+        fields = [
+            'id', 'titulo', 'orden', 'requiere_fecha', 'requiere_documento',
+            'dias_antes_montaje', 'bloquea_produccion', 'requisitos',
+        ]
         extra_kwargs = {'orden': {'required': False}}
 
     def validate_titulo(self, value):
@@ -31,6 +38,18 @@ class CheckDefinitionSerializer(serializers.ModelSerializer):
         if not value:
             raise serializers.ValidationError('Indica un titulo para el paso.')
         return value
+
+    def validate_requisitos(self, value):
+        if self.instance and self.instance in value:
+            raise serializers.ValidationError('Un paso no puede requerirse a si mismo.')
+        return value
+
+    def validate(self, attrs):
+        # Un plazo relativo a D solo tiene sentido con fecha limite.
+        dias = attrs.get('dias_antes_montaje', getattr(self.instance, 'dias_antes_montaje', None))
+        if dias is not None:
+            attrs['requiere_fecha'] = True
+        return attrs
 
 
 class CheckDefinitionViewSet(viewsets.ModelViewSet):
@@ -80,20 +99,67 @@ def sembrar_checklist(proyecto):
     existentes = {_clave_titulo(t) for t in proyecto.checks.values_list('titulo', flat=True)}
     siguiente = (proyecto.checks.aggregate(m=Max('orden'))['m'] or 0) + 1
     nuevos = []
-    for definicion in ProyectoCheckDefinicion.objects.all():
+    definiciones = list(ProyectoCheckDefinicion.objects.prefetch_related('requisitos'))
+    for definicion in definiciones:
         if _clave_titulo(definicion.titulo) in existentes:
             continue
         existentes.add(_clave_titulo(definicion.titulo))
         nuevos.append(ProyectoCheck(
             proyecto=proyecto, titulo=definicion.titulo, orden=siguiente,
             origen=ProyectoCheck.Origen.PLANTILLA,
-            requiere_fecha=definicion.requiere_fecha,
+            # Un plazo relativo implica fecha limite aunque la plantilla se
+            # haya creado sin la marca (ORM, admin).
+            requiere_fecha=definicion.requiere_fecha or definicion.dias_antes_montaje is not None,
             requiere_documento=definicion.requiere_documento,
+            dias_antes_montaje=definicion.dias_antes_montaje,
+            bloquea_produccion=definicion.bloquea_produccion,
+            fecha_limite=ProyectoCheck.fecha_limite_para(
+                proyecto.fecha_montaje, definicion.dias_antes_montaje,
+            ),
         ))
         siguiente += 1
-    if nuevos:
-        ProyectoCheck.objects.bulk_create(nuevos)
+    if not nuevos:
+        return 0
+    ProyectoCheck.objects.bulk_create(nuevos)
+    # Los requisitos se resuelven por titulo dentro del proyecto, asi valen
+    # tanto los pasos recien creados como los que ya existian.
+    por_titulo = {_clave_titulo(c.titulo): c for c in proyecto.checks.all()}
+    for definicion in definiciones:
+        paso = por_titulo.get(_clave_titulo(definicion.titulo))
+        if paso is None or paso.origen != ProyectoCheck.Origen.PLANTILLA:
+            continue
+        requisitos = [
+            por_titulo[_clave_titulo(r.titulo)]
+            for r in definicion.requisitos.all()
+            if _clave_titulo(r.titulo) in por_titulo
+        ]
+        if requisitos and not paso.requisitos.exists():
+            paso.requisitos.set(requisitos)
     return len(nuevos)
+
+
+def recalcular_fechas_checklist(proyecto):
+    """Fecha de montaje nueva: recalcula los pasos pendientes con plazo relativo.
+
+    Los completados y los pasos sin plazo relativo (fecha puesta a mano) no
+    se tocan. Devuelve cuantos pasos han cambiado de fecha.
+    """
+    cambiados = 0
+    for paso in proyecto.checks.filter(completado=False, dias_antes_montaje__isnull=False):
+        nueva = ProyectoCheck.fecha_limite_para(proyecto.fecha_montaje, paso.dias_antes_montaje)
+        if nueva != paso.fecha_limite:
+            paso.fecha_limite = nueva
+            paso.save(update_fields=['fecha_limite'])
+            cambiados += 1
+    return cambiados
+
+
+def checks_bloqueantes_pendientes(proyecto):
+    """Titulos de los pasos que impiden meter el proyecto en produccion."""
+    return list(
+        proyecto.checks.filter(bloquea_produccion=True, completado=False)
+        .order_by('orden', 'id').values_list('titulo', flat=True)
+    )
 
 
 class ProjectCheckAttachmentSerializer(serializers.ModelSerializer):
@@ -115,18 +181,27 @@ class ProjectCheckAttachmentSerializer(serializers.ModelSerializer):
 class ProjectCheckSerializer(serializers.ModelSerializer):
     completado_por = serializers.SerializerMethodField()
     adjuntos = ProjectCheckAttachmentSerializer(many=True, read_only=True)
+    requisitos = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
+    requisitos_pendientes = serializers.SerializerMethodField()
 
     class Meta:
         model = ProyectoCheck
         fields = [
             'id', 'titulo', 'orden', 'origen',
             'requiere_fecha', 'requiere_documento', 'fecha_limite',
+            'dias_antes_montaje', 'bloquea_produccion', 'requisitos', 'requisitos_pendientes',
             'completado', 'completado_at', 'completado_por', 'creado_at', 'adjuntos',
         ]
-        read_only_fields = ['orden', 'origen', 'completado_at', 'completado_por', 'creado_at']
+        read_only_fields = [
+            'orden', 'origen', 'dias_antes_montaje', 'bloquea_produccion',
+            'completado_at', 'completado_por', 'creado_at',
+        ]
 
     def get_completado_por(self, obj):
         return obj.completado_por.get_username() if obj.completado_por else None
+
+    def get_requisitos_pendientes(self, obj):
+        return [r.titulo for r in obj.requisitos.all() if not r.completado]
 
     def validate_titulo(self, value):
         value = value.strip()
@@ -156,7 +231,8 @@ class ProjectChecklistViewSet(viewsets.GenericViewSet):
 
     def _rows(self, project):
         return ProjectCheckSerializer(
-            project.checks.select_related('completado_por').prefetch_related('adjuntos__subido_por'),
+            project.checks.select_related('completado_por')
+            .prefetch_related('adjuntos__subido_por', 'requisitos'),
             many=True,
         ).data
 
@@ -231,6 +307,9 @@ class ProjectChecklistViewSet(viewsets.GenericViewSet):
         data.is_valid(raise_exception=True)
         if 'completado' in data.validated_data and data.validated_data['completado'] != check.completado:
             if data.validated_data['completado']:
+                pendientes = [r.titulo for r in check.requisitos.all() if not r.completado]
+                if pendientes:
+                    raise ValidationError({'completado': 'Antes hay que completar: ' + ', '.join(pendientes) + '.'})
                 check.completado_at = timezone.now()
                 check.completado_por = request.user
             else:
