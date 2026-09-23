@@ -25,6 +25,8 @@
   alone. Deleting a master step removes the pending copies without
   documents; completed copies or copies with documents stay as project-only
   steps (`origen=MANUAL`, `definicion=NULL`). Master titles are unique.
+  After deploying migration 0060 run `python manage.py sincronizar_checklist`
+  once: the migration links old copies by title but does not update them.
   Projects can still add their own steps. Completing a step records who and
   when; unmarking clears both. The project detail shows a progress bar and
   opens the list in a modal. Staff only.

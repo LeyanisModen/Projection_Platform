@@ -117,6 +117,19 @@ class OfficePlanningTests(APITestCase):
         self.assertEqual([r['titulo'] for r in self._rows(self.project)], ['Acta', 'Planos', 'Paso manual'])
         self.assertEqual([r['titulo'] for r in self._rows(self.project2)], ['Acta', 'Planos'])
 
+    def test_sync_command_aligns_old_copies_with_the_master_list(self):
+        from django.core.management import call_command
+        definicion = ProyectoCheckDefinicion.objects.create(titulo='Geometria', dias_antes_montaje=30, bloquea_produccion=True)
+        # Copia antigua: enlazada por la migracion pero sin la configuracion actual.
+        self.project.fecha_montaje = date(2026, 11, 20)
+        self.project.save()
+        self.project.checks.create(titulo='Geometria', origen='PLANTILLA', definicion=definicion)
+        call_command('sincronizar_checklist')
+        rows = {r['titulo']: r for r in self._rows(self.project)}
+        self.assertEqual(rows['Geometria']['fecha_limite'], '2026-10-21')
+        self.assertTrue(rows['Geometria']['bloquea_produccion'])
+        self.assertEqual([r['titulo'] for r in self._rows(self.project2)], ['Geometria'])
+
     def test_deleting_a_master_step_keeps_copies_with_documents(self):
         definition = self._definir('Planos', requiere_documento=True)
         check_id = self._rows(self.project)[0]['id']
