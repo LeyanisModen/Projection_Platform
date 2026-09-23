@@ -159,12 +159,6 @@ import { ApiService, Proyecto, ProjectCheck, ProjectCheckAttachment } from '../.
                         </div>
                     </form>
 
-                    <footer class="checklist-footer">
-                        <button type="button" class="text-button" [disabled]="busyCheck() !== null" (click)="seedFromMaster()">
-                            Traer los pasos de la lista maestra que falten
-                        </button>
-                        @if (seedMessage()) { <span role="status">{{ seedMessage() }}</span> }
-                    </footer>
                     @if (checkError()) { <p role="alert" class="urgent">{{ checkError() }}</p> }
                 </div>
             </div>
@@ -229,7 +223,6 @@ export class ProjectControlsComponent {
     readonly newRequiereDocumento = signal(false);
     readonly uploadingFor = signal<number | null>(null);
     readonly listOpen = signal(false);
-    readonly seedMessage = signal('');
     readonly completed = computed(() => this.checks().filter(c => c.completado).length);
     readonly percent = computed(() => this.checks().length ? Math.round(this.completed() / this.checks().length * 100) : 0);
     readonly nextPending = computed(() => this.checks().find(c => !c.completado) ?? null);
@@ -258,7 +251,7 @@ export class ProjectControlsComponent {
             error: () => { this.saving.set(false); this.deadlineMessage.set('No se pudo guardar el plazo.'); },
         });
     }
-    openList(): void { this.checkError.set(''); this.seedMessage.set(''); this.listOpen.set(true); }
+    openList(): void { this.checkError.set(''); this.listOpen.set(true); }
     closeList(): void { this.listOpen.set(false); }
 
     private mutate(request: Observable<ProjectCheck[]>, busyId: number, message: string, after?: () => void): void {
@@ -324,16 +317,5 @@ export class ProjectControlsComponent {
         const detail = check.completado ? ' Se perderá la marca de completado.' : '';
         if (!confirm(`Eliminar «${check.titulo}» de este proyecto?${detail}`)) return;
         this.mutate(this.api.deleteProjectCheck(this.project().id, check.id), check.id, 'No se pudo eliminar el paso.');
-    }
-    seedFromMaster(): void {
-        if (this.busyCheck() !== null) return;
-        this.busyCheck.set(-2); this.checkError.set(''); this.seedMessage.set('');
-        this.api.seedProjectChecklist(this.project().id).subscribe({
-            next: result => {
-                this.checks.set(result.checks); this.busyCheck.set(null);
-                this.seedMessage.set(result.creados ? `${result.creados} paso(s) añadido(s).` : 'Este proyecto ya tiene todos los pasos de la lista maestra.');
-            },
-            error: () => { this.checkError.set('No se pudo traer la lista maestra.'); this.busyCheck.set(null); },
-        });
     }
 }

@@ -70,6 +70,8 @@ export interface ProjectCheckAttachment {
 export interface ProjectCheck {
     id: number; titulo: string; orden: number;
     origen: 'PLANTILLA' | 'MANUAL';
+    /** Paso de la lista maestra del que es copia (null en los propios del proyecto). */
+    definicion: number | null;
     /** Qué necesita el paso; decide qué controles muestra su fila. */
     requiere_fecha: boolean; requiere_documento: boolean;
     fecha_limite: string | null;
@@ -582,10 +584,6 @@ export class ApiService {
     }
     deleteProjectCheck(projectId: number, id: number): Observable<ProjectCheck[]> {
         return this.http.delete<ProjectCheck[]>(`${this.baseUrl}/proyecto-checklist/${projectId}/checks/${id}/`, { headers: this.getHeaders() });
-    }
-    /** Copia al proyecto los pasos de la lista maestra que aún no tiene. */
-    seedProjectChecklist(projectId: number): Observable<{ creados: number; checks: ProjectCheck[] }> {
-        return this.http.post<{ creados: number; checks: ProjectCheck[] }>(`${this.baseUrl}/proyecto-checklist/${projectId}/sembrar/`, {}, { headers: this.getHeaders() });
     }
     uploadProjectCheckAttachment(projectId: number, checkId: number, file: File): Observable<ProjectCheck[]> {
         const form = new FormData();

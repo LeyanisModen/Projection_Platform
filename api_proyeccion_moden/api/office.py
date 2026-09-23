@@ -2,7 +2,7 @@
 from datetime import date
 
 from django.db import transaction
-from django.db.models import Max
+from django.db.models import Max, Q
 from django.utils import timezone
 from rest_framework import serializers, viewsets, permissions, status
 from rest_framework.decorators import action
@@ -37,6 +37,11 @@ class CheckDefinitionSerializer(serializers.ModelSerializer):
         value = value.strip()
         if not value:
             raise serializers.ValidationError('Indica un titulo para el paso.')
+        duplicados = ProyectoCheckDefinicion.objects.filter(titulo__iexact=value)
+        if self.instance:
+            duplicados = duplicados.exclude(pk=self.instance.pk)
+        if duplicados.exists():
+            raise serializers.ValidationError('Ya hay un paso con ese titulo.')
         return value
 
     def validate_requisitos(self, value):
@@ -53,19 +58,31 @@ class CheckDefinitionSerializer(serializers.ModelSerializer):
 
 
 class CheckDefinitionViewSet(viewsets.ModelViewSet):
-    """CRUD de la lista maestra. Borrar aqui no afecta a proyectos ya sembrados."""
+    """CRUD de la lista maestra. Cada cambio se propaga a todos los proyectos."""
     queryset = ProyectoCheckDefinicion.objects.all()
     serializer_class = CheckDefinitionSerializer
     permission_classes = [permissions.IsAdminUser]
     pagination_class = None
     http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
 
+    @transaction.atomic
     def perform_create(self, serializer):
         if 'orden' in serializer.validated_data:
             serializer.save()
-            return
-        siguiente = (ProyectoCheckDefinicion.objects.aggregate(m=Max('orden'))['m'] or 0) + 1
-        serializer.save(orden=siguiente)
+        else:
+            siguiente = (ProyectoCheckDefinicion.objects.aggregate(m=Max('orden'))['m'] or 0) + 1
+            serializer.save(orden=siguiente)
+        propagar_definicion(serializer.instance)
+
+    @transaction.atomic
+    def perform_update(self, serializer):
+        serializer.save()
+        propagar_definicion(serializer.instance)
+
+    @transaction.atomic
+    def perform_destroy(self, instance):
+        retirar_definicion(instance)
+        instance.delete()
 
     @action(detail=False, methods=['post'])
     @transaction.atomic
@@ -79,6 +96,7 @@ class CheckDefinitionViewSet(viewsets.ModelViewSet):
             raise ValidationError({'ids': 'La lista debe incluir todos los pasos exactamente una vez.'})
         for posicion, pk in enumerate(ids, start=1):
             ProyectoCheckDefinicion.objects.filter(pk=pk).update(orden=posicion)
+            ProyectoCheck.objects.filter(definicion_id=pk).update(orden=posicion)
         return Response(CheckDefinitionSerializer(ProyectoCheckDefinicion.objects.all(), many=True).data)
 
 
@@ -89,53 +107,102 @@ def _clave_titulo(titulo):
     return (titulo or '').strip().casefold()
 
 
-def sembrar_checklist(proyecto):
-    """Copia al proyecto los pasos de la plantilla que aun no tiene (por titulo).
+def _campos_copia(definicion, proyecto):
+    """Campos de ProyectoCheck que siguen a la definicion."""
+    return {
+        'titulo': definicion.titulo,
+        'orden': definicion.orden,
+        'origen': ProyectoCheck.Origen.PLANTILLA,
+        # Un plazo relativo implica fecha limite aunque la plantilla se haya
+        # creado sin la marca (ORM, admin).
+        'requiere_fecha': definicion.requiere_fecha or definicion.dias_antes_montaje is not None,
+        'requiere_documento': definicion.requiere_documento,
+        'dias_antes_montaje': definicion.dias_antes_montaje,
+        'bloquea_produccion': definicion.bloquea_produccion,
+    }
 
-    Se llama al crear el proyecto y desde el boton «Traer los pasos de la
-    lista maestra». Los pasos nuevos se anaden al final para no reordenar los
-    que ya existen. Devuelve cuantos se han creado.
-    """
-    existentes = {_clave_titulo(t) for t in proyecto.checks.values_list('titulo', flat=True)}
-    siguiente = (proyecto.checks.aggregate(m=Max('orden'))['m'] or 0) + 1
-    nuevos = []
+
+def _sincronizar_requisitos(definiciones, proyectos):
+    """Los requisitos del proyecto son las copias de los requisitos de la plantilla."""
+    for proyecto in proyectos:
+        copias = {c.definicion_id: c for c in proyecto.checks.filter(definicion__isnull=False)}
+        for definicion in definiciones:
+            copia = copias.get(definicion.id)
+            if copia is None:
+                continue
+            copia.requisitos.set([copias[r.id] for r in definicion.requisitos.all() if r.id in copias])
+
+
+def sembrar_checklist(proyecto):
+    """Proyecto nuevo: copia de toda la lista maestra. Devuelve cuantos pasos crea."""
     definiciones = list(ProyectoCheckDefinicion.objects.prefetch_related('requisitos'))
+    existentes = set(proyecto.checks.filter(definicion__isnull=False).values_list('definicion_id', flat=True))
+    titulos = {_clave_titulo(t) for t in proyecto.checks.values_list('titulo', flat=True)}
+    nuevos = []
     for definicion in definiciones:
-        if _clave_titulo(definicion.titulo) in existentes:
+        if definicion.id in existentes or _clave_titulo(definicion.titulo) in titulos:
             continue
-        existentes.add(_clave_titulo(definicion.titulo))
         nuevos.append(ProyectoCheck(
-            proyecto=proyecto, titulo=definicion.titulo, orden=siguiente,
-            origen=ProyectoCheck.Origen.PLANTILLA,
-            # Un plazo relativo implica fecha limite aunque la plantilla se
-            # haya creado sin la marca (ORM, admin).
-            requiere_fecha=definicion.requiere_fecha or definicion.dias_antes_montaje is not None,
-            requiere_documento=definicion.requiere_documento,
-            dias_antes_montaje=definicion.dias_antes_montaje,
-            bloquea_produccion=definicion.bloquea_produccion,
-            fecha_limite=ProyectoCheck.fecha_limite_para(
-                proyecto.fecha_montaje, definicion.dias_antes_montaje,
-            ),
+            proyecto=proyecto, definicion=definicion,
+            fecha_limite=ProyectoCheck.fecha_limite_para(proyecto.fecha_montaje, definicion.dias_antes_montaje),
+            **_campos_copia(definicion, proyecto),
         ))
-        siguiente += 1
-    if not nuevos:
-        return 0
-    ProyectoCheck.objects.bulk_create(nuevos)
-    # Los requisitos se resuelven por titulo dentro del proyecto, asi valen
-    # tanto los pasos recien creados como los que ya existian.
-    por_titulo = {_clave_titulo(c.titulo): c for c in proyecto.checks.all()}
-    for definicion in definiciones:
-        paso = por_titulo.get(_clave_titulo(definicion.titulo))
-        if paso is None or paso.origen != ProyectoCheck.Origen.PLANTILLA:
-            continue
-        requisitos = [
-            por_titulo[_clave_titulo(r.titulo)]
-            for r in definicion.requisitos.all()
-            if _clave_titulo(r.titulo) in por_titulo
-        ]
-        if requisitos and not paso.requisitos.exists():
-            paso.requisitos.set(requisitos)
+    if nuevos:
+        ProyectoCheck.objects.bulk_create(nuevos)
+    _sincronizar_requisitos(definiciones, [proyecto])
     return len(nuevos)
+
+
+def propagar_definicion(definicion):
+    """Paso creado o editado en la lista maestra: todos los proyectos lo siguen.
+
+    Crea la copia donde falte y actualiza titulo, orden, marcas, plazo y
+    bloqueo donde exista. La fecha limite solo se recalcula en copias
+    pendientes con plazo relativo; lo completado no se toca.
+    """
+    proyectos = list(Proyecto.objects.all())
+    for proyecto in proyectos:
+        copia = proyecto.checks.filter(definicion=definicion).first()
+        if copia is None:
+            # Pasos sembrados antes de existir el enlace: se reconocen por titulo.
+            copia = proyecto.checks.filter(
+                definicion__isnull=True, origen=ProyectoCheck.Origen.PLANTILLA,
+                titulo__iexact=definicion.titulo,
+            ).first()
+        campos = _campos_copia(definicion, proyecto)
+        if copia is None:
+            ProyectoCheck.objects.create(
+                proyecto=proyecto, definicion=definicion,
+                fecha_limite=ProyectoCheck.fecha_limite_para(proyecto.fecha_montaje, definicion.dias_antes_montaje),
+                **campos,
+            )
+            continue
+        for campo, valor in campos.items():
+            setattr(copia, campo, valor)
+        copia.definicion = definicion
+        if not copia.completado:
+            if not copia.requiere_fecha:
+                copia.fecha_limite = None
+            elif definicion.dias_antes_montaje is not None:
+                copia.fecha_limite = ProyectoCheck.fecha_limite_para(
+                    proyecto.fecha_montaje, definicion.dias_antes_montaje,
+                )
+        copia.save()
+    _sincronizar_requisitos(
+        list(ProyectoCheckDefinicion.objects.prefetch_related('requisitos')), proyectos,
+    )
+
+
+def retirar_definicion(definicion):
+    """Paso borrado de la lista maestra.
+
+    Las copias pendientes y sin documentos desaparecen; las completadas o con
+    documentos se conservan como pasos propios del proyecto.
+    """
+    copias = ProyectoCheck.objects.filter(definicion=definicion)
+    conservar = copias.filter(Q(completado=True) | Q(adjuntos__isnull=False)).distinct()
+    conservar.update(origen=ProyectoCheck.Origen.MANUAL, definicion=None)
+    copias.delete()
 
 
 def recalcular_fechas_checklist(proyecto):
@@ -187,13 +254,13 @@ class ProjectCheckSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProyectoCheck
         fields = [
-            'id', 'titulo', 'orden', 'origen',
+            'id', 'titulo', 'orden', 'origen', 'definicion',
             'requiere_fecha', 'requiere_documento', 'fecha_limite',
             'dias_antes_montaje', 'bloquea_produccion', 'requisitos', 'requisitos_pendientes',
             'completado', 'completado_at', 'completado_por', 'creado_at', 'adjuntos',
         ]
         read_only_fields = [
-            'orden', 'origen', 'dias_antes_montaje', 'bloquea_produccion',
+            'orden', 'origen', 'definicion', 'dias_antes_montaje', 'bloquea_produccion',
             'completado_at', 'completado_por', 'creado_at',
         ]
 
@@ -219,7 +286,7 @@ class ProjectCheckSerializer(serializers.ModelSerializer):
 
 
 class ProjectChecklistViewSet(viewsets.GenericViewSet):
-    """GET lista, POST checks/ (manual), PATCH/DELETE checks/<id>/, POST sembrar/,
+    """GET lista, POST checks/ (manual), PATCH/DELETE checks/<id>/,
     POST/DELETE checks/<id>/adjuntos[/<id>]/, GET vencimientos/.
 
     Todas las mutaciones devuelven la lista completa para que el front la
@@ -343,12 +410,6 @@ class ProjectChecklistViewSet(viewsets.GenericViewSet):
         adjunto.archivo.delete(save=False)
         adjunto.delete()
         return Response(self._rows(project))
-
-    @action(detail=True, methods=['post'])
-    def sembrar(self, request, pk=None):
-        project = self.get_object()
-        creados = sembrar_checklist(project)
-        return Response({'creados': creados, 'checks': self._rows(project)})
 
 
 class WorkerSerializer(serializers.ModelSerializer):

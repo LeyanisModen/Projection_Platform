@@ -6,9 +6,10 @@ import { Observable } from 'rxjs';
 import { ApiService, CheckDefinition } from '../../services/api.service';
 
 /**
- * Lista de control maestra. Es la plantilla que se copia a cada proyecto al
- * crearlo; cambiarla o borrar pasos aqui no toca los proyectos ya sembrados
- * (cada proyecto es dueno de su copia y puede anadir pasos propios).
+ * Lista de control maestra. Todos los proyectos la siguen: anadir, editar,
+ * reordenar o borrar un paso aqui se refleja en cada proyecto (que ademas
+ * puede tener pasos propios). Al borrar, los pasos completados o con
+ * documentos se conservan en su proyecto.
  */
 @Component({
     selector: 'app-lista-control',
@@ -18,7 +19,7 @@ import { ApiService, CheckDefinition } from '../../services/api.service';
         <header class="page-heading">
             <div>
                 <h1>Lista de control</h1>
-                <p>Pasos que recibe cada proyecto nuevo.</p>
+                <p>Pasos de control de todos los proyectos.</p>
             </div>
         </header>
 
@@ -50,7 +51,7 @@ import { ApiService, CheckDefinition } from '../../services/api.service';
 
             @if (loading()) { <p>Cargando lista...</p> }
             @else if (!steps().length) {
-                <p class="empty">Todavía no hay pasos. Los proyectos nuevos se crearán con la lista vacía.</p>
+                <p class="empty">Todavía no hay pasos.</p>
             }
 
             <ol class="steps">
@@ -278,7 +279,7 @@ export class ListaControlComponent {
     }
 
     remove(step: CheckDefinition): void {
-        if (!confirm(`Eliminar «${step.titulo}» de la lista maestra?\n\nLos proyectos que ya lo tienen lo conservan; solo dejará de copiarse a los proyectos nuevos.`)) return;
+        if (!confirm(`Eliminar «${step.titulo}» de la lista de control?\n\nDesaparece de todos los proyectos donde siga pendiente. Donde esté completado o tenga documentos se conserva como paso propio del proyecto.`)) return;
         this.run(this.api.deleteCheckDefinition(step.id), () => {
             this.steps.update(rows => rows.filter(r => r.id !== step.id));
         }, 'No se pudo eliminar el paso.');

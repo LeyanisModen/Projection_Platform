@@ -7,6 +7,7 @@ import { ProjectControlsComponent } from './project-controls.component';
 const check = (id: number, titulo: string, completado = false, origen: ProjectCheck['origen'] = 'PLANTILLA', extra: Partial<ProjectCheck> = {}): ProjectCheck => ({
     id, titulo, orden: id, origen, completado,
     requiere_fecha: false, requiere_documento: false, fecha_limite: null, adjuntos: [],
+    definicion: origen === 'PLANTILLA' ? id : null,
     dias_antes_montaje: null, bloquea_produccion: false, requisitos: [], requisitos_pendientes: [],
     completado_at: completado ? '2026-09-17T10:00:00Z' : null,
     completado_por: completado ? 'moden' : null,
@@ -231,15 +232,5 @@ describe('ProjectControlsComponent lista de control', () => {
         ] })]);
         expect(fixture.componentInstance.uploadingFor()).toBeNull();
         expect(fixture.componentInstance.checks()[0].adjuntos.length).toBe(1);
-    });
-
-    it('trae los pasos que faltan de la lista maestra e informa de cuántos', () => {
-        fixture.componentInstance.openList();
-        fixture.componentInstance.seedFromMaster();
-        const request = http.expectOne('/api/proyecto-checklist/7/sembrar/');
-        expect(request.request.method).toBe('POST');
-        request.flush({ creados: 2, checks: [check(1, 'A'), check(2, 'B'), check(5, 'C'), check(6, 'D')] });
-        expect(fixture.componentInstance.seedMessage()).toContain('2');
-        expect(fixture.componentInstance.checks().length).toBe(4);
     });
 });

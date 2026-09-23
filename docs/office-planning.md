@@ -13,14 +13,21 @@
 - Photo modals use the full viewport on narrow screens, with touch-sized controls
   below the image. Existing pinch/drag zoom remains available.
 - Project checklist (September 2026 redesign; no data existed before it):
-  the admin page "Lista de control" holds a master list of steps. Creating a
-  project copies the master steps into `ProyectoCheck` rows owned by that
-  project; from then on the project's list is independent (add project-only
-  steps, delete any step, "Traer los pasos de la lista maestra que falten"
-  re-copies missing ones by title). Editing or deleting master steps never
-  touches seeded projects. Completing a step records who and when; unmarking
-  clears both. The project detail shows a progress bar and opens the list in
-  a modal. Staff only.
+  the admin page "Lista de control" holds a master list of steps that every
+  project follows (2026-09-23; before that projects owned an independent
+  copy and a "Traer los pasos que falten" button re-copied by title). Each
+  project row is a `ProyectoCheck` linked to its definition
+  (`definicion` FK, backfilled by title in migration 0060). Creating,
+  editing or reordering a master step propagates to every project
+  (`propagar_definicion`): missing copies are created, existing ones follow
+  title, order, flags, deadline offset and blocking; pending copies with a
+  relative deadline get their date recomputed, completed ones are left
+  alone. Deleting a master step removes the pending copies without
+  documents; completed copies or copies with documents stay as project-only
+  steps (`origen=MANUAL`, `definicion=NULL`). Master titles are unique.
+  Projects can still add their own steps. Completing a step records who and
+  when; unmarking clears both. The project detail shows a progress bar and
+  opens the list in a modal. Staff only.
 - Each step declares what it needs, on the master list and on the project
   copy (`requiere_fecha`, `requiere_documento`): a due date (`fecha_limite`,
   shown in the admin calendar as a read-only "Control" item and in the day

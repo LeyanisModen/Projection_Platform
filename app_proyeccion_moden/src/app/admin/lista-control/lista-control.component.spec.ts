@@ -78,7 +78,7 @@ describe('ListaControlComponent', () => {
     it('elimina tras confirmar y avisa de que los proyectos ya sembrados lo conservan', () => {
         const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
         fixture.componentInstance.remove(fixture.componentInstance.steps()[0]);
-        expect(confirmSpy.mock.calls[0][0]).toContain('conservan');
+        expect(confirmSpy.mock.calls[0][0]).toContain('todos los proyectos');
         const request = http.expectOne('/api/check-definiciones/1/');
         expect(request.request.method).toBe('DELETE');
         request.flush(null);

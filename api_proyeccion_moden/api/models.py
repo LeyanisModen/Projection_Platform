@@ -366,9 +366,10 @@ class Modulo(models.Model):
 class ProyectoCheckDefinicion(models.Model):
     """Paso de la lista de control maestra (pantalla «Lista de control»).
 
-    Al crear un proyecto se copian estos pasos a ProyectoCheck. A partir de ahi
-    cada proyecto es dueno de su lista: cambiar o borrar aqui no toca los
-    proyectos ya sembrados.
+    Todos los proyectos la siguen: crear, editar, reordenar o borrar un paso
+    aqui se propaga a sus copias (ProyectoCheck.definicion) en cada proyecto.
+    Al borrar, las copias completadas o con documentos se conservan como pasos
+    propios del proyecto.
     """
     titulo = models.CharField(max_length=200)
     orden = models.PositiveIntegerField(default=0)
@@ -407,6 +408,11 @@ class ProyectoCheck(models.Model):
         MANUAL = 'MANUAL', 'Manual'
 
     proyecto = models.ForeignKey(Proyecto, on_delete=models.CASCADE, related_name='checks')
+    # Paso de la lista maestra del que es copia; vacio en los pasos propios del
+    # proyecto y en los que quedaron sueltos al borrar su definicion.
+    definicion = models.ForeignKey(
+        ProyectoCheckDefinicion, null=True, blank=True, on_delete=models.SET_NULL, related_name='copias',
+    )
     titulo = models.CharField(max_length=200)
     orden = models.PositiveIntegerField(default=0)
     origen = models.CharField(max_length=10, choices=Origen.choices, default=Origen.MANUAL)

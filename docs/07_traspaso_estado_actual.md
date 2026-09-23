@@ -162,7 +162,7 @@ Routers/API principales:
 - `/api/health/`.
 - Oficina (solo staff): `check-definiciones` (lista maestra, con `reorder/`),
   `proyecto-checklist/<id>/` (+ `checks/`, `checks/<id>/`,
-  `checks/<id>/adjuntos[/<id>]/`, `sembrar/`), `proyecto-checklist/vencimientos/`
+  `checks/<id>/adjuntos[/<id>]/`), `proyecto-checklist/vencimientos/`
   (fechas límite para el calendario), `trabajadores`, `eventos` (`api/office.py`).
 
 ### 3.4 Servicio local de los mini-PCs
