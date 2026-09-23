@@ -16,11 +16,15 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .filters select { max-width: 230px; }
 .calendar-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 20px; align-items: start; }
 .calendar-months { display: grid; gap: 16px; min-width: 0; align-items: start; }
-.multi-view .calendar-months { grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr)); }
-.multi-view .calendar-week { min-height: 86px; }
-.multi-view .day { padding: 4px; }
-.year-view { --day-header: 29px; --event-row: 26px; }
-.year-view .calendar-week { min-height: 44px; }
+.year-view .calendar-months { grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr)); }
+/* Trimestral: un mes debajo de otro, con el tamaño de la vista mensual. */
+.quarter-view .calendar-months { grid-template-columns: minmax(0, 1fr); }
+.year-view { --day-header: 29px; --event-row: 0px; }
+.year-view .calendar-week { min-height: 46px; }
+.year-view .day { padding: 4px; }
+.day-marks { position: absolute; left: 6px; right: 4px; bottom: 4px; display: flex; gap: 3px; align-items: center; }
+.day-marks span { width: 7px; height: 7px; border-radius: 50%; box-shadow: inset 0 0 0 1px #0002; }
+.day-marks .more { width: auto; height: auto; box-shadow: none; font-size: 10px; line-height: 1; color: var(--muted); }
 .year-view .weekday { padding: 8px 0; }
 .year-view .month-heading button { padding: 10px 12px; }
 .month-heading button { display: flex; justify-content: space-between; width: 100%; align-items: center; border: 0; border-radius: 0; padding: 13px 14px; text-align: left; font-weight: 600; text-transform: capitalize; background: #f8fafc; }

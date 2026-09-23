@@ -34,7 +34,7 @@
     </div>
 </section>
 @if (view()==='quarter') { <p class="view-hint">Mes de referencia y los dos siguientes. Las flechas desplazan la ventana un mes.</p> }
-@if (view()==='year') { <p class="view-hint">Enero a diciembre. Pulsa el nombre de un mes para verlo en detalle.</p> }
+@if (view()==='year') { <p class="view-hint">Cada marca es un evento, montaje o control; pulsa el día para verlo. Pulsa el nombre de un mes para verlo en detalle.</p> }
 <div class="team-legend" aria-label="Colores del equipo">
     @for (worker of legendWorkers(); track worker.id) {
         <button type="button" [class.active]="workerFilter()===worker.id" [attr.aria-pressed]="workerFilter()===worker.id"
@@ -44,7 +44,7 @@
     }
     <span class="legend-note">Pulsa una persona para filtrar · Fondos: vacaciones (si coinciden varias personas, se apilan sus colores) · Barras: eventos, montajes y fechas límite de control</span>
 </div>
-<div class="calendar-layout" [class.multi-view]="view()!=='month'" [class.year-view]="annualView()">
+<div class="calendar-layout" [class.multi-view]="view()!=='month'" [class.quarter-view]="view()==='quarter'" [class.year-view]="annualView()">
     <div class="calendar-months">
     @for (calendar of calendars(); track calendar.key) {
     <section class="month-grid" [attr.aria-label]="calendar.title" [attr.aria-busy]="loading()">
@@ -69,6 +69,11 @@
                             }</span>
                         }
                         <span class="day-number">{{ day.number }}</span>
+                        @if (day.marks.length) {
+                            <span class="day-marks" aria-hidden="true">@for (color of day.marks.slice(0, 4); track $index) {
+                                <span [style.background-color]="color"></span>
+                            }@if (day.marks.length > 4) { <span class="more">+</span> }</span>
+                        }
                     </button>
                     } @else { <span class="day outside empty-day" [style.grid-column]="column+1" aria-hidden="true"></span> }
                 }
