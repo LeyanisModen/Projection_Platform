@@ -12,7 +12,7 @@ from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
 from .models import (
-    EventoCalendario, Mesa, MesaQueueItem, Modulo, Proyecto,
+    EventoCalendario, GrupoMesas, Mesa, MesaQueueItem, Modulo, Proyecto,
     ProyectoCheckAdjunto, ProyectoCheckDefinicion, TrabajadorOficina, UserProfile,
 )
 from .office import CHECK_ATTACHMENT_MAX_BYTES
@@ -63,6 +63,12 @@ class OfficePlanningTests(APITestCase):
     def _rows(self, project):
         return self.client.get(f'/api/proyecto-checklist/{project.pk}/').data
 
+    def _definir(self, titulo, **fields):
+        """Paso de la lista maestra por la API: llega a todos los proyectos."""
+        response = self.client.post('/api/check-definiciones/', {'titulo': titulo, **fields}, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        return response.data
+
     def test_new_project_is_seeded_from_master_list_in_order(self):
         ProyectoCheckDefinicion.objects.create(titulo='Planos entregados', orden=2)
         ProyectoCheckDefinicion.objects.create(titulo='Aprobacion equivalencias', orden=1)
@@ -76,27 +82,67 @@ class OfficePlanningTests(APITestCase):
         self.assertEqual([r['titulo'] for r in rows], ['Aprobacion equivalencias', 'Planos entregados'])
         self.assertTrue(all(r['origen'] == 'PLANTILLA' and not r['completado'] for r in rows))
 
-    def test_master_list_changes_do_not_touch_seeded_projects(self):
-        definition = ProyectoCheckDefinicion.objects.create(titulo='Entrega')
-        self.assertEqual(self.client.post(f'/api/proyecto-checklist/{self.project.pk}/sembrar/').data['creados'], 1)
+    def test_master_list_changes_reach_every_project(self):
+        definition = self._definir('Entrega', requiere_documento=True)
+        for project in (self.project, self.project2, self.foreign_project):
+            rows = self._rows(project)
+            self.assertEqual([(r['titulo'], r['origen'], r['definicion']) for r in rows], [('Entrega', 'PLANTILLA', definition['id'])])
+            self.assertTrue(rows[0]['requiere_documento'])
 
-        self.assertEqual(self.client.patch(f'/api/check-definiciones/{definition.pk}/', {'titulo': 'Entrega final'}, format='json').status_code, 200)
-        self.assertEqual(self.client.delete(f'/api/check-definiciones/{definition.pk}/').status_code, 204)
+        self.assertEqual(self.client.patch(
+            f'/api/check-definiciones/{definition["id"]}/', {'titulo': 'Entrega final', 'requiere_documento': False}, format='json',
+        ).status_code, 200)
+        rows = self._rows(self.project2)
+        self.assertEqual(rows[0]['titulo'], 'Entrega final')
+        self.assertFalse(rows[0]['requiere_documento'])
 
-        self.assertEqual([r['titulo'] for r in self._rows(self.project)], ['Entrega'])
+        # Una copia completada sobrevive al borrado como paso propio del proyecto.
+        check_id = self._rows(self.project)[0]['id']
+        self.client.patch(f'/api/proyecto-checklist/{self.project.pk}/checks/{check_id}/', {'completado': True}, format='json')
+        self.assertEqual(self.client.delete(f'/api/check-definiciones/{definition["id"]}/').status_code, 204)
+        kept = self._rows(self.project)
+        self.assertEqual([(r['titulo'], r['origen'], r['definicion'], r['completado']) for r in kept], [('Entrega final', 'MANUAL', None, True)])
         self.assertEqual(self._rows(self.project2), [])
 
-    def test_sembrar_only_adds_missing_steps_and_appends_at_the_end(self):
-        ProyectoCheckDefinicion.objects.create(titulo='Planos', orden=1)
+    def test_master_titles_are_unique_and_project_steps_follow_master_order(self):
+        self._definir('Planos')
         self.client.post(f'/api/proyecto-checklist/{self.project.pk}/checks/', {'titulo': 'Paso manual'}, format='json')
-        ProyectoCheckDefinicion.objects.create(titulo='  planos  ', orden=2)  # duplicado por titulo
-        ProyectoCheckDefinicion.objects.create(titulo='Acta', orden=3)
+        acta = self._definir('Acta')
+        self.assertEqual(self.client.post('/api/check-definiciones/', {'titulo': '  planos  '}, format='json').status_code, 400)
+        self.assertEqual([r['titulo'] for r in self._rows(self.project)], ['Planos', 'Paso manual', 'Acta'])
 
-        response = self.client.post(f'/api/proyecto-checklist/{self.project.pk}/sembrar/')
-        self.assertEqual(response.data['creados'], 2)
-        self.assertEqual([r['titulo'] for r in response.data['checks']], ['Paso manual', 'Planos', 'Acta'])
+        planos_id = [d['id'] for d in self.client.get('/api/check-definiciones/').data if d['titulo'] == 'Planos'][0]
+        self.client.post('/api/check-definiciones/reorder/', {'ids': [acta['id'], planos_id]}, format='json')
+        # Las copias siguen el orden de la maestra; los pasos propios del proyecto van detras.
+        self.assertEqual([r['titulo'] for r in self._rows(self.project)], ['Acta', 'Planos', 'Paso manual'])
+        self.assertEqual([r['titulo'] for r in self._rows(self.project2)], ['Acta', 'Planos'])
 
-        self.assertEqual(self.client.post(f'/api/proyecto-checklist/{self.project.pk}/sembrar/').data['creados'], 0)
+    def test_sync_command_aligns_old_copies_with_the_master_list(self):
+        from django.core.management import call_command
+        definicion = ProyectoCheckDefinicion.objects.create(titulo='Geometria', dias_antes_montaje=30, bloquea_produccion=True)
+        # Copia antigua: enlazada por la migracion pero sin la configuracion actual.
+        self.project.fecha_montaje = date(2026, 11, 20)
+        self.project.save()
+        self.project.checks.create(titulo='Geometria', origen='PLANTILLA', definicion=definicion)
+        call_command('sincronizar_checklist')
+        rows = {r['titulo']: r for r in self._rows(self.project)}
+        self.assertEqual(rows['Geometria']['fecha_limite'], '2026-10-21')
+        self.assertTrue(rows['Geometria']['bloquea_produccion'])
+        self.assertEqual([r['titulo'] for r in self._rows(self.project2)], ['Geometria'])
+
+    def test_deleting_a_master_step_keeps_copies_with_documents(self):
+        definition = self._definir('Planos', requiere_documento=True)
+        check_id = self._rows(self.project)[0]['id']
+        upload = SimpleUploadedFile('ok.pdf', b'%PDF-1.4 ok', content_type='application/pdf')
+        self.assertEqual(self.client.post(
+            f'/api/proyecto-checklist/{self.project.pk}/checks/{check_id}/adjuntos/', {'archivo': upload}, format='multipart',
+        ).status_code, 201)
+        self.assertEqual(self.client.delete(f'/api/check-definiciones/{definition["id"]}/').status_code, 204)
+        rows = self._rows(self.project)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['origen'], 'MANUAL')
+        self.assertEqual(len(rows[0]['adjuntos']), 1)
+        self.assertEqual(self._rows(self.project2), [])
 
     def test_manual_step_is_project_only_and_rejects_duplicates(self):
         url = f'/api/proyecto-checklist/{self.project.pk}/checks/'
@@ -111,8 +157,8 @@ class OfficePlanningTests(APITestCase):
         self.assertEqual(ProyectoCheckDefinicion.objects.count(), 0)
 
     def test_completing_records_who_and_when_and_unmarking_clears_them(self):
-        ProyectoCheckDefinicion.objects.create(titulo='Entrega')
-        check = self.client.post(f'/api/proyecto-checklist/{self.project.pk}/sembrar/').data['checks'][0]
+        self._definir('Entrega')
+        check = self._rows(self.project)[0]
         url = f'/api/proyecto-checklist/{self.project.pk}/checks/{check["id"]}/'
 
         done = self.client.patch(url, {'completado': True}, format='json')
@@ -157,15 +203,108 @@ class OfficePlanningTests(APITestCase):
     # Fechas limite y documentos de confirmacion por paso
     # ------------------------------------------------------------------
     def test_master_flags_are_copied_when_seeding(self):
-        ProyectoCheckDefinicion.objects.create(titulo='Aprobacion equivalencias', requiere_fecha=True, requiere_documento=True)
-        ProyectoCheckDefinicion.objects.create(titulo='Planos entregados')
-        rows = self.client.post(f'/api/proyecto-checklist/{self.project.pk}/sembrar/').data['checks']
+        self._definir('Aprobacion equivalencias', requiere_fecha=True, requiere_documento=True)
+        self._definir('Planos entregados')
+        rows = self._rows(self.project)
         by_title = {r['titulo']: r for r in rows}
         self.assertTrue(by_title['Aprobacion equivalencias']['requiere_fecha'])
         self.assertTrue(by_title['Aprobacion equivalencias']['requiere_documento'])
         self.assertFalse(by_title['Planos entregados']['requiere_fecha'])
         self.assertIsNone(by_title['Aprobacion equivalencias']['fecha_limite'])
         self.assertEqual(by_title['Aprobacion equivalencias']['adjuntos'], [])
+
+    # ------------------------------------------------------------------
+    # Plazos relativos a D, requisitos entre pasos y bloqueo de produccion
+    # ------------------------------------------------------------------
+    def test_relative_deadline_is_computed_from_mounting_date_when_seeding(self):
+        with_date = Proyecto.objects.create(nombre='Con D', usuario=self.factory, fecha_montaje=date(2026, 11, 20))
+        without_date = Proyecto.objects.create(nombre='Sin D', usuario=self.factory)
+        self._definir('Geometria y armados', dias_antes_montaje=30)
+        self._definir('Sin plazo', requiere_fecha=True)
+        rows = {r['titulo']: r for r in self._rows(with_date)}
+        self.assertEqual(rows['Geometria y armados']['fecha_limite'], '2026-10-21')
+        self.assertEqual(rows['Geometria y armados']['dias_antes_montaje'], 30)
+        self.assertTrue(rows['Geometria y armados']['requiere_fecha'])
+        self.assertIsNone(rows['Sin plazo']['fecha_limite'])
+        rows = {r['titulo']: r for r in self._rows(without_date)}
+        self.assertIsNone(rows['Geometria y armados']['fecha_limite'])
+
+    def test_master_relative_deadline_forces_date_flag(self):
+        row = self.client.post('/api/check-definiciones/', {'titulo': 'Equivalencias', 'dias_antes_montaje': 21}).data
+        self.assertTrue(row['requiere_fecha'])
+        self.assertEqual(row['dias_antes_montaje'], 21)
+
+    def test_changing_mounting_date_recalculates_pending_relative_steps_only(self):
+        self.project.fecha_montaje = date(2026, 11, 20)
+        self.project.save()
+        self._definir('Geometria', dias_antes_montaje=30)
+        self._definir('Equivalencias', dias_antes_montaje=21)
+        self._definir('Manual', requiere_fecha=True)
+        rows = {r['titulo']: r for r in self._rows(self.project)}
+        self.client.patch(f'/api/proyecto-checklist/{self.project.pk}/checks/{rows["Geometria"]["id"]}/', {'completado': True})
+        self.client.patch(f'/api/proyecto-checklist/{self.project.pk}/checks/{rows["Manual"]["id"]}/', {'fecha_limite': '2026-10-01'})
+
+        self.client.patch(f'/api/proyectos/{self.project.pk}/', {'fecha_montaje': '2026-12-04'})
+
+        rows = {r['titulo']: r for r in self._rows(self.project)}
+        self.assertEqual(rows['Equivalencias']['fecha_limite'], '2026-11-13')
+        self.assertEqual(rows['Geometria']['fecha_limite'], '2026-10-21', 'completed steps keep their date')
+        self.assertEqual(rows['Manual']['fecha_limite'], '2026-10-01', 'hand-set dates are not touched')
+
+        self.client.patch(f'/api/proyectos/{self.project.pk}/', {'fecha_montaje': None}, format='json')
+        rows = {r['titulo']: r for r in self._rows(self.project)}
+        self.assertIsNone(rows['Equivalencias']['fecha_limite'])
+
+    def test_step_cannot_be_completed_before_its_prerequisites(self):
+        geometria = self._definir('Geometria')
+        self._definir('Ingenieria definitiva', requisitos=[geometria['id']])
+        rows = {r['titulo']: r for r in self._rows(self.project)}
+        self.assertEqual(rows['Ingenieria definitiva']['requisitos'], [rows['Geometria']['id']])
+        self.assertEqual(rows['Ingenieria definitiva']['requisitos_pendientes'], ['Geometria'])
+
+        url = f'/api/proyecto-checklist/{self.project.pk}/checks/{rows["Ingenieria definitiva"]["id"]}/'
+        response = self.client.patch(url, {'completado': True})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('Geometria', response.data['completado'])
+
+        self.client.patch(f'/api/proyecto-checklist/{self.project.pk}/checks/{rows["Geometria"]["id"]}/', {'completado': True})
+        response = self.client.patch(url, {'completado': True})
+        self.assertEqual(response.status_code, 200)
+        rows = {r['titulo']: r for r in response.data}
+        self.assertTrue(rows['Ingenieria definitiva']['completado'])
+        self.assertEqual(rows['Ingenieria definitiva']['requisitos_pendientes'], [])
+
+    def test_master_step_cannot_require_itself(self):
+        step = ProyectoCheckDefinicion.objects.create(titulo='Solo')
+        response = self.client.patch(f'/api/check-definiciones/{step.pk}/', {'requisitos': [step.pk]}, format='json')
+        self.assertEqual(response.status_code, 400)
+
+    def test_blocking_steps_keep_project_out_of_production(self):
+        self._definir('Geometria', bloquea_produccion=True)
+        self._definir('Fotos', bloquea_produccion=False)
+        self.create_module()
+
+        listed = {p['id']: p for p in self.client.get('/api/proyectos/').data['results']}
+        self.assertTrue(listed[self.project.pk]['produccion_bloqueada'])
+        self.assertEqual(listed[self.project.pk]['checks_bloqueantes_pendientes'], 1)
+        self.assertTrue(listed[self.project2.pk]['produccion_bloqueada'], 'la lista maestra llega a todos los proyectos')
+
+        grupo = GrupoMesas.objects.create(nombre='G', usuario=self.factory)
+        self.client.force_authenticate(self.factory)
+        response = self.client.post(f'/api/grupos-mesas/{grupo.pk}/cola/add/', {'proyecto': self.project.pk})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('Geometria', response.data['detail'])
+
+        self.client.force_authenticate(self.admin)
+        rows = {r['titulo']: r for r in self._rows(self.project)}
+        self.client.patch(f'/api/proyecto-checklist/{self.project.pk}/checks/{rows["Geometria"]["id"]}/', {'completado': True})
+        self.client.force_authenticate(self.factory)
+        response = self.client.post(f'/api/grupos-mesas/{grupo.pk}/cola/add/', {'proyecto': self.project.pk})
+        self.assertEqual(response.status_code, 200, response.data)
+        self.client.force_authenticate(self.admin)
+        listed = {p['id']: p for p in self.client.get('/api/proyectos/').data['results']}
+        self.assertFalse(listed[self.project.pk]['produccion_bloqueada'])
+        self.assertTrue(listed[self.project2.pk]['produccion_bloqueada'], 'cada proyecto completa lo suyo')
 
     def test_manual_step_can_declare_date_and_document_and_set_deadline(self):
         response = self.client.post(
@@ -250,7 +389,6 @@ class OfficePlanningTests(APITestCase):
         self.assertEqual(self.client.post('/api/eventos/', {}).status_code, 403)
         self.assertEqual(self.client.post('/api/check-definiciones/', {'titulo': 'No'}).status_code, 403)
         self.assertEqual(self.client.post(f'/api/proyecto-checklist/{self.project.pk}/checks/', {'titulo': 'No'}).status_code, 403)
-        self.assertEqual(self.client.post(f'/api/proyecto-checklist/{self.project.pk}/sembrar/').status_code, 403)
 
     def test_vacations_require_worker_and_valid_range(self):
         data = {'titulo': 'Vacaciones', 'tipo': 'VACACIONES', 'inicio': '2026-09-10', 'fin': '2026-09-12'}

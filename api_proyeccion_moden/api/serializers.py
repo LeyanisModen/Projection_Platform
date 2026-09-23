@@ -238,6 +238,8 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
     # detalle sin una peticion extra.
     checks_total = serializers.SerializerMethodField()
     checks_completados = serializers.SerializerMethodField()
+    checks_bloqueantes_pendientes = serializers.SerializerMethodField()
+    produccion_bloqueada = serializers.SerializerMethodField()
     datos_tecnicos_archivo = serializers.SerializerMethodField()
     bastidor_longitud_cm = serializers.SerializerMethodField()
     # Rolling-deploy compatibility for an older frontend still in service.
@@ -259,6 +261,7 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
             "capacidad_diaria_usuario",
             "grupos_count", "modulos_count", "modulos_completados",
             "modulos_completados_hoy", "checks_total", "checks_completados",
+            "checks_bloqueantes_pendientes", "produccion_bloqueada",
         ]
         extra_kwargs = {
             'usuario': {'required': False, 'allow_null': True},
@@ -346,6 +349,15 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
     def get_checks_completados(self, obj):
         cached = getattr(obj, '_checks_completados', None)
         return cached if cached is not None else obj.checks.filter(completado=True).count()
+
+    def get_checks_bloqueantes_pendientes(self, obj):
+        cached = getattr(obj, '_checks_bloqueantes_pendientes', None)
+        if cached is not None:
+            return cached
+        return obj.checks.filter(bloquea_produccion=True, completado=False).count()
+
+    def get_produccion_bloqueada(self, obj):
+        return self.get_checks_bloqueantes_pendientes(obj) > 0
 
     def get_modulos_completados_hoy(self, obj):
         from django.utils import timezone

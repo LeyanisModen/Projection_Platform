@@ -2,6 +2,8 @@ from decimal import Decimal, InvalidOperation
 from datetime import time
 
 from django.core.validators import MinValueValidator, RegexValidator
+from datetime import timedelta
+
 from django.db import models
 from django.contrib.auth.models import User
 
@@ -364,9 +366,10 @@ class Modulo(models.Model):
 class ProyectoCheckDefinicion(models.Model):
     """Paso de la lista de control maestra (pantalla «Lista de control»).
 
-    Al crear un proyecto se copian estos pasos a ProyectoCheck. A partir de ahi
-    cada proyecto es dueno de su lista: cambiar o borrar aqui no toca los
-    proyectos ya sembrados.
+    Todos los proyectos la siguen: crear, editar, reordenar o borrar un paso
+    aqui se propaga a sus copias (ProyectoCheck.definicion) en cada proyecto.
+    Al borrar, las copias completadas o con documentos se conservan como pasos
+    propios del proyecto.
     """
     titulo = models.CharField(max_length=200)
     orden = models.PositiveIntegerField(default=0)
@@ -375,6 +378,16 @@ class ProyectoCheckDefinicion(models.Model):
     # proyecto al sembrar; alli deciden que controles muestra cada fila.
     requiere_fecha = models.BooleanField(default=False)
     requiere_documento = models.BooleanField(default=False)
+    # Plazo relativo al dia de montaje (D): la fecha limite del proyecto se
+    # calcula como fecha_montaje - dias. Vacio = la fecha se pone a mano.
+    dias_antes_montaje = models.PositiveIntegerField(null=True, blank=True)
+    # Sin este paso completado el proyecto no se puede meter en produccion
+    # (no se ofrece en «Gestionar» del dashboard del cliente).
+    bloquea_produccion = models.BooleanField(default=False)
+    # Pasos que deben estar completados antes de poder marcar este.
+    requisitos = models.ManyToManyField(
+        'self', symmetrical=False, blank=True, related_name='dependientes',
+    )
 
     class Meta:
         ordering = ['orden', 'id']
@@ -395,12 +408,25 @@ class ProyectoCheck(models.Model):
         MANUAL = 'MANUAL', 'Manual'
 
     proyecto = models.ForeignKey(Proyecto, on_delete=models.CASCADE, related_name='checks')
+    # Paso de la lista maestra del que es copia; vacio en los pasos propios del
+    # proyecto y en los que quedaron sueltos al borrar su definicion.
+    definicion = models.ForeignKey(
+        ProyectoCheckDefinicion, null=True, blank=True, on_delete=models.SET_NULL, related_name='copias',
+    )
     titulo = models.CharField(max_length=200)
     orden = models.PositiveIntegerField(default=0)
     origen = models.CharField(max_length=10, choices=Origen.choices, default=Origen.MANUAL)
     requiere_fecha = models.BooleanField(default=False)
     requiere_documento = models.BooleanField(default=False)
     fecha_limite = models.DateField(null=True, blank=True)
+    # Copiados de la plantilla al sembrar. Con dias_antes_montaje la fecha
+    # limite se recalcula al cambiar la fecha de montaje mientras el paso
+    # siga pendiente.
+    dias_antes_montaje = models.PositiveIntegerField(null=True, blank=True)
+    bloquea_produccion = models.BooleanField(default=False)
+    requisitos = models.ManyToManyField(
+        'self', symmetrical=False, blank=True, related_name='dependientes',
+    )
     completado = models.BooleanField(default=False)
     # Quien confirmo el paso y cuando. Se vacian al desmarcarlo.
     completado_at = models.DateTimeField(null=True, blank=True)
@@ -418,6 +444,12 @@ class ProyectoCheck(models.Model):
 
     def __str__(self):
         return f'{self.proyecto_id}: {self.titulo}'
+
+    @staticmethod
+    def fecha_limite_para(fecha_montaje, dias_antes_montaje):
+        if fecha_montaje is None or dias_antes_montaje is None:
+            return None
+        return fecha_montaje - timedelta(days=dias_antes_montaje)
 
 
 class ProyectoCheckAdjunto(models.Model):

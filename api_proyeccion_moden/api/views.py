@@ -1319,6 +1319,11 @@ class ProyectoViewSet(viewsets.ModelViewSet):
             _checks_completados=Count(
                 'checks', filter=Q(checks__completado=True), distinct=True,
             ),
+            _checks_bloqueantes_pendientes=Count(
+                'checks',
+                filter=Q(checks__bloquea_produccion=True, checks__completado=False),
+                distinct=True,
+            ),
         )
 
     def get_queryset(self):
@@ -1356,6 +1361,7 @@ class ProyectoViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         instance = serializer.instance
+        fecha_montaje_anterior = instance.fecha_montaje
         if 'usuario' in serializer.validated_data:
             new_user = serializer.validated_data['usuario']
             new_user_id = getattr(new_user, 'id', None)
@@ -1408,6 +1414,10 @@ class ProyectoViewSet(viewsets.ModelViewSet):
                 replaced_files.append(current_file.name)
 
         serializer.save()
+        if serializer.instance.fecha_montaje != fecha_montaje_anterior:
+            # Plazos relativos a D: los pasos pendientes siguen a la fecha nueva.
+            from api.office import recalcular_fechas_checklist
+            recalcular_fechas_checklist(serializer.instance)
         if replaced_files:
             transaction.on_commit(
                 lambda: delete_unreferenced_storage_files(replaced_files),
@@ -3977,6 +3987,18 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         if not has_pending and proyecto.modulos.exists():
             return Response(
                 {'detail': 'Este proyecto no tiene modulos pendientes (todos fabricados o cerrados).'},
+                status=400,
+            )
+
+        # Validaciones previas (geometria, equivalencias...): sin ellas el
+        # proyecto no entra en produccion. El dashboard no lo ofrece; esto
+        # cubre llamadas directas.
+        from api.office import checks_bloqueantes_pendientes
+        bloqueantes = checks_bloqueantes_pendientes(proyecto)
+        if bloqueantes:
+            return Response(
+                {'detail': 'Este proyecto no puede entrar en produccion hasta completar: '
+                           + ', '.join(bloqueantes) + '.'},
                 status=400,
             )
 

@@ -110,18 +110,26 @@ export class CalendarioComponent {
     });
     readonly calendars = computed(() => {
         const compact = this.view() !== 'month';
+        // Annual view: no bars, only a colored mark per item so every month
+        // keeps the same height; the day agenda shows the detail.
+        const annual = this.annualView();
+        const items = this.calendarItems();
         const workers = this.workers().filter(worker => this.workerFilter() === null || this.workerFilter() === worker.id);
         return this.visibleMonths().map(month => ({
             key: localDate(month), month,
             title: month.toLocaleDateString('es-ES', {month: 'long', year: 'numeric'}),
-            weeks: calendarWeeks(monthDays(month, compact), this.calendarItems(), compact)
+            weeks: calendarWeeks(monthDays(month, compact), annual ? [] : items, compact)
                 .map(week => ({...week, days: week.days.map(day => {
                     const dayEvents = day.current || !compact ? this.eventsOn(day.key) : [];
                     const vacations = dayEvents.filter(event => event.tipo === 'VACACIONES');
                     const ids = new Set(vacations.flatMap(event => event.trabajadores));
                     const vacationWorkers = workers.filter(worker => ids.has(worker.id));
+                    const marks = annual && day.current
+                        ? items.filter(item => item.start <= day.key && item.end >= day.key)
+                            .map(item => item.colors.length === 1 ? item.colors[0] : '#64748b')
+                        : [];
                     return {
-                        ...day, vacationWorkers,
+                        ...day, vacationWorkers, marks,
                         vacationLabel: vacationWorkers.length ? `Vacaciones de ${this.namesOf(vacationWorkers)}` : 'Sin vacaciones',
                         eventCount: dayEvents.length - vacations.length + this.mountsOn(day.key).length + this.deadlinesOn(day.key).length,
                     };

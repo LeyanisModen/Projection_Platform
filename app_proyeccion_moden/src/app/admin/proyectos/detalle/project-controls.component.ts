@@ -50,6 +50,10 @@ import { ApiService, Proyecto, ProjectCheck, ProjectCheckAttachment } from '../.
                     <strong class="progress-label">{{ completed() }} / {{ checks().length }}</strong>
                 </div>
                 @if (nextPending(); as next) { <p class="next-step">Siguiente: {{ next.titulo }}</p> }
+                @if (blocking().length) {
+                    <p class="blocked" role="status"><i class="fa fa-lock" aria-hidden="true"></i>
+                        Sin producción hasta completar: {{ blockingTitles() }}</p>
+                }
             }
             <button type="button" class="secondary" [disabled]="loadingChecks()" (click)="openList()">Ver lista de control</button>
             @if (checkError() && !listOpen()) { <p role="alert" class="urgent">{{ checkError() }}</p> }
@@ -75,13 +79,22 @@ import { ApiService, Proyecto, ProjectCheck, ProjectCheckAttachment } from '../.
 
                     <ol class="check-list">
                         @for (check of checks(); track check.id) {
-                            <li class="check-row" [class.is-done]="check.completado" [class.is-overdue]="isOverdue(check)">
+                            <li class="check-row" [class.is-done]="check.completado" [class.is-overdue]="isOverdue(check)"
+                                [class.is-waiting]="isWaiting(check)">
                                 <input type="checkbox" [id]="'check-' + check.id" [checked]="check.completado"
-                                    [disabled]="busyCheck() !== null" (change)="toggleCheck(check, $event)" />
+                                    [disabled]="busyCheck() !== null || isWaiting(check)" (change)="toggleCheck(check, $event)"
+                                    [title]="isWaiting(check) ? 'Antes: ' + check.requisitos_pendientes.join(', ') : ''" />
                                 <div class="check-body">
                                     <label [for]="'check-' + check.id">
-                                        <span class="check-title">{{ check.titulo }}</span>
+                                        <span class="check-title">{{ check.titulo }}
+                                            @if (check.bloquea_produccion) {
+                                                <i class="fa fa-lock lock-icon" title="Bloquea producción" aria-label="Bloquea producción"></i>
+                                            }
+                                        </span>
                                         @if (check.origen === 'MANUAL') { <span class="origin">añadido en este proyecto</span> }
+                                        @if (isWaiting(check)) {
+                                            <small class="waiting"><i class="fa fa-link" aria-hidden="true"></i> Antes: {{ check.requisitos_pendientes.join(', ') }}</small>
+                                        }
                                         @if (check.completado && check.completado_at) {
                                             <small>{{ check.completado_at | date:'dd/MM/yy HH:mm' }}@if (check.completado_por) { · {{ check.completado_por }}}</small>
                                         }
@@ -93,7 +106,10 @@ import { ApiService, Proyecto, ProjectCheck, ProjectCheckAttachment } from '../.
                                             <input type="date" [id]="'deadline-' + check.id" [value]="check.fecha_limite || ''"
                                                 [disabled]="busyCheck() !== null" (change)="setDeadline(check, $event)" />
                                             @if (!check.completado && isOverdue(check)) { <span class="warn">Vencido</span> }
-                                            @else if (!check.completado && !check.fecha_limite) { <span class="hint">Sin fecha</span> }
+                                            @else if (!check.completado && !check.fecha_limite) {
+                                                <span class="hint">{{ check.dias_antes_montaje !== null ? 'D−' + check.dias_antes_montaje + ' · sin fecha de montaje' : 'Sin fecha' }}</span>
+                                            }
+                                            @else if (check.dias_antes_montaje !== null) { <span class="hint">D−{{ check.dias_antes_montaje }}</span> }
                                         </div>
                                     }
 
@@ -143,12 +159,6 @@ import { ApiService, Proyecto, ProjectCheck, ProjectCheckAttachment } from '../.
                         </div>
                     </form>
 
-                    <footer class="checklist-footer">
-                        <button type="button" class="text-button" [disabled]="busyCheck() !== null" (click)="seedFromMaster()">
-                            Traer los pasos de la lista maestra que falten
-                        </button>
-                        @if (seedMessage()) { <span role="status">{{ seedMessage() }}</span> }
-                    </footer>
                     @if (checkError()) { <p role="alert" class="urgent">{{ checkError() }}</p> }
                 </div>
             </div>
@@ -167,6 +177,9 @@ import { ApiService, Proyecto, ProjectCheck, ProjectCheckAttachment } from '../.
         .progress{flex:1 1 auto;height:10px;background:#edf0f4;border-radius:999px;overflow:hidden}
         .progress-fill{height:100%;background:#ef6815;border-radius:999px;transition:width .25s ease}.progress-fill.done{background:#2f9e5b}
         .progress-label{font-size:14px;white-space:nowrap}.next-step{margin:8px 0 0}
+        .blocked{margin:8px 0 0;color:#b3341a;font-weight:600}.blocked i{margin-right:4px}
+        .lock-icon{margin-left:6px;color:#c2570e;font-size:12px}
+        .check-row.is-waiting>input[type=checkbox]{cursor:not-allowed}.waiting{color:#67758a}.waiting i{margin-right:3px}
         .checklist-backdrop{position:fixed;inset:0;background:rgba(20,28,40,.45);display:grid;place-items:center;padding:16px;z-index:1000}
         .checklist-dialog{background:#fff;border-radius:12px;width:min(640px,100%);max-height:calc(100vh - 32px);overflow:auto;padding:20px;box-shadow:0 20px 50px rgba(0,0,0,.25);color:#243446}
         .checklist-header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px}.checklist-header h3{margin:0 0 4px}.checklist-header p{margin:0}
@@ -210,10 +223,11 @@ export class ProjectControlsComponent {
     readonly newRequiereDocumento = signal(false);
     readonly uploadingFor = signal<number | null>(null);
     readonly listOpen = signal(false);
-    readonly seedMessage = signal('');
     readonly completed = computed(() => this.checks().filter(c => c.completado).length);
     readonly percent = computed(() => this.checks().length ? Math.round(this.completed() / this.checks().length * 100) : 0);
     readonly nextPending = computed(() => this.checks().find(c => !c.completado) ?? null);
+    readonly blocking = computed(() => this.checks().filter(c => c.bloquea_produccion && !c.completado));
+    readonly blockingTitles = computed(() => this.blocking().map(c => c.titulo).join(', '));
     constructor() {
         effect(() => {
             const project = this.project();
@@ -237,7 +251,7 @@ export class ProjectControlsComponent {
             error: () => { this.saving.set(false); this.deadlineMessage.set('No se pudo guardar el plazo.'); },
         });
     }
-    openList(): void { this.checkError.set(''); this.seedMessage.set(''); this.listOpen.set(true); }
+    openList(): void { this.checkError.set(''); this.listOpen.set(true); }
     closeList(): void { this.listOpen.set(false); }
 
     private mutate(request: Observable<ProjectCheck[]>, busyId: number, message: string, after?: () => void): void {
@@ -248,9 +262,14 @@ export class ProjectControlsComponent {
             error: () => { this.checkError.set(message); this.busyCheck.set(null); this.uploadingFor.set(null); },
         });
     }
+    /** Pendiente de otros pasos: no se puede marcar hasta que estén completos. */
+    isWaiting(check: ProjectCheck): boolean {
+        return !check.completado && check.requisitos_pendientes.length > 0;
+    }
     toggleCheck(check: ProjectCheck, event: Event): void {
         const input = event.target as HTMLInputElement;
         input.checked = check.completado;
+        if (this.isWaiting(check)) return;
         this.mutate(
             this.api.updateProjectCheck(this.project().id, check.id, { completado: !check.completado }),
             check.id, 'No se pudo guardar el paso.',
@@ -298,16 +317,5 @@ export class ProjectControlsComponent {
         const detail = check.completado ? ' Se perderá la marca de completado.' : '';
         if (!confirm(`Eliminar «${check.titulo}» de este proyecto?${detail}`)) return;
         this.mutate(this.api.deleteProjectCheck(this.project().id, check.id), check.id, 'No se pudo eliminar el paso.');
-    }
-    seedFromMaster(): void {
-        if (this.busyCheck() !== null) return;
-        this.busyCheck.set(-2); this.checkError.set(''); this.seedMessage.set('');
-        this.api.seedProjectChecklist(this.project().id).subscribe({
-            next: result => {
-                this.checks.set(result.checks); this.busyCheck.set(null);
-                this.seedMessage.set(result.creados ? `${result.creados} paso(s) añadido(s).` : 'Este proyecto ya tiene todos los pasos de la lista maestra.');
-            },
-            error: () => { this.checkError.set('No se pudo traer la lista maestra.'); this.busyCheck.set(null); },
-        });
     }
 }

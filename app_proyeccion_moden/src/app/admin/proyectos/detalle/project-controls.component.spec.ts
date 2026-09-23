@@ -7,6 +7,8 @@ import { ProjectControlsComponent } from './project-controls.component';
 const check = (id: number, titulo: string, completado = false, origen: ProjectCheck['origen'] = 'PLANTILLA', extra: Partial<ProjectCheck> = {}): ProjectCheck => ({
     id, titulo, orden: id, origen, completado,
     requiere_fecha: false, requiere_documento: false, fecha_limite: null, adjuntos: [],
+    definicion: origen === 'PLANTILLA' ? id : null,
+    dias_antes_montaje: null, bloquea_produccion: false, requisitos: [], requisitos_pendientes: [],
     completado_at: completado ? '2026-09-17T10:00:00Z' : null,
     completado_por: completado ? 'moden' : null,
     creado_at: '2026-09-01T00:00:00Z',
@@ -140,6 +142,26 @@ describe('ProjectControlsComponent lista de control', () => {
         expect(fixture.componentInstance.percent()).toBe(67);
     });
 
+    it('avisa de los pasos que bloquean producción y no deja marcar los que esperan a otros', () => {
+        fixture.componentInstance.checks.set([
+            check(1, 'Geometría y armados', false, 'PLANTILLA', { bloquea_produccion: true, dias_antes_montaje: 30, requiere_fecha: true }),
+            check(2, 'Ingeniería definitiva', false, 'PLANTILLA', { requisitos: [1], requisitos_pendientes: ['Geometría y armados'] }),
+        ]);
+        fixture.detectChanges();
+        const element: HTMLElement = fixture.nativeElement;
+        expect(element.querySelector('.blocked')?.textContent).toContain('Geometría y armados');
+
+        fixture.componentInstance.openList();
+        fixture.detectChanges();
+        expect(element.querySelectorAll('.lock-icon').length).toBe(1);
+        expect(element.querySelector('.check-date .hint')?.textContent).toContain('D−30');
+        const waiting = element.querySelector('#check-2') as HTMLInputElement;
+        expect(waiting.disabled).toBe(true);
+        expect(element.querySelector('.check-row.is-waiting .waiting')?.textContent).toContain('Geometría y armados');
+        waiting.click();
+        http.expectNone('/api/proyecto-checklist/7/checks/2/');
+    });
+
     it('añade un paso propio del proyecto y vacía el campo', () => {
         fixture.componentInstance.openList();
         fixture.componentInstance.newTitle.set('  Grúa contratada ');
@@ -210,15 +232,5 @@ describe('ProjectControlsComponent lista de control', () => {
         ] })]);
         expect(fixture.componentInstance.uploadingFor()).toBeNull();
         expect(fixture.componentInstance.checks()[0].adjuntos.length).toBe(1);
-    });
-
-    it('trae los pasos que faltan de la lista maestra e informa de cuántos', () => {
-        fixture.componentInstance.openList();
-        fixture.componentInstance.seedFromMaster();
-        const request = http.expectOne('/api/proyecto-checklist/7/sembrar/');
-        expect(request.request.method).toBe('POST');
-        request.flush({ creados: 2, checks: [check(1, 'A'), check(2, 'B'), check(5, 'C'), check(6, 'D')] });
-        expect(fixture.componentInstance.seedMessage()).toContain('2');
-        expect(fixture.componentInstance.checks().length).toBe(4);
     });
 });

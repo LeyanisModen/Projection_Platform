@@ -900,6 +900,15 @@
                                 Añadir
                             </button>
                         </div>
+                        @if (proyectosBloqueados(gestionandoGrupo); as bloqueados) {
+                            @if (bloqueados.length) {
+                                <p class="gestionar-empty gestionar-bloqueados">
+                                    <i class="fa fa-lock" aria-hidden="true"></i>
+                                    Pendiente de validación con Moden:
+                                    @for (p of bloqueados; track p.id) { {{ p.nombre }}@if (!$last) {, } }
+                                </p>
+                            }
+                        }
 
                         @if (gestionandoGrupo.proyectos_cola.length === 0) {
                             <p class="gestionar-empty">No hay proyectos en cola. Añade uno arriba.</p>

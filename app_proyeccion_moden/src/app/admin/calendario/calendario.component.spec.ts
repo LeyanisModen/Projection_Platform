@@ -158,6 +158,8 @@ describe('CalendarioComponent', () => {
         component.setView('quarter');
         finishLoad('2026-09-01', '2026-11-30');
         expect(fixture.nativeElement.querySelectorAll('.month-grid').length).toBe(3);
+        expect(fixture.nativeElement.querySelector('.calendar-layout.quarter-view')).not.toBeNull();
+        expect(fixture.nativeElement.querySelectorAll('.event-bar').length).toBeGreaterThan(0);
         expect(component.calendars().map(c => c.key)).toEqual(['2026-09-01','2026-10-01','2026-11-01']);
         expect(fixture.nativeElement.querySelectorAll('button.day.outside').length).toBe(0);
         component.changeMonth(1);
@@ -172,6 +174,10 @@ describe('CalendarioComponent', () => {
         finishLoad('2026-01-01', '2026-12-31');
         expect(fixture.nativeElement.querySelectorAll('.month-grid').length).toBe(12);
         expect(fixture.nativeElement.querySelectorAll('button.day').length).toBe(365);
+        // Annual view: marks instead of bars, so every month keeps the same height.
+        expect(fixture.nativeElement.querySelectorAll('.event-bar').length).toBe(0);
+        expect(fixture.nativeElement.querySelectorAll('.day-marks').length).toBeGreaterThan(0);
+        expect(fixture.nativeElement.querySelector('.calendar-layout.year-view')).not.toBeNull();
         component.changeMonth(1);
         finishLoad('2027-01-01', '2027-12-31');
         expect(component.title()).toBe('2027');

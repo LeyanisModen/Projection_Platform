@@ -13,14 +13,23 @@
 - Photo modals use the full viewport on narrow screens, with touch-sized controls
   below the image. Existing pinch/drag zoom remains available.
 - Project checklist (September 2026 redesign; no data existed before it):
-  the admin page "Lista de control" holds a master list of steps. Creating a
-  project copies the master steps into `ProyectoCheck` rows owned by that
-  project; from then on the project's list is independent (add project-only
-  steps, delete any step, "Traer los pasos de la lista maestra que falten"
-  re-copies missing ones by title). Editing or deleting master steps never
-  touches seeded projects. Completing a step records who and when; unmarking
-  clears both. The project detail shows a progress bar and opens the list in
-  a modal. Staff only.
+  the admin page "Lista de control" holds a master list of steps that every
+  project follows (2026-09-23; before that projects owned an independent
+  copy and a "Traer los pasos que falten" button re-copied by title). Each
+  project row is a `ProyectoCheck` linked to its definition
+  (`definicion` FK, backfilled by title in migration 0060). Creating,
+  editing or reordering a master step propagates to every project
+  (`propagar_definicion`): missing copies are created, existing ones follow
+  title, order, flags, deadline offset and blocking; pending copies with a
+  relative deadline get their date recomputed, completed ones are left
+  alone. Deleting a master step removes the pending copies without
+  documents; completed copies or copies with documents stay as project-only
+  steps (`origen=MANUAL`, `definicion=NULL`). Master titles are unique.
+  After deploying migration 0060 run `python manage.py sincronizar_checklist`
+  once: the migration links old copies by title but does not update them.
+  Projects can still add their own steps. Completing a step records who and
+  when; unmarking clears both. The project detail shows a progress bar and
+  opens the list in a modal. Staff only.
 - Each step declares what it needs, on the master list and on the project
   copy (`requiere_fecha`, `requiere_documento`): a due date (`fecha_limite`,
   shown in the admin calendar as a read-only "Control" item and in the day
@@ -30,6 +39,25 @@
   `/media/`; a paired mini-PC can only read `imagenes/` and `fotos/`).
   Clearing `requiere_fecha` clears the due date. Completing a step that
   requires a document without one is allowed but flagged in the list.
+- Validation gates (2026-09-22, from the office's "D-day" process; D is the
+  mounting date `fecha_montaje`):
+  - `dias_antes_montaje` on a master step (implies `requiere_fecha`) makes the
+    project copy compute `fecha_limite = D - days` when seeding, and
+    `recalcular_fechas_checklist` recomputes it whenever D changes, only for
+    steps that are still pending and carry a relative deadline (completed
+    steps and hand-set dates are left alone; no D means no date). Shown as
+    `D−30` in the master list and the project modal.
+  - `requisitos` (M2M on the definition, copied by title to the project) are
+    prerequisites: PATCH `completado=true` is refused with the pending titles
+    until they are done, and the modal disables the checkbox with the same
+    hint. `requisitos_pendientes` comes in every project row.
+  - `bloquea_produccion` marks validations the client must have before
+    fabricating (geometry, equivalences, technical justifications). While
+    any is pending, `Proyecto.produccion_bloqueada` is true: the client
+    dashboard leaves the project out of the "Gestionar" add-to-queue list
+    (with a "Pendiente de validación con Moden" note) and `cola/add` answers
+    400 naming the missing steps, so a direct call cannot bypass it. The
+    admin project card shows "Sin producción hasta completar: ...".
 - Admin Calendar shows project events, mounting dates and office vacations.
   Office workers are independent of login accounts. Events use inclusive date
   ranges (whole days). Availability means no recorded vacation or assigned event for that day,

@@ -70,9 +70,17 @@ export interface ProjectCheckAttachment {
 export interface ProjectCheck {
     id: number; titulo: string; orden: number;
     origen: 'PLANTILLA' | 'MANUAL';
+    /** Paso de la lista maestra del que es copia (null en los propios del proyecto). */
+    definicion: number | null;
     /** Qué necesita el paso; decide qué controles muestra su fila. */
     requiere_fecha: boolean; requiere_documento: boolean;
     fecha_limite: string | null;
+    /** Plazo relativo al montaje (D − días); la fecha se recalcula si cambia D. */
+    dias_antes_montaje: number | null;
+    /** Sin este paso el proyecto no entra en producción (no se ofrece en Gestionar). */
+    bloquea_produccion: boolean;
+    /** Ids de los pasos que deben completarse antes; títulos de los que aún faltan. */
+    requisitos: number[]; requisitos_pendientes: string[];
     completado: boolean;
     completado_at: string | null; completado_por: string | null;
     creado_at: string;
@@ -82,6 +90,9 @@ export interface ProjectCheck {
 export interface CheckDefinition {
     id: number; titulo: string; orden: number;
     requiere_fecha: boolean; requiere_documento: boolean;
+    dias_antes_montaje: number | null;
+    bloquea_produccion: boolean;
+    requisitos: number[];
 }
 /** Paso con fecha límite, tal como lo consume el calendario. */
 export interface CheckDeadline {
@@ -117,6 +128,9 @@ export interface Proyecto {
     modulos_completados_hoy?: number;
     checks_total?: number;
     checks_completados?: number;
+    checks_bloqueantes_pendientes?: number;
+    /** Validaciones bloqueantes sin completar: el cliente no puede fabricarlo aún. */
+    produccion_bloqueada?: boolean;
 }
 
 export interface GrupoBastidorModulo {
@@ -570,10 +584,6 @@ export class ApiService {
     }
     deleteProjectCheck(projectId: number, id: number): Observable<ProjectCheck[]> {
         return this.http.delete<ProjectCheck[]>(`${this.baseUrl}/proyecto-checklist/${projectId}/checks/${id}/`, { headers: this.getHeaders() });
-    }
-    /** Copia al proyecto los pasos de la lista maestra que aún no tiene. */
-    seedProjectChecklist(projectId: number): Observable<{ creados: number; checks: ProjectCheck[] }> {
-        return this.http.post<{ creados: number; checks: ProjectCheck[] }>(`${this.baseUrl}/proyecto-checklist/${projectId}/sembrar/`, {}, { headers: this.getHeaders() });
     }
     uploadProjectCheckAttachment(projectId: number, checkId: number, file: File): Observable<ProjectCheck[]> {
         const form = new FormData();
