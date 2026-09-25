@@ -1,8 +1,8 @@
-<div class="container" *ngIf="proyecto">
+<div class="page page-wide" *ngIf="proyecto">
 
     <div class="page-header d-flex justify-content-between align-items-center">
         <div class="header-content d-flex align-items-center" style="gap: 0.75rem;">
-            <a routerLink="/admin-dashboard/proyectos" class="btn btn-secondary btn-sm">← Volver</a>
+            <a routerLink="/admin-dashboard/proyectos" class="back-link" aria-label="Volver a proyectos"><i class="fa fa-arrow-left" aria-hidden="true"></i></a>
             <div class="project-title-wrap" *ngIf="!editingProjectName; else editProjectNameTpl">
                 <h1 class="project-title mb-0">{{ proyecto.nombre }}</h1>
                 <button
@@ -61,9 +61,8 @@
         <div class="col-md-4">
             <app-project-controls [project]="proyecto" (saved)="onProjectControlsSaved($event)" />
 
-            <div class="ferralla-selector mb-3 p-3 bg-white rounded border"
-                style="box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
-                <label class="d-block mb-1">Ferralla asignada:</label>
+            <div class="side-panel ferralla-selector">
+                <span class="section-label">Ferralla</span>
                 <div class="custom-dropdown" (click)="dropdownOpen = !dropdownOpen">
 
                     <span class="custom-dropdown-value">{{ getSelectedFerrallaLabel() }}</span>
@@ -98,9 +97,9 @@
                 </div>
             </div>
 
-            <div class="project-config-card project-logistics-card mb-3 p-3 bg-white rounded border">
+            <div class="side-panel project-config-card project-logistics-card">
                 <div class="project-config-header">
-                    <label class="d-block mb-1">Límites de transporte</label>
+                    <span class="section-label">Límites de transporte</span>
                 </div>
                 <div class="project-logistics-row">
                     <span class="logistics-label">Longitud útil del bastidor</span>
@@ -136,13 +135,13 @@
                 </small>
             </div>
 
-            <div class="project-config-card mb-3 p-3 bg-white rounded border">
+            <div class="side-panel project-config-card">
                 <div class="project-config-header">
                     <div>
-                        <label class="d-block mb-1">
-                            Datos técnicos del proyecto
-                            <i *ngIf="proyecto.datos_tecnicos_importados" class="fa fa-check-circle text-success ml-1" title="Datos técnicos importados"></i>
-                        </label>
+                        <span class="section-label">
+                            Datos técnicos
+                            <i *ngIf="proyecto.datos_tecnicos_importados" class="fa fa-check-circle is-ok ml-1" title="Datos técnicos importados"></i>
+                        </span>
                         <small class="text-muted" *ngIf="!proyecto.datos_tecnicos_importados">Admite JSON, CSV o SQLite (.db).</small>
                         <small class="text-muted d-block" *ngIf="proyecto.datos_tecnicos_archivo">
                             Base vigente: {{ proyecto.datos_tecnicos_archivo }}
@@ -156,7 +155,7 @@
                     <input #technicalDataInput type="file" accept=".json,.csv,.db,.sqlite,.sqlite3" hidden (change)="onTechnicalDataSelected($event)">
                     <button
                         type="button"
-                        class="btn btn-sm btn-import-modules"
+                        class="btn btn-sm"
                         (click)="triggerTechnicalDataUpload(technicalDataInput)"
                         [disabled]="technicalImporting">
                         {{ technicalImporting ? 'Importando...' : (proyecto.datos_tecnicos_importados ? 'Actualizar base técnica' : 'Importar datos técnicos') }}
@@ -177,31 +176,27 @@
             </div>
 
             <!-- Archivos del proyecto -->
-            <div class="project-config-card mb-3 p-3 bg-white rounded border">
+            <div class="side-panel project-config-card">
                 <div class="project-config-header d-flex justify-content-between align-items-start">
                     <div>
-                        <label class="d-block mb-1">Archivos del proyecto</label>
+                        <span class="section-label">Archivos</span>
                     </div>
-                    <button type="button" class="btn btn-sm btn-edit-icon p-0"
+                    <button type="button" class="btn-icon"
                         (click)="openProjectFilesModal()"
-                        title="Editar archivos del proyecto">
+                        title="Editar archivos del proyecto" aria-label="Editar archivos del proyecto">
                         <i class="fa fa-pencil" aria-hidden="true"></i>
                     </button>
                 </div>
                 <ul class="archivo-proyecto-list mt-2">
                     <li>
                         <strong>Plano:</strong>
-                        <span *ngIf="proyecto.plano_archivo" class="text-success">
-                            <i class="fa fa-check"></i> cargado
-                        </span>
-                        <span *ngIf="!proyecto.plano_archivo" class="text-muted">sin cargar</span>
+                        <span *ngIf="proyecto.plano_archivo" class="is-ok"><i class="fa fa-check" aria-hidden="true"></i> cargado</span>
+                        <span *ngIf="!proyecto.plano_archivo" class="meta">sin cargar</span>
                     </li>
                     <li>
                         <strong>Documentos:</strong>
-                        <span *ngIf="proyecto.documentos_archivo" class="text-success">
-                            <i class="fa fa-check"></i> cargada
-                        </span>
-                        <span *ngIf="!proyecto.documentos_archivo" class="text-muted">sin cargar</span>
+                        <span *ngIf="proyecto.documentos_archivo" class="is-ok"><i class="fa fa-check" aria-hidden="true"></i> cargados</span>
+                        <span *ngIf="!proyecto.documentos_archivo" class="meta">sin cargar</span>
                     </li>
                 </ul>
             </div>
@@ -214,11 +209,11 @@
 
         <div class="col-md-8">
 
-            <div class="card h-100" *ngIf="modulos.length > 0; else noProjectModules">
+            <div class="modules-panel" *ngIf="modulos.length > 0; else noProjectModules">
 
-                <div class="card-header d-flex justify-content-between align-items-center flex-wrap" style="gap: 0.75rem;">
+                <div class="modules-header">
                     <div class="modules-title">
-                        <h3 class="mb-0">Módulos del Proyecto</h3>
+                        <h3 class="mb-0">Módulos</h3>
                         <button type="button" class="add-modules-btn" (click)="importModulesFromFolder()"
                             [disabled]="importing" [class.is-busy]="importing"
                             title="Importar módulos desde una carpeta"
@@ -277,12 +272,12 @@
                     </div>
                 </div>
 
-                <div class="card-body">
+                <div class="modules-body">
 
                     <!-- Si no hay grupos calculados, pedir datos técnicos -->
-                    <div *ngIf="grupos.length === 0" class="alert alert-warning text-center">
-                        <strong>Los grupos aún no están calculados.</strong>
-                        <p class="mb-0 mt-2">Importa los datos técnicos (fichero .db, .csv o .json) desde el panel izquierdo para agrupar los módulos por bastidor.</p>
+                    <div *ngIf="grupos.length === 0" class="panel-note">
+                        <strong>Los bastidores aún no están calculados.</strong>
+                        <span>Importa los datos técnicos desde el panel izquierdo para agrupar los módulos.</span>
                     </div>
 
                     <!-- Vista por grupos con drag&drop entre bastidores y de bastidores -->
@@ -519,8 +514,7 @@
             </div>
 
             <ng-template #noProjectModules>
-                <div
-                    class="card h-100 d-flex align-items-center justify-content-center p-5 text-muted bg-light border-dashed">
+                <div class="modules-empty">
                     <button type="button" class="add-modules-btn is-large" (click)="importModulesFromFolder()"
                         [disabled]="importing" [class.is-busy]="importing"
                         aria-label="Importar módulos desde una carpeta">
@@ -528,8 +522,8 @@
                         <span *ngIf="importing" class="spinner" aria-hidden="true"></span>
                     </button>
                     <h3 class="mt-3">Aún no hay módulos</h3>
-                    <p *ngIf="!importing">Pulsa <strong>+</strong> para elegir la carpeta del proyecto y los módulos que quieres cargar.</p>
-                    <p *ngIf="importing" class="text-primary">{{ importProgress }}</p>
+                    <p class="meta" *ngIf="!importing">Elige la carpeta del proyecto para cargarlos.</p>
+                    <p class="meta" *ngIf="importing">{{ importProgress }}</p>
                 </div>
             </ng-template>
 
