@@ -79,6 +79,9 @@ export class CalendarioComponent {
         (this.projectFilter() === null || e.proyecto === this.projectFilter()) &&
         (this.workerFilter() === null || e.trabajadores.includes(this.workerFilter()!)),
     ));
+    /** Panel de filtros plegado: los filtros son la excepcion, no lo habitual. */
+    readonly filtersOpen = signal(false);
+    readonly filtersActive = computed(() => this.projectFilter() !== null || this.workerFilter() !== null);
     readonly legendWorkers = computed(() => this.workers().filter(worker =>
         worker.activo || this.filteredEvents().some(event => event.trabajadores.includes(worker.id)),
     ));
@@ -214,6 +217,7 @@ export class CalendarioComponent {
         }
     }
     openTeam(): void { this.editWorker(); this.teamOpen.set(true); }
+    clearFilters(): void { this.projectFilter.set(null); this.workerFilter.set(null); }
     editWorker(worker?: OfficeWorker): void {
         this.workerId = worker?.id ?? null;
         this.workerName = worker?.nombre ?? '';

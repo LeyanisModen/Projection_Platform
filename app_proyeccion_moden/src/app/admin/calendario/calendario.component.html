@@ -1,46 +1,49 @@
 <header class="page-heading">
-    <div><h1>Calendario</h1></div>
-    <div class="actions">
-        <button type="button" (click)="printCalendar()" [disabled]="loading() || !!error()">Imprimir / PDF</button>
-        <button type="button" (click)="openTeam()">Gestionar equipo</button>
-        <button type="button" class="primary" (click)="editEvent()">Añadir evento</button>
-    </div>
+    <h1>Calendario</h1>
 </header>
 <div class="print-heading"><h1>Calendario · {{ title() }}</h1><p>{{ printFilters() }}</p></div>
 @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
 <section class="calendar-toolbar">
-    <div class="month-nav">
+    <!-- Mes y vista juntos: una sola pieza para moverse por el calendario. -->
+    <div class="calendar-controls">
         <button type="button" class="nav-arrow" (click)="changeMonth(-1)" [disabled]="loading()" [attr.aria-label]="annualView() ? 'Año anterior' : 'Mes anterior'"><i class="fa fa-chevron-left" aria-hidden="true"></i></button>
         <h2>{{ title() }}</h2>
         <button type="button" class="nav-arrow" (click)="changeMonth(1)" [disabled]="loading()" [attr.aria-label]="annualView() ? 'Año siguiente' : 'Mes siguiente'"><i class="fa fa-chevron-right" aria-hidden="true"></i></button>
-        <button type="button" (click)="goToday()" [disabled]="loading()">Hoy</button>
+        <button type="button" class="today" (click)="goToday()" [disabled]="loading()">Hoy</button>
+        <span class="controls-divider" aria-hidden="true"></span>
+        <div class="view-switch" role="group" aria-label="Vista del calendario">
+            @for (option of viewOptions; track option.value) {
+                <button type="button" [class.active]="view()===option.value" [attr.aria-pressed]="view()===option.value"
+                    [disabled]="loading()" (click)="setView(option.value)">{{ option.label }}</button>
+            }
+        </div>
     </div>
-    <div class="view-switch" role="group" aria-label="Vista del calendario">
-        @for (option of viewOptions; track option.value) {
-            <button type="button" [class.active]="view()===option.value" [attr.aria-pressed]="view()===option.value"
-                [disabled]="loading()" (click)="setView(option.value)">{{ option.label }}</button>
-        }
-    </div>
-    <div class="filters">
-        <select aria-label="Filtrar por proyecto" [ngModel]="projectFilter()" (ngModelChange)="projectFilter.set($event)">
-            <option [ngValue]="null">Todos los proyectos</option>
-            @for (project of projects(); track project.id) { <option [ngValue]="project.id">{{ project.nombre }}</option> }
-        </select>
-        <select aria-label="Filtrar por persona" [ngModel]="workerFilter()" (ngModelChange)="workerFilter.set($event)">
-            <option [ngValue]="null">Todo el equipo</option>
-            @for (worker of workers(); track worker.id) { <option [ngValue]="worker.id">{{ worker.nombre }}</option> }
-        </select>
-        <button type="button" (click)="load()" [disabled]="loading()">{{ loading() ? 'Cargando...' : 'Actualizar' }}</button>
+    <div class="toolbar-actions">
+        <button type="button" class="icon-button" [class.active]="filtersOpen()" [class.has-filters]="filtersActive()"
+            (click)="filtersOpen.set(!filtersOpen())" [attr.aria-expanded]="filtersOpen()" aria-controls="calendar-filters"
+            title="Filtros" aria-label="Filtros"><i class="fa fa-bars" aria-hidden="true"></i></button>
+        <button type="button" class="icon-button" (click)="openTeam()" title="Gestionar equipo" aria-label="Gestionar equipo"><i class="fa fa-users" aria-hidden="true"></i></button>
+        <button type="button" class="primary" (click)="editEvent()"><i class="fa fa-plus" aria-hidden="true"></i> Evento</button>
     </div>
 </section>
-<div class="team-legend" aria-label="Colores del equipo">
-    @for (worker of legendWorkers(); track worker.id) {
-        <button type="button" [class.active]="workerFilter()===worker.id" [attr.aria-pressed]="workerFilter()===worker.id"
-            (click)="workerFilter.set(workerFilter()===worker.id ? null : worker.id)">
-            <span class="color-dot" [style.background-color]="colorOf(worker)" aria-hidden="true"></span>{{ worker.nombre }}
-        </button>
-    }
-</div>
+@if (filtersOpen()) {
+<section class="filters-panel" id="calendar-filters" aria-label="Filtros del calendario">
+    <select aria-label="Filtrar por proyecto" [ngModel]="projectFilter()" (ngModelChange)="projectFilter.set($event)">
+        <option [ngValue]="null">Todos los proyectos</option>
+        @for (project of projects(); track project.id) { <option [ngValue]="project.id">{{ project.nombre }}</option> }
+    </select>
+    <div class="team-legend" aria-label="Filtrar por persona">
+        @for (worker of legendWorkers(); track worker.id) {
+            <button type="button" [class.active]="workerFilter()===worker.id" [attr.aria-pressed]="workerFilter()===worker.id"
+                (click)="workerFilter.set(workerFilter()===worker.id ? null : worker.id)">
+                <span class="color-dot" [style.background-color]="colorOf(worker)" aria-hidden="true"></span>{{ worker.nombre }}
+            </button>
+        }
+    </div>
+    @if (filtersActive()) { <button type="button" class="link-button" (click)="clearFilters()">Quitar filtros</button> }
+    <button type="button" class="icon-button refresh" (click)="load()" [disabled]="loading()" title="Actualizar" aria-label="Actualizar"><i class="fa fa-refresh" [class.fa-spin]="loading()" aria-hidden="true"></i></button>
+</section>
+}
 <div class="calendar-layout" [class.multi-view]="view()!=='month'" [class.quarter-view]="view()==='quarter'" [class.year-view]="annualView()">
     <div class="calendar-months">
     @for (calendar of calendars(); track calendar.key) {
@@ -228,3 +231,6 @@
         </section>
     </div>
 }
+<button type="button" class="print-fab" (click)="printCalendar()" [disabled]="loading() || !!error()" title="Imprimir / PDF" aria-label="Imprimir / PDF">
+    <i class="fa fa-print" aria-hidden="true"></i>
+</button>

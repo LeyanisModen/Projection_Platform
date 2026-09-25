@@ -21,18 +21,41 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .primary { background: var(--accent); color: #fff; border-color: var(--accent); }
 .primary:hover:not(:disabled) { background: var(--accent-dark); border-color: var(--accent-dark); }
-.actions, .month-nav, .filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.month-nav h2 { min-width: 200px; text-align: center; text-transform: capitalize; }
-.nav-arrow { width: 36px; padding: 0; color: var(--muted); }
-.nav-arrow:hover:not(:disabled) { color: var(--ink); }
-.filters select { max-width: 230px; }
+.actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.calendar-toolbar { margin-bottom: 14px; }
 
-.view-switch { display: inline-flex; padding: 3px; gap: 2px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); }
-.view-switch button { height: 30px; padding: 0 12px; border-color: transparent; color: var(--muted); }
-.view-switch button:hover:not(:disabled) { color: var(--ink); background: var(--surface-2); }
+/* Mes + vista en una sola pieza. */
+.calendar-controls { display: inline-flex; align-items: center; gap: 2px; padding: 3px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); }
+.calendar-controls button { height: 30px; border-color: transparent; color: var(--muted); }
+.calendar-controls button:hover:not(:disabled) { color: var(--ink); background: var(--surface-2); }
+.calendar-controls h2 { min-width: 190px; font-size: 15px; text-align: center; text-transform: capitalize; }
+.nav-arrow { width: 30px; padding: 0; }
+.today { padding: 0 10px; }
+.controls-divider { width: 1px; height: 20px; margin: 0 4px; background: var(--line-strong); }
+.view-switch { display: inline-flex; gap: 2px; }
+.view-switch button { padding: 0 12px; }
 .view-switch button.active { color: #fff; background: var(--ink); }
 
-.team-legend { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: -4px 0 16px; }
+.toolbar-actions { display: flex; align-items: center; gap: 6px; }
+.icon-button { position: relative; width: 36px; padding: 0; color: var(--muted); }
+.icon-button:hover:not(:disabled), .icon-button.active { color: var(--ink); }
+.icon-button.active { background: var(--surface-2); border-color: var(--ink); }
+.icon-button.has-filters::after { content: ''; position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.toolbar-actions .primary { padding: 0 14px; }
+.toolbar-actions .primary i { margin-right: 4px; font-size: 11px; }
+
+/* Filtros: solo cuando se piden. */
+.filters-panel { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: -4px 0 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); }
+.filters-panel select { max-width: 240px; }
+.link-button { height: 30px; padding: 0 8px; border-color: transparent; color: var(--muted); text-decoration: underline; text-underline-offset: 2px; }
+.link-button:hover:not(:disabled) { background: transparent; color: var(--ink); }
+.filters-panel .refresh { margin-left: auto; width: 32px; height: 32px; }
+
+/* Imprimir: flotante, fuera del camino. */
+.print-fab { position: fixed; left: 20px; bottom: 20px; z-index: 30; width: 44px; height: 44px; padding: 0; border-radius: 50%; color: var(--muted); background: var(--surface); border: 1px solid var(--line-strong); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08); }
+.print-fab:hover:not(:disabled) { color: var(--ink); background: var(--surface); border-color: var(--ink); }
+
+.team-legend { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .team-legend button { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 10px; border-radius: 999px; color: var(--text); }
 .team-legend button.active { color: var(--ink); border-color: var(--ink); background: var(--surface-2); }
 .color-dot { display: inline-block; width: 10px; height: 10px; flex: 0 0 10px; border-radius: 50%; box-shadow: inset 0 0 0 1px #0002; }
@@ -178,15 +201,18 @@ legend { color: var(--muted); font-size: 12px; font-weight: 500; }
     button { min-height: 42px; }
     .worker-row { flex-wrap: wrap; }
     .worker-name { flex-basis: 100%; }
-    .month-nav { gap: 5px; }
-    .month-nav h2 { min-width: 0; max-width: 185px; font-size: 15px; }
+    .calendar-controls { flex-wrap: wrap; width: 100%; }
+    .calendar-controls h2 { min-width: 0; flex: 1 1 auto; font-size: 14px; }
+    .controls-divider { display: none; }
+    .view-switch { width: 100%; display: grid; grid-template-columns: 1fr 1fr 1fr; }
+    .toolbar-actions { width: 100%; justify-content: flex-end; }
     .year-view { --event-row: 32px; }
-    .view-switch { display: grid; grid-template-columns: 1fr 1fr 1fr; width: 100%; }
+    .print-fab { left: 12px; bottom: 12px; }
 }
 @media print {
     :host { color: #111; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
     .calendar-layout { --event-row: auto; }
-    .page-heading, .calendar-toolbar, .day-agenda, .overlay { display: none !important; }
+    .page-heading, .calendar-toolbar, .filters-panel, .print-fab, .day-agenda, .overlay { display: none !important; }
     .print-heading { display: block; margin-bottom: 3mm; }
     .print-heading h1 { font-size: 16pt; }
     .print-heading p { font-size: 9pt; margin: 2mm 0; }
