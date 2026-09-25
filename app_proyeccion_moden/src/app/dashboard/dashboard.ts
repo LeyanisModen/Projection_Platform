@@ -37,7 +37,7 @@ interface Subfase {
   selector: 'app-dashboard',
   standalone: true,
   templateUrl: './dashboard.html',
-  styleUrls: ['./dashboard.css', './dashboard-responsive.css'],
+  styleUrls: ['../admin/admin-theme.css', './dashboard.css', './dashboard-responsive.css'],
   imports: [CommonModule, DragDropModule, FormsModule, ZoomableImageComponent]
 })
 export class Dashboard implements OnInit, OnDestroy {
