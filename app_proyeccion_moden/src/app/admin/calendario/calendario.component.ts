@@ -12,7 +12,7 @@ import { CalendarItem, CalendarSegment, CalendarView, calendarMonths, calendarRa
     selector: 'app-calendario',
     imports: [CommonModule, FormsModule, RouterLink, A11yModule],
     templateUrl: './calendario.component.html',
-    styleUrl: './calendario.component.css',
+    styleUrls: ['../admin-theme.css', './calendario.component.css'],
     changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class CalendarioComponent {

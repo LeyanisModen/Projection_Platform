@@ -1,5 +1,5 @@
 <header class="page-heading">
-    <div><h1>Calendario</h1><p>Montajes, eventos y disponibilidad de la oficina</p></div>
+    <div><h1>Calendario</h1></div>
     <div class="actions">
         <button type="button" (click)="printCalendar()" [disabled]="loading() || !!error()">Imprimir / PDF</button>
         <button type="button" (click)="openTeam()">Gestionar equipo</button>
@@ -10,9 +10,9 @@
 @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
 <section class="calendar-toolbar">
     <div class="month-nav">
-        <button type="button" (click)="changeMonth(-1)" [disabled]="loading()" [attr.aria-label]="annualView() ? 'Año anterior' : 'Mes anterior'">&lt;</button>
+        <button type="button" class="nav-arrow" (click)="changeMonth(-1)" [disabled]="loading()" [attr.aria-label]="annualView() ? 'Año anterior' : 'Mes anterior'"><i class="fa fa-chevron-left" aria-hidden="true"></i></button>
         <h2>{{ title() }}</h2>
-        <button type="button" (click)="changeMonth(1)" [disabled]="loading()" [attr.aria-label]="annualView() ? 'Año siguiente' : 'Mes siguiente'">&gt;</button>
+        <button type="button" class="nav-arrow" (click)="changeMonth(1)" [disabled]="loading()" [attr.aria-label]="annualView() ? 'Año siguiente' : 'Mes siguiente'"><i class="fa fa-chevron-right" aria-hidden="true"></i></button>
         <button type="button" (click)="goToday()" [disabled]="loading()">Hoy</button>
     </div>
     <div class="view-switch" role="group" aria-label="Vista del calendario">
@@ -33,8 +33,6 @@
         <button type="button" (click)="load()" [disabled]="loading()">{{ loading() ? 'Cargando...' : 'Actualizar' }}</button>
     </div>
 </section>
-@if (view()==='quarter') { <p class="view-hint">Mes de referencia y los dos siguientes. Las flechas desplazan la ventana un mes.</p> }
-@if (view()==='year') { <p class="view-hint">Cada marca es un evento, montaje o control; pulsa el día para verlo. Pulsa el nombre de un mes para verlo en detalle.</p> }
 <div class="team-legend" aria-label="Colores del equipo">
     @for (worker of legendWorkers(); track worker.id) {
         <button type="button" [class.active]="workerFilter()===worker.id" [attr.aria-pressed]="workerFilter()===worker.id"
@@ -42,7 +40,6 @@
             <span class="color-dot" [style.background-color]="colorOf(worker)" aria-hidden="true"></span>{{ worker.nombre }}
         </button>
     }
-    <span class="legend-note">Pulsa una persona para filtrar · Fondos: vacaciones (si coinciden varias personas, se apilan sus colores) · Barras: eventos, montajes y fechas límite de control</span>
 </div>
 <div class="calendar-layout" [class.multi-view]="view()!=='month'" [class.quarter-view]="view()==='quarter'" [class.year-view]="annualView()">
     <div class="calendar-months">
@@ -107,7 +104,6 @@
                 <div [class.absent]="worker.holiday || worker.away"><strong><i class="color-dot" [style.background-color]="colorOf(worker)" aria-hidden="true"></i>{{ worker.nombre }}</strong><span>{{ worker.holiday ? 'De vacaciones' : worker.away ? 'Fuera de la oficina' : 'Disponible' }}</span></div>
             } @empty { <p>Añade personas desde Gestionar equipo.</p> }
         </div>
-        <small>Según vacaciones y eventos asignados, durante todo el día. Los filtros no cambian la disponibilidad.</small>
         }
         <h3>Agenda del día</h3>
         @for (project of mountingProjects(); track project.id) {
