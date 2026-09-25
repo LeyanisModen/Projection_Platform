@@ -12,16 +12,18 @@
 .new-project-error { flex-basis: 100%; }
 
 /* Lista plana sobre el fondo: la ferralla es un separador, no una tarjeta. */
+/* Rotulo de seccion: pequeno y en mayusculas; los proyectos van indentados debajo. */
 .group-title {
     display: flex;
     align-items: baseline;
     gap: 10px;
-    padding: 22px 8px 8px;
-    border-bottom: 1px solid var(--line);
+    padding: 26px 8px 6px;
+    border-bottom: 1px solid var(--line-strong);
 }
 
-.group-title:first-child { padding-top: 4px; }
-.group-name { color: var(--ink); font-weight: 600; }
+.group-title:first-child { padding-top: 6px; }
+.group-name { color: var(--text); font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+.group-title .meta { font-size: 12px; }
 .group-demand { margin-left: auto; }
 .is-unassigned .group-name { color: var(--warn); }
 
@@ -29,7 +31,7 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 12px 8px;
+    padding: 12px 8px 12px 32px;
     border-bottom: 1px solid var(--line);
     border-radius: var(--radius-sm);
     cursor: pointer;
@@ -81,4 +83,5 @@
     .page { padding: 8px 12px 32px; }
     .group-title { flex-wrap: wrap; }
     .group-demand { flex-basis: 100%; margin-left: 0; }
+    .project-row { padding-left: 16px; }
 }
