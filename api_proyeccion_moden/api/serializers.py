@@ -411,6 +411,9 @@ class FaseModuloSerializer(serializers.Serializer):
 
 class GrupoBastidorSerializer(serializers.ModelSerializer):
     modulos = serializers.SerializerMethodField()
+    etiqueta = serializers.CharField(read_only=True)
+    es_division = serializers.BooleanField(read_only=True)
+    dividido = serializers.SerializerMethodField()
     longitud_total_cm = serializers.SerializerMethodField()
     capacidad_cm = serializers.SerializerMethodField()
     peso_total_kg = serializers.SerializerMethodField()
@@ -424,11 +427,21 @@ class GrupoBastidorSerializer(serializers.ModelSerializer):
         model = GrupoBastidor
         fields = [
             "id", "proyecto", "indice", "nombre", "created_at",
+            "sufijo", "dividido_de", "etiqueta", "es_division", "dividido",
             "modulos", "longitud_total_cm", "capacidad_cm",
             "peso_total_kg", "capacidad_peso_kg", "peso_desconocido",
             "overflow_longitud", "overflow_peso", "overflow",
         ]
-        read_only_fields = ["created_at", "proyecto"]
+        read_only_fields = ["created_at", "proyecto", "sufijo", "dividido_de"]
+
+    def get_dividido(self, obj):
+        """True en un bastidor raiz que tiene partes de fabricacion."""
+        if obj.dividido_de_id is not None:
+            return False
+        divisiones = getattr(obj, '_prefetched_objects_cache', {}).get('divisiones')
+        if divisiones is not None:
+            return len(divisiones) > 0
+        return obj.divisiones.exists()
 
     def _natural_key(self, nombre):
         import re as _re
@@ -707,6 +720,9 @@ class MesaQueueItemSerializer(serializers.ModelSerializer):
     grupo_bastidor_nombre = serializers.CharField(
         source='modulo.grupo_bastidor.nombre', read_only=True, default=''
     )
+    grupo_bastidor_sufijo = serializers.CharField(
+        source='modulo.grupo_bastidor.sufijo', read_only=True, default=''
+    )
     dificultad = serializers.SerializerMethodField()
     current_image_index = serializers.IntegerField(
         source='mesa.current_image_index', read_only=True
@@ -721,7 +737,7 @@ class MesaQueueItemSerializer(serializers.ModelSerializer):
             "modulo_proyecto_id", "modulo_proyecto_nombre",
             "fase", "imagen", "imagen_url",
             "position", "plan_group_index",
-            "grupo_bastidor_indice", "grupo_bastidor_nombre",
+            "grupo_bastidor_indice", "grupo_bastidor_nombre", "grupo_bastidor_sufijo",
             "status", "dificultad", "current_image_index", "imagenes_total",
             "assigned_by", "assigned_at",
             "done_by", "done_at"

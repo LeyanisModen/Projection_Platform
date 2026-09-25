@@ -145,10 +145,32 @@ class GrupoBastidor(models.Model):
     """
     Agrupacion fisica de modulos que comparten un bastidor de acopio.
     Una vez calculados son inmutables: un modulo reiniciado permanece en su grupo.
+
+    Un bastidor puede dividirse temporalmente en varias partes de fabricacion
+    (``dividido_de`` apunta a la raiz y ``sufijo`` las distingue: B, C...).
+    Las partes solo existen para repartir el trabajo entre mesas; comparten
+    el numero de bastidor real para almacenamiento y transporte.
     """
     id = models.AutoField(primary_key=True)
     proyecto = models.ForeignKey(Proyecto, on_delete=models.CASCADE, related_name='grupos_bastidor')
-    indice = models.PositiveIntegerField(help_text='Numero de grupo dentro del proyecto (1, 2, 3...).')
+    indice = models.PositiveIntegerField(
+        help_text='Numero de bastidor dentro del proyecto (1, 2, 3...). '
+                  'Las divisiones comparten el indice de su raiz.'
+    )
+    dividido_de = models.ForeignKey(
+        'self',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='divisiones',
+        help_text='Bastidor raiz del que esta parte es una division de fabricacion.',
+    )
+    sufijo = models.CharField(
+        max_length=2,
+        blank=True,
+        default='',
+        help_text='Letra de la division (B, C...). Vacio en el bastidor raiz.',
+    )
     nombre = models.CharField(
         max_length=120,
         blank=True,
@@ -166,16 +188,31 @@ class GrupoBastidor(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        if self.nombre:
-            return f"{self.proyecto.nombre} - {self.nombre}"
-        return f"{self.proyecto.nombre} - Grupo {self.indice}"
+        return f"{self.proyecto.nombre} - {self.etiqueta}"
+
+    @property
+    def es_division(self):
+        return self.dividido_de_id is not None
+
+    @property
+    def raiz(self):
+        """Bastidor real (el que se almacena y transporta)."""
+        return self.dividido_de if self.dividido_de_id else self
+
+    @property
+    def etiqueta(self):
+        """Nombre visible: 'Grupo 2', 'Grupo 2B' o el alias con su letra."""
+        base = self.nombre or f'Grupo {self.indice}'
+        if not self.sufijo:
+            return base
+        return f'{base} {self.sufijo}' if self.nombre else f'{base}{self.sufijo}'
 
     class Meta:
         db_table = 'api_grupo_bastidor'
-        ordering = ['proyecto', 'indice']
+        ordering = ['proyecto', 'indice', 'sufijo']
         constraints = [
             models.UniqueConstraint(
-                fields=['proyecto', 'indice'],
+                fields=['proyecto', 'indice', 'sufijo'],
                 name='unique_grupo_indice_per_proyecto'
             ),
         ]
@@ -222,6 +259,14 @@ class Modulo(models.Model):
             'Posicion del modulo dentro de su GrupoBastidor (1..N). '
             'Se respeta tanto en la visualizacion del admin como en la cola '
             'operativa. Se reindexa al mover/reordenar via drag-drop.'
+        ),
+    )
+    orden_intra_previo = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text=(
+            'Posicion que tenia en el bastidor raiz antes de dividirlo; '
+            'se usa para recomponer el orden al unir. Null si no esta dividido.'
         ),
     )
     
@@ -1170,6 +1215,14 @@ class MesaQueueItem(models.Model):
         null=True,
         blank=True,
         help_text='Indice de grupo de bastidor dentro de la planificacion automatica.'
+    )
+    resume_image_index = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text=(
+            'Imagen por la que iba esta fase cuando se aparto de la mesa; '
+            'al volver a mostrarse continua desde ahi.'
+        ),
     )
     status = models.CharField(
         max_length=20,

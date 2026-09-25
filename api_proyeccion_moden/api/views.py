@@ -47,12 +47,16 @@ from api.project_media import (
 from api.module_features import annotate_modules_with_sd
 from api.queue_sync import (
     EARLY_IMAGE_INDEX_LIMIT,
-    QueueRelocationError,
+    _ensure_project_in_group_queue,
+    activate_queue_item,
+    apply_queue_progress,
     capture_phase_assignment_hints,
+    capture_queue_progress,
+    module_fabrication_started_map,
     module_reorderability,
     module_reorderability_map,
-    reconcile_module_queue_after_bastidor_move,
     reconcile_superior_queue_for_group,
+    stash_showing_progress,
     reconcile_superior_queue_if_adaptive,
     register_superior_demand_for_mesa,
     sync_module_phases,
@@ -1120,51 +1124,38 @@ def _collect_anchored_item_ids_for_grupo(grupo):
     return anchored
 
 
-def _collect_bastidor_reorder_anchor_ids_for_grupo(grupo):
-    """Preserve all queued phases belonging to physically committed work.
+def _collect_replan_anchor_ids_for_grupo(grupo):
+    """Superior work that must survive a rebuild of the grupo's queues.
 
-    Reordering the project cards may rebuild the pending plan, but it must not
-    split or relocate a bastidor once any of its modules is no longer movable.
-    The existing photo/completion anchors are included as an additional guard.
+    Inferior work is never anchored: the plan carries it (the bastidor being
+    fabricated stays on its mesa and a displaced phase resumes on the image
+    it was on). Superior work keeps today's behaviour: a phase with photos
+    or past the setup images stays where it is, as long as its mesa is still
+    an active superior mesa.
     """
-    active_items = list(
-        MesaQueueItem.objects.filter(
+    modulos_sup_en_proceso = set(
+        FotoFabricacion.objects.filter(
             mesa__grupo=grupo,
-            status__in=ACTIVE_QUEUE_STATUSES,
-        ).select_related('mesa', 'modulo')
+            fase='SUPERIOR',
+        ).values_list('modulo_id', flat=True)
     )
-    if not active_items:
-        return set()
-
-    modules_by_id = {item.modulo_id: item.modulo for item in active_items}
-    reorderability = module_reorderability_map(modules_by_id.values())
-    existing_anchor_ids = _collect_anchored_item_ids_for_grupo(grupo)
-
-    locked_bastidor_ids = set()
-    locked_module_ids = set()
-    for modulo_id, modulo in modules_by_id.items():
-        movable, _ = reorderability.get(modulo_id, (False, None))
-        if not movable:
-            if modulo.grupo_bastidor_id is not None:
-                locked_bastidor_ids.add(modulo.grupo_bastidor_id)
-            else:
-                locked_module_ids.add(modulo_id)
-
-    # A legacy photo/completion anchor also commits its complete bastidor.
-    for item in active_items:
-        if item.id not in existing_anchor_ids:
+    anchored = set()
+    items = MesaQueueItem.objects.select_related('mesa').filter(
+        mesa__grupo=grupo,
+        fase='SUPERIOR',
+        status__in=ACTIVE_QUEUE_STATUSES,
+    )
+    for item in items:
+        if not item.mesa.activa or item.mesa.tipo != MesaTipo.SUPERIOR:
             continue
-        if item.modulo.grupo_bastidor_id is not None:
-            locked_bastidor_ids.add(item.modulo.grupo_bastidor_id)
-        else:
-            locked_module_ids.add(item.modulo_id)
-
-    return {
-        item.id
-        for item in active_items
-        if item.modulo.grupo_bastidor_id in locked_bastidor_ids
-        or item.modulo_id in locked_module_ids
-    }
+        if item.modulo_id in modulos_sup_en_proceso:
+            anchored.add(item.id)
+        elif (
+            item.status == MesaQueueStatus.MOSTRANDO
+            and item.mesa.current_image_index > EARLY_IMAGE_INDEX_LIMIT
+        ):
+            anchored.add(item.id)
+    return anchored
 
 
 def _distribute_superior_sequence(superior_sequence, num_superiores):
@@ -2202,11 +2193,11 @@ class ProyectoViewSet(viewsets.ModelViewSet):
             )
 
         project_modules = list(proyecto.modulos.all())
-        reorderability = module_reorderability_map(project_modules)
+        started = module_fabrication_started_map(project_modules)
         bloqueantes = [
             modulo.nombre
             for modulo in project_modules
-            if not reorderability[modulo.id][0]
+            if not started[modulo.id][0]
         ]
         if bloqueantes:
             return Response(
@@ -2839,9 +2830,15 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
     API endpoint para consultar, renombrar, mover modulos entre y reordenar
     los grupos de bastidor de un proyecto. Filtrar con ?proyecto=ID.
 
-    Acciones admin (drag-drop en el dashboard):
+    Moden define los bastidores (orden de acopio y transporte). La ferralla
+    dueña del proyecto puede ordenar bastidores, ordenar modulos dentro de
+    su bastidor y dividir o unir un bastidor para repartirlo entre sus
+    mesas; cambiar un modulo de bastidor sigue siendo solo de admin.
+
       - POST /grupos-bastidor/move-modulo/  -> {modulo_id, grupo_destino_id|null}
       - POST /grupos-bastidor/reorder/      -> {proyecto, orden: [grupo_id,...]}
+      - POST /grupos-bastidor/{id}/dividir/ -> una parte por mesa inferior activa
+      - POST /grupos-bastidor/{id}/unir/    -> recompone el bastidor raiz
     """
     queryset = _grupos_with_reorder_data(
         GrupoBastidor.objects.all()
@@ -2854,7 +2851,7 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = _grupos_with_reorder_data(
             GrupoBastidor.objects.all()
-        ).order_by('proyecto', 'indice')
+        ).order_by('proyecto', 'indice', 'sufijo', 'id')
         if not _is_admin(self.request.user):
             queryset = queryset.filter(proyecto__usuario=self.request.user)
         proyecto_id = self.request.query_params.get('proyecto', None)
@@ -2863,13 +2860,92 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
         return queryset
 
     @staticmethod
-    def _reindex_grupos(proyecto):
-        """Reasigna indices 1..N a los grupos del proyecto manteniendo el orden actual."""
-        grupos = list(proyecto.grupos_bastidor.order_by('indice', 'id'))
-        for i, g in enumerate(grupos, start=1):
-            if g.indice != i:
-                g.indice = i
-                g.save(update_fields=['indice'])
+    def _puede_gestionar(user, proyecto):
+        return _is_admin(user) or proyecto.usuario_id == user.id
+
+    @staticmethod
+    def _asignar_orden_raices(proyecto, orden_raices):
+        """Numera los bastidores raiz 1..N en el orden dado; cada division
+        hereda el indice de su raiz y se reletra B, C..."""
+        grupos = list(proyecto.grupos_bastidor.order_by('indice', 'sufijo', 'id'))
+        # Indices temporales para no chocar con la unique constraint.
+        for g in grupos:
+            GrupoBastidor.objects.filter(pk=g.pk).update(indice=10000 + g.pk)
+        for i, raiz_id in enumerate(orden_raices, start=1):
+            GrupoBastidor.objects.filter(pk=raiz_id).update(indice=i)
+            divisiones = sorted(
+                (g for g in grupos if g.dividido_de_id == raiz_id),
+                key=lambda g: (g.sufijo, g.id),
+            )
+            for j, division in enumerate(divisiones):
+                GrupoBastidor.objects.filter(pk=division.pk).update(
+                    indice=i,
+                    sufijo=chr(ord('B') + j),
+                )
+
+    @classmethod
+    def _reindex_grupos(cls, proyecto):
+        """Reasigna indices 1..N a los bastidores raiz manteniendo el orden actual."""
+        raices = list(
+            proyecto.grupos_bastidor.filter(dividido_de__isnull=True)
+            .order_by('indice', 'id')
+            .values_list('id', flat=True)
+        )
+        cls._asignar_orden_raices(proyecto, raices)
+
+    @staticmethod
+    def _grupos_respuesta(proyecto):
+        grupos = _grupos_with_reorder_data(
+            proyecto.grupos_bastidor.all()
+        ).order_by('indice', 'sufijo', 'id')
+        return GrupoBastidorSerializer(grupos, many=True).data
+
+    @staticmethod
+    def _replan_grupos_operativos(proyecto, user, moved_modulo_ids=()):
+        """El plan persistido es la verdad: tras cambiarlo, rehacer las colas
+        de todos los grupos de mesas donde el proyecto tenga trabajo.
+
+        ``moved_modulo_ids``: modulos cambiados de bastidor a mano; conservan
+        su imagen pero no fijan el bastidor de destino a la mesa donde estaban.
+        """
+        grupos_operativos_ids = list(
+            GrupoMesas.objects.filter(
+                Q(proyectos_cola__proyecto=proyecto)
+                | Q(
+                    mesas__queue_items__modulo__proyecto=proyecto,
+                    mesas__queue_items__status__in=ACTIVE_QUEUE_STATUSES,
+                )
+            ).values_list('id', flat=True).distinct()
+        )
+        grupos_operativos = list(
+            GrupoMesas.objects.select_for_update()
+            .filter(id__in=grupos_operativos_ids)
+            .order_by('id')
+        )
+        planner = GrupoMesasViewSet()
+        for grupo_operativo in grupos_operativos:
+            planner._replan_after_plan_change(
+                grupo_operativo,
+                user,
+                proyecto=proyecto,
+                ignore_pin_modulo_ids=moved_modulo_ids,
+            )
+
+    @staticmethod
+    def _grupo_mesas_para_bastidor(grupo):
+        """Grupo de mesas donde se fabrica (o se va a fabricar) este bastidor."""
+        if grupo.asignado_a_id and grupo.asignado_a.activa:
+            return grupo.asignado_a
+        return (
+            GrupoMesas.objects.filter(
+                Q(proyectos_cola__proyecto=grupo.proyecto)
+                | Q(
+                    mesas__queue_items__modulo__proyecto=grupo.proyecto,
+                    mesas__queue_items__status__in=ACTIVE_QUEUE_STATUSES,
+                ),
+                activa=True,
+            ).order_by('id').first()
+        )
 
     @staticmethod
     def _reindex_modulos_intra(grupo):
@@ -2892,13 +2968,133 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
         del cross_group  # noqa: usado solo para documentar el contrato.
         return module_reorderability(modulo)
 
+    @action(detail=True, methods=['post'], url_path='dividir')
+    @transaction.atomic
+    def dividir(self, request, pk=None):
+        """Reparte el bastidor entre todas las mesas inferiores activas.
+
+        Las partes (2B, 2C...) solo existen para fabricar: en el acopio y el
+        transporte siguen siendo el bastidor 2. Lo que ya se esta mostrando
+        se queda en la raiz; el resto de pendientes se alterna en orden de
+        fabricacion. Un bastidor dividido no se vuelve a dividir: se une.
+        """
+        grupo = self.get_object()
+        proyecto = grupo.proyecto
+        if not self._puede_gestionar(request.user, proyecto):
+            return Response({'detail': 'No puedes gestionar bastidores de otra ferralla.'},
+                            status=status.HTTP_403_FORBIDDEN)
+        if grupo.dividido_de_id is not None or grupo.divisiones.exists():
+            return Response(
+                {'detail': 'Este bastidor ya esta dividido. Unelo antes de volver a dividirlo.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        grupo_mesas = self._grupo_mesas_para_bastidor(grupo)
+        if grupo_mesas is None:
+            return Response(
+                {'detail': 'Planifica el proyecto en un grupo de mesas antes de dividir.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        partes = grupo_mesas.mesas.filter(tipo=MesaTipo.INFERIOR, activa=True).count()
+        if partes < 2:
+            return Response(
+                {'detail': 'Solo hay una mesa de inferior activa: no hay entre que dividir.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        modulos = sorted(
+            grupo.modulos.all(),
+            key=lambda m: (m.orden_intra or 0, _natural_sort_key(m.nombre)),
+        )
+        mostrando_ids = set(
+            MesaQueueItem.objects.filter(
+                modulo__in=modulos,
+                fase='INFERIOR',
+                status=MesaQueueStatus.MOSTRANDO,
+            ).values_list('modulo_id', flat=True)
+        )
+        pendientes = [
+            m for m in modulos
+            if not m.inferior_hecho and not m.cerrado and m.id not in mostrando_ids
+        ]
+        if len(pendientes) < 2:
+            return Response(
+                {'detail': 'No hay modulos pendientes suficientes para repartir.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        partes = min(partes, len(pendientes))
+
+        # Guardar el orden original de todo el bastidor para poder unirlo despues.
+        for m in modulos:
+            m.orden_intra_previo = m.orden_intra or 0
+            m.save(update_fields=['orden_intra_previo'])
+
+        divisiones = [
+            GrupoBastidor.objects.create(
+                proyecto=proyecto,
+                indice=grupo.indice,
+                sufijo=chr(ord('B') + j),
+                dividido_de=grupo,
+                asignado_a=grupo.asignado_a,
+            )
+            for j in range(partes - 1)
+        ]
+
+        # La cola inferior fabrica el bastidor de abajo arriba: alternar en
+        # ese orden para que cada parte empiece por lo que tocaba antes.
+        for rank, m in enumerate(reversed(pendientes)):
+            parte = rank % partes
+            if parte == 0:
+                continue
+            m.grupo_bastidor = divisiones[parte - 1]
+            m.save(update_fields=['grupo_bastidor'])
+        for g in (grupo, *divisiones):
+            self._reindex_modulos_intra(g)
+
+        self._replan_grupos_operativos(proyecto, request.user)
+        return Response(self._grupos_respuesta(proyecto))
+
+    @action(detail=True, methods=['post'], url_path='unir')
+    @transaction.atomic
+    def unir(self, request, pk=None):
+        """Devuelve las partes al bastidor raiz recomponiendo el orden original."""
+        grupo = self.get_object()
+        proyecto = grupo.proyecto
+        if not self._puede_gestionar(request.user, proyecto):
+            return Response({'detail': 'No puedes gestionar bastidores de otra ferralla.'},
+                            status=status.HTTP_403_FORBIDDEN)
+        raiz = grupo.raiz
+        divisiones = list(raiz.divisiones.all())
+        if not divisiones:
+            return Response({'detail': 'Este bastidor no esta dividido.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        devueltos = list(
+            Modulo.objects.filter(grupo_bastidor__in=divisiones).values_list('id', flat=True)
+        )
+        Modulo.objects.filter(id__in=devueltos).update(grupo_bastidor=raiz)
+        modulos = sorted(
+            raiz.modulos.all(),
+            key=lambda m: (
+                m.orden_intra_previo is None,
+                m.orden_intra_previo or 0,
+                m.orden_intra or 0,
+                _natural_sort_key(m.nombre),
+            ),
+        )
+        for i, m in enumerate(modulos, start=1):
+            m.orden_intra = i
+            m.orden_intra_previo = None
+            m.save(update_fields=['orden_intra', 'orden_intra_previo'])
+        for division in divisiones:
+            division.delete()
+
+        self._replan_grupos_operativos(proyecto, request.user, moved_modulo_ids=devueltos)
+        return Response(self._grupos_respuesta(proyecto))
+
     @action(detail=False, methods=['post'], url_path='move-modulo')
     @transaction.atomic
     def move_modulo(self, request):
-        if not _is_admin(request.user):
-            return Response({'detail': 'Solo admin puede mover modulos entre bastidores.'},
-                            status=status.HTTP_403_FORBIDDEN)
-
         modulo_id = request.data.get('modulo_id')
         grupo_destino_id = request.data.get('grupo_destino_id')  # null => crear nuevo
         index_destino = request.data.get('index_destino')  # 0-based; None => append
@@ -2929,6 +3125,12 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
             or (grupo_origen and str(grupo_destino_id) != str(grupo_origen.id))
             or grupo_origen is None
         )
+        # La ferralla ordena dentro de su bastidor; cambiar de bastidor
+        # altera el acopio y el transporte, asi que sigue siendo de admin.
+        if not _is_admin(request.user):
+            if cross_group or proyecto.usuario_id != request.user.id:
+                return Response({'detail': 'Solo admin puede mover modulos entre bastidores.'},
+                                status=status.HTTP_403_FORBIDDEN)
         movible, error = self._modulo_es_movible(modulo, cross_group=cross_group)
         if not movible:
             return Response({'detail': error}, status=status.HTTP_409_CONFLICT)
@@ -2994,9 +3196,10 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
                 m.orden_intra = i
                 m.save(update_fields=['orden_intra'])
 
-        # Limpiar y reindexar origen si cambio de grupo.
+        # Limpiar y reindexar origen si cambio de grupo. Una raiz dividida
+        # se conserva aunque quede vacia: sus partes siguen colgando de ella.
         if not same_group and grupo_origen:
-            if not grupo_origen.modulos.exists():
+            if not grupo_origen.modulos.exists() and not grupo_origen.divisiones.exists():
                 grupo_origen.delete()
             else:
                 self._reindex_modulos_intra(grupo_origen)
@@ -3004,30 +3207,16 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
         # Reindexar indices de grupos 1..N (puede haber borrado el origen).
         self._reindex_grupos(proyecto)
 
-        # El grupo del modulo y su cola operativa son una sola decision:
-        # al cambiar o reordenar el bastidor, corrige tambien asignaciones
-        # antiguas que hubieran quedado en otra mesa.
-        modulo.refresh_from_db(fields=['grupo_bastidor'])
-        try:
-            reconcile_module_queue_after_bastidor_move(modulo)
-        except QueueRelocationError as exc:
-            transaction.set_rollback(True)
-            return Response(
-                {'detail': str(exc)},
-                status=status.HTTP_409_CONFLICT,
-            )
-
-        grupos = _grupos_with_reorder_data(
-            proyecto.grupos_bastidor.all()
-        ).order_by('indice')
-        return Response(GrupoBastidorSerializer(grupos, many=True).data)
+        # El grupo del modulo y su cola operativa son una sola decision: las
+        # colas se rehacen desde el plan, conservando la imagen en curso.
+        self._replan_grupos_operativos(
+            proyecto, request.user,
+            moved_modulo_ids=() if same_group else (modulo.id,),
+        )
+        return Response(self._grupos_respuesta(proyecto))
 
     @action(detail=False, methods=['post'], url_path='reorder')
     def reorder(self, request):
-        if not _is_admin(request.user):
-            return Response({'detail': 'Solo admin puede reordenar bastidores.'},
-                            status=status.HTTP_403_FORBIDDEN)
-
         proyecto_id = request.data.get('proyecto')
         orden = request.data.get('orden')
 
@@ -3041,51 +3230,33 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
         except Proyecto.DoesNotExist:
             return Response({'detail': 'Proyecto no encontrado.'},
                             status=status.HTTP_404_NOT_FOUND)
+        if not self._puede_gestionar(request.user, proyecto):
+            return Response({'detail': 'No puedes reordenar bastidores de otra ferralla.'},
+                            status=status.HTTP_403_FORBIDDEN)
 
+        # Se acepta el orden de todos los grupos o solo el de las raices:
+        # las divisiones siempre van pegadas a su raiz.
         grupos_proyecto = list(proyecto.grupos_bastidor.all())
         ids_proyecto = {g.id for g in grupos_proyecto}
-        ids_orden = [int(x) for x in orden]
-        if set(ids_orden) != ids_proyecto:
+        ids_raiz = {g.id for g in grupos_proyecto if g.dividido_de_id is None}
+        try:
+            ids_orden = [int(x) for x in orden]
+        except (TypeError, ValueError):
+            return Response({'detail': 'orden debe ser una lista de ids.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if set(ids_orden) not in (ids_proyecto, ids_raiz) or len(set(ids_orden)) != len(ids_orden):
             return Response(
                 {'detail': 'El nuevo orden debe contener exactamente los mismos bastidores del proyecto.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        orden_raices = [gid for gid in ids_orden if gid in ids_raiz]
 
         with transaction.atomic():
-            # Asignar indices temporales primero para no chocar con la unique constraint.
-            for i, gid in enumerate(ids_orden, start=1):
-                GrupoBastidor.objects.filter(pk=gid).update(indice=10000 + i)
-            for i, gid in enumerate(ids_orden, start=1):
-                GrupoBastidor.objects.filter(pk=gid).update(indice=i)
+            self._asignar_orden_raices(proyecto, orden_raices)
+            # El orden de los cards es tambien el orden de fabricacion.
+            self._replan_grupos_operativos(proyecto, request.user)
 
-            # El orden de los cards es tambien el orden de fabricacion. Rehacer
-            # las colas afectadas conserva el trabajo iniciado y redistribuye
-            # solo lo pendiente con el mismo planner usado por las mesas.
-            grupos_operativos_ids = list(
-                GrupoMesas.objects.filter(
-                    Q(proyectos_cola__proyecto=proyecto)
-                    | Q(
-                        mesas__queue_items__modulo__proyecto=proyecto,
-                        mesas__queue_items__status__in=ACTIVE_QUEUE_STATUSES,
-                    )
-                ).values_list('id', flat=True).distinct()
-            )
-            grupos_operativos = list(
-                GrupoMesas.objects.select_for_update()
-                .filter(id__in=grupos_operativos_ids)
-                .order_by('id')
-            )
-            planner = GrupoMesasViewSet()
-            for grupo_operativo in grupos_operativos:
-                planner._replan_after_bastidor_reorder(
-                    grupo_operativo,
-                    request.user,
-                )
-
-        grupos = _grupos_with_reorder_data(
-            proyecto.grupos_bastidor.all()
-        ).order_by('indice')
-        return Response(GrupoBastidorSerializer(grupos, many=True).data)
+        return Response(self._grupos_respuesta(proyecto))
 
 
 class ModuloViewSet(viewsets.ModelViewSet):
@@ -3784,16 +3955,20 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         if not _is_admin(self.request.user) and grupo.usuario_id != self.request.user.id:
             raise PermissionDenied('No puedes gestionar grupos de otra ferralla')
 
-    def _collect_anchored_item_ids(self, grupo):
-        return _collect_anchored_item_ids_for_grupo(grupo)
+    def _replan_after_plan_change(self, grupo, user, proyecto=None, ignore_pin_modulo_ids=()):
+        """Rebuild the grupo's queues from the persisted plan.
 
-    def _replan_after_bastidor_reorder(self, grupo, user):
-        """Rebuild movable queues after changing persisted bastidor order."""
-        anchored_ids = _collect_bastidor_reorder_anchor_ids_for_grupo(grupo)
-        MesaQueueItem.objects.filter(
-            mesa__grupo=grupo,
-            status__in=ACTIVE_QUEUE_STATUSES,
-        ).exclude(id__in=anchored_ids).delete()
+        Work in progress is not an anchor any more: the bastidor being
+        fabricated stays on its mesa (pin) and every displaced phase keeps
+        the image it was on, so the ferralla can reorder, split and merge
+        freely. Superior work with photos or past the setup images is still
+        preserved in place.
+        """
+        progress, pins = capture_queue_progress(grupo, ignore_pin_modulo_ids)
+        anchored_ids = _collect_replan_anchor_ids_for_grupo(grupo)
+        recycle = self._collect_recyclable_items(grupo, exclude_ids=anchored_ids)
+        if proyecto is not None:
+            _ensure_project_in_group_queue(grupo, proyecto)
 
         plan_summaries = []
         entries = list(
@@ -3806,10 +3981,14 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
                     entry.proyecto,
                     user,
                     append_mode=True,
+                    mesa_pins=pins,
+                    recycle=recycle,
                 )
             )
+        self._discard_recyclable_leftovers(recycle)
         reconcile_superior_queue_for_group(grupo)
         self._sync_proyecto_actual(grupo)
+        apply_queue_progress(grupo, progress)
         return plan_summaries
 
     @staticmethod
@@ -3915,25 +4094,11 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
             return Response({'detail': 'No hay cambios que aplicar.'}, status=400)
 
         with transaction.atomic():
-            anchored_ids = self._collect_anchored_item_ids(grupo)
-
-            MesaQueueItem.objects.filter(
-                mesa__grupo=grupo,
-                status__in=ACTIVE_QUEUE_STATUSES,
-            ).exclude(id__in=anchored_ids).delete()
-
+            # Primero el nuevo estado de las mesas: asi el replanificado ya
+            # sabe que mesas siguen siendo inferiores activas y mueve el
+            # trabajo de las apagadas conservando la imagen en curso.
             self._apply_mesa_changes(grupo, final_states)
-
-            entries = list(
-                grupo.proyectos_cola.select_related('proyecto').order_by('orden', 'id')
-            )
-            plan_summaries = []
-            for entry in entries:
-                plan_summaries.append(
-                    self._build_group_plan(grupo, entry.proyecto, request.user, append_mode=True)
-                )
-            reconcile_superior_queue_for_group(grupo)
-            self._sync_proyecto_actual(grupo)
+            plan_summaries = self._replan_after_plan_change(grupo, request.user)
 
         fresh = self._refresh_grupo_with_prefetch(grupo)
         serializer = self.get_serializer(fresh)
@@ -4048,6 +4213,7 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
 
             # Borrar items activos del proyecto removido, preservando los
             # anclados para no perder trabajo en curso.
+            progress, pins = capture_queue_progress(grupo)
             anchored_ids = _collect_anchored_item_ids_for_grupo(grupo)
             MesaQueueItem.objects.filter(
                 mesa__grupo=grupo,
@@ -4069,12 +4235,15 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
             )
             for entry in entries:
                 try:
-                    self._build_group_plan(grupo, entry.proyecto, request.user, append_mode=True)
+                    self._build_group_plan(
+                        grupo, entry.proyecto, request.user, append_mode=True, mesa_pins=pins,
+                    )
                 except Exception:
                     pass
 
             reconcile_superior_queue_for_group(grupo)
             self._sync_proyecto_actual(grupo)
+            apply_queue_progress(grupo, progress)
 
         fresh = self._refresh_grupo_with_prefetch(grupo)
         return Response(GrupoMesasSerializer(fresh).data)
@@ -4115,6 +4284,7 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
             # Preserve-anchored + replan: borra activos no anclados de
             # las mesas y vuelve a planificar en el nuevo orden, asi el
             # head pasa a fabricarse primero.
+            progress, pins = capture_queue_progress(grupo)
             anchored_ids = _collect_anchored_item_ids_for_grupo(grupo)
             MesaQueueItem.objects.filter(
                 mesa__grupo=grupo,
@@ -4126,30 +4296,84 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
             )
             for entry in entries:
                 try:
-                    self._build_group_plan(grupo, entry.proyecto, request.user, append_mode=True)
+                    self._build_group_plan(
+                        grupo, entry.proyecto, request.user, append_mode=True, mesa_pins=pins,
+                    )
                 except Exception:
                     pass
             reconcile_superior_queue_for_group(grupo)
+            apply_queue_progress(grupo, progress)
 
         fresh = self._refresh_grupo_with_prefetch(grupo)
         return Response(GrupoMesasSerializer(fresh).data)
 
-    def _create_queue_for_mesa(self, mesa, modules, fase, user, module_group_map, group_offset=0, start_position=0, has_active_items=False):
+    def _create_queue_for_mesa(self, mesa, modules, fase, user, module_group_map, group_offset=0,
+                               start_position=0, has_active_items=False, recycle=None):
+        """Materializa una secuencia planificada como items de cola.
+
+        ``recycle`` ((modulo_id, fase) -> MesaQueueItem) reutiliza la fila que
+        ya tenia esa fase en vez de crear otra: el item conserva su id, y con
+        el la referencia que guardan el player y el dashboard.
+        """
         created_items = []
         for index, modulo in enumerate(modules):
+            plan_group_index = (
+                (group_offset + module_group_map.get(modulo.id))
+                if module_group_map.get(modulo.id) else None
+            )
+            status_value = 'MOSTRANDO' if (index == 0 and not has_active_items) else 'EN_COLA'
+            existing = recycle.pop((modulo.id, fase), None) if recycle else None
+            if existing is not None:
+                existing.mesa = mesa
+                existing.position = start_position + index
+                existing.plan_group_index = plan_group_index
+                existing.status = status_value
+                existing.save(update_fields=['mesa', 'position', 'plan_group_index', 'status'])
+                created_items.append(existing)
+                continue
             item = MesaQueueItem.objects.create(
                 mesa=mesa,
                 modulo=modulo,
                 fase=fase,
                 imagen=None,
                 position=start_position + index,
-                plan_group_index=(group_offset + module_group_map.get(modulo.id)) if module_group_map.get(modulo.id) else None,
-                status='MOSTRANDO' if (index == 0 and not has_active_items) else 'EN_COLA',
+                plan_group_index=plan_group_index,
+                status=status_value,
                 assigned_by=user if user.is_authenticated else None,
             )
             created_items.append(item)
 
         return created_items
+
+    @staticmethod
+    def _collect_recyclable_items(grupo, exclude_ids=()):
+        """Filas activas del grupo que el replanificado reutilizara.
+
+        Se aparcan como EN_COLA mientras se recalcula: lo que se mostraba ya
+        ha quedado en ``capture_queue_progress`` y se reasigna al final.
+        """
+        recycle = {}
+        items = list(
+            MesaQueueItem.objects.filter(
+                mesa__grupo=grupo,
+                status__in=ACTIVE_QUEUE_STATUSES,
+            ).exclude(id__in=list(exclude_ids)).order_by('id')
+        )
+        for item in items:
+            recycle[(item.modulo_id, item.fase)] = item
+        if items:
+            MesaQueueItem.objects.filter(
+                id__in=[item.id for item in items],
+            ).update(status=MesaQueueStatus.EN_COLA)
+        return recycle
+
+    @staticmethod
+    def _discard_recyclable_leftovers(recycle):
+        """Filas que ningun plan ha reutilizado: ya no hay trabajo para ellas."""
+        leftover_ids = [item.id for item in recycle.values()]
+        if leftover_ids:
+            MesaQueueItem.objects.filter(id__in=leftover_ids).delete()
+        recycle.clear()
 
     def _normalize_active_queue_for_mesa(self, mesa, preserved_items):
         normalized = []
@@ -4217,20 +4441,21 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
 
         return preserve_until, preserved_by_mesa, preserved_keys
 
-    def _get_all_active_prefix(self, grupo):
+    def _get_all_active_prefix(self, grupo, exclude_ids=None):
         """Append mode: preserve every active queue item (EN_COLA /
         MOSTRANDO). New items just slot in at the tail. Used for
         planning subsequent projects of the cola and for auto-plan
         after cola/add.
 
         Items are keyed by ``mesa_id`` so multiple mesas of the same
-        ``tipo`` keep their work separate.
+        ``tipo`` keep their work separate. ``exclude_ids`` leaves out the
+        rows a replan is about to recycle.
         """
         active_items = list(
             MesaQueueItem.objects.select_related('mesa', 'modulo').filter(
                 mesa__grupo=grupo,
                 status__in=ACTIVE_QUEUE_STATUSES,
-            ).order_by('mesa_id', 'position')
+            ).exclude(id__in=list(exclude_ids or [])).order_by('mesa_id', 'position')
         )
         preserved_by_mesa = {}
         preserved_keys = set()
@@ -4247,7 +4472,7 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
     @staticmethod
     def _build_plan_sequences(proyecto, num_inferiores, excluded_phase_keys=None,
                               group_index_offset=0, initial_loads_inf=None,
-                              include_completed=False):
+                              include_completed=False, mesa_pins=None):
         """Construye las secuencias de planificacion para N mesas inferiores.
 
         ``initial_loads_inf`` es una lista de longitud ``num_inferiores`` con
@@ -4255,6 +4480,11 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         ya arrastra de pasadas anteriores. El balanceo se hace siempre
         sobre esas cargas vivas para que sucesivas planificaciones
         queden niveladas.
+
+        ``mesa_pins`` (grupo_bastidor_id -> indice 0-based de mesa inferior)
+        fija bastidores que ya tienen inferiores fabricados o en curso en
+        una mesa: el balanceo no los cambia de sitio. Las partes de un
+        bastidor dividido se reparten en mesas distintas.
 
         Devuelve un dict con:
         - ``inferior_sequences``: lista de N listas de Modulo, una por
@@ -4323,10 +4553,11 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         # admin ve. Se filtran solo los modulos inferior-pending y se
         # preservan en su orden_intra.
         pending_ids = {m.id for m in inferiors_pending}
-        bastidor_groups = []
+        bastidor_groups = []  # [(GrupoBastidor|None, [Modulo, ...]), ...]
         if pending_ids:
             grupos_persistidos = list(
-                proyecto.grupos_bastidor.prefetch_related('modulos').order_by('indice')
+                proyecto.grupos_bastidor.prefetch_related('modulos')
+                .order_by('indice', 'sufijo', 'id')
             )
             modulo_by_id = {m.id: m for m in modulos}
             for grupo in grupos_persistidos:
@@ -4339,17 +4570,17 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
                     key=lambda m: (m.orden_intra or 0, _natural_sort_key(m.nombre)),
                 )
                 if in_grupo:
-                    bastidor_groups.append(in_grupo)
+                    bastidor_groups.append((grupo, in_grupo))
 
             # Modulos pendientes sin grupo persistido: se recalculan con la
             # misma logica dinamica de bastidor para no colapsar toda la cola
             # en una sola mesa cuando el proyecto aun no tiene grupos
             # materializados o ha quedado algun modulo fuera.
-            ids_en_grupos = {m.id for g in bastidor_groups for m in g}
+            ids_en_grupos = {m.id for _, g in bastidor_groups for m in g}
             huerfanos = [m for m in inferiors_pending if m.id not in ids_en_grupos]
             if huerfanos:
                 bastidor_groups.extend(
-                    _build_bastidor_groups(proyecto, huerfanos)
+                    (None, g) for g in _build_bastidor_groups(proyecto, huerfanos)
                 )
 
         inferior_sequences = [[] for _ in range(num_inferiores)]
@@ -4363,14 +4594,35 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         ordered_bastidores = enumerate(bastidor_groups, start=1)
 
         loads = list(initial_loads_inf)
+        mesa_pins = mesa_pins or {}
+        family_targets = {}  # raiz_id -> mesas ya usadas por sus partes
 
-        for original_index, modules_in_group in ordered_bastidores:
+        for original_index, (grupo_bastidor, modules_in_group) in ordered_bastidores:
             effective_index = group_index_offset + original_index
             reversed_group = list(reversed(modules_in_group))
             for module in modules_in_group:
                 module_group_map[module.id] = effective_index
-            # Mesa con menor carga; empate -> menor indice (mas a la izquierda).
-            target_idx = min(range(num_inferiores), key=lambda i: (loads[i], i))
+
+            pinned = mesa_pins.get(grupo_bastidor.id) if grupo_bastidor else None
+            raiz_id = (
+                (grupo_bastidor.dividido_de_id or grupo_bastidor.id)
+                if grupo_bastidor else None
+            )
+            if pinned is not None and 0 <= pinned < num_inferiores:
+                # Bastidor con inferiores hechos o en curso: no se mueve de mesa.
+                target_idx = pinned
+            else:
+                candidates = list(range(num_inferiores))
+                if raiz_id is not None:
+                    # Las partes de un bastidor dividido van a mesas distintas.
+                    used = family_targets.get(raiz_id, set())
+                    free = [i for i in candidates if i not in used]
+                    if free:
+                        candidates = free
+                # Mesa con menor carga; empate -> menor indice (mas a la izquierda).
+                target_idx = min(candidates, key=lambda i: (loads[i], i))
+            if raiz_id is not None:
+                family_targets.setdefault(raiz_id, set()).add(target_idx)
             inferior_sequences[target_idx].extend(reversed_group)
             loads[target_idx] += len(modules_in_group)
 
@@ -4410,9 +4662,48 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
             'superior_sequence': superior_sequence,
         }
 
-    def _build_group_plan(self, grupo, proyecto, user, append_mode=False):
+    @staticmethod
+    def _bastidor_pins(proyecto, mesas_inf, extra_pins=None):
+        """grupo_bastidor_id -> indice de mesa inferior donde ya se fabrica.
+
+        Un bastidor con inferiores hechos en una mesa sigue en ella (la que
+        mas lleva; empate, la mas reciente). ``extra_pins`` (mesa_id por
+        bastidor, normalmente lo que se esta mostrando) tiene prioridad.
+        """
+        mesa_idx = {mesa.id: index for index, mesa in enumerate(mesas_inf)}
+        pins = {}
+        if not mesa_idx:
+            return pins
+        done_rows = (
+            MesaQueueItem.objects.filter(
+                mesa__in=mesas_inf,
+                fase='INFERIOR',
+                status=MesaQueueStatus.HECHO,
+                modulo__proyecto=proyecto,
+                modulo__grupo_bastidor__isnull=False,
+            )
+            .values('modulo__grupo_bastidor_id', 'mesa_id')
+            .annotate(n=Count('id'), last=Max('done_at'))
+            .order_by()
+        )
+        best = {}
+        for row in done_rows:
+            gid = row['modulo__grupo_bastidor_id']
+            score = (row['n'], row['last'].timestamp() if row['last'] else 0)
+            if gid not in best or score > best[gid][0]:
+                best[gid] = (score, row['mesa_id'])
+        for gid, (_, mesa_id) in best.items():
+            pins[gid] = mesa_idx[mesa_id]
+        for gid, mesa_id in (extra_pins or {}).items():
+            if mesa_id in mesa_idx:
+                pins[gid] = mesa_idx[mesa_id]
+        return pins
+
+    def _build_group_plan(self, grupo, proyecto, user, append_mode=False, mesa_pins=None,
+                          recycle=None):
         grupo.ensure_default_mesas()
         grupo.refresh_from_db()
+        recycle_ids = {item.id for item in recycle.values()} if recycle else set()
 
         # Mesas activas por tipo. El planner acepta cualquier N inferiores
         # y M superiores; si una fase no tiene mesas activas, se salta esa
@@ -4426,9 +4717,19 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         )
 
         if append_mode:
-            preserved_until, preserved_by_mesa, preserved_phase_keys = self._get_all_active_prefix(grupo)
+            preserved_until, preserved_by_mesa, preserved_phase_keys = self._get_all_active_prefix(
+                grupo, exclude_ids=recycle_ids,
+            )
         else:
             preserved_until, preserved_by_mesa, preserved_phase_keys = self._get_preserved_active_prefix(grupo)
+            if recycle:
+                # Lo preservado se queda tal cual: no entra en el reciclaje.
+                preserved_id_set = {
+                    item.id for items in preserved_by_mesa.values() for item in items
+                }
+                for key in [k for k, item in recycle.items() if item.id in preserved_id_set]:
+                    recycle.pop(key)
+                recycle_ids -= preserved_id_set
         external_conflicts = MesaQueueItem.objects.select_related('mesa', 'modulo').filter(
             status__in=ACTIVE_QUEUE_STATUSES,
             modulo__proyecto=proyecto,
@@ -4468,6 +4769,7 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
             ),
             group_index_offset=preserved_until or 0,
             initial_loads_inf=initial_loads_inf,
+            mesa_pins=self._bastidor_pins(proyecto, mesas_inf, mesa_pins),
         )
 
         # Spread the superior cola across M mesas (round-robin so loads
@@ -4491,8 +4793,9 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
                 for items in preserved_by_mesa.values()
                 for item in items
             ]
-            if preserved_ids:
-                active_group_items.exclude(id__in=preserved_ids).delete()
+            keep_ids = set(preserved_ids) | recycle_ids
+            if keep_ids:
+                active_group_items.exclude(id__in=keep_ids).delete()
             else:
                 active_group_items.delete()
 
@@ -4509,6 +4812,7 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
                     plan_data['module_group_map'],
                     start_position=len(preserved_for_mesa),
                     has_active_items=bool(preserved_for_mesa),
+                    recycle=recycle,
                 )
                 items = preserved_for_mesa + created
                 queues_payload.append({
@@ -4530,6 +4834,7 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
                     plan_data['module_group_map'],
                     start_position=len(preserved_for_mesa),
                     has_active_items=bool(preserved_for_mesa),
+                    recycle=recycle,
                 )
                 items = preserved_for_mesa + created
                 queues_payload.append({
@@ -4639,16 +4944,24 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         entries = list(
             grupo.proyectos_cola.select_related('proyecto').order_by('orden', 'id')
         )
+        for entry in entries:
+            if not _is_admin(user) and entry.proyecto.usuario_id != user.id:
+                raise PermissionDenied('No puedes planificar proyectos de otra ferralla')
+
+        progress, pins = capture_queue_progress(grupo)
+        recycle = self._collect_recyclable_items(grupo)
         plan_summaries = []
         for position, entry in enumerate(entries):
-            proyecto = entry.proyecto
-            if not _is_admin(user) and proyecto.usuario_id != user.id:
-                raise PermissionDenied('No puedes planificar proyectos de otra ferralla')
             append_mode = position > 0
             plan_summaries.append(
-                self._build_group_plan(grupo, proyecto, user, append_mode=append_mode)
+                self._build_group_plan(
+                    grupo, entry.proyecto, user, append_mode=append_mode,
+                    mesa_pins=pins, recycle=recycle,
+                )
             )
+        self._discard_recyclable_leftovers(recycle)
         reconcile_superior_queue_for_group(grupo)
+        apply_queue_progress(grupo, progress)
         return plan_summaries
 
     @action(detail=True, methods=['post'], url_path='planificar')
@@ -5699,15 +6012,7 @@ class DeviceViewSet(viewsets.ViewSet):
                 mesa.queue_items.select_for_update()
                 .filter(status=MesaQueueStatus.EN_COLA).order_by('position').first()
             )
-            if next_item:
-                next_item.status = MesaQueueStatus.MOSTRANDO
-                next_item.save(update_fields=['status'])
-                mesa.imagen_actual = next_item.imagen
-                mesa.current_image_index = 0
-            else:
-                mesa.imagen_actual = None
-                mesa.current_image_index = 0
-            mesa.save(update_fields=['imagen_actual', 'current_image_index'])
+            activate_queue_item(mesa, next_item)
             reconcile_superior_queue_if_adaptive(mesa.grupo)
 
         return Response({'status': 'ok'})
@@ -6175,18 +6480,7 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
                 mesa=mesa,
                 status=MesaQueueStatus.EN_COLA
             ).order_by('position').first()
-            
-            if next_item:
-                next_item.status = MesaQueueStatus.MOSTRANDO
-                next_item.save(update_fields=['status'])
-                mesa.imagen_actual = next_item.imagen
-                mesa.current_image_index = 0
-                mesa.save(update_fields=['imagen_actual', 'current_image_index'])
-            else:
-                # No more items, clear projection
-                mesa.imagen_actual = None
-                mesa.current_image_index = 0
-                mesa.save(update_fields=['imagen_actual', 'current_image_index'])
+            activate_queue_item(mesa, next_item)
 
     @action(detail=True, methods=['post'])
     def marcar_hecho(self, request, pk=None):
@@ -6204,16 +6498,7 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
                 mesa=mesa,
                 status=MesaQueueStatus.EN_COLA
             ).order_by('position').first()
-
-            if next_item:
-                next_item.status = MesaQueueStatus.MOSTRANDO
-                next_item.save(update_fields=['status'])
-                mesa.imagen_actual = next_item.imagen
-                mesa.current_image_index = 0
-            else:
-                mesa.imagen_actual = None
-                mesa.current_image_index = 0
-            mesa.save(update_fields=['imagen_actual', 'current_image_index'])
+            activate_queue_item(mesa, next_item)
 
         reconcile_superior_queue_if_adaptive(mesa.grupo)
 
@@ -6225,18 +6510,16 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
         """Set this item as the one currently showing."""
         from api.models import MesaQueueStatus
         item = self.get_object()
-        # Unset any other MOSTRANDO items for this desk
-        MesaQueueItem.objects.filter(
-            mesa=item.mesa,
-            status=MesaQueueStatus.MOSTRANDO
-        ).update(status=MesaQueueStatus.EN_COLA)
-        # Set this one as MOSTRANDO
-        item.status = MesaQueueStatus.MOSTRANDO
-        item.save(update_fields=['status'])
-        # Update mesa cache
-        item.mesa.imagen_actual = item.imagen
-        item.mesa.current_image_index = 0
-        item.mesa.save(update_fields=['imagen_actual', 'current_image_index'])
+        mesa = item.mesa
+        # Whatever was showing steps aside but remembers its image.
+        for displaced in MesaQueueItem.objects.filter(
+            mesa=mesa,
+            status=MesaQueueStatus.MOSTRANDO,
+        ).exclude(id=item.id):
+            displaced.status = MesaQueueStatus.EN_COLA
+            displaced.save(update_fields=['status'])
+            stash_showing_progress(displaced, mesa.current_image_index)
+        activate_queue_item(mesa, item)
         serializer = self.get_serializer(item)
         return Response(serializer.data)
 
@@ -6375,7 +6658,13 @@ class FotoFabricacionViewSet(viewsets.ReadOnlyModelViewSet):
         if proyecto_id:
             queryset = queryset.filter(modulo__proyecto_id=proyecto_id)
         if grupo_bastidor_ids:
-            queryset = queryset.filter(modulo__grupo_bastidor_id__in=grupo_bastidor_ids)
+            # Las partes de un bastidor dividido cuelgan de su raiz.
+            ids_con_divisiones = list(
+                GrupoBastidor.objects.filter(
+                    Q(id__in=grupo_bastidor_ids) | Q(dividido_de_id__in=grupo_bastidor_ids)
+                ).values_list('id', flat=True)
+            )
+            queryset = queryset.filter(modulo__grupo_bastidor_id__in=ids_con_divisiones)
         if fase:
             queryset = queryset.filter(fase=fase)
 
@@ -6422,7 +6711,8 @@ class FotoFabricacionViewSet(viewsets.ReadOnlyModelViewSet):
                 modulo_nombre = foto.modulo.nombre
                 grupo_bastidor = foto.modulo.grupo_bastidor
                 if grupo_bastidor:
-                    grupo_nombre = grupo_bastidor.nombre or f'Bastidor {grupo_bastidor.indice:02d}'
+                    raiz = grupo_bastidor.raiz
+                    grupo_nombre = raiz.nombre or f'Bastidor {raiz.indice:02d}'
                 else:
                     grupo_nombre = 'sin_bastidor'
                 filename = os.path.basename(foto.url)

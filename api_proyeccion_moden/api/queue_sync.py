@@ -20,10 +20,6 @@ ACTIVE_QUEUE_STATUSES = [MesaQueueStatus.EN_COLA, MesaQueueStatus.MOSTRANDO]
 EARLY_IMAGE_INDEX_LIMIT = 1
 
 
-class QueueRelocationError(Exception):
-    """Raised when a bastidor change would move work already on screen."""
-
-
 def module_operational_state(modulo, showing_items=None):
     """Return the module state visible to operators.
 
@@ -57,8 +53,33 @@ def module_operational_state(modulo, showing_items=None):
 def module_reorderability(modulo, showing_items=None):
     """Return whether a module can still change its bastidor position.
 
-    Images 1 and 2 are treated as setup time. Once either phase reaches the
-    third image, its physical position is considered committed.
+    Only the inferior phase commits a module to its bastidor: a finished
+    superior is stored apart and the module reaches the transport rack when
+    its inferior is done. Work in progress on a mesa does not lock the
+    module either; if it is moved, the queue remembers the image it was on
+    and resumes there (see ``resume_image_index``).
+    """
+    del showing_items  # la fabricacion en curso ya no bloquea el movimiento.
+    if modulo.cerrado:
+        return False, (
+            f'No se puede mover "{modulo.nombre}" porque esta cerrado.'
+        )
+
+    if modulo.inferior_hecho:
+        return False, (
+            f'No se puede mover "{modulo.nombre}" porque su inferior ya esta '
+            'fabricado y ocupa su sitio en el bastidor.'
+        )
+
+    return True, None
+
+
+def module_fabrication_started(modulo, showing_items=None):
+    """Return whether any physical work exists for the module.
+
+    Stricter than ``module_reorderability``: used where the whole bastidor
+    layout is recomputed (recalcular bastidores), because there is no plan
+    order to carry the work in progress into.
     """
     if modulo.estado != ModuloEstado.PENDIENTE:
         return False, (
@@ -98,6 +119,32 @@ def module_reorderability(modulo, showing_items=None):
     return True, None
 
 
+def module_fabrication_started_map(modules):
+    """``module_fabrication_started`` for a collection with one queue query."""
+    modules = list(modules)
+    showing_by_module = {modulo.id: [] for modulo in modules}
+    if not showing_by_module:
+        return {}
+
+    showing_items = (
+        MesaQueueItem.objects.select_related("mesa")
+        .filter(
+            modulo_id__in=showing_by_module,
+            status=MesaQueueStatus.MOSTRANDO,
+        )
+    )
+    for item in showing_items:
+        showing_by_module[item.modulo_id].append(item)
+
+    return {
+        modulo.id: module_fabrication_started(
+            modulo,
+            showing_items=showing_by_module[modulo.id],
+        )
+        for modulo in modules
+    }
+
+
 def module_reorderability_map(modules):
     """Calculate reorderability for a module collection with one queue query."""
     modules = list(modules)
@@ -122,6 +169,109 @@ def module_reorderability_map(modules):
         )
         for modulo in modules
     }
+
+
+def stash_showing_progress(item, current_image_index):
+    """Remember the image a displaced phase was on so it resumes there."""
+    if item is None:
+        return
+    value = current_image_index if current_image_index and current_image_index > 0 else None
+    if item.resume_image_index != value:
+        item.resume_image_index = value
+        item.save(update_fields=["resume_image_index"])
+
+
+def activate_queue_item(mesa, item):
+    """Make ``item`` the one showing on ``mesa`` (or clear the mesa).
+
+    The mesa image index continues where the phase was left the last time
+    it was on a mesa, if it was ever displaced mid-work.
+    """
+    if item is None:
+        mesa.imagen_actual = None
+        mesa.current_image_index = 0
+    else:
+        if item.status != MesaQueueStatus.MOSTRANDO:
+            item.status = MesaQueueStatus.MOSTRANDO
+            item.save(update_fields=["status"])
+        mesa.imagen_actual = item.imagen
+        mesa.current_image_index = item.resume_image_index or 0
+        if item.resume_image_index is not None:
+            item.resume_image_index = None
+            item.save(update_fields=["resume_image_index"])
+    mesa.save(
+        update_fields=[
+            "imagen_actual",
+            "current_image_index",
+            "ultima_actualizacion",
+        ]
+    )
+
+
+def capture_queue_progress(group, ignore_pin_modulo_ids=()):
+    """Snapshot what a rebuild of the group's queues must not lose.
+
+    Returns ``(progress, pins)``:
+    - ``progress``: ``{(modulo_id, fase): image_index}`` for phases in
+      progress on a mesa or already waiting with a saved index.
+    - ``pins``: ``{grupo_bastidor_id: mesa_id}`` for bastidores whose
+      inferior is being fabricated right now, so the planner keeps them on
+      that mesa. Modules in ``ignore_pin_modulo_ids`` (just moved to another
+      bastidor by hand) keep their progress but do not pin their new one.
+    """
+    progress = {}
+    pins = {}
+    ignore_pin_modulo_ids = set(ignore_pin_modulo_ids)
+    items = (
+        MesaQueueItem.objects.select_related("mesa", "modulo")
+        .filter(mesa__grupo=group, status__in=ACTIVE_QUEUE_STATUSES)
+        .order_by("mesa_id", "position", "id")
+    )
+    for item in items:
+        key = (item.modulo_id, item.fase)
+        if item.status == MesaQueueStatus.MOSTRANDO:
+            if item.mesa.current_image_index > 0:
+                progress[key] = item.mesa.current_image_index
+            if (
+                item.fase == Fase.INFERIOR
+                and item.modulo.grupo_bastidor_id is not None
+                and item.modulo_id not in ignore_pin_modulo_ids
+                and item.mesa.activa
+                and item.mesa.tipo == MesaTipo.INFERIOR
+            ):
+                pins.setdefault(item.modulo.grupo_bastidor_id, item.mesa_id)
+        elif item.resume_image_index:
+            progress[key] = item.resume_image_index
+    return progress, pins
+
+
+def apply_queue_progress(group, progress):
+    """Carry a ``capture_queue_progress`` snapshot onto rebuilt queue items."""
+    for (modulo_id, fase), index in progress.items():
+        item = (
+            MesaQueueItem.objects.select_related("mesa")
+            .filter(
+                mesa__grupo=group,
+                modulo_id=modulo_id,
+                fase=fase,
+                status__in=ACTIVE_QUEUE_STATUSES,
+            )
+            .order_by("id")
+            .first()
+        )
+        if item is None:
+            continue
+        if item.status == MesaQueueStatus.MOSTRANDO:
+            mesa = item.mesa
+            if mesa.current_image_index != index:
+                mesa.current_image_index = index
+                mesa.save(update_fields=["current_image_index", "ultima_actualizacion"])
+            if item.resume_image_index is not None:
+                item.resume_image_index = None
+                item.save(update_fields=["resume_image_index"])
+        elif item.resume_image_index != index:
+            item.resume_image_index = index
+            item.save(update_fields=["resume_image_index"])
 
 
 def capture_phase_assignment_hints(modulo, fases):
@@ -381,15 +531,9 @@ def _insert_phase(modulo, fase, mesa, plan_group_index, assigned_by, prioritize,
             queued_item.save(update_fields=updates)
 
     if showing_item.id == item.id:
-        mesa.imagen_actual = item.imagen
-        mesa.current_image_index = 0
-        mesa.save(
-            update_fields=[
-                "imagen_actual",
-                "current_image_index",
-                "ultima_actualizacion",
-            ]
-        )
+        if current is not None and current.id != item.id:
+            stash_showing_progress(current, mesa.current_image_index)
+        activate_queue_item(mesa, item)
     return item
 
 
@@ -486,15 +630,13 @@ def _persist_active_order(mesa, items, current):
             (item for item in items if item.id == current_id),
             None,
         )
-        mesa.imagen_actual = current_item.imagen if current_item else None
-        mesa.current_image_index = 0
-        mesa.save(
-            update_fields=[
-                "imagen_actual",
-                "current_image_index",
-                "ultima_actualizacion",
-            ]
-        )
+        if current_changed and previous_current_id is not None:
+            displaced = next(
+                (item for item in items if item.id == previous_current_id),
+                None,
+            )
+            stash_showing_progress(displaced, mesa.current_image_index)
+        activate_queue_item(mesa, current_item)
 
 
 def _backfill_missing_superior_items(group, inferior_items, superior_items):
@@ -925,190 +1067,3 @@ def reconcile_superior_queue_for_group(group):
             superior_items,
             key=lambda item: (item.mesa.indice, item.position, item.id),
         )
-
-
-def reconcile_module_queue_after_bastidor_move(modulo):
-    """Keep queued work aligned after an admin moves a module.
-
-    Inferior work follows the mesa already used by the destination bastidor.
-    Superior work keeps its current mesa while it remains in the same
-    operational group, because superior queues are intentionally distributed.
-    """
-    bastidor = getattr(modulo, "grupo_bastidor", None)
-    if not bastidor:
-        return []
-
-    active_items = list(
-        MesaQueueItem.objects.select_for_update()
-        .select_related("mesa")
-        .filter(modulo=modulo, status__in=ACTIVE_QUEUE_STATUSES)
-        .order_by("id")
-    )
-    if not active_items:
-        return []
-
-    group = None
-    if bastidor.asignado_a_id:
-        group = GrupoMesas.objects.filter(
-            id=bastidor.asignado_a_id,
-            activa=True,
-        ).first()
-    else:
-        active_group_ids = {
-            item.mesa.grupo_id
-            for item in active_items
-            if item.mesa.grupo_id is not None
-        }
-        if len(active_group_ids) == 1:
-            group = GrupoMesas.objects.filter(
-                id=next(iter(active_group_ids)),
-                activa=True,
-            ).first()
-            if group:
-                bastidor.asignado_a = group
-                bastidor.save(update_fields=["asignado_a"])
-
-    if group is None:
-        group = _group_for_module(modulo, {})
-    if group is None:
-        return []
-
-    relocations = []
-    for item in active_items:
-        peer = (
-            _peer_assignment(modulo, item.fase, group)
-            if item.fase == Fase.INFERIOR
-            else None
-        )
-        if peer and peer.mesa.activa and peer.mesa.tipo == item.mesa.tipo:
-            target_mesa = peer.mesa
-            plan_group_index = peer.plan_group_index
-        elif item.mesa.grupo_id == group.id:
-            target_mesa = item.mesa
-            plan_group_index = bastidor.indice
-        else:
-            target_mesa, plan_group_index = _resolve_target(
-                modulo,
-                item.fase,
-                group,
-                {},
-            )
-
-        if target_mesa is None:
-            continue
-        if plan_group_index is None:
-            plan_group_index = bastidor.indice
-
-        if item.mesa_id != target_mesa.id and item.status == MesaQueueStatus.MOSTRANDO:
-            raise QueueRelocationError(
-                f'No se puede mover "{modulo.nombre}" al {bastidor.nombre}: '
-                f'ya se esta mostrando en {item.mesa.nombre}.'
-            )
-        relocations.append((item.id, item.mesa_id, target_mesa.id, plan_group_index))
-
-    moved_items = []
-    for item_id, source_mesa_id, target_mesa_id, plan_group_index in relocations:
-        item = MesaQueueItem.objects.select_for_update().get(id=item_id)
-        same_mesa = source_mesa_id == target_mesa_id
-        if same_mesa and item.fase != Fase.INFERIOR:
-            if item.plan_group_index != plan_group_index:
-                item.plan_group_index = plan_group_index
-                item.save(update_fields=["plan_group_index"])
-            continue
-        if (
-            same_mesa
-            and item.status == MesaQueueStatus.MOSTRANDO
-            and item.mesa.current_image_index > EARLY_IMAGE_INDEX_LIMIT
-        ):
-            if item.plan_group_index != plan_group_index:
-                item.plan_group_index = plan_group_index
-                item.save(update_fields=["plan_group_index"])
-            continue
-
-        locked_mesas = {
-            mesa.id: mesa
-            for mesa in Mesa.objects.select_for_update().filter(
-                id__in=sorted({source_mesa_id, target_mesa_id})
-            )
-        }
-        source_mesa = locked_mesas[source_mesa_id]
-        target_mesa = locked_mesas[target_mesa_id]
-
-        update_fields = []
-        if not same_mesa:
-            item.mesa = target_mesa
-            update_fields.append("mesa")
-        item.plan_group_index = plan_group_index
-        update_fields.append("plan_group_index")
-        item.save(update_fields=update_fields)
-
-        if not same_mesa:
-            source_items, source_current = _ordered_active_items(source_mesa)
-            _persist_active_order(source_mesa, source_items, source_current)
-
-        target_items, target_current = _ordered_active_items(target_mesa)
-        target_items = [queued for queued in target_items if queued.id != item.id]
-        peer_indexes = [
-            index
-            for index, queued in enumerate(target_items)
-            if queued.modulo.grupo_bastidor_id == bastidor.id
-            and queued.fase == item.fase
-        ]
-        insert_at = len(target_items)
-        if peer_indexes:
-            insert_at = max(peer_indexes) + 1
-            # La cola inferior fabrica cada bastidor en orden inverso al
-            # card: el ultimo modulo colocado es el primero en salir.
-            for peer_index in peer_indexes:
-                peer_order = target_items[peer_index].modulo.orden_intra or 0
-                if peer_order < (modulo.orden_intra or 0):
-                    insert_at = peer_index
-                    break
-
-            current_index = next(
-                (
-                    index
-                    for index, queued in enumerate(target_items)
-                    if target_current and queued.id == target_current.id
-                ),
-                None,
-            )
-            current_is_same_bastidor = bool(
-                target_current
-                and target_current.modulo.grupo_bastidor_id == bastidor.id
-                and target_current.fase == item.fase
-            )
-            if target_current and target_current.id == item.id:
-                # El modulo que se estaba mostrando se ha recolocado desde
-                # el card dentro del margen inicial. El primero del nuevo
-                # orden pasa a ser el actual, aunque ya no sea este item.
-                target_current = None
-            if (
-                current_is_same_bastidor
-                and current_index is not None
-                and insert_at <= current_index
-            ):
-                if target_mesa.current_image_index <= EARLY_IMAGE_INDEX_LIMIT:
-                    target_current = item
-                else:
-                    # No se interrumpe un modulo que ya paso del margen
-                    # inicial, aunque el card haya cambiado de orden.
-                    insert_at = max(peer_indexes) + 1
-
-        target_items.insert(insert_at, item)
-        _persist_active_order(target_mesa, target_items, target_current)
-        moved_items.append(item)
-
-    reconcile_superior_queue_for_group(group)
-    superior_item = (
-        MesaQueueItem.objects.filter(
-            modulo=modulo,
-            fase=Fase.SUPERIOR,
-            status__in=ACTIVE_QUEUE_STATUSES,
-        )
-        .order_by("id")
-        .last()
-    )
-    if superior_item and all(item.id != superior_item.id for item in moved_items):
-        moved_items.append(superior_item)
-    return moved_items
