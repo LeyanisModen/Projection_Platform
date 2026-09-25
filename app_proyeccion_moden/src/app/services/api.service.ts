@@ -688,33 +688,6 @@ export class ApiService {
         });
     }
 
-    createProjectWithStructure(formData: FormData): Observable<{
-        status: string;
-        proyecto_id: number;
-        project: Proyecto;
-        stats: {
-            modulos: number;
-            imagenes: number;
-            detalles_fase: number;
-            plano_cargado?: boolean;
-            documentos_cargados?: boolean;
-            base_tecnica_actualizada?: boolean;
-            modulos_omitidos?: number;
-            module_errors?: Array<{
-                module: string;
-                folder: string;
-                errors: string[];
-            }>;
-            errors: string[];
-        };
-    }> {
-        return this.http.post<any>(
-            `${this.baseUrl}/proyectos/create-with-structure/`,
-            formData,
-            { headers: this.getAuthHeaders() }
-        );
-    }
-
     importProjectTechnicalData(proyectoId: number, formData: FormData): Observable<{
         status: string;
         proyecto_id: number;
