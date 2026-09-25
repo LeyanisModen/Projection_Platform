@@ -5,46 +5,27 @@ import { ApiService, User, Proyecto } from '../../services/api.service';
 import { forkJoin } from 'rxjs';
 import { Router } from '@angular/router';
 import { requiredDaily, planningIssues, planningLabel } from '../../shared/project-planning';
-import {
-  appendModuleImportCandidate,
-  ModuleImportScanResult,
-  scanModuleImportFolder,
-} from './detalle/module-import.utils';
 
 interface ProjectGroup {
   username: string;
   userUrl: string;
   projects: Proyecto[];
-  collapsed: boolean;
 }
 
-interface ImportStats {
-  modulos: number;
-  imagenes: number;
-  detalles_fase?: number;
-  plano_cargado?: boolean;
-  documentos_cargados?: boolean;
-  base_tecnica_actualizada?: boolean;
-  modulos_omitidos?: number;
-  module_errors?: Array<{
-    module: string;
-    folder: string;
-    errors: string[];
-  }>;
-  errors: string[];
-}
-
-interface ProjectCreationReport {
-  projectName: string;
-  stats: ImportStats;
-}
-
+/**
+ * Listado de proyectos por ferralla y alta de proyecto.
+ *
+ * Un proyecto nace solo con nombre (y ferralla si se conoce): sirve para
+ * gestionar fechas y validaciones previas antes de tener datos. Todo lo demas
+ * (modulos, plano, documentos, plazo, limites) se completa desde su detalle,
+ * al que se salta nada mas crearlo.
+ */
 @Component({
   selector: 'app-proyectos',
   standalone: true,
   imports: [CommonModule, FormsModule],
   templateUrl: './proyectos.component.html',
-  styleUrls: ['./proyectos.component.css', '../admin-responsive.css']
+  styleUrls: ['../admin-theme.css', './proyectos.component.css']
 })
 export class ProyectosComponent implements OnInit {
   readonly requiredDaily = requiredDaily;
@@ -56,16 +37,7 @@ export class ProyectosComponent implements OnInit {
   loading = false;
   error = '';
   showForm = false;
-  newProject: any = { nombre: '', usuario: null, peso_maximo_grua_kg: null };
-
-  // Folder import state
-  selectedFolder: FileSystemDirectoryHandle | null = null;
-  folderName: string = '';
-  importProgress: string = '';
-  importing = false;
-  importStats: ImportStats | null = null;
-  folderScan: ModuleImportScanResult | null = null;
-  creationReport: ProjectCreationReport | null = null;
+  newProject: { nombre: string; usuario: string | null } = { nombre: '', usuario: null };
 
   constructor(private api: ApiService, private router: Router, private cdr: ChangeDetectorRef) { }
 
@@ -104,16 +76,14 @@ export class ProyectosComponent implements OnInit {
         username: user.first_name || user.username,
         userUrl: user.url,
         projects: [],
-        collapsed: false
       };
     });
 
     // Add "Sin Asignar" group
     groups['__unassigned__'] = {
-      username: 'Sin Asignar',
+      username: 'Sin ferralla',
       userUrl: '',
       projects: [],
-      collapsed: false
     };
 
     // Distribute projects
@@ -125,11 +95,11 @@ export class ProyectosComponent implements OnInit {
       }
     });
 
-    // Convert to array, put "Sin Asignar" first if it has projects
+    // Solo ferrallas con proyectos; los sin ferralla van primero.
     const unassigned = groups['__unassigned__'];
     delete groups['__unassigned__'];
 
-    this.groupedProjects = Object.values(groups);
+    this.groupedProjects = Object.values(groups).filter(group => group.projects.length > 0);
     if (unassigned.projects.length > 0) {
       this.groupedProjects.unshift(unassigned);
     }
@@ -138,206 +108,27 @@ export class ProyectosComponent implements OnInit {
   toggleForm() {
     this.showForm = !this.showForm;
     this.error = '';
-    this.selectedFolder = null;
-    this.folderName = '';
-    this.importStats = null;
-    this.folderScan = null;
-    this.creationReport = null;
-  }
-
-  /**
-   * Drop the chosen folder and go back to creating the project empty.
-   * Without this, touching "Examinar..." locked the form: a folder with no
-   * valid module leaves the submit button disabled and there was no way
-   * back other than cancelling the whole form.
-   */
-  clearSelectedFolder(): void {
-    this.selectedFolder = null;
-    this.folderName = '';
-    this.folderScan = null;
-    this.importStats = null;
-    this.error = '';
-    this.importProgress = '';
+    this.newProject = { nombre: '', usuario: null };
     this.cdr.detectChanges();
   }
 
-  async selectFolder() {
-    try {
-      const dirHandle = await (window as any).showDirectoryPicker();
-      this.selectedFolder = dirHandle;
-      this.folderName = dirHandle.name;
-      this.folderScan = null;
-      this.creationReport = null;
-      this.error = '';
-      if (!this.newProject.nombre) {
-        this.newProject.nombre = dirHandle.name;
-      }
-
-      this.importing = true;
-      this.importProgress = 'Analizando la estructura completa...';
-      this.cdr.detectChanges();
-      this.folderScan = await scanModuleImportFolder(
-        dirHandle,
-        [],
-        folderName => {
-          this.importProgress = `Revisando modulo: ${folderName}...`;
-          this.cdr.detectChanges();
-        }
-      );
-      this.importing = false;
-      this.importProgress = '';
-
-      if (this.validFolderModules.length === 0) {
-        const detalle = this.folderScan.candidates.length
-          ? 'No hay ningun modulo valido. Corrige las incidencias indicadas antes de crear el proyecto.'
-          : 'No se encontraron carpetas de modulos en la carpeta seleccionada.';
-        this.error = `${detalle} Si quieres crear el proyecto vacio e importar mas tarde, usa "Quitar carpeta".`;
-      }
-      this.cdr.detectChanges();
-    } catch (err: any) {
-      this.importing = false;
-      this.importProgress = '';
-      if (err.name !== 'AbortError') {
-        console.error('Error selecting folder:', err);
-        this.error = 'Error leyendo la carpeta: ' + (err.message || 'error desconocido');
+  createProyecto() {
+    const nombre = this.newProject.nombre.trim();
+    if (!nombre || this.loading) return;
+    this.error = '';
+    this.loading = true;
+    this.api.createProyecto({ nombre, usuario: this.newProject.usuario || null }).subscribe({
+      next: (project) => {
+        this.loading = false;
+        this.manageProject(project);
+      },
+      error: (err) => {
+        console.error('Error creating project', err);
+        this.error = this.apiErrorMessage(err, 'Error creando el proyecto.');
+        this.loading = false;
         this.cdr.detectChanges();
       }
-    }
-  }
-
-  get validFolderModules() {
-    return this.folderScan?.candidates.filter(candidate => candidate.valid) || [];
-  }
-
-  get invalidFolderModules() {
-    return this.folderScan?.candidates.filter(candidate => !candidate.valid) || [];
-  }
-
-  get canCreateSelectedProject(): boolean {
-    return !this.selectedFolder || this.validFolderModules.length > 0;
-  }
-
-  async createProyecto() {
-    this.error = '';
-    const rawCraneLimit = Number(this.newProject.peso_maximo_grua_kg);
-
-    const projectData: any = {
-      nombre: this.newProject.nombre,
-      fecha_montaje: this.newProject.fecha_montaje || null,
-      usuario: this.newProject.usuario || null,
-      peso_maximo_grua_kg: Number.isFinite(rawCraneLimit) && rawCraneLimit > 0
-        ? rawCraneLimit
-        : null
-    };
-
-    if (!this.selectedFolder) {
-      this.loading = true;
-      this.api.createProyecto(projectData).subscribe({
-        next: (project) => {
-          this.projects.push(project);
-          this.groupProjects();
-          this.resetCreationForm();
-        },
-        error: (err) => {
-          console.error('Error creating project', err);
-          this.error = this.apiErrorMessage(err, 'Error creando el proyecto.');
-          this.loading = false;
-          this.cdr.detectChanges();
-        }
-      });
-      return;
-    }
-
-    if (!this.folderScan || this.validFolderModules.length === 0) {
-      this.error = 'La carpeta no contiene ningun modulo valido para importar.';
-      this.cdr.detectChanges();
-      return;
-    }
-
-    this.loading = true;
-    this.importing = true;
-    this.importProgress = `Preparando ${this.validFolderModules.length} modulos validos...`;
-    this.cdr.detectChanges();
-
-    try {
-      const formData = this.buildProjectCreationFormData(projectData, this.folderScan);
-      this.importProgress = 'Creando proyecto y subiendo imagenes...';
-      this.api.createProjectWithStructure(formData).subscribe({
-        next: (result) => {
-          const projectName = this.newProject.nombre;
-          this.projects.push(result.project);
-          this.groupProjects();
-          this.creationReport = { projectName, stats: result.stats };
-          this.importStats = result.stats;
-          this.newProject = { nombre: '', usuario: null, peso_maximo_grua_kg: null };
-          this.showForm = false;
-          this.loading = false;
-          this.importing = false;
-          this.importProgress = '';
-          this.selectedFolder = null;
-          this.folderName = '';
-          this.folderScan = null;
-          this.cdr.detectChanges();
-        },
-        error: (err) => {
-          console.error('Error creating project with structure:', err);
-          const stats = err?.error?.stats as ImportStats | undefined;
-          if (stats) this.importStats = stats;
-          this.error = this.apiErrorMessage(
-            err,
-            'No se pudo crear el proyecto. No se guardo ningun proyecto vacio.'
-          );
-          this.loading = false;
-          this.importing = false;
-          this.importProgress = '';
-          this.cdr.detectChanges();
-        }
-      });
-    } catch (err: any) {
-      console.error('Error preparing project structure:', err);
-      this.error = 'Error preparando la importacion: ' + (err.message || 'error desconocido');
-      this.loading = false;
-      this.importing = false;
-      this.importProgress = '';
-      this.cdr.detectChanges();
-    }
-  }
-
-  private buildProjectCreationFormData(
-    projectData: any,
-    scan: ModuleImportScanResult
-  ): FormData {
-    const formData = new FormData();
-    const modules = this.validFolderModules.map(candidate =>
-      appendModuleImportCandidate(formData, candidate, 'PROY')
-    );
-
-    if (scan.planoFile) {
-      formData.append('plano_file', scan.planoFile.file, scan.planoFile.entryName);
-    }
-    if (scan.documentosFile) {
-      formData.append(
-        'documentos_file',
-        scan.documentosFile.file,
-        scan.documentosFile.entryName
-      );
-    }
-    if (scan.technicalDbFile) {
-      formData.append('technical_file', scan.technicalDbFile, scan.technicalDbFile.name);
-    }
-
-    formData.append('project', JSON.stringify(projectData));
-    formData.append('modulos', JSON.stringify(modules));
-    formData.append('strict_validation', 'true');
-    formData.append('client_errors', JSON.stringify(scan.rootIssues));
-    formData.append('client_module_errors', JSON.stringify(
-      this.invalidFolderModules.map(candidate => ({
-        module: candidate.moduleName,
-        folder: candidate.folderName,
-        errors: candidate.issues,
-      }))
-    ));
-    return formData;
+    });
   }
 
   private apiErrorMessage(err: any, fallback: string): string {
@@ -347,7 +138,6 @@ export class ProyectosComponent implements OnInit {
     if (payload?.detail) return payload.detail;
     if (payload && typeof payload === 'object') {
       const fieldErrors = Object.entries(payload)
-        .filter(([key]) => !['stats', 'status'].includes(key))
         .flatMap(([key, value]) => {
           const messages = Array.isArray(value) ? value : [value];
           return messages.map(message => `${key}: ${message}`);
@@ -355,18 +145,6 @@ export class ProyectosComponent implements OnInit {
       if (fieldErrors.length) return fieldErrors.join(' ');
     }
     return fallback;
-  }
-
-  private resetCreationForm(): void {
-    this.newProject = { nombre: '', usuario: null, peso_maximo_grua_kg: null };
-    this.showForm = false;
-    this.loading = false;
-    this.importing = false;
-    this.selectedFolder = null;
-    this.folderName = '';
-    this.folderScan = null;
-    this.importProgress = '';
-    this.cdr.detectChanges();
   }
 
   manageProject(project: Proyecto) {
@@ -406,5 +184,3 @@ export class ProyectosComponent implements OnInit {
     });
   }
 }
-
-

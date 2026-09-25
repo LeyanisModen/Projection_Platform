@@ -1,312 +1,75 @@
-<div class="container">
+<div class="page">
     <div class="page-header">
-        <h1>Gestión de Proyectos</h1>
-        <button class="btn btn-primary" (click)="toggleForm()">
-            {{ showForm ? 'Cancelar' : 'Nuevo Proyecto' }}
+        <h1>Proyectos</h1>
+        <button type="button" class="btn" [class.btn-primary]="!showForm" (click)="toggleForm()">
+            {{ showForm ? 'Cancelar' : 'Nuevo proyecto' }}
         </button>
     </div>
 
-    <section class="creation-report" *ngIf="creationReport as report">
-        <div class="creation-report-icon" aria-hidden="true">&#10003;</div>
-        <div class="creation-report-content">
-            <strong>Proyecto "{{ report.projectName }}" creado</strong>
-            <div class="creation-report-metrics">
-                <span>{{ report.stats.modulos }} módulos creados</span>
-                <span>{{ report.stats.imagenes }} imágenes cargadas</span>
-                <span *ngIf="report.stats.modulos_omitidos">
-                    {{ report.stats.modulos_omitidos }} módulos omitidos
+    <!-- Alta: solo nombre y ferralla; el resto se completa en el detalle. -->
+    <form class="new-project" *ngIf="showForm" (ngSubmit)="createProyecto()" autocomplete="off">
+        <input type="text" id="nombre" name="nombre" class="field new-project-name"
+            [(ngModel)]="newProject.nombre" required placeholder="Nombre del proyecto"
+            aria-label="Nombre del proyecto" autocomplete="off" autofocus [disabled]="loading">
+        <select id="usuario" name="usuario" class="field new-project-ferralla"
+            [(ngModel)]="newProject.usuario" aria-label="Ferralla" [disabled]="loading">
+            <option [ngValue]="null">Sin ferralla</option>
+            <option *ngFor="let user of users" [ngValue]="user.url">{{ user.first_name || user.username }}</option>
+        </select>
+        <button type="submit" class="btn btn-primary" [disabled]="loading || !newProject.nombre.trim()">
+            {{ loading ? 'Creando...' : 'Crear' }}
+        </button>
+        <div *ngIf="error" class="alert-inline new-project-error" role="alert">{{ error }}</div>
+    </form>
+
+    <!-- Una sola lista plana; la ferralla es solo un separador. -->
+    <div class="projects">
+        <div *ngIf="loading && !projects.length" class="meta">Cargando proyectos...</div>
+
+        <ng-container *ngFor="let group of groupedProjects">
+            <div class="group-title" [class.is-unassigned]="!group.userUrl">
+                <span class="group-name">{{ group.username }}</span>
+                <span class="meta">{{ group.projects.length }} {{ group.projects.length === 1 ? 'proyecto' : 'proyectos' }}</span>
+                <span class="meta group-demand">
+                    {{ requiredDaily(group.projects) }} módulos/día
+                    @if (planningIssues(group.projects)) { <span class="is-warn"> · {{ planningIssues(group.projects) }} sin planificar</span> }
                 </span>
             </div>
-            <div class="creation-report-errors" *ngIf="report.stats.module_errors?.length">
-                <strong>Carpetas que requieren corrección:</strong>
-                <div *ngFor="let moduleError of report.stats.module_errors">
-                    <b>{{ moduleError.module }}</b>
-                    <span *ngIf="moduleError.folder !== moduleError.module"> ({{ moduleError.folder }})</span>:
-                    {{ moduleError.errors.join(' ') }}
-                </div>
-            </div>
-        </div>
-        <button type="button" class="creation-report-close" (click)="creationReport = null"
-            aria-label="Cerrar resumen">&times;</button>
-    </section>
-
-    <!-- Formulario de Creación -->
-    <div class="card mb-4" *ngIf="showForm">
-        <div class="card-header">
-            <h2>Nuevo Proyecto</h2>
-        </div>
-        <div class="card-body">
-            <div class="row">
-                <div class="col-md-7">
-                    <form (ngSubmit)="createProyecto()" #projectForm="ngForm" autocomplete="off">
-
-                        <!-- Folder Selection -->
-                        <div class="form-group">
-                            <label for="carpeta">Carpeta del Proyecto</label>
-                            <div class="folder-input-group">
-                                <input type="text" id="carpeta" class="form-control folder-display"
-                                    [value]="folderName || ''" placeholder="Selecciona una carpeta..." readonly>
-                                <button type="button" class="btn btn-primary folder-btn" (click)="selectFolder()"
-                                    [disabled]="importing">
-                                    Examinar...
-                                </button>
-                                <button type="button" class="btn btn-secondary folder-btn" *ngIf="selectedFolder"
-                                    (click)="clearSelectedFolder()" [disabled]="importing">
-                                    Quitar carpeta
-                                </button>
-                            </div>
-                            <small class="text-muted folder-guidance">Organice sus archivos según la estructura esperada
-                                de la derecha antes de seleccionar la carpeta. La carpeta es opcional: sin carpeta se
-                                crea el proyecto vacío y los módulos se importan después desde su detalle.</small>
-                            <div class="tree-legend">
-                                <span class="legend-required">■</span> Nombres obligatorios (deben coincidir
-                                exactamente)
-                                <br>
-                                <span class="legend-optional">■</span> Archivos opcionales
-                            </div>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="nombre">Nombre del Proyecto</label>
-                            <input type="text" id="nombre" name="nombre" class="form-control"
-                                [(ngModel)]="newProject.nombre" required placeholder="Ej: Edificio Residencial Norte"
-                                autocomplete="off">
-                        </div>
-
-                        <div class="form-group">
-                            <label for="usuario">Ferralla</label>
-                            <select id="usuario" name="usuario" class="form-control dropdown-ferralla"
-                                [(ngModel)]="newProject.usuario" autocomplete="off">
-                                <option [ngValue]="null">Sin asignar</option>
-                                <option *ngFor="let user of users" [ngValue]="user.url">{{ user.first_name ||
-                                    user.username
-                                    }}</option>
-                            </select>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="peso_maximo_grua_kg">Carga máxima de la grúa (kg)</label>
-                            <input type="number" id="peso_maximo_grua_kg" name="peso_maximo_grua_kg"
-                                class="form-control" [(ngModel)]="newProject.peso_maximo_grua_kg"
-                                min="0.01" step="0.01" placeholder="Ej: 2500" autocomplete="off">
-                            <small class="text-muted">
-                                Opcional. Los módulos se separarán para respetar el límite; si uno lo supera por sí solo, quedará marcado.
-                            </small>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="fecha_montaje">Fecha de montaje</label>
-                            <input id="fecha_montaje" name="fecha_montaje" type="date" class="form-control" [(ngModel)]="newProject.fecha_montaje">
-                            <small class="text-muted">El objetivo diario se calculará para terminar antes de esta fecha, usando los días de trabajo de la ferralla asignada.</small>
-                        </div>
-
-                        <!-- Import Progress -->
-                        <div *ngIf="importing" class="import-progress mb-3">
-                            <div class="progress-indicator">
-                                <div class="spinner"></div>
-                                <span>{{ importProgress }}</span>
-                            </div>
-                        </div>
-
-                        <section class="folder-analysis" *ngIf="folderScan as scan">
-                            <header class="folder-analysis-header">
-                                <div>
-                                    <strong>Revisión previa de la carpeta</strong>
-                                    <small>Se comprueba todo antes de crear el proyecto.</small>
-                                </div>
-                                <div class="folder-analysis-counts">
-                                    <span class="is-valid">{{ validFolderModules.length }} válidos</span>
-                                    <span class="is-invalid" *ngIf="invalidFolderModules.length">
-                                        {{ invalidFolderModules.length }} con incidencias
-                                    </span>
-                                </div>
-                            </header>
-
-                            <div class="folder-analysis-general" *ngIf="scan.rootIssues.length">
-                                <div *ngFor="let issue of scan.rootIssues">{{ issue }}</div>
-                            </div>
-
-                            <div class="folder-analysis-modules">
-                                <article *ngFor="let candidate of scan.candidates"
-                                    [class.is-invalid]="!candidate.valid">
-                                    <div class="folder-analysis-module-title">
-                                        <strong>{{ candidate.moduleName }}</strong>
-                                        <span>{{ candidate.phases.join(' + ') || 'Sin fases válidas' }}</span>
-                                    </div>
-                                    <div class="folder-analysis-issues" *ngIf="candidate.issues.length">
-                                        <div *ngFor="let issue of candidate.issues">{{ issue }}</div>
-                                    </div>
-                                </article>
-                            </div>
-                        </section>
-
-                        <!-- Import Stats -->
-                        <div *ngIf="importStats" class="import-stats alert alert-success mb-3">
-                            <strong>Importacion completada:</strong>
-                            <ul class="mb-0 mt-1">
-                                <li>{{ importStats.modulos }} modulos creados</li>
-                                <li>{{ importStats.imagenes }} imagenes importadas</li>
-                            </ul>
-                            <div *ngIf="importStats.errors.length > 0" class="text-danger mt-2">
-                                <strong>Errores ({{ importStats.errors.length }}):</strong>
-                                <ul>
-                                    <li *ngFor="let err of importStats.errors.slice(0, 5)">{{ err }}</li>
-                                    <li *ngIf="importStats.errors.length > 5">... y {{ importStats.errors.length - 5 }}
-                                        más</li>
-                                </ul>
-                            </div>
-                        </div>
-
-                        <div class="form-actions text-right">
-                            <button type="button" class="btn btn-secondary mr-2"
-                                (click)="toggleForm()">Cancelar</button>
-                            <button type="submit" class="btn btn-success"
-                                [disabled]="!projectForm.form.valid || loading || importing || !canCreateSelectedProject">
-                                {{ selectedFolder
-                                    ? 'Crear e importar ' + validFolderModules.length + ' módulos'
-                                    : 'Crear Proyecto' }}
-                            </button>
-                        </div>
-                    </form>
-                    <div *ngIf="error" class="alert alert-danger mt-2">
-                        <strong>{{ error }}</strong>
-                        <div class="error-module-list" *ngIf="importStats?.module_errors?.length">
-                            <div *ngFor="let moduleError of importStats?.module_errors">
-                                <b>{{ moduleError.module }}</b>: {{ moduleError.errors.join(' ') }}
-                            </div>
-                        </div>
+            <div *ngFor="let project of group.projects"
+                class="project-row"
+                role="link"
+                tabindex="0"
+                [attr.aria-label]="'Gestionar proyecto ' + project.nombre"
+                (click)="manageProject(project)"
+                (keydown)="onProjectRowKeydown($event, project)">
+                <div class="project-main">
+                    <div class="project-name">{{ project.nombre }}</div>
+                    <div class="meta project-info">
+                        @if (project.fecha_montaje) { <span>Montaje {{ project.fecha_montaje | date:'dd/MM/yyyy' }}</span> }
+                        <span>{{ planningLabel(project) }}</span>
+                        <span *ngIf="(project.grupos_count || 0) > 0">{{ project.grupos_count }} grupos</span>
+                        <span *ngIf="!project.grupos_count && (project.modulos_count || 0) > 0" class="is-warn">sin grupos</span>
+                        <span *ngIf="(project.modulos_count || 0) > 0"
+                            [class.is-ok]="(project.modulos_completados || 0) === project.modulos_count">
+                            {{ project.modulos_completados || 0 }}/{{ project.modulos_count }} módulos
+                        </span>
+                        <span *ngIf="!project.modulos_count">sin módulos</span>
+                        <span *ngIf="project.produccion_bloqueada" class="is-danger">
+                            <i class="fa fa-lock" aria-hidden="true"></i> sin producción
+                        </span>
                     </div>
                 </div>
-
-                <div class="col-md-5 pl-md-4">
-                    <div class="folder-structure-graphic">
-                        <h4>Estructura de Carpetas Esperada</h4>
-                        <div class="tree">
-                            <ul>
-                                <li>
-                                    <span class="folder">📁 MiProyecto/</span>
-                                    <ul>
-                                        <li><span class="file file-optional">📄 database.db</span> <span
-                                                class="tag-optional">&lt;archivo opcional&gt;</span></li>
-                                        <li><span class="file file-optional">📄 plano.pdf</span> <span
-                                                class="tag-optional">&lt;archivo opcional&gt;</span></li>
-                                        <li><span class="file file-optional">📦 documentos.zip</span> <span
-                                                class="tag-optional">&lt;archivo opcional&gt;</span></li>
-                                        <li>
-                                            <span class="folder">📁 MOD-01/</span>
-                                            <ul>
-                                                <li>
-                                                    <span class="folder folder-required">📁 INF/</span> <span
-                                                        class="tag-required">&lt;obligatorio&gt;</span>
-                                                    <ul>
-                                                        <li><span class="file">🖼️ imagen1.png</span></li>
-                                                    </ul>
-                                                </li>
-                                                <li>
-                                                    <span class="folder folder-required">📁 SUP/</span> <span
-                                                        class="tag-required">&lt;obligatorio&gt;</span>
-                                                </li>
-                                            </ul>
-                                        </li>
-                                        <li>
-                                            <span class="folder">📁 MOD-02/</span>
-                                            <ul>
-                                                <li><span class="folder folder-required">📁 INF/</span></li>
-                                                <li><span class="folder folder-required">📁 SUP/</span></li>
-                                            </ul>
-                                        </li>
-                                        <li><span class="dots">...</span></li>
-                                    </ul>
-                                </li>
-                            </ul>
-                        </div>
-                    </div>
+                <div class="project-actions">
+                    <button type="button" class="btn-icon danger"
+                        (click)="$event.stopPropagation(); confirmDelete(project)"
+                        title="Eliminar proyecto" aria-label="Eliminar proyecto">
+                        <i class="fa fa-trash-o" aria-hidden="true"></i>
+                    </button>
+                    <i class="fa fa-chevron-right row-chevron" aria-hidden="true"></i>
                 </div>
             </div>
-        </div>
+        </ng-container>
 
-    </div>
-
-
-    <!-- Lista de Proyectos Agrupados -->
-    <div class="projects-list">
-        <div *ngIf="loading && !projects.length" class="text-center">Cargando proyectos...</div>
-
-        <div *ngFor="let group of groupedProjects" class="user-group card mb-3">
-            <div class="card-header user-header" [class.bg-warning-light]="!group.userUrl"
-                (click)="group.collapsed = !group.collapsed" style="cursor: pointer;">
-                <h3>
-                    <span class="toggle-icon">{{ group.collapsed ? '▶' : '▼' }}</span>
-                    <span *ngIf="group.userUrl">👷</span>
-                    <span *ngIf="!group.userUrl">📋</span>
-                    {{ group.username }}
-                </h3>
-                <span class="planning-group-demand">
-                    Objetivo conjunto: {{ requiredDaily(group.projects) }} módulos/día
-                    @if (planningIssues(group.projects)) { <small> · {{ planningIssues(group.projects) }} proyectos requieren planificación</small> }
-                </span>
-                <span class="badge badge-count" [class.badge-warning]="!group.userUrl" [class.badge-info]="group.userUrl">
-                    {{ group.projects.length }} {{ group.projects.length === 1 ? 'proyecto' : 'proyectos' }}
-                </span>
-            </div>
-            <div class="card-body p-0" *ngIf="!group.collapsed">
-                <table class="table mb-0" *ngIf="group.projects.length > 0">
-                    <tbody>
-                        <tr *ngFor="let project of group.projects"
-                            class="project-row"
-                            role="link"
-                            tabindex="0"
-                            [attr.aria-label]="'Gestionar proyecto ' + project.nombre"
-                            (click)="manageProject(project)"
-                            (keydown)="onProjectRowKeydown($event, project)">
-                            <td>
-                                <div class="project-name">{{ project.nombre }}</div>
-                                <div class="project-planning-info">
-                                    @if (project.fecha_montaje) { <span>Montaje: {{ project.fecha_montaje | date:'dd/MM/yyyy' }} · </span> }
-                                    {{ planningLabel(project) }}
-                                </div>
-                                <div class="project-stats">
-                                    <span *ngIf="(project.grupos_count || 0) > 0" class="stat-pill stat-grupos">
-                                        <i class="fa fa-layer-group"></i>
-                                        {{ project.grupos_count }} grupos
-                                    </span>
-                                    <span *ngIf="!project.grupos_count && (project.modulos_count || 0) > 0" class="stat-pill stat-warning" title="Sin datos técnicos importados">
-                                        <i class="fa fa-exclamation-triangle"></i>
-                                        sin grupos
-                                    </span>
-                                    <span *ngIf="(project.modulos_count || 0) > 0" class="stat-pill"
-                                        [class.stat-completo]="(project.modulos_completados || 0) === project.modulos_count"
-                                        [class.stat-pendiente]="(project.modulos_completados || 0) < (project.modulos_count || 0)">
-                                        {{ project.modulos_completados || 0 }}/{{ project.modulos_count }} módulos
-                                    </span>
-                                    <span *ngIf="!project.modulos_count" class="stat-pill stat-empty">
-                                        sin módulos
-                                    </span>
-                                </div>
-                            </td>
-                            <td class="text-right">
-                                <button class="btn-icon-action btn-manage mr-2"
-                                    (click)="$event.stopPropagation(); manageProject(project)"
-                                    title="Gestionar proyecto">
-                                    <i class="fa fa-folder-open" aria-hidden="true"></i>
-                                </button>
-                                <button class="btn-icon-action btn-delete"
-                                    (click)="$event.stopPropagation(); confirmDelete(project)"
-                                    title="Eliminar proyecto">
-                                    <i class="fa fa-trash" aria-hidden="true"></i>
-                                </button>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-                <div *ngIf="group.projects.length === 0" class="p-3 text-muted text-center">
-                    Sin proyectos asignados.
-                </div>
-            </div>
-        </div>
-
-        <div *ngIf="!loading && groupedProjects.length === 0" class="text-center mt-5">
-            No hay proyectos ni usuarios cargados.
-        </div>
+        <div *ngIf="!loading && groupedProjects.length === 0" class="meta">No hay proyectos.</div>
     </div>
 </div>

@@ -38,7 +38,7 @@ import { getModuloPhaseAction } from './phase-action.utils';
         ZoomableImageComponent,
     ],
     templateUrl: './detalle.component.html',
-    styleUrls: ['./detalle.component.css', './detalle-responsive.css']
+    styleUrls: ['../../admin-theme.css', './detalle.component.css', './detalle-responsive.css']
 })
 export class ProyectoDetailComponent implements OnInit {
     proyectoId: number | null = null;

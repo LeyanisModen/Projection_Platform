@@ -11,7 +11,6 @@ import { ApiService } from '../../services/api.service';
       <header class="admin-header">
         <a class="brand" routerLink="/admin-dashboard/proyectos" aria-label="Ir a Proyectos">
           <img src="assets/logo-moden.jpg" alt="MOD:EN" class="header-logo" />
-          <span class="subtitle">Administracion de la plataforma</span>
         </a>
 
         <nav class="header-nav" aria-label="Secciones de administracion">
@@ -49,7 +48,7 @@ import { ApiService } from '../../services/api.service';
               <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
               <circle cx="12" cy="7" r="4" />
             </svg>
-            <span>Usuario {{ username }}</span>
+            <span>{{ username }}</span>
           </span>
           <button
             type="button"
@@ -84,13 +83,14 @@ import { ApiService } from '../../services/api.service';
   `,
   styles: `
     :host {
-      --header-height: 64px;
+      --header-height: 60px;
       --card-bg: #ffffff;
-      --text-primary: #1a1a2e;
-      --text-secondary: #6b6b7b;
+      --text-primary: #1f2933;
+      --text-secondary: #7b8794;
       --accent-orange: #f0640f;
-      --border-light: #e0e0e0;
+      --border-light: #e4e7eb;
 
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       display: block;
       height: 100vh;
       height: 100dvh;
@@ -102,7 +102,7 @@ import { ApiService } from '../../services/api.service';
       display: flex;
       flex-direction: column;
       height: 100%;
-      background: #f0f2f5;
+      background: #f7f8fa;
     }
 
     .admin-header {
@@ -117,7 +117,6 @@ import { ApiService } from '../../services/api.service';
       flex-shrink: 0;
       background: var(--card-bg);
       border-bottom: 1px solid var(--border-light);
-      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.02);
       box-sizing: border-box;
     }
 
@@ -131,18 +130,9 @@ import { ApiService } from '../../services/api.service';
     }
 
     .header-logo {
-      height: 40px;
+      height: 36px;
       border-radius: 6px;
       flex-shrink: 0;
-    }
-
-    .subtitle {
-      overflow: hidden;
-      color: var(--text-secondary);
-      font-size: 0.9rem;
-      font-weight: 500;
-      text-overflow: ellipsis;
-      white-space: nowrap;
     }
 
     .header-nav {
@@ -158,8 +148,8 @@ import { ApiService } from '../../services/api.service';
       align-items: center;
       border: 0;
       color: var(--text-secondary);
-      font-size: 0.95rem;
-      font-weight: 600;
+      font-size: 0.92rem;
+      font-weight: 500;
       text-decoration: none;
       white-space: nowrap;
       transition: color 160ms ease;
@@ -170,8 +160,8 @@ import { ApiService } from '../../services/api.service';
       right: 0;
       bottom: 0;
       left: 0;
-      height: 3px;
-      border-radius: 3px 3px 0 0;
+      height: 2px;
+      border-radius: 2px 2px 0 0;
       background: var(--accent-orange);
       content: '';
       opacity: 0;
@@ -179,10 +169,8 @@ import { ApiService } from '../../services/api.service';
       transition: opacity 160ms ease, transform 160ms ease;
     }
 
-    .header-nav a:hover,
-    .header-nav a.active {
-      color: var(--accent-orange);
-    }
+    .header-nav a:hover { color: var(--text-primary); }
+    .header-nav a.active { color: var(--text-primary); font-weight: 600; }
 
     .header-nav a.active::after {
       opacity: 1;
@@ -210,7 +198,7 @@ import { ApiService } from '../../services/api.service';
       align-items: center;
       gap: 8px;
       color: var(--text-secondary);
-      font-size: 0.9rem;
+      font-size: 0.85rem;
       font-weight: 500;
       white-space: nowrap;
     }
@@ -248,10 +236,6 @@ import { ApiService } from '../../services/api.service';
       .admin-header {
         grid-template-columns: auto 1fr auto;
         gap: 18px;
-      }
-
-      .subtitle {
-        display: none;
       }
 
       .header-nav {
