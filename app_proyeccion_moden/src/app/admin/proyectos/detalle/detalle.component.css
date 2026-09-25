@@ -141,7 +141,8 @@
 .grupo-modulo-phases { display: inline-flex; gap: 3px; }
 .grupo-modulo-phase { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 7px; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--surface); color: var(--muted); font: inherit; font-size: 10px; font-weight: 700; cursor: pointer; }
 .grupo-modulo-phase:hover { color: var(--ink); background: var(--surface-2); }
-.grupo-modulo-phase.is-completa { color: #fff; background: var(--ok); border-color: var(--ok); }
+.grupo-modulo-phase.is-completa { color: var(--muted); background: var(--surface); border-color: var(--line); }
+.grupo-modulo-phase.is-completa .phase-check { color: var(--ok); }
 .grupo-modulo-phase.is-en-curso { color: var(--accent-dark); border-color: var(--accent); background: var(--accent-soft); }
 .grupo-modulo-phase-icon { display: inline-grid; width: 10px; }
 .grupo-modulo-phase-icon i { grid-area: 1 / 1; font-size: 9px; }
