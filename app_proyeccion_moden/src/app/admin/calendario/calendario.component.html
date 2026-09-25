@@ -20,6 +20,7 @@
             (click)="filtersOpen.set(!filtersOpen())" [attr.aria-expanded]="filtersOpen()" aria-controls="calendar-filters"
             title="Filtros" aria-label="Filtros"><i class="fa fa-bars" aria-hidden="true"></i></button>
         <button type="button" class="icon-button" (click)="openTeam()" title="Gestionar equipo" aria-label="Gestionar equipo"><i class="fa fa-users" aria-hidden="true"></i></button>
+        <button type="button" class="icon-button" (click)="printCalendar()" [disabled]="loading() || !!error()" title="Imprimir / PDF" aria-label="Imprimir / PDF"><i class="fa fa-print" aria-hidden="true"></i></button>
     </div>
 </section>
 @if (filtersOpen()) {
@@ -95,7 +96,7 @@
     <aside class="day-agenda">
         <div class="agenda-header">
             <h2>{{ selected() | date:'dd/MM/yyyy' }}</h2>
-            <button type="button" class="add-event" (click)="editEvent()" title="Añadir evento" aria-label="Añadir evento"><i class="fa fa-plus" aria-hidden="true"></i></button>
+            <button type="button" class="add-event" (click)="editEvent()" title="Añadir evento"><i class="fa fa-plus" aria-hidden="true"></i> Evento</button>
         </div>
         <h3>Disponibilidad de oficina</h3>
         @if (loading()) { <p role="status">Comprobando disponibilidad...</p>
@@ -230,6 +231,3 @@
         </section>
     </div>
 }
-<button type="button" class="print-fab" (click)="printCalendar()" [disabled]="loading() || !!error()" title="Imprimir / PDF" aria-label="Imprimir / PDF">
-    <i class="fa fa-print" aria-hidden="true"></i>
-</button>

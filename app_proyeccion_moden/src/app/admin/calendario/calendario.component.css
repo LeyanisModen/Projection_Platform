@@ -46,15 +46,11 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .toolbar-actions .primary i { margin-right: 4px; font-size: 11px; }
 
 /* Filtros: solo cuando se piden. */
-.filters-panel { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: -4px 0 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); }
+.filters-panel { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: -4px 0 14px; padding: 10px 12px; border: 1px solid var(--line); background: var(--surface); }
 .filters-panel select { max-width: 240px; }
 .link-button { height: 30px; padding: 0 8px; border-color: transparent; color: var(--muted); text-decoration: underline; text-underline-offset: 2px; }
 .link-button:hover:not(:disabled) { background: transparent; color: var(--ink); }
 .filters-panel .refresh { margin-left: auto; width: 32px; height: 32px; }
-
-/* Imprimir: flotante, fuera del camino. */
-.print-fab { position: fixed; left: 20px; bottom: 20px; z-index: 30; width: 44px; height: 44px; padding: 0; border-radius: 50%; color: var(--muted); background: var(--surface); border: 1px solid var(--line-strong); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08); }
-.print-fab:hover:not(:disabled) { color: var(--ink); background: var(--surface); border-color: var(--ink); }
 
 .team-legend { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .team-legend button { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 10px; border-radius: 999px; color: var(--text); }
@@ -74,7 +70,8 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .day-marks { position: absolute; left: 6px; right: 4px; bottom: 4px; display: flex; gap: 3px; align-items: center; }
 .day-marks span { width: 7px; height: 7px; border-radius: 50%; box-shadow: inset 0 0 0 1px #0002; }
 .day-marks .more { width: auto; height: auto; box-shadow: none; font-size: 10px; line-height: 1; color: var(--muted); }
-.month-grid { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; min-width: 0; }
+/* Sin esquinas: rejilla cuadrada, panel del dia plano tras una linea vertical. */
+.month-grid { background: var(--surface); border: 1px solid var(--line); overflow: hidden; min-width: 0; }
 .month-heading button { display: flex; justify-content: space-between; align-items: center; width: 100%; height: auto; padding: 12px 14px; border: 0; border-radius: 0; color: var(--ink); text-align: left; font-weight: 600; text-transform: capitalize; background: var(--surface-2); }
 .month-heading button span { color: var(--muted); }
 .month-heading button:hover:not(:disabled) { background: #eef1f5; }
@@ -111,16 +108,17 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .control.done .event-label { text-decoration: line-through; opacity: .8; }
 
 /* Agenda del dia */
-.day-agenda { min-width: 0; padding: 18px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+.day-agenda { min-width: 0; padding: 0 0 0 22px; border-left: 2px solid var(--line-strong); }
 .agenda-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.add-event { width: 36px; height: 36px; padding: 0; border: 2px solid var(--accent); border-radius: 50%; color: var(--accent); background: var(--surface); font-size: 15px; }
-.add-event:hover:not(:disabled) { background: var(--accent); color: #fff; }
+.add-event { height: 32px; padding: 0 12px; border-color: var(--accent); border-radius: var(--radius-sm); color: #fff; background: var(--accent); font-size: 12px; font-weight: 600; }
+.add-event i { margin-right: 4px; font-size: 11px; }
+.add-event:hover:not(:disabled) { background: var(--accent-dark); border-color: var(--accent-dark); }
 .availability { display: grid; gap: 6px; }
-.availability > div { display: flex; justify-content: space-between; gap: 12px; padding: 7px 10px; border-radius: var(--radius-sm); background: var(--surface-2); font-size: 12px; }
+.availability > div { display: flex; justify-content: space-between; gap: 12px; padding: 7px 10px; background: var(--surface-2); font-size: 12px; }
 .availability strong { display: inline-flex; align-items: center; gap: 7px; min-width: 0; color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
 .availability span { color: var(--ok); }
 .availability .absent span { color: var(--warn); }
-.agenda-event { display: grid; gap: 6px; margin: 10px 0; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); font-size: 13px; overflow-wrap: anywhere; }
+.agenda-event { display: grid; gap: 6px; margin: 10px 0; padding: 12px; border: 1px solid var(--line); font-size: 13px; overflow-wrap: anywhere; }
 .agenda-event strong { color: var(--ink); }
 .agenda-event span { font-size: 12px; color: var(--muted); }
 .agenda-event a { color: var(--text); text-decoration: underline; text-underline-offset: 2px; }
@@ -211,12 +209,12 @@ legend { color: var(--muted); font-size: 12px; font-weight: 500; }
     .view-switch { width: 100%; display: grid; grid-template-columns: 1fr 1fr 1fr; }
     .toolbar-actions { width: 100%; justify-content: flex-end; }
     .year-view { --event-row: 32px; }
-    .print-fab { left: 12px; bottom: 12px; }
+    .day-agenda { padding-left: 0; border-left: 0; border-top: 2px solid var(--line-strong); padding-top: 16px; }
 }
 @media print {
     :host { color: #111; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
     .calendar-layout { --event-row: auto; }
-    .page-heading, .calendar-toolbar, .filters-panel, .print-fab, .day-agenda, .overlay { display: none !important; }
+    .page-heading, .calendar-toolbar, .filters-panel, .day-agenda, .overlay { display: none !important; }
     .print-heading { display: block; margin-bottom: 3mm; }
     .print-heading h1 { font-size: 16pt; }
     .print-heading p { font-size: 9pt; margin: 2mm 0; }
@@ -225,7 +223,7 @@ legend { color: var(--muted); font-size: 12px; font-weight: 500; }
     .team-legend { margin: 0 0 4mm; gap: 2mm; }
     .team-legend button { height: auto; padding: 1mm 2mm; font-size: 8pt; min-height: 0; }
     .team-legend button.active { background: white; color: #111; border-color: var(--line); }
-    .month-grid { border-radius: 2mm; margin-bottom: 3mm; }
+    .month-grid { margin-bottom: 3mm; }
     .calendar-week { break-inside: avoid; min-height: 25mm; }
     .month-heading button { min-height: 0; padding: 2mm; font-size: 12pt; }
     .month-heading button span { display: none; }
