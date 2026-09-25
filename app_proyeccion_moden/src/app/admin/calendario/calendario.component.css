@@ -22,7 +22,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .primary { background: var(--accent); color: #fff; border-color: var(--accent); }
 .primary:hover:not(:disabled) { background: var(--accent-dark); border-color: var(--accent-dark); }
 .actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.calendar-toolbar { margin-bottom: 14px; }
+.calendar-toolbar { margin: 4px 0 14px; }
 
 /* Mes + vista en una sola pieza. */
 .calendar-controls { display: inline-flex; align-items: center; gap: 2px; padding: 3px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); }
@@ -112,6 +112,9 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* Agenda del dia */
 .day-agenda { min-width: 0; padding: 18px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+.agenda-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.add-event { width: 36px; height: 36px; padding: 0; border: 2px solid var(--accent); border-radius: 50%; color: var(--accent); background: var(--surface); font-size: 15px; }
+.add-event:hover:not(:disabled) { background: var(--accent); color: #fff; }
 .availability { display: grid; gap: 6px; }
 .availability > div { display: flex; justify-content: space-between; gap: 12px; padding: 7px 10px; border-radius: var(--radius-sm); background: var(--surface-2); font-size: 12px; }
 .availability strong { display: inline-flex; align-items: center; gap: 7px; min-width: 0; color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
