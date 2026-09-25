@@ -19,13 +19,13 @@ import { ApiService, CheckDefinition } from '../../services/api.service';
         <header class="page-heading">
             <div>
                 <h1>Lista de control</h1>
-                <p>Pasos de control de todos los proyectos.</p>
+                <p>Todos los proyectos siguen esta lista.</p>
             </div>
         </header>
 
         @if (error()) { <p class="error" role="alert">{{ error() }}</p> }
 
-        <section class="card">
+        <section>
             <form class="add-row" (ngSubmit)="add()">
                 <label for="new-step" class="sr-only">Nuevo paso</label>
                 <input id="new-step" name="newStep" maxlength="200" [ngModel]="newTitle()" (ngModelChange)="newTitle.set($event)"
@@ -46,7 +46,7 @@ import { ApiService, CheckDefinition } from '../../services/api.service';
                         (click)="newBloquea.set(!newBloquea())" [disabled]="busy()"
                         title="Bloquea producción" aria-label="Bloquea producción"><i class="fa fa-lock" aria-hidden="true"></i></button>
                 </div>
-                <button type="submit" class="primary" [disabled]="busy() || !newTitle().trim()">Añadir paso</button>
+                <button type="submit" class="btn btn-primary" [disabled]="busy() || !newTitle().trim()">Añadir paso</button>
             </form>
 
             @if (loading()) { <p>Cargando lista...</p> }
@@ -81,7 +81,7 @@ import { ApiService, CheckDefinition } from '../../services/api.service';
                                     title="Bloquea producción" aria-label="Bloquea producción"><i class="fa fa-lock" aria-hidden="true"></i></button>
                             </div>
                             <div class="row-actions">
-                                <button type="button" [disabled]="busy() || !editTitle().trim()" (click)="saveEdit(step)">Guardar</button>
+                                <button type="button" class="primary" [disabled]="busy() || !editTitle().trim()" (click)="saveEdit(step)">Guardar</button>
                                 <button type="button" [disabled]="busy()" (click)="cancelEdit()">Cancelar</button>
                             </div>
                             @if (otherSteps(step).length) {
@@ -111,10 +111,10 @@ import { ApiService, CheckDefinition } from '../../services/api.service';
                                 }
                             </span>
                             <div class="row-actions">
-                                <button type="button" [disabled]="busy() || first" (click)="move(i, -1)" aria-label="Subir">&uarr;</button>
-                                <button type="button" [disabled]="busy() || last" (click)="move(i, 1)" aria-label="Bajar">&darr;</button>
-                                <button type="button" [disabled]="busy()" (click)="startEdit(step)">Editar</button>
-                                <button type="button" class="danger" [disabled]="busy()" (click)="remove(step)">Eliminar</button>
+                                <button type="button" [disabled]="busy() || first" (click)="move(i, -1)" title="Subir" aria-label="Subir"><i class="fa fa-arrow-up" aria-hidden="true"></i></button>
+                                <button type="button" [disabled]="busy() || last" (click)="move(i, 1)" title="Bajar" aria-label="Bajar"><i class="fa fa-arrow-down" aria-hidden="true"></i></button>
+                                <button type="button" [disabled]="busy()" (click)="startEdit(step)" title="Editar" aria-label="Editar"><i class="fa fa-pencil" aria-hidden="true"></i></button>
+                                <button type="button" class="danger" [disabled]="busy()" (click)="remove(step)" title="Eliminar" aria-label="Eliminar"><i class="fa fa-trash-o" aria-hidden="true"></i></button>
                             </div>
                         }
                     </li>
@@ -122,32 +122,47 @@ import { ApiService, CheckDefinition } from '../../services/api.service';
             </ol>
         </section>
     `,
+    styleUrls: ['../admin-theme.css'],
     styles: `
-        :host{display:block;max-width:900px;margin:0 auto;color:#27374a;--line:#dce3eb;--orange:#ed6a19;--muted:#62748a}
+        :host{max-width:900px;margin:0 auto}
         *{box-sizing:border-box}
-        .page-heading{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:22px}
-        h1{font-size:27px;margin:0}p{color:var(--muted);font-size:13px;line-height:1.5;max-width:70ch}
-        .error{color:#b3341a}.empty{margin:14px 0 4px}
-        .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:18px}
-        button,input{font:inherit;font-size:13px;border:1px solid var(--line);border-radius:7px;padding:9px 12px;background:#fff;color:inherit;min-width:0}
-        button{cursor:pointer}button:disabled{opacity:.5;cursor:default}
-        button:focus-visible,input:focus-visible{outline:2px solid var(--orange);outline-offset:2px}
-        .primary{background:var(--orange);color:#fff;border-color:var(--orange)}
-        .danger{color:#b3341a;border-color:#f1c9bf}
-        .add-row{display:flex;gap:8px;align-items:stretch}.add-row input{flex:1 1 auto}
-        .edit-block{flex:1 1 auto;min-width:0;display:flex}.edit-block input{flex:1 1 auto}
-        .flag-toggles{display:inline-flex;gap:4px;flex:0 0 auto}.flag-toggle{display:inline-grid;place-items:center;width:38px;min-width:38px;min-height:36px;padding:0;color:#9aa6b4;background:#fff;border:1px solid #dce3eb;border-radius:7px;font-size:15px;cursor:pointer;transition:color .15s,background-color .15s,border-color .15s}.flag-toggle:hover:not(:disabled){color:#27374a}.flag-toggle.on{color:#fff;background:#ed6a19;border-color:#ed6a19}.flag-toggle:disabled{opacity:.5;cursor:default}.flag-icons{display:inline-flex;align-items:center;gap:6px;margin-left:8px;color:#c2570e;font-size:13px;vertical-align:middle}
-        .days-input{width:64px;min-width:64px;padding:6px 8px;text-align:right}.days-badge{font-size:11px;font-weight:700;color:#98440d;background:#fff0e3;border-radius:999px;padding:1px 7px}
+        .page-heading{margin-bottom:20px}
+        .page-heading h1{margin:0;color:var(--ink);font-size:24px;font-weight:600;letter-spacing:-0.01em}
+        .page-heading p{margin:2px 0 0;color:var(--muted);font-size:13px}
+        .error{color:var(--danger)}.empty{margin:14px 0 4px;color:var(--muted)}
+        .add-row{display:flex;gap:8px;align-items:stretch}
+        .add-row>input{flex:1 1 auto;height:var(--control-h);padding:0 12px;border:1px solid var(--line-strong);border-radius:var(--radius-sm);font:inherit;color:var(--ink)}
+        .add-row>input::placeholder,.title-input::placeholder{color:var(--muted)}
+        .add-row>input:focus,.title-input:focus,.days-input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+        .edit-block{flex:1 1 auto;min-width:0;display:flex}
+        .title-input{flex:1 1 auto;height:36px;padding:0 10px;border:1px solid var(--line-strong);border-radius:var(--radius-sm);font:inherit;color:var(--ink)}
+        .flag-toggles{display:inline-flex;align-items:center;gap:4px;flex:0 0 auto}
+        .flag-toggle{display:inline-grid;place-items:center;width:38px;min-width:38px;height:var(--control-h);padding:0;color:var(--muted);background:var(--surface);border:1px solid var(--line-strong);border-radius:var(--radius-sm);font-size:14px;cursor:pointer;transition:color .12s,background-color .12s,border-color .12s}
+        .flag-toggle:hover:not(:disabled){color:var(--ink);background:var(--surface-2)}
+        .flag-toggle.on{color:var(--ink);background:var(--surface-2);border-color:var(--ink)}
+        .flag-toggle:disabled{opacity:.5;cursor:default}
+        .step .flag-toggle{height:36px;width:34px;min-width:34px}
+        .flag-icons{display:inline-flex;align-items:center;gap:8px;margin-left:10px;color:var(--muted);font-size:13px;vertical-align:middle}
+        .days-input{width:64px;min-width:64px;height:var(--control-h);padding:0 8px;border:1px solid var(--line-strong);border-radius:var(--radius-sm);font:inherit;text-align:right;color:var(--ink)}
+        .step .days-input{height:36px}
+        .days-badge{font-size:11px;font-weight:600;color:var(--text);background:var(--surface-2);border:1px solid var(--line);border-radius:999px;padding:1px 7px}
         .requisitos-hint{display:block;margin-top:3px;color:var(--muted);font-size:12px}
-        .requisitos{flex-basis:100%;display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding-left:40px}.requisitos-label{color:var(--muted);font-size:12px;margin-right:2px}
-        .req-chip{padding:4px 10px;font-size:12px;border-radius:999px;color:#62748a}.req-chip.on{color:#98440d;background:#fff0e3;border-color:#ed6a19}
-        .steps{list-style:none;margin:16px 0 0;padding:0}
-        .step{display:flex;align-items:center;flex-wrap:wrap;gap:12px;padding:10px 0;border-top:1px solid #edf0f4}
-        .position{flex:0 0 28px;height:28px;display:grid;place-items:center;border-radius:50%;background:#fff0e3;color:#98440d;font-weight:700;font-size:12px}
-        .title{flex:1 1 auto;min-width:0;overflow-wrap:anywhere}.title-input{flex:1 1 auto}
-        .row-actions{display:flex;gap:6px;flex-wrap:wrap}.row-actions button{padding:6px 9px;font-size:12px}
+        .requisitos{flex-basis:100%;display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding-left:40px}
+        .requisitos-label{color:var(--muted);font-size:12px;margin-right:2px}
+        .req-chip{padding:4px 10px;font:inherit;font-size:12px;color:var(--muted);background:var(--surface);border:1px solid var(--line-strong);border-radius:999px;cursor:pointer}
+        .req-chip.on{color:var(--ink);background:var(--surface-2);border-color:var(--ink)}
+        .steps{list-style:none;margin:20px 0 0;padding:0;border-top:1px solid var(--line-strong)}
+        .step{display:flex;align-items:center;flex-wrap:wrap;gap:12px;padding:12px 8px;border-bottom:1px solid var(--line)}
+        .position{flex:0 0 28px;color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums;text-align:right}
+        .title{flex:1 1 auto;min-width:0;color:var(--ink);font-size:15px;font-weight:600;overflow-wrap:anywhere}
+        .row-actions{display:flex;gap:4px}
+        .row-actions button{display:inline-grid;place-items:center;min-width:32px;height:32px;padding:0 8px;color:var(--muted);background:transparent;border:1px solid transparent;border-radius:var(--radius-sm);font:inherit;font-size:13px;cursor:pointer;transition:background-color .12s,color .12s}
+        .row-actions button:hover:not(:disabled){background:var(--surface-2);color:var(--ink)}
+        .row-actions button.danger:hover:not(:disabled){background:#fbeae7;color:var(--danger)}
+        .row-actions button:disabled{opacity:.4;cursor:default}
+        .row-actions .primary{color:var(--ink);border-color:var(--line-strong)}
         .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
-        @media(max-width:600px){.step{flex-wrap:wrap}.row-actions{flex-basis:100%;justify-content:flex-end}input{font-size:16px}button{min-height:40px}}
+        @media(max-width:600px){.row-actions{flex-basis:100%;justify-content:flex-end}.requisitos{padding-left:0}input{font-size:16px}}
     `,
 })
 export class ListaControlComponent {

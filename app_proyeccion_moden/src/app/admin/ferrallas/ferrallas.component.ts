@@ -28,7 +28,7 @@ interface FichaDraft {
   standalone: true,
   imports: [CommonModule, FormsModule],
   templateUrl: './ferrallas.component.html',
-  styleUrls: ['./ferrallas.component.css', '../admin-responsive.css']
+  styleUrls: ['../admin-theme.css', './ferrallas.component.css']
 })
 export class FerrallasComponent implements OnInit, OnDestroy {
   private static readonly MESA_OFFLINE_AFTER_MS = 2 * 60 * 1000;
