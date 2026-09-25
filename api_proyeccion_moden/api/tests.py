@@ -5629,6 +5629,30 @@ class BastidorSelfServiceTests(APITestCase):
         nada = self.client.post(f"/api/grupos-bastidor/{self.bastidor.id}/unir/")
         self.assertEqual(nada.status_code, 400)
 
+    def test_unir_respeta_el_orden_original_aunque_no_sea_alfabetico(self):
+        for modulo, nombre in zip(self.modulos, ["Z1", "A2", "M3", "B4", "K5"]):
+            modulo.nombre = nombre
+            modulo.save(update_fields=["nombre"])
+        self._planificar()
+        self.assertEqual(self.client.post(f"/api/grupos-bastidor/{self.bastidor.id}/dividir/").status_code, 200)
+        self.assertEqual(
+            list(Modulo.objects.filter(proyecto=self.project, orden_intra_previo__isnull=False)
+                 .order_by("orden_intra_previo").values_list("nombre", flat=True)),
+            ["Z1", "A2", "M3", "B4", "K5"],
+        )
+        # Unir desde la raiz: su objeto trae los modulos prefetched de antes
+        # de dividir y no debe fiarse de esa cache.
+        self.assertEqual(self.client.post(f"/api/grupos-bastidor/{self.bastidor.id}/unir/").status_code, 200)
+        self.assertEqual(
+            list(self.bastidor.modulos.order_by("orden_intra").values_list("nombre", flat=True)),
+            ["Z1", "A2", "M3", "B4", "K5"],
+        )
+        self.assertEqual(
+            list(self.bastidor.modulos.order_by("orden_intra").values_list("orden_intra", flat=True)),
+            [1, 2, 3, 4, 5],
+        )
+        self.assertFalse(Modulo.objects.filter(orden_intra_previo__isnull=False).exists())
+
     def test_superior_hecho_no_bloquea_pero_inferior_hecho_si(self):
         con_superior = self.modulos[0]
         con_superior.superior_hecho = True

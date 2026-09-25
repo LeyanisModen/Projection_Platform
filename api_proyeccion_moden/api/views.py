@@ -2950,9 +2950,12 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
     @staticmethod
     def _reindex_modulos_intra(grupo):
         """Reasigna orden_intra 1..N a los modulos del grupo respetando su
-        orden actual (orden_intra existente; fallback a nombre natural)."""
+        orden actual (orden_intra existente; fallback a nombre natural).
+
+        Lee de la BD y no de ``grupo.modulos`` porque el objeto puede traer
+        los modulos prefetched de antes de moverlos."""
         modulos = sorted(
-            grupo.modulos.all(),
+            Modulo.objects.filter(grupo_bastidor=grupo),
             key=lambda m: (m.orden_intra or 0, _natural_sort_key(m.nombre)),
         )
         for i, m in enumerate(modulos, start=1):
@@ -3003,7 +3006,7 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
             )
 
         modulos = sorted(
-            grupo.modulos.all(),
+            Modulo.objects.filter(grupo_bastidor=grupo),
             key=lambda m: (m.orden_intra or 0, _natural_sort_key(m.nombre)),
         )
         mostrando_ids = set(
@@ -3074,7 +3077,7 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
         )
         Modulo.objects.filter(id__in=devueltos).update(grupo_bastidor=raiz)
         modulos = sorted(
-            raiz.modulos.all(),
+            Modulo.objects.filter(grupo_bastidor=raiz),
             key=lambda m: (
                 m.orden_intra_previo is None,
                 m.orden_intra_previo or 0,
