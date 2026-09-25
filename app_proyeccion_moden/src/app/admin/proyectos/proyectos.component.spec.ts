@@ -29,6 +29,19 @@ describe('ProyectosComponent — alta de proyecto', () => {
 
   afterEach(() => http.verify());
 
+  it('lista solo las ferrallas con proyectos, los sin ferralla primero', () => {
+    component.users = [
+      { id: 9, url: '/api/users/9/', username: 'europapl5', first_name: 'Europa' } as any,
+      { id: 3, url: '/api/users/3/', username: 'vacia', first_name: 'Sin nada' } as any,
+    ];
+    component.projects = [
+      { id: 1, nombre: 'Con ferralla', usuario: '/api/users/9/' } as any,
+      { id: 2, nombre: 'Suelto', usuario: null } as any,
+    ];
+    component.groupProjects();
+    expect(component.groupedProjects.map(g => [g.username, g.projects.length])).toEqual([['Sin ferralla', 1], ['Europa', 1]]);
+  });
+
   it('pide solo nombre y ferralla', () => {
     component.toggleForm();
     fixture.detectChanges();

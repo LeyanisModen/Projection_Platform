@@ -22,59 +22,54 @@
         <div *ngIf="error" class="alert-inline new-project-error" role="alert">{{ error }}</div>
     </form>
 
-    <!-- Lista de Proyectos Agrupados -->
-    <div class="projects-list">
+    <!-- Una sola lista plana; la ferralla es solo un separador. -->
+    <div class="projects">
         <div *ngIf="loading && !projects.length" class="meta">Cargando proyectos...</div>
 
-        <section *ngFor="let group of groupedProjects" class="card group" [class.is-unassigned]="!group.userUrl">
-            <button type="button" class="group-header" (click)="group.collapsed = !group.collapsed"
-                [attr.aria-expanded]="!group.collapsed">
-                <i class="fa toggle-icon" [class.fa-chevron-down]="!group.collapsed" [class.fa-chevron-right]="group.collapsed" aria-hidden="true"></i>
+        <ng-container *ngFor="let group of groupedProjects">
+            <div class="group-title" [class.is-unassigned]="!group.userUrl">
                 <span class="group-name">{{ group.username }}</span>
-                <span class="meta group-count">{{ group.projects.length }} {{ group.projects.length === 1 ? 'proyecto' : 'proyectos' }}</span>
-                <span class="meta group-demand" *ngIf="group.projects.length">
+                <span class="meta">{{ group.projects.length }} {{ group.projects.length === 1 ? 'proyecto' : 'proyectos' }}</span>
+                <span class="meta group-demand">
                     {{ requiredDaily(group.projects) }} módulos/día
                     @if (planningIssues(group.projects)) { <span class="is-warn"> · {{ planningIssues(group.projects) }} sin planificar</span> }
                 </span>
-            </button>
-            <div *ngIf="!group.collapsed">
-                <div *ngFor="let project of group.projects"
-                    class="project-row"
-                    role="link"
-                    tabindex="0"
-                    [attr.aria-label]="'Gestionar proyecto ' + project.nombre"
-                    (click)="manageProject(project)"
-                    (keydown)="onProjectRowKeydown($event, project)">
-                    <div class="project-main">
-                        <div class="project-name">{{ project.nombre }}</div>
-                        <div class="meta project-info">
-                            @if (project.fecha_montaje) { <span>Montaje {{ project.fecha_montaje | date:'dd/MM/yyyy' }}</span> }
-                            <span>{{ planningLabel(project) }}</span>
-                            <span *ngIf="(project.grupos_count || 0) > 0">{{ project.grupos_count }} grupos</span>
-                            <span *ngIf="!project.grupos_count && (project.modulos_count || 0) > 0" class="is-warn">sin grupos</span>
-                            <span *ngIf="(project.modulos_count || 0) > 0"
-                                [class.is-ok]="(project.modulos_completados || 0) === project.modulos_count">
-                                {{ project.modulos_completados || 0 }}/{{ project.modulos_count }} módulos
-                            </span>
-                            <span *ngIf="!project.modulos_count">sin módulos</span>
-                            <span *ngIf="project.produccion_bloqueada" class="is-danger">
-                                <i class="fa fa-lock" aria-hidden="true"></i> sin producción
-                            </span>
-                        </div>
-                    </div>
-                    <div class="project-actions">
-                        <button type="button" class="btn-icon danger"
-                            (click)="$event.stopPropagation(); confirmDelete(project)"
-                            title="Eliminar proyecto" aria-label="Eliminar proyecto">
-                            <i class="fa fa-trash-o" aria-hidden="true"></i>
-                        </button>
-                        <i class="fa fa-chevron-right row-chevron" aria-hidden="true"></i>
+            </div>
+            <div *ngFor="let project of group.projects"
+                class="project-row"
+                role="link"
+                tabindex="0"
+                [attr.aria-label]="'Gestionar proyecto ' + project.nombre"
+                (click)="manageProject(project)"
+                (keydown)="onProjectRowKeydown($event, project)">
+                <div class="project-main">
+                    <div class="project-name">{{ project.nombre }}</div>
+                    <div class="meta project-info">
+                        @if (project.fecha_montaje) { <span>Montaje {{ project.fecha_montaje | date:'dd/MM/yyyy' }}</span> }
+                        <span>{{ planningLabel(project) }}</span>
+                        <span *ngIf="(project.grupos_count || 0) > 0">{{ project.grupos_count }} grupos</span>
+                        <span *ngIf="!project.grupos_count && (project.modulos_count || 0) > 0" class="is-warn">sin grupos</span>
+                        <span *ngIf="(project.modulos_count || 0) > 0"
+                            [class.is-ok]="(project.modulos_completados || 0) === project.modulos_count">
+                            {{ project.modulos_completados || 0 }}/{{ project.modulos_count }} módulos
+                        </span>
+                        <span *ngIf="!project.modulos_count">sin módulos</span>
+                        <span *ngIf="project.produccion_bloqueada" class="is-danger">
+                            <i class="fa fa-lock" aria-hidden="true"></i> sin producción
+                        </span>
                     </div>
                 </div>
-                <div *ngIf="group.projects.length === 0" class="meta group-empty">Sin proyectos.</div>
+                <div class="project-actions">
+                    <button type="button" class="btn-icon danger"
+                        (click)="$event.stopPropagation(); confirmDelete(project)"
+                        title="Eliminar proyecto" aria-label="Eliminar proyecto">
+                        <i class="fa fa-trash-o" aria-hidden="true"></i>
+                    </button>
+                    <i class="fa fa-chevron-right row-chevron" aria-hidden="true"></i>
+                </div>
             </div>
-        </section>
+        </ng-container>
 
-        <div *ngIf="!loading && groupedProjects.length === 0" class="meta">No hay proyectos ni ferrallas.</div>
+        <div *ngIf="!loading && groupedProjects.length === 0" class="meta">No hay proyectos.</div>
     </div>
 </div>

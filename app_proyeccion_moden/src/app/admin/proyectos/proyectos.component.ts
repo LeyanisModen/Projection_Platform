@@ -10,7 +10,6 @@ interface ProjectGroup {
   username: string;
   userUrl: string;
   projects: Proyecto[];
-  collapsed: boolean;
 }
 
 /**
@@ -77,16 +76,14 @@ export class ProyectosComponent implements OnInit {
         username: user.first_name || user.username,
         userUrl: user.url,
         projects: [],
-        collapsed: false
       };
     });
 
     // Add "Sin Asignar" group
     groups['__unassigned__'] = {
-      username: 'Sin Asignar',
+      username: 'Sin ferralla',
       userUrl: '',
       projects: [],
-      collapsed: false
     };
 
     // Distribute projects
@@ -98,11 +95,11 @@ export class ProyectosComponent implements OnInit {
       }
     });
 
-    // Convert to array, put "Sin Asignar" first if it has projects
+    // Solo ferrallas con proyectos; los sin ferralla van primero.
     const unassigned = groups['__unassigned__'];
     delete groups['__unassigned__'];
 
-    this.groupedProjects = Object.values(groups);
+    this.groupedProjects = Object.values(groups).filter(group => group.projects.length > 0);
     if (unassigned.projects.length > 0) {
       this.groupedProjects.unshift(unassigned);
     }

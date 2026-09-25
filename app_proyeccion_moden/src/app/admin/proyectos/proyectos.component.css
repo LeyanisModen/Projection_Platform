@@ -11,43 +11,32 @@
 .new-project-ferralla { flex: 1 1 200px; }
 .new-project-error { flex-basis: 100%; }
 
-/* Grupos por ferralla: una fila plana, sin fondo tintado. */
-.group-header {
+/* Lista plana sobre el fondo: la ferralla es un separador, no una tarjeta. */
+.group-title {
     display: flex;
-    align-items: center;
+    align-items: baseline;
     gap: 10px;
-    width: 100%;
-    padding: 12px 16px;
-    border: 0;
-    background: var(--surface-2);
-    color: var(--ink);
-    font: inherit;
-    text-align: left;
-    cursor: pointer;
+    padding: 22px 8px 8px;
+    border-bottom: 1px solid var(--line);
 }
 
-.group-header:hover { background: #eef1f5; }
-.group-header:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-
-.toggle-icon { width: 12px; color: var(--muted); font-size: 11px; }
-.group-name { font-weight: 600; }
+.group-title:first-child { padding-top: 4px; }
+.group-name { color: var(--ink); font-weight: 600; }
 .group-demand { margin-left: auto; }
 .is-unassigned .group-name { color: var(--warn); }
 
-.group-empty { padding: 12px 16px 14px 38px; }
-
-/* Filas de proyecto */
 .project-row {
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 12px 16px 12px 38px;
-    border-top: 1px solid var(--line);
+    padding: 12px 8px;
+    border-bottom: 1px solid var(--line);
+    border-radius: var(--radius-sm);
     cursor: pointer;
     transition: background-color 120ms ease;
 }
 
-.project-row:hover { background: var(--surface-2); }
+.project-row:hover { background: #eef1f5; }
 
 .project-row:focus-visible {
     position: relative;
@@ -78,10 +67,6 @@
     color: var(--line-strong);
 }
 
-.project-info .is-warn::before,
-.project-info .is-ok::before,
-.project-info .is-danger::before { color: var(--line-strong); }
-
 .project-actions {
     display: flex;
     align-items: center;
@@ -94,7 +79,6 @@
 
 @media (max-width: 760px) {
     .page { padding: 8px 12px 32px; }
-    .group-demand { flex-basis: 100%; margin-left: 22px; }
-    .project-row { padding-left: 16px; }
-    .group-empty { padding-left: 16px; }
+    .group-title { flex-wrap: wrap; }
+    .group-demand { flex-basis: 100%; margin-left: 0; }
 }
