@@ -5567,6 +5567,12 @@ class BastidorSelfServiceTests(APITestCase):
         grupos = [g for g in response.data if g["indice"] == 1]
         self.assertEqual([g["etiqueta"] for g in grupos], ["Grupo 1", "Grupo 1B"])
         raiz, parte = grupos
+        # Con alias en la raiz, la parte lo hereda: 'Fachada B'.
+        self.bastidor.nombre = "Fachada"
+        self.bastidor.save(update_fields=["nombre"])
+        self.assertEqual(GrupoBastidor.objects.get(id=parte["id"]).etiqueta, "Fachada B")
+        self.bastidor.nombre = ""
+        self.bastidor.save(update_fields=["nombre"])
         self.assertTrue(raiz["dividido"])
         self.assertFalse(raiz["es_division"])
         self.assertTrue(parte["es_division"])

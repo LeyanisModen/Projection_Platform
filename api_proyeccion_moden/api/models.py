@@ -201,11 +201,12 @@ class GrupoBastidor(models.Model):
 
     @property
     def etiqueta(self):
-        """Nombre visible: 'Grupo 2', 'Grupo 2B' o el alias con su letra."""
-        base = self.nombre or f'Grupo {self.indice}'
+        """Nombre visible: 'Grupo 2', 'Grupo 2B' o el alias de la raiz con su letra."""
+        raiz = self.raiz
+        base = raiz.nombre or f'Grupo {self.indice}'
         if not self.sufijo:
             return base
-        return f'{base} {self.sufijo}' if self.nombre else f'{base}{self.sufijo}'
+        return f'{base} {self.sufijo}' if raiz.nombre else f'{base}{self.sufijo}'
 
     class Meta:
         db_table = 'api_grupo_bastidor'
