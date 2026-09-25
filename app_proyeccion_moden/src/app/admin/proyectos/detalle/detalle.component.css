@@ -112,6 +112,13 @@
 .grupo-nombre-edit-btn:hover { color: var(--ink); background: var(--surface-2); }
 .grupo-nombre-input { height: 28px; min-width: 0; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); font: inherit; font-size: 13px; font-weight: 600; color: var(--ink); }
 .grupo-bastidor-meta { display: grid; justify-items: end; gap: 2px; text-align: right; }
+/* Partes de fabricacion (2B, 2C): cuelgan de su raiz y no se transportan aparte. */
+.grupo-bastidor-card.is-division { margin-left: 18px; border-left-style: dashed; }
+.grupo-plan-actions { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+.grupo-division-tag { color: var(--muted); font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; }
+.grupo-plan-btn { height: 24px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--muted); font: inherit; font-size: 11px; white-space: nowrap; cursor: pointer; }
+.grupo-plan-btn:hover:not(:disabled) { color: var(--ink); background: var(--surface-2); }
+.grupo-plan-btn:disabled { opacity: 0.5; cursor: default; }
 .grupo-capacidad { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .grupo-capacidad.is-overflow { color: var(--danger); font-weight: 600; }
 .grupo-capacidad.is-unknown { color: var(--warn); }

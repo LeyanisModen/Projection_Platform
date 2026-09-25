@@ -376,6 +376,16 @@ añadir una regresión para el caso nuevo.
 - Proyectos añadidos o módulos nuevos aparecen sin quitar/reagregar el proyecto.
 - Scroll interno en las colas del dashboard sin aumentar el alto de las tarjetas.
 
+Autogestión de la ferralla (septiembre 2026):
+
+- Moden define los bastidores (orden de acopio y transporte). La ferralla dueña del proyecto puede ordenar bastidores, ordenar módulos dentro de su bastidor y dividir o unir un bastidor; cambiar un módulo de bastidor sigue siendo de admin.
+- `POST /grupos-bastidor/{id}/dividir/` crea una parte por mesa inferior activa (`2B`, `2C`...: `dividido_de` apunta a la raíz y `sufijo` la distingue; comparten `indice`). Lo que se está mostrando se queda en la raíz; el resto de pendientes se alterna en orden de fabricación. Un bastidor dividido solo se puede unir (`POST /grupos-bastidor/{id}/unir/`), que recompone el orden original guardado en `orden_intra_previo`.
+- Solo un inferior hecho fija un módulo a su bastidor (`module_reorderability`). Un superior hecho o una fase en curso no bloquean: la fase apartada guarda la imagen por la que iba en `MesaQueueItem.resume_image_index` y continúa ahí cuando vuelve a mostrarse (replanificados, `marcar_hecho`, `mostrar`, `mark_done` del player).
+- Tras cualquier cambio del plan las colas se rehacen desde él (`_replan_after_plan_change`): el bastidor con inferiores hechos o en curso se ancla a su mesa (`_bastidor_pins`), las partes de un bastidor dividido van a mesas distintas y las filas activas se reciclan para que cada fase conserve su id (el player y el dashboard no ven un item nuevo).
+- Desactivar una mesa traslada lo que tenía, incluido lo que se estaba mostrando, a las mesas activas con su imagen.
+- La foto ZIP y las etiquetas agrupan las divisiones bajo su bastidor raíz (`GrupoBastidor.raiz`, `etiqueta`).
+- `recalcular-bastidores` mantiene la regla estricta (`module_fabrication_started`): no se recalcula con trabajo empezado.
+
 ### 5.4 Estados y reinicios
 
 - Completar módulo completo.

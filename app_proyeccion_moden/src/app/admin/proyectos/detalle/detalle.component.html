@@ -295,6 +295,7 @@
                             (cdkDragStarted)="onBastidorDragStarted()"
                             (cdkDragEnded)="onBastidorDragEnded()"
                             class="grupo-bastidor-card"
+                            [class.is-division]="grupo.es_division"
                             [class.grupo-completado]="isGrupoCompletado(grupo)"
                             [class.grupo-pendiente]="!isGrupoCompletado(grupo)"
                             [class.grupo-overflow]="grupo.overflow">
@@ -318,8 +319,9 @@
                                             autofocus>
                                     </ng-container>
                                     <ng-template #grupoNombreStatic>
-                                        <h4>{{ grupo.nombre || 'Grupo ' + grupo.indice }}</h4>
-                                        <button type="button"
+                                        <h4>{{ grupoEtiqueta(grupo) }}</h4>
+                                        <button *ngIf="!grupo.es_division"
+                                            type="button"
                                             class="grupo-nombre-edit-btn"
                                             (click)="startEditingGrupo(grupo, $event)"
                                             title="Renombrar grupo">
@@ -347,6 +349,15 @@
                                         <ng-template #noCraneLimit>kg</ng-template>
                                         <span *ngIf="grupo.peso_desconocido"> · incompleto</span>
                                     </small>
+                                    <div class="grupo-plan-actions">
+                                        <span *ngIf="grupo.es_division" class="grupo-division-tag">Parte de fabricación</span>
+                                        <button *ngIf="canDividirGrupo(grupo)" type="button" class="grupo-plan-btn"
+                                            (click)="dividirGrupo(grupo, $event)" [disabled]="movingModulo"
+                                            title="Repartir este bastidor entre las mesas inferiores de la ferralla">Dividir entre mesas</button>
+                                        <button *ngIf="canUnirGrupo(grupo)" type="button" class="grupo-plan-btn"
+                                            (click)="unirGrupo(grupo, $event)" [disabled]="movingModulo"
+                                            title="Volver a juntar las partes en un solo bastidor">Unir</button>
+                                    </div>
                                 </div>
                             </div>
 

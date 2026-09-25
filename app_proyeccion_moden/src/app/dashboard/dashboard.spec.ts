@@ -1,7 +1,9 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { Dashboard } from './dashboard';
-import { ApiService, Mesa, Modulo, Proyecto, ProductionStatsBucket, ProductionStatsResponse } from '../services/api.service';
+import {
+  ApiService, GrupoBastidor, GrupoBastidorModulo, Mesa, Modulo, Proyecto, ProductionStatsBucket, ProductionStatsResponse,
+} from '../services/api.service';
 import { of, Subject, throwError } from 'rxjs';
 import { vi } from 'vitest';
 
@@ -242,29 +244,99 @@ describe('Dashboard', () => {
     expect(component.proyectosBloqueados(null).map(p => p.nombre)).toEqual(['Bloqueado']);
   });
 
-  it('orders project modules naturally by name by default', () => {
-    component.planModalModulos = [
-      { id: 10, nombre: 'A10', completado_at: null } as Modulo,
-      { id: 2, nombre: 'A2', completado_at: null } as Modulo,
-      { id: 1, nombre: 'A01', completado_at: null } as Modulo,
-    ];
+  describe('project modal bastidores', () => {
+    const grupo = (
+      id: number, indice: number, extra: Partial<GrupoBastidor>, modulos: Array<Partial<GrupoBastidorModulo>>,
+    ): GrupoBastidor => ({
+      id, proyecto: 7, indice, nombre: '', created_at: '', modulos: modulos as GrupoBastidorModulo[],
+      longitud_total_cm: 0, capacidad_cm: 114, peso_total_kg: 0, capacidad_peso_kg: null, peso_desconocido: false,
+      overflow_longitud: false, overflow_peso: false, overflow: false, ...extra,
+    });
 
-    expect(component.planModalSortedModulos().map(modulo => modulo.nombre))
-      .toEqual(['A01', 'A2', 'A10']);
-  });
+    beforeEach(() => {
+      component.showPlanModal = true;
+      component.planModalProyecto = {id: 7, nombre: 'Proyecto', modulos_count: 4} as Proyecto;
+      component.planModalModulos = [
+        {id: 1, nombre: 'A1', grupo_bastidor: 10, inferior_hecho: false, superior_hecho: false} as Modulo,
+        {id: 2, nombre: 'A2', grupo_bastidor: 10, inferior_hecho: false, superior_hecho: false} as Modulo,
+        {id: 3, nombre: 'A3', grupo_bastidor: 10, inferior_hecho: true, superior_hecho: true, estado: 'COMPLETADO'} as Modulo,
+        {id: 4, nombre: 'B1', grupo_bastidor: 11, inferior_hecho: false, superior_hecho: false} as Modulo,
+        {id: 5, nombre: 'Z9', grupo_bastidor: null, inferior_hecho: false, superior_hecho: false} as Modulo,
+      ];
+      component.planModalGrupos = [
+        grupo(10, 1, {etiqueta: 'Grupo 1', dividido: false, es_division: false}, [
+          {id: 1, nombre: 'A1', movible: true}, {id: 2, nombre: 'A2', movible: true}, {id: 3, nombre: 'A3', movible: false},
+        ]),
+        grupo(11, 2, {etiqueta: 'Grupo 2', dividido: false, es_division: false}, [{id: 4, nombre: 'B1', movible: true}]),
+      ];
+      fixture.changeDetectorRef.markForCheck();
+      fixture.detectChanges();
+    });
 
-  it('orders active modules first, then recent completions and pending modules', () => {
-    component.planModalSort = 'completed';
-    component.planModalModulos = [
-      { id: 3, nombre: 'A03', estado: 'PENDIENTE', estado_operativo: 'PENDIENTE', completado_at: null } as Modulo,
-      { id: 1, nombre: 'A01', estado: 'COMPLETADO', estado_operativo: 'COMPLETADO', completado_at: '2026-08-18T08:30:00Z' } as Modulo,
-      { id: 5, nombre: 'A05', estado: 'PENDIENTE', estado_operativo: 'EN_PROGRESO', completado_at: null } as Modulo,
-      { id: 4, nombre: 'A04', estado: 'PENDIENTE', estado_operativo: 'PENDIENTE', completado_at: 'invalid-date' } as Modulo,
-      { id: 2, nombre: 'A02', estado: 'COMPLETADO', estado_operativo: 'COMPLETADO', completado_at: '2026-08-19T07:15:00Z' } as Modulo,
-    ];
+    it('lists every bastidor in fabrication order, then the loose modules', () => {
+      const secciones: NodeListOf<HTMLElement> = fixture.nativeElement.querySelectorAll('.plan-grupo');
+      expect(Array.from(secciones).map(s => s.querySelector('.plan-grupo-title strong')?.textContent))
+        .toEqual(['Grupo 1', 'Grupo 2', 'Sin bastidor']);
+      // El card del admin se fabrica de abajo arriba: A3 (hecho) sale primero.
+      expect(Array.from(secciones[0].querySelectorAll('.plan-modulo-nombre')).map(e => e.textContent?.trim()))
+        .toEqual(['A3', 'A2', 'A1']);
+      expect(secciones[0].querySelector('[aria-label="Dividir Grupo 1 entre mesas"]')).not.toBeNull();
+      expect(secciones[0].querySelector('[aria-label="Unir Grupo 1"]')).toBeNull();
+      expect(secciones[2].querySelector('.plan-modulo-order')).toBeNull();
+    });
 
-    expect(component.planModalSortedModulos().map(modulo => modulo.nombre))
-      .toEqual(['A05', 'A02', 'A01', 'A03', 'A04']);
+    it('only lets pending modules swap with pending neighbours', () => {
+      const [g1] = component.planModalGrupos;
+      const [a1, a2, a3] = component.planModalModulos;
+      expect(component.canMoveModulo(g1, a3, 1)).toBe(false);
+      expect(component.canMoveModulo(g1, a2, -1)).toBe(false);
+      expect(component.canMoveModulo(g1, a2, 1)).toBe(true);
+      expect(component.canMoveModulo(g1, a1, -1)).toBe(true);
+      expect(component.canMoveModulo(g1, a1, 1)).toBe(false);
+    });
+
+    it('moves a module earlier in fabrication using the card index the backend expects', () => {
+      const api = TestBed.inject(ApiService);
+      const move = vi.spyOn(api, 'moveModuloEntreBastidores').mockReturnValue(of(component.planModalGrupos));
+      vi.spyOn(api, 'getProyectoModulos').mockReturnValue(of(component.planModalModulos));
+      vi.spyOn(component, 'loadMesas').mockImplementation(() => undefined);
+      vi.spyOn(component as any, 'silentRefreshProyectosAndStats').mockImplementation(() => undefined);
+
+      const [g1] = component.planModalGrupos;
+      component.moveModuloEnPlan(g1, component.planModalModulos[0], -1);
+
+      // A1 pasa de fabricarse el ultimo a fabricarse antes que A2: en el card
+      // (arriba abajo) queda entre A2 y A3, posicion 1.
+      expect(move).toHaveBeenCalledWith(1, 10, 1);
+      expect(component.planModalBusy).toBe(false);
+    });
+
+    it('reorders root bastidores with the arrows and shows the backend error', () => {
+      const api = TestBed.inject(ApiService);
+      const reorder = vi.spyOn(api, 'reorderBastidores').mockReturnValue(throwError(() => ({error: {detail: 'No hay mesas'}})));
+      const [g1, g2] = component.planModalGrupos;
+      expect(component.canMoveGrupo(g1, -1)).toBe(false);
+      component.moveGrupoEnPlan(g2, -1);
+      expect(reorder).toHaveBeenCalledWith(7, [11, 10]);
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.plan-modal-error')?.textContent).toBe('No hay mesas');
+    });
+
+    it('offers merge instead of split on a divided bastidor and its parts', () => {
+      component.planModalGrupos = [
+        grupo(10, 1, {etiqueta: 'Grupo 1', dividido: true, es_division: false}, [{id: 1, nombre: 'A1', movible: true}]),
+        grupo(12, 1, {etiqueta: 'Grupo 1B', dividido: false, es_division: true, sufijo: 'B', dividido_de: 10}, [{id: 2, nombre: 'A2', movible: true}]),
+      ];
+      fixture.changeDetectorRef.markForCheck();
+      fixture.detectChanges();
+      const secciones: NodeListOf<HTMLElement> = fixture.nativeElement.querySelectorAll('.plan-grupo');
+      expect(secciones[0].querySelector('[aria-label="Unir Grupo 1"]')).not.toBeNull();
+      expect(secciones[0].querySelector('[aria-label="Dividir Grupo 1 entre mesas"]')).toBeNull();
+      expect(secciones[1].classList.contains('is-division')).toBe(true);
+      expect(secciones[1].querySelector('[aria-label="Unir Grupo 1B"]')).not.toBeNull();
+      expect(secciones[1].querySelector('.plan-order-btn')).not.toBeNull();
+      expect(secciones[1].querySelector('.plan-grupo-actions .plan-order-btn')).toBeNull();
+    });
   });
 
   describe('project modal phase details', () => {
@@ -283,25 +355,28 @@ describe('Dashboard', () => {
       fixture.detectChanges();
     });
 
-    it('keeps each phase, completion date and reset action together', () => {
+    it('shows each phase as a compact pill that only resets finished work', () => {
       const rows: NodeListOf<HTMLElement> = fixture.nativeElement.querySelectorAll('.plan-modulo-row');
       expect(rows.length).toBe(2);
-      const phases = rows[0].querySelectorAll('.plan-phase-row');
+      const phases = rows[0].querySelectorAll('.plan-modulo-phase');
       expect(phases.length).toBe(2);
-      expect(phases[0].querySelector('.plan-phase-details strong')?.textContent).toBe('Inferior');
-      expect(phases[0].querySelector('time')?.getAttribute('datetime')).toBe('2026-09-04T10:30:00Z');
-      expect(phases[1].querySelector('.plan-phase-details strong')?.textContent).toBe('Superior');
-      expect(phases[1].querySelector('time')).toBeNull();
-      expect(rows[1].querySelector('.plan-phase-details small')?.textContent).toBe('Fecha no registrada');
-      expect(phases[1].querySelector('button')?.getAttribute('aria-label')).toBe('Reiniciar fase superior de A01');
+      expect(phases[0].tagName).toBe('BUTTON');
+      expect(phases[0].textContent?.trim()).toBe('INF');
+      expect(phases[0].getAttribute('title')).toContain('Inferior terminada · 04/09/2026');
+      expect(phases[0].getAttribute('aria-label')).toBe('Reiniciar fase inferior de A01');
+      // La superior de A01 esta pendiente: no hay nada que reiniciar.
+      expect(phases[1].tagName).toBe('SPAN');
+      expect(phases[1].getAttribute('title')).toBe('Superior pendiente');
+      const doneWithoutDate = rows[1].querySelectorAll('.plan-modulo-phase');
+      expect(doneWithoutDate[1].getAttribute('title')).toContain('fecha no registrada');
       expect(rows[0].querySelector('.plan-modulo-action')).not.toBeNull();
     });
 
     it('opens confirmation only for the selected phase and cancels without changing its counterpart', () => {
-      const button: HTMLButtonElement = fixture.nativeElement.querySelector('[aria-label="Reiniciar fase superior de A01"]');
+      const button: HTMLButtonElement = fixture.nativeElement.querySelector('[aria-label="Reiniciar fase inferior de A01"]');
       button.click();
       fixture.detectChanges();
-      expect(component.phaseResetTarget?.phase).toBe('SUPERIOR');
+      expect(component.phaseResetTarget?.phase).toBe('INFERIOR');
       expect(component.phaseResetTarget?.module.id).toBe(1);
       expect(fixture.nativeElement.querySelector('.phase-reset-modal')).not.toBeNull();
       const cancel: HTMLButtonElement = fixture.nativeElement.querySelector('.phase-reset-actions button');
@@ -316,9 +391,24 @@ describe('Dashboard', () => {
       component.resettingPhase = true;
       fixture.changeDetectorRef.markForCheck();
       fixture.detectChanges();
-      const buttons: NodeListOf<HTMLButtonElement> = fixture.nativeElement.querySelectorAll('.plan-phase-row button');
-      expect(buttons.length).toBe(4);
+      const buttons: NodeListOf<HTMLButtonElement> = fixture.nativeElement.querySelectorAll('button.plan-modulo-phase');
+      expect(buttons.length).toBe(3);
       expect(Array.from(buttons).every(button => button.disabled)).toBe(true);
+    });
+
+    it('lets a phase that is being projected be reset even before it is done', () => {
+      component.planModalGrupos = [{
+        id: 10, proyecto: 7, indice: 1, nombre: '', created_at: '', etiqueta: 'Grupo 1', dividido: false, es_division: false,
+        modulos: [{id: 1, nombre: 'A01', movible: true, superior_en_curso: true} as GrupoBastidorModulo],
+        longitud_total_cm: 0, capacidad_cm: 114, peso_total_kg: 0, capacidad_peso_kg: null, peso_desconocido: false,
+        overflow_longitud: false, overflow_peso: false, overflow: false,
+      }];
+      fixture.changeDetectorRef.markForCheck();
+      fixture.detectChanges();
+      const pill: HTMLElement = fixture.nativeElement.querySelector('[aria-label="Reiniciar fase superior de A01"]');
+      expect(pill).not.toBeNull();
+      expect(pill.classList.contains('is-en-curso')).toBe(true);
+      expect(pill.getAttribute('title')).toBe('Superior en curso. Clic para reiniciar');
     });
   });
 

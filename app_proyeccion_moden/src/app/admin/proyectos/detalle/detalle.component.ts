@@ -14,7 +14,7 @@ import {
     DetalleModuloFase, TechnicalImportStats, GrupoBastidor, GrupoBastidorModulo,
     EstrategiaBastidor, ModuloFase
 } from '../../../services/api.service';
-import { switchMap, forkJoin, of } from 'rxjs';
+import { switchMap, forkJoin, of, Observable } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import { ProjectControlsComponent } from './project-controls.component';
 import { RackViewOrder, rackInsertionIndex } from './rack-order.utils';
@@ -514,7 +514,53 @@ export class ProyectoDetailComponent implements OnInit {
     }
 
     grupoDownloadName(grupo: GrupoBastidor): string {
-        return grupo.nombre || `Bastidor ${grupo.indice}`;
+        return grupo.etiqueta || grupo.nombre || `Bastidor ${grupo.indice}`;
+    }
+
+    grupoEtiqueta(grupo: GrupoBastidor): string {
+        if (grupo.etiqueta) return grupo.etiqueta;
+        const base = grupo.nombre || `Grupo ${grupo.indice}`;
+        if (!grupo.sufijo) return base;
+        return grupo.nombre ? `${base} ${grupo.sufijo}` : `${base}${grupo.sufijo}`;
+    }
+
+    canDividirGrupo(grupo: GrupoBastidor): boolean {
+        return !grupo.es_division && !grupo.dividido;
+    }
+
+    canUnirGrupo(grupo: GrupoBastidor): boolean {
+        return !!(grupo.es_division || grupo.dividido);
+    }
+
+    /** Reparte el bastidor entre las mesas inferiores de la ferralla (2, 2B, 2C...). */
+    dividirGrupo(grupo: GrupoBastidor, event?: Event): void {
+        event?.stopPropagation();
+        if (this.movingModulo || !this.canDividirGrupo(grupo)) return;
+        this.applyGrupoPlanAction(this.api.dividirBastidor(grupo.id), 'No se pudo dividir el bastidor.');
+    }
+
+    /** Vuelve a juntar las partes en el bastidor raiz con su orden original. */
+    unirGrupo(grupo: GrupoBastidor, event?: Event): void {
+        event?.stopPropagation();
+        if (this.movingModulo || !this.canUnirGrupo(grupo)) return;
+        this.applyGrupoPlanAction(this.api.unirBastidor(grupo.id), 'No se pudo unir el bastidor.');
+    }
+
+    private applyGrupoPlanAction(action: Observable<GrupoBastidor[]>, fallback: string): void {
+        this.movingModulo = true;
+        this.cdr.detectChanges();
+        action.subscribe({
+            next: (grupos) => {
+                this.grupos = grupos.sort((a, b) => a.indice - b.indice);
+                this.movingModulo = false;
+                this.cdr.detectChanges();
+            },
+            error: (err) => {
+                this.movingModulo = false;
+                alert(err?.error?.detail || fallback);
+                this.loadData();
+            }
+        });
     }
 
     grupoDownloadModuloIds(grupo: GrupoBastidor): number[] {
@@ -563,6 +609,7 @@ export class ProyectoDetailComponent implements OnInit {
         this.api.updateGrupoBastidor(grupo.id, { nombre: target }).subscribe({
             next: (updated) => {
                 grupo.nombre = updated.nombre;
+                grupo.etiqueta = updated.etiqueta;
                 this.cdr.detectChanges();
             },
             error: (err) => {

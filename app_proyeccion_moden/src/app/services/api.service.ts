@@ -157,6 +157,14 @@ export interface GrupoBastidor {
     proyecto: number;
     indice: number;
     nombre: string;
+    /** Letra de la parte de fabricacion (B, C...); vacio en el bastidor raiz. */
+    sufijo?: string;
+    dividido_de?: number | null;
+    /** Nombre visible calculado por el backend: 'Grupo 2', 'Grupo 2B'... */
+    etiqueta?: string;
+    es_division?: boolean;
+    /** Raiz que tiene partes de fabricacion. */
+    dividido?: boolean;
     created_at: string;
     modulos: GrupoBastidorModulo[];
     longitud_total_cm: number;
@@ -312,6 +320,7 @@ export interface MesaQueueItem {
     plan_group_index?: number | null;
     grupo_bastidor_indice?: number | null;
     grupo_bastidor_nombre?: string | null;
+    grupo_bastidor_sufijo?: string | null;
     status: 'EN_COLA' | 'MOSTRANDO' | 'HECHO';
     dificultad?: number | null;
     current_image_index: number;
@@ -858,6 +867,24 @@ export class ApiService {
         return this.http.post<GrupoBastidor[]>(
             `${this.baseUrl}/grupos-bastidor/reorder/`,
             { proyecto: proyectoId, orden },
+            { headers: this.getHeaders() }
+        );
+    }
+
+    /** Reparte el bastidor entre todas las mesas inferiores activas (2, 2B, 2C...). */
+    dividirBastidor(id: number): Observable<GrupoBastidor[]> {
+        return this.http.post<GrupoBastidor[]>(
+            `${this.baseUrl}/grupos-bastidor/${id}/dividir/`,
+            {},
+            { headers: this.getHeaders() }
+        );
+    }
+
+    /** Devuelve las partes al bastidor raiz con su orden original. */
+    unirBastidor(id: number): Observable<GrupoBastidor[]> {
+        return this.http.post<GrupoBastidor[]>(
+            `${this.baseUrl}/grupos-bastidor/${id}/unir/`,
+            {},
             { headers: this.getHeaders() }
         );
     }
