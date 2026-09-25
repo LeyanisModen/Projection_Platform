@@ -347,8 +347,17 @@
     flex: 1 1 200px;
 }
 
+/* Misma altura en campo, desplegable y boton: el select recorta el texto si
+   hereda la altura fija de Bootstrap con el padding vertical de .form-control. */
+.new-project .form-control {
+    height: 42px;
+    padding-top: 0;
+    padding-bottom: 0;
+    line-height: 40px;
+}
+
 .new-project .btn {
-    height: 38px;
+    height: 42px;
     white-space: nowrap;
 }
 
