@@ -336,7 +336,11 @@ añadir una regresión para el caso nuevo.
 
 ### 5.2 Proyectos e importación
 
-- Creación de proyecto con importación estructural tolerante.
+- Alta de proyecto solo con nombre y ferralla (2026-09-25): el proyecto nace
+  vacío para gestionar fechas y validaciones previas y salta a su detalle.
+  Los módulos, la base técnica, el plano y los documentos se importan desde
+  el detalle (botón «+»), con importación estructural tolerante. El endpoint
+  `create-with-structure` sigue en el backend pero el admin ya no lo usa.
 - Un módulo inválido no impide importar los válidos; se informa cuál falló.
 - Selección múltiple de carpetas `MOD-*` desde una carpeta común.
 - Detección de duplicados sobre todas las páginas de la API.
@@ -345,7 +349,6 @@ añadir una regresión para el caso nuevo.
 - Importación y actualización de base técnica SQLite.
 - Reaplicación automática de datos técnicos a módulos añadidos después.
 - PDF de plano y PDF de planilla detectados por nombre.
-- Previsualizador de imágenes sin alterar fabricación.
 - Checkbox para ocultar bastidores completamente terminados.
 - Nombre de proyecto editable con foco automático.
 - Lista de control por proyecto: se siembra desde la lista maestra (pantalla
