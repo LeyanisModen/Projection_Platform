@@ -500,6 +500,7 @@
                 } @else {
                     <div class="plan-modal-body">
                         @if (planModalError) { <p class="plan-modal-error" role="alert">{{ planModalError }}</p> }
+                        <div class="plan-grupos">
                         @for (seccion of planModalSecciones(); track seccion.key) {
                             <section class="plan-grupo" [class.is-division]="seccion.grupo?.es_division" [attr.aria-label]="seccion.titulo">
                                 <div class="plan-grupo-header">
@@ -513,21 +514,23 @@
                                                 <button type="button" class="plan-order-btn" (click)="moveGrupoEnPlan(grupo, -1)"
                                                     [disabled]="planModalBusy || !canMoveGrupo(grupo, -1)"
                                                     title="Fabricar antes" [attr.aria-label]="'Fabricar antes ' + seccion.titulo">
-                                                    <i class="fa fa-chevron-up" aria-hidden="true"></i>
+                                                    <i class="fa fa-chevron-left" aria-hidden="true"></i>
                                                 </button>
                                                 <button type="button" class="plan-order-btn" (click)="moveGrupoEnPlan(grupo, 1)"
                                                     [disabled]="planModalBusy || !canMoveGrupo(grupo, 1)"
                                                     title="Fabricar después" [attr.aria-label]="'Fabricar después ' + seccion.titulo">
-                                                    <i class="fa fa-chevron-down" aria-hidden="true"></i>
+                                                    <i class="fa fa-chevron-right" aria-hidden="true"></i>
                                                 </button>
                                             }
                                             @if (canDividir(grupo)) {
                                                 <button type="button" class="plan-grupo-btn" (click)="dividirGrupoEnPlan(grupo)"
-                                                    [disabled]="planModalBusy" [attr.aria-label]="'Dividir ' + seccion.titulo + ' entre mesas'">Dividir entre mesas</button>
+                                                    [disabled]="planModalBusy" title="Repartir este bastidor entre las mesas inferiores"
+                                                    [attr.aria-label]="'Dividir ' + seccion.titulo + ' entre mesas'">Dividir</button>
                                             }
                                             @if (canUnir(grupo)) {
                                                 <button type="button" class="plan-grupo-btn" (click)="unirGrupoEnPlan(grupo)"
-                                                    [disabled]="planModalBusy" [attr.aria-label]="'Unir ' + seccion.titulo">Unir</button>
+                                                    [disabled]="planModalBusy" title="Volver a juntar las partes en un solo bastidor"
+                                                    [attr.aria-label]="'Unir ' + seccion.titulo">Unir</button>
                                             }
                                         </div>
                                     }
@@ -555,52 +558,47 @@
                                                 <span class="plan-modulo-dot"></span>
                                             }
                                             <span class="plan-modulo-nombre">{{ m.nombre }}</span>
-                                            <div class="plan-modulo-actions">
-                                                @if (moduloHasFotos(m)) {
-                                                    <button type="button"
-                                                        class="plan-modulo-action"
-                                                        (click)="openPlanFotosModal(m, $event)"
-                                                        title="Ver fotos del módulo">
-                                                        <i class="fa fa-image" aria-hidden="true"></i>
-                                                        <span>{{ m.fotos_count }}</span>
-                                                    </button>
-                                                    <button type="button"
-                                                        class="plan-modulo-action"
-                                                        [disabled]="downloadingPlanFotosZip"
-                                                        (click)="downloadPlanFotosZip('modulo', m, $event)"
-                                                        title="Descargar fotos del módulo">
-                                                        <i class="fa fa-download" aria-hidden="true"></i>
-                                                    </button>
-                                                }
-                                                @if (m.completado_at) {
-                                                    <time class="plan-modulo-completed-at"
-                                                        [attr.datetime]="m.completado_at"
-                                                        [title]="'Terminado el ' + (m.completado_at | date:'dd/MM/yyyy HH:mm')">
-                                                        {{ m.completado_at | date:'dd/MM/yyyy HH:mm' }}
-                                                    </time>
-                                                }
-                                                <span class="plan-modulo-estado">{{ moduloEstadoLabel(m) }}</span>
-                                            </div>
-                                            <div class="plan-phase-list" role="group" [attr.aria-label]="'Fases de ' + m.nombre">
+                                            <div class="plan-modulo-phases" role="group" [attr.aria-label]="'Fases de ' + m.nombre">
                                                 @for (phase of modulePhases; track phase) {
-                                                    <div class="plan-phase-row">
-                                                        <div class="plan-phase-details">
-                                                            <strong>{{ phase === 'INFERIOR' ? 'Inferior' : 'Superior' }}</strong>
-                                                            <span>{{ phaseDone(m, phase) ? 'Terminada' : 'Pendiente / en proceso' }}</span>
-                                                            @if (phaseFinishedAt(m, phase); as finished) {
-                                                                <time [attr.datetime]="finished">{{ finished | date:'dd/MM/yyyy HH:mm' }}</time>
-                                                            } @else if (phaseDone(m, phase)) { <small>Fecha no registrada</small> }
-                                                        </div>
-                                                        <button type="button" (click)="requestPhaseReset(m, phase)" [disabled]="resettingPhase"
-                                                            [attr.aria-label]="'Reiniciar fase ' + (phase === 'INFERIOR' ? 'inferior' : 'superior') + ' de ' + m.nombre">Reiniciar {{ phase === 'INFERIOR' ? 'inferior' : 'superior' }}</button>
-                                                    </div>
+                                                    @if (phaseResettable(m, phase)) {
+                                                        <button type="button" class="plan-modulo-phase"
+                                                            [class.is-completa]="phaseDone(m, phase)"
+                                                            [class.is-en-curso]="!phaseDone(m, phase) && phaseEnCurso(m, phase)"
+                                                            (click)="requestPhaseReset(m, phase)" [disabled]="resettingPhase"
+                                                            [title]="phaseTitle(m, phase)"
+                                                            [attr.aria-label]="'Reiniciar fase ' + (phase === 'INFERIOR' ? 'inferior' : 'superior') + ' de ' + m.nombre">
+                                                            <span>{{ phase === 'INFERIOR' ? 'INF' : 'SUP' }}</span>
+                                                            <i class="fa fa-check phase-check" aria-hidden="true"></i>
+                                                        </button>
+                                                    } @else {
+                                                        <span class="plan-modulo-phase is-pendiente" [title]="phaseTitle(m, phase)">{{ phase === 'INFERIOR' ? 'INF' : 'SUP' }}</span>
+                                                    }
                                                 }
                                             </div>
+                                            @if (moduloHasFotos(m)) {
+                                                <button type="button" class="plan-modulo-action"
+                                                    (click)="openPlanFotosModal(m, $event)" title="Ver fotos del módulo">
+                                                    <i class="fa fa-camera" aria-hidden="true"></i>
+                                                    <span>{{ m.fotos_count }}</span>
+                                                </button>
+                                            } @else {
+                                                <span class="plan-modulo-action is-empty" aria-hidden="true"></span>
+                                            }
+                                            @if (m.completado_at) {
+                                                <time class="plan-modulo-completed-at"
+                                                    [attr.datetime]="m.completado_at"
+                                                    [title]="'Terminado el ' + (m.completado_at | date:'dd/MM/yyyy HH:mm')">
+                                                    {{ m.completado_at | date:'dd/MM HH:mm' }}
+                                                </time>
+                                            } @else {
+                                                <span class="plan-modulo-estado">{{ moduloEstadoLabel(m) }}</span>
+                                            }
                                         </li>
                                     }
                                 </ul>
                             </section>
                         }
+                        </div>
                     </div>
                 }
             </div>

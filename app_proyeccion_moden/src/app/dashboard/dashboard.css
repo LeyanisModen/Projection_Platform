@@ -145,7 +145,7 @@
 .modal-content { width: 100%; max-width: 360px; padding: 22px 24px; background: var(--surface); border: 1px solid var(--line); box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2); color: var(--text); text-align: center; }
 .modal-content h3 { margin: 0; color: var(--ink); font-size: 17px; font-weight: 600; }
 .modal-content p { color: var(--muted); font-size: 13px; }
-.modal-content.plan-modal { display: flex; flex-direction: column; gap: 14px; width: 92vw; max-width: 760px; max-height: 80vh; text-align: left; }
+.modal-content.plan-modal { display: flex; flex-direction: column; gap: 14px; width: 94vw; max-width: 1400px; max-height: 92vh; text-align: left; }
 .modal-content.gestionar-modal { display: flex; flex-direction: column; gap: 14px; width: 92vw; max-width: 560px; max-height: 86vh; text-align: left; }
 .modal-content.materiales-modal { display: flex; flex-direction: column; width: 92vw; max-width: 640px; max-height: 84vh; text-align: left; }
 .modal-content.materiales-modal-general { max-width: 760px; }
@@ -160,35 +160,47 @@
 .plan-modal-close:hover { color: var(--ink); background: var(--surface-2); }
 .plan-modal-body { display: flex; flex-direction: column; gap: 14px; min-height: 0; overflow-y: auto; padding-right: 4px; }
 .plan-modal-error { margin: 0; color: var(--danger); font-size: 13px; }
-/* Un bastidor por bloque, en orden de fabricacion. Las partes (2B, 2C) van indentadas bajo su raiz. */
-.plan-grupo { display: grid; gap: 6px; }
-.plan-grupo.is-division { margin-left: 18px; }
-.plan-grupo-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+/* Un bastidor por tarjeta, en rejilla, con una fila por modulo. Las partes (2B, 2C) van marcadas. */
+.plan-grupos { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; align-items: start; }
+.plan-grupo { display: grid; gap: 6px; padding: 8px 10px; border: 1px solid var(--line); border-left: 3px solid var(--line-strong); background: var(--surface); }
+.plan-grupo.is-division { border-left-style: dashed; }
+.plan-grupo-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 26px; }
 .plan-grupo-title { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .plan-grupo-title strong { color: var(--text); font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
-.plan-project-count { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
-.plan-grupo-actions { display: flex; align-items: center; gap: 4px; }
-.plan-order-btn { display: inline-grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; color: var(--muted); font-size: 11px; cursor: pointer; }
+.plan-project-count { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.plan-grupo-actions { display: flex; align-items: center; gap: 2px; }
+.plan-order-btn { display: inline-grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; color: var(--muted); font-size: 10px; cursor: pointer; }
 .plan-order-btn:hover:not(:disabled) { color: var(--ink); background: var(--surface-2); border-color: var(--line-strong); }
 .plan-order-btn:disabled { opacity: 0.3; cursor: default; }
-.plan-grupo-btn { height: 26px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--muted); font: inherit; font-size: 12px; white-space: nowrap; cursor: pointer; }
+.plan-grupo-btn { height: 24px; margin-left: 4px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--muted); font: inherit; font-size: 11px; white-space: nowrap; cursor: pointer; }
 .plan-grupo-btn:hover:not(:disabled) { color: var(--ink); background: var(--surface-2); }
 .plan-grupo-btn:disabled { opacity: 0.5; cursor: default; }
 .plan-modulo-order { display: grid; }
-.plan-modulo-order .plan-order-btn { width: 22px; height: 18px; }
-.plan-modulo-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
-.plan-modulo-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); background: var(--surface); font-size: 13px; }
-.plan-modulo-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--line-strong); }
+.plan-modulo-order .plan-order-btn { width: 20px; height: 15px; font-size: 9px; }
+.plan-modulo-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
+.plan-modulo-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto; align-items: center; gap: 8px; padding: 3px 6px 3px 4px; border: 1px solid var(--line); border-left: 3px solid transparent; background: var(--surface); font-size: 13px; }
+.plan-modulo-row.done { border-left-color: var(--ok); }
+.plan-modulo-row.partial { border-left-color: var(--accent); }
+.plan-modulo-dot { width: 8px; height: 8px; margin: 0 6px; border-radius: 50%; background: var(--line-strong); }
 .plan-modulo-row.done .plan-modulo-dot { background: var(--ok); }
 .plan-modulo-row.partial .plan-modulo-dot { background: var(--accent); }
 .plan-modulo-nombre { color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
-.plan-modulo-actions { display: flex; align-items: center; gap: 6px; }
-.plan-modulo-action { display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; }
-.plan-modulo-action:hover:not(:disabled) { color: var(--ink); background: var(--surface-2); }
-.plan-modulo-action:disabled { opacity: 0.5; cursor: default; }
-.plan-modulo-completed-at { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
-.plan-modulo-estado { color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
-.plan-modulo-row.done .plan-modulo-estado { color: var(--ok); }
+.plan-modulo-row.done .plan-modulo-nombre { color: var(--muted); }
+.plan-modulo-phases { display: flex; align-items: center; gap: 4px; }
+.plan-modulo-phase { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 7px; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--surface); color: var(--muted); font: inherit; font-size: 10px; font-weight: 700; cursor: pointer; }
+.plan-modulo-phase:hover:not(:disabled) { color: var(--ink); background: var(--surface-2); }
+.plan-modulo-phase:disabled { cursor: wait; opacity: 0.5; }
+.plan-modulo-phase.is-pendiente { border-color: var(--line); color: var(--line-strong); cursor: default; }
+.plan-modulo-phase.is-completa { border-color: var(--line); }
+.plan-modulo-phase.is-completa .phase-check { color: var(--ok); }
+.plan-modulo-phase:not(.is-completa) .phase-check { display: none; }
+.plan-modulo-phase.is-en-curso { color: var(--accent-dark); border-color: var(--accent); background: var(--accent-soft); }
+.plan-modulo-phase .phase-check { font-size: 9px; }
+.plan-modulo-action { display: inline-flex; align-items: center; gap: 4px; width: auto; min-width: 40px; height: 22px; padding: 0 6px; border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; color: var(--muted); font: inherit; font-size: 11px; cursor: pointer; }
+.plan-modulo-action:hover:not(:disabled) { color: var(--ink); background: var(--surface-2); border-color: var(--line-strong); }
+.plan-modulo-action.is-empty { min-width: 40px; cursor: default; }
+.plan-modulo-completed-at { min-width: 72px; color: var(--muted); font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; }
+.plan-modulo-estado { min-width: 72px; color: var(--muted); font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-align: right; text-transform: uppercase; }
 .plan-modulo-row.partial .plan-modulo-estado { color: var(--accent-dark); }
 .plan-fotos-body { display: flex; flex-direction: column; flex: 1; min-height: 0; gap: 12px; }
 .plan-fotos-stage { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; flex: 1; min-height: 0; gap: 12px; }

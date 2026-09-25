@@ -1,5 +1,5 @@
 import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { CommonModule, formatDate } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { DragDropModule, CdkDragDrop, moveItemInArray, transferArrayItem } from '@angular/cdk/drag-drop';
@@ -410,6 +410,37 @@ export class Dashboard implements OnInit, OnDestroy {
 
   phaseFinishedAt(module: Modulo, phase: ModuloFase): string | null {
     return (phase === 'INFERIOR' ? module.inferior_completado_at : module.superior_completado_at) || null;
+  }
+
+  /** Fase que se esta proyectando ahora mismo, segun lo que sabe el plan del bastidor. */
+  phaseEnCurso(module: Modulo, phase: ModuloFase): boolean {
+    const info = this.planModuloInfo(module.id);
+    if (!info) return false;
+    return !!(phase === 'INFERIOR' ? info.inferior_en_curso : info.superior_en_curso);
+  }
+
+  /** Solo se reinicia lo que ya tiene trabajo: una fase hecha o en curso. */
+  phaseResettable(module: Modulo, phase: ModuloFase): boolean {
+    return this.phaseDone(module, phase) || this.phaseEnCurso(module, phase);
+  }
+
+  phaseTitle(module: Modulo, phase: ModuloFase): string {
+    const nombre = phase === 'INFERIOR' ? 'Inferior' : 'Superior';
+    if (this.phaseDone(module, phase)) {
+      const finished = this.phaseFinishedAt(module, phase);
+      const cuando = finished ? formatDate(finished, 'dd/MM/yyyy HH:mm', 'en-US') : 'fecha no registrada';
+      return `${nombre} terminada · ${cuando}. Clic para reiniciar`;
+    }
+    if (this.phaseEnCurso(module, phase)) return `${nombre} en curso. Clic para reiniciar`;
+    return `${nombre} pendiente`;
+  }
+
+  private planModuloInfo(moduloId: number): GrupoBastidorModulo | undefined {
+    for (const grupo of this.planModalGrupos) {
+      const info = (grupo.modulos || []).find(m => m.id === moduloId);
+      if (info) return info;
+    }
+    return undefined;
   }
 
   requestPhaseReset(module: Modulo, phase: ModuloFase): void {
