@@ -1,106 +1,80 @@
-<div class="container">
+<div class="page">
     <div class="page-header">
-        <h1>Gestión de Proyectos</h1>
-        <button class="btn btn-primary" (click)="toggleForm()">
-            {{ showForm ? 'Cancelar' : 'Nuevo Proyecto' }}
+        <h1>Proyectos</h1>
+        <button type="button" class="btn" [class.btn-primary]="!showForm" (click)="toggleForm()">
+            {{ showForm ? 'Cancelar' : 'Nuevo proyecto' }}
         </button>
     </div>
 
     <!-- Alta: solo nombre y ferralla; el resto se completa en el detalle. -->
     <form class="new-project" *ngIf="showForm" (ngSubmit)="createProyecto()" autocomplete="off">
-        <input type="text" id="nombre" name="nombre" class="form-control new-project-name"
+        <input type="text" id="nombre" name="nombre" class="field new-project-name"
             [(ngModel)]="newProject.nombre" required placeholder="Nombre del proyecto"
             aria-label="Nombre del proyecto" autocomplete="off" autofocus [disabled]="loading">
-        <select id="usuario" name="usuario" class="form-control new-project-ferralla"
+        <select id="usuario" name="usuario" class="field new-project-ferralla"
             [(ngModel)]="newProject.usuario" aria-label="Ferralla" [disabled]="loading">
             <option [ngValue]="null">Sin ferralla</option>
             <option *ngFor="let user of users" [ngValue]="user.url">{{ user.first_name || user.username }}</option>
         </select>
-        <button type="submit" class="btn btn-success" [disabled]="loading || !newProject.nombre.trim()">
+        <button type="submit" class="btn btn-primary" [disabled]="loading || !newProject.nombre.trim()">
             {{ loading ? 'Creando...' : 'Crear' }}
         </button>
-        <div *ngIf="error" class="alert alert-danger new-project-error" role="alert">{{ error }}</div>
+        <div *ngIf="error" class="alert-inline new-project-error" role="alert">{{ error }}</div>
     </form>
 
     <!-- Lista de Proyectos Agrupados -->
     <div class="projects-list">
-        <div *ngIf="loading && !projects.length" class="text-center">Cargando proyectos...</div>
+        <div *ngIf="loading && !projects.length" class="meta">Cargando proyectos...</div>
 
-        <div *ngFor="let group of groupedProjects" class="user-group card mb-3">
-            <div class="card-header user-header" [class.bg-warning-light]="!group.userUrl"
-                (click)="group.collapsed = !group.collapsed" style="cursor: pointer;">
-                <h3>
-                    <span class="toggle-icon">{{ group.collapsed ? '▶' : '▼' }}</span>
-                    <span *ngIf="group.userUrl">👷</span>
-                    <span *ngIf="!group.userUrl">📋</span>
-                    {{ group.username }}
-                </h3>
-                <span class="planning-group-demand">
-                    Objetivo conjunto: {{ requiredDaily(group.projects) }} módulos/día
-                    @if (planningIssues(group.projects)) { <small> · {{ planningIssues(group.projects) }} proyectos requieren planificación</small> }
+        <section *ngFor="let group of groupedProjects" class="card group" [class.is-unassigned]="!group.userUrl">
+            <button type="button" class="group-header" (click)="group.collapsed = !group.collapsed"
+                [attr.aria-expanded]="!group.collapsed">
+                <i class="fa toggle-icon" [class.fa-chevron-down]="!group.collapsed" [class.fa-chevron-right]="group.collapsed" aria-hidden="true"></i>
+                <span class="group-name">{{ group.username }}</span>
+                <span class="meta group-count">{{ group.projects.length }} {{ group.projects.length === 1 ? 'proyecto' : 'proyectos' }}</span>
+                <span class="meta group-demand" *ngIf="group.projects.length">
+                    {{ requiredDaily(group.projects) }} módulos/día
+                    @if (planningIssues(group.projects)) { <span class="is-warn"> · {{ planningIssues(group.projects) }} sin planificar</span> }
                 </span>
-                <span class="badge badge-count" [class.badge-warning]="!group.userUrl" [class.badge-info]="group.userUrl">
-                    {{ group.projects.length }} {{ group.projects.length === 1 ? 'proyecto' : 'proyectos' }}
-                </span>
-            </div>
-            <div class="card-body p-0" *ngIf="!group.collapsed">
-                <table class="table mb-0" *ngIf="group.projects.length > 0">
-                    <tbody>
-                        <tr *ngFor="let project of group.projects"
-                            class="project-row"
-                            role="link"
-                            tabindex="0"
-                            [attr.aria-label]="'Gestionar proyecto ' + project.nombre"
-                            (click)="manageProject(project)"
-                            (keydown)="onProjectRowKeydown($event, project)">
-                            <td>
-                                <div class="project-name">{{ project.nombre }}</div>
-                                <div class="project-planning-info">
-                                    @if (project.fecha_montaje) { <span>Montaje: {{ project.fecha_montaje | date:'dd/MM/yyyy' }} · </span> }
-                                    {{ planningLabel(project) }}
-                                </div>
-                                <div class="project-stats">
-                                    <span *ngIf="(project.grupos_count || 0) > 0" class="stat-pill stat-grupos">
-                                        <i class="fa fa-layer-group"></i>
-                                        {{ project.grupos_count }} grupos
-                                    </span>
-                                    <span *ngIf="!project.grupos_count && (project.modulos_count || 0) > 0" class="stat-pill stat-warning" title="Sin datos técnicos importados">
-                                        <i class="fa fa-exclamation-triangle"></i>
-                                        sin grupos
-                                    </span>
-                                    <span *ngIf="(project.modulos_count || 0) > 0" class="stat-pill"
-                                        [class.stat-completo]="(project.modulos_completados || 0) === project.modulos_count"
-                                        [class.stat-pendiente]="(project.modulos_completados || 0) < (project.modulos_count || 0)">
-                                        {{ project.modulos_completados || 0 }}/{{ project.modulos_count }} módulos
-                                    </span>
-                                    <span *ngIf="!project.modulos_count" class="stat-pill stat-empty">
-                                        sin módulos
-                                    </span>
-                                </div>
-                            </td>
-                            <td class="text-right">
-                                <button class="btn-icon-action btn-manage mr-2"
-                                    (click)="$event.stopPropagation(); manageProject(project)"
-                                    title="Gestionar proyecto">
-                                    <i class="fa fa-folder-open" aria-hidden="true"></i>
-                                </button>
-                                <button class="btn-icon-action btn-delete"
-                                    (click)="$event.stopPropagation(); confirmDelete(project)"
-                                    title="Eliminar proyecto">
-                                    <i class="fa fa-trash" aria-hidden="true"></i>
-                                </button>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-                <div *ngIf="group.projects.length === 0" class="p-3 text-muted text-center">
-                    Sin proyectos asignados.
+            </button>
+            <div *ngIf="!group.collapsed">
+                <div *ngFor="let project of group.projects"
+                    class="project-row"
+                    role="link"
+                    tabindex="0"
+                    [attr.aria-label]="'Gestionar proyecto ' + project.nombre"
+                    (click)="manageProject(project)"
+                    (keydown)="onProjectRowKeydown($event, project)">
+                    <div class="project-main">
+                        <div class="project-name">{{ project.nombre }}</div>
+                        <div class="meta project-info">
+                            @if (project.fecha_montaje) { <span>Montaje {{ project.fecha_montaje | date:'dd/MM/yyyy' }}</span> }
+                            <span>{{ planningLabel(project) }}</span>
+                            <span *ngIf="(project.grupos_count || 0) > 0">{{ project.grupos_count }} grupos</span>
+                            <span *ngIf="!project.grupos_count && (project.modulos_count || 0) > 0" class="is-warn">sin grupos</span>
+                            <span *ngIf="(project.modulos_count || 0) > 0"
+                                [class.is-ok]="(project.modulos_completados || 0) === project.modulos_count">
+                                {{ project.modulos_completados || 0 }}/{{ project.modulos_count }} módulos
+                            </span>
+                            <span *ngIf="!project.modulos_count">sin módulos</span>
+                            <span *ngIf="project.produccion_bloqueada" class="is-danger">
+                                <i class="fa fa-lock" aria-hidden="true"></i> sin producción
+                            </span>
+                        </div>
+                    </div>
+                    <div class="project-actions">
+                        <button type="button" class="btn-icon danger"
+                            (click)="$event.stopPropagation(); confirmDelete(project)"
+                            title="Eliminar proyecto" aria-label="Eliminar proyecto">
+                            <i class="fa fa-trash-o" aria-hidden="true"></i>
+                        </button>
+                        <i class="fa fa-chevron-right row-chevron" aria-hidden="true"></i>
+                    </div>
                 </div>
+                <div *ngIf="group.projects.length === 0" class="meta group-empty">Sin proyectos.</div>
             </div>
-        </div>
+        </section>
 
-        <div *ngIf="!loading && groupedProjects.length === 0" class="text-center mt-5">
-            No hay proyectos ni usuarios cargados.
-        </div>
+        <div *ngIf="!loading && groupedProjects.length === 0" class="meta">No hay proyectos ni ferrallas.</div>
     </div>
 </div>

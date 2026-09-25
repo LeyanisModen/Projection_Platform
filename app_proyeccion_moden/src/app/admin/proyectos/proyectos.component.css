@@ -1,367 +1,100 @@
-.container {
-    padding: 20px;
-    max-width: 1200px;
-    margin: 0 auto;
-}
-
-.project-name {
-    font-weight: 500;
-    color: #212529;
-}
-
-.project-row {
-    cursor: pointer;
-    transition: background-color 0.15s ease;
-}
-
-.project-row:hover {
-    background-color: #fff8f3;
-}
-
-.project-row:focus-visible {
-    position: relative;
-    z-index: 1;
-    outline: 2px solid var(--moden-primary, #f0640f);
-    outline-offset: -2px;
-    background-color: #fff8f3;
-}
-
-.project-stats {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.35rem;
-    margin-top: 0.25rem;
-}
-
-.stat-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    font-size: 0.72rem;
-    padding: 0.1rem 0.45rem;
-    border-radius: 10px;
-    background-color: #e9ecef;
-    color: #495057;
-    font-weight: 500;
-}
-
-.stat-pill.stat-grupos {
-    background-color: #e9ecef;
-    color: #343a40;
-}
-
-.stat-pill.stat-pendiente {
-    background-color: #fff3e0;
-    color: #b35900;
-}
-
-.stat-pill.stat-completo {
-    background-color: #e2f5e7;
-    color: #1e7e34;
-}
-
-.stat-pill.stat-warning {
-    background-color: #fff3cd;
-    color: #856404;
-}
-
-.stat-pill.stat-empty {
-    background-color: #f8f9fa;
-    color: #adb5bd;
-    font-style: italic;
-}
-
-.btn-icon-action {
-    background: none;
-    border: none;
-    padding: 0.35rem 0.5rem;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: background-color 0.15s, color 0.15s;
-    font-size: 0.95rem;
-    line-height: 1;
-}
-
-.btn-manage {
-    color: #495057;
-}
-
-.btn-manage:hover {
-    background-color: #e9ecef;
-    color: #212529;
-}
-
-.btn-delete {
-    color: #adb5bd;
-}
-
-.btn-delete:hover {
-    background-color: #f8d7da;
-    color: #c82333;
-}
-
-.toggle-icon {
-    font-size: 0.6em;
-    margin-right: 6px;
-    display: inline-block;
-    width: 10px;
-    vertical-align: middle;
-}
-
-.page-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 2rem;
-}
-
-.card {
-    background: white;
-    border-radius: 8px;
-    padding: 0;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-    overflow: hidden;
-}
-
-.card-header {
-    padding: 1rem 1.5rem;
-    border-bottom: 1px solid #eee;
-    background: #f8f9fa;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.card-header h3 {
-    margin: 0;
-    font-size: 1.25rem;
-}
-
-.user-header {
-    background: var(--moden-primary-light, #fff3e0);
-    color: var(--moden-primary-dark, #b33f00);
-}
-
-.badge {
-    background: var(--moden-primary, #f0640f);
-    color: white;
-    padding: 0.2rem 0.7rem;
-    border-radius: 12px;
-    font-size: 0.8rem;
-    font-weight: 500;
-    letter-spacing: 0.02em;
-}
-
-.card-body {
-    padding: 1.5rem;
-}
-
-.p-0 {
-    padding: 0 !important;
-}
-
-.p-3 {
-    padding: 1rem !important;
-}
-
-.mb-3 {
-    margin-bottom: 1rem;
-}
-
-.mb-4 {
-    margin-bottom: 1.5rem;
-}
-
-.mb-0 {
-    margin-bottom: 0 !important;
-}
-
-.btn {
-    padding: 0.5rem 1rem;
-    border-radius: 4px;
-    border: none;
-    cursor: pointer;
-    font-weight: 500;
-    transition: opacity 0.2s;
-}
-
-.btn:hover {
-    opacity: 0.9;
-}
-
-.btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-}
-
-.btn-primary {
-    background: #1976d2;
-    color: white;
-}
-
-.btn-success {
-    background: #2e7d32;
-    color: white;
-}
-
-.btn-danger {
-    background: #d32f2f;
-    color: white;
-}
-
-.btn-info {
-    background: #0288d1;
-    color: white;
-}
-
-.btn-sm {
-    padding: 0.25rem 0.5rem;
-    font-size: 0.875rem;
-}
-
-.mr-2 {
-    margin-right: 0.5rem;
-}
-
-.form-group {
-    margin-bottom: 1.5rem;
-}
-
-.form-group label {
-    display: block;
-    margin-bottom: 0.75rem;
-    font-weight: 500;
-}
-
-.form-control {
-    width: 100%;
-    padding: 0.65rem 0.5rem;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    font-size: 1rem;
-}
-
-.table {
-    width: 100%;
-    border-collapse: collapse;
-}
-
-.table th,
-.table td {
-    padding: 0.75rem;
-    text-align: left;
-    border-bottom: 1px solid #eee;
-}
-
-.table th {
-    font-weight: 600;
-    background: #f8f9fa;
-}
-
-.text-center {
-    text-align: center;
-}
-
-.text-muted {
-    color: #666;
-    font-style: italic;
-}
-
-.alert {
-    padding: 0.75rem 1rem;
-    border-radius: 4px;
-    margin-top: 1rem;
-}
-
-.alert-danger {
-    background: #fdecea;
-    color: #c62828;
-    border: 1px solid #fad2cf;
-}
-
-.mt-2 {
-    margin-top: 0.5rem;
-}
-
-.mt-5 {
-    margin-top: 3rem;
-}
-
-/* Sin Asignar group styling */
-.bg-warning-light {
-    background: #fff3cd !important;
-    color: #856404;
-}
-
-.badge-warning {
-    background: #ffc107;
-    color: #212529;
-}
-
-.badge-info {
-    background: var(--moden-primary, #e8590c);
-    color: white;
-}
-
-/* Outline buttons */
-.btn-outline-info {
-    background: transparent;
-    border: 1px solid #0288d1;
-    color: #0288d1;
-}
-
-.btn-outline-info:hover {
-    background: #0288d1;
-    color: white;
-}
-
-.btn-outline-danger {
-    background: transparent;
-    border: 1px solid #d32f2f;
-    color: #d32f2f;
-}
-
-.btn-outline-danger:hover {
-    background: #d32f2f;
-    color: white;
-}
-
-.text-right {
-    text-align: right !important;
-}
-
-/* Alta de proyecto: una sola fila, el resto se rellena en el detalle. */
+/* Alta: una fila. */
 .new-project {
     display: flex;
     align-items: flex-start;
     flex-wrap: wrap;
-    gap: 0.6rem;
-    margin-bottom: 1.5rem;
+    gap: 8px;
+    margin-bottom: 20px;
 }
 
-.new-project-name {
-    flex: 2 1 260px;
+.new-project-name { flex: 2 1 260px; }
+.new-project-ferralla { flex: 1 1 200px; }
+.new-project-error { flex-basis: 100%; }
+
+/* Grupos por ferralla: una fila plana, sin fondo tintado. */
+.group-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 12px 16px;
+    border: 0;
+    background: var(--surface-2);
+    color: var(--ink);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
 }
 
-.new-project-ferralla {
-    flex: 1 1 200px;
+.group-header:hover { background: #eef1f5; }
+.group-header:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.toggle-icon { width: 12px; color: var(--muted); font-size: 11px; }
+.group-name { font-weight: 600; }
+.group-demand { margin-left: auto; }
+.is-unassigned .group-name { color: var(--warn); }
+
+.group-empty { padding: 12px 16px 14px 38px; }
+
+/* Filas de proyecto */
+.project-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px 12px 38px;
+    border-top: 1px solid var(--line);
+    cursor: pointer;
+    transition: background-color 120ms ease;
 }
 
-/* Misma altura en campo, desplegable y boton: el select recorta el texto si
-   hereda la altura fija de Bootstrap con el padding vertical de .form-control. */
-.new-project .form-control {
-    height: 42px;
-    padding-top: 0;
-    padding-bottom: 0;
-    line-height: 40px;
+.project-row:hover { background: var(--surface-2); }
+
+.project-row:focus-visible {
+    position: relative;
+    z-index: 1;
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
 }
 
-.new-project .btn {
-    height: 42px;
-    white-space: nowrap;
+.project-main { flex: 1 1 auto; min-width: 0; }
+
+.project-name {
+    color: var(--ink);
+    font-size: 15px;
+    font-weight: 600;
+    overflow-wrap: anywhere;
 }
 
-.new-project-error {
-    flex-basis: 100%;
-    margin: 0;
+.project-info {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 6px;
+    margin-top: 2px;
+}
+
+.project-info > span + span::before {
+    content: '·';
+    margin-right: 6px;
+    color: var(--line-strong);
+}
+
+.project-info .is-warn::before,
+.project-info .is-ok::before,
+.project-info .is-danger::before { color: var(--line-strong); }
+
+.project-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 0 0 auto;
+}
+
+.row-chevron { color: var(--line-strong); font-size: 12px; }
+.project-row:hover .row-chevron { color: var(--muted); }
+
+@media (max-width: 760px) {
+    .page { padding: 8px 12px 32px; }
+    .group-demand { flex-basis: 100%; margin-left: 22px; }
+    .project-row { padding-left: 16px; }
+    .group-empty { padding-left: 16px; }
 }

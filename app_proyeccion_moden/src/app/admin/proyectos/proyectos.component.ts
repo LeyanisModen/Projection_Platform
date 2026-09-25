@@ -26,7 +26,7 @@ interface ProjectGroup {
   standalone: true,
   imports: [CommonModule, FormsModule],
   templateUrl: './proyectos.component.html',
-  styleUrls: ['./proyectos.component.css', '../admin-responsive.css']
+  styleUrls: ['../admin-theme.css', './proyectos.component.css']
 })
 export class ProyectosComponent implements OnInit {
   readonly requiredDaily = requiredDaily;
