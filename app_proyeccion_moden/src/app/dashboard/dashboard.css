@@ -159,14 +159,25 @@
 .plan-modal-close { display: inline-grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; color: var(--muted); font-size: 22px; line-height: 1; cursor: pointer; }
 .plan-modal-close:hover { color: var(--ink); background: var(--surface-2); }
 .plan-modal-body { display: flex; flex-direction: column; gap: 14px; min-height: 0; overflow-y: auto; padding-right: 4px; }
-.plan-project-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
-.plan-project-header strong { color: var(--text); font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
-.plan-project-tools { display: flex; align-items: center; gap: 12px; }
+.plan-modal-error { margin: 0; color: var(--danger); font-size: 13px; }
+/* Un bastidor por bloque, en orden de fabricacion. Las partes (2B, 2C) van indentadas bajo su raiz. */
+.plan-grupo { display: grid; gap: 6px; }
+.plan-grupo.is-division { margin-left: 18px; }
+.plan-grupo-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.plan-grupo-title { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.plan-grupo-title strong { color: var(--text); font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
 .plan-project-count { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
-.plan-project-sort { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--muted); font-size: 12px; }
-.plan-project-sort select { height: 30px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); font: inherit; font-size: 13px; color: var(--ink); }
+.plan-grupo-actions { display: flex; align-items: center; gap: 4px; }
+.plan-order-btn { display: inline-grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; color: var(--muted); font-size: 11px; cursor: pointer; }
+.plan-order-btn:hover:not(:disabled) { color: var(--ink); background: var(--surface-2); border-color: var(--line-strong); }
+.plan-order-btn:disabled { opacity: 0.3; cursor: default; }
+.plan-grupo-btn { height: 26px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--muted); font: inherit; font-size: 12px; white-space: nowrap; cursor: pointer; }
+.plan-grupo-btn:hover:not(:disabled) { color: var(--ink); background: var(--surface-2); }
+.plan-grupo-btn:disabled { opacity: 0.5; cursor: default; }
+.plan-modulo-order { display: grid; }
+.plan-modulo-order .plan-order-btn { width: 22px; height: 18px; }
 .plan-modulo-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
-.plan-modulo-row { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); background: var(--surface); font-size: 13px; }
+.plan-modulo-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); background: var(--surface); font-size: 13px; }
 .plan-modulo-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--line-strong); }
 .plan-modulo-row.done .plan-modulo-dot { background: var(--ok); }
 .plan-modulo-row.partial .plan-modulo-dot { background: var(--accent); }

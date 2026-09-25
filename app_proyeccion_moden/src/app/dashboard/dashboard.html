@@ -499,27 +499,61 @@
                     <div class="plan-modal-loading">Este proyecto no tiene módulos.</div>
                 } @else {
                     <div class="plan-modal-body">
-                        <div class="plan-project-block">
-                            <div class="plan-project-header">
-                                <strong>Módulos del proyecto</strong>
-                                <div class="plan-project-tools">
-                                    <span class="plan-project-count">{{ planModalDoneCount() }}/{{ planModalModulos.length }}</span>
-                                    <label class="plan-project-sort">
-                                        <span>Ordenar por</span>
-                                        <select [(ngModel)]="planModalSort" aria-label="Ordenar módulos del proyecto">
-                                            <option value="name">Nombre</option>
-                                            <option value="completed">En proceso y últimos terminados</option>
-                                        </select>
-                                    </label>
+                        @if (planModalError) { <p class="plan-modal-error" role="alert">{{ planModalError }}</p> }
+                        @for (seccion of planModalSecciones(); track seccion.key) {
+                            <section class="plan-grupo" [class.is-division]="seccion.grupo?.es_division" [attr.aria-label]="seccion.titulo">
+                                <div class="plan-grupo-header">
+                                    <div class="plan-grupo-title">
+                                        <strong>{{ seccion.titulo }}</strong>
+                                        <span class="plan-project-count">{{ seccion.hechos }}/{{ seccion.modulos.length }}</span>
+                                    </div>
+                                    @if (seccion.grupo; as grupo) {
+                                        <div class="plan-grupo-actions">
+                                            @if (!grupo.es_division) {
+                                                <button type="button" class="plan-order-btn" (click)="moveGrupoEnPlan(grupo, -1)"
+                                                    [disabled]="planModalBusy || !canMoveGrupo(grupo, -1)"
+                                                    title="Fabricar antes" [attr.aria-label]="'Fabricar antes ' + seccion.titulo">
+                                                    <i class="fa fa-chevron-up" aria-hidden="true"></i>
+                                                </button>
+                                                <button type="button" class="plan-order-btn" (click)="moveGrupoEnPlan(grupo, 1)"
+                                                    [disabled]="planModalBusy || !canMoveGrupo(grupo, 1)"
+                                                    title="Fabricar después" [attr.aria-label]="'Fabricar después ' + seccion.titulo">
+                                                    <i class="fa fa-chevron-down" aria-hidden="true"></i>
+                                                </button>
+                                            }
+                                            @if (canDividir(grupo)) {
+                                                <button type="button" class="plan-grupo-btn" (click)="dividirGrupoEnPlan(grupo)"
+                                                    [disabled]="planModalBusy" [attr.aria-label]="'Dividir ' + seccion.titulo + ' entre mesas'">Dividir entre mesas</button>
+                                            }
+                                            @if (canUnir(grupo)) {
+                                                <button type="button" class="plan-grupo-btn" (click)="unirGrupoEnPlan(grupo)"
+                                                    [disabled]="planModalBusy" [attr.aria-label]="'Unir ' + seccion.titulo">Unir</button>
+                                            }
+                                        </div>
+                                    }
                                 </div>
-                            </div>
                                 <ul class="plan-modulo-list">
-                                    @for (m of planModalSortedModulos(); track m.id) {
+                                    @for (m of seccion.modulos; track m.id) {
                                         <li class="plan-modulo-row"
                                             [class.done]="moduloEstadoClass(m) === 'done'"
                                             [class.partial]="moduloEstadoClass(m) === 'partial'"
                                             [class.pending]="moduloEstadoClass(m) === 'pending'">
-                                            <span class="plan-modulo-dot"></span>
+                                            @if (seccion.grupo; as grupo) {
+                                                <div class="plan-modulo-order" role="group" [attr.aria-label]="'Orden de ' + m.nombre">
+                                                    <button type="button" class="plan-order-btn" (click)="moveModuloEnPlan(grupo, m, -1)"
+                                                        [disabled]="planModalBusy || !canMoveModulo(grupo, m, -1)"
+                                                        title="Fabricar antes" [attr.aria-label]="'Fabricar antes ' + m.nombre">
+                                                        <i class="fa fa-chevron-up" aria-hidden="true"></i>
+                                                    </button>
+                                                    <button type="button" class="plan-order-btn" (click)="moveModuloEnPlan(grupo, m, 1)"
+                                                        [disabled]="planModalBusy || !canMoveModulo(grupo, m, 1)"
+                                                        title="Fabricar después" [attr.aria-label]="'Fabricar después ' + m.nombre">
+                                                        <i class="fa fa-chevron-down" aria-hidden="true"></i>
+                                                    </button>
+                                                </div>
+                                            } @else {
+                                                <span class="plan-modulo-dot"></span>
+                                            }
                                             <span class="plan-modulo-nombre">{{ m.nombre }}</span>
                                             <div class="plan-modulo-actions">
                                                 @if (moduloHasFotos(m)) {
@@ -558,14 +592,15 @@
                                                             } @else if (phaseDone(m, phase)) { <small>Fecha no registrada</small> }
                                                         </div>
                                                         <button type="button" (click)="requestPhaseReset(m, phase)" [disabled]="resettingPhase"
-                                                            [attr.aria-label]="'Reiniciar fase ' + (phase === 'INFERIOR' ? 'inferior' : 'superior') + ' de ' + m.nombre">Reiniciar</button>
+                                                            [attr.aria-label]="'Reiniciar fase ' + (phase === 'INFERIOR' ? 'inferior' : 'superior') + ' de ' + m.nombre">Reiniciar {{ phase === 'INFERIOR' ? 'inferior' : 'superior' }}</button>
                                                     </div>
                                                 }
                                             </div>
                                         </li>
                                     }
                                 </ul>
-                        </div>
+                            </section>
+                        }
                     </div>
                 }
             </div>

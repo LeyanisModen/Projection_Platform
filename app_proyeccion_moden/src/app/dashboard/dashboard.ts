@@ -7,7 +7,8 @@ import { DragDropModule, CdkDragDrop, moveItemInArray, transferArrayItem } from 
 import {
   ApiService,
   Proyecto, Modulo, Mesa, ModuloQueueItem, MesaQueueItem, Imagen, FotoFabricacion,
-  EstrategiaColaSuperior, GrupoMesas, GrupoMesasProyectoEntry, ProductionStatsResponse, ModuloFase
+  EstrategiaColaSuperior, GrupoMesas, GrupoMesasProyectoEntry, ProductionStatsResponse, ModuloFase,
+  GrupoBastidor, GrupoBastidorModulo,
 } from '../services/api.service';
 import {
   ListaMaterialesService,
@@ -18,10 +19,23 @@ import {
   BloqueGeneralPorProyecto,
   GrupoMaterial,
 } from '../services/lista-materiales.service';
-import { Subject, takeUntil, interval } from 'rxjs';
+import { Subject, takeUntil, interval, forkJoin, Observable, of } from 'rxjs';
+import { catchError } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
 import { ZoomableImageComponent } from '../shared/zoomable-image/zoomable-image.component';
 import { planningIssues, planningLabel } from '../shared/project-planning';
+
+/** Un bastidor del plan tal y como lo ve la ferralla: en orden de fabricacion. */
+export interface PlanSeccion {
+  key: string;
+  titulo: string;
+  grupo: GrupoBastidor | null;
+  modulos: Modulo[];
+  hechos: number;
+}
+
+const compareModulosByName = (a: Modulo, b: Modulo) =>
+  a.nombre.localeCompare(b.nombre, undefined, { numeric: true });
 
 // Logical entity for display and drag-drop
 interface Subfase {
@@ -112,7 +126,11 @@ export class Dashboard implements OnInit, OnDestroy {
   showPlanModal = false;
   planModalProyecto: Proyecto | null = null;
   planModalModulos: Modulo[] = [];
-  planModalSort: 'name' | 'completed' = 'name';
+  /** Bastidores del proyecto (raices y partes), en orden de fabricacion. */
+  planModalGrupos: GrupoBastidor[] = [];
+  planModalBusy = false;
+  planModalError = '';
+  private planSeccionesCache: { modulos: Modulo[]; grupos: GrupoBastidor[]; value: PlanSeccion[] } | null = null;
   readonly modulePhases: ModuloFase[] = ['INFERIOR', 'SUPERIOR'];
   phaseResetTarget: { module: Modulo; phase: ModuloFase } | null = null;
   resettingPhase = false;
@@ -184,13 +202,18 @@ export class Dashboard implements OnInit, OnDestroy {
     this.showPlanModal = true;
     this.planModalProyecto = proyecto;
     this.planModalModulos = [];
+    this.planModalGrupos = [];
+    this.planModalError = '';
     this.loadingPlanModal = true;
     this.cdr.detectChanges();
 
-    this.api.getProyectoModulos(proyecto.id)
-      .pipe(takeUntil(this.destroy$)).subscribe({
-      next: (modulos) => {
+    forkJoin({
+      modulos: this.api.getProyectoModulos(proyecto.id),
+      grupos: this.api.getGruposBastidor(proyecto.id).pipe(catchError(() => of([] as GrupoBastidor[]))),
+    }).pipe(takeUntil(this.destroy$)).subscribe({
+      next: ({ modulos, grupos }) => {
         this.planModalModulos = modulos;
+        this.planModalGrupos = grupos;
         this.loadingPlanModal = false;
         this.cdr.detectChanges();
       },
@@ -202,13 +225,183 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   closePlanModal(): void {
-    if (this.resettingPhase) return;
+    if (this.resettingPhase || this.planModalBusy) return;
     this.phaseResetTarget = null;
     this.showPlanModal = false;
     this.planModalProyecto = null;
     this.planModalModulos = [];
+    this.planModalGrupos = [];
+    this.planModalError = '';
     this.closePlanFotosModal();
     this.cdr.detectChanges();
+  }
+
+  // ---- Plan por bastidores: lo que la ferralla puede tocar --------------
+
+  grupoEtiqueta(grupo: GrupoBastidor): string {
+    if (grupo.etiqueta) return grupo.etiqueta;
+    const base = grupo.nombre || `Grupo ${grupo.indice}`;
+    if (!grupo.sufijo) return base;
+    return grupo.nombre ? `${base} ${grupo.sufijo}` : `${base}${grupo.sufijo}`;
+  }
+
+  /**
+   * Secciones del modal: un bastidor por seccion, con sus modulos en orden
+   * de fabricacion (el card del admin se fabrica de abajo arriba). Los
+   * modulos sin bastidor van al final.
+   */
+  planModalSecciones(): PlanSeccion[] {
+    const cache = this.planSeccionesCache;
+    if (cache && cache.modulos === this.planModalModulos && cache.grupos === this.planModalGrupos) {
+      return cache.value;
+    }
+    const value = this.buildPlanSecciones();
+    this.planSeccionesCache = { modulos: this.planModalModulos, grupos: this.planModalGrupos, value };
+    return value;
+  }
+
+  private buildPlanSecciones(): PlanSeccion[] {
+    const byId = new Map(this.planModalModulos.map(m => [m.id, m]));
+    const asignados = new Set<number>();
+    const secciones: PlanSeccion[] = [];
+    for (const grupo of this.planModalGrupos) {
+      const modulos = this.fabricacionOrder(grupo)
+        .map(gm => byId.get(gm.id))
+        .filter((m): m is Modulo => !!m);
+      modulos.forEach(m => asignados.add(m.id));
+      secciones.push({
+        key: `g${grupo.id}`,
+        titulo: this.grupoEtiqueta(grupo),
+        grupo,
+        modulos,
+        hechos: modulos.filter(m => m.inferior_hecho && m.superior_hecho).length,
+      });
+    }
+    const sueltos = this.planModalModulos.filter(m => !asignados.has(m.id)).sort(compareModulosByName);
+    if (sueltos.length > 0 || secciones.length === 0) {
+      secciones.push({
+        key: 'sin-bastidor',
+        titulo: secciones.length ? 'Sin bastidor' : 'Módulos',
+        grupo: null,
+        modulos: sueltos,
+        hechos: sueltos.filter(m => m.inferior_hecho && m.superior_hecho).length,
+      });
+    }
+    return secciones;
+  }
+
+  /** Orden real de fabricacion del bastidor: inverso al card del admin. */
+  private fabricacionOrder(grupo: GrupoBastidor): GrupoBastidorModulo[] {
+    return [...(grupo.modulos || [])].reverse();
+  }
+
+  private planModuloMovible(grupo: GrupoBastidor, moduloId: number): boolean {
+    const info = (grupo.modulos || []).find(m => m.id === moduloId);
+    if (!info) return false;
+    return info.movible ?? (!info.inferior_hecho && !info.cerrado);
+  }
+
+  private planRoots(): GrupoBastidor[] {
+    return this.planModalGrupos.filter(g => !g.es_division);
+  }
+
+  canMoveGrupo(grupo: GrupoBastidor, dir: -1 | 1): boolean {
+    const roots = this.planRoots();
+    const index = roots.findIndex(g => g.id === grupo.id);
+    const target = index + dir;
+    return index >= 0 && target >= 0 && target < roots.length;
+  }
+
+  canMoveModulo(grupo: GrupoBastidor, modulo: Modulo, dir: -1 | 1): boolean {
+    const orden = this.fabricacionOrder(grupo);
+    const index = orden.findIndex(m => m.id === modulo.id);
+    const target = index + dir;
+    if (index < 0 || target < 0 || target >= orden.length) return false;
+    return this.planModuloMovible(grupo, modulo.id) && this.planModuloMovible(grupo, orden[target].id);
+  }
+
+  canDividir(grupo: GrupoBastidor): boolean {
+    return !grupo.es_division && !grupo.dividido;
+  }
+
+  canUnir(grupo: GrupoBastidor): boolean {
+    return !!(grupo.es_division || grupo.dividido);
+  }
+
+  moveGrupoEnPlan(grupo: GrupoBastidor, dir: -1 | 1): void {
+    if (!this.planModalProyecto || !this.canMoveGrupo(grupo, dir)) return;
+    const ids = this.planRoots().map(g => g.id);
+    const index = ids.indexOf(grupo.id);
+    ids.splice(index, 1);
+    ids.splice(index + dir, 0, grupo.id);
+    this.runPlanAction(this.api.reorderBastidores(this.planModalProyecto.id, ids));
+  }
+
+  moveModuloEnPlan(grupo: GrupoBastidor, modulo: Modulo, dir: -1 | 1): void {
+    if (!this.canMoveModulo(grupo, modulo, dir)) return;
+    const orden = this.fabricacionOrder(grupo);
+    const target = orden.findIndex(m => m.id === modulo.id) + dir;
+    // El backend cuenta posiciones del card (de arriba abajo).
+    const indexDestino = (orden.length - 1) - target;
+    this.runPlanAction(this.api.moveModuloEntreBastidores(modulo.id, grupo.id, indexDestino));
+  }
+
+  dividirGrupoEnPlan(grupo: GrupoBastidor): void {
+    if (!this.canDividir(grupo)) return;
+    this.runPlanAction(this.api.dividirBastidor(grupo.id));
+  }
+
+  unirGrupoEnPlan(grupo: GrupoBastidor): void {
+    if (!this.canUnir(grupo)) return;
+    this.runPlanAction(this.api.unirBastidor(grupo.id));
+  }
+
+  private runPlanAction(action: Observable<GrupoBastidor[]>): void {
+    if (this.planModalBusy) return;
+    this.planModalBusy = true;
+    this.planModalError = '';
+    this.cdr.detectChanges();
+    action.pipe(takeUntil(this.destroy$)).subscribe({
+      next: grupos => {
+        this.planModalGrupos = grupos;
+        this.planModalBusy = false;
+        this.reloadPlanModalModulos();
+        this.loadMesas();
+        this.silentRefreshProyectosAndStats();
+        this.cdr.detectChanges();
+      },
+      error: error => {
+        this.planModalError = error?.error?.detail || 'No se pudo aplicar el cambio.';
+        this.planModalBusy = false;
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  private reloadPlanModalGrupos(): void {
+    const proyecto = this.planModalProyecto;
+    if (!proyecto) return;
+    this.api.getGruposBastidor(proyecto.id).pipe(takeUntil(this.destroy$)).subscribe({
+      next: grupos => {
+        if (this.planModalProyecto?.id !== proyecto.id) return;
+        this.planModalGrupos = grupos;
+        this.cdr.detectChanges();
+      },
+      error: () => { /* sin bastidores se lista plano */ },
+    });
+  }
+
+  private reloadPlanModalModulos(): void {
+    const proyecto = this.planModalProyecto;
+    if (!proyecto) return;
+    this.api.getProyectoModulos(proyecto.id).pipe(takeUntil(this.destroy$)).subscribe({
+      next: modulos => {
+        if (this.planModalProyecto?.id !== proyecto.id) return;
+        this.planModalModulos = modulos;
+        this.cdr.detectChanges();
+      },
+      error: () => { /* la lista anterior sigue siendo valida */ },
+    });
   }
 
   phaseDone(module: Modulo, phase: ModuloFase): boolean {
@@ -239,6 +432,7 @@ export class Dashboard implements OnInit, OnDestroy {
         this.resettingPhase = false;
         this.silentRefreshProyectosAndStats();
         this.loadMesas();
+        this.reloadPlanModalGrupos();
         this.cdr.detectChanges();
       },
       error: error => {
@@ -562,39 +756,6 @@ export class Dashboard implements OnInit, OnDestroy {
     return order
       .map((g) => ({ ...g, rows: rows.filter((r) => r.grupo === g.grupo) }))
       .filter((g) => g.rows.length > 0);
-  }
-
-  planModalSortedModulos(): Modulo[] {
-    const compareByName = (a: Modulo, b: Modulo) =>
-      a.nombre.localeCompare(b.nombre, undefined, { numeric: true });
-
-    if (this.planModalSort === 'name') {
-      return [...this.planModalModulos].sort(compareByName);
-    }
-
-    return [...this.planModalModulos].sort((a, b) => {
-      const stateRank = (modulo: Modulo): number => {
-        const state = this.moduloEstadoOperativo(modulo);
-        if (state === 'EN_PROGRESO') return 0;
-        if (state === 'COMPLETADO' || state === 'CERRADO') return 1;
-        return 2;
-      };
-      const rankDifference = stateRank(a) - stateRank(b);
-      if (rankDifference !== 0) return rankDifference;
-
-      const aTimestamp = a.completado_at ? Date.parse(a.completado_at) : Number.NaN;
-      const bTimestamp = b.completado_at ? Date.parse(b.completado_at) : Number.NaN;
-      const aHasDate = Number.isFinite(aTimestamp);
-      const bHasDate = Number.isFinite(bTimestamp);
-
-      if (aHasDate && bHasDate && aTimestamp !== bTimestamp) {
-        return bTimestamp - aTimestamp;
-      }
-      if (aHasDate !== bHasDate) {
-        return aHasDate ? -1 : 1;
-      }
-      return compareByName(a, b);
-    });
   }
 
   planModalDoneCount(): number {
@@ -2360,7 +2521,9 @@ export class Dashboard implements OnInit, OnDestroy {
   getItemGrupoLabel(item: MesaQueueItem): string {
     const grupoName = (item.grupo_bastidor_nombre || '').trim();
     const grupoIdx = item.grupo_bastidor_indice;
-    const grupo = grupoName || (grupoIdx != null ? `Grupo ${grupoIdx}` : 'Grupo');
+    const sufijo = (item.grupo_bastidor_sufijo || '').trim();
+    const base = grupoName || (grupoIdx != null ? `Grupo ${grupoIdx}` : 'Grupo');
+    const grupo = !sufijo ? base : (grupoName ? `${base} ${sufijo}` : `${base}${sufijo}`);
     const proyecto = (item.modulo_proyecto_nombre || '').trim();
     return proyecto ? `${proyecto} · ${grupo}` : grupo;
   }
