@@ -5,6 +5,7 @@ from django.utils import timezone
 from api.models import (
     EstrategiaColaSuperior,
     Fase,
+    GrupoBastidor,
     GrupoMesas,
     GrupoMesasProyecto,
     Mesa,
@@ -545,7 +546,16 @@ def _insert_phase(modulo, fase, mesa, plan_group_index, assigned_by, prioritize,
 
 
 def sync_module_phases(modulo, fases, assigned_by=None, hints=None, prioritize=False):
-    """Add missing phases without rebuilding or discarding the existing queue."""
+    """Add missing phases without rebuilding or discarding the existing queue.
+
+    A module whose bastidor is on hold (``en_espera``) stays out of every
+    queue; it enters when the bastidor is released.
+    """
+    bastidor_id = getattr(modulo, "grupo_bastidor_id", None)
+    if bastidor_id is not None and GrupoBastidor.objects.filter(
+        pk=bastidor_id, en_espera=True,
+    ).exists():
+        return []
     hints = hints or {}
     created = []
     group_ids = set()

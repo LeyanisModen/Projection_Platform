@@ -12,7 +12,12 @@ export function planningLabel(project: Proyecto): string {
     const plan = project.planificacion;
     if (!plan) return 'Sin planificación';
     switch (plan.estado) {
-        case 'PLANIFICADO': return `${plan.modulos_por_dia} módulos/día · ${plan.dias_disponibles} días disponibles`;
+        case 'PLANIFICADO': {
+            const base = `${plan.modulos_por_dia} módulos/día · ${plan.dias_disponibles} días disponibles`;
+            const previstos = plan.modulos_previstos || 0;
+            const subidos = plan.modulos_subidos ?? 0;
+            return previstos > subidos ? `${base} · ${subidos} de ${previstos} subidos` : base;
+        }
         case 'COMPLETADO': return 'Fabricación completada';
         case 'SIN_MODULOS': return 'Pendiente de cargar módulos';
         case 'SIN_FERRALLA': return 'Falta asignar una ferralla';

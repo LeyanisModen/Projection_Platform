@@ -170,6 +170,9 @@
 .plan-grupo.is-division { border-left-style: dashed; }
 .plan-grupo.is-terminado { border-left-color: var(--ok); }
 .plan-grupo.is-terminado .plan-grupo-title strong { color: var(--muted); }
+.plan-grupo.is-espera { border-left-style: dotted; background: var(--surface-2); }
+.plan-grupo.is-espera .plan-grupo-title strong, .plan-grupo.is-espera .plan-modulo-nombre { color: var(--muted); }
+.plan-grupo-tag { color: var(--warn); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
 .plan-mesa-btn { display: inline-grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; color: var(--muted); font-size: 11px; cursor: pointer; }
 .plan-mesa-btn:hover:not(:disabled) { color: var(--ink); background: var(--surface-2); border-color: var(--line-strong); }
 .plan-mesa-btn:disabled { opacity: 0.3; cursor: default; }

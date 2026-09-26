@@ -55,6 +55,10 @@ export type ModuloFase = 'INFERIOR' | 'SUPERIOR';
 
 export interface PlanificacionProyecto {
     modulos_pendientes: number;
+    /** Modulos ya subidos al proyecto. */
+    modulos_subidos?: number;
+    /** Total previsto del proyecto cuando se suben por tandas. */
+    modulos_previstos?: number | null;
     dias_disponibles: number | null;
     modulos_por_dia: number | null;
     estado: 'COMPLETADO' | 'SIN_FECHA' | 'SIN_MODULOS' | 'SIN_FERRALLA' | 'VENCIDO' | 'SIN_DIAS' | 'PLANIFICADO';
@@ -112,6 +116,7 @@ export interface Proyecto {
     nombre: string;
     fecha_montaje?: string | null;
     planificacion?: PlanificacionProyecto;
+    modulos_previstos?: number | null;
     usuario: string | null;
     bastidor_longitud_cm: number;
     peso_maximo_grua_kg: number | null;
@@ -169,6 +174,8 @@ export interface GrupoBastidor {
     mesa_preferida?: number | null;
     /** Mesa inferior donde se fabrica o se fabrico; null si aun no ha pasado por ninguna. */
     mesa_actual?: number | null;
+    /** Apartado de las mesas (sin acero cortado, etc.) hasta que se suelte. */
+    en_espera?: boolean;
     created_at: string;
     modulos: GrupoBastidorModulo[];
     longitud_total_cm: number;
@@ -880,6 +887,15 @@ export class ApiService {
         return this.http.post<GrupoBastidor[]>(
             `${this.baseUrl}/grupos-bastidor/${id}/dividir/`,
             {},
+            { headers: this.getHeaders() }
+        );
+    }
+
+    /** Aparta el bastidor de las mesas o lo suelta para que entre en cola. */
+    esperaBastidor(id: number, enEspera: boolean): Observable<GrupoBastidor[]> {
+        return this.http.post<GrupoBastidor[]>(
+            `${this.baseUrl}/grupos-bastidor/${id}/espera/`,
+            { en_espera: enEspera },
             { headers: this.getHeaders() }
         );
     }

@@ -383,6 +383,32 @@ describe('Dashboard', () => {
       expect(columna.querySelector('.plan-grupo')?.classList.contains('is-terminado')).toBe(true);
     });
 
+    it('keeps bastidores on hold at the bottom of their mesa with a release button', () => {
+      component.planModalModulos = [
+        {id: 1, nombre: 'A1', grupo_bastidor: 10, inferior_hecho: false, superior_hecho: false} as Modulo,
+        {id: 4, nombre: 'B1', grupo_bastidor: 11, inferior_hecho: false, superior_hecho: false} as Modulo,
+      ];
+      component.planModalGrupos = [
+        grupo(10, 1, {etiqueta: 'Grupo 1', en_espera: true}, [{id: 1, nombre: 'A1', movible: true}]),
+        grupo(11, 2, {etiqueta: 'Grupo 2', en_espera: false}, [{id: 4, nombre: 'B1', movible: true}]),
+      ];
+      fixture.changeDetectorRef.markForCheck();
+      fixture.detectChanges();
+      const columna: HTMLElement = fixture.nativeElement.querySelector('.plan-mesa');
+      expect(Array.from(columna.querySelectorAll('.plan-grupo-title strong')).map(e => e.textContent))
+        .toEqual(['Grupo 2', 'Grupo 1']);
+      const apartado = columna.querySelectorAll('.plan-grupo')[1];
+      expect(apartado.classList.contains('is-espera')).toBe(true);
+      expect(apartado.querySelector('.plan-grupo-tag')?.textContent).toBe('En espera');
+      expect(apartado.querySelector('[aria-label="Soltar Grupo 1"]')).not.toBeNull();
+      expect(columna.querySelector('[aria-label="Apartar Grupo 2"]')).not.toBeNull();
+
+      const api = TestBed.inject(ApiService);
+      const espera = vi.spyOn(api, 'esperaBastidor').mockReturnValue(throwError(() => ({error: {detail: 'x'}})));
+      component.toggleEsperaEnPlan(component.planModalGrupos[0]);
+      expect(espera).toHaveBeenCalledWith(10, false);
+    });
+
     it('offers merge instead of split on a divided bastidor and its parts', () => {
       component.planModalGrupos = [
         grupo(10, 1, {etiqueta: 'Grupo 1', dividido: true, es_division: false}, [{id: 1, nombre: 'A1', movible: true}]),

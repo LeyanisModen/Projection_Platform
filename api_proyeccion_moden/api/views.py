@@ -980,10 +980,11 @@ def _persist_bastidor_groups(proyecto):
     return created_groups
 
 
-def _assign_modulo_to_group_on_create(modulo):
+def _assign_modulo_to_group_on_create(modulo, force_new_group=False):
     """
     Al crear un modulo nuevo en un proyecto que ya tiene grupos calculados,
     lo anade al ultimo grupo si cabe, o crea un grupo nuevo.
+    ``force_new_group`` abre bastidor nuevo aunque quepa en el ultimo.
     """
     from api.models import GrupoBastidor
 
@@ -1036,7 +1037,7 @@ def _assign_modulo_to_group_on_create(modulo):
         ) != (modulo.tipo_modulo == 'CENTRAL_GIRADO')
     )
 
-    if suma_actual + modulo_width <= bastidor_longitud and peso_cabe and tipo_cabe:
+    if not force_new_group and suma_actual + modulo_width <= bastidor_longitud and peso_cabe and tipo_cabe:
         modulo.grupo_bastidor = ultimo_grupo
         max_orden = ultimo_grupo.modulos.aggregate(
             mx=Max('orden_intra')
@@ -1795,6 +1796,12 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         strict_validation = str(
             request.data.get('strict_validation', '')
         ).strip().lower() in {'1', 'true', 'yes', 'si'}
+        # Subir en espera: la tanda abre bastidor nuevo y queda apartada de
+        # las mesas hasta que la ferralla o Moden la suelten.
+        subir_en_espera = str(
+            request.data.get('en_espera', '')
+        ).strip().lower() in {'1', 'true', 'yes', 'si'}
+        grupos_antes = set(proyecto.grupos_bastidor.values_list('id', flat=True))
 
         def add_module_error(module_name, source_folder, errors):
             normalized_errors = [str(error) for error in errors if str(error).strip()]
@@ -2157,9 +2164,17 @@ class ProyectoViewSet(viewsets.ModelViewSet):
                 proyecto.datos_tecnicos_importados = True
                 proyecto.save(update_fields=['datos_tecnicos_importados'])
         else:
+            for index, modulo in enumerate(created_modulos):
+                _assign_modulo_to_group_on_create(
+                    modulo,
+                    force_new_group=(subir_en_espera and index == 0),
+                )
+        if subir_en_espera and created_modulos:
+            GrupoBastidor.objects.filter(
+                proyecto=proyecto,
+            ).exclude(id__in=grupos_antes).update(en_espera=True)
             for modulo in created_modulos:
-                _assign_modulo_to_group_on_create(modulo)
-
+                modulo.refresh_from_db(fields=['grupo_bastidor'])
         # Existing mesa queues discover imported modules automatically.
         # This is incremental and never rebuilds work already in progress.
         for modulo in created_modulos:
@@ -3049,6 +3064,7 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
                 sufijo=chr(ord('B') + j),
                 dividido_de=grupo,
                 asignado_a=grupo.asignado_a,
+                en_espera=grupo.en_espera,
             )
             for j in range(partes - 1)
         ]
@@ -3069,6 +3085,31 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
         # Los modulos que pasan a una parte no la atan a la mesa de la raiz:
         # cada parte busca una mesa distinta.
         self._replan_grupos_operativos(proyecto, request.user, moved_modulo_ids=movidos)
+        return Response(self._grupos_respuesta(proyecto))
+
+    @action(detail=True, methods=['post'], url_path='espera')
+    @transaction.atomic
+    def espera(self, request, pk=None):
+        """Aparta el bastidor de las mesas ({en_espera: true}) o lo suelta.
+
+        Moden lo marca al subirlo cuando el cliente no tiene el acero
+        cortado; la ferralla lo suelta cuando lo tiene, o lo aparta ella
+        misma. Un bastidor dividido se aparta y se suelta con sus partes.
+        """
+        grupo = self.get_object()
+        proyecto = grupo.proyecto
+        if not self._puede_gestionar(request.user, proyecto):
+            return Response({'detail': 'No puedes gestionar bastidores de otra ferralla.'},
+                            status=status.HTTP_403_FORBIDDEN)
+        valor = request.data.get('en_espera')
+        if not isinstance(valor, bool):
+            return Response({'detail': 'Envia {en_espera: true|false}.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        raiz = grupo.raiz
+        GrupoBastidor.objects.filter(
+            Q(pk=raiz.pk) | Q(dividido_de=raiz),
+        ).update(en_espera=valor)
+        self._replan_grupos_operativos(proyecto, request.user)
         return Response(self._grupos_respuesta(proyecto))
 
     @action(detail=True, methods=['post'], url_path='mesa')
@@ -4816,6 +4857,15 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         )
         reservation_phase_keys = set()
         for mid in reserved_elsewhere_modulo_ids:
+            reservation_phase_keys.add((mid, 'INFERIOR'))
+            reservation_phase_keys.add((mid, 'SUPERIOR'))
+        # Bastidores en espera (sin acero cortado, etc.): fuera de las mesas
+        # hasta que la ferralla o Moden los suelten.
+        en_espera_ids = Modulo.objects.filter(
+            proyecto=proyecto,
+            grupo_bastidor__en_espera=True,
+        ).values_list('id', flat=True)
+        for mid in en_espera_ids:
             reservation_phase_keys.add((mid, 'INFERIOR'))
             reservation_phase_keys.add((mid, 'SUPERIOR'))
 

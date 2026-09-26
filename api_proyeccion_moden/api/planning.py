@@ -40,6 +40,11 @@ def project_demand(project, today=None):
             done=Count('id', filter=Q(estado__in=['COMPLETADO', 'CERRADO'])),
         )
         total, done = counts['total'], counts['done']
+    # Los modulos se suben por tandas: el ritmo diario se calcula sobre el
+    # total previsto del proyecto cuando es mayor que lo ya subido.
+    subidos = total
+    previstos = project.modulos_previstos or 0
+    total = max(total, previstos)
     remaining = max(0, total - done)
     date = project.fecha_montaje
     active_days = factory_production_days(project)
@@ -55,6 +60,8 @@ def project_demand(project, today=None):
     )
     return {
         'modulos_pendientes': remaining,
+        'modulos_subidos': subidos,
+        'modulos_previstos': project.modulos_previstos,
         'dias_disponibles': days,
         'modulos_por_dia': daily,
         'estado': state,
