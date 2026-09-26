@@ -328,6 +328,16 @@
                                             title="Renombrar grupo">
                                             <i class="fa fa-pencil" aria-hidden="true"></i>
                                         </button>
+                                        <button *ngIf="!isGrupoCompletado(grupo)"
+                                            type="button"
+                                            class="grupo-espera-btn"
+                                            [class.is-active]="grupo.en_espera"
+                                            (click)="toggleEsperaGrupo(grupo, $event)"
+                                            [disabled]="movingModulo"
+                                            [title]="grupo.en_espera ? 'En espera. Clic para soltar' : 'Apartar de las mesas hasta que la ferralla tenga el acero'"
+                                            [attr.aria-label]="(grupo.en_espera ? 'Soltar ' : 'Apartar ') + grupoEtiqueta(grupo)">
+                                            <i class="fa" [class.fa-pause]="!grupo.en_espera" [class.fa-play]="grupo.en_espera" aria-hidden="true"></i>
+                                        </button>
                                     </ng-template>
                                 </div>
                                 <div class="grupo-bastidor-meta">
@@ -350,20 +360,8 @@
                                         <ng-template #noCraneLimit>kg</ng-template>
                                         <span *ngIf="grupo.peso_desconocido"> · incompleto</span>
                                     </small>
-                                    <div class="grupo-plan-actions">
-                                        <span *ngIf="grupo.en_espera" class="grupo-espera-tag">En espera</span>
-                                        <span *ngIf="grupo.es_division" class="grupo-division-tag">Parte de fabricación</span>
-                                        <button *ngIf="!isGrupoCompletado(grupo)" type="button" class="grupo-plan-btn"
-                                            (click)="toggleEsperaGrupo(grupo, $event)" [disabled]="movingModulo"
-                                            [title]="grupo.en_espera ? 'Soltar: vuelve a entrar en las mesas' : 'Apartar de las mesas hasta que la ferralla tenga el acero'">
-                                            {{ grupo.en_espera ? 'Soltar' : 'Apartar' }}</button>
-                                        <button *ngIf="canDividirGrupo(grupo)" type="button" class="grupo-plan-btn"
-                                            (click)="dividirGrupo(grupo, $event)" [disabled]="movingModulo"
-                                            title="Repartir este bastidor entre las mesas inferiores de la ferralla">Dividir entre mesas</button>
-                                        <button *ngIf="canUnirGrupo(grupo)" type="button" class="grupo-plan-btn"
-                                            (click)="unirGrupo(grupo, $event)" [disabled]="movingModulo"
-                                            title="Volver a juntar las partes en un solo bastidor">Unir</button>
-                                    </div>
+                                    <small *ngIf="grupo.en_espera" class="grupo-espera-tag">En espera</small>
+                                    <small *ngIf="grupo.es_division" class="grupo-division-tag">Parte de fabricación</small>
                                 </div>
                             </div>
 

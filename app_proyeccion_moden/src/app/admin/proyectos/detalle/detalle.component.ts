@@ -526,14 +526,6 @@ export class ProyectoDetailComponent implements OnInit {
         return grupo.nombre ? `${base} ${grupo.sufijo}` : `${base}${grupo.sufijo}`;
     }
 
-    canDividirGrupo(grupo: GrupoBastidor): boolean {
-        return !grupo.es_division && !grupo.dividido;
-    }
-
-    canUnirGrupo(grupo: GrupoBastidor): boolean {
-        return !!(grupo.es_division || grupo.dividido);
-    }
-
     /** Aparta el bastidor de las mesas (sin acero cortado) o lo suelta. */
     toggleEsperaGrupo(grupo: GrupoBastidor, event?: Event): void {
         event?.stopPropagation();
@@ -542,20 +534,6 @@ export class ProyectoDetailComponent implements OnInit {
             this.api.esperaBastidor(grupo.id, !grupo.en_espera),
             grupo.en_espera ? 'No se pudo soltar el bastidor.' : 'No se pudo apartar el bastidor.',
         );
-    }
-
-    /** Reparte el bastidor entre las mesas inferiores de la ferralla (2, 2B, 2C...). */
-    dividirGrupo(grupo: GrupoBastidor, event?: Event): void {
-        event?.stopPropagation();
-        if (this.movingModulo || !this.canDividirGrupo(grupo)) return;
-        this.applyGrupoPlanAction(this.api.dividirBastidor(grupo.id), 'No se pudo dividir el bastidor.');
-    }
-
-    /** Vuelve a juntar las partes en el bastidor raiz con su orden original. */
-    unirGrupo(grupo: GrupoBastidor, event?: Event): void {
-        event?.stopPropagation();
-        if (this.movingModulo || !this.canUnirGrupo(grupo)) return;
-        this.applyGrupoPlanAction(this.api.unirBastidor(grupo.id), 'No se pudo unir el bastidor.');
     }
 
     private applyGrupoPlanAction(action: Observable<GrupoBastidor[]>, fallback: string): void {
