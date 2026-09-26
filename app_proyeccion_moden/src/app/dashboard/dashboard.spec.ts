@@ -2,7 +2,8 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { Dashboard } from './dashboard';
 import {
-  ApiService, GrupoBastidor, GrupoBastidorModulo, Mesa, Modulo, Proyecto, ProductionStatsBucket, ProductionStatsResponse,
+  ApiService, GrupoBastidor, GrupoBastidorModulo, GrupoMesas, Mesa, Modulo, Proyecto,
+  ProductionStatsBucket, ProductionStatsResponse,
 } from '../services/api.service';
 import { of, Subject, throwError } from 'rxjs';
 import { vi } from 'vitest';
@@ -274,6 +275,8 @@ describe('Dashboard', () => {
     });
 
     it('lists every bastidor in fabrication order, then the loose modules', () => {
+      // Sin grupos de mesas conocidos todo cae en una unica columna.
+      expect(fixture.nativeElement.querySelectorAll('.plan-mesa').length).toBe(1);
       const secciones: NodeListOf<HTMLElement> = fixture.nativeElement.querySelectorAll('.plan-grupo');
       expect(Array.from(secciones).map(s => s.querySelector('.plan-grupo-title strong')?.textContent))
         .toEqual(['Grupo 1', 'Grupo 2', 'Sin bastidor']);
@@ -320,6 +323,64 @@ describe('Dashboard', () => {
       expect(reorder).toHaveBeenCalledWith(7, [11, 10]);
       fixture.detectChanges();
       expect(fixture.nativeElement.querySelector('.plan-modal-error')?.textContent).toBe('No hay mesas');
+    });
+
+    it('shows one column per active inferior mesa and moves a bastidor sideways', () => {
+      component.gruposMesas = [{
+        id: 1, nombre: 'Grupo mesas', usuario: 1, proyecto_actual: 7, proyectos_cola: [], estrategia_cola_superior: 'PLANIFICADA',
+        activa: true, created_at: '',
+        mesas: [
+          {id: 2, nombre: 'Mesa 2', tipo: 'INFERIOR', indice: 2, activa: true, is_linked: false},
+          {id: 1, nombre: 'Mesa 1', tipo: 'INFERIOR', indice: 1, activa: true, is_linked: false},
+          {id: 3, nombre: 'Mesa 3', tipo: 'SUPERIOR', indice: 3, activa: true, is_linked: false},
+          {id: 4, nombre: 'Mesa 4', tipo: 'INFERIOR', indice: 4, activa: false, is_linked: false},
+        ],
+      } as GrupoMesas];
+      component.planModalGrupos = [
+        grupo(10, 1, {etiqueta: 'Grupo 1', mesa_actual: 1}, [{id: 1, nombre: 'A1', movible: true}]),
+        grupo(11, 2, {etiqueta: 'Grupo 2', mesa_actual: 2}, [{id: 4, nombre: 'B1', movible: true}]),
+        grupo(12, 3, {etiqueta: 'Grupo 3', mesa_actual: null}, [{id: 2, nombre: 'A2', movible: true}]),
+      ];
+      fixture.changeDetectorRef.markForCheck();
+      fixture.detectChanges();
+      const columnas: NodeListOf<HTMLElement> = fixture.nativeElement.querySelectorAll('.plan-mesa');
+      expect(Array.from(columnas).map(c => c.querySelector('.plan-mesa-header strong')?.textContent)).toEqual(['Mesa 1', 'Mesa 2']);
+      const titulos = (c: HTMLElement) => Array.from(c.querySelectorAll('.plan-grupo-title strong')).map(e => e.textContent);
+      // Sin mesa conocida cae en la primera; los sueltos tambien.
+      expect(titulos(columnas[0])).toEqual(['Grupo 1', 'Grupo 3', 'Sin bastidor']);
+      expect(titulos(columnas[1])).toEqual(['Grupo 2']);
+      const [g1, g2] = component.planModalGrupos;
+      expect(component.canMoverBastidorAMesa(g1, -1)).toBe(false);
+      expect(component.canMoverBastidorAMesa(g2, 1)).toBe(false);
+      // Arriba y abajo solo entre vecinos de la misma mesa.
+      expect(component.canMoveGrupo(g2, -1)).toBe(false);
+      expect(component.canMoveGrupo(g1, 1)).toBe(true);
+
+      const api = TestBed.inject(ApiService);
+      const llevar = vi.spyOn(api, 'llevarBastidorAMesa').mockReturnValue(throwError(() => ({error: {detail: 'x'}})));
+      component.moverBastidorAMesa(g1, 1);
+      expect(llevar).toHaveBeenCalledWith(10, 2);
+    });
+
+    it('stacks finished bastidores at the top of their mesa, folded until asked', () => {
+      component.planModalModulos = [
+        {id: 1, nombre: 'A1', grupo_bastidor: 10, inferior_hecho: true, superior_hecho: true, estado: 'COMPLETADO'} as Modulo,
+        {id: 4, nombre: 'B1', grupo_bastidor: 11, inferior_hecho: false, superior_hecho: false} as Modulo,
+      ];
+      component.planModalGrupos = [
+        grupo(11, 1, {etiqueta: 'Grupo 1'}, [{id: 4, nombre: 'B1', movible: true}]),
+        grupo(10, 2, {etiqueta: 'Grupo 2'}, [{id: 1, nombre: 'A1', movible: false}]),
+      ];
+      fixture.changeDetectorRef.markForCheck();
+      fixture.detectChanges();
+      const columna: HTMLElement = fixture.nativeElement.querySelector('.plan-mesa');
+      expect(Array.from(columna.querySelectorAll('.plan-grupo-title strong')).map(e => e.textContent)).toEqual(['Grupo 1']);
+      expect(columna.querySelector('.plan-mesa-done')?.textContent?.trim()).toBe('1 terminado');
+
+      component.togglePlanModalDone();
+      fixture.detectChanges();
+      expect(Array.from(columna.querySelectorAll('.plan-grupo-title strong')).map(e => e.textContent)).toEqual(['Grupo 2', 'Grupo 1']);
+      expect(columna.querySelector('.plan-grupo')?.classList.contains('is-terminado')).toBe(true);
     });
 
     it('offers merge instead of split on a divided bastidor and its parts', () => {

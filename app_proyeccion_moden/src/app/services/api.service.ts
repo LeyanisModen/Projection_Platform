@@ -165,6 +165,10 @@ export interface GrupoBastidor {
     es_division?: boolean;
     /** Raiz que tiene partes de fabricacion. */
     dividido?: boolean;
+    /** Mesa inferior a la que la ferralla ha llevado el bastidor (null: la decide el planificador). */
+    mesa_preferida?: number | null;
+    /** Mesa inferior donde se fabrica o se fabrico; null si aun no ha pasado por ninguna. */
+    mesa_actual?: number | null;
     created_at: string;
     modulos: GrupoBastidorModulo[];
     longitud_total_cm: number;
@@ -876,6 +880,15 @@ export class ApiService {
         return this.http.post<GrupoBastidor[]>(
             `${this.baseUrl}/grupos-bastidor/${id}/dividir/`,
             {},
+            { headers: this.getHeaders() }
+        );
+    }
+
+    /** Lleva el bastidor a una mesa inferior y lo deja fijado alli; null lo suelta. */
+    llevarBastidorAMesa(id: number, mesaId: number | null): Observable<GrupoBastidor[]> {
+        return this.http.post<GrupoBastidor[]>(
+            `${this.baseUrl}/grupos-bastidor/${id}/mesa/`,
+            { mesa: mesaId },
             { headers: this.getHeaders() }
         );
     }

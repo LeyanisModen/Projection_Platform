@@ -414,6 +414,7 @@ class GrupoBastidorSerializer(serializers.ModelSerializer):
     etiqueta = serializers.CharField(read_only=True)
     es_division = serializers.BooleanField(read_only=True)
     dividido = serializers.SerializerMethodField()
+    mesa_actual = serializers.SerializerMethodField()
     longitud_total_cm = serializers.SerializerMethodField()
     capacidad_cm = serializers.SerializerMethodField()
     peso_total_kg = serializers.SerializerMethodField()
@@ -428,11 +429,39 @@ class GrupoBastidorSerializer(serializers.ModelSerializer):
         fields = [
             "id", "proyecto", "indice", "nombre", "created_at",
             "sufijo", "dividido_de", "etiqueta", "es_division", "dividido",
+            "mesa_preferida", "mesa_actual",
             "modulos", "longitud_total_cm", "capacidad_cm",
             "peso_total_kg", "capacidad_peso_kg", "peso_desconocido",
             "overflow_longitud", "overflow_peso", "overflow",
         ]
-        read_only_fields = ["created_at", "proyecto", "sufijo", "dividido_de"]
+        read_only_fields = ["created_at", "proyecto", "sufijo", "dividido_de", "mesa_preferida"]
+
+    def get_mesa_actual(self, obj):
+        """Mesa inferior donde se fabrica (o se fabrico) el bastidor.
+
+        La fijada por la ferralla manda; si no, la mesa con mas inferiores
+        activos, luego con mas hechos, luego la mas reciente. None si el
+        bastidor aun no ha pasado por ninguna mesa.
+        """
+        if obj.mesa_preferida_id is not None:
+            return obj.mesa_preferida_id
+        puntuacion = {}
+        for m in obj.modulos.all():
+            for item in getattr(m, 'inferior_queue_items', []):
+                mesa = item.mesa
+                if mesa.tipo != 'INFERIOR' or not mesa.activa:
+                    continue
+                activos, hechos, ultimo = puntuacion.get(mesa.id, (0, 0, 0))
+                momento = item.done_at or item.assigned_at
+                ultimo = max(ultimo, momento.timestamp() if momento else 0)
+                if item.status == 'HECHO':
+                    hechos += 1
+                else:
+                    activos += 1
+                puntuacion[mesa.id] = (activos, hechos, ultimo)
+        if not puntuacion:
+            return None
+        return max(puntuacion, key=lambda mesa_id: puntuacion[mesa_id])
 
     def get_dividido(self, obj):
         """True en un bastidor raiz que tiene partes de fabricacion."""

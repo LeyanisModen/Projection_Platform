@@ -160,10 +160,20 @@
 .plan-modal-close:hover { color: var(--ink); background: var(--surface-2); }
 .plan-modal-body { display: flex; flex-direction: column; gap: 14px; min-height: 0; overflow-y: auto; padding-right: 4px; }
 .plan-modal-error { margin: 0; color: var(--danger); font-size: 13px; }
-/* Un bastidor por tarjeta, en rejilla, con una fila por modulo. Las partes (2B, 2C) van marcadas. */
-.plan-grupos { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; align-items: start; }
+/* Una columna por mesa inferior; dentro, un bastidor por tarjeta con una fila por modulo. */
+.plan-mesas { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(320px, 1fr); gap: 16px; align-items: start; overflow-x: auto; }
+.plan-mesa { display: grid; gap: 8px; align-content: start; min-width: 0; }
+.plan-mesa-header { display: flex; align-items: baseline; gap: 8px; padding: 0 2px 6px; border-bottom: 2px solid var(--line-strong); }
+.plan-mesa-header strong { color: var(--ink); font-size: 14px; font-weight: 600; }
+.plan-mesa-done { margin-left: auto; color: var(--muted); font-size: 12px; }
 .plan-grupo { display: grid; gap: 6px; padding: 8px 10px; border: 1px solid var(--line); border-left: 3px solid var(--line-strong); background: var(--surface); }
 .plan-grupo.is-division { border-left-style: dashed; }
+.plan-grupo.is-terminado { border-left-color: var(--ok); }
+.plan-grupo.is-terminado .plan-grupo-title strong { color: var(--muted); }
+.plan-mesa-btn { display: inline-grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; color: var(--muted); font-size: 11px; cursor: pointer; }
+.plan-mesa-btn:hover:not(:disabled) { color: var(--ink); background: var(--surface-2); border-color: var(--line-strong); }
+.plan-mesa-btn:disabled { opacity: 0.3; cursor: default; }
+.plan-modal-download.is-active { color: var(--ink); border-color: var(--ink); }
 .plan-grupo-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 26px; }
 .plan-grupo-title { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .plan-grupo-title strong { color: var(--text); font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
