@@ -328,16 +328,6 @@
                                             title="Renombrar grupo">
                                             <i class="fa fa-pencil" aria-hidden="true"></i>
                                         </button>
-                                        <button *ngIf="!isGrupoCompletado(grupo)"
-                                            type="button"
-                                            class="grupo-espera-btn"
-                                            [class.is-active]="grupo.en_espera"
-                                            (click)="toggleEsperaGrupo(grupo, $event)"
-                                            [disabled]="movingModulo"
-                                            [title]="grupo.en_espera ? 'En espera. Clic para soltar' : 'Apartar de las mesas hasta que la ferralla tenga el acero'"
-                                            [attr.aria-label]="(grupo.en_espera ? 'Soltar ' : 'Apartar ') + grupoEtiqueta(grupo)">
-                                            <i class="fa" [class.fa-pause]="!grupo.en_espera" [class.fa-play]="grupo.en_espera" aria-hidden="true"></i>
-                                        </button>
                                     </ng-template>
                                 </div>
                                 <div class="grupo-bastidor-meta">
@@ -360,8 +350,20 @@
                                         <ng-template #noCraneLimit>kg</ng-template>
                                         <span *ngIf="grupo.peso_desconocido"> · incompleto</span>
                                     </small>
-                                    <small *ngIf="grupo.en_espera" class="grupo-espera-tag">En espera</small>
                                     <small *ngIf="grupo.es_division" class="grupo-division-tag">Parte de fabricación</small>
+                                    <span class="grupo-meta-actions">
+                                        <small *ngIf="grupo.en_espera" class="grupo-espera-tag">En espera</small>
+                                        <button *ngIf="!isGrupoCompletado(grupo)"
+                                            type="button"
+                                            class="grupo-espera-btn"
+                                            [class.is-active]="grupo.en_espera"
+                                            (click)="toggleEsperaGrupo(grupo, $event)"
+                                            [disabled]="movingModulo"
+                                            [title]="grupo.en_espera ? 'En espera. Clic para soltar' : 'Apartar de las mesas hasta que la ferralla tenga el acero'"
+                                            [attr.aria-label]="(grupo.en_espera ? 'Soltar ' : 'Apartar ') + grupoEtiqueta(grupo)">
+                                            <i class="fa" [class.fa-pause]="!grupo.en_espera" [class.fa-play]="grupo.en_espera" aria-hidden="true"></i>
+                                        </button>
+                                    </span>
                                 </div>
                             </div>
 
