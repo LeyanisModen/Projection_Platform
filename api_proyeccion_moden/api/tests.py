@@ -5625,6 +5625,11 @@ class BastidorSelfServiceTests(APITestCase):
         self.assertEqual(self._cola(self.mesa_2), ["B1"])
         item_a3.refresh_from_db()
         self.assertEqual(item_a3.mesa_id, self.mesa_1.id)
+        # Unir vale aunque el bastidor este terminado: es el grupo de transporte.
+        Modulo.objects.filter(grupo_bastidor=self.bastidor).update(
+            inferior_hecho=True, superior_hecho=True, estado=ModuloEstado.COMPLETADO,
+        )
+        self.assertEqual(self.client.post(f"/api/grupos-bastidor/{self.bastidor.id}/dividir/").status_code, 400)
 
         nada = self.client.post(f"/api/grupos-bastidor/{self.bastidor.id}/unir/")
         self.assertEqual(nada.status_code, 400)
@@ -5652,6 +5657,69 @@ class BastidorSelfServiceTests(APITestCase):
             [1, 2, 3, 4, 5],
         )
         self.assertFalse(Modulo.objects.filter(orden_intra_previo__isnull=False).exists())
+
+    def test_llevar_un_bastidor_a_otra_mesa_lo_fija_alli(self):
+        self._planificar()
+        grupos = {g["id"]: g for g in self.client.get(f"/api/grupos-bastidor/?proyecto={self.project.id}").data}
+        self.assertEqual(grupos[self.bastidor.id]["mesa_actual"], self.mesa_1.id)
+        self.assertEqual(grupos[self.otro_bastidor.id]["mesa_actual"], self.mesa_2.id)
+        self.assertIsNone(grupos[self.bastidor.id]["mesa_preferida"])
+
+        response = self.client.post(
+            f"/api/grupos-bastidor/{self.bastidor.id}/mesa/", {"mesa": self.mesa_2.id}, format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        grupo = next(g for g in response.data if g["id"] == self.bastidor.id)
+        self.assertEqual(grupo["mesa_preferida"], self.mesa_2.id)
+        self.assertEqual(grupo["mesa_actual"], self.mesa_2.id)
+        # En la mesa 2 manda el orden del plan: el bastidor 1 antes que el 2.
+        self.assertEqual(self._cola(self.mesa_1), [])
+        self.assertEqual(self._cola(self.mesa_2), ["A5", "A4", "A3", "A2", "A1", "B1"])
+
+        # Sigue en su mesa aunque se replanifique por otro motivo.
+        reorder = self.client.post(
+            "/api/grupos-bastidor/reorder/",
+            {"proyecto": self.project.id, "orden": [self.otro_bastidor.id, self.bastidor.id]},
+            format="json",
+        )
+        self.assertEqual(reorder.status_code, 200)
+        self.assertEqual(self._cola(self.mesa_1), [])
+        self.assertEqual(self._cola(self.mesa_2)[0], "B1")
+
+        suelto = self.client.post(f"/api/grupos-bastidor/{self.bastidor.id}/mesa/", {"mesa": None}, format="json")
+        self.assertEqual(suelto.status_code, 200)
+        self.assertIsNone(next(g for g in suelto.data if g["id"] == self.bastidor.id)["mesa_preferida"])
+
+    def test_llevar_un_bastidor_rechaza_mesas_que_no_valen(self):
+        self._planificar()
+        superior = self.client.post(
+            f"/api/grupos-bastidor/{self.bastidor.id}/mesa/", {"mesa": self.mesa_sup.id}, format="json",
+        )
+        self.assertEqual(superior.status_code, 400)
+        otra = User.objects.create_user(username="otra_ferralla_mesa", password="pass123")
+        ajena = Mesa.objects.create(nombre="Ajena", usuario=otra, tipo="INFERIOR", indice=1, activa=True)
+        response = self.client.post(
+            f"/api/grupos-bastidor/{self.bastidor.id}/mesa/", {"mesa": ajena.id}, format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.bastidor.refresh_from_db()
+        self.assertIsNone(self.bastidor.mesa_preferida_id)
+
+    def test_desactivar_la_mesa_suelta_el_bastidor_fijado(self):
+        self._planificar()
+        self.assertEqual(
+            self.client.post(f"/api/grupos-bastidor/{self.bastidor.id}/mesa/", {"mesa": self.mesa_2.id}, format="json").status_code,
+            200,
+        )
+        response = self.client.post(
+            f"/api/grupos-mesas/{self.grupo.id}/actualizar-mesas/",
+            {"cambios": [{"mesa_id": self.mesa_2.id, "activa": False}]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.bastidor.refresh_from_db()
+        self.assertIsNone(self.bastidor.mesa_preferida_id)
+        self.assertEqual(self._cola(self.mesa_1), ["A5", "A4", "A3", "A2", "A1", "B1"])
 
     def test_superior_hecho_no_bloquea_pero_inferior_hecho_si(self):
         con_superior = self.modulos[0]

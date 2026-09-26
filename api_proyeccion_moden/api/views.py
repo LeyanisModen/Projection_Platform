@@ -160,7 +160,16 @@ def _modules_with_reorder_data(queryset):
                 .select_related('mesa')
             ),
             to_attr='reorder_showing_items',
-        )
+        ),
+        Prefetch(
+            'mesa_queue_items',
+            queryset=(
+                MesaQueueItem.objects
+                .filter(fase='INFERIOR')
+                .select_related('mesa')
+            ),
+            to_attr='inferior_queue_items',
+        ),
     )
 
 
@@ -169,6 +178,7 @@ def _grupos_with_reorder_data(queryset):
         'proyecto',
         'proyecto__usuario',
         'proyecto__usuario__profile',
+        'mesa_preferida',
     ).prefetch_related(
         Prefetch(
             'modulos',
@@ -3045,14 +3055,53 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
 
         # La cola inferior fabrica el bastidor de abajo arriba: alternar en
         # ese orden para que cada parte empiece por lo que tocaba antes.
+        movidos = []
         for rank, m in enumerate(reversed(pendientes)):
             parte = rank % partes
             if parte == 0:
                 continue
             m.grupo_bastidor = divisiones[parte - 1]
             m.save(update_fields=['grupo_bastidor'])
+            movidos.append(m.id)
         for g in (grupo, *divisiones):
             self._reindex_modulos_intra(g)
+
+        # Los modulos que pasan a una parte no la atan a la mesa de la raiz:
+        # cada parte busca una mesa distinta.
+        self._replan_grupos_operativos(proyecto, request.user, moved_modulo_ids=movidos)
+        return Response(self._grupos_respuesta(proyecto))
+
+    @action(detail=True, methods=['post'], url_path='mesa')
+    @transaction.atomic
+    def mesa(self, request, pk=None):
+        """Lleva el bastidor a una mesa inferior ({mesa: id}) o lo suelta ({mesa: null}).
+
+        El bastidor queda fijado a esa mesa hasta que lo muevan otra vez o la
+        mesa deje de ser una inferior activa. Los bastidores sin fijar los
+        sigue repartiendo el planificador.
+        """
+        grupo = self.get_object()
+        proyecto = grupo.proyecto
+        if not self._puede_gestionar(request.user, proyecto):
+            return Response({'detail': 'No puedes gestionar bastidores de otra ferralla.'},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        mesa_id = request.data.get('mesa')
+        if mesa_id in (None, '', 'null'):
+            grupo.mesa_preferida = None
+        else:
+            try:
+                mesa = Mesa.objects.select_related('grupo').get(pk=int(mesa_id))
+            except (TypeError, ValueError, Mesa.DoesNotExist):
+                return Response({'detail': 'Mesa no encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+            if mesa.usuario_id != proyecto.usuario_id:
+                return Response({'detail': 'Esa mesa no es de la ferralla del proyecto.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            if mesa.tipo != MesaTipo.INFERIOR or not mesa.activa:
+                return Response({'detail': 'Solo se puede llevar un bastidor a una mesa inferior activa.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            grupo.mesa_preferida = mesa
+        grupo.save(update_fields=['mesa_preferida'])
 
         self._replan_grupos_operativos(proyecto, request.user)
         return Response(self._grupos_respuesta(proyecto))
@@ -3961,13 +4010,15 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
     def _replan_after_plan_change(self, grupo, user, proyecto=None, ignore_pin_modulo_ids=()):
         """Rebuild the grupo's queues from the persisted plan.
 
-        Work in progress is not an anchor any more: the bastidor being
-        fabricated stays on its mesa (pin) and every displaced phase keeps
-        the image it was on, so the ferralla can reorder, split and merge
+        Work in progress is not an anchor any more: every bastidor already
+        queued stays on its mesa (pin) and every displaced phase keeps the
+        image it was on, so the ferralla can reorder, split and merge
         freely. Superior work with photos or past the setup images is still
         preserved in place.
         """
-        progress, pins = capture_queue_progress(grupo, ignore_pin_modulo_ids)
+        # Cada bastidor se queda en la mesa donde ya estaba en cola: solo lo
+        # mueven la ferralla (mesa/dividir), una mesa apagada o "Planificar".
+        progress, pins = capture_queue_progress(grupo, ignore_pin_modulo_ids, pin_queued=True)
         anchored_ids = _collect_replan_anchor_ids_for_grupo(grupo)
         recycle = self._collect_recyclable_items(grupo, exclude_ids=anchored_ids)
         if proyecto is not None:
@@ -4101,6 +4152,11 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
             # sabe que mesas siguen siendo inferiores activas y mueve el
             # trabajo de las apagadas conservando la imagen en curso.
             self._apply_mesa_changes(grupo, final_states)
+            # Una mesa que deja de ser inferior activa suelta los bastidores
+            # que la ferralla habia fijado a ella.
+            GrupoBastidor.objects.filter(
+                mesa_preferida__in=grupo.mesas.exclude(tipo=MesaTipo.INFERIOR, activa=True),
+            ).update(mesa_preferida=None)
             plan_summaries = self._replan_after_plan_change(grupo, request.user)
 
         fresh = self._refresh_grupo_with_prefetch(grupo)
@@ -4700,6 +4756,13 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         for gid, mesa_id in (extra_pins or {}).items():
             if mesa_id in mesa_idx:
                 pins[gid] = mesa_idx[mesa_id]
+        # Lo que la ferralla ha llevado a una mesa a mano manda sobre todo.
+        fijados = GrupoBastidor.objects.filter(
+            proyecto=proyecto,
+            mesa_preferida__in=mesas_inf,
+        ).values_list('id', 'mesa_preferida_id')
+        for gid, mesa_id in fijados:
+            pins[gid] = mesa_idx[mesa_id]
         return pins
 
     def _build_group_plan(self, grupo, proyecto, user, append_mode=False, mesa_pins=None,

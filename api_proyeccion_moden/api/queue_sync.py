@@ -208,7 +208,7 @@ def activate_queue_item(mesa, item):
     )
 
 
-def capture_queue_progress(group, ignore_pin_modulo_ids=()):
+def capture_queue_progress(group, ignore_pin_modulo_ids=(), pin_queued=False):
     """Snapshot what a rebuild of the group's queues must not lose.
 
     Returns ``(progress, pins)``:
@@ -216,8 +216,11 @@ def capture_queue_progress(group, ignore_pin_modulo_ids=()):
       progress on a mesa or already waiting with a saved index.
     - ``pins``: ``{grupo_bastidor_id: mesa_id}`` for bastidores whose
       inferior is being fabricated right now, so the planner keeps them on
-      that mesa. Modules in ``ignore_pin_modulo_ids`` (just moved to another
-      bastidor by hand) keep their progress but do not pin their new one.
+      that mesa. With ``pin_queued`` every bastidor already queued on a mesa
+      stays there too: the ferralla sees its plan per mesa and only its own
+      moves (or "Planificar") change where a bastidor goes. Modules in
+      ``ignore_pin_modulo_ids`` (just moved to another bastidor by hand)
+      keep their progress but do not pin their new one.
     """
     progress = {}
     pins = {}
@@ -229,19 +232,23 @@ def capture_queue_progress(group, ignore_pin_modulo_ids=()):
     )
     for item in items:
         key = (item.modulo_id, item.fase)
-        if item.status == MesaQueueStatus.MOSTRANDO:
-            if item.mesa.current_image_index > 0:
-                progress[key] = item.mesa.current_image_index
-            if (
-                item.fase == Fase.INFERIOR
-                and item.modulo.grupo_bastidor_id is not None
-                and item.modulo_id not in ignore_pin_modulo_ids
-                and item.mesa.activa
-                and item.mesa.tipo == MesaTipo.INFERIOR
-            ):
-                pins.setdefault(item.modulo.grupo_bastidor_id, item.mesa_id)
-        elif item.resume_image_index:
+        showing = item.status == MesaQueueStatus.MOSTRANDO
+        if showing and item.mesa.current_image_index > 0:
+            progress[key] = item.mesa.current_image_index
+        elif not showing and item.resume_image_index:
             progress[key] = item.resume_image_index
+        if (
+            (showing or pin_queued)
+            and item.fase == Fase.INFERIOR
+            and item.modulo.grupo_bastidor_id is not None
+            and item.modulo_id not in ignore_pin_modulo_ids
+            and item.mesa.activa
+            and item.mesa.tipo == MesaTipo.INFERIOR
+        ):
+            if showing:
+                pins[item.modulo.grupo_bastidor_id] = item.mesa_id
+            else:
+                pins.setdefault(item.modulo.grupo_bastidor_id, item.mesa_id)
     return progress, pins
 
 

@@ -171,6 +171,17 @@ class GrupoBastidor(models.Model):
         default='',
         help_text='Letra de la division (B, C...). Vacio en el bastidor raiz.',
     )
+    mesa_preferida = models.ForeignKey(
+        'Mesa',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='bastidores_fijados',
+        help_text=(
+            'Mesa inferior a la que la ferralla ha llevado este bastidor. '
+            'Null => lo reparte el planificador por carga.'
+        ),
+    )
     nombre = models.CharField(
         max_length=120,
         blank=True,
