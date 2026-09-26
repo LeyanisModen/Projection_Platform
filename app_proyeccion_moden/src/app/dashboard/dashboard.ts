@@ -32,6 +32,17 @@ export interface PlanSeccion {
   grupo: GrupoBastidor | null;
   modulos: Modulo[];
   hechos: number;
+  /** Todos sus modulos fabricados: ya no va a pasar por la mesa. */
+  terminado: boolean;
+}
+
+/** Una mesa inferior del plan con los bastidores que tiene por delante. */
+export interface PlanColumna {
+  key: string;
+  mesaId: number | null;
+  nombre: string;
+  secciones: PlanSeccion[];
+  terminados: number;
 }
 
 const compareModulosByName = (a: Modulo, b: Modulo) =>
@@ -130,7 +141,12 @@ export class Dashboard implements OnInit, OnDestroy {
   planModalGrupos: GrupoBastidor[] = [];
   planModalBusy = false;
   planModalError = '';
+  /** Los bastidores terminados se apilan al principio de su mesa, plegados por defecto. */
+  planModalShowDone = false;
   private planSeccionesCache: { modulos: Modulo[]; grupos: GrupoBastidor[]; value: PlanSeccion[] } | null = null;
+  private planColumnasCache: {
+    secciones: PlanSeccion[]; grupos: GrupoMesas[]; showDone: boolean; value: PlanColumna[];
+  } | null = null;
   readonly modulePhases: ModuloFase[] = ['INFERIOR', 'SUPERIOR'];
   phaseResetTarget: { module: Modulo; phase: ModuloFase } | null = null;
   resettingPhase = false;
@@ -232,6 +248,7 @@ export class Dashboard implements OnInit, OnDestroy {
     this.planModalModulos = [];
     this.planModalGrupos = [];
     this.planModalError = '';
+    this.planModalShowDone = false;
     this.closePlanFotosModal();
     this.cdr.detectChanges();
   }
@@ -269,12 +286,14 @@ export class Dashboard implements OnInit, OnDestroy {
         .map(gm => byId.get(gm.id))
         .filter((m): m is Modulo => !!m);
       modulos.forEach(m => asignados.add(m.id));
+      const hechos = modulos.filter(m => m.inferior_hecho && m.superior_hecho).length;
       secciones.push({
         key: `g${grupo.id}`,
         titulo: this.grupoEtiqueta(grupo),
         grupo,
         modulos,
-        hechos: modulos.filter(m => m.inferior_hecho && m.superior_hecho).length,
+        hechos,
+        terminado: modulos.length > 0 && hechos === modulos.length,
       });
     }
     const sueltos = this.planModalModulos.filter(m => !asignados.has(m.id)).sort(compareModulosByName);
@@ -285,9 +304,84 @@ export class Dashboard implements OnInit, OnDestroy {
         grupo: null,
         modulos: sueltos,
         hechos: sueltos.filter(m => m.inferior_hecho && m.superior_hecho).length,
+        terminado: false,
       });
     }
     return secciones;
+  }
+
+  /** Mesas inferiores activas de la ferralla, en el orden de sus grupos. */
+  planMesas(): Array<{ id: number | null; nombre: string }> {
+    const mesas: Array<{ id: number; nombre: string }> = [];
+    for (const grupo of this.gruposMesas) {
+      const propias = (grupo.mesas || [])
+        .filter(m => m.tipo === 'INFERIOR' && m.activa)
+        .sort((a, b) => a.indice - b.indice)
+        .map(m => ({ id: m.id, nombre: m.nombre }));
+      mesas.push(...propias);
+    }
+    return mesas.length ? mesas : [{ id: null, nombre: 'Mesa' }];
+  }
+
+  /**
+   * Columnas del modal: cada mesa inferior con sus bastidores. Un bastidor
+   * va a la columna de la mesa donde se fabrica; si aun no ha pasado por
+   * ninguna, a la primera. Los terminados se apilan al principio.
+   */
+  planModalColumnas(): PlanColumna[] {
+    const secciones = this.planModalSecciones();
+    const cache = this.planColumnasCache;
+    if (cache && cache.secciones === secciones && cache.grupos === this.gruposMesas
+        && cache.showDone === this.planModalShowDone) {
+      return cache.value;
+    }
+    const mesas = this.planMesas();
+    const columnas: PlanColumna[] = mesas.map(mesa => ({
+      key: `m${mesa.id ?? 'x'}`, mesaId: mesa.id, nombre: mesa.nombre, secciones: [], terminados: 0,
+    }));
+    const porMesa = new Map(columnas.map(c => [c.mesaId, c]));
+    for (const seccion of secciones) {
+      const destino = porMesa.get(seccion.grupo?.mesa_actual ?? null) || columnas[0];
+      if (seccion.terminado) {
+        destino.terminados += 1;
+        if (!this.planModalShowDone) continue;
+      }
+      destino.secciones.push(seccion);
+    }
+    for (const columna of columnas) {
+      columna.secciones.sort((a, b) => Number(b.terminado) - Number(a.terminado));
+    }
+    this.planColumnasCache = {
+      secciones, grupos: this.gruposMesas, showDone: this.planModalShowDone, value: columnas,
+    };
+    return columnas;
+  }
+
+  togglePlanModalDone(): void {
+    this.planModalShowDone = !this.planModalShowDone;
+    this.cdr.detectChanges();
+  }
+
+  private planColumnaDe(grupo: GrupoBastidor): number {
+    const columnas = this.planModalColumnas();
+    const index = columnas.findIndex(c => c.secciones.some(s => s.grupo?.id === grupo.id));
+    return index >= 0 ? index : 0;
+  }
+
+  mesaVecina(grupo: GrupoBastidor, dir: -1 | 1): { id: number | null; nombre: string } | null {
+    const columnas = this.planModalColumnas();
+    const vecina = columnas[this.planColumnaDe(grupo) + dir];
+    return vecina && vecina.mesaId !== null ? { id: vecina.mesaId, nombre: vecina.nombre } : null;
+  }
+
+  canMoverBastidorAMesa(grupo: GrupoBastidor, dir: -1 | 1): boolean {
+    return this.mesaVecina(grupo, dir) !== null;
+  }
+
+  moverBastidorAMesa(grupo: GrupoBastidor, dir: -1 | 1): void {
+    const vecina = this.mesaVecina(grupo, dir);
+    if (!vecina || vecina.id === null) return;
+    this.runPlanAction(this.api.llevarBastidorAMesa(grupo.id, vecina.id));
   }
 
   /** Orden real de fabricacion del bastidor: inverso al card del admin. */
@@ -305,11 +399,20 @@ export class Dashboard implements OnInit, OnDestroy {
     return this.planModalGrupos.filter(g => !g.es_division);
   }
 
+  /** Raices vecinas dentro de la misma mesa, en el orden en que se muestran. */
+  private raicesEnSuMesa(grupo: GrupoBastidor): GrupoBastidor[] {
+    const columna = this.planModalColumnas()[this.planColumnaDe(grupo)];
+    return columna.secciones
+      .map(s => s.grupo)
+      .filter((g): g is GrupoBastidor => !!g && !g.es_division);
+  }
+
   canMoveGrupo(grupo: GrupoBastidor, dir: -1 | 1): boolean {
-    const roots = this.planRoots();
-    const index = roots.findIndex(g => g.id === grupo.id);
+    if (grupo.es_division) return false;
+    const vecinas = this.raicesEnSuMesa(grupo);
+    const index = vecinas.findIndex(g => g.id === grupo.id);
     const target = index + dir;
-    return index >= 0 && target >= 0 && target < roots.length;
+    return index >= 0 && target >= 0 && target < vecinas.length;
   }
 
   canMoveModulo(grupo: GrupoBastidor, modulo: Modulo, dir: -1 | 1): boolean {
@@ -328,12 +431,14 @@ export class Dashboard implements OnInit, OnDestroy {
     return !!(grupo.es_division || grupo.dividido);
   }
 
+  /** Adelanta o retrasa el bastidor respecto a su vecino en la misma mesa. */
   moveGrupoEnPlan(grupo: GrupoBastidor, dir: -1 | 1): void {
     if (!this.planModalProyecto || !this.canMoveGrupo(grupo, dir)) return;
-    const ids = this.planRoots().map(g => g.id);
-    const index = ids.indexOf(grupo.id);
-    ids.splice(index, 1);
-    ids.splice(index + dir, 0, grupo.id);
+    const vecinas = this.raicesEnSuMesa(grupo);
+    const vecino = vecinas[vecinas.findIndex(g => g.id === grupo.id) + dir];
+    const ids = this.planRoots().map(g => g.id).filter(id => id !== grupo.id);
+    const posVecino = ids.indexOf(vecino.id);
+    ids.splice(dir < 0 ? posVecino : posVecino + 1, 0, grupo.id);
     this.runPlanAction(this.api.reorderBastidores(this.planModalProyecto.id, ids));
   }
 

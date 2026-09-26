@@ -481,6 +481,12 @@
                         }
                     </div>
                     <div class="plan-modal-header-actions">
+                        <button type="button" class="plan-modal-download" [class.is-active]="planModalShowDone"
+                            (click)="togglePlanModalDone()" [attr.aria-pressed]="planModalShowDone"
+                            title="Mostrar u ocultar los bastidores ya fabricados">
+                            <i class="fa fa-check" aria-hidden="true"></i>
+                            Terminados
+                        </button>
                         <button type="button"
                             class="plan-modal-download"
                             [disabled]="downloadingPlanFotosZip || planModalFotosTotal() === 0"
@@ -500,9 +506,19 @@
                 } @else {
                     <div class="plan-modal-body">
                         @if (planModalError) { <p class="plan-modal-error" role="alert">{{ planModalError }}</p> }
-                        <div class="plan-grupos">
-                        @for (seccion of planModalSecciones(); track seccion.key) {
-                            <section class="plan-grupo" [class.is-division]="seccion.grupo?.es_division" [attr.aria-label]="seccion.titulo">
+                        <div class="plan-mesas">
+                        @for (col of planModalColumnas(); track col.key) {
+                            <section class="plan-mesa" [attr.aria-label]="col.nombre">
+                                <div class="plan-mesa-header">
+                                    <strong>{{ col.nombre }}</strong>
+                                    <span class="plan-project-count">{{ col.secciones.length }} {{ col.secciones.length === 1 ? 'bastidor' : 'bastidores' }}</span>
+                                    @if (col.terminados && !planModalShowDone) {
+                                        <span class="plan-mesa-done">{{ col.terminados }} {{ col.terminados === 1 ? 'terminado' : 'terminados' }}</span>
+                                    }
+                                </div>
+                                @for (seccion of col.secciones; track seccion.key) {
+                            <section class="plan-grupo" [class.is-division]="seccion.grupo?.es_division"
+                                [class.is-terminado]="seccion.terminado" [attr.aria-label]="seccion.titulo">
                                 <div class="plan-grupo-header">
                                     <div class="plan-grupo-title">
                                         <strong>{{ seccion.titulo }}</strong>
@@ -510,21 +526,33 @@
                                     </div>
                                     @if (seccion.grupo; as grupo) {
                                         <div class="plan-grupo-actions">
+                                            <button type="button" class="plan-mesa-btn" (click)="moverBastidorAMesa(grupo, -1)"
+                                                [disabled]="planModalBusy || !canMoverBastidorAMesa(grupo, -1)"
+                                                [title]="mesaVecina(grupo, -1) ? 'Llevar a ' + mesaVecina(grupo, -1)!.nombre : 'Es la primera mesa'"
+                                                [attr.aria-label]="'Llevar ' + seccion.titulo + ' a la mesa de la izquierda'">
+                                                <i class="fa fa-arrow-left" aria-hidden="true"></i>
+                                            </button>
                                             @if (!grupo.es_division) {
                                                 <button type="button" class="plan-order-btn" (click)="moveGrupoEnPlan(grupo, -1)"
                                                     [disabled]="planModalBusy || !canMoveGrupo(grupo, -1)"
                                                     title="Fabricar antes" [attr.aria-label]="'Fabricar antes ' + seccion.titulo">
-                                                    <i class="fa fa-chevron-left" aria-hidden="true"></i>
+                                                    <i class="fa fa-chevron-up" aria-hidden="true"></i>
                                                 </button>
                                                 <button type="button" class="plan-order-btn" (click)="moveGrupoEnPlan(grupo, 1)"
                                                     [disabled]="planModalBusy || !canMoveGrupo(grupo, 1)"
                                                     title="Fabricar después" [attr.aria-label]="'Fabricar después ' + seccion.titulo">
-                                                    <i class="fa fa-chevron-right" aria-hidden="true"></i>
+                                                    <i class="fa fa-chevron-down" aria-hidden="true"></i>
                                                 </button>
                                             }
+                                            <button type="button" class="plan-mesa-btn" (click)="moverBastidorAMesa(grupo, 1)"
+                                                [disabled]="planModalBusy || !canMoverBastidorAMesa(grupo, 1)"
+                                                [title]="mesaVecina(grupo, 1) ? 'Llevar a ' + mesaVecina(grupo, 1)!.nombre : 'Es la última mesa'"
+                                                [attr.aria-label]="'Llevar ' + seccion.titulo + ' a la mesa de la derecha'">
+                                                <i class="fa fa-arrow-right" aria-hidden="true"></i>
+                                            </button>
                                             @if (canDividir(grupo)) {
                                                 <button type="button" class="plan-grupo-btn" (click)="dividirGrupoEnPlan(grupo)"
-                                                    [disabled]="planModalBusy" title="Repartir este bastidor entre las mesas inferiores"
+                                                    [disabled]="planModalBusy" title="Repartir este bastidor entre las mesas"
                                                     [attr.aria-label]="'Dividir ' + seccion.titulo + ' entre mesas'">Dividir</button>
                                             }
                                             @if (canUnir(grupo)) {
@@ -596,6 +624,8 @@
                                         </li>
                                     }
                                 </ul>
+                            </section>
+                                }
                             </section>
                         }
                         </div>
