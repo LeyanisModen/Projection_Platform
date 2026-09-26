@@ -476,7 +476,7 @@
                         <h3>{{ planModalProyecto?.nombre }}</h3>
                         @if (planModalProyecto && planModalProyecto.modulos_count) {
                             <span class="plan-modal-subtitle">
-                                {{ planModalProyecto.modulos_completados || 0 }} / {{ planModalProyecto.modulos_count }} fabricados
+                                {{ planModalProyecto.modulos_completados || 0 }} / {{ planModalProyecto.modulos_count }} fabricados@if ((planModalProyecto.modulos_previstos || 0) > (planModalProyecto.modulos_count || 0)) { · {{ planModalProyecto.modulos_previstos }} previstos }
                             </span>
                         }
                     </div>
@@ -518,11 +518,13 @@
                                 </div>
                                 @for (seccion of col.secciones; track seccion.key) {
                             <section class="plan-grupo" [class.is-division]="seccion.grupo?.es_division"
-                                [class.is-terminado]="seccion.terminado" [attr.aria-label]="seccion.titulo">
+                                [class.is-terminado]="seccion.terminado" [class.is-espera]="seccion.grupo?.en_espera"
+                                [attr.aria-label]="seccion.titulo">
                                 <div class="plan-grupo-header">
                                     <div class="plan-grupo-title">
                                         <strong>{{ seccion.titulo }}</strong>
                                         <span class="plan-project-count">{{ seccion.hechos }}/{{ seccion.modulos.length }}</span>
+                                        @if (seccion.grupo?.en_espera) { <span class="plan-grupo-tag">En espera</span> }
                                     </div>
                                     @if (seccion.grupo; as grupo) {
                                         <div class="plan-grupo-actions">
@@ -559,6 +561,14 @@
                                                 <button type="button" class="plan-grupo-btn" (click)="unirGrupoEnPlan(grupo)"
                                                     [disabled]="planModalBusy" title="Volver a juntar las partes en un solo bastidor"
                                                     [attr.aria-label]="'Unir ' + seccion.titulo">Unir</button>
+                                            }
+                                            @if (!seccion.terminado) {
+                                                <button type="button" class="plan-mesa-btn" (click)="toggleEsperaEnPlan(grupo)"
+                                                    [disabled]="planModalBusy"
+                                                    [title]="grupo.en_espera ? 'Soltar: vuelve a entrar en la mesa' : 'Apartar de las mesas hasta tener el acero'"
+                                                    [attr.aria-label]="(grupo.en_espera ? 'Soltar ' : 'Apartar ') + seccion.titulo">
+                                                    <i class="fa" [class.fa-pause]="!grupo.en_espera" [class.fa-play]="grupo.en_espera" aria-hidden="true"></i>
+                                                </button>
                                             }
                                         </div>
                                     }

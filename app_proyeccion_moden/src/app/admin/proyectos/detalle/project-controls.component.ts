@@ -15,13 +15,16 @@ import { ApiService, Proyecto, ProjectCheck, ProjectCheckAttachment } from '../.
             <div class="deadline-row">
                 <input id="mounting-date" type="date" aria-label="Fecha de montaje" [ngModel]="date()" (ngModelChange)="date.set($event)"
                     (keydown.enter)="saveDeadline()" />
-                <button type="button" class="primary" [disabled]="saving() || date() === (project().fecha_montaje || '')" (click)="saveDeadline()">Guardar</button>
+                <input id="planned-modules" type="number" min="0" step="1" class="planned" placeholder="Módulos" aria-label="Módulos previstos"
+                    title="Total de módulos previsto, aunque aún no estén todos subidos"
+                    [ngModel]="previstos()" (ngModelChange)="previstos.set($event)" (keydown.enter)="saveDeadline()" />
+                <button type="button" class="primary" [disabled]="saving() || !dirty()" (click)="saveDeadline()">Guardar</button>
             </div>
             @if (project().planificacion; as plan) {
                 <div class="demand" [class.urgent]="plan.estado === 'VENCIDO' || plan.estado === 'SIN_DIAS'">
                     @if (plan.estado === 'PLANIFICADO') {
                         <strong>{{ plan.modulos_por_dia }} módulos / día</strong>
-                        <span>{{ plan.modulos_pendientes }} pendientes · {{ plan.dias_disponibles }} días disponibles</span>
+                        <span>{{ plan.modulos_pendientes }} pendientes · {{ plan.dias_disponibles }} días disponibles@if ((plan.modulos_previstos || 0) > (plan.modulos_subidos ?? 0)) { · {{ plan.modulos_subidos }} de {{ plan.modulos_previstos }} subidos }</span>
                     } @else if (plan.estado === 'COMPLETADO') { <strong>Fabricación completada</strong>
                     } @else if (plan.estado === 'VENCIDO') {
                         <strong>Plazo agotado: {{ plan.modulos_pendientes }} pendientes</strong>
@@ -175,7 +178,7 @@ import { ApiService, Proyecto, ProjectCheck, ProjectCheckAttachment } from '../.
         button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
         .primary{background:var(--accent);border-color:var(--accent);color:#fff}.primary:hover:not(:disabled){background:var(--accent-dark);border-color:var(--accent-dark)}
         .secondary{width:100%;margin-top:10px}
-        .deadline-row{display:flex;gap:8px;align-items:stretch}.deadline-row input{flex:1 1 auto;margin:0}.deadline-row .primary{flex:0 0 auto;padding:0 16px}
+        .deadline-row{display:flex;gap:8px;align-items:stretch}.deadline-row input{flex:1 1 auto;margin:0}.deadline-row .primary{flex:0 0 auto;padding:0 16px}.deadline-row .planned{flex:0 0 96px}
         .demand{display:grid;gap:2px;padding:10px 12px;background:var(--surface-2);margin:10px 0 0}.demand span{font-size:12px}.urgent{color:var(--danger)}
         .progress-row{display:flex;align-items:center;gap:12px}
         .progress{flex:1 1 auto;height:6px;background:var(--line);border-radius:999px;overflow:hidden}
@@ -215,8 +218,14 @@ export class ProjectControlsComponent {
     readonly saved = output<Proyecto>();
     private readonly api = inject(ApiService);
     readonly date = signal('');
+    readonly previstos = signal<number | null>(null);
     readonly saving = signal(false);
     readonly deadlineMessage = signal('');
+    readonly dirty = computed(() => {
+        const project = this.project();
+        return this.date() !== (project.fecha_montaje || '')
+            || this.normalizePrevistos(this.previstos()) !== (project.modulos_previstos ?? null);
+    });
     readonly checks = signal<ProjectCheck[]>([]);
     readonly loadingChecks = signal(false);
     readonly busyCheck = signal<number | null>(null);
@@ -235,6 +244,7 @@ export class ProjectControlsComponent {
         effect(() => {
             const project = this.project();
             this.date.set(project.fecha_montaje || '');
+            this.previstos.set(project.modulos_previstos ?? null);
         });
         effect(onCleanup => {
             const id = this.project().id;
@@ -246,10 +256,22 @@ export class ProjectControlsComponent {
             onCleanup(() => sub.unsubscribe());
         });
     }
+    private normalizePrevistos(value: number | string | null): number | null {
+        if (value === null || value === undefined || value === '') return null;
+        const parsed = Number(value);
+        return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : null;
+    }
+
     saveDeadline(): void {
-        if (this.saving()) return;
+        if (this.saving() || !this.dirty()) return;
         this.saving.set(true); this.deadlineMessage.set('');
-        this.api.updateProyecto(this.project().id, {fecha_montaje:this.date() || null}).subscribe({
+        // Solo lo que cambia: el plazo y los previstos se guardan por separado.
+        const project = this.project();
+        const payload: Partial<Proyecto> = {};
+        if (this.date() !== (project.fecha_montaje || '')) payload.fecha_montaje = this.date() || null;
+        const previstos = this.normalizePrevistos(this.previstos());
+        if (previstos !== (project.modulos_previstos ?? null)) payload.modulos_previstos = previstos;
+        this.api.updateProyecto(project.id, payload).subscribe({
             next: project => { this.saved.emit(project); this.saving.set(false); },
             error: () => { this.saving.set(false); this.deadlineMessage.set('No se pudo guardar el plazo.'); },
         });

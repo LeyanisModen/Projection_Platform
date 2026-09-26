@@ -349,7 +349,9 @@ export class Dashboard implements OnInit, OnDestroy {
       destino.secciones.push(seccion);
     }
     for (const columna of columnas) {
-      columna.secciones.sort((a, b) => Number(b.terminado) - Number(a.terminado));
+      // Terminados al principio, en espera al final, el resto en su orden.
+      const rango = (s: PlanSeccion) => (s.terminado ? 0 : s.grupo?.en_espera ? 2 : 1);
+      columna.secciones.sort((a, b) => rango(a) - rango(b));
     }
     this.planColumnasCache = {
       secciones, grupos: this.gruposMesas, showDone: this.planModalShowDone, value: columnas,
@@ -425,6 +427,11 @@ export class Dashboard implements OnInit, OnDestroy {
 
   canDividir(grupo: GrupoBastidor): boolean {
     return !grupo.es_division && !grupo.dividido;
+  }
+
+  /** Aparta el bastidor de las mesas (p.ej. sin acero cortado) o lo suelta. */
+  toggleEsperaEnPlan(grupo: GrupoBastidor): void {
+    this.runPlanAction(this.api.esperaBastidor(grupo.id, !grupo.en_espera));
   }
 
   canUnir(grupo: GrupoBastidor): boolean {

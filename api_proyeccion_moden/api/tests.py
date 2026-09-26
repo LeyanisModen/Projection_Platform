@@ -5721,6 +5721,90 @@ class BastidorSelfServiceTests(APITestCase):
         self.assertIsNone(self.bastidor.mesa_preferida_id)
         self.assertEqual(self._cola(self.mesa_1), ["A5", "A4", "A3", "A2", "A1", "B1"])
 
+    def test_bastidor_en_espera_sale_de_las_mesas_hasta_que_se_suelta(self):
+        self._planificar()
+        self.assertEqual(self._cola(self.mesa_1), ["A5", "A4", "A3", "A2", "A1"])
+
+        apartar = self.client.post(
+            f"/api/grupos-bastidor/{self.bastidor.id}/espera/", {"en_espera": True}, format="json",
+        )
+        self.assertEqual(apartar.status_code, 200)
+        grupo = next(g for g in apartar.data if g["id"] == self.bastidor.id)
+        self.assertTrue(grupo["en_espera"])
+        # Sigue en su columna: recuerda la mesa donde estaba.
+        self.assertEqual(grupo["mesa_actual"], self.mesa_1.id)
+        self.assertEqual(grupo["mesa_preferida"], self.mesa_1.id)
+        self.assertEqual(self._cola(self.mesa_1), [])
+        self.assertEqual(self._cola(self.mesa_2), ["B1"])
+        self.assertFalse(
+            MesaQueueItem.objects.filter(
+                modulo__grupo_bastidor=self.bastidor,
+                status__in=[MesaQueueStatus.MOSTRANDO, MesaQueueStatus.EN_COLA],
+            ).exists()
+        )
+        # Un modulo nuevo del bastidor apartado tampoco entra en cola.
+        nuevo = Modulo.objects.create(nombre="A6", proyecto=self.project, grupo_bastidor=self.bastidor, orden_intra=6)
+        from api.queue_sync import sync_new_module
+        self.assertEqual(sync_new_module(nuevo), [])
+
+        # Sigue contando como pendiente para el ritmo diario.
+        proyecto = self.client.get(f"/api/proyectos/{self.project.id}/").data
+        self.assertEqual(proyecto["planificacion"]["modulos_pendientes"], 7)
+
+        soltar = self.client.post(
+            f"/api/grupos-bastidor/{self.bastidor.id}/espera/", {"en_espera": False}, format="json",
+        )
+        self.assertEqual(soltar.status_code, 200)
+        self.assertEqual(self._cola(self.mesa_1), ["A6", "A5", "A4", "A3", "A2", "A1"])
+
+        # Al dividir, las partes heredan la espera.
+        self.assertEqual(self.client.post(f"/api/grupos-bastidor/{self.bastidor.id}/espera/", {"en_espera": True}, format="json").status_code, 200)
+        self.assertEqual(self.client.post(f"/api/grupos-bastidor/{self.bastidor.id}/dividir/").status_code, 200)
+        self.assertTrue(all(GrupoBastidor.objects.filter(indice=self.bastidor.indice, proyecto=self.project).values_list("en_espera", flat=True)))
+        self.assertEqual(self._cola(self.mesa_1), [])
+        malo = self.client.post(f"/api/grupos-bastidor/{self.bastidor.id}/espera/", {"en_espera": "si"}, format="json")
+        self.assertEqual(malo.status_code, 400)
+
+    def test_importar_en_espera_abre_bastidor_nuevo_fuera_de_las_mesas(self):
+        self.project.datos_tecnicos_importados = True
+        self.project.save(update_fields=["datos_tecnicos_importados"])
+        self._planificar()
+        # Cabria en el ultimo bastidor, pero la tanda en espera abre uno nuevo.
+        response = self.client.post(
+            f"/api/proyectos/{self.project.id}/import-structure/",
+            {
+                "modulos": json.dumps([
+                    {"nombre": "C1", "ancho_cm": "10.00", "imagenes": []},
+                    {"nombre": "C2", "ancho_cm": "10.00", "imagenes": []},
+                ]),
+                "en_espera": "true",
+            },
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        nuevos = list(Modulo.objects.filter(proyecto=self.project, nombre__in=["C1", "C2"]).order_by("nombre"))
+        grupo = nuevos[0].grupo_bastidor
+        self.assertIsNotNone(grupo)
+        self.assertNotIn(grupo.id, {self.bastidor.id, self.otro_bastidor.id})
+        self.assertEqual(nuevos[1].grupo_bastidor_id, grupo.id)
+        self.assertTrue(grupo.en_espera)
+        self.assertFalse(
+            MesaQueueItem.objects.filter(
+                modulo__in=nuevos, status__in=[MesaQueueStatus.MOSTRANDO, MesaQueueStatus.EN_COLA],
+            ).exists()
+        )
+        self.assertEqual(self._cola(self.mesa_1), ["A5", "A4", "A3", "A2", "A1"])
+        self.assertEqual(self._cola(self.mesa_2), ["B1"])
+
+        soltar = self.client.post(f"/api/grupos-bastidor/{grupo.id}/espera/", {"en_espera": False}, format="json")
+        self.assertEqual(soltar.status_code, 200)
+        self.assertEqual(
+            MesaQueueItem.objects.filter(
+                modulo__in=nuevos, fase="INFERIOR", status__in=[MesaQueueStatus.MOSTRANDO, MesaQueueStatus.EN_COLA],
+            ).count(),
+            2,
+        )
+
     def test_superior_hecho_no_bloquea_pero_inferior_hecho_si(self):
         con_superior = self.modulos[0]
         con_superior.superior_hecho = True

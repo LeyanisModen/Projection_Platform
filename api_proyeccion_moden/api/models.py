@@ -83,6 +83,14 @@ class Proyecto(models.Model):
         validators=[MinValueValidator(Decimal('0.01'))],
         help_text='Peso maximo que puede elevar la grua de la obra. Vacio significa sin limite configurado.',
     )
+    modulos_previstos = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text=(
+            'Total de modulos que tendra el proyecto aunque aun no esten todos '
+            'subidos. Vacio => se usan los subidos. Sirve para el ritmo diario.'
+        ),
+    )
     datos_tecnicos_importados = models.BooleanField(
         default=False,
         help_text='Indica si ya se importo el fichero de datos tecnicos y se calcularon los grupos.'
@@ -180,6 +188,13 @@ class GrupoBastidor(models.Model):
         help_text=(
             'Mesa inferior a la que la ferralla ha llevado este bastidor. '
             'Null => lo reparte el planificador por carga.'
+        ),
+    )
+    en_espera = models.BooleanField(
+        default=False,
+        help_text=(
+            'Apartado de las mesas (p.ej. sin acero cortado): ni el ni los '
+            'modulos que le lleguen entran en cola hasta que se suelte.'
         ),
     )
     nombre = models.CharField(

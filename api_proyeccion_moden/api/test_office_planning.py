@@ -1,3 +1,4 @@
+import math
 from datetime import date, timedelta
 from importlib import import_module
 from unittest.mock import patch
@@ -595,6 +596,20 @@ class OfficePlanningTests(APITestCase):
         plan = project_demand(project, date(2026, 9, 4))
         self.assertEqual(plan['dias_produccion'], list(DAY_CODES[:5]))
         self.assertFalse(UserProfile.objects.filter(user=self.factory).exists())
+
+    def test_demand_uses_planned_modules_when_more_than_uploaded(self):
+        """Los modulos se suben por tandas: el ritmo sale del total previsto."""
+        self.project.fecha_montaje = date(2026, 9, 8)
+        self.project.modulos_previstos = 12
+        self.create_module()
+        plan = project_demand(self.project, date(2026, 9, 4))
+        self.assertEqual(plan['modulos_subidos'], 1)
+        self.assertEqual(plan['modulos_previstos'], 12)
+        self.assertEqual(plan['modulos_pendientes'], 12)
+        self.assertEqual(plan['modulos_por_dia'], math.ceil(12 / plan['dias_disponibles']))
+        # Si ya hay mas subidos que previstos, mandan los subidos.
+        self.project.modulos_previstos = 0
+        self.assertEqual(project_demand(self.project, date(2026, 9, 4))['modulos_pendientes'], 1)
 
     def test_demand_rounds_up_and_sums_projects_not_nominal_capacity(self):
         self.project.fecha_montaje = date(2026, 9, 8)

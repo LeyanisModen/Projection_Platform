@@ -253,7 +253,7 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
         model = Proyecto
         fields = [
             "id", "url", "nombre", "usuario", "usuario_nombre",
-            "fecha_montaje", "planificacion",
+            "fecha_montaje", "planificacion", "modulos_previstos",
             "bastidor_longitud_cm", "peso_maximo_grua_kg", "datos_tecnicos_importados",
             "datos_tecnicos_archivo", "datos_tecnicos_actualizados_at",
             "plano_archivo", "documentos_archivo", "planilla_archivo",
@@ -300,6 +300,8 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
         if user and not (user.is_staff or user.is_superuser):
             if 'fecha_montaje' in attrs:
                 raise serializers.ValidationError('Solo administracion puede fijar el plazo de montaje.')
+            if 'modulos_previstos' in attrs:
+                raise serializers.ValidationError('Solo administracion puede fijar los modulos previstos.')
         return attrs
 
     @staticmethod
@@ -415,6 +417,7 @@ class GrupoBastidorSerializer(serializers.ModelSerializer):
     es_division = serializers.BooleanField(read_only=True)
     dividido = serializers.SerializerMethodField()
     mesa_actual = serializers.SerializerMethodField()
+    en_espera = serializers.BooleanField(read_only=True)
     longitud_total_cm = serializers.SerializerMethodField()
     capacidad_cm = serializers.SerializerMethodField()
     peso_total_kg = serializers.SerializerMethodField()
@@ -429,7 +432,7 @@ class GrupoBastidorSerializer(serializers.ModelSerializer):
         fields = [
             "id", "proyecto", "indice", "nombre", "created_at",
             "sufijo", "dividido_de", "etiqueta", "es_division", "dividido",
-            "mesa_preferida", "mesa_actual",
+            "mesa_preferida", "mesa_actual", "en_espera",
             "modulos", "longitud_total_cm", "capacidad_cm",
             "peso_total_kg", "capacidad_peso_kg", "peso_desconocido",
             "overflow_longitud", "overflow_peso", "overflow",
