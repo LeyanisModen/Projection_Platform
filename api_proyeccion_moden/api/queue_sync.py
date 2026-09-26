@@ -52,26 +52,16 @@ def module_operational_state(modulo, showing_items=None):
 
 
 def module_reorderability(modulo, showing_items=None):
-    """Return whether a module can still change its bastidor position.
+    """Return whether a module can change its bastidor position.
 
-    Only the inferior phase commits a module to its bastidor: a finished
-    superior is stored apart and the module reaches the transport rack when
-    its inferior is done. Work in progress on a mesa does not lock the
-    module either; if it is moved, the queue remembers the image it was on
-    and resumes there (see ``resume_image_index``).
+    Nothing locks it any more. The bastidor is the transport group and
+    Moden may regroup a finished module (e.g. leftovers fabricated in
+    ad-hoc groups) without touching production: a finished module never
+    enters a queue, and work in progress resumes on the image it was on
+    (see ``resume_image_index``) if it is moved. Kept as a function so the
+    serializers and the admin keep a single place to ask.
     """
-    del showing_items  # la fabricacion en curso ya no bloquea el movimiento.
-    if modulo.cerrado:
-        return False, (
-            f'No se puede mover "{modulo.nombre}" porque esta cerrado.'
-        )
-
-    if modulo.inferior_hecho:
-        return False, (
-            f'No se puede mover "{modulo.nombre}" porque su inferior ya esta '
-            'fabricado y ocupa su sitio en el bastidor.'
-        )
-
+    del modulo, showing_items
     return True, None
 
 

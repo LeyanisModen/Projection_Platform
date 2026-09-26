@@ -2923,10 +2923,10 @@ class PlanningFoundationTests(APITestCase):
         self.assertIsNone(item_b12.resume_image_index)
         self.assertEqual(mesa_inf.current_image_index, 11)
 
-    def test_modulo_nuevo_no_baja_de_un_inferior_ya_fabricado(self):
-        """Solo un inferior hecho fija su sitio en el bastidor: un modulo
-        soltado al fondo del card queda justo encima del ultimo fabricado,
-        aunque eso adelante a uno que estaba en curso (que conserva su imagen)."""
+    def test_modulo_nuevo_se_coloca_donde_se_suelta_aunque_haya_fabricados(self):
+        """Nada fija el sitio en el bastidor: un modulo soltado al fondo del
+        card queda debajo del ya fabricado, y la cola solo cambia para lo
+        pendiente (el que estaba en curso conserva su imagen)."""
         grupo = self._crear_grupo("Grupo Insercion Segura")
         mesa_inf = grupo.mesas.get(tipo="INFERIOR", indice=1)
         mesa_origen = grupo.mesas.get(tipo="INFERIOR", indice=2)
@@ -3023,8 +3023,8 @@ class PlanningFoundationTests(APITestCase):
             [
                 pendiente_superior.nombre,
                 iniciado.nombre,
-                self.modulo.nombre,
                 terminado.nombre,
+                self.modulo.nombre,
             ],
         )
         moved_item.refresh_from_db()
@@ -5805,20 +5805,33 @@ class BastidorSelfServiceTests(APITestCase):
             2,
         )
 
-    def test_superior_hecho_no_bloquea_pero_inferior_hecho_si(self):
-        con_superior = self.modulos[0]
-        con_superior.superior_hecho = True
-        con_superior.actualizar_estado()
-        con_inferior = self.modulos[1]
-        con_inferior.inferior_hecho = True
-        con_inferior.actualizar_estado()
+    def test_un_modulo_terminado_se_puede_llevar_a_otro_bastidor_sin_tocar_las_mesas(self):
+        """Los restos fabricados en grupos de napas se recolocan para el
+        transporte: nada bloquea el movimiento y la cola no se entera."""
+        self._planificar()
+        terminado = self.modulos[0]
+        terminado.inferior_hecho = True
+        terminado.superior_hecho = True
+        terminado.actualizar_estado()
+        MesaQueueItem.objects.filter(modulo=terminado).update(status=MesaQueueStatus.HECHO)
+        cola_antes = self._cola(self.mesa_1)
 
         response = self.client.get(f"/api/grupos-bastidor/?proyecto={self.project.id}")
-        self.assertEqual(response.status_code, 200)
-        por_nombre = {m["nombre"]: m for m in response.data[0]["modulos"]}
+        por_nombre = {m["nombre"]: m for g in response.data for m in g["modulos"]}
         self.assertTrue(por_nombre["A1"]["movible"])
-        self.assertFalse(por_nombre["A2"]["movible"])
-        self.assertIn("inferior", por_nombre["A2"]["motivo_bloqueo"])
+        self.assertIsNone(por_nombre["A1"]["motivo_bloqueo"])
+
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=User.objects.create_user(username='admin_napas', password='p', is_staff=True)).key}")
+        move = self.client.post(
+            "/api/grupos-bastidor/move-modulo/",
+            {"modulo_id": terminado.id, "grupo_destino_id": self.otro_bastidor.id, "index_destino": 0},
+            format="json",
+        )
+        self.assertEqual(move.status_code, 200, move.data)
+        terminado.refresh_from_db()
+        self.assertEqual(terminado.grupo_bastidor_id, self.otro_bastidor.id)
+        self.assertEqual(self._cola(self.mesa_1), cola_antes)
+        self.assertEqual(self._cola(self.mesa_2), ["B1"])
 
     def test_desactivar_mesa_traslada_el_modulo_en_curso_con_su_imagen(self):
         self._planificar()

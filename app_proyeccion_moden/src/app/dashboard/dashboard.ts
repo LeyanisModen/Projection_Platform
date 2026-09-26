@@ -391,10 +391,11 @@ export class Dashboard implements OnInit, OnDestroy {
     return [...(grupo.modulos || [])].reverse();
   }
 
+  /** En la ferralla solo se reordena lo pendiente: un modulo hecho ya no pasa por la mesa. */
   private planModuloMovible(grupo: GrupoBastidor, moduloId: number): boolean {
     const info = (grupo.modulos || []).find(m => m.id === moduloId);
-    if (!info) return false;
-    return info.movible ?? (!info.inferior_hecho && !info.cerrado);
+    if (!info || info.inferior_hecho || info.cerrado) return false;
+    return info.movible ?? true;
   }
 
   private planRoots(): GrupoBastidor[] {
