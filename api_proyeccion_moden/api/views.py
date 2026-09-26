@@ -3106,9 +3106,28 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
             return Response({'detail': 'Envia {en_espera: true|false}.'},
                             status=status.HTTP_400_BAD_REQUEST)
         raiz = grupo.raiz
-        GrupoBastidor.objects.filter(
-            Q(pk=raiz.pk) | Q(dividido_de=raiz),
-        ).update(en_espera=valor)
+        familia = list(GrupoBastidor.objects.filter(Q(pk=raiz.pk) | Q(dividido_de=raiz)))
+        if valor:
+            # Al apartarlo pierde sus items: recordar la mesa en la que
+            # estaba para que siga en su columna y vuelva a ella al soltarlo.
+            for g in familia:
+                if g.mesa_preferida_id is None:
+                    item = (
+                        MesaQueueItem.objects.select_related('mesa')
+                        .filter(
+                            modulo__grupo_bastidor=g,
+                            fase='INFERIOR',
+                            status__in=ACTIVE_QUEUE_STATUSES,
+                            mesa__activa=True,
+                            mesa__tipo=MesaTipo.INFERIOR,
+                        )
+                        .order_by('position', 'id')
+                        .first()
+                    )
+                    if item is not None:
+                        g.mesa_preferida = item.mesa
+                        g.save(update_fields=['mesa_preferida'])
+        GrupoBastidor.objects.filter(id__in=[g.id for g in familia]).update(en_espera=valor)
         self._replan_grupos_operativos(proyecto, request.user)
         return Response(self._grupos_respuesta(proyecto))
 

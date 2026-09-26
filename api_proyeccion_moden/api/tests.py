@@ -5731,6 +5731,9 @@ class BastidorSelfServiceTests(APITestCase):
         self.assertEqual(apartar.status_code, 200)
         grupo = next(g for g in apartar.data if g["id"] == self.bastidor.id)
         self.assertTrue(grupo["en_espera"])
+        # Sigue en su columna: recuerda la mesa donde estaba.
+        self.assertEqual(grupo["mesa_actual"], self.mesa_1.id)
+        self.assertEqual(grupo["mesa_preferida"], self.mesa_1.id)
         self.assertEqual(self._cola(self.mesa_1), [])
         self.assertEqual(self._cola(self.mesa_2), ["B1"])
         self.assertFalse(
