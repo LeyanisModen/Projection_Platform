@@ -2,7 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { Dashboard } from './dashboard';
 import {
-  ApiService, GrupoBastidor, GrupoBastidorModulo, GrupoMesas, Mesa, Modulo, Proyecto,
+  ApiService, FerrallaCaptureConfig, GrupoBastidor, GrupoBastidorModulo, GrupoMesas, Mesa, Modulo, Proyecto,
   ProductionStatsBucket, ProductionStatsResponse,
 } from '../services/api.service';
 import { of, Subject, throwError } from 'rxjs';
@@ -243,6 +243,63 @@ describe('Dashboard', () => {
 
     expect(component.proyectosDisponibles(null).map(p => p.nombre)).toEqual(['Libre']);
     expect(component.proyectosBloqueados(null).map(p => p.nombre)).toEqual(['Bloqueado']);
+  });
+
+  describe('working schedule owned by the ferralla', () => {
+    const config = (extra: Partial<FerrallaCaptureConfig> = {}): FerrallaCaptureConfig => ({
+      user_id: 1, active_days: ['MON', 'TUE', 'WED', 'THU', 'FRI'], start_time: '06:50', end_time: '15:00',
+      interval_seconds: 20, check_times: [], capture_window: {start_time: '06:20', end_time: '15:30'}, mesas: [], ...extra,
+    });
+
+    it('describes the schedule with the capture window the mini-PC will use', () => {
+      component.horario = config();
+      expect(component.horarioLabel()).toBe('Lun–Vie · 06:50–15:00 · cámara 06:20–15:30');
+      component.horario = config({active_days: ['MON', 'WED', 'FRI'], capture_window: undefined});
+      expect(component.horarioLabel()).toBe('Lun, Mié, Vie · 06:50–15:00');
+    });
+
+    it('saves days and hours for the ferralla and refreshes the statistics', () => {
+      const api = TestBed.inject(ApiService);
+      component.gruposMesas = [{
+        id: 1, nombre: 'Grupo', usuario: 42, proyecto_actual: null, proyectos_cola: [], estrategia_cola_superior: 'PLANIFICADA',
+        activa: true, created_at: '', mesas: [],
+      } as GrupoMesas];
+      component.horario = config();
+      const update = vi.spyOn(api, 'updateFerrallaCaptureConfig')
+        .mockReturnValue(of(config({active_days: ['MON', 'TUE'], start_time: '07:00', end_time: '14:00'})));
+      vi.spyOn(component, 'loadStats').mockImplementation(() => undefined);
+      vi.spyOn(component as any, 'silentRefreshProyectosAndStats').mockImplementation(() => undefined);
+
+      component.editHorario();
+      component.toggleHorarioDay('WED');
+      component.toggleHorarioDay('THU');
+      component.toggleHorarioDay('FRI');
+      component.horarioDraft.start_time = '07:00';
+      component.horarioDraft.end_time = '14:00';
+      component.saveHorario();
+
+      expect(update).toHaveBeenCalledWith(42, {
+        active_days: ['MON', 'TUE'], start_time: '07:00', end_time: '14:00', interval_seconds: 20, rotations: [],
+      });
+      expect(component.horarioEditing).toBe(false);
+      expect(component.horario?.start_time).toBe('07:00');
+      expect(component.loadStats).toHaveBeenCalled();
+    });
+
+    it('refuses an end hour before the start hour without calling the API', () => {
+      const api = TestBed.inject(ApiService);
+      component.gruposMesas = [{
+        id: 1, nombre: 'Grupo', usuario: 42, proyecto_actual: null, proyectos_cola: [], estrategia_cola_superior: 'PLANIFICADA',
+        activa: true, created_at: '', mesas: [],
+      } as GrupoMesas];
+      component.horario = config();
+      const update = vi.spyOn(api, 'updateFerrallaCaptureConfig');
+      component.editHorario();
+      component.horarioDraft.end_time = '06:00';
+      component.saveHorario();
+      expect(update).not.toHaveBeenCalled();
+      expect(component.horarioError).toContain('posterior');
+    });
   });
 
   describe('project modal bastidores', () => {

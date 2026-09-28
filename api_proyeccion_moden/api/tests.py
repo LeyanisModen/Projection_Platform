@@ -514,8 +514,9 @@ class PermissionAndDeviceAuthTests(APITestCase):
         self.assertEqual(response.data['schedule']['active_days'], [
             'MON', 'TUE', 'WED', 'THU', 'FRI',
         ])
-        self.assertEqual(response.data['schedule']['start_time'], '06:50')
-        self.assertEqual(response.data['schedule']['end_time'], '15:00')
+        # La jornada es 06:50-15:00; el mini-PC captura con media hora de margen.
+        self.assertEqual(response.data['schedule']['start_time'], '06:20')
+        self.assertEqual(response.data['schedule']['end_time'], '15:30')
         self.assertEqual(response.data['schedule']['interval_seconds'], 20)
         self.assertEqual(response.data['camera']['image_rotation'], 180)
         self.mesa_a.refresh_from_db()
@@ -564,20 +565,29 @@ class PermissionAndDeviceAuthTests(APITestCase):
         self.assertEqual(self.mesa_a.capture_config_revision, 2)
         self.assertEqual(mesa_b.capture_config_revision, 2)
 
-    def test_regular_user_cannot_edit_remote_capture_config(self):
+    def test_la_ferralla_cambia_su_horario_pero_no_el_de_otra(self):
         self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.user_a_token.key}')
+        payload = {
+            'active_days': ['MON'],
+            'start_time': '07:00',
+            'end_time': '15:00',
+            'interval_seconds': 20,
+            'rotations': [],
+        }
         response = self.client.put(
-            f'/api/users/{self.user_a.id}/capture-config/',
-            {
-                'active_days': ['MON'],
-                'start_time': '07:00',
-                'end_time': '15:00',
-                'interval_seconds': 20,
-                'rotations': [],
-            },
-            format='json',
+            f'/api/users/{self.user_a.id}/capture-config/', payload, format='json',
         )
-        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['start_time'], '07:00')
+        self.assertEqual(response.data['capture_window'], {'start_time': '06:30', 'end_time': '15:30'})
+        profile = UserProfile.objects.get(user=self.user_a)
+        self.assertEqual(profile.capture_active_days, ['MON'])
+
+        otra = User.objects.create_user(username='otra_ferralla_horario', password='pass123')
+        ajena = self.client.put(
+            f'/api/users/{otra.id}/capture-config/', payload, format='json',
+        )
+        self.assertIn(ajena.status_code, (403, 404))
 
     def test_device_ack_marks_only_the_reported_revision_as_applied(self):
         applied = self.client.post(

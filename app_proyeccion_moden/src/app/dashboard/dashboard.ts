@@ -8,7 +8,7 @@ import {
   ApiService,
   Proyecto, Modulo, Mesa, ModuloQueueItem, MesaQueueItem, Imagen, FotoFabricacion,
   EstrategiaColaSuperior, GrupoMesas, GrupoMesasProyectoEntry, ProductionStatsResponse, ModuloFase,
-  GrupoBastidor, GrupoBastidorModulo,
+  GrupoBastidor, GrupoBastidorModulo, CaptureDay, FerrallaCaptureConfig,
 } from '../services/api.service';
 import {
   ListaMaterialesService,
@@ -132,6 +132,21 @@ export class Dashboard implements OnInit, OnDestroy {
   // Blueprint Modal State
   showBlueprintModal = false;
   blueprintUrl: string | null = null;
+
+  // Horario de trabajo de la ferralla (lo cambia ella; Moden lo usa para la captura).
+  horario: FerrallaCaptureConfig | null = null;
+  horarioEditing = false;
+  horarioDraft: { active_days: CaptureDay[]; start_time: string; end_time: string } = {
+    active_days: [], start_time: '', end_time: '',
+  };
+  savingHorario = false;
+  horarioError = '';
+  readonly captureDays: Array<{ code: CaptureDay; label: string; largo: string }> = [
+    { code: 'MON', label: 'L', largo: 'Lun' }, { code: 'TUE', label: 'M', largo: 'Mar' },
+    { code: 'WED', label: 'X', largo: 'Mié' }, { code: 'THU', label: 'J', largo: 'Jue' },
+    { code: 'FRI', label: 'V', largo: 'Vie' }, { code: 'SAT', label: 'S', largo: 'Sáb' },
+    { code: 'SUN', label: 'D', largo: 'Dom' },
+  ];
 
   // Project-plan Modal State
   showPlanModal = false;
@@ -1547,6 +1562,7 @@ export class Dashboard implements OnInit, OnDestroy {
             this.selectedProyectoPorGrupo[grupo.id] = grupo.proyecto_actual;
           });
           this.loadingGruposMesas = false;
+          this.loadHorario();
           this.cdr.detectChanges();
         },
         error: (err) => {
@@ -1554,6 +1570,102 @@ export class Dashboard implements OnInit, OnDestroy {
           this.loadingGruposMesas = false;
         }
       });
+  }
+
+  // ---- Horario de trabajo ------------------------------------------------
+
+  private get horarioUserId(): number | null {
+    return this.gruposMesas[0]?.usuario ?? null;
+  }
+
+  loadHorario(): void {
+    const userId = this.horarioUserId;
+    if (!userId) return;
+    this.api.getFerrallaCaptureConfig(userId).pipe(takeUntil(this.destroy$)).subscribe({
+      next: config => { this.horario = config; this.cdr.detectChanges(); },
+      error: () => { /* sin horario no hay editor, las estadisticas siguen */ },
+    });
+  }
+
+  /** "Lun–Vie · 06:50–15:00 · cámara 06:20–15:30" */
+  horarioLabel(): string {
+    const h = this.horario;
+    if (!h) return '';
+    const orden = this.captureDays.map(d => d.code);
+    const dias = orden.filter(code => h.active_days.includes(code));
+    let etiqueta: string;
+    if (dias.length === 0) {
+      etiqueta = 'Sin días de trabajo';
+    } else {
+      const indices = dias.map(code => orden.indexOf(code));
+      const consecutivos = indices.every((v, i) => i === 0 || v === indices[i - 1] + 1);
+      const largo = (code: CaptureDay) => this.captureDays.find(d => d.code === code)!.largo;
+      etiqueta = consecutivos && dias.length > 2
+        ? `${largo(dias[0])}–${largo(dias[dias.length - 1])}`
+        : dias.map(largo).join(', ');
+    }
+    const partes = [etiqueta, `${h.start_time}–${h.end_time}`];
+    if (h.capture_window) partes.push(`cámara ${h.capture_window.start_time}–${h.capture_window.end_time}`);
+    return partes.join(' · ');
+  }
+
+  editHorario(): void {
+    if (!this.horario) return;
+    this.horarioDraft = {
+      active_days: [...this.horario.active_days],
+      start_time: this.horario.start_time,
+      end_time: this.horario.end_time,
+    };
+    this.horarioError = '';
+    this.horarioEditing = true;
+    this.cdr.detectChanges();
+  }
+
+  cancelHorario(): void {
+    if (this.savingHorario) return;
+    this.horarioEditing = false;
+    this.cdr.detectChanges();
+  }
+
+  toggleHorarioDay(code: CaptureDay): void {
+    const days = this.horarioDraft.active_days;
+    this.horarioDraft.active_days = days.includes(code) ? days.filter(d => d !== code) : [...days, code];
+    this.cdr.detectChanges();
+  }
+
+  saveHorario(): void {
+    const userId = this.horarioUserId;
+    if (!this.horario || !userId || this.savingHorario) return;
+    if (!this.horarioDraft.active_days.length || !this.horarioDraft.start_time || !this.horarioDraft.end_time) return;
+    if (this.horarioDraft.end_time <= this.horarioDraft.start_time) {
+      this.horarioError = 'La hora de fin tiene que ser posterior a la de inicio.';
+      this.cdr.detectChanges();
+      return;
+    }
+    this.savingHorario = true;
+    this.horarioError = '';
+    this.api.updateFerrallaCaptureConfig(userId, {
+      active_days: this.horarioDraft.active_days,
+      start_time: this.horarioDraft.start_time,
+      end_time: this.horarioDraft.end_time,
+      interval_seconds: this.horario.interval_seconds,
+      rotations: [],
+    }).pipe(takeUntil(this.destroy$)).subscribe({
+      next: config => {
+        this.horario = config;
+        this.horarioEditing = false;
+        this.savingHorario = false;
+        // Las estadisticas cuentan horas de jornada: recalcular con el horario nuevo.
+        this.loadStats();
+        this.silentRefreshProyectosAndStats();
+        this.cdr.detectChanges();
+      },
+      error: error => {
+        this.horarioError = error?.error?.detail || 'No se pudo guardar el horario.';
+        this.savingHorario = false;
+        this.cdr.detectChanges();
+      },
+    });
   }
 
   loadMesaQueueItems(mesaId: number): void {

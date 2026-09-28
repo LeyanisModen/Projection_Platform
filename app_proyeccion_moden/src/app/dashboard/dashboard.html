@@ -2,8 +2,8 @@
     <header class="dashboard-header">
         <img src="assets/logo-moden.jpg" alt="MOD:EN Logo" class="header-logo">
         <nav class="header-nav" aria-label="Secciones del dashboard">
-            <button type="button" class="nav-link" (click)="scrollToSection('grupos-section')">Grupos</button>
             <button type="button" class="nav-link" (click)="scrollToSection('estadisticas-section')">Estadísticas</button>
+            <button type="button" class="nav-link" (click)="scrollToSection('grupos-section')">Grupos</button>
             <button type="button" class="nav-link" (click)="scrollToSection('proyectos-section')">Proyectos</button>
         </nav>
         <div class="header-right">
@@ -22,145 +22,39 @@
             @if (loadingGruposMesas || loadingMesas) {
             <div class="loading planner-loading">Cargando operativa...</div>
             } @else {
-            <section class="planner-section" id="grupos-section">
-                <div class="section-header planner-header">
-                    <h2>Producción</h2>
-                </div>
-
-                @if (gruposMesas.length === 0) {
-                <div class="planner-empty">
-                    No hay grupos de mesas creados todavia. Cuando existan, podras planificar y trabajar por proyecto desde aqui.
-                </div>
-                } @else {
-                <div class="grupo-workspace">
-                    @for (grupo of gruposMesas; track trackByGrupo($index, grupo)) {
-                    <section class="grupo-operativo">
-                        <div class="grupo-operativo-header">
-                            <div class="grupo-operativo-title">
-                                <div class="grupo-operativo-info">
-                                    <h3>{{ grupo.nombre }}</h3>
-                                    @if (grupo.proyectos_cola.length === 0) {
-                                        <span class="grupo-cola-chip sin-cola">Sin proyectos en cola</span>
-                                    } @else {
-                                        <span class="grupo-cola-chip" [title]="grupo.proyectos_cola[0].proyecto_nombre">
-                                            <i class="fa fa-bookmark" aria-hidden="true"></i>
-                                            {{ grupo.proyectos_cola[0].proyecto_nombre }}
-                                        </span>
-                                        @if (grupo.proyectos_cola.length > 1) {
-                                            <span class="grupo-cola-more">+ {{ grupo.proyectos_cola.length - 1 }} en cola</span>
-                                        }
-                                    }
-                                    @if (grupo.estrategia_cola_superior === 'ADAPTATIVA') {
-                                        <span class="grupo-estrategia-chip" title="La cola superior sigue la demanda real de las mesas inferiores">
-                                            <i class="fa fa-bolt" aria-hidden="true"></i>
-                                            SUP adaptativo
-                                        </span>
-                                    }
-                                </div>
-                                <button type="button" class="btn-gestionar" (click)="openGestionarModal(grupo)">
-                                    <i class="fa fa-sliders" aria-hidden="true"></i>
-                                    Gestionar
-                                </button>
-                            </div>
-                        </div>
-
-                        <div class="mesas-grid grupo-mesas-grid">
-                            @for (mesa of getMesasForGrupo(grupo.id); track trackByMesa($index, mesa)) {
-                            <div class="mesa-card"
-                                [class.locked]="mesa.locked"
-                                [class.blackout]="mesa.blackout"
-                                [class.mesa-inactiva]="!mesa.activa">
-                                <div class="mesa-header">
-                                    <div class="mesa-title-container">
-                                        <span class="mesa-role-badge">{{ getMesaRoleLabel(mesa) }}</span>
-                                        <span class="mesa-tipo-chip">{{ getMesaTipoLabel(mesa) }}</span>
-                                    </div>
-                                    <div class="mesa-header-actions">
-                                        @if (mesa.locked) { <span class="mesa-badge locked">LOCK</span> }
-                                        @if (mesa.blackout) { <span class="mesa-badge blackout">OFF</span> }
-                                        @if (isMesaCameraUnavailable(mesa)) {
-                                            <span class="mesa-camera-warning offline"
-                                                  title="Camara no disponible: el servicio local no puede capturar imagenes.">
-                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                                    <path d="M23 7l-7 5 7 5V7z"></path>
-                                                    <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
-                                                    <line x1="2" y1="2" x2="22" y2="22"></line>
-                                                </svg>
-                                            </span>
-                                        } @else if (mesa.is_linked && mesa.camera_sharpness === 'blurry') {
-                                            <span class="mesa-camera-warning dirty"
-                                                  title="Cámara sucia: limpiar el objetivo.">
-                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                                    <path d="M23 7l-7 5 7 5V7z"></path>
-                                                    <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
-                                                </svg>
-                                            </span>
-                                        }
-                                        <div class="header-link-status">
-                                            @if (mesa.is_linked) {
-                                            <button class="btn-icon connected" (click)="openProjectionView(mesa)"
-                                                title="Proyeccion conectada">
-                                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line><path d="M9 10l2 2 4-4"></path></svg>
-                                            </button>
-                                            } @else {
-                                            <button class="btn-icon disconnected" (click)="openProjectionView(mesa)"
-                                                title="Sin vincular">
-                                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line><line x1="2" y1="2" x2="22" y2="22"></line></svg>
-                                            </button>
-                                            }
-                                        </div>
-                                    </div>
-                                </div>
-
-                                @if (!mesa.activa) {
-                                    <div class="mesa-empty-inactiva">
-                                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none"
-                                            stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
-                                            stroke-linejoin="round" aria-hidden="true">
-                                            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
-                                            <line x1="8" y1="21" x2="16" y2="21"></line>
-                                            <line x1="12" y1="17" x2="12" y2="21"></line>
-                                            <line x1="3" y1="3" x2="21" y2="21"></line>
-                                        </svg>
-                                        <span class="mesa-empty-text">DESACTIVADA</span>
-                                    </div>
-                                } @else {
-                                    <div class="mesa-queue">
-                                        @for (item of getMesaQueueItems(mesa.id); track trackByItem($index, item)) {
-                                            @if (shouldShowGroupDivider(item, $index, mesa)) {
-                                                <div class="queue-group-divider">
-                                                    — {{ getItemGrupoLabel(item) }} —
-                                                </div>
-                                            }
-                                            <div class="queue-item" [class]="getItemStatusClass(item.status)">
-                                                <div class="queue-item-info">
-                                                    <span class="queue-item-nombre">{{ item.modulo_nombre }}</span>
-                                                    @if (getItemImageProgress(item); as progress) {
-                                                        <span class="queue-item-progress"
-                                                            title="Imagen proyectada del total">{{ progress }}</span>
-                                                    }
-                                                    <span class="queue-item-status">{{ item.status }}</span>
-                                                    <span class="queue-item-dif-dot"
-    *ngIf="item.dificultad != null"
-    [style.background-color]="dificultadColor(item.dificultad)"
-    [title]="dificultadLabel(item.dificultad) + ' (' + (item.dificultad | number:'1.0-0') + ')'"></span>
-                                                </div>
-                                            </div>
-                                        }
-                                    </div>
+            <section class="stats-section" id="estadisticas-section">
+                <div class="section-header legacy-header stats-header">
+                    <h2>Estadísticas de producción</h2>
+                    @if (horario) {
+                    <div class="stats-schedule">
+                        @if (!horarioEditing) {
+                        <span class="stats-schedule-label">{{ horarioLabel() }}</span>
+                        <button type="button" class="btn-icon" (click)="editHorario()"
+                            title="Cambiar el horario de trabajo" aria-label="Cambiar horario de trabajo">
+                            <i class="fa fa-pencil" aria-hidden="true"></i>
+                        </button>
+                        } @else {
+                        <form class="stats-schedule-form" (ngSubmit)="saveHorario()">
+                            <div class="day-chips" role="group" aria-label="Días de trabajo">
+                                @for (day of captureDays; track day.code) {
+                                <button type="button" class="day-chip" [class.active]="horarioDraft.active_days.includes(day.code)"
+                                    [attr.aria-pressed]="horarioDraft.active_days.includes(day.code)"
+                                    (click)="toggleHorarioDay(day.code)">{{ day.label }}</button>
                                 }
                             </div>
-                            }
-                        </div>
-                    </section>
+                            <input type="time" name="horario-inicio" aria-label="Hora de inicio" required
+                                [(ngModel)]="horarioDraft.start_time">
+                            <span class="stats-schedule-sep">a</span>
+                            <input type="time" name="horario-fin" aria-label="Hora de fin" required
+                                [(ngModel)]="horarioDraft.end_time">
+                            <button type="submit" class="btn btn-primary btn-sm"
+                                [disabled]="savingHorario || !horarioDraft.active_days.length || !horarioDraft.start_time || !horarioDraft.end_time">Guardar</button>
+                            <button type="button" class="btn btn-sm" (click)="cancelHorario()" [disabled]="savingHorario">Cancelar</button>
+                            @if (horarioError) { <span class="stats-schedule-error" role="alert">{{ horarioError }}</span> }
+                        </form>
+                        }
+                    </div>
                     }
-                </div>
-                }
-            </section>
-
-            <section class="stats-section" id="estadisticas-section">
-                <div class="section-header legacy-header">
-                    <h2>Estadísticas de producción</h2>
                 </div>
 
                 <div class="stats-board">
@@ -357,6 +251,142 @@
                         }
                     }
                 </div>
+            </section>
+
+            <section class="planner-section" id="grupos-section">
+                <div class="section-header planner-header">
+                    <h2>Producción</h2>
+                </div>
+
+                @if (gruposMesas.length === 0) {
+                <div class="planner-empty">
+                    No hay grupos de mesas creados todavia. Cuando existan, podras planificar y trabajar por proyecto desde aqui.
+                </div>
+                } @else {
+                <div class="grupo-workspace">
+                    @for (grupo of gruposMesas; track trackByGrupo($index, grupo)) {
+                    <section class="grupo-operativo">
+                        <div class="grupo-operativo-header">
+                            <div class="grupo-operativo-title">
+                                <div class="grupo-operativo-info">
+                                    <h3>{{ grupo.nombre }}</h3>
+                                    @if (grupo.proyectos_cola.length === 0) {
+                                        <span class="grupo-cola-chip sin-cola">Sin proyectos en cola</span>
+                                    } @else {
+                                        <span class="grupo-cola-chip" [title]="grupo.proyectos_cola[0].proyecto_nombre">
+                                            <i class="fa fa-bookmark" aria-hidden="true"></i>
+                                            {{ grupo.proyectos_cola[0].proyecto_nombre }}
+                                        </span>
+                                        @if (grupo.proyectos_cola.length > 1) {
+                                            <span class="grupo-cola-more">+ {{ grupo.proyectos_cola.length - 1 }} en cola</span>
+                                        }
+                                    }
+                                    @if (grupo.estrategia_cola_superior === 'ADAPTATIVA') {
+                                        <span class="grupo-estrategia-chip" title="La cola superior sigue la demanda real de las mesas inferiores">
+                                            <i class="fa fa-bolt" aria-hidden="true"></i>
+                                            SUP adaptativo
+                                        </span>
+                                    }
+                                </div>
+                                <button type="button" class="btn-gestionar" (click)="openGestionarModal(grupo)">
+                                    <i class="fa fa-sliders" aria-hidden="true"></i>
+                                    Gestionar
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="mesas-grid grupo-mesas-grid">
+                            @for (mesa of getMesasForGrupo(grupo.id); track trackByMesa($index, mesa)) {
+                            <div class="mesa-card"
+                                [class.locked]="mesa.locked"
+                                [class.blackout]="mesa.blackout"
+                                [class.mesa-inactiva]="!mesa.activa">
+                                <div class="mesa-header">
+                                    <div class="mesa-title-container">
+                                        <span class="mesa-role-badge">{{ getMesaRoleLabel(mesa) }}</span>
+                                        <span class="mesa-tipo-chip">{{ getMesaTipoLabel(mesa) }}</span>
+                                    </div>
+                                    <div class="mesa-header-actions">
+                                        @if (mesa.locked) { <span class="mesa-badge locked">LOCK</span> }
+                                        @if (mesa.blackout) { <span class="mesa-badge blackout">OFF</span> }
+                                        @if (isMesaCameraUnavailable(mesa)) {
+                                            <span class="mesa-camera-warning offline"
+                                                  title="Camara no disponible: el servicio local no puede capturar imagenes.">
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                                    <path d="M23 7l-7 5 7 5V7z"></path>
+                                                    <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
+                                                    <line x1="2" y1="2" x2="22" y2="22"></line>
+                                                </svg>
+                                            </span>
+                                        } @else if (mesa.is_linked && mesa.camera_sharpness === 'blurry') {
+                                            <span class="mesa-camera-warning dirty"
+                                                  title="Cámara sucia: limpiar el objetivo.">
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                                    <path d="M23 7l-7 5 7 5V7z"></path>
+                                                    <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
+                                                </svg>
+                                            </span>
+                                        }
+                                        <div class="header-link-status">
+                                            @if (mesa.is_linked) {
+                                            <button class="btn-icon connected" (click)="openProjectionView(mesa)"
+                                                title="Proyeccion conectada">
+                                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line><path d="M9 10l2 2 4-4"></path></svg>
+                                            </button>
+                                            } @else {
+                                            <button class="btn-icon disconnected" (click)="openProjectionView(mesa)"
+                                                title="Sin vincular">
+                                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line><line x1="2" y1="2" x2="22" y2="22"></line></svg>
+                                            </button>
+                                            }
+                                        </div>
+                                    </div>
+                                </div>
+
+                                @if (!mesa.activa) {
+                                    <div class="mesa-empty-inactiva">
+                                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none"
+                                            stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+                                            stroke-linejoin="round" aria-hidden="true">
+                                            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                                            <line x1="8" y1="21" x2="16" y2="21"></line>
+                                            <line x1="12" y1="17" x2="12" y2="21"></line>
+                                            <line x1="3" y1="3" x2="21" y2="21"></line>
+                                        </svg>
+                                        <span class="mesa-empty-text">DESACTIVADA</span>
+                                    </div>
+                                } @else {
+                                    <div class="mesa-queue">
+                                        @for (item of getMesaQueueItems(mesa.id); track trackByItem($index, item)) {
+                                            @if (shouldShowGroupDivider(item, $index, mesa)) {
+                                                <div class="queue-group-divider">
+                                                    — {{ getItemGrupoLabel(item) }} —
+                                                </div>
+                                            }
+                                            <div class="queue-item" [class]="getItemStatusClass(item.status)">
+                                                <div class="queue-item-info">
+                                                    <span class="queue-item-nombre">{{ item.modulo_nombre }}</span>
+                                                    @if (getItemImageProgress(item); as progress) {
+                                                        <span class="queue-item-progress"
+                                                            title="Imagen proyectada del total">{{ progress }}</span>
+                                                    }
+                                                    <span class="queue-item-status">{{ item.status }}</span>
+                                                    <span class="queue-item-dif-dot"
+    *ngIf="item.dificultad != null"
+    [style.background-color]="dificultadColor(item.dificultad)"
+    [title]="dificultadLabel(item.dificultad) + ' (' + (item.dificultad | number:'1.0-0') + ')'"></span>
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                            }
+                        </div>
+                    </section>
+                    }
+                </div>
+                }
             </section>
 
             <section class="projects-section" id="proyectos-section">

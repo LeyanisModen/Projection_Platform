@@ -207,10 +207,27 @@ def _capture_config_status(mesa):
     return 'pending'
 
 
+CAPTURE_WINDOW_MARGIN_MINUTES = 30
+
+
+def _capture_window(profile):
+    """Ventana de captura del mini-PC: la jornada de la ferralla con media
+    hora de margen a cada lado, sin cruzar la medianoche."""
+    from datetime import datetime, timedelta
+    base = datetime(2000, 1, 1)
+    margin = timedelta(minutes=CAPTURE_WINDOW_MARGIN_MINUTES)
+    start = datetime.combine(base.date(), profile.capture_start_time) - margin
+    end = datetime.combine(base.date(), profile.capture_end_time) + margin
+    start = max(start, base)
+    end = min(end, base.replace(hour=23, minute=59))
+    return start.strftime('%H:%M'), end.strftime('%H:%M')
+
+
 def _ferralla_capture_config_payload(user, mesas=None):
     profile, _ = UserProfile.objects.get_or_create(user=user)
     if mesas is None:
         mesas = Mesa.objects.filter(usuario=user).order_by('nombre', 'id')
+    window_start, window_end = _capture_window(profile)
     return {
         'user_id': user.id,
         'active_days': sorted(
@@ -219,6 +236,7 @@ def _ferralla_capture_config_payload(user, mesas=None):
         ),
         'start_time': profile.capture_start_time.strftime('%H:%M'),
         'end_time': profile.capture_end_time.strftime('%H:%M'),
+        'capture_window': {'start_time': window_start, 'end_time': window_end},
         'interval_seconds': profile.capture_interval_seconds,
         'check_times': ['06:00', '09:00', '12:00', '15:00'],
         'mesas': [
@@ -1222,7 +1240,8 @@ class UserViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get', 'put'], url_path='capture-config')
     def capture_config(self, request, pk=None):
-        if not _is_admin(request.user):
+        # La ferralla gestiona su propio horario; Moden puede tocar cualquiera.
+        if not _is_admin(request.user) and str(request.user.id) != str(pk):
             return Response({'detail': 'Forbidden'}, status=403)
 
         ferralla = self.get_object()
@@ -6002,14 +6021,17 @@ class DeviceViewSet(viewsets.ViewSet):
             profile.capture_active_days or [],
             key=lambda day: CAPTURE_DAY_ORDER.get(day, 99),
         )
+        # El mini-PC captura desde media hora antes de la jornada hasta media
+        # hora despues; la jornada en si la fija la ferralla.
+        window_start, window_end = _capture_window(profile)
         return Response({
             'revision': mesa.capture_config_revision,
             'mesa_id': mesa.id,
             'mesa_name': mesa.nombre,
             'schedule': {
                 'active_days': active_days,
-                'start_time': profile.capture_start_time.strftime('%H:%M'),
-                'end_time': profile.capture_end_time.strftime('%H:%M'),
+                'start_time': window_start,
+                'end_time': window_end,
                 'interval_seconds': profile.capture_interval_seconds,
             },
             'camera': {

@@ -379,6 +379,8 @@ export interface FerrallaCaptureConfig {
     end_time: string;
     interval_seconds: number;
     check_times: string[];
+    /** Ventana real de captura del mini-PC: la jornada con media hora de margen a cada lado. */
+    capture_window?: { start_time: string; end_time: string };
     mesas: MesaCaptureConfig[];
 }
 
