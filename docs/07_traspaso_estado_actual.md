@@ -414,7 +414,7 @@ Autogestión de la ferralla (septiembre 2026):
 - Flujo `_check` con espera, detección y overlays compartidos.
 - Aviso persistente si no hay cámara y opción de continuar.
 - Animación repetida cuando el nombre contiene `warning`.
-- Calibración y distorsión de proyección.
+- Calibración y distorsión de proyección. En el visor (supervisor) la imagen se ve plana y con hueco abajo para la leyenda de teclas; la deformación solo se aplica en el player y, en el visor, mientras se calibra con `C` (`Mapper.plainView`).
 - Overlays de teclas compactos, transparentes y centrados.
 - Recuperación automática del foco del kiosk.
 - Doble `Q` para cerrar kiosk y entrar en pausa de mantenimiento.

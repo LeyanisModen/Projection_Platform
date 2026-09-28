@@ -30,6 +30,10 @@ export class Mapper implements OnChanges {
   @Input() isCalibrationActive: boolean = false;
   @Input() mesaId: number | null = null;
   @Input() allowInteraction: boolean = true;
+  /** Vista plana (supervisor sin calibrar): la imagen sin deformar y con
+   *  hueco abajo para la leyenda de teclas. La deformacion solo importa
+   *  en el player y mientras se calibra. */
+  @Input() plainView: boolean = false;
   @Output() imageReady = new EventEmitter<string>();
   @Output() imageFailed = new EventEmitter<string>();
 
@@ -182,7 +186,27 @@ export class Mapper implements OnChanges {
       }
     }
 
+    if (changes['plainView'] && !changes['plainView'].firstChange) {
+      this.applyViewMode();
+    }
+
     // Note: calibrationJson is now handled by setter, not here
+  }
+
+  private applyViewMode(): void {
+    const wrapper = this.mapperWrapper?.nativeElement;
+    if (!wrapper) return;
+    if (this.plainView) {
+      this.renderer.addClass(wrapper, 'plain-view');
+      if (this.sourceIframe?.nativeElement) {
+        this.sourceIframe.nativeElement.style.transform = 'none';
+      }
+      return;
+    }
+    this.renderer.removeClass(wrapper, 'plain-view');
+    if (this.markers?.length === 4 && this.corners?.length === 8) {
+      this.update();
+    }
   }
 
   constructor(private renderer: Renderer2, private route: ActivatedRoute) { }
@@ -430,6 +454,11 @@ export class Mapper implements OnChanges {
   };
 
   transform2d(srcCorners: number[], dstCorners: number[]) {
+    if (this.plainView) {
+      // Las esquinas se conservan para cuando vuelva la calibracion.
+      this.sourceIframe.nativeElement.style.transform = 'none';
+      return;
+    }
     const H = fixPerspective(srcCorners, dstCorners);
     const t = "matrix3d(" + H.join(", ") + ")";
     this.sourceIframe.nativeElement.style.transform = t;
@@ -974,6 +1003,7 @@ export class Mapper implements OnChanges {
     }
 
     setInterval(this.updateResolution, 1000);
+    this.applyViewMode();
 
     this.scheduleUserInactive();
 
