@@ -444,3 +444,9 @@ p {
     color: #fff;
     border-radius: 6px;
 }
+
+/* Vista plana del supervisor: sin deformar y con hueco abajo para la leyenda de teclas. */
+main.plain-view #sourceIframe { transform: none !important; }
+main.plain-view #result { bottom: 72px; }
+main.plain-view #correctedVideo { object-fit: contain; }
+main.plain-view .corner, main.plain-view .line { visibility: hidden !important; }
