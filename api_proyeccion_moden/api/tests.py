@@ -580,8 +580,45 @@ class PermissionAndDeviceAuthTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['start_time'], '07:00')
         self.assertEqual(response.data['capture_window'], {'start_time': '06:30', 'end_time': '15:30'})
+        self.assertEqual(response.data['horario'], [{'day': 'MON', 'start_time': '07:00', 'end_time': '15:00'}])
         profile = UserProfile.objects.get(user=self.user_a)
         self.assertEqual(profile.capture_active_days, ['MON'])
+
+        # Jornada por dia: los viernes acaban antes. La ventana del mini-PC
+        # es la mas amplia de la semana con media hora de margen.
+        por_dia = self.client.put(
+            f'/api/users/{self.user_a.id}/capture-config/',
+            {
+                'horario': [
+                    {'day': 'MON', 'start_time': '06:50', 'end_time': '15:00'},
+                    {'day': 'FRI', 'start_time': '06:50', 'end_time': '13:00'},
+                ],
+                'interval_seconds': 20,
+                'rotations': [],
+            },
+            format='json',
+        )
+        self.assertEqual(por_dia.status_code, 200, por_dia.data)
+        self.assertEqual(por_dia.data['active_days'], ['MON', 'FRI'])
+        self.assertEqual((por_dia.data['start_time'], por_dia.data['end_time']), ('06:50', '15:00'))
+        self.assertEqual(por_dia.data['capture_window'], {'start_time': '06:20', 'end_time': '15:30'})
+        self.assertEqual(
+            por_dia.data['horario'],
+            [
+                {'day': 'MON', 'start_time': '06:50', 'end_time': '15:00'},
+                {'day': 'FRI', 'start_time': '06:50', 'end_time': '13:00'},
+            ],
+        )
+        profile.refresh_from_db()
+        self.assertEqual(profile.capture_horario, {'MON': ['06:50', '15:00'], 'FRI': ['06:50', '13:00']})
+        self.assertEqual(profile.horario_por_dia()['FRI'][1].strftime('%H:%M'), '13:00')
+
+        invalido = self.client.put(
+            f'/api/users/{self.user_a.id}/capture-config/',
+            {'horario': [{'day': 'MON', 'start_time': '15:00', 'end_time': '07:00'}], 'interval_seconds': 20},
+            format='json',
+        )
+        self.assertEqual(invalido.status_code, 400)
 
         otra = User.objects.create_user(username='otra_ferralla_horario', password='pass123')
         ajena = self.client.put(

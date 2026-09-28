@@ -372,22 +372,30 @@ export interface MesaCaptureConfig {
     status: CaptureConfigStatus;
 }
 
+/** Jornada de un dia de trabajo. */
+export interface HorarioDia {
+    day: CaptureDay;
+    start_time: string;
+    end_time: string;
+}
+
 export interface FerrallaCaptureConfig {
     user_id: number;
+    /** Derivados de `horario`: dias activos, inicio mas temprano y fin mas tardio. */
     active_days: CaptureDay[];
     start_time: string;
     end_time: string;
+    /** Jornada por dia, solo los dias de trabajo. */
+    horario: HorarioDia[];
     interval_seconds: number;
     check_times: string[];
-    /** Ventana real de captura del mini-PC: la jornada con media hora de margen a cada lado. */
+    /** Ventana real de captura del mini-PC: la jornada mas amplia con media hora de margen. */
     capture_window?: { start_time: string; end_time: string };
     mesas: MesaCaptureConfig[];
 }
 
 export interface FerrallaCaptureConfigUpdate {
-    active_days: CaptureDay[];
-    start_time: string;
-    end_time: string;
+    horario: HorarioDia[];
     interval_seconds: number;
     rotations: { mesa_id: number; image_rotation: 0 | 90 | 180 | 270 }[];
 }

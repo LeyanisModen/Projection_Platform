@@ -35,22 +35,28 @@
                         </button>
                         } @else {
                         <form class="stats-schedule-form" (ngSubmit)="saveHorario()">
-                            <div class="day-chips" role="group" aria-label="Días de trabajo">
-                                @for (day of captureDays; track day.code) {
-                                <button type="button" class="day-chip" [class.active]="horarioDraft.active_days.includes(day.code)"
-                                    [attr.aria-pressed]="horarioDraft.active_days.includes(day.code)"
-                                    (click)="toggleHorarioDay(day.code)">{{ day.label }}</button>
+                            <div class="horario-dias" role="group" aria-label="Jornada por día">
+                                @for (fila of horarioDraft; track fila.day) {
+                                <div class="horario-dia" [class.is-off]="!fila.activo">
+                                    <button type="button" class="day-chip" [class.active]="fila.activo" [attr.aria-pressed]="fila.activo"
+                                        (click)="toggleHorarioDay(fila.day)" [attr.aria-label]="'Trabajar el ' + captureDays[$index].largo">{{ captureDays[$index].label }}</button>
+                                    <input type="time" [name]="'inicio-' + fila.day" [attr.aria-label]="'Inicio ' + captureDays[$index].largo"
+                                        [(ngModel)]="fila.start_time" [disabled]="!fila.activo || savingHorario">
+                                    <span class="stats-schedule-sep">a</span>
+                                    <input type="time" [name]="'fin-' + fila.day" [attr.aria-label]="'Fin ' + captureDays[$index].largo"
+                                        [(ngModel)]="fila.end_time" [disabled]="!fila.activo || savingHorario">
+                                    <button type="button" class="btn-icon horario-copiar" (click)="copiarHorarioA(fila.day)" [disabled]="!fila.activo || savingHorario"
+                                        title="Poner esta jornada en todos los días activos" [attr.aria-label]="'Copiar la jornada del ' + captureDays[$index].largo + ' a los demás días'">
+                                        <i class="fa fa-clone" aria-hidden="true"></i>
+                                    </button>
+                                </div>
                                 }
                             </div>
-                            <input type="time" name="horario-inicio" aria-label="Hora de inicio" required
-                                [(ngModel)]="horarioDraft.start_time">
-                            <span class="stats-schedule-sep">a</span>
-                            <input type="time" name="horario-fin" aria-label="Hora de fin" required
-                                [(ngModel)]="horarioDraft.end_time">
-                            <button type="submit" class="btn btn-primary btn-sm"
-                                [disabled]="savingHorario || !horarioDraft.active_days.length || !horarioDraft.start_time || !horarioDraft.end_time">Guardar</button>
-                            <button type="button" class="btn btn-sm" (click)="cancelHorario()" [disabled]="savingHorario">Cancelar</button>
-                            @if (horarioError) { <span class="stats-schedule-error" role="alert">{{ horarioError }}</span> }
+                            <div class="stats-schedule-actions">
+                                <button type="submit" class="btn btn-primary btn-sm" [disabled]="savingHorario || !horarioDraftValido()">Guardar</button>
+                                <button type="button" class="btn btn-sm" (click)="cancelHorario()" [disabled]="savingHorario">Cancelar</button>
+                                @if (horarioError) { <span class="stats-schedule-error" role="alert">{{ horarioError }}</span> }
+                            </div>
                         </form>
                         }
                     </div>

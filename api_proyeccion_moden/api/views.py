@@ -211,16 +211,59 @@ CAPTURE_WINDOW_MARGIN_MINUTES = 30
 
 
 def _capture_window(profile):
-    """Ventana de captura del mini-PC: la jornada de la ferralla con media
-    hora de margen a cada lado, sin cruzar la medianoche."""
+    """Ventana de captura del mini-PC: la jornada mas amplia de la semana
+    (inicio mas temprano, fin mas tardio) con media hora de margen a cada
+    lado, sin cruzar la medianoche. El servicio del mini-PC solo entiende
+    una franja para todos los dias."""
     from datetime import datetime, timedelta
     base = datetime(2000, 1, 1)
     margin = timedelta(minutes=CAPTURE_WINDOW_MARGIN_MINUTES)
-    start = datetime.combine(base.date(), profile.capture_start_time) - margin
-    end = datetime.combine(base.date(), profile.capture_end_time) + margin
+    horario = profile.horario_por_dia()
+    inicios = [tramo[0] for tramo in horario.values()] or [profile.capture_start_time]
+    fines = [tramo[1] for tramo in horario.values()] or [profile.capture_end_time]
+    start = datetime.combine(base.date(), min(inicios)) - margin
+    end = datetime.combine(base.date(), max(fines)) + margin
     start = max(start, base)
     end = min(end, base.replace(hour=23, minute=59))
     return start.strftime('%H:%M'), end.strftime('%H:%M')
+
+
+def _horario_payload(profile):
+    horario = profile.horario_por_dia()
+    return [
+        {
+            'day': day,
+            'start_time': horario[day][0].strftime('%H:%M'),
+            'end_time': horario[day][1].strftime('%H:%M'),
+        }
+        for day in sorted(horario, key=lambda d: CAPTURE_DAY_ORDER.get(d, 99))
+    ]
+
+
+def _guardar_horario(profile, horario):
+    """Persist ``{'MON': (time, time), ...}`` and keep the legacy fields in step.
+
+    Returns True when something changed.
+    """
+    nuevo = {
+        day: [tramo[0].strftime('%H:%M'), tramo[1].strftime('%H:%M')]
+        for day, tramo in horario.items()
+    }
+    dias = sorted(nuevo, key=lambda d: CAPTURE_DAY_ORDER.get(d, 99))
+    inicio = min(tramo[0] for tramo in horario.values())
+    fin = max(tramo[1] for tramo in horario.values())
+    changed = any([
+        (profile.capture_horario or {}) != nuevo,
+        list(profile.capture_active_days or []) != dias,
+        profile.capture_start_time != inicio,
+        profile.capture_end_time != fin,
+    ])
+    if changed:
+        profile.capture_horario = nuevo
+        profile.capture_active_days = dias
+        profile.capture_start_time = inicio
+        profile.capture_end_time = fin
+    return changed
 
 
 def _ferralla_capture_config_payload(user, mesas=None):
@@ -236,6 +279,7 @@ def _ferralla_capture_config_payload(user, mesas=None):
         ),
         'start_time': profile.capture_start_time.strftime('%H:%M'),
         'end_time': profile.capture_end_time.strftime('%H:%M'),
+        'horario': _horario_payload(profile),
         'capture_window': {'start_time': window_start, 'end_time': window_end},
         'interval_seconds': profile.capture_interval_seconds,
         'check_times': ['06:00', '09:00', '12:00', '15:00'],
@@ -1251,10 +1295,18 @@ class UserViewSet(viewsets.ModelViewSet):
         serializer = FerrallaCaptureConfigSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
-        active_days = sorted(
-            data['active_days'],
-            key=lambda day: CAPTURE_DAY_ORDER[day],
-        )
+        # Jornada por dia (viernes mas corto, etc.). El formato antiguo, con
+        # una sola franja para todos los dias activos, se sigue aceptando.
+        if data.get('horario'):
+            horario = {
+                item['day']: (item['start_time'], item['end_time'])
+                for item in data['horario']
+            }
+        else:
+            horario = {
+                day: (data['start_time'], data['end_time'])
+                for day in data['active_days']
+            }
         rotations = {
             item['mesa_id']: int(item['image_rotation'])
             for item in data.get('rotations', [])
@@ -1278,18 +1330,13 @@ class UserViewSet(viewsets.ModelViewSet):
                     )
                 })
 
-            schedule_changed = any([
-                list(profile.capture_active_days or []) != active_days,
-                profile.capture_start_time != data['start_time'],
-                profile.capture_end_time != data['end_time'],
-                profile.capture_interval_seconds != data['interval_seconds'],
-            ])
+            horario_changed = _guardar_horario(profile, horario)
+            interval_changed = profile.capture_interval_seconds != data['interval_seconds']
+            schedule_changed = horario_changed or interval_changed
             if schedule_changed:
-                profile.capture_active_days = active_days
-                profile.capture_start_time = data['start_time']
-                profile.capture_end_time = data['end_time']
                 profile.capture_interval_seconds = data['interval_seconds']
                 profile.save(update_fields=[
+                    'capture_horario',
                     'capture_active_days',
                     'capture_start_time',
                     'capture_end_time',
@@ -5196,18 +5243,21 @@ def _working_hours_in_range(start_date, end_date, profile, now=None):
 
     current_tz = timezone.get_current_timezone()
     now = now or timezone.localtime(timezone.now(), current_tz)
-    active_days = set(
-        getattr(profile, 'capture_active_days', None)
-        or ['MON', 'TUE', 'WED', 'THU', 'FRI']
-    )
-    start_time = getattr(profile, 'capture_start_time', None) or time(6, 50)
-    end_time = getattr(profile, 'capture_end_time', None) or time(15, 0)
+    if profile is not None and hasattr(profile, 'horario_por_dia'):
+        horario = profile.horario_por_dia()
+    else:
+        horario = {
+            day: (time(6, 50), time(15, 0))
+            for day in ['MON', 'TUE', 'WED', 'THU', 'FRI']
+        }
     day_codes = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']
 
     seconds = 0.0
     current = start_date
     while current <= end_date:
-        if day_codes[current.weekday()] in active_days:
+        tramo = horario.get(day_codes[current.weekday()])
+        if tramo:
+            start_time, end_time = tramo
             day_start = timezone.make_aware(
                 timezone.datetime.combine(current, start_time), current_tz
             )

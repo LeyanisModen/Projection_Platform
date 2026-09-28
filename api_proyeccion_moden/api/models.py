@@ -1097,7 +1097,33 @@ class UserProfile(models.Model):
     capture_active_days = models.JSONField(default=default_capture_active_days)
     capture_start_time = models.TimeField(default=time(6, 50))
     capture_end_time = models.TimeField(default=time(15, 0))
+    # Jornada por dia: {"MON": ["06:50", "15:00"], "FRI": ["06:50", "13:00"]}.
+    # Vacio => todos los dias activos con capture_start_time/capture_end_time.
+    # Los tres campos anteriores se mantienen sincronizados (dias activos,
+    # inicio mas temprano y fin mas tardio) para lo que aun los lee.
+    capture_horario = models.JSONField(default=dict, blank=True)
     capture_interval_seconds = models.PositiveIntegerField(default=20)
+
+    def horario_por_dia(self):
+        """{'MON': (time, time), ...} solo con los dias de trabajo."""
+        from datetime import datetime
+        horario = self.capture_horario or {}
+        resultado = {}
+        if horario:
+            for dia in ('MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'):
+                tramo = horario.get(dia)
+                if not tramo or len(tramo) != 2:
+                    continue
+                try:
+                    inicio = datetime.strptime(tramo[0], '%H:%M').time()
+                    fin = datetime.strptime(tramo[1], '%H:%M').time()
+                except (TypeError, ValueError):
+                    continue
+                resultado[dia] = (inicio, fin)
+            return resultado
+        for dia in self.capture_active_days or []:
+            resultado[dia] = (self.capture_start_time, self.capture_end_time)
+        return resultado
 
     def __str__(self):
         return f"Perfil de {self.user.username}"

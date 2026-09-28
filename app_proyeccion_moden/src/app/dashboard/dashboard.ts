@@ -8,7 +8,7 @@ import {
   ApiService,
   Proyecto, Modulo, Mesa, ModuloQueueItem, MesaQueueItem, Imagen, FotoFabricacion,
   EstrategiaColaSuperior, GrupoMesas, GrupoMesasProyectoEntry, ProductionStatsResponse, ModuloFase,
-  GrupoBastidor, GrupoBastidorModulo, CaptureDay, FerrallaCaptureConfig,
+  GrupoBastidor, GrupoBastidorModulo, CaptureDay, FerrallaCaptureConfig, HorarioDia,
 } from '../services/api.service';
 import {
   ListaMaterialesService,
@@ -136,9 +136,8 @@ export class Dashboard implements OnInit, OnDestroy {
   // Horario de trabajo de la ferralla (lo cambia ella; Moden lo usa para la captura).
   horario: FerrallaCaptureConfig | null = null;
   horarioEditing = false;
-  horarioDraft: { active_days: CaptureDay[]; start_time: string; end_time: string } = {
-    active_days: [], start_time: '', end_time: '',
-  };
+  /** Una fila por dia de la semana; solo cuentan las activas. */
+  horarioDraft: Array<{ day: CaptureDay; activo: boolean; start_time: string; end_time: string }> = [];
   savingHorario = false;
   horarioError = '';
   readonly captureDays: Array<{ code: CaptureDay; label: string; largo: string }> = [
@@ -1587,35 +1586,46 @@ export class Dashboard implements OnInit, OnDestroy {
     });
   }
 
-  /** "Lun–Vie · 06:50–15:00 · cámara 06:20–15:30" */
+  /** "Lun–Jue 06:50–15:00 · Vie 06:50–13:00": tramos de dias seguidos con la misma jornada. */
   horarioLabel(): string {
     const h = this.horario;
     if (!h) return '';
     const orden = this.captureDays.map(d => d.code);
-    const dias = orden.filter(code => h.active_days.includes(code));
-    let etiqueta: string;
-    if (dias.length === 0) {
-      etiqueta = 'Sin días de trabajo';
-    } else {
-      const indices = dias.map(code => orden.indexOf(code));
-      const consecutivos = indices.every((v, i) => i === 0 || v === indices[i - 1] + 1);
-      const largo = (code: CaptureDay) => this.captureDays.find(d => d.code === code)!.largo;
-      etiqueta = consecutivos && dias.length > 2
-        ? `${largo(dias[0])}–${largo(dias[dias.length - 1])}`
-        : dias.map(largo).join(', ');
-    }
-    const partes = [etiqueta, `${h.start_time}–${h.end_time}`];
-    if (h.capture_window) partes.push(`cámara ${h.capture_window.start_time}–${h.capture_window.end_time}`);
-    return partes.join(' · ');
+    const porDia = new Map(h.horario.map(item => [item.day, `${item.start_time}–${item.end_time}`]));
+    const largo = (code: CaptureDay) => this.captureDays.find(d => d.code === code)!.largo;
+    const tramos: Array<{ desde: number; hasta: number; horas: string }> = [];
+    orden.forEach((code, index) => {
+      const horas = porDia.get(code);
+      if (!horas) return;
+      const ultimo = tramos[tramos.length - 1];
+      if (ultimo && ultimo.hasta === index - 1 && ultimo.horas === horas) {
+        ultimo.hasta = index;
+      } else {
+        tramos.push({ desde: index, hasta: index, horas });
+      }
+    });
+    if (tramos.length === 0) return 'Sin días de trabajo';
+    return tramos.map(t => {
+      const dias = t.hasta === t.desde ? largo(orden[t.desde])
+        : t.hasta === t.desde + 1 ? `${largo(orden[t.desde])}, ${largo(orden[t.hasta])}`
+        : `${largo(orden[t.desde])}–${largo(orden[t.hasta])}`;
+      return `${dias} ${t.horas}`;
+    }).join(' · ');
   }
 
   editHorario(): void {
     if (!this.horario) return;
-    this.horarioDraft = {
-      active_days: [...this.horario.active_days],
-      start_time: this.horario.start_time,
-      end_time: this.horario.end_time,
-    };
+    const porDia = new Map(this.horario.horario.map(item => [item.day, item]));
+    const referencia = this.horario.horario[0] || { start_time: '07:00', end_time: '15:00' };
+    this.horarioDraft = this.captureDays.map(({ code }) => {
+      const dia = porDia.get(code);
+      return {
+        day: code,
+        activo: !!dia,
+        start_time: dia?.start_time ?? referencia.start_time,
+        end_time: dia?.end_time ?? referencia.end_time,
+      };
+    });
     this.horarioError = '';
     this.horarioEditing = true;
     this.cdr.detectChanges();
@@ -1628,26 +1638,51 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   toggleHorarioDay(code: CaptureDay): void {
-    const days = this.horarioDraft.active_days;
-    this.horarioDraft.active_days = days.includes(code) ? days.filter(d => d !== code) : [...days, code];
+    const fila = this.horarioDraft.find(f => f.day === code);
+    if (fila) fila.activo = !fila.activo;
     this.cdr.detectChanges();
+  }
+
+  /** Copia la jornada de un dia a los demas dias activos. */
+  copiarHorarioA(code: CaptureDay): void {
+    const origen = this.horarioDraft.find(f => f.day === code);
+    if (!origen) return;
+    this.horarioDraft.forEach(f => {
+      if (f.activo && f.day !== code) {
+        f.start_time = origen.start_time;
+        f.end_time = origen.end_time;
+      }
+    });
+    this.cdr.detectChanges();
+  }
+
+  horarioDraftActivos(): HorarioDia[] {
+    return this.horarioDraft
+      .filter(f => f.activo)
+      .map(f => ({ day: f.day, start_time: f.start_time, end_time: f.end_time }));
+  }
+
+  horarioDraftValido(): boolean {
+    const activos = this.horarioDraftActivos();
+    return activos.length > 0 && activos.every(f => !!f.start_time && !!f.end_time && f.end_time > f.start_time);
   }
 
   saveHorario(): void {
     const userId = this.horarioUserId;
     if (!this.horario || !userId || this.savingHorario) return;
-    if (!this.horarioDraft.active_days.length || !this.horarioDraft.start_time || !this.horarioDraft.end_time) return;
-    if (this.horarioDraft.end_time <= this.horarioDraft.start_time) {
-      this.horarioError = 'La hora de fin tiene que ser posterior a la de inicio.';
+    const activos = this.horarioDraftActivos();
+    if (activos.length === 0) return;
+    const malo = activos.find(f => !f.start_time || !f.end_time || f.end_time <= f.start_time);
+    if (malo) {
+      const largo = this.captureDays.find(d => d.code === malo.day)!.largo;
+      this.horarioError = `${largo}: la hora de fin tiene que ser posterior a la de inicio.`;
       this.cdr.detectChanges();
       return;
     }
     this.savingHorario = true;
     this.horarioError = '';
     this.api.updateFerrallaCaptureConfig(userId, {
-      active_days: this.horarioDraft.active_days,
-      start_time: this.horarioDraft.start_time,
-      end_time: this.horarioDraft.end_time,
+      horario: activos,
       interval_seconds: this.horario.interval_seconds,
       rotations: [],
     }).pipe(takeUntil(this.destroy$)).subscribe({

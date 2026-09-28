@@ -7,6 +7,7 @@ import {
   CaptureConfigStatus,
   CaptureDay,
   FerrallaCaptureConfig,
+  HorarioDia,
   FerrallaContacto,
   FerrallaDireccion,
   GrupoMesas,
@@ -33,14 +34,14 @@ interface FichaDraft {
 export class FerrallasComponent implements OnInit, OnDestroy {
   private static readonly MESA_OFFLINE_AFTER_MS = 2 * 60 * 1000;
   private static readonly MESA_REFRESH_MS = 30 * 1000;
-  readonly captureDays: { value: CaptureDay; label: string }[] = [
-    { value: 'MON', label: 'L' },
-    { value: 'TUE', label: 'M' },
-    { value: 'WED', label: 'X' },
-    { value: 'THU', label: 'J' },
-    { value: 'FRI', label: 'V' },
-    { value: 'SAT', label: 'S' },
-    { value: 'SUN', label: 'D' },
+  readonly captureDays: { value: CaptureDay; label: string; largo: string }[] = [
+    { value: 'MON', label: 'L', largo: 'lunes' },
+    { value: 'TUE', label: 'M', largo: 'martes' },
+    { value: 'WED', label: 'X', largo: 'miércoles' },
+    { value: 'THU', label: 'J', largo: 'jueves' },
+    { value: 'FRI', label: 'V', largo: 'viernes' },
+    { value: 'SAT', label: 'S', largo: 'sábado' },
+    { value: 'SUN', label: 'D', largo: 'domingo' },
   ];
   readonly imageRotations = [0, 90, 180, 270] as const;
 
@@ -351,22 +352,36 @@ export class FerrallasComponent implements OnInit, OnDestroy {
     });
   }
 
+  horarioDe(day: CaptureDay): HorarioDia | undefined {
+    return this.captureConfig?.horario?.find(item => item.day === day);
+  }
+
   isCaptureDayActive(day: CaptureDay): boolean {
-    return !!this.captureConfig?.active_days.includes(day);
+    return !!this.horarioDe(day);
+  }
+
+  setHorario(day: CaptureDay, campo: 'start_time' | 'end_time', valor: string): void {
+    const item = this.horarioDe(day);
+    if (!item) return;
+    item[campo] = valor;
+    this.captureConfigMessage = '';
   }
 
   toggleCaptureDay(day: CaptureDay): void {
     if (!this.captureConfig || this.savingCaptureConfig) return;
-    const activeDays = new Set(this.captureConfig.active_days);
-    if (activeDays.has(day)) {
-      if (activeDays.size === 1) return;
-      activeDays.delete(day);
+    const horario = this.captureConfig.horario || [];
+    const existente = this.horarioDe(day);
+    if (existente) {
+      if (horario.length === 1) return;
+      this.captureConfig.horario = horario.filter(item => item.day !== day);
     } else {
-      activeDays.add(day);
+      // Un dia nuevo hereda la jornada del primero activo.
+      const referencia = horario[0] || { start_time: this.captureConfig.start_time, end_time: this.captureConfig.end_time };
+      const orden = this.captureDays.map(item => item.value);
+      this.captureConfig.horario = [...horario, { day, start_time: referencia.start_time, end_time: referencia.end_time }]
+        .sort((a, b) => orden.indexOf(a.day) - orden.indexOf(b.day));
     }
-    this.captureConfig.active_days = this.captureDays
-      .map(item => item.value)
-      .filter(value => activeDays.has(value));
+    this.captureConfig.active_days = this.captureConfig.horario.map(item => item.day);
     this.captureConfigMessage = '';
   }
 
@@ -377,9 +392,7 @@ export class FerrallasComponent implements OnInit, OnDestroy {
     this.captureConfigError = '';
     this.captureConfigMessage = '';
     const payload = {
-      active_days: [...this.captureConfig.active_days],
-      start_time: this.captureConfig.start_time,
-      end_time: this.captureConfig.end_time,
+      horario: (this.captureConfig.horario || []).map(item => ({ ...item })),
       interval_seconds: Number(this.captureConfig.interval_seconds),
       rotations: this.captureConfig.mesas.map(mesa => ({
         mesa_id: mesa.id,

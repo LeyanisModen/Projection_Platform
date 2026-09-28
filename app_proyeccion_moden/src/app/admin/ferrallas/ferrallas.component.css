@@ -117,6 +117,15 @@ select.form-control { padding-right: 28px; }
 .capture-no-mesas { color: var(--muted); font-size: 13px; }
 .capture-config-content { display: grid; grid-template-columns: minmax(360px, 1fr) minmax(300px, 0.8fr); gap: 20px; }
 .capture-schedule { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 12px; }
+/* Jornada por dia: una fila por dia de la semana. */
+.capture-days-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 4px 14px; width: 100%; }
+.capture-day-row { display: flex; align-items: center; gap: 6px; }
+.capture-day-row.is-off .form-control, .capture-day-row.is-off .capture-day-sep { opacity: 0.35; }
+.capture-day-row .form-control { width: 96px; }
+.capture-day-sep { color: var(--muted); font-size: 12px; }
+.capture-day-toggle { width: 28px; height: 28px; padding: 0; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--muted); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.capture-day-toggle:hover:not(:disabled) { color: var(--ink); background: var(--surface-2); }
+.capture-day-toggle.active { color: #fff; background: var(--ink); border-color: var(--ink); }
 .capture-days { display: inline-flex; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); overflow: hidden; }
 .capture-days button {
     min-width: 36px;

@@ -76,14 +76,18 @@
 .stats-header { flex-wrap: wrap; }
 .stats-schedule { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; color: var(--muted); font-size: 13px; }
 .stats-schedule-label { font-variant-numeric: tabular-nums; }
-.stats-schedule-form { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
-.day-chips { display: inline-flex; gap: 2px; }
+.stats-schedule-form { display: grid; gap: 8px; }
+.horario-dias { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 4px 14px; }
+.horario-dia { display: flex; align-items: center; gap: 6px; }
+.horario-dia.is-off input, .horario-dia.is-off .stats-schedule-sep { opacity: 0.35; }
+.horario-copiar { width: 26px; height: 26px; }
+.stats-schedule-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .day-chip { width: 28px; height: 28px; padding: 0; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--muted); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
 .day-chip:hover { color: var(--ink); background: var(--surface-2); }
 .day-chip.active { color: #fff; background: var(--ink); border-color: var(--ink); }
 .stats-schedule-form input[type="time"] { height: 30px; padding: 0 6px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); font: inherit; font-size: 13px; color: var(--ink); background: var(--surface); }
 .stats-schedule-sep { color: var(--muted); }
-.stats-schedule-error { width: 100%; color: var(--danger); font-size: 12px; }
+.stats-schedule-error { color: var(--danger); font-size: 12px; }
 .stats-period-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
 .stats-period-presets { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); }
 .period-chip { height: 30px; padding: 0 12px; border: 0; border-radius: 5px; background: transparent; color: var(--muted); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }

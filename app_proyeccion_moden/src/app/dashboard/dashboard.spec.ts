@@ -246,16 +246,23 @@ describe('Dashboard', () => {
   });
 
   describe('working schedule owned by the ferralla', () => {
+    const jornada = (days: string[], start = '06:50', end = '15:00') =>
+      days.map(day => ({day: day as any, start_time: start, end_time: end}));
     const config = (extra: Partial<FerrallaCaptureConfig> = {}): FerrallaCaptureConfig => ({
       user_id: 1, active_days: ['MON', 'TUE', 'WED', 'THU', 'FRI'], start_time: '06:50', end_time: '15:00',
+      horario: jornada(['MON', 'TUE', 'WED', 'THU', 'FRI']),
       interval_seconds: 20, check_times: [], capture_window: {start_time: '06:20', end_time: '15:30'}, mesas: [], ...extra,
     });
 
-    it('describes the schedule with the capture window the mini-PC will use', () => {
+    it('describes the week by runs of days sharing the same hours, without the camera window', () => {
       component.horario = config();
-      expect(component.horarioLabel()).toBe('Lun–Vie · 06:50–15:00 · cámara 06:20–15:30');
-      component.horario = config({active_days: ['MON', 'WED', 'FRI'], capture_window: undefined});
-      expect(component.horarioLabel()).toBe('Lun, Mié, Vie · 06:50–15:00');
+      expect(component.horarioLabel()).toBe('Lun–Vie 06:50–15:00');
+      component.horario = config({horario: [...jornada(['MON', 'TUE', 'WED', 'THU']), ...jornada(['FRI'], '06:50', '13:00')]});
+      expect(component.horarioLabel()).toBe('Lun–Jue 06:50–15:00 · Vie 06:50–13:00');
+      component.horario = config({horario: jornada(['MON', 'WED', 'FRI'])});
+      expect(component.horarioLabel()).toBe('Lun 06:50–15:00 · Mié 06:50–15:00 · Vie 06:50–15:00');
+      component.horario = config({horario: []});
+      expect(component.horarioLabel()).toBe('Sin días de trabajo');
     });
 
     it('saves days and hours for the ferralla and refreshes the statistics', () => {
@@ -266,24 +273,41 @@ describe('Dashboard', () => {
       } as GrupoMesas];
       component.horario = config();
       const update = vi.spyOn(api, 'updateFerrallaCaptureConfig')
-        .mockReturnValue(of(config({active_days: ['MON', 'TUE'], start_time: '07:00', end_time: '14:00'})));
+        .mockReturnValue(of(config({horario: [...jornada(['MON', 'TUE', 'WED', 'THU']), ...jornada(['FRI'], '06:50', '13:00')]})));
       vi.spyOn(component, 'loadStats').mockImplementation(() => undefined);
       vi.spyOn(component as any, 'silentRefreshProyectosAndStats').mockImplementation(() => undefined);
 
       component.editHorario();
-      component.toggleHorarioDay('WED');
-      component.toggleHorarioDay('THU');
-      component.toggleHorarioDay('FRI');
-      component.horarioDraft.start_time = '07:00';
-      component.horarioDraft.end_time = '14:00';
+      expect(component.horarioDraft.map(f => f.activo)).toEqual([true, true, true, true, true, false, false]);
+      // El viernes acaba antes; el sabado se activa y hereda la jornada de referencia.
+      component.horarioDraft[4].end_time = '13:00';
+      component.toggleHorarioDay('SAT');
+      component.horarioDraft[5].start_time = '08:00';
+      component.horarioDraft[5].end_time = '12:00';
       component.saveHorario();
 
       expect(update).toHaveBeenCalledWith(42, {
-        active_days: ['MON', 'TUE'], start_time: '07:00', end_time: '14:00', interval_seconds: 20, rotations: [],
+        horario: [
+          ...jornada(['MON', 'TUE', 'WED', 'THU']),
+          {day: 'FRI', start_time: '06:50', end_time: '13:00'},
+          {day: 'SAT', start_time: '08:00', end_time: '12:00'},
+        ],
+        interval_seconds: 20,
+        rotations: [],
       });
       expect(component.horarioEditing).toBe(false);
-      expect(component.horario?.start_time).toBe('07:00');
+      expect(component.horarioLabel()).toBe('Lun–Jue 06:50–15:00 · Vie 06:50–13:00');
       expect(component.loadStats).toHaveBeenCalled();
+    });
+
+    it('copies one day\'s hours to every other active day', () => {
+      component.horario = config();
+      component.editHorario();
+      component.horarioDraft[0].start_time = '07:30';
+      component.horarioDraft[0].end_time = '14:30';
+      component.copiarHorarioA('MON');
+      expect(component.horarioDraft.filter(f => f.activo).every(f => f.start_time === '07:30' && f.end_time === '14:30')).toBe(true);
+      expect(component.horarioDraft[5].start_time).toBe('06:50');
     });
 
     it('refuses an end hour before the start hour without calling the API', () => {
@@ -295,10 +319,11 @@ describe('Dashboard', () => {
       component.horario = config();
       const update = vi.spyOn(api, 'updateFerrallaCaptureConfig');
       component.editHorario();
-      component.horarioDraft.end_time = '06:00';
+      component.horarioDraft[4].end_time = '06:00';
+      expect(component.horarioDraftValido()).toBe(false);
       component.saveHorario();
       expect(update).not.toHaveBeenCalled();
-      expect(component.horarioError).toContain('posterior');
+      expect(component.horarioError).toBe('Vie: la hora de fin tiene que ser posterior a la de inicio.');
     });
   });
 
