@@ -372,20 +372,30 @@ export interface MesaCaptureConfig {
     status: CaptureConfigStatus;
 }
 
+/** Jornada de un dia de trabajo. */
+export interface HorarioDia {
+    day: CaptureDay;
+    start_time: string;
+    end_time: string;
+}
+
 export interface FerrallaCaptureConfig {
     user_id: number;
+    /** Derivados de `horario`: dias activos, inicio mas temprano y fin mas tardio. */
     active_days: CaptureDay[];
     start_time: string;
     end_time: string;
+    /** Jornada por dia, solo los dias de trabajo. */
+    horario: HorarioDia[];
     interval_seconds: number;
     check_times: string[];
+    /** Ventana real de captura del mini-PC: la jornada mas amplia con media hora de margen. */
+    capture_window?: { start_time: string; end_time: string };
     mesas: MesaCaptureConfig[];
 }
 
 export interface FerrallaCaptureConfigUpdate {
-    active_days: CaptureDay[];
-    start_time: string;
-    end_time: string;
+    horario: HorarioDia[];
     interval_seconds: number;
     rotations: { mesa_id: number; image_rotation: 0 | 90 | 180 | 270 }[];
 }
@@ -397,7 +407,7 @@ export interface GrupoMesasProyectoEntry {
     orden: number;
 }
 
-export type EstrategiaColaSuperior = 'PLANIFICADA' | 'ADAPTATIVA';
+export type EstrategiaColaSuperior = 'PLANIFICADA' | 'ADAPTATIVA' | 'MANUAL';
 
 export interface GrupoMesas {
     id: number;
@@ -406,6 +416,8 @@ export interface GrupoMesas {
     proyecto_actual: number | null;
     proyectos_cola: GrupoMesasProyectoEntry[];
     estrategia_cola_superior: EstrategiaColaSuperior;
+    /** Estrategia automatica a la que volver al salir del orden manual. */
+    estrategia_cola_superior_previa?: EstrategiaColaSuperior | '';
     activa: boolean;
     created_at: string;
     mesas: GrupoMesaResumen[];

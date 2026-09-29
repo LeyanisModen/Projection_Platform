@@ -8,7 +8,7 @@ import {
   ApiService,
   Proyecto, Modulo, Mesa, ModuloQueueItem, MesaQueueItem, Imagen, FotoFabricacion,
   EstrategiaColaSuperior, GrupoMesas, GrupoMesasProyectoEntry, ProductionStatsResponse, ModuloFase,
-  GrupoBastidor, GrupoBastidorModulo,
+  GrupoBastidor, GrupoBastidorModulo, CaptureDay, FerrallaCaptureConfig, HorarioDia, GrupoMesaResumen,
 } from '../services/api.service';
 import {
   ListaMaterialesService,
@@ -34,6 +34,15 @@ export interface PlanSeccion {
   hechos: number;
   /** Todos sus modulos fabricados: ya no va a pasar por la mesa. */
   terminado: boolean;
+}
+
+/** Una mesa superior del plan: su cola para este proyecto, en el orden en que se proyecta. */
+export interface PlanColumnaSuperior {
+  key: string;
+  mesa: GrupoMesaResumen;
+  grupo: GrupoMesas;
+  items: MesaQueueItem[];
+  manual: boolean;
 }
 
 /** Una mesa inferior del plan con los bastidores que tiene por delante. */
@@ -132,6 +141,23 @@ export class Dashboard implements OnInit, OnDestroy {
   // Blueprint Modal State
   showBlueprintModal = false;
   blueprintUrl: string | null = null;
+
+  /** Dos dashboards sobre el mismo componente: produccion (mesas y proyectos) o estadisticas. */
+  vista: 'produccion' | 'estadisticas' = 'produccion';
+
+  // Horario de trabajo de la ferralla (lo cambia ella; Moden lo usa para la captura).
+  horario: FerrallaCaptureConfig | null = null;
+  horarioEditing = false;
+  /** Una fila por dia de la semana; solo cuentan las activas. */
+  horarioDraft: Array<{ day: CaptureDay; activo: boolean; start_time: string; end_time: string }> = [];
+  savingHorario = false;
+  horarioError = '';
+  readonly captureDays: Array<{ code: CaptureDay; label: string; largo: string }> = [
+    { code: 'MON', label: 'L', largo: 'Lun' }, { code: 'TUE', label: 'M', largo: 'Mar' },
+    { code: 'WED', label: 'X', largo: 'Mié' }, { code: 'THU', label: 'J', largo: 'Jue' },
+    { code: 'FRI', label: 'V', largo: 'Vie' }, { code: 'SAT', label: 'S', largo: 'Sáb' },
+    { code: 'SUN', label: 'D', largo: 'Dom' },
+  ];
 
   // Project-plan Modal State
   showPlanModal = false;
@@ -357,6 +383,93 @@ export class Dashboard implements OnInit, OnDestroy {
       secciones, grupos: this.gruposMesas, showDone: this.planModalShowDone, value: columnas,
     };
     return columnas;
+  }
+
+  /** Mesas superiores activas con la cola de este proyecto. Como hasta ahora la
+   *  ordena el automatismo; si la ferralla mueve algo, el grupo pasa a manual. */
+  planModalSuperiores(): PlanColumnaSuperior[] {
+    const proyectoId = this.planModalProyecto?.id;
+    if (!proyectoId) return [];
+    const columnas: PlanColumnaSuperior[] = [];
+    for (const grupo of this.gruposMesas) {
+      const mesas = (grupo.mesas || [])
+        .filter(m => m.tipo === 'SUPERIOR' && m.activa)
+        .sort((a, b) => a.indice - b.indice);
+      for (const mesa of mesas) {
+        const items = (this.mesaQueueItems.get(mesa.id) || [])
+          .filter(item => item.fase === 'SUPERIOR' && item.status !== 'HECHO' && item.modulo_proyecto_id === proyectoId);
+        columnas.push({
+          key: `s${mesa.id}`, mesa, grupo, items, manual: grupo.estrategia_cola_superior === 'MANUAL',
+        });
+      }
+    }
+    return columnas;
+  }
+
+  canMoverSupItem(col: PlanColumnaSuperior, item: MesaQueueItem, dir: -1 | 1): boolean {
+    if (item.status === 'MOSTRANDO') return false;
+    const index = col.items.indexOf(item);
+    const target = index + dir;
+    if (index < 0 || target < 0 || target >= col.items.length) return false;
+    return col.items[target].status !== 'MOSTRANDO';
+  }
+
+  /** Mueve la fase superior de este proyecto delante o detras de su vecina en la mesa. */
+  moverSupItem(col: PlanColumnaSuperior, item: MesaQueueItem, dir: -1 | 1): void {
+    if (this.planModalBusy || !this.canMoverSupItem(col, item, dir)) return;
+    const vecino = col.items[col.items.indexOf(item) + dir];
+    // Las posiciones son de toda la mesa (puede haber otros proyectos en cola).
+    const todos = [...(this.mesaQueueItems.get(col.mesa.id) || [])].filter(i => i.status !== 'HECHO');
+    const desde = todos.findIndex(i => i.id === item.id);
+    const hasta = todos.findIndex(i => i.id === vecino.id);
+    if (desde < 0 || hasta < 0) return;
+    todos.splice(hasta, 0, todos.splice(desde, 1)[0]);
+    this.planModalBusy = true;
+    this.planModalError = '';
+    this.cdr.detectChanges();
+    this.api.reorderMesaQueue(todos.map((i, index) => ({ id: i.id, position: index })))
+      .pipe(takeUntil(this.destroy$)).subscribe({
+        next: () => {
+          this.planModalBusy = false;
+          this.loadMesaQueueItems(col.mesa.id);
+          this.loadGruposMesas();
+          this.cdr.detectChanges();
+        },
+        error: error => {
+          this.planModalError = error?.error?.detail || 'No se pudo cambiar el orden de la mesa superior.';
+          this.planModalBusy = false;
+          this.cdr.detectChanges();
+        },
+      });
+  }
+
+  /** Devuelve la mesa superior al orden automatico que tenia antes. */
+  volverSupAutomatico(col: PlanColumnaSuperior): void {
+    if (this.planModalBusy || !col.manual) return;
+    const previa = col.grupo.estrategia_cola_superior_previa;
+    const estrategia = previa === 'ADAPTATIVA' || previa === 'PLANIFICADA' ? previa : 'PLANIFICADA';
+    this.planModalBusy = true;
+    this.planModalError = '';
+    this.cdr.detectChanges();
+    this.api.updateGrupoMesas(col.grupo.id, { estrategia_cola_superior: estrategia })
+      .pipe(takeUntil(this.destroy$)).subscribe({
+        next: () => {
+          this.planModalBusy = false;
+          this.loadMesaQueueItems(col.mesa.id);
+          this.loadGruposMesas();
+          this.cdr.detectChanges();
+        },
+        error: error => {
+          this.planModalError = error?.error?.detail || 'No se pudo volver al orden automatico.';
+          this.planModalBusy = false;
+          this.cdr.detectChanges();
+        },
+      });
+  }
+
+  supModoLabel(col: PlanColumnaSuperior): string {
+    if (col.manual) return 'Orden manual';
+    return col.grupo.estrategia_cola_superior === 'ADAPTATIVA' ? 'Automático · adaptativo' : 'Automático · planificado';
   }
 
   togglePlanModalDone(): void {
@@ -1244,6 +1357,11 @@ export class Dashboard implements OnInit, OnDestroy {
 
   username: string = '';
 
+  irA(vista: 'produccion' | 'estadisticas'): void {
+    if (vista === this.vista) return;
+    this.router.navigate([vista === 'estadisticas' ? '/dashboard/estadisticas' : '/dashboard']);
+  }
+
   scrollToSection(sectionId: string): void {
     const section = document.getElementById(sectionId) as HTMLElement | null;
     if (!section) return;
@@ -1282,6 +1400,7 @@ export class Dashboard implements OnInit, OnDestroy {
     }
 
     this.username = this.api.getUsername() || 'Usuario';
+    this.vista = this.router.url.includes('/dashboard/estadisticas') ? 'estadisticas' : 'produccion';
 
     // Prevent back navigation
     history.pushState(null, '', location.href);
@@ -1547,6 +1666,7 @@ export class Dashboard implements OnInit, OnDestroy {
             this.selectedProyectoPorGrupo[grupo.id] = grupo.proyecto_actual;
           });
           this.loadingGruposMesas = false;
+          this.loadHorario();
           this.cdr.detectChanges();
         },
         error: (err) => {
@@ -1554,6 +1674,138 @@ export class Dashboard implements OnInit, OnDestroy {
           this.loadingGruposMesas = false;
         }
       });
+  }
+
+  // ---- Horario de trabajo ------------------------------------------------
+
+  private get horarioUserId(): number | null {
+    return this.gruposMesas[0]?.usuario ?? null;
+  }
+
+  loadHorario(): void {
+    const userId = this.horarioUserId;
+    if (!userId) return;
+    this.api.getFerrallaCaptureConfig(userId).pipe(takeUntil(this.destroy$)).subscribe({
+      next: config => { this.horario = config; this.cdr.detectChanges(); },
+      error: () => { /* sin horario no hay editor, las estadisticas siguen */ },
+    });
+  }
+
+  /** "Lun–Jue 06:50–15:00 · Vie 06:50–13:00": tramos de dias seguidos con la misma jornada. */
+  horarioLabel(): string {
+    const h = this.horario;
+    if (!h) return '';
+    const orden = this.captureDays.map(d => d.code);
+    const porDia = new Map(h.horario.map(item => [item.day, `${item.start_time}–${item.end_time}`]));
+    const largo = (code: CaptureDay) => this.captureDays.find(d => d.code === code)!.largo;
+    const tramos: Array<{ desde: number; hasta: number; horas: string }> = [];
+    orden.forEach((code, index) => {
+      const horas = porDia.get(code);
+      if (!horas) return;
+      const ultimo = tramos[tramos.length - 1];
+      if (ultimo && ultimo.hasta === index - 1 && ultimo.horas === horas) {
+        ultimo.hasta = index;
+      } else {
+        tramos.push({ desde: index, hasta: index, horas });
+      }
+    });
+    if (tramos.length === 0) return 'Sin días de trabajo';
+    return tramos.map(t => {
+      const dias = t.hasta === t.desde ? largo(orden[t.desde])
+        : t.hasta === t.desde + 1 ? `${largo(orden[t.desde])}, ${largo(orden[t.hasta])}`
+        : `${largo(orden[t.desde])}–${largo(orden[t.hasta])}`;
+      return `${dias} ${t.horas}`;
+    }).join(' · ');
+  }
+
+  editHorario(): void {
+    if (!this.horario) return;
+    const porDia = new Map(this.horario.horario.map(item => [item.day, item]));
+    const referencia = this.horario.horario[0] || { start_time: '07:00', end_time: '15:00' };
+    this.horarioDraft = this.captureDays.map(({ code }) => {
+      const dia = porDia.get(code);
+      return {
+        day: code,
+        activo: !!dia,
+        start_time: dia?.start_time ?? referencia.start_time,
+        end_time: dia?.end_time ?? referencia.end_time,
+      };
+    });
+    this.horarioError = '';
+    this.horarioEditing = true;
+    this.cdr.detectChanges();
+  }
+
+  cancelHorario(): void {
+    if (this.savingHorario) return;
+    this.horarioEditing = false;
+    this.cdr.detectChanges();
+  }
+
+  toggleHorarioDay(code: CaptureDay): void {
+    const fila = this.horarioDraft.find(f => f.day === code);
+    if (fila) fila.activo = !fila.activo;
+    this.cdr.detectChanges();
+  }
+
+  /** Copia la jornada de un dia a los demas dias activos. */
+  copiarHorarioA(code: CaptureDay): void {
+    const origen = this.horarioDraft.find(f => f.day === code);
+    if (!origen) return;
+    this.horarioDraft.forEach(f => {
+      if (f.activo && f.day !== code) {
+        f.start_time = origen.start_time;
+        f.end_time = origen.end_time;
+      }
+    });
+    this.cdr.detectChanges();
+  }
+
+  horarioDraftActivos(): HorarioDia[] {
+    return this.horarioDraft
+      .filter(f => f.activo)
+      .map(f => ({ day: f.day, start_time: f.start_time, end_time: f.end_time }));
+  }
+
+  horarioDraftValido(): boolean {
+    const activos = this.horarioDraftActivos();
+    return activos.length > 0 && activos.every(f => !!f.start_time && !!f.end_time && f.end_time > f.start_time);
+  }
+
+  saveHorario(): void {
+    const userId = this.horarioUserId;
+    if (!this.horario || !userId || this.savingHorario) return;
+    const activos = this.horarioDraftActivos();
+    if (activos.length === 0) return;
+    const malo = activos.find(f => !f.start_time || !f.end_time || f.end_time <= f.start_time);
+    if (malo) {
+      const largo = this.captureDays.find(d => d.code === malo.day)!.largo;
+      this.horarioError = `${largo}: la hora de fin tiene que ser posterior a la de inicio.`;
+      this.cdr.detectChanges();
+      return;
+    }
+    this.savingHorario = true;
+    this.horarioError = '';
+    this.api.updateFerrallaCaptureConfig(userId, {
+      horario: activos,
+      interval_seconds: this.horario.interval_seconds,
+      rotations: [],
+    }).pipe(takeUntil(this.destroy$)).subscribe({
+      next: config => {
+        this.horario = config;
+        this.horarioEditing = false;
+        this.savingHorario = false;
+        // Las estadisticas cuentan horas de jornada: recalcular con el horario nuevo.
+        this.loadStats();
+        this.silentRefreshProyectosAndStats();
+        this.cdr.detectChanges();
+      },
+      error: error => {
+        this.horarioError = error?.error?.detail || 'No se pudo guardar el horario.';
+        this.savingHorario = false;
+        this.cdr.detectChanges();
+      },
+    });
   }
 
   loadMesaQueueItems(mesaId: number): void {

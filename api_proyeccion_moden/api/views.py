@@ -35,7 +35,7 @@ from api.models import (
     FotoFabricacion, GrupoMesas, GrupoMesasProyecto,
     DetalleModuloFase, MesaQueueStatus, ModuloEstado, Fase,
     GrupoBastidor, MaterialPieza, MaterialInformado, MaterialOrigenCheck,
-    MaterialTipo, MesaTipo, UserProfile,
+    MaterialTipo, MesaTipo, UserProfile, EstrategiaColaSuperior,
 )
 from api.project_media import (
     collect_module_media,
@@ -207,10 +207,70 @@ def _capture_config_status(mesa):
     return 'pending'
 
 
+CAPTURE_WINDOW_MARGIN_MINUTES = 30
+
+
+def _capture_window(profile):
+    """Ventana de captura del mini-PC: la jornada mas amplia de la semana
+    (inicio mas temprano, fin mas tardio) con media hora de margen a cada
+    lado, sin cruzar la medianoche. El servicio del mini-PC solo entiende
+    una franja para todos los dias."""
+    from datetime import datetime, timedelta
+    base = datetime(2000, 1, 1)
+    margin = timedelta(minutes=CAPTURE_WINDOW_MARGIN_MINUTES)
+    horario = profile.horario_por_dia()
+    inicios = [tramo[0] for tramo in horario.values()] or [profile.capture_start_time]
+    fines = [tramo[1] for tramo in horario.values()] or [profile.capture_end_time]
+    start = datetime.combine(base.date(), min(inicios)) - margin
+    end = datetime.combine(base.date(), max(fines)) + margin
+    start = max(start, base)
+    end = min(end, base.replace(hour=23, minute=59))
+    return start.strftime('%H:%M'), end.strftime('%H:%M')
+
+
+def _horario_payload(profile):
+    horario = profile.horario_por_dia()
+    return [
+        {
+            'day': day,
+            'start_time': horario[day][0].strftime('%H:%M'),
+            'end_time': horario[day][1].strftime('%H:%M'),
+        }
+        for day in sorted(horario, key=lambda d: CAPTURE_DAY_ORDER.get(d, 99))
+    ]
+
+
+def _guardar_horario(profile, horario):
+    """Persist ``{'MON': (time, time), ...}`` and keep the legacy fields in step.
+
+    Returns True when something changed.
+    """
+    nuevo = {
+        day: [tramo[0].strftime('%H:%M'), tramo[1].strftime('%H:%M')]
+        for day, tramo in horario.items()
+    }
+    dias = sorted(nuevo, key=lambda d: CAPTURE_DAY_ORDER.get(d, 99))
+    inicio = min(tramo[0] for tramo in horario.values())
+    fin = max(tramo[1] for tramo in horario.values())
+    changed = any([
+        (profile.capture_horario or {}) != nuevo,
+        list(profile.capture_active_days or []) != dias,
+        profile.capture_start_time != inicio,
+        profile.capture_end_time != fin,
+    ])
+    if changed:
+        profile.capture_horario = nuevo
+        profile.capture_active_days = dias
+        profile.capture_start_time = inicio
+        profile.capture_end_time = fin
+    return changed
+
+
 def _ferralla_capture_config_payload(user, mesas=None):
     profile, _ = UserProfile.objects.get_or_create(user=user)
     if mesas is None:
         mesas = Mesa.objects.filter(usuario=user).order_by('nombre', 'id')
+    window_start, window_end = _capture_window(profile)
     return {
         'user_id': user.id,
         'active_days': sorted(
@@ -219,6 +279,8 @@ def _ferralla_capture_config_payload(user, mesas=None):
         ),
         'start_time': profile.capture_start_time.strftime('%H:%M'),
         'end_time': profile.capture_end_time.strftime('%H:%M'),
+        'horario': _horario_payload(profile),
+        'capture_window': {'start_time': window_start, 'end_time': window_end},
         'interval_seconds': profile.capture_interval_seconds,
         'check_times': ['06:00', '09:00', '12:00', '15:00'],
         'mesas': [
@@ -1150,6 +1212,7 @@ def _collect_replan_anchor_ids_for_grupo(grupo):
             fase='SUPERIOR',
         ).values_list('modulo_id', flat=True)
     )
+    orden_manual = grupo.estrategia_cola_superior == EstrategiaColaSuperior.MANUAL
     anchored = set()
     items = MesaQueueItem.objects.select_related('mesa').filter(
         mesa__grupo=grupo,
@@ -1158,6 +1221,10 @@ def _collect_replan_anchor_ids_for_grupo(grupo):
     )
     for item in items:
         if not item.mesa.activa or item.mesa.tipo != MesaTipo.SUPERIOR:
+            continue
+        if orden_manual:
+            # La ferralla ordeno la cola superior a mano: no se rehace.
+            anchored.add(item.id)
             continue
         if item.modulo_id in modulos_sup_en_proceso:
             anchored.add(item.id)
@@ -1222,7 +1289,8 @@ class UserViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get', 'put'], url_path='capture-config')
     def capture_config(self, request, pk=None):
-        if not _is_admin(request.user):
+        # La ferralla gestiona su propio horario; Moden puede tocar cualquiera.
+        if not _is_admin(request.user) and str(request.user.id) != str(pk):
             return Response({'detail': 'Forbidden'}, status=403)
 
         ferralla = self.get_object()
@@ -1232,10 +1300,18 @@ class UserViewSet(viewsets.ModelViewSet):
         serializer = FerrallaCaptureConfigSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
-        active_days = sorted(
-            data['active_days'],
-            key=lambda day: CAPTURE_DAY_ORDER[day],
-        )
+        # Jornada por dia (viernes mas corto, etc.). El formato antiguo, con
+        # una sola franja para todos los dias activos, se sigue aceptando.
+        if data.get('horario'):
+            horario = {
+                item['day']: (item['start_time'], item['end_time'])
+                for item in data['horario']
+            }
+        else:
+            horario = {
+                day: (data['start_time'], data['end_time'])
+                for day in data['active_days']
+            }
         rotations = {
             item['mesa_id']: int(item['image_rotation'])
             for item in data.get('rotations', [])
@@ -1259,18 +1335,13 @@ class UserViewSet(viewsets.ModelViewSet):
                     )
                 })
 
-            schedule_changed = any([
-                list(profile.capture_active_days or []) != active_days,
-                profile.capture_start_time != data['start_time'],
-                profile.capture_end_time != data['end_time'],
-                profile.capture_interval_seconds != data['interval_seconds'],
-            ])
+            horario_changed = _guardar_horario(profile, horario)
+            interval_changed = profile.capture_interval_seconds != data['interval_seconds']
+            schedule_changed = horario_changed or interval_changed
             if schedule_changed:
-                profile.capture_active_days = active_days
-                profile.capture_start_time = data['start_time']
-                profile.capture_end_time = data['end_time']
                 profile.capture_interval_seconds = data['interval_seconds']
                 profile.save(update_fields=[
+                    'capture_horario',
                     'capture_active_days',
                     'capture_start_time',
                     'capture_end_time',
@@ -4019,6 +4090,12 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         with transaction.atomic():
             group = serializer.save()
             if group.estrategia_cola_superior != previous_strategy:
+                if (
+                    group.estrategia_cola_superior == EstrategiaColaSuperior.MANUAL
+                    and previous_strategy != EstrategiaColaSuperior.MANUAL
+                ):
+                    group.estrategia_cola_superior_previa = previous_strategy
+                    group.save(update_fields=['estrategia_cola_superior_previa'])
                 reconcile_superior_queue_for_group(group)
 
     def perform_destroy(self, instance):
@@ -5177,18 +5254,21 @@ def _working_hours_in_range(start_date, end_date, profile, now=None):
 
     current_tz = timezone.get_current_timezone()
     now = now or timezone.localtime(timezone.now(), current_tz)
-    active_days = set(
-        getattr(profile, 'capture_active_days', None)
-        or ['MON', 'TUE', 'WED', 'THU', 'FRI']
-    )
-    start_time = getattr(profile, 'capture_start_time', None) or time(6, 50)
-    end_time = getattr(profile, 'capture_end_time', None) or time(15, 0)
+    if profile is not None and hasattr(profile, 'horario_por_dia'):
+        horario = profile.horario_por_dia()
+    else:
+        horario = {
+            day: (time(6, 50), time(15, 0))
+            for day in ['MON', 'TUE', 'WED', 'THU', 'FRI']
+        }
     day_codes = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']
 
     seconds = 0.0
     current = start_date
     while current <= end_date:
-        if day_codes[current.weekday()] in active_days:
+        tramo = horario.get(day_codes[current.weekday()])
+        if tramo:
+            start_time, end_time = tramo
             day_start = timezone.make_aware(
                 timezone.datetime.combine(current, start_time), current_tz
             )
@@ -6002,14 +6082,17 @@ class DeviceViewSet(viewsets.ViewSet):
             profile.capture_active_days or [],
             key=lambda day: CAPTURE_DAY_ORDER.get(day, 99),
         )
+        # El mini-PC captura desde media hora antes de la jornada hasta media
+        # hora despues; la jornada en si la fija la ferralla.
+        window_start, window_end = _capture_window(profile)
         return Response({
             'revision': mesa.capture_config_revision,
             'mesa_id': mesa.id,
             'mesa_name': mesa.nombre,
             'schedule': {
                 'active_days': active_days,
-                'start_time': profile.capture_start_time.strftime('%H:%M'),
-                'end_time': profile.capture_end_time.strftime('%H:%M'),
+                'start_time': window_start,
+                'end_time': window_end,
                 'interval_seconds': profile.capture_interval_seconds,
             },
             'camera': {
@@ -6720,22 +6803,35 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['post'])
     def reorder(self, request):
-        """Reorder items in the mesa queue. Expects: {items: [{id: X, position: Y}, ...]}"""
-        if not _is_admin(request.user):
-            return Response(
-                {'detail': 'Solo admin puede reordenar modulos en las mesas.'},
-                status=status.HTTP_403_FORBIDDEN,
-            )
+        """Reorder items in the mesa queue. Expects: {items: [{id: X, position: Y}, ...]}
+
+        La ferralla puede ordenar sus mesas. Si toca una mesa superior, su
+        grupo pasa a orden manual: el automatismo deja de reordenar y solo
+        anade al final lo que falte, hasta que vuelvan al modo automatico.
+        """
         items_data = request.data.get('items', [])
-        for item_data in items_data:
-            try:
-                item = MesaQueueItem.objects.get(id=item_data['id'])
+        mesas_tocadas = {}
+        with transaction.atomic():
+            for item_data in items_data:
+                try:
+                    item = MesaQueueItem.objects.select_related('mesa__grupo').get(id=item_data['id'])
+                except (MesaQueueItem.DoesNotExist, KeyError, TypeError):
+                    continue
                 if not _is_admin(request.user) and item.mesa.usuario_id != request.user.id:
                     continue
-                item.position = item_data['position']
+                item.position = item_data.get('position', item.position)
                 item.save(update_fields=['position'])
-            except MesaQueueItem.DoesNotExist:
-                pass
+                mesas_tocadas[item.mesa_id] = item.mesa
+            for mesa in mesas_tocadas.values():
+                grupo = mesa.grupo
+                if (
+                    mesa.tipo == MesaTipo.SUPERIOR
+                    and grupo is not None
+                    and grupo.estrategia_cola_superior != EstrategiaColaSuperior.MANUAL
+                ):
+                    grupo.estrategia_cola_superior_previa = grupo.estrategia_cola_superior
+                    grupo.estrategia_cola_superior = EstrategiaColaSuperior.MANUAL
+                    grupo.save(update_fields=['estrategia_cola_superior', 'estrategia_cola_superior_previa'])
         return Response({'status': 'ok'})
 
 

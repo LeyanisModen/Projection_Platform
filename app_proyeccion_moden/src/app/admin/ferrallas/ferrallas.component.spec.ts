@@ -28,7 +28,7 @@ function setup(queryParams: Record<string, string> = {}) {
 function flushFerrallaDetail(http: HttpTestingController, id: number) {
     http.expectOne(`/api/grupos-mesas/?usuario=${id}`).flush({results: [], next: null, count: 0});
     http.expectOne(`/api/users/${id}/capture-config/`).flush({
-        user_id: id, active_days: [], start_time: '07:00', end_time: '19:00',
+        user_id: id, active_days: [], start_time: '07:00', end_time: '19:00', horario: [],
         interval_seconds: 600, check_times: [], mesas: [],
     });
 }

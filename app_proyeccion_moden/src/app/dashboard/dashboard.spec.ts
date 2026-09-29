@@ -2,7 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { Dashboard } from './dashboard';
 import {
-  ApiService, GrupoBastidor, GrupoBastidorModulo, GrupoMesas, Mesa, Modulo, Proyecto,
+  ApiService, FerrallaCaptureConfig, GrupoBastidor, GrupoBastidorModulo, GrupoMesas, Mesa, MesaQueueItem, Modulo, Proyecto,
   ProductionStatsBucket, ProductionStatsResponse,
 } from '../services/api.service';
 import { of, Subject, throwError } from 'rxjs';
@@ -37,6 +37,8 @@ describe('Dashboard', () => {
       fixture.nativeElement.querySelector(selector)?.textContent.replace(/\s+/g, ' ').trim() || '';
 
     beforeEach(() => {
+      // Las estadisticas viven en su propia vista del dashboard.
+      component.vista = 'estadisticas';
       stats = {
         range: {from: '2026-09-01', to: '2026-09-14', working_days: 10},
         totals: {
@@ -245,6 +247,128 @@ describe('Dashboard', () => {
     expect(component.proyectosBloqueados(null).map(p => p.nombre)).toEqual(['Bloqueado']);
   });
 
+  describe('two dashboards on one component', () => {
+    it('shows only the statistics on the statistics view and only the mesas and projects on production', () => {
+      component.loadingGruposMesas = false;
+      component.loadingMesas = false;
+      component.vista = 'estadisticas';
+      fixture.changeDetectorRef.markForCheck();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.stats-section')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('.planner-section')).toBeNull();
+      expect(fixture.nativeElement.querySelector('.projects-section')).toBeNull();
+      expect(fixture.nativeElement.querySelector('.nav-link.active')?.textContent?.trim()).toBe('Estadísticas');
+
+      component.vista = 'produccion';
+      fixture.changeDetectorRef.markForCheck();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.stats-section')).toBeNull();
+      expect(fixture.nativeElement.querySelector('.planner-section')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('.projects-section')).not.toBeNull();
+    });
+  });
+
+  describe('working schedule owned by the ferralla', () => {
+    const jornada = (days: string[], start = '06:50', end = '15:00') =>
+      days.map(day => ({day: day as any, start_time: start, end_time: end}));
+    const config = (extra: Partial<FerrallaCaptureConfig> = {}): FerrallaCaptureConfig => ({
+      user_id: 1, active_days: ['MON', 'TUE', 'WED', 'THU', 'FRI'], start_time: '06:50', end_time: '15:00',
+      horario: jornada(['MON', 'TUE', 'WED', 'THU', 'FRI']),
+      interval_seconds: 20, check_times: [], capture_window: {start_time: '06:20', end_time: '15:30'}, mesas: [], ...extra,
+    });
+
+    it('describes the week by runs of days sharing the same hours, without the camera window', () => {
+      component.horario = config();
+      expect(component.horarioLabel()).toBe('Lun–Vie 06:50–15:00');
+      component.horario = config({horario: [...jornada(['MON', 'TUE', 'WED', 'THU']), ...jornada(['FRI'], '06:50', '13:00')]});
+      expect(component.horarioLabel()).toBe('Lun–Jue 06:50–15:00 · Vie 06:50–13:00');
+      component.horario = config({horario: jornada(['MON', 'WED', 'FRI'])});
+      expect(component.horarioLabel()).toBe('Lun 06:50–15:00 · Mié 06:50–15:00 · Vie 06:50–15:00');
+      component.horario = config({horario: []});
+      expect(component.horarioLabel()).toBe('Sin días de trabajo');
+    });
+
+    it('saves days and hours for the ferralla and refreshes the statistics', () => {
+      const api = TestBed.inject(ApiService);
+      component.gruposMesas = [{
+        id: 1, nombre: 'Grupo', usuario: 42, proyecto_actual: null, proyectos_cola: [], estrategia_cola_superior: 'PLANIFICADA',
+        activa: true, created_at: '', mesas: [],
+      } as GrupoMesas];
+      component.horario = config();
+      const update = vi.spyOn(api, 'updateFerrallaCaptureConfig')
+        .mockReturnValue(of(config({horario: [...jornada(['MON', 'TUE', 'WED', 'THU']), ...jornada(['FRI'], '06:50', '13:00')]})));
+      vi.spyOn(component, 'loadStats').mockImplementation(() => undefined);
+      vi.spyOn(component as any, 'silentRefreshProyectosAndStats').mockImplementation(() => undefined);
+
+      component.editHorario();
+      expect(component.horarioDraft.map(f => f.activo)).toEqual([true, true, true, true, true, false, false]);
+      // El viernes acaba antes; el sabado se activa y hereda la jornada de referencia.
+      component.horarioDraft[4].end_time = '13:00';
+      component.toggleHorarioDay('SAT');
+      component.horarioDraft[5].start_time = '08:00';
+      component.horarioDraft[5].end_time = '12:00';
+      component.saveHorario();
+
+      expect(update).toHaveBeenCalledWith(42, {
+        horario: [
+          ...jornada(['MON', 'TUE', 'WED', 'THU']),
+          {day: 'FRI', start_time: '06:50', end_time: '13:00'},
+          {day: 'SAT', start_time: '08:00', end_time: '12:00'},
+        ],
+        interval_seconds: 20,
+        rotations: [],
+      });
+      expect(component.horarioEditing).toBe(false);
+      expect(component.horarioLabel()).toBe('Lun–Jue 06:50–15:00 · Vie 06:50–13:00');
+      expect(component.loadStats).toHaveBeenCalled();
+    });
+
+    it('edits the schedule in a modal instead of inline', () => {
+      component.loadingGruposMesas = false;
+      component.loadingMesas = false;
+      component.vista = 'estadisticas';
+      component.horario = config();
+      fixture.changeDetectorRef.markForCheck();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.horario-modal')).toBeNull();
+      component.editHorario();
+      fixture.detectChanges();
+      const modal: HTMLElement = fixture.nativeElement.querySelector('.horario-modal');
+      expect(modal).not.toBeNull();
+      expect(modal.querySelectorAll('.horario-dia').length).toBe(7);
+      expect(fixture.nativeElement.querySelector('.stats-header .stats-schedule-form')).toBeNull();
+      component.cancelHorario();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.horario-modal')).toBeNull();
+    });
+
+    it('copies one day\'s hours to every other active day', () => {
+      component.horario = config();
+      component.editHorario();
+      component.horarioDraft[0].start_time = '07:30';
+      component.horarioDraft[0].end_time = '14:30';
+      component.copiarHorarioA('MON');
+      expect(component.horarioDraft.filter(f => f.activo).every(f => f.start_time === '07:30' && f.end_time === '14:30')).toBe(true);
+      expect(component.horarioDraft[5].start_time).toBe('06:50');
+    });
+
+    it('refuses an end hour before the start hour without calling the API', () => {
+      const api = TestBed.inject(ApiService);
+      component.gruposMesas = [{
+        id: 1, nombre: 'Grupo', usuario: 42, proyecto_actual: null, proyectos_cola: [], estrategia_cola_superior: 'PLANIFICADA',
+        activa: true, created_at: '', mesas: [],
+      } as GrupoMesas];
+      component.horario = config();
+      const update = vi.spyOn(api, 'updateFerrallaCaptureConfig');
+      component.editHorario();
+      component.horarioDraft[4].end_time = '06:00';
+      expect(component.horarioDraftValido()).toBe(false);
+      component.saveHorario();
+      expect(update).not.toHaveBeenCalled();
+      expect(component.horarioError).toBe('Vie: la hora de fin tiene que ser posterior a la de inicio.');
+    });
+  });
+
   describe('project modal bastidores', () => {
     const grupo = (
       id: number, indice: number, extra: Partial<GrupoBastidor>, modulos: Array<Partial<GrupoBastidorModulo>>,
@@ -343,7 +467,7 @@ describe('Dashboard', () => {
       ];
       fixture.changeDetectorRef.markForCheck();
       fixture.detectChanges();
-      const columnas: NodeListOf<HTMLElement> = fixture.nativeElement.querySelectorAll('.plan-mesa');
+      const columnas: NodeListOf<HTMLElement> = fixture.nativeElement.querySelectorAll('.plan-mesa:not(.plan-mesa-sup)');
       expect(Array.from(columnas).map(c => c.querySelector('.plan-mesa-header strong')?.textContent)).toEqual(['Mesa 1', 'Mesa 2']);
       const titulos = (c: HTMLElement) => Array.from(c.querySelectorAll('.plan-grupo-title strong')).map(e => e.textContent);
       // Sin mesa conocida cae en la primera; los sueltos tambien.
@@ -360,6 +484,63 @@ describe('Dashboard', () => {
       const llevar = vi.spyOn(api, 'llevarBastidorAMesa').mockReturnValue(throwError(() => ({error: {detail: 'x'}})));
       component.moverBastidorAMesa(g1, 1);
       expect(llevar).toHaveBeenCalledWith(10, 2);
+    });
+
+    it('lists the superior mesa queue of the project and reorders it by hand', () => {
+      const api = TestBed.inject(ApiService);
+      component.gruposMesas = [{
+        id: 1, nombre: 'Grupo mesas', usuario: 1, proyecto_actual: 7, proyectos_cola: [], estrategia_cola_superior: 'ADAPTATIVA',
+        activa: true, created_at: '',
+        mesas: [
+          {id: 1, nombre: 'Mesa 1', tipo: 'INFERIOR', indice: 1, activa: true, is_linked: false},
+          {id: 3, nombre: 'Mesa 3', tipo: 'SUPERIOR', indice: 3, activa: true, is_linked: false},
+        ],
+      } as GrupoMesas];
+      const sup = (id: number, nombre: string, position: number, status: 'MOSTRANDO' | 'EN_COLA', proyecto = 7) => ({
+        id, mesa: 3, modulo: id, modulo_nombre: nombre, modulo_proyecto_id: proyecto, fase: 'SUPERIOR', position, status,
+        current_image_index: 2, imagenes_total: 16, grupo_bastidor_indice: 1,
+      } as unknown as MesaQueueItem);
+      component.mesaQueueItems.set(3, [sup(31, 'A1', 0, 'MOSTRANDO'), sup(32, 'A2', 1, 'EN_COLA'), sup(99, 'Z1', 2, 'EN_COLA', 8), sup(33, 'A3', 3, 'EN_COLA')]);
+      fixture.changeDetectorRef.markForCheck();
+      fixture.detectChanges();
+
+      const columna: HTMLElement = fixture.nativeElement.querySelector('.plan-mesa-sup');
+      expect(columna).not.toBeNull();
+      expect(Array.from(columna.querySelectorAll('.plan-modulo-nombre')).map(e => e.textContent?.trim())).toEqual(['A1', 'A2', 'A3']);
+      expect(columna.querySelector('.plan-sup-modo')?.textContent).toBe('Automático · adaptativo');
+      expect(columna.querySelector('[aria-label="Volver al orden automático en Mesa 3"]')).toBeNull();
+
+      const [col] = component.planModalSuperiores();
+      expect(component.canMoverSupItem(col, col.items[0], 1)).toBe(false);
+      expect(component.canMoverSupItem(col, col.items[1], -1)).toBe(false);
+      expect(component.canMoverSupItem(col, col.items[2], -1)).toBe(true);
+
+      const reorder = vi.spyOn(api, 'reorderMesaQueue').mockReturnValue(of({status: 'ok'}));
+      vi.spyOn(component, 'loadMesaQueueItems').mockImplementation(() => undefined);
+      vi.spyOn(component, 'loadGruposMesas').mockImplementation(() => undefined);
+      component.moverSupItem(col, col.items[2], -1);
+      // A3 pasa delante de A2; el modulo del otro proyecto conserva su sitio relativo.
+      expect(reorder).toHaveBeenCalledWith([
+        {id: 31, position: 0}, {id: 33, position: 1}, {id: 32, position: 2}, {id: 99, position: 3},
+      ]);
+    });
+
+    it('offers the way back to the automatic order when the superior mesa is manual', () => {
+      const api = TestBed.inject(ApiService);
+      component.gruposMesas = [{
+        id: 1, nombre: 'Grupo mesas', usuario: 1, proyecto_actual: 7, proyectos_cola: [], estrategia_cola_superior: 'MANUAL',
+        estrategia_cola_superior_previa: 'ADAPTATIVA', activa: true, created_at: '',
+        mesas: [{id: 3, nombre: 'Mesa 3', tipo: 'SUPERIOR', indice: 3, activa: true, is_linked: false}],
+      } as GrupoMesas];
+      fixture.changeDetectorRef.markForCheck();
+      fixture.detectChanges();
+      const columna: HTMLElement = fixture.nativeElement.querySelector('.plan-mesa-sup');
+      expect(columna.querySelector('.plan-sup-modo')?.textContent).toBe('Orden manual');
+      const update = vi.spyOn(api, 'updateGrupoMesas').mockReturnValue(of({} as GrupoMesas));
+      vi.spyOn(component, 'loadMesaQueueItems').mockImplementation(() => undefined);
+      vi.spyOn(component, 'loadGruposMesas').mockImplementation(() => undefined);
+      component.volverSupAutomatico(component.planModalSuperiores()[0]);
+      expect(update).toHaveBeenCalledWith(1, {estrategia_cola_superior: 'ADAPTATIVA'});
     });
 
     it('stacks finished bastidores at the top of their mesa, folded until asked', () => {

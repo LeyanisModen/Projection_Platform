@@ -303,27 +303,26 @@
 
                         <div class="capture-config-content" *ngIf="captureConfig as config">
                             <div class="capture-schedule">
-                                <div class="capture-days" role="group" aria-label="Dias de captura">
-                                    <button type="button" *ngFor="let day of captureDays"
-                                        [class.active]="isCaptureDayActive(day.value)"
-                                        [disabled]="savingCaptureConfig"
-                                        (click)="toggleCaptureDay(day.value)"
-                                        [attr.aria-pressed]="isCaptureDayActive(day.value)">
-                                        {{ day.label }}
-                                    </button>
+                                <div class="capture-days-grid" role="group" aria-label="Jornada por dia">
+                                    <div class="capture-day-row" *ngFor="let day of captureDays"
+                                        [class.is-off]="!isCaptureDayActive(day.value)">
+                                        <button type="button" class="capture-day-toggle"
+                                            [class.active]="isCaptureDayActive(day.value)"
+                                            [disabled]="savingCaptureConfig"
+                                            (click)="toggleCaptureDay(day.value)"
+                                            [attr.aria-pressed]="isCaptureDayActive(day.value)"
+                                            [attr.aria-label]="'Trabajar el ' + day.largo">{{ day.label }}</button>
+                                        <input type="time" class="form-control" [attr.aria-label]="'Inicio ' + day.largo"
+                                            [ngModel]="horarioDe(day.value)?.start_time"
+                                            (ngModelChange)="setHorario(day.value, 'start_time', $event)"
+                                            [disabled]="savingCaptureConfig || !isCaptureDayActive(day.value)">
+                                        <span class="capture-day-sep">a</span>
+                                        <input type="time" class="form-control" [attr.aria-label]="'Fin ' + day.largo"
+                                            [ngModel]="horarioDe(day.value)?.end_time"
+                                            (ngModelChange)="setHorario(day.value, 'end_time', $event)"
+                                            [disabled]="savingCaptureConfig || !isCaptureDayActive(day.value)">
+                                    </div>
                                 </div>
-                                <label class="capture-field">
-                                    <span>Desde</span>
-                                    <input type="time" class="form-control" [(ngModel)]="config.start_time"
-                                        (ngModelChange)="captureConfigMessage = ''"
-                                        [disabled]="savingCaptureConfig">
-                                </label>
-                                <label class="capture-field">
-                                    <span>Hasta</span>
-                                    <input type="time" class="form-control" [(ngModel)]="config.end_time"
-                                        (ngModelChange)="captureConfigMessage = ''"
-                                        [disabled]="savingCaptureConfig">
-                                </label>
                                 <label class="capture-field capture-interval">
                                     <span>Cada</span>
                                     <div class="capture-interval-input">

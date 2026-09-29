@@ -711,9 +711,9 @@ class GrupoMesasSerializer(serializers.ModelSerializer):
             "id", "nombre", "usuario",
             "proyecto_actual", "proyectos_cola",
             "estrategia_cola_superior",
-            "activa", "created_at", "mesas",
+            "activa", "created_at", "mesas", "estrategia_cola_superior_previa",
         ]
-        read_only_fields = ["created_at", "mesas", "proyectos_cola"]
+        read_only_fields = ["created_at", "mesas", "proyectos_cola", "estrategia_cola_superior_previa"]
         extra_kwargs = {
             "usuario": {"required": False},
             "proyecto_actual": {"required": False, "allow_null": True},
@@ -903,21 +903,55 @@ class MesaCaptureRotationSerializer(serializers.Serializer):
     image_rotation = serializers.ChoiceField(choices=[0, 90, 180, 270])
 
 
+class HorarioDiaSerializer(serializers.Serializer):
+    day = serializers.ChoiceField(choices=CAPTURE_DAY_CHOICES)
+    start_time = serializers.TimeField(input_formats=['%H:%M', '%H:%M:%S'], format='%H:%M')
+    end_time = serializers.TimeField(input_formats=['%H:%M', '%H:%M:%S'], format='%H:%M')
+
+    def validate(self, attrs):
+        if attrs['end_time'] <= attrs['start_time']:
+            raise serializers.ValidationError('La hora de fin tiene que ser posterior a la de inicio.')
+        return attrs
+
+
 class FerrallaCaptureConfigSerializer(serializers.Serializer):
+    """Jornada de la ferralla. ``horario`` (por dia) es la forma nueva; el
+    trio ``active_days``/``start_time``/``end_time`` se acepta por
+    compatibilidad y significa la misma franja todos los dias."""
+    horario = HorarioDiaSerializer(many=True, required=False)
     active_days = serializers.ListField(
         child=serializers.ChoiceField(choices=CAPTURE_DAY_CHOICES),
         allow_empty=False,
+        required=False,
     )
     start_time = serializers.TimeField(
         input_formats=['%H:%M', '%H:%M:%S'],
         format='%H:%M',
+        required=False,
     )
     end_time = serializers.TimeField(
         input_formats=['%H:%M', '%H:%M:%S'],
         format='%H:%M',
+        required=False,
     )
     interval_seconds = serializers.IntegerField(min_value=10, max_value=3600)
     rotations = MesaCaptureRotationSerializer(many=True, required=False)
+
+    def validate(self, attrs):
+        horario = attrs.get('horario')
+        if horario:
+            dias = [item['day'] for item in horario]
+            if len(dias) != len(set(dias)):
+                raise serializers.ValidationError({'horario': 'Hay dias repetidos.'})
+            return attrs
+        faltan = [campo for campo in ('active_days', 'start_time', 'end_time') if campo not in attrs]
+        if faltan:
+            raise serializers.ValidationError({
+                'horario': 'Envia horario por dia o active_days, start_time y end_time.',
+            })
+        if attrs['end_time'] <= attrs['start_time']:
+            raise serializers.ValidationError({'end_time': 'La hora de fin tiene que ser posterior a la de inicio.'})
+        return attrs
 
     def validate_active_days(self, value):
         if len(value) != len(set(value)):
@@ -929,13 +963,6 @@ class FerrallaCaptureConfigSerializer(serializers.Serializer):
         if len(mesa_ids) != len(set(mesa_ids)):
             raise serializers.ValidationError('No se puede repetir una mesa.')
         return value
-
-    def validate(self, attrs):
-        if attrs['start_time'] >= attrs['end_time']:
-            raise serializers.ValidationError(
-                {'end_time': 'La hora final debe ser posterior a la inicial.'}
-            )
-        return attrs
 
 
 class DeviceCaptureConfigAckSerializer(serializers.Serializer):

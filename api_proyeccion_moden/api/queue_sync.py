@@ -903,6 +903,15 @@ def reconcile_superior_queue_for_group(group):
             inferior_items,
             superior_items,
         )
+        if group.estrategia_cola_superior == EstrategiaColaSuperior.MANUAL:
+            # Orden manual de la ferralla: se respeta tal cual. Lo que falte
+            # ya ha entrado al final; solo se normalizan posiciones y el
+            # item mostrado de cada mesa superior.
+            for mesa_id in sorted({item.mesa_id for item in superior_items}):
+                mesa = next(item.mesa for item in superior_items if item.mesa_id == mesa_id)
+                ordered, current = _ordered_active_items(mesa)
+                _persist_active_order(mesa, ordered, current)
+            return superior_items
         if not superior_items or (not inferior_items and not adaptive):
             return superior_items
 
