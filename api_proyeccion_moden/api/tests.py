@@ -1355,6 +1355,46 @@ class PlanningFoundationTests(APITestCase):
         self.project = Proyecto.objects.create(nombre="Proyecto Plan", usuario=self.user)
         self.modulo = Modulo.objects.create(nombre="M-01", proyecto=self.project)
 
+    def test_estadisticas_dan_el_tiempo_por_panel_medido_o_aproximado(self):
+        from api.models import EventoFabricacion
+        UserProfile.objects.create(
+            user=self.user,
+            capture_active_days=["MON", "TUE", "WED", "THU", "FRI"],
+            capture_start_time=time(6, 0),
+            capture_end_time=time(14, 0),
+        )
+        mesa = Mesa.objects.create(nombre="Mesa 1", usuario=self.user, tipo="INFERIOR", indice=1)
+        aware = lambda *args: timezone.make_aware(datetime(*args))  # noqa: E731
+        modulos = [Modulo.objects.create(nombre=f"T{n}", proyecto=self.project) for n in range(1, 4)]
+
+        def hecho(modulo, done_at):
+            return MesaQueueItem.objects.create(
+                modulo=modulo, mesa=mesa, fase="INFERIOR", status=MesaQueueStatus.HECHO, done_at=done_at,
+            )
+
+        # Lunes 28/09/2026: sin registro, se aproxima desde el inicio de jornada (06:00) o el panel anterior.
+        hecho(modulos[0], aware(2026, 9, 28, 7, 0))    # 60 min
+        hecho(modulos[1], aware(2026, 9, 28, 9, 0))    # 120 min
+        medido = hecho(modulos[2], aware(2026, 9, 28, 14, 30))
+        for tipo, paso, at in (
+            ("INICIO", 0, aware(2026, 9, 28, 10, 0)),
+            ("PASO", 3, aware(2026, 9, 28, 10, 10)),
+            ("PAUSA", None, aware(2026, 9, 28, 10, 20)),
+            ("INICIO", 3, aware(2026, 9, 28, 13, 50)),
+            ("FIN", None, aware(2026, 9, 28, 14, 30)),   # la jornada acaba a las 14:00 -> 10 min
+        ):
+            EventoFabricacion.objects.create(item=medido, mesa=mesa, modulo=modulos[2], fase="INFERIOR", tipo=tipo, paso=paso, at=at)
+
+        response = self.client.get("/api/stats/production/?from=2026-09-28&to=2026-09-28")
+        self.assertEqual(response.status_code, 200)
+        tiempos = response.data["tiempos"]
+        self.assertEqual(tiempos["inferior"], {"mediana_min": 60.0, "media_min": 70.0, "paneles": 3, "medidos": 1})
+        self.assertEqual(tiempos["superior"], {"mediana_min": None, "media_min": None, "paneles": 0, "medidos": 0})
+        fila = next(m for m in response.data["por_mesa"] if m["mesa_id"] == mesa.id)
+        self.assertEqual(fila["tiempo_mediana_min"], 60.0)
+        self.assertEqual(fila["tiempo_paneles"], 3)
+        self.assertEqual(fila["tiempo_medidos"], 1)
+
     def test_estadisticas_calculan_ritmo_sobre_horas_transcurridas(self):
         profile = UserProfile.objects.create(
             user=self.user,
@@ -5616,6 +5656,44 @@ class BastidorSelfServiceTests(APITestCase):
         self.assertEqual(back.status_code, 200, back.data)
         self.assertEqual(back.data["estrategia_cola_superior"], "PLANIFICADA")
         self.assertNotEqual(self._cola_sup(), manual)
+
+    def test_la_mesa_registra_inicio_pasos_pausa_y_fin_de_cada_fase(self):
+        from api.models import EventoFabricacion
+        self._planificar()
+        mostrando = self.mesa_1.queue_items.get(status=MesaQueueStatus.MOSTRANDO)
+        # El plan no abre tramo: lo abre el primer cambio de imagen.
+        self.assertEqual(EventoFabricacion.objects.filter(item=mostrando).count(), 0)
+        for index in (1, 2, 2, 3):
+            response = self.client.post(f"/api/mesas/{self.mesa_1.id}/set_index/", {"index": index}, format="json")
+            self.assertEqual(response.status_code, 200)
+        tipos = list(EventoFabricacion.objects.filter(item=mostrando).values_list("tipo", "paso"))
+        self.assertEqual(tipos, [("INICIO", 1), ("PASO", 2), ("PASO", 3)])
+
+        # Mostrar otro a mano aparta el actual (PAUSA) y abre el nuevo (INICIO).
+        siguiente = self.mesa_1.queue_items.filter(status=MesaQueueStatus.EN_COLA).order_by("position").first()
+        response = self.client.post(f"/api/mesa-queue-items/{siguiente.id}/mostrar/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            list(EventoFabricacion.objects.filter(item=mostrando).values_list("tipo", flat=True))[-1], "PAUSA",
+        )
+        self.assertEqual(
+            list(EventoFabricacion.objects.filter(item=siguiente).values_list("tipo", "paso")), [("INICIO", 0)],
+        )
+        # Volver al primero reanuda por su imagen y abre otro tramo ahi.
+        response = self.client.post(f"/api/mesa-queue-items/{mostrando.id}/mostrar/")
+        self.assertEqual(response.status_code, 200)
+        self.mesa_1.refresh_from_db()
+        self.assertEqual(self.mesa_1.current_image_index, 3)
+        self.assertEqual(
+            list(EventoFabricacion.objects.filter(item=mostrando).values_list("tipo", "paso"))[-1], ("INICIO", 3),
+        )
+        # Marcar hecho cierra con FIN y el siguiente arranca con INICIO.
+        response = self.client.post(f"/api/mesa-queue-items/{mostrando.id}/marcar_hecho/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            list(EventoFabricacion.objects.filter(item=mostrando).values_list("tipo", flat=True))[-1], "FIN",
+        )
+        self.assertEqual(EventoFabricacion.objects.filter(item=siguiente, tipo="INICIO").count(), 2)
 
     def test_la_ferralla_no_reordena_las_mesas_de_otra(self):
         self._planificar()

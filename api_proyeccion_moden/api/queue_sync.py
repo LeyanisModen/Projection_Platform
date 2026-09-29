@@ -4,6 +4,8 @@ from django.utils import timezone
 
 from api.models import (
     EstrategiaColaSuperior,
+    EventoFabricacion,
+    EventoFabricacionTipo,
     Fase,
     GrupoBastidor,
     GrupoMesas,
@@ -162,6 +164,80 @@ def module_reorderability_map(modules):
     }
 
 
+def record_queue_event(item, tipo, paso=None, mesa=None, at=None):
+    """Append one fabrication event for ``item`` (see ``EventoFabricacion``)."""
+    if item is None:
+        return None
+    return EventoFabricacion.objects.create(
+        item=item,
+        mesa=mesa if mesa is not None else item.mesa,
+        modulo_id=item.modulo_id,
+        fase=item.fase,
+        tipo=tipo,
+        paso=paso,
+        at=at or timezone.now(),
+    )
+
+
+def _last_queue_event(item):
+    return (
+        EventoFabricacion.objects.filter(item=item)
+        .order_by("-at", "-id")
+        .first()
+    )
+
+
+def _showing_interval_open(item):
+    last = _last_queue_event(item)
+    return last is not None and last.tipo in (
+        EventoFabricacionTipo.INICIO,
+        EventoFabricacionTipo.PASO,
+    )
+
+
+def open_showing_interval(item, mesa, paso):
+    """Record that ``item`` starts (or resumes) showing, once per interval."""
+    if item is None or _showing_interval_open(item):
+        return
+    record_queue_event(item, EventoFabricacionTipo.INICIO, paso=paso, mesa=mesa)
+
+
+def close_showing_interval(item, tipo=EventoFabricacionTipo.PAUSA, mesa=None):
+    """Close the open showing interval of ``item`` with PAUSA or FIN."""
+    if item is None or not _showing_interval_open(item):
+        return
+    record_queue_event(item, tipo, mesa=mesa)
+
+
+def record_step(mesa, index):
+    """Log an image change for whatever ``mesa`` is showing.
+
+    Repeated reports of the same image are ignored. A phase already on
+    screen without an open interval (promoted before the log existed)
+    opens one here so its time counts from now on.
+    """
+    try:
+        index = int(index)
+    except (TypeError, ValueError):
+        return
+    if index < 0:
+        return
+    item = (
+        MesaQueueItem.objects.filter(mesa=mesa, status=MesaQueueStatus.MOSTRANDO)
+        .order_by("position", "id")
+        .first()
+    )
+    if item is None:
+        return
+    last = _last_queue_event(item)
+    if last is None or last.tipo in (EventoFabricacionTipo.PAUSA, EventoFabricacionTipo.FIN):
+        record_queue_event(item, EventoFabricacionTipo.INICIO, paso=index, mesa=mesa)
+        return
+    if last.paso == index:
+        return
+    record_queue_event(item, EventoFabricacionTipo.PASO, paso=index, mesa=mesa)
+
+
 def stash_showing_progress(item, current_image_index):
     """Remember the image a displaced phase was on so it resumes there."""
     if item is None:
@@ -170,6 +246,7 @@ def stash_showing_progress(item, current_image_index):
     if item.resume_image_index != value:
         item.resume_image_index = value
         item.save(update_fields=["resume_image_index"])
+    close_showing_interval(item, EventoFabricacionTipo.PAUSA)
 
 
 def activate_queue_item(mesa, item):
@@ -190,6 +267,7 @@ def activate_queue_item(mesa, item):
         if item.resume_image_index is not None:
             item.resume_image_index = None
             item.save(update_fields=["resume_image_index"])
+        open_showing_interval(item, mesa, mesa.current_image_index)
     mesa.save(
         update_fields=[
             "imagen_actual",

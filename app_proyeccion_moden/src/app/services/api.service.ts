@@ -475,6 +475,18 @@ export interface ProductionStatsMesa extends ProductionStatsBucket {
     mesa_nombre: string;
     tipo: MesaTipo;
     indice: number;
+    /** Mediana de minutos de jornada por panel hecho en esta mesa (null sin datos). */
+    tiempo_mediana_min?: number | null;
+    tiempo_paneles?: number;
+    tiempo_medidos?: number;
+}
+
+/** Tiempo por panel: medido desde el registro de la mesa o aproximado entre paneles hechos. */
+export interface TiempoFabricacion {
+    mediana_min: number | null;
+    media_min: number | null;
+    paneles: number;
+    medidos: number;
 }
 
 export interface ProductionStatsDay extends ProductionStatsBucket {
@@ -498,6 +510,7 @@ export interface ProductionStatsResponse {
     por_mesa: ProductionStatsMesa[];
     por_dia: ProductionStatsDay[];
     por_hora?: ProductionStatsHour[] | null;
+    tiempos?: { inferior: TiempoFabricacion; superior: TiempoFabricacion };
     esperado: {
         capacidad_diaria_modulos: number;
         modulos_esperados: number | null;

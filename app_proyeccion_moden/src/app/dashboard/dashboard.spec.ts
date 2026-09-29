@@ -57,6 +57,30 @@ describe('Dashboard', () => {
       component.statsTo = stats.range.to;
     });
 
+    it('shows the time per panel as a KPI per phase and a column per mesa', () => {
+      stats.tiempos = {
+        inferior: {mediana_min: 34.4, media_min: 40.2, paneles: 12, medidos: 3},
+        superior: {mediana_min: null, media_min: null, paneles: 0, medidos: 0},
+      };
+      stats.por_mesa = [{
+        mesa_id: 1, mesa_nombre: 'Mesa 1', tipo: 'INFERIOR', indice: 1, fases_completadas: 12,
+        peso_malla_inicial_kg: 0, peso_malla_final_kg: 0, desperdicio_kg: 0, cantidad_cortes: 0, cantidad_refuerzos: 0,
+        cantidad_zunchos: 0, cantidad_separadores: 0, cantidad_punzos: 0, dificultad_total: 0,
+        tiempo_mediana_min: 34.4, tiempo_paneles: 12, tiempo_medidos: 3,
+      }];
+      stats.totals.fases_completadas = 12;
+      render();
+      const kpis = Array.from(fixture.nativeElement.querySelectorAll('.stats-kpi-tiempo')) as HTMLElement[];
+      expect(kpis.map(k => k.textContent?.replace(/\s+/g, ' ').trim())).toEqual([
+        'Tiempo inferior 34 min/panel', 'Tiempo superior — min/panel',
+      ]);
+      expect(kpis[0].getAttribute('title')).toBe('Inferior: mediana de 12 paneles, 3 medidos');
+      expect(text('.stats-tiempo-cell')).toBe('34');
+      expect(text('.stats-tiempo-nota')).toContain('Los paneles fabricados desde ahora se miden');
+      expect(component.tiempoDetalle({mediana_min: 20, media_min: 20, paneles: 5, medidos: 5})).toBe('mediana de 5 paneles medidos');
+      expect(component.tiempoDetalle({mediana_min: 20, media_min: 20, paneles: 1, medidos: 0})).toBe('mediana de 1 panel, aproximado');
+    });
+
     it('shows all six zero-valued KPIs and the period target before production starts', () => {
       render();
       expect(fixture.nativeElement.querySelectorAll('.stats-kpi').length).toBe(6);
