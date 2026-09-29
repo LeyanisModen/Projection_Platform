@@ -37,6 +37,8 @@ describe('Dashboard', () => {
       fixture.nativeElement.querySelector(selector)?.textContent.replace(/\s+/g, ' ').trim() || '';
 
     beforeEach(() => {
+      // Las estadisticas viven en su propia vista del dashboard.
+      component.vista = 'estadisticas';
       stats = {
         range: {from: '2026-09-01', to: '2026-09-14', working_days: 10},
         totals: {
@@ -245,6 +247,27 @@ describe('Dashboard', () => {
     expect(component.proyectosBloqueados(null).map(p => p.nombre)).toEqual(['Bloqueado']);
   });
 
+  describe('two dashboards on one component', () => {
+    it('shows only the statistics on the statistics view and only the mesas and projects on production', () => {
+      component.loadingGruposMesas = false;
+      component.loadingMesas = false;
+      component.vista = 'estadisticas';
+      fixture.changeDetectorRef.markForCheck();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.stats-section')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('.planner-section')).toBeNull();
+      expect(fixture.nativeElement.querySelector('.projects-section')).toBeNull();
+      expect(fixture.nativeElement.querySelector('.nav-link.active')?.textContent?.trim()).toBe('Estadísticas');
+
+      component.vista = 'produccion';
+      fixture.changeDetectorRef.markForCheck();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.stats-section')).toBeNull();
+      expect(fixture.nativeElement.querySelector('.planner-section')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('.projects-section')).not.toBeNull();
+    });
+  });
+
   describe('working schedule owned by the ferralla', () => {
     const jornada = (days: string[], start = '06:50', end = '15:00') =>
       days.map(day => ({day: day as any, start_time: start, end_time: end}));
@@ -298,6 +321,25 @@ describe('Dashboard', () => {
       expect(component.horarioEditing).toBe(false);
       expect(component.horarioLabel()).toBe('Lun–Jue 06:50–15:00 · Vie 06:50–13:00');
       expect(component.loadStats).toHaveBeenCalled();
+    });
+
+    it('edits the schedule in a modal instead of inline', () => {
+      component.loadingGruposMesas = false;
+      component.loadingMesas = false;
+      component.vista = 'estadisticas';
+      component.horario = config();
+      fixture.changeDetectorRef.markForCheck();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.horario-modal')).toBeNull();
+      component.editHorario();
+      fixture.detectChanges();
+      const modal: HTMLElement = fixture.nativeElement.querySelector('.horario-modal');
+      expect(modal).not.toBeNull();
+      expect(modal.querySelectorAll('.horario-dia').length).toBe(7);
+      expect(fixture.nativeElement.querySelector('.stats-header .stats-schedule-form')).toBeNull();
+      component.cancelHorario();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.horario-modal')).toBeNull();
     });
 
     it('copies one day\'s hours to every other active day', () => {

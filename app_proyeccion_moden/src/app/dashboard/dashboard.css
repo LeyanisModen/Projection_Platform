@@ -11,6 +11,8 @@
 .nav-link { position: relative; display: flex; align-items: center; padding: 0; border: 0; background: none; color: var(--muted); font: inherit; font-size: 0.92rem; font-weight: 500; white-space: nowrap; cursor: pointer; transition: color 160ms ease; }
 .nav-link:hover { color: var(--ink); }
 .nav-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.nav-link.active { color: var(--ink); }
+.nav-link.active::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--accent); }
 .header-right { display: flex; align-items: center; justify-content: flex-end; gap: 14px; min-width: 0; }
 .user-display { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 0.85rem; font-weight: 500; white-space: nowrap; }
 .btn-icon { display: inline-grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; color: var(--muted); cursor: pointer; transition: background-color 120ms ease, color 120ms ease; }
@@ -76,12 +78,13 @@
 .stats-header { flex-wrap: wrap; }
 .stats-schedule { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; color: var(--muted); font-size: 13px; }
 .stats-schedule-label { font-variant-numeric: tabular-nums; }
-.stats-schedule-form { display: grid; gap: 8px; }
-.horario-dias { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 4px 14px; }
+.modal-content.horario-modal { display: grid; gap: 14px; max-width: 420px; text-align: left; }
+.stats-schedule-form { display: grid; gap: 10px; }
+.horario-dias { display: grid; gap: 4px; }
 .horario-dia { display: flex; align-items: center; gap: 6px; }
 .horario-dia.is-off input, .horario-dia.is-off .stats-schedule-sep { opacity: 0.35; }
 .horario-copiar { width: 26px; height: 26px; }
-.stats-schedule-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.stats-schedule-actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 .day-chip { width: 28px; height: 28px; padding: 0; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--muted); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
 .day-chip:hover { color: var(--ink); background: var(--surface-2); }
 .day-chip.active { color: #fff; background: var(--ink); border-color: var(--ink); }

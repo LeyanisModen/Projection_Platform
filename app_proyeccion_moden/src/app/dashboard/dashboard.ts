@@ -133,6 +133,9 @@ export class Dashboard implements OnInit, OnDestroy {
   showBlueprintModal = false;
   blueprintUrl: string | null = null;
 
+  /** Dos dashboards sobre el mismo componente: produccion (mesas y proyectos) o estadisticas. */
+  vista: 'produccion' | 'estadisticas' = 'produccion';
+
   // Horario de trabajo de la ferralla (lo cambia ella; Moden lo usa para la captura).
   horario: FerrallaCaptureConfig | null = null;
   horarioEditing = false;
@@ -1258,6 +1261,11 @@ export class Dashboard implements OnInit, OnDestroy {
 
   username: string = '';
 
+  irA(vista: 'produccion' | 'estadisticas'): void {
+    if (vista === this.vista) return;
+    this.router.navigate([vista === 'estadisticas' ? '/dashboard/estadisticas' : '/dashboard']);
+  }
+
   scrollToSection(sectionId: string): void {
     const section = document.getElementById(sectionId) as HTMLElement | null;
     if (!section) return;
@@ -1296,6 +1304,7 @@ export class Dashboard implements OnInit, OnDestroy {
     }
 
     this.username = this.api.getUsername() || 'Usuario';
+    this.vista = this.router.url.includes('/dashboard/estadisticas') ? 'estadisticas' : 'produccion';
 
     // Prevent back navigation
     history.pushState(null, '', location.href);

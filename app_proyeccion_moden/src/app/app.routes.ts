@@ -34,6 +34,13 @@ export const routes: Routes = [{
   canActivate: [AuthGuard],
 },
 {
+  // Mismo componente, otra vista: solo estadisticas.
+  path: 'dashboard/estadisticas',
+  loadComponent: () => import('./dashboard/dashboard').then(m => m.Dashboard),
+  title: 'Estadísticas',
+  canActivate: [AuthGuard],
+},
+{
   path: 'admin-dashboard',
   loadChildren: () => import('./admin/admin.routes').then(m => m.ADMIN_ROUTES),
   title: 'Admin Dashboard',
