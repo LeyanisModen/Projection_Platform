@@ -280,7 +280,7 @@
 .gestionar-section h4 { margin: 0; color: var(--text); font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
 .gestionar-input { width: 100%; height: var(--control-h); padding: 0 12px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); font: inherit; color: var(--ink); box-sizing: border-box; }
 .gestionar-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-.estrategia-superior-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; }
+.estrategia-superior-options { display: grid; grid-template-columns: 1fr; gap: 8px; }
 .estrategia-superior-option { position: relative; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); text-align: left; font: inherit; cursor: pointer; }
 .estrategia-superior-option:hover:not(:disabled) { background: var(--surface-2); }
 .estrategia-superior-option.active { border-color: var(--ink); }
