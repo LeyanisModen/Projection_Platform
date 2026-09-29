@@ -711,9 +711,9 @@ class GrupoMesasSerializer(serializers.ModelSerializer):
             "id", "nombre", "usuario",
             "proyecto_actual", "proyectos_cola",
             "estrategia_cola_superior",
-            "activa", "created_at", "mesas",
+            "activa", "created_at", "mesas", "estrategia_cola_superior_previa",
         ]
-        read_only_fields = ["created_at", "mesas", "proyectos_cola"]
+        read_only_fields = ["created_at", "mesas", "proyectos_cola", "estrategia_cola_superior_previa"]
         extra_kwargs = {
             "usuario": {"required": False},
             "proyecto_actual": {"required": False, "allow_null": True},

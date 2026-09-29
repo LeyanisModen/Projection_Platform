@@ -62,6 +62,9 @@ class EstrategiaBastidor(models.TextChoices):
 class EstrategiaColaSuperior(models.TextChoices):
     PLANIFICADA = 'PLANIFICADA', 'Alternancia planificada'
     ADAPTATIVA = 'ADAPTATIVA', 'Adaptar al avance real'
+    # La ferralla ordena la cola superior a mano: se respeta tal cual y
+    # solo se anaden al final los superiores que falten.
+    MANUAL = 'MANUAL', 'Orden manual'
 
 
 class Proyecto(models.Model):
@@ -870,8 +873,15 @@ class GrupoMesas(models.Model):
         default=EstrategiaColaSuperior.PLANIFICADA,
         help_text=(
             'PLANIFICADA mantiene la alternancia teorica. ADAPTATIVA '
-            'prioriza los superiores ya requeridos por las mesas inferiores.'
+            'prioriza los superiores ya requeridos por las mesas inferiores. '
+            'MANUAL respeta el orden que ponga la ferralla.'
         ),
+    )
+    estrategia_cola_superior_previa = models.CharField(
+        max_length=20,
+        blank=True,
+        default='',
+        help_text='Estrategia automatica a la que volver al salir del orden manual.',
     )
     activa = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)

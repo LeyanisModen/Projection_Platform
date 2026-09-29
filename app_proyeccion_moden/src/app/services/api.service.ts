@@ -407,7 +407,7 @@ export interface GrupoMesasProyectoEntry {
     orden: number;
 }
 
-export type EstrategiaColaSuperior = 'PLANIFICADA' | 'ADAPTATIVA';
+export type EstrategiaColaSuperior = 'PLANIFICADA' | 'ADAPTATIVA' | 'MANUAL';
 
 export interface GrupoMesas {
     id: number;
@@ -416,6 +416,8 @@ export interface GrupoMesas {
     proyecto_actual: number | null;
     proyectos_cola: GrupoMesasProyectoEntry[];
     estrategia_cola_superior: EstrategiaColaSuperior;
+    /** Estrategia automatica a la que volver al salir del orden manual. */
+    estrategia_cola_superior_previa?: EstrategiaColaSuperior | '';
     activa: boolean;
     created_at: string;
     mesas: GrupoMesaResumen[];

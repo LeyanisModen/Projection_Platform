@@ -991,7 +991,8 @@ class MesaQueueItemBehaviorTests(APITestCase):
         self.assertEqual(delete_response.status_code, 204)
         self.assertFalse(MesaQueueItem.objects.filter(id=item_id).exists())
 
-    def test_regular_user_cannot_reorder_queue(self):
+    def test_regular_user_reorders_only_their_own_queue(self):
+        """La ferralla ordena sus mesas; las de otra ferralla no se tocan."""
         first = self._create_item(self.mesa_a.id, self.modulo_a.id, position=0)
         second = self._create_item(self.mesa_a.id, self.modulo_b.id, position=1)
         third = self._create_item(self.mesa_a.id, self.modulo_c.id, position=2)
@@ -1011,9 +1012,19 @@ class MesaQueueItemBehaviorTests(APITestCase):
             format="json",
         )
 
-        self.assertEqual(reorder_response.status_code, 403)
-        self.assertEqual(MesaQueueItem.objects.get(id=third.data["id"]).position, 2)
-        self.assertEqual(MesaQueueItem.objects.get(id=second.data["id"]).position, 1)
+        self.assertEqual(reorder_response.status_code, 200)
+        self.assertEqual(MesaQueueItem.objects.get(id=third.data["id"]).position, 1)
+        self.assertEqual(MesaQueueItem.objects.get(id=second.data["id"]).position, 2)
+
+        otra = User.objects.create_user(username="queue_ajena", password="pass123")
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=otra).key}")
+        ajena = self.client.post(
+            "/api/mesa-queue-items/reorder/",
+            {"items": [{"id": third.data["id"], "position": 7}]},
+            format="json",
+        )
+        self.assertEqual(ajena.status_code, 200)
+        self.assertEqual(MesaQueueItem.objects.get(id=third.data["id"]).position, 1)
 
     def test_admin_can_reorder_queue(self):
         first = self._create_item(self.mesa_a.id, self.modulo_a.id, position=0)
@@ -5554,6 +5565,74 @@ class BastidorSelfServiceTests(APITestCase):
                 status__in=[MesaQueueStatus.MOSTRANDO, MesaQueueStatus.EN_COLA],
             ).order_by("position").values_list("modulo__nombre", flat=True)
         )
+
+    def _cola_sup(self):
+        return list(
+            self.mesa_sup.queue_items.filter(
+                status__in=[MesaQueueStatus.MOSTRANDO, MesaQueueStatus.EN_COLA],
+            ).order_by("position").values_list("modulo__nombre", flat=True)
+        )
+
+    def test_la_ferralla_ordena_la_mesa_superior_a_mano_y_el_automatismo_lo_respeta(self):
+        from api.queue_sync import reconcile_superior_queue_for_group
+        self._planificar()
+        inicial = self._cola_sup()
+        self.assertGreaterEqual(len(inicial), 3)
+        items = list(
+            self.mesa_sup.queue_items.filter(status=MesaQueueStatus.EN_COLA).order_by("position")
+        )
+        # Intercambiar los dos primeros en cola (el mostrado se queda).
+        a, b = items[0], items[1]
+        response = self.client.post(
+            "/api/mesa-queue-items/reorder/",
+            {"items": [{"id": a.id, "position": b.position}, {"id": b.id, "position": a.position}]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        manual = self._cola_sup()
+        esperado = list(inicial)
+        ia, ib = esperado.index(a.modulo.nombre), esperado.index(b.modulo.nombre)
+        esperado[ia], esperado[ib] = esperado[ib], esperado[ia]
+        self.assertEqual(manual, esperado)
+        self.grupo.refresh_from_db()
+        self.assertEqual(self.grupo.estrategia_cola_superior, "MANUAL")
+        self.assertEqual(self.grupo.estrategia_cola_superior_previa, "PLANIFICADA")
+
+        # Ni el reconciliado ni un cambio del plan lo pisan.
+        reconcile_superior_queue_for_group(self.grupo)
+        self.assertEqual(self._cola_sup(), manual)
+        reorder = self.client.post(
+            "/api/grupos-bastidor/reorder/",
+            {"proyecto": self.project.id, "orden": [self.otro_bastidor.id, self.bastidor.id]},
+            format="json",
+        )
+        self.assertEqual(reorder.status_code, 200)
+        self.assertEqual(self._cola_sup(), manual)
+
+        # Volver al automatico recompone el orden del planificador.
+        back = self.client.patch(
+            f"/api/grupos-mesas/{self.grupo.id}/", {"estrategia_cola_superior": "PLANIFICADA"}, format="json",
+        )
+        self.assertEqual(back.status_code, 200, back.data)
+        self.assertEqual(back.data["estrategia_cola_superior"], "PLANIFICADA")
+        self.assertNotEqual(self._cola_sup(), manual)
+
+    def test_la_ferralla_no_reordena_las_mesas_de_otra(self):
+        self._planificar()
+        otra = User.objects.create_user(username="ferralla_ajena", password="pass123")
+        token = Token.objects.create(user=otra)
+        item = self.mesa_sup.queue_items.filter(status=MesaQueueStatus.EN_COLA).order_by("position").first()
+        before = self._cola_sup()
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+        response = self.client.post(
+            "/api/mesa-queue-items/reorder/",
+            {"items": [{"id": item.id, "position": 99}]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self._cola_sup(), before)
+        self.grupo.refresh_from_db()
+        self.assertEqual(self.grupo.estrategia_cola_superior, "PLANIFICADA")
 
     def test_ferralla_reordena_sus_bastidores_pero_no_los_de_otra(self):
         self._planificar()

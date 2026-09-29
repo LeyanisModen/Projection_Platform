@@ -2,7 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { Dashboard } from './dashboard';
 import {
-  ApiService, FerrallaCaptureConfig, GrupoBastidor, GrupoBastidorModulo, GrupoMesas, Mesa, Modulo, Proyecto,
+  ApiService, FerrallaCaptureConfig, GrupoBastidor, GrupoBastidorModulo, GrupoMesas, Mesa, MesaQueueItem, Modulo, Proyecto,
   ProductionStatsBucket, ProductionStatsResponse,
 } from '../services/api.service';
 import { of, Subject, throwError } from 'rxjs';
@@ -467,7 +467,7 @@ describe('Dashboard', () => {
       ];
       fixture.changeDetectorRef.markForCheck();
       fixture.detectChanges();
-      const columnas: NodeListOf<HTMLElement> = fixture.nativeElement.querySelectorAll('.plan-mesa');
+      const columnas: NodeListOf<HTMLElement> = fixture.nativeElement.querySelectorAll('.plan-mesa:not(.plan-mesa-sup)');
       expect(Array.from(columnas).map(c => c.querySelector('.plan-mesa-header strong')?.textContent)).toEqual(['Mesa 1', 'Mesa 2']);
       const titulos = (c: HTMLElement) => Array.from(c.querySelectorAll('.plan-grupo-title strong')).map(e => e.textContent);
       // Sin mesa conocida cae en la primera; los sueltos tambien.
@@ -484,6 +484,63 @@ describe('Dashboard', () => {
       const llevar = vi.spyOn(api, 'llevarBastidorAMesa').mockReturnValue(throwError(() => ({error: {detail: 'x'}})));
       component.moverBastidorAMesa(g1, 1);
       expect(llevar).toHaveBeenCalledWith(10, 2);
+    });
+
+    it('lists the superior mesa queue of the project and reorders it by hand', () => {
+      const api = TestBed.inject(ApiService);
+      component.gruposMesas = [{
+        id: 1, nombre: 'Grupo mesas', usuario: 1, proyecto_actual: 7, proyectos_cola: [], estrategia_cola_superior: 'ADAPTATIVA',
+        activa: true, created_at: '',
+        mesas: [
+          {id: 1, nombre: 'Mesa 1', tipo: 'INFERIOR', indice: 1, activa: true, is_linked: false},
+          {id: 3, nombre: 'Mesa 3', tipo: 'SUPERIOR', indice: 3, activa: true, is_linked: false},
+        ],
+      } as GrupoMesas];
+      const sup = (id: number, nombre: string, position: number, status: 'MOSTRANDO' | 'EN_COLA', proyecto = 7) => ({
+        id, mesa: 3, modulo: id, modulo_nombre: nombre, modulo_proyecto_id: proyecto, fase: 'SUPERIOR', position, status,
+        current_image_index: 2, imagenes_total: 16, grupo_bastidor_indice: 1,
+      } as unknown as MesaQueueItem);
+      component.mesaQueueItems.set(3, [sup(31, 'A1', 0, 'MOSTRANDO'), sup(32, 'A2', 1, 'EN_COLA'), sup(99, 'Z1', 2, 'EN_COLA', 8), sup(33, 'A3', 3, 'EN_COLA')]);
+      fixture.changeDetectorRef.markForCheck();
+      fixture.detectChanges();
+
+      const columna: HTMLElement = fixture.nativeElement.querySelector('.plan-mesa-sup');
+      expect(columna).not.toBeNull();
+      expect(Array.from(columna.querySelectorAll('.plan-modulo-nombre')).map(e => e.textContent?.trim())).toEqual(['A1', 'A2', 'A3']);
+      expect(columna.querySelector('.plan-sup-modo')?.textContent).toBe('Automático · adaptativo');
+      expect(columna.querySelector('[aria-label="Volver al orden automático en Mesa 3"]')).toBeNull();
+
+      const [col] = component.planModalSuperiores();
+      expect(component.canMoverSupItem(col, col.items[0], 1)).toBe(false);
+      expect(component.canMoverSupItem(col, col.items[1], -1)).toBe(false);
+      expect(component.canMoverSupItem(col, col.items[2], -1)).toBe(true);
+
+      const reorder = vi.spyOn(api, 'reorderMesaQueue').mockReturnValue(of({status: 'ok'}));
+      vi.spyOn(component, 'loadMesaQueueItems').mockImplementation(() => undefined);
+      vi.spyOn(component, 'loadGruposMesas').mockImplementation(() => undefined);
+      component.moverSupItem(col, col.items[2], -1);
+      // A3 pasa delante de A2; el modulo del otro proyecto conserva su sitio relativo.
+      expect(reorder).toHaveBeenCalledWith([
+        {id: 31, position: 0}, {id: 33, position: 1}, {id: 32, position: 2}, {id: 99, position: 3},
+      ]);
+    });
+
+    it('offers the way back to the automatic order when the superior mesa is manual', () => {
+      const api = TestBed.inject(ApiService);
+      component.gruposMesas = [{
+        id: 1, nombre: 'Grupo mesas', usuario: 1, proyecto_actual: 7, proyectos_cola: [], estrategia_cola_superior: 'MANUAL',
+        estrategia_cola_superior_previa: 'ADAPTATIVA', activa: true, created_at: '',
+        mesas: [{id: 3, nombre: 'Mesa 3', tipo: 'SUPERIOR', indice: 3, activa: true, is_linked: false}],
+      } as GrupoMesas];
+      fixture.changeDetectorRef.markForCheck();
+      fixture.detectChanges();
+      const columna: HTMLElement = fixture.nativeElement.querySelector('.plan-mesa-sup');
+      expect(columna.querySelector('.plan-sup-modo')?.textContent).toBe('Orden manual');
+      const update = vi.spyOn(api, 'updateGrupoMesas').mockReturnValue(of({} as GrupoMesas));
+      vi.spyOn(component, 'loadMesaQueueItems').mockImplementation(() => undefined);
+      vi.spyOn(component, 'loadGruposMesas').mockImplementation(() => undefined);
+      component.volverSupAutomatico(component.planModalSuperiores()[0]);
+      expect(update).toHaveBeenCalledWith(1, {estrategia_cola_superior: 'ADAPTATIVA'});
     });
 
     it('stacks finished bastidores at the top of their mesa, folded until asked', () => {

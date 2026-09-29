@@ -185,6 +185,13 @@
 .plan-mesa-header { display: flex; align-items: baseline; gap: 8px; padding: 0 2px 6px; border-bottom: 2px solid var(--line-strong); }
 .plan-mesa-header strong { color: var(--ink); font-size: 14px; font-weight: 600; }
 .plan-mesa-done { margin-left: auto; color: var(--muted); font-size: 12px; }
+/* Mesa superior: la cola tal cual se proyecta; en manual la ordena la ferralla. */
+.plan-mesa-sup .plan-mesa-header { flex-wrap: wrap; }
+.plan-sup-modo { margin-left: auto; color: var(--muted); font-size: 12px; }
+.plan-sup-modo.is-manual { color: var(--accent-dark); font-weight: 600; }
+.plan-sup-empty { margin: 0; color: var(--muted); font-size: 13px; }
+.plan-sup-row { grid-template-columns: auto minmax(0, 1fr) auto auto; }
+.plan-sup-grupo { color: var(--muted); font-size: 11px; white-space: nowrap; }
 .plan-grupo { display: grid; gap: 6px; padding: 8px 10px; border: 1px solid var(--line); border-left: 3px solid var(--line-strong); background: var(--surface); }
 .plan-grupo.is-division { border-left-style: dashed; }
 .plan-grupo.is-terminado { border-left-color: var(--ok); }
@@ -273,7 +280,7 @@
 .gestionar-section h4 { margin: 0; color: var(--text); font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
 .gestionar-input { width: 100%; height: var(--control-h); padding: 0 12px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); font: inherit; color: var(--ink); box-sizing: border-box; }
 .gestionar-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-.estrategia-superior-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.estrategia-superior-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; }
 .estrategia-superior-option { position: relative; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); text-align: left; font: inherit; cursor: pointer; }
 .estrategia-superior-option:hover:not(:disabled) { background: var(--surface-2); }
 .estrategia-superior-option.active { border-color: var(--ink); }

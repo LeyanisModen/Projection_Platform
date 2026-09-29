@@ -387,6 +387,7 @@ Autogestión de la ferralla (septiembre 2026):
 - Bastidores **en espera** (`GrupoBastidor.en_espera`, `POST /grupos-bastidor/{id}/espera/` `{en_espera: bool}`, ferralla o admin): ni el bastidor ni los módulos que le lleguen entran en cola hasta soltarlo; al dividir, las partes heredan la espera. En la importación, `en_espera=true` abre bastidor nuevo para la tanda y la deja apartada (casilla "Subir en espera" en el admin). Siguen contando como pendientes para el ritmo diario.
 - Horario de trabajo por día (`UserProfile.capture_horario`, `{"MON": ["06:50","15:00"], ...}`; `horario_por_dia()` cae a los campos antiguos si está vacío, y esos campos se mantienen sincronizados: días activos, inicio más temprano y fin más tardío). Lo gestiona la ferralla desde la cabecera de "Estadísticas de producción" de su dashboard y Moden desde Ferrallas → Horario y cámaras (`PUT /users/{id}/capture-config/` con `horario: [{day, start_time, end_time}]`; el trío antiguo `active_days/start_time/end_time` se sigue aceptando). Es la jornada real para estadísticas (`_working_hours_in_range` por día) y ritmo diario. El mini-PC recibe en `device/config` la franja más amplia de la semana con media hora de margen a cada lado (`_capture_window`); al cliente no se le muestra esa ventana. El dashboard del cliente son dos vistas del mismo componente: `/dashboard` (Producción: mesas y proyectos) y `/dashboard/estadisticas` (solo estadísticas, con sitio para crecer); la cabecera alterna entre ellas. El horario se edita en un modal desde la cabecera de estadísticas.
 - `Proyecto.modulos_previstos` (solo admin, junto al plazo de montaje): el ritmo diario (`project_demand`) usa el mayor de previstos o subidos; la planificación expone `modulos_subidos` y `modulos_previstos` y las etiquetas dicen "X de Y subidos".
+- Mesa superior en el modal del plan (2026-09-29): una columna por mesa superior activa con la cola de ese proyecto en el orden en que se proyecta. El automatismo sigue igual (`PLANIFICADA`/`ADAPTATIVA`), pero la ferralla puede mover los pendientes con las flechas (`POST /mesa-queue-items/reorder/`, ahora permitido al dueño de la mesa): al tocar una mesa superior el grupo pasa a `EstrategiaColaSuperior.MANUAL` y guarda la estrategia anterior en `estrategia_cola_superior_previa`. En manual `reconcile_superior_queue_for_group` no reordena, solo añade al final lo que falte, y los replanificados anclan toda la cola superior (`_collect_replan_anchor_ids_for_grupo`). El botón "Automático" de la columna (o la opción en Gestionar) devuelve la estrategia previa y el planificador recompone el orden. Lo mostrado no se mueve.
 - Desactivar una mesa traslada lo que tenía, incluido lo que se estaba mostrando, a las mesas activas con su imagen.
 - La foto ZIP y las etiquetas agrupan las divisiones bajo su bastidor raíz (`GrupoBastidor.raiz`, `etiqueta`).
 - `recalcular-bastidores` mantiene la regla estricta (`module_fabrication_started`): no se recalcula con trabajo empezado.
@@ -881,7 +882,9 @@ Capture service: usar `config.ini`/config remota. No versionar `config.ini`,
 
 - Recarga automática agresiva de Chrome: ya rompió pairing/sesión.
 - Borrado local por antigüedad sin comprobar copia equivalente en Drive.
-- Reordenación directa de la cola superior.
+- Reordenación directa de la cola superior fuera del modo manual: desde
+  septiembre de 2026 la ferralla la ordena a mano en el modal del plan y el
+  grupo pasa a `MANUAL`; no volver a reordenarla por detrás en ese modo.
 - Rehacer el previsualizador de mesas virtuales tal como estaba: se retiró de
   la interfaz y su código se borró en septiembre de 2026 porque no resolvía el
   problema que se esperaba. Si vuelve, debe estar conectado a las mesas reales

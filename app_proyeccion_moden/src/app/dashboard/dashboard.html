@@ -271,6 +271,11 @@
                                             <i class="fa fa-bolt" aria-hidden="true"></i>
                                             SUP adaptativo
                                         </span>
+                                    } @else if (grupo.estrategia_cola_superior === 'MANUAL') {
+                                        <span class="grupo-estrategia-chip" title="La cola superior la ordena la ferralla a mano">
+                                            <i class="fa fa-hand-paper-o" aria-hidden="true"></i>
+                                            SUP manual
+                                        </span>
                                     }
                                 </div>
                                 <button type="button" class="btn-gestionar" (click)="openGestionarModal(grupo)">
@@ -654,6 +659,48 @@
                                 }
                             </section>
                         }
+                        @for (col of planModalSuperiores(); track col.key) {
+                            <section class="plan-mesa plan-mesa-sup" [attr.aria-label]="col.mesa.nombre + ' superior'">
+                                <div class="plan-mesa-header">
+                                    <strong>{{ col.mesa.nombre }}</strong>
+                                    <span class="plan-project-count">superior · {{ col.items.length }} {{ col.items.length === 1 ? 'módulo' : 'módulos' }}</span>
+                                    <span class="plan-sup-modo" [class.is-manual]="col.manual">{{ supModoLabel(col) }}</span>
+                                    @if (col.manual) {
+                                        <button type="button" class="plan-grupo-btn" (click)="volverSupAutomatico(col)" [disabled]="planModalBusy"
+                                            title="Volver a dejar que el orden lo ponga el automatismo"
+                                            [attr.aria-label]="'Volver al orden automático en ' + col.mesa.nombre">Automático</button>
+                                    }
+                                </div>
+                                @if (col.items.length === 0) {
+                                    <p class="plan-sup-empty">Sin superiores de este proyecto en cola.</p>
+                                }
+                                <ul class="plan-modulo-list plan-sup-list">
+                                    @for (item of col.items; track item.id) {
+                                        <li class="plan-modulo-row plan-sup-row" [class.partial]="item.status === 'MOSTRANDO'">
+                                            <div class="plan-modulo-order" role="group" [attr.aria-label]="'Orden de ' + item.modulo_nombre + ' superior'">
+                                                <button type="button" class="plan-order-btn" (click)="moverSupItem(col, item, -1)"
+                                                    [disabled]="planModalBusy || !canMoverSupItem(col, item, -1)"
+                                                    title="Fabricar antes" [attr.aria-label]="'Fabricar antes el superior de ' + item.modulo_nombre">
+                                                    <i class="fa fa-chevron-up" aria-hidden="true"></i>
+                                                </button>
+                                                <button type="button" class="plan-order-btn" (click)="moverSupItem(col, item, 1)"
+                                                    [disabled]="planModalBusy || !canMoverSupItem(col, item, 1)"
+                                                    title="Fabricar después" [attr.aria-label]="'Fabricar después el superior de ' + item.modulo_nombre">
+                                                    <i class="fa fa-chevron-down" aria-hidden="true"></i>
+                                                </button>
+                                            </div>
+                                            <span class="plan-modulo-nombre">{{ item.modulo_nombre }}</span>
+                                            <span class="plan-sup-grupo">{{ item.grupo_bastidor_nombre || ('Grupo ' + item.grupo_bastidor_indice) }}{{ item.grupo_bastidor_sufijo || '' }}</span>
+                                            @if (item.status === 'MOSTRANDO') {
+                                                <span class="plan-modulo-estado">En mesa · {{ item.current_image_index + 1 }}/{{ item.imagenes_total }}</span>
+                                            } @else {
+                                                <span class="plan-modulo-estado">En cola</span>
+                                            }
+                                        </li>
+                                    }
+                                </ul>
+                            </section>
+                        }
                         </div>
                     </div>
                 }
@@ -941,8 +988,8 @@
                         <div class="estrategia-superior-options" role="group" aria-label="Estrategia de orden para superiores">
                             <button type="button"
                                 class="estrategia-superior-option"
-                                [class.active]="gestionandoGrupo.estrategia_cola_superior !== 'ADAPTATIVA'"
-                                [attr.aria-pressed]="gestionandoGrupo.estrategia_cola_superior !== 'ADAPTATIVA'"
+                                [class.active]="gestionandoGrupo.estrategia_cola_superior === 'PLANIFICADA'"
+                                [attr.aria-pressed]="gestionandoGrupo.estrategia_cola_superior === 'PLANIFICADA'"
                                 [disabled]="gestionarBusy || gestionarAplicandoCambios"
                                 (click)="setGestionarEstrategiaColaSuperior('PLANIFICADA')">
                                 <span class="estrategia-icon planificada"><i class="fa fa-random" aria-hidden="true"></i></span>
@@ -962,6 +1009,19 @@
                                 <span class="estrategia-copy">
                                     <strong>Adaptar al avance real</strong>
                                     <small>Prioriza los superiores que ya necesita produccion inferior.</small>
+                                </span>
+                                <i class="fa fa-check estrategia-check" aria-hidden="true"></i>
+                            </button>
+                            <button type="button"
+                                class="estrategia-superior-option"
+                                [class.active]="gestionandoGrupo.estrategia_cola_superior === 'MANUAL'"
+                                [attr.aria-pressed]="gestionandoGrupo.estrategia_cola_superior === 'MANUAL'"
+                                [disabled]="gestionarBusy || gestionarAplicandoCambios"
+                                (click)="setGestionarEstrategiaColaSuperior('MANUAL')">
+                                <span class="estrategia-icon manual"><i class="fa fa-hand-paper-o" aria-hidden="true"></i></span>
+                                <span class="estrategia-copy">
+                                    <strong>Orden manual</strong>
+                                    <small>Lo ordenáis vosotros desde el plan; lo nuevo entra al final.</small>
                                 </span>
                                 <i class="fa fa-check estrategia-check" aria-hidden="true"></i>
                             </button>

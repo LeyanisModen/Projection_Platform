@@ -35,7 +35,7 @@ from api.models import (
     FotoFabricacion, GrupoMesas, GrupoMesasProyecto,
     DetalleModuloFase, MesaQueueStatus, ModuloEstado, Fase,
     GrupoBastidor, MaterialPieza, MaterialInformado, MaterialOrigenCheck,
-    MaterialTipo, MesaTipo, UserProfile,
+    MaterialTipo, MesaTipo, UserProfile, EstrategiaColaSuperior,
 )
 from api.project_media import (
     collect_module_media,
@@ -1212,6 +1212,7 @@ def _collect_replan_anchor_ids_for_grupo(grupo):
             fase='SUPERIOR',
         ).values_list('modulo_id', flat=True)
     )
+    orden_manual = grupo.estrategia_cola_superior == EstrategiaColaSuperior.MANUAL
     anchored = set()
     items = MesaQueueItem.objects.select_related('mesa').filter(
         mesa__grupo=grupo,
@@ -1220,6 +1221,10 @@ def _collect_replan_anchor_ids_for_grupo(grupo):
     )
     for item in items:
         if not item.mesa.activa or item.mesa.tipo != MesaTipo.SUPERIOR:
+            continue
+        if orden_manual:
+            # La ferralla ordeno la cola superior a mano: no se rehace.
+            anchored.add(item.id)
             continue
         if item.modulo_id in modulos_sup_en_proceso:
             anchored.add(item.id)
@@ -4085,6 +4090,12 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         with transaction.atomic():
             group = serializer.save()
             if group.estrategia_cola_superior != previous_strategy:
+                if (
+                    group.estrategia_cola_superior == EstrategiaColaSuperior.MANUAL
+                    and previous_strategy != EstrategiaColaSuperior.MANUAL
+                ):
+                    group.estrategia_cola_superior_previa = previous_strategy
+                    group.save(update_fields=['estrategia_cola_superior_previa'])
                 reconcile_superior_queue_for_group(group)
 
     def perform_destroy(self, instance):
@@ -6792,22 +6803,35 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['post'])
     def reorder(self, request):
-        """Reorder items in the mesa queue. Expects: {items: [{id: X, position: Y}, ...]}"""
-        if not _is_admin(request.user):
-            return Response(
-                {'detail': 'Solo admin puede reordenar modulos en las mesas.'},
-                status=status.HTTP_403_FORBIDDEN,
-            )
+        """Reorder items in the mesa queue. Expects: {items: [{id: X, position: Y}, ...]}
+
+        La ferralla puede ordenar sus mesas. Si toca una mesa superior, su
+        grupo pasa a orden manual: el automatismo deja de reordenar y solo
+        anade al final lo que falte, hasta que vuelvan al modo automatico.
+        """
         items_data = request.data.get('items', [])
-        for item_data in items_data:
-            try:
-                item = MesaQueueItem.objects.get(id=item_data['id'])
+        mesas_tocadas = {}
+        with transaction.atomic():
+            for item_data in items_data:
+                try:
+                    item = MesaQueueItem.objects.select_related('mesa__grupo').get(id=item_data['id'])
+                except (MesaQueueItem.DoesNotExist, KeyError, TypeError):
+                    continue
                 if not _is_admin(request.user) and item.mesa.usuario_id != request.user.id:
                     continue
-                item.position = item_data['position']
+                item.position = item_data.get('position', item.position)
                 item.save(update_fields=['position'])
-            except MesaQueueItem.DoesNotExist:
-                pass
+                mesas_tocadas[item.mesa_id] = item.mesa
+            for mesa in mesas_tocadas.values():
+                grupo = mesa.grupo
+                if (
+                    mesa.tipo == MesaTipo.SUPERIOR
+                    and grupo is not None
+                    and grupo.estrategia_cola_superior != EstrategiaColaSuperior.MANUAL
+                ):
+                    grupo.estrategia_cola_superior_previa = grupo.estrategia_cola_superior
+                    grupo.estrategia_cola_superior = EstrategiaColaSuperior.MANUAL
+                    grupo.save(update_fields=['estrategia_cola_superior', 'estrategia_cola_superior_previa'])
         return Response({'status': 'ok'})
 
 
