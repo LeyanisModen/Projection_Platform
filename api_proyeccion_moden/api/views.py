@@ -5414,15 +5414,21 @@ def _jornada_inicio(local_date, horario, current_tz):
     )
 
 
+# Por debajo de esto no se ha fabricado un panel: se ha marcado hecho en
+# bloque o nada mas aparecer en la mesa. No cuenta como tiempo.
+TIEMPO_PANEL_MINIMO_S = 120
+
+
 def _tiempos_fabricacion(items, horario, current_tz):
     """Minutes of working time per finished phase, measured when possible.
 
     Measured: sum of the intervals between INICIO/PASO and PAUSA/FIN events
     (time with the phase on screen), clipped to the working schedule.
-    Approximated (phases finished before the log existed): working time
-    between the previous phase finished on the same mesa that day (or the
-    start of the working day) and this one. Returns
-    ``{item_id: (minutes, measured)}``.
+    Approximated (phases finished before the log existed, or on screen for
+    less than the minimum): working time between the previous phase
+    finished on the same mesa that day (or the start of the working day)
+    and this one. Anything under ``TIEMPO_PANEL_MINIMO_S`` is left without a
+    time. Returns ``{item_id: (minutes, measured)}``.
     """
     items = [it for it in items if it.done_at is not None and it.mesa_id is not None]
     if not items:
@@ -5440,29 +5446,28 @@ def _tiempos_fabricacion(items, horario, current_tz):
         previous_done = None
         for it in mesa_items:
             evs = eventos.get(it.id, [])
-            measured = any(ev.tipo == EventoFabricacionTipo.INICIO for ev in evs)
-            if measured:
-                seconds = 0.0
+            medido = 0.0
+            if any(ev.tipo == EventoFabricacionTipo.INICIO for ev in evs):
                 open_at = None
                 for ev in evs:
                     if ev.tipo in (EventoFabricacionTipo.INICIO, EventoFabricacionTipo.PASO):
                         if open_at is None:
                             open_at = ev.at
                     elif open_at is not None:
-                        seconds += _working_seconds_between(open_at, ev.at, horario, current_tz)
+                        medido += _working_seconds_between(open_at, ev.at, horario, current_tz)
                         open_at = None
                 if open_at is not None:
-                    seconds += _working_seconds_between(open_at, it.done_at, horario, current_tz)
-                result[it.id] = (seconds / 60.0, True)
+                    medido += _working_seconds_between(open_at, it.done_at, horario, current_tz)
+            if medido >= TIEMPO_PANEL_MINIMO_S:
+                result[it.id] = (medido / 60.0, True)
             else:
                 done_local = timezone.localtime(it.done_at, current_tz)
-                start = None
                 if previous_done is not None and timezone.localtime(previous_done, current_tz).date() == done_local.date():
                     start = previous_done
                 else:
                     start = _jornada_inicio(done_local.date(), horario, current_tz)
                 seconds = _working_seconds_between(start, it.done_at, horario, current_tz)
-                if seconds > 0:
+                if seconds >= TIEMPO_PANEL_MINIMO_S:
                     result[it.id] = (seconds / 60.0, False)
             previous_done = it.done_at
     return result

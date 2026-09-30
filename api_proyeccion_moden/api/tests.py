@@ -1365,7 +1365,7 @@ class PlanningFoundationTests(APITestCase):
         )
         mesa = Mesa.objects.create(nombre="Mesa 1", usuario=self.user, tipo="INFERIOR", indice=1)
         aware = lambda *args: timezone.make_aware(datetime(*args))  # noqa: E731
-        modulos = [Modulo.objects.create(nombre=f"T{n}", proyecto=self.project) for n in range(1, 4)]
+        modulos = [Modulo.objects.create(nombre=f"T{n}", proyecto=self.project) for n in range(1, 5)]
 
         def hecho(modulo, done_at):
             return MesaQueueItem.objects.create(
@@ -1375,6 +1375,8 @@ class PlanningFoundationTests(APITestCase):
         # Lunes 28/09/2026: sin registro, se aproxima desde el inicio de jornada (06:00) o el panel anterior.
         hecho(modulos[0], aware(2026, 9, 28, 7, 0))    # 60 min
         hecho(modulos[1], aware(2026, 9, 28, 9, 0))    # 120 min
+        # Marcado hecho medio minuto despues de otro: eso no es fabricar, queda sin tiempo.
+        hecho(modulos[3], aware(2026, 9, 28, 9, 0, 30))
         medido = hecho(modulos[2], aware(2026, 9, 28, 14, 30))
         for tipo, paso, at in (
             ("INICIO", 0, aware(2026, 9, 28, 10, 0)),
