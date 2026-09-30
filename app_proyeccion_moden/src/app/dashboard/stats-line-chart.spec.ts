@@ -46,6 +46,17 @@ describe('StatsLineChart', () => {
       .toEqual(['Llega al objetivo', 'Por debajo', 'Objetivo 2 al día']);
   });
 
+  it('moves the target label to the start when the last point sits on the target line', () => {
+    fixture.componentRef.setInput('target', [2, 2, 2, 2]);
+    fixture.componentRef.setInput('series', [{ name: 'Módulos', color: '#f0640f', values: [0, 8, 8, 8] }]);
+    fixture.detectChanges();
+    expect(el().querySelector('.lc-target-label')?.getAttribute('text-anchor')).toBe('end');
+
+    fixture.componentRef.setInput('series', [{ name: 'Módulos', color: '#f0640f', values: [0, 8, 8, 2] }]);
+    fixture.detectChanges();
+    expect(el().querySelector('.lc-target-label')?.getAttribute('text-anchor')).toBe('start');
+  });
+
   it('fades the line towards the previous and next period only where they are known', () => {
     fixture.componentRef.setInput('series', [{ name: 'Módulos', color: '#f0640f', values: [3, 1, 2, 1], prev: 4, next: null }]);
     fixture.detectChanges();

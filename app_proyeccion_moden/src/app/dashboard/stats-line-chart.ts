@@ -121,7 +121,7 @@ let nextChartId = 0;
           }
           @if (targetPath(); as objetivo) {
             <path class="lc-target" [attr.d]="objetivo.d" />
-            <text class="lc-target-label" [attr.x]="plot().x + plot().w" [attr.y]="objetivo.labelY" text-anchor="end">{{ targetLabel() }}</text>
+            <text class="lc-target-label" [attr.x]="objetivo.labelX" [attr.y]="objetivo.labelY" [attr.text-anchor]="objetivo.anchor">{{ targetLabel() }}</text>
           }
           @for (line of lines(); track line.name) {
             @for (fade of line.fades; track fade.id) {
@@ -306,7 +306,13 @@ export class StatsLineChart implements AfterViewInit, OnDestroy {
     const last = points[points.length - 1];
     const d = [`M${plot.x} ${first.y.toFixed(1)}`, ...points.map(p => `L${p.x.toFixed(1)} ${p.y.toFixed(1)}`),
       `L${plot.x + plot.w} ${last.y.toFixed(1)}`].join(' ');
-    return { d, labelY: last.y - 6 };
+    // La etiqueta va al final de la linea salvo que ahi tape un punto y al principio no.
+    const choca = (desde: number, hasta: number, y: number): boolean => this.lines().some(line =>
+      line.points.some(p => p.x >= desde && p.x <= hasta && p.y > y - 18 && p.y < y + 8));
+    const alInicio = choca(plot.x + plot.w - 120, plot.x + plot.w, last.y - 6) && !choca(plot.x, plot.x + 120, first.y - 6);
+    return alInicio
+      ? { d, labelX: plot.x + 4, labelY: first.y - 6, anchor: 'start' }
+      : { d, labelX: plot.x + plot.w, labelY: last.y - 6, anchor: 'end' };
   });
 
   readonly legend = computed<LegendItem[]>(() => {
