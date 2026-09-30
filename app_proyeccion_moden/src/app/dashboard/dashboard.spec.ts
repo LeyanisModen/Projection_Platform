@@ -150,10 +150,15 @@ describe('Dashboard', () => {
       }];
       stats.totals.peso_total_kg = 140;
       stats.totals.peso_malla_final_kg = 100;
+      stats.totals.desperdicio_kg = 7;
       render();
-      const pesoKpi = text('.stats-kpi[title^="Peso total"] .stats-kpi-value');
-      expect(pesoKpi.startsWith('140 kg')).toBe(true);
-      expect(pesoKpi).toContain('100 kg de mallazo');
+      // El indicador de peso es solo el total; el mallazo queda en las tablas.
+      expect(text('.stats-kpi[title^="Peso total"] .stats-kpi-value')).toBe('140 kg');
+      // Desperdicio: kilos y, al lado, su porcentaje sobre el peso total (7 de 140).
+      const desperdicio = fixture.nativeElement.querySelector('.stats-kpi[title^="Kilos de mallazo desechados"] .stats-kpi-value') as HTMLElement;
+      expect(desperdicio.querySelector('.stats-kpi-sep')).not.toBeNull();
+      expect(desperdicio.querySelector('.stats-kpi-pct')?.textContent).toBe('5.0');
+      expect(desperdicio.textContent?.replace(/\s+/g, ' ').trim().startsWith('7 kg')).toBe(true);
       expect(component.statsResumen()?.kgPorModulo).toBe(140);
       const celdas = Array.from(fixture.nativeElement.querySelectorAll('.stats-table-modulos tbody td'))
         .map(td => (td as HTMLElement).textContent?.trim());
