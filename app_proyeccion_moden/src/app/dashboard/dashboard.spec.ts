@@ -83,7 +83,7 @@ describe('Dashboard', () => {
 
     it('builds the line charts with the daily target, the day in progress and the neighbouring periods', () => {
       const dia = (fecha: string, modulos: number, extra: Partial<ProductionStatsDay> = {}): ProductionStatsDay => ({
-        fecha, modulos_completados: modulos, fases_completadas: modulos * 2, peso_malla_inicial_kg: 100, peso_malla_final_kg: 90,
+        fecha, modulos_completados: modulos, fases_completadas: modulos * 2, peso_total_kg: 130, peso_malla_inicial_kg: 100, peso_malla_final_kg: 90,
         desperdicio_kg: 10, cantidad_cortes: 0, cantidad_refuerzos: 0, cantidad_zunchos: 0, cantidad_separadores: 0,
         cantidad_punzos: 0, dificultad_total: 50, ...extra,
       });
@@ -112,6 +112,9 @@ describe('Dashboard', () => {
       expect(vista.tiempo.map(serie => serie.values[0])).toEqual([40, 20]);
       expect(vista.tiempo[0].values[1]).toBeNull();
       expect(vista.desperdicio[0].values[0]).toBe(10);
+      // El peso de las graficas y tablas es el total del modulo, no solo el mallazo.
+      expect(vista.peso[0].values).toEqual([130, 130, 0, 130, 0]);
+      expect(vista.peso[0].prev).toBe(130);
       expect(component.statsResumen()).toEqual({
         cumplimiento: 70, diasCumplidos: {cumplidos: 2, total: 5}, mediaDiaria: 7 / 3,
         mejorDia: {modulos: 3, label: 'Lun 14'}, kgPorModulo: 0, dificultadMedia: 0,
@@ -122,6 +125,9 @@ describe('Dashboard', () => {
       expect(filas.length).toBe(5);
       expect(Array.from(filas[0].querySelectorAll('td')).slice(0, 4).map(td => td.textContent?.trim()))
         .toEqual(['Lun 14', '3', '2', '+1']);
+      // Paneles, peso total y mallazo, en ese orden.
+      expect(Array.from(filas[0].querySelectorAll('td')).slice(4, 7).map(td => td.textContent?.trim()))
+        .toEqual(['6', '130', '90']);
       expect(filas[1].querySelector('.stats-diferencia')?.classList.contains('is-bajo')).toBe(true);
       expect(filas[0].querySelector('.stats-diferencia')?.classList.contains('is-ok')).toBe(true);
     });
@@ -136,9 +142,15 @@ describe('Dashboard', () => {
           peso_kg: 40, desperdicio_kg: 2, cortes: 3, refuerzos: 1, dificultad: 80},
         superior: {mesa_nombre: 'Mesa 3', done_at: '2026-09-14T10:30:00+02:00', minutos: 25, medido: false,
           peso_kg: 60, desperdicio_kg: 0, cortes: 1, refuerzos: 0, dificultad: 40},
-        minutos: 66.6, peso_kg: 100, desperdicio_kg: 2, dificultad: 120,
+        minutos: 66.6, peso_kg: 140, malla_kg: 100, desperdicio_kg: 2, dificultad: 120,
       }];
+      stats.totals.peso_total_kg = 140;
+      stats.totals.peso_malla_final_kg = 100;
       render();
+      const pesoKpi = text('.stats-kpi[title^="Peso total"] .stats-kpi-value');
+      expect(pesoKpi.startsWith('140 kg')).toBe(true);
+      expect(pesoKpi).toContain('100 kg de mallazo');
+      expect(component.statsResumen()?.kgPorModulo).toBe(140);
       const celdas = Array.from(fixture.nativeElement.querySelectorAll('.stats-table-modulos tbody td'))
         .map(td => (td as HTMLElement).textContent?.trim());
       expect(celdas.slice(0, 3)).toEqual(['A73', 'Torre Norte', 'Grupo 2B']);
@@ -146,7 +158,7 @@ describe('Dashboard', () => {
       expect(celdas[6]).toBe('42');
       expect(celdas[7]).toBe('Mesa 3');
       expect(celdas[9]).toBe('~25');
-      expect(celdas.slice(10)).toEqual(['~67', '100', '2', '120']);
+      expect(celdas.slice(10)).toEqual(['~67', '140', '100', '2', '120']);
       expect(text('.stats-table-modulos').length).toBeGreaterThan(0);
     });
 

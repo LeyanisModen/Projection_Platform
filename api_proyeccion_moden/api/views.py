@@ -77,6 +77,7 @@ TECHNICAL_FIELD_ALIASES = {
     'espesor_cm': ['espesor_cm', 'espesor', 'canto', 'thickness_cm', 'thickness'],
     'peso_malla_inicial_kg': ['peso_malla_inicial_kg', 'peso_malla_inicial', 'malla_inicial_kg', 'peso_mallazo_inicial_kg'],
     'peso_malla_final_kg': ['peso_malla_final_kg', 'peso_malla_final', 'malla_final_kg', 'peso_mallazo_final_kg'],
+    'peso_malla_manual_kg': ['peso_malla_manual_kg', 'peso_malla_manual', 'malla_manual_kg'],
     'desperdicio_kg': ['desperdicio_kg', 'desperdicio', 'peso_desperdicio_kg'],
     'cantidad_cortes': ['cantidad_cortes', 'cortes', 'numero_cortes'],
     'cantidad_refuerzos': ['cantidad_refuerzos', 'refuerzos', 'numero_refuerzos'],
@@ -350,6 +351,7 @@ DECIMAL_FIELDS_2_PLACES = {
     'espesor_cm',
     'peso_malla_inicial_kg',
     'peso_malla_final_kg',
+    'peso_malla_manual_kg',
     'desperdicio_kg',
     'peso_refuerzos_kg',
     'peso_zunchos_kg',
@@ -541,6 +543,32 @@ def _load_technical_records_from_sqlite(uploaded_file):
                     color_chars.append(ch[0] if ch else 'x')
             codigos_color = ''.join(color_chars) or 'xxxxxxxx'
 
+            # Malla hecha a mano (barra a barra, sin pedido ni desperdicio): su
+            # peso no viene en ninguna columna de piezas, solo dentro de
+            # peso_total. Lo que peso_total tiene de mas sobre la suma de las
+            # piezas es esa malla, repartida a partes iguales entre las fases.
+            def _kg(column):
+                try:
+                    return float(row_dict.get(column))
+                except (TypeError, ValueError):
+                    return None
+
+            manual_inf = manual_sup = None
+            peso_total = _kg('peso_total')
+            if peso_total is not None:
+                piezas = sum(_kg(column) or 0.0 for column in (
+                    'peso_mallazo_recortado_inf', 'peso_mallazo_recortado_sup',
+                    'peso_refuerzos_inf', 'peso_refuerzos_sup',
+                    'peso_zunchos', 'peso_punzonamientos', 'peso_separadores',
+                ))
+                resto = round(peso_total - piezas, 2)
+                if resto >= 0.5:
+                    manual_inf = round(resto / 2, 2)
+                    manual_sup = round(resto - manual_inf, 2)
+                else:
+                    # Con peso_total en la base, un modulo sin malla manual la pone a cero.
+                    manual_inf = manual_sup = 0.0
+
             technical_records.append({
                 'modulo': module_name,
                 'ancho_cm': ancho_cm,
@@ -552,6 +580,8 @@ def _load_technical_records_from_sqlite(uploaded_file):
                 'sup_desperdicio_kg': row_dict.get('peso_mallazo_desperdicio_sup'),
                 'inf_peso_malla_final_kg': row_dict.get('peso_mallazo_recortado_inf'),
                 'sup_peso_malla_final_kg': row_dict.get('peso_mallazo_recortado_sup'),
+                'inf_peso_malla_manual_kg': manual_inf,
+                'sup_peso_malla_manual_kg': manual_sup,
                 # Cuts split per phase (older DBs had a single numero_cortes_mallazo)
                 'inf_cantidad_cortes': row_dict.get('numero_cortes_mallazo_inf')
                                        or row_dict.get('numero_cortes_mallazo'),
@@ -5650,6 +5680,9 @@ class ProductionStatsView(APIView):
         def empty_totals():
             return {
                 'fases_completadas': 0,
+                # Peso real de lo fabricado: malla recortada mas refuerzos,
+                # zunchos, separadores y punzonamientos.
+                'peso_total_kg': 0.0,
                 'peso_malla_inicial_kg': 0.0,
                 'peso_malla_final_kg': 0.0,
                 'desperdicio_kg': 0.0,
@@ -5669,6 +5702,11 @@ class ProductionStatsView(APIView):
                 target['peso_malla_inicial_kg'] += float(detalle.peso_malla_inicial_kg)
             if detalle.peso_malla_final_kg is not None:
                 target['peso_malla_final_kg'] += float(detalle.peso_malla_final_kg)
+            if detalle.peso_malla_manual_kg is not None:
+                # La malla hecha a mano tambien es mallazo del modulo.
+                target['peso_malla_final_kg'] += float(detalle.peso_malla_manual_kg)
+            if detalle.peso_total_kg is not None:
+                target['peso_total_kg'] += float(detalle.peso_total_kg)
             if detalle.desperdicio_kg is not None:
                 target['desperdicio_kg'] += float(detalle.desperdicio_kg)
             target['cantidad_cortes'] += detalle.cantidad_cortes or 0
@@ -5781,7 +5819,7 @@ class ProductionStatsView(APIView):
             modulos_completados / working_hours, 2
         ) if working_hours > 0 else 0.0
         totals['kg_por_hora'] = round(
-            totals['peso_malla_final_kg'] / working_hours, 2
+            totals['peso_total_kg'] / working_hours, 2
         ) if working_hours > 0 else 0.0
 
         # Tiempo por panel. La ventana es mas ancha que el rango: da contexto a
@@ -5928,7 +5966,14 @@ class ProductionStatsView(APIView):
                 ),
                 'minutos': round(valor[0], 1) if valor else None,
                 'medido': bool(valor and valor[1]),
-                'peso_kg': _decimal(detalle.peso_malla_final_kg) if detalle else None,
+                # peso_kg es el total de la fase; malla_kg, solo la malla recortada.
+                'peso_kg': _decimal(detalle.peso_total_kg) if detalle else None,
+                'malla_kg': (
+                    _decimal((detalle.peso_malla_final_kg or 0) + (detalle.peso_malla_manual_kg or 0))
+                    if detalle and (
+                        detalle.peso_malla_final_kg is not None or detalle.peso_malla_manual_kg is not None
+                    ) else None
+                ),
                 'desperdicio_kg': _decimal(detalle.desperdicio_kg) if detalle else None,
                 'cortes': (detalle.cantidad_cortes or 0) if detalle else 0,
                 'refuerzos': (detalle.cantidad_refuerzos or 0) if detalle else 0,
@@ -5961,6 +6006,7 @@ class ProductionStatsView(APIView):
                 'superior': superior,
                 'minutos': minutos,
                 'peso_kg': round(sum(fase['peso_kg'] or 0 for fase in fases), 2),
+                'malla_kg': round(sum(fase['malla_kg'] or 0 for fase in fases), 2),
                 'desperdicio_kg': round(sum(fase['desperdicio_kg'] or 0 for fase in fases), 2),
                 'dificultad': round(sum(fase['dificultad'] for fase in fases), 1),
             })

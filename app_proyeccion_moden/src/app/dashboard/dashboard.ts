@@ -39,6 +39,8 @@ export interface StatsBucket {
   label: string;
   modulos_completados: number;
   fases_completadas: number;
+  /** Peso real fabricado (malla + refuerzos + zunchos + separadores + punzonamientos). */
+  peso_total_kg: number;
   peso_malla_inicial_kg: number;
   peso_malla_final_kg: number;
   desperdicio_kg: number;
@@ -2134,6 +2136,7 @@ export class Dashboard implements OnInit, OnDestroy {
     const base = (found: (ProductionStatsBucket & ProductionStatsTiempos & { modulos_completados: number }) | undefined) => ({
       modulos_completados: found?.modulos_completados || 0,
       fases_completadas: found?.fases_completadas || 0,
+      peso_total_kg: this.pesoTotal(found),
       peso_malla_inicial_kg: found?.peso_malla_inicial_kg || 0,
       peso_malla_final_kg: found?.peso_malla_final_kg || 0,
       desperdicio_kg: found?.desperdicio_kg || 0,
@@ -2203,7 +2206,7 @@ export class Dashboard implements OnInit, OnDestroy {
       const segStart = weekStart < from ? new Date(from) : weekStart;
       const segEnd = weekEnd > to ? new Date(to) : weekEnd;
 
-      let modulos = 0, fases = 0, pi = 0, pf = 0, desp = 0, dif = 0, workDays = 0;
+      let modulos = 0, fases = 0, pt = 0, pi = 0, pf = 0, desp = 0, dif = 0, workDays = 0;
       let tiSum = 0, tiN = 0, tsSum = 0, tsN = 0;
       const d = new Date(segStart);
       while (d <= segEnd) {
@@ -2211,6 +2214,7 @@ export class Dashboard implements OnInit, OnDestroy {
         if (found) {
           modulos += found.modulos_completados || 0;
           fases += found.fases_completadas || 0;
+          pt += this.pesoTotal(found);
           pi += found.peso_malla_inicial_kg || 0;
           pf += found.peso_malla_final_kg || 0;
           desp += found.desperdicio_kg || 0;
@@ -2237,6 +2241,7 @@ export class Dashboard implements OnInit, OnDestroy {
         label: `S${this.getIsoWeek(weekStart)}`,
         modulos_completados: modulos,
         fases_completadas: fases,
+        peso_total_kg: pt,
         peso_malla_inicial_kg: pi,
         peso_malla_final_kg: pf,
         desperdicio_kg: desp,
@@ -2291,7 +2296,7 @@ export class Dashboard implements OnInit, OnDestroy {
         const found = dias.get(this.toLocalIsoDate(mover(start, k)));
         if (!found) continue;
         modulos += found.modulos_completados || 0;
-        peso += found.peso_malla_final_kg || 0;
+        peso += this.pesoTotal(found);
         inicial += found.peso_malla_inicial_kg || 0;
         desperdicio += found.desperdicio_kg || 0;
         dificultad += found.dificultad_total || 0;
@@ -2357,7 +2362,7 @@ export class Dashboard implements OnInit, OnDestroy {
         prev: prev?.modulos ?? null, next: next?.modulos ?? null,
       }],
       peso: [{
-        name: 'Peso', color: CHART_GRIS, values: valores(b => b.peso_malla_final_kg),
+        name: 'Peso', color: CHART_GRIS, values: valores(b => b.peso_total_kg),
         prev: prev?.peso ?? null, next: next?.peso ?? null,
       }],
       tiempo: [
@@ -2422,9 +2427,15 @@ export class Dashboard implements OnInit, OnDestroy {
       diasCumplidos,
       mediaDiaria: conProduccion.length ? modulos / conProduccion.length : null,
       mejorDia: mejor ? { modulos: mejor.modulos_completados, label: this.dayLabel(mejor.fecha) } : null,
-      kgPorModulo: modulos > 0 ? (data.totals.peso_malla_final_kg || 0) / modulos : null,
+      kgPorModulo: modulos > 0 ? this.pesoTotal(data.totals) / modulos : null,
       dificultadMedia: modulos > 0 ? (data.totals.dificultad_total || 0) / modulos : null,
     };
+  }
+
+  /** Peso real fabricado de un bloque de estadisticas: malla recortada mas refuerzos,
+   *  zunchos, separadores y punzonamientos. */
+  pesoTotal(bucket: { peso_total_kg?: number; peso_malla_final_kg?: number } | null | undefined): number {
+    return bucket?.peso_total_kg ?? bucket?.peso_malla_final_kg ?? 0;
   }
 
   /** "+2" / "−1.5" frente al objetivo de la fila. */

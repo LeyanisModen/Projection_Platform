@@ -459,6 +459,8 @@ export interface PlanificarGrupoResponse {
 
 export interface ProductionStatsBucket {
     fases_completadas: number;
+    /** Peso real fabricado: malla recortada + refuerzos + zunchos + separadores + punzonamientos. */
+    peso_total_kg?: number;
     peso_malla_inicial_kg: number;
     peso_malla_final_kg: number;
     desperdicio_kg: number;
@@ -514,7 +516,10 @@ export interface ProductionStatsModuloFase {
     minutos: number | null;
     /** true si el tiempo sale del registro de la mesa; false si es aproximado. */
     medido: boolean;
+    /** Peso total de la fase. */
     peso_kg: number | null;
+    /** Solo la malla recortada. */
+    malla_kg?: number | null;
     desperdicio_kg: number | null;
     cortes: number;
     refuerzos: number;
@@ -532,6 +537,7 @@ export interface ProductionStatsModulo {
     superior: ProductionStatsModuloFase | null;
     minutos: number | null;
     peso_kg: number;
+    malla_kg?: number;
     desperdicio_kg: number;
     dificultad: number;
 }
