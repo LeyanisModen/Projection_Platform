@@ -489,14 +489,51 @@ export interface TiempoFabricacion {
     medidos: number;
 }
 
-export interface ProductionStatsDay extends ProductionStatsBucket {
+/** Mediana de minutos por panel hecho en el dia u hora (null sin paneles). */
+export interface ProductionStatsTiempos {
+    tiempo_inferior_min?: number | null;
+    tiempo_superior_min?: number | null;
+    tiempo_inferior_paneles?: number;
+    tiempo_superior_paneles?: number;
+}
+
+export interface ProductionStatsDay extends ProductionStatsBucket, ProductionStatsTiempos {
     fecha: string;
     modulos_completados: number;
 }
 
-export interface ProductionStatsHour extends ProductionStatsBucket {
+export interface ProductionStatsHour extends ProductionStatsBucket, ProductionStatsTiempos {
     hora: string;
     modulos_completados: number;
+}
+
+/** Una fase de un modulo terminado: donde, cuando, cuanto tardo y cuanto pesa. */
+export interface ProductionStatsModuloFase {
+    mesa_nombre: string | null;
+    done_at: string | null;
+    minutos: number | null;
+    /** true si el tiempo sale del registro de la mesa; false si es aproximado. */
+    medido: boolean;
+    peso_kg: number | null;
+    desperdicio_kg: number | null;
+    cortes: number;
+    refuerzos: number;
+    dificultad: number;
+}
+
+export interface ProductionStatsModulo {
+    id: number;
+    nombre: string;
+    proyecto_id: number;
+    proyecto_nombre: string;
+    grupo: string | null;
+    completado_at: string;
+    inferior: ProductionStatsModuloFase | null;
+    superior: ProductionStatsModuloFase | null;
+    minutos: number | null;
+    peso_kg: number;
+    desperdicio_kg: number;
+    dificultad: number;
 }
 
 export interface ProductionStatsResponse {
@@ -510,7 +547,11 @@ export interface ProductionStatsResponse {
     por_mesa: ProductionStatsMesa[];
     por_dia: ProductionStatsDay[];
     por_hora?: ProductionStatsHour[] | null;
-    tiempos?: { inferior: TiempoFabricacion; superior: TiempoFabricacion };
+    tiempos?: { inferior: TiempoFabricacion; superior: TiempoFabricacion; modulo?: TiempoFabricacion };
+    /** Dias de antes y de despues del rango: dan continuidad a las graficas. */
+    contexto?: { anterior: ProductionStatsDay[]; siguiente: ProductionStatsDay[] };
+    /** Modulos terminados en el rango, del mas reciente al mas antiguo. */
+    modulos?: ProductionStatsModulo[];
     esperado: {
         capacidad_diaria_modulos: number;
         modulos_esperados: number | null;

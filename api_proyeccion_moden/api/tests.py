@@ -1395,6 +1395,75 @@ class PlanningFoundationTests(APITestCase):
         self.assertEqual(fila["tiempo_paneles"], 3)
         self.assertEqual(fila["tiempo_medidos"], 1)
 
+    def test_estadisticas_detallan_modulos_tiempos_por_dia_y_contexto(self):
+        UserProfile.objects.create(
+            user=self.user,
+            capture_active_days=["MON", "TUE", "WED", "THU", "FRI"],
+            capture_start_time=time(6, 0),
+            capture_end_time=time(14, 0),
+        )
+        mesa_inf = Mesa.objects.create(nombre="Mesa 1", usuario=self.user, tipo="INFERIOR", indice=1)
+        mesa_sup = Mesa.objects.create(nombre="Mesa 3", usuario=self.user, tipo="SUPERIOR", indice=3)
+        aware = lambda *args: timezone.make_aware(datetime(*args))  # noqa: E731
+
+        # Lunes 28/09/2026: inferior hecho a las 07:00 y superior a las 08:00.
+        MesaQueueItem.objects.create(
+            modulo=self.modulo, mesa=mesa_inf, fase="INFERIOR",
+            status=MesaQueueStatus.HECHO, done_at=aware(2026, 9, 28, 7, 0),
+        )
+        MesaQueueItem.objects.create(
+            modulo=self.modulo, mesa=mesa_sup, fase="SUPERIOR",
+            status=MesaQueueStatus.HECHO, done_at=aware(2026, 9, 28, 8, 0),
+        )
+        self.modulo.inferior_hecho = True
+        self.modulo.superior_hecho = True
+        self.modulo.estado = ModuloEstado.COMPLETADO
+        self.modulo.completado_at = aware(2026, 9, 28, 8, 0)
+        self.modulo.save(update_fields=["inferior_hecho", "superior_hecho", "estado", "completado_at"])
+        DetalleModuloFase.objects.create(
+            modulo=self.modulo, fase="INFERIOR", peso_malla_final_kg="40.00", desperdicio_kg="2.00",
+        )
+        DetalleModuloFase.objects.create(modulo=self.modulo, fase="SUPERIOR", peso_malla_final_kg="60.00")
+
+        # Viernes anterior: un modulo terminado, que es el contexto de la grafica.
+        anterior = Modulo.objects.create(
+            nombre="M-00", proyecto=self.project, inferior_hecho=True, superior_hecho=True,
+            estado=ModuloEstado.COMPLETADO, completado_at=aware(2026, 9, 25, 10, 0),
+        )
+        DetalleModuloFase.objects.create(modulo=anterior, fase="INFERIOR", peso_malla_final_kg="30.00")
+
+        response = self.client.get("/api/stats/production/?from=2026-09-28&to=2026-09-28")
+        self.assertEqual(response.status_code, 200)
+
+        self.assertEqual(len(response.data["modulos"]), 1)
+        fila = response.data["modulos"][0]
+        self.assertEqual(fila["nombre"], "M-01")
+        self.assertEqual(fila["proyecto_nombre"], "Proyecto Plan")
+        self.assertEqual(fila["inferior"]["mesa_nombre"], "Mesa 1")
+        self.assertEqual(fila["inferior"]["minutos"], 60.0)
+        self.assertFalse(fila["inferior"]["medido"])
+        self.assertEqual(fila["inferior"]["peso_kg"], 40.0)
+        self.assertEqual(fila["superior"]["mesa_nombre"], "Mesa 3")
+        self.assertEqual(fila["superior"]["minutos"], 120.0)
+        self.assertEqual(fila["minutos"], 180.0)
+        self.assertEqual(fila["peso_kg"], 100.0)
+        self.assertEqual(fila["desperdicio_kg"], 2.0)
+        self.assertEqual(response.data["tiempos"]["modulo"]["mediana_min"], 180.0)
+
+        dia = response.data["por_dia"][0]
+        self.assertEqual(dia["tiempo_inferior_min"], 60.0)
+        self.assertEqual(dia["tiempo_superior_min"], 120.0)
+        horas = {h["hora"]: h for h in response.data["por_hora"]}
+        self.assertEqual(horas["07"]["tiempo_inferior_min"], 60.0)
+        self.assertEqual(horas["07"]["modulos_completados"], 0)
+        self.assertEqual(horas["08"]["modulos_completados"], 1)
+
+        contexto = response.data["contexto"]
+        self.assertEqual([d["fecha"] for d in contexto["anterior"]], ["2026-09-25"])
+        self.assertEqual(contexto["anterior"][0]["modulos_completados"], 1)
+        self.assertEqual(contexto["anterior"][0]["peso_malla_final_kg"], 30.0)
+        self.assertEqual(contexto["siguiente"], [])
+
     def test_estadisticas_calculan_ritmo_sobre_horas_transcurridas(self):
         profile = UserProfile.objects.create(
             user=self.user,

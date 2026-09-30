@@ -5517,7 +5517,7 @@ class ProductionStatsView(APIView):
         # may not have MesaQueueItem rows attached).
         modulos_qs = (
             Modulo.objects
-            .select_related('proyecto')
+            .select_related('proyecto', 'grupo_bastidor', 'grupo_bastidor__dividido_de')
             .prefetch_related('detalles_fase')
             .filter(completado_at__isnull=False,
                     completado_at__gte=from_dt,
@@ -5779,28 +5779,63 @@ class ProductionStatsView(APIView):
             totals['peso_malla_final_kg'] / working_hours, 2
         ) if working_hours > 0 else 0.0
 
-        # Tiempo por panel: fases marcadas hechas en el rango, por mesa.
+        # Tiempo por panel. La ventana es mas ancha que el rango: da contexto a
+        # las graficas (periodo anterior y siguiente) y el panel anterior de
+        # cada mesa para la aproximacion.
+        import statistics
+        contexto_dias = 14
+        ventana_desde = from_dt - timedelta(days=contexto_dias)
+        ventana_hasta = to_dt_exclusive + timedelta(days=contexto_dias)
+        fechas_fases = [it.done_at for it in item_by_modulo_fase.values() if it.done_at is not None]
+        if fechas_fases:
+            primera = timezone.localtime(min(fechas_fases), current_tz).replace(
+                hour=0, minute=0, second=0, microsecond=0,
+            )
+            ventana_desde = max(min(ventana_desde, primera), from_dt - timedelta(days=45))
         tiempo_items_qs = (
-            MesaQueueItem.objects.select_related('mesa')
-            .filter(status=MesaQueueStatus.HECHO, done_at__gte=from_dt, done_at__lt=to_dt_exclusive)
+            MesaQueueItem.objects.select_related('mesa', 'modulo')
+            .filter(status=MesaQueueStatus.HECHO, done_at__gte=ventana_desde, done_at__lt=ventana_hasta)
             .exclude(mesa__isnull=True)
         )
-        if proyecto_id:
-            tiempo_items_qs = tiempo_items_qs.filter(modulo__proyecto_id=proyecto_id)
         if not _is_admin(request.user):
             tiempo_items_qs = tiempo_items_qs.filter(mesa__usuario=request.user)
-        tiempo_items = list(tiempo_items_qs)
+        elif profile_user is not None:
+            tiempo_items_qs = tiempo_items_qs.filter(mesa__usuario=profile_user)
+        ventana_items = list(tiempo_items_qs)
         tiempos_por_item = _tiempos_fabricacion(
-            tiempo_items, _horario_para_perfil(profile), current_tz,
+            ventana_items, _horario_para_perfil(profile), current_tz,
         )
+        proyecto_filtro = int(proyecto_id) if proyecto_id and str(proyecto_id).isdigit() else None
+
+        def _mediana(valores):
+            return round(statistics.median(valores), 1) if valores else None
+
+        def _tiempos_bucket(bucket, fases):
+            fases = fases or {}
+            bucket['tiempo_inferior_min'] = _mediana(fases.get('INFERIOR', []))
+            bucket['tiempo_superior_min'] = _mediana(fases.get('SUPERIOR', []))
+            bucket['tiempo_inferior_paneles'] = len(fases.get('INFERIOR', []))
+            bucket['tiempo_superior_paneles'] = len(fases.get('SUPERIOR', []))
+
         tiempos_fase = {'INFERIOR': [], 'SUPERIOR': []}
         tiempos_mesa = {}
-        for it in tiempo_items:
+        tiempos_dia = {}
+        tiempos_hora = {}
+        for it in ventana_items:
             valor = tiempos_por_item.get(it.id)
             if valor is None:
                 continue
+            if proyecto_filtro is not None and it.modulo.proyecto_id != proyecto_filtro:
+                continue
+            local_done = timezone.localtime(it.done_at, current_tz)
+            tiempos_dia.setdefault(local_done.date().isoformat(), {}).setdefault(it.fase, []).append(valor[0])
+            if not (from_dt <= it.done_at < to_dt_exclusive):
+                continue
             tiempos_fase.setdefault(it.fase, []).append(valor)
             tiempos_mesa.setdefault(it.mesa_id, {'mesa': it.mesa, 'valores': []})['valores'].append(valor)
+            if single_day:
+                tiempos_hora.setdefault(f'{local_done.hour:02d}', {}).setdefault(it.fase, []).append(valor[0])
+
         for mesa_id, data in tiempos_mesa.items():
             if mesa_id not in por_mesa:
                 por_mesa[mesa_id] = {
@@ -5815,9 +5850,121 @@ class ProductionStatsView(APIView):
             bucket['tiempo_mediana_min'] = resumen['mediana_min']
             bucket['tiempo_paneles'] = resumen['paneles']
             bucket['tiempo_medidos'] = resumen['medidos']
+
+        # Tiempo por dia (y por hora en la vista de un dia), tambien en los dias
+        # con paneles hechos pero sin modulos terminados.
+        from_iso, to_iso = from_date.isoformat(), to_date.isoformat()
+        for fecha in tiempos_dia:
+            if from_iso <= fecha <= to_iso and fecha not in por_dia:
+                por_dia[fecha] = {'fecha': fecha, 'modulos_completados': 0, **empty_totals()}
+        for fecha, bucket in por_dia.items():
+            _tiempos_bucket(bucket, tiempos_dia.get(fecha))
+        if single_day:
+            for hora in tiempos_hora:
+                if hora not in por_hora:
+                    por_hora[hora] = {'hora': hora, 'modulos_completados': 0, **empty_totals()}
+            for hora, bucket in por_hora.items():
+                _tiempos_bucket(bucket, tiempos_hora.get(hora))
+
+        # Contexto: los dias de antes y de despues del rango, para que las
+        # graficas prolonguen la linea hacia el periodo vecino.
+        contexto_desde = from_dt - timedelta(days=contexto_dias)
+        contexto_base = Modulo.objects.prefetch_related('detalles_fase').filter(completado_at__isnull=False)
+        if proyecto_id:
+            contexto_base = contexto_base.filter(proyecto_id=proyecto_id)
+        if not _is_admin(request.user):
+            contexto_base = contexto_base.filter(proyecto__usuario=request.user)
+        contexto_modulos = list(
+            contexto_base.filter(completado_at__gte=contexto_desde, completado_at__lt=from_dt)
+        ) + list(
+            contexto_base.filter(completado_at__gte=to_dt_exclusive, completado_at__lt=ventana_hasta)
+        )
+        contexto_dia = {}
+        for modulo in contexto_modulos:
+            fecha = timezone.localtime(modulo.completado_at, current_tz).date().isoformat()
+            bucket = contexto_dia.setdefault(
+                fecha, {'fecha': fecha, 'modulos_completados': 0, **empty_totals()},
+            )
+            bucket['modulos_completados'] += 1
+            for detalle in modulo.detalles_fase.all():
+                add_detalle(bucket, detalle)
+        contexto_desde_iso = timezone.localtime(contexto_desde, current_tz).date().isoformat()
+        for fecha in tiempos_dia:
+            fuera = fecha < from_iso or fecha > to_iso
+            if fuera and fecha >= contexto_desde_iso and fecha not in contexto_dia:
+                contexto_dia[fecha] = {'fecha': fecha, 'modulos_completados': 0, **empty_totals()}
+        for fecha, bucket in contexto_dia.items():
+            _tiempos_bucket(bucket, tiempos_dia.get(fecha))
+        contexto = {
+            'anterior': sorted(
+                (b for fecha, b in contexto_dia.items() if fecha < from_iso), key=lambda b: b['fecha'],
+            ),
+            'siguiente': sorted(
+                (b for fecha, b in contexto_dia.items() if fecha > to_iso), key=lambda b: b['fecha'],
+            ),
+        }
+
+        # Detalle por modulo terminado en el rango: mesa, hora, minutos y kilos
+        # de cada fase.
+        def _decimal(value):
+            return round(float(value), 2) if value is not None else None
+
+        def _fase_detalle(modulo, fase, detalles):
+            detalle = detalles.get(fase)
+            it = item_by_modulo_fase.get((modulo.id, fase))
+            if detalle is None and it is None:
+                return None
+            valor = tiempos_por_item.get(it.id) if it is not None else None
+            return {
+                'mesa_nombre': it.mesa.nombre if it is not None and it.mesa is not None else None,
+                'done_at': (
+                    timezone.localtime(it.done_at, current_tz).isoformat()
+                    if it is not None and it.done_at else None
+                ),
+                'minutos': round(valor[0], 1) if valor else None,
+                'medido': bool(valor and valor[1]),
+                'peso_kg': _decimal(detalle.peso_malla_final_kg) if detalle else None,
+                'desperdicio_kg': _decimal(detalle.desperdicio_kg) if detalle else None,
+                'cortes': (detalle.cantidad_cortes or 0) if detalle else 0,
+                'refuerzos': (detalle.cantidad_refuerzos or 0) if detalle else 0,
+                'dificultad': round(_compute_dificultad(detalle) * dificultad_scale, 1) if detalle else 0.0,
+            }
+
+        modulos_detalle = []
+        tiempos_modulo = []
+        for modulo in modulos_list:
+            detalles = {detalle.fase: detalle for detalle in modulo.detalles_fase.all()}
+            inferior = _fase_detalle(modulo, 'INFERIOR', detalles)
+            superior = _fase_detalle(modulo, 'SUPERIOR', detalles)
+            fases = [fase for fase in (inferior, superior) if fase]
+            minutos = None
+            if (
+                inferior and superior
+                and inferior['minutos'] is not None and superior['minutos'] is not None
+            ):
+                minutos = round(inferior['minutos'] + superior['minutos'], 1)
+                tiempos_modulo.append((minutos, inferior['medido'] and superior['medido']))
+            grupo = modulo.grupo_bastidor
+            modulos_detalle.append({
+                'id': modulo.id,
+                'nombre': modulo.nombre,
+                'proyecto_id': modulo.proyecto_id,
+                'proyecto_nombre': modulo.proyecto.nombre if modulo.proyecto else '',
+                'grupo': grupo.etiqueta if grupo is not None else None,
+                'completado_at': timezone.localtime(modulo.completado_at, current_tz).isoformat(),
+                'inferior': inferior,
+                'superior': superior,
+                'minutos': minutos,
+                'peso_kg': round(sum(fase['peso_kg'] or 0 for fase in fases), 2),
+                'desperdicio_kg': round(sum(fase['desperdicio_kg'] or 0 for fase in fases), 2),
+                'dificultad': round(sum(fase['dificultad'] for fase in fases), 1),
+            })
+        modulos_detalle.sort(key=lambda row: row['completado_at'], reverse=True)
+
         tiempos = {
             'inferior': _resumen_tiempos(tiempos_fase.get('INFERIOR', [])),
             'superior': _resumen_tiempos(tiempos_fase.get('SUPERIOR', [])),
+            'modulo': _resumen_tiempos(tiempos_modulo),
         }
 
         return Response({
@@ -5842,6 +5989,8 @@ class ProductionStatsView(APIView):
             },
             'planificacion': planning,
             'tiempos': tiempos,
+            'contexto': contexto,
+            'modulos': modulos_detalle,
         })
 
 

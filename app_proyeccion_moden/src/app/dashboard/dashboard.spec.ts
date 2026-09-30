@@ -3,7 +3,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Dashboard } from './dashboard';
 import {
   ApiService, FerrallaCaptureConfig, GrupoBastidor, GrupoBastidorModulo, GrupoMesas, Mesa, MesaQueueItem, Modulo, Proyecto,
-  ProductionStatsBucket, ProductionStatsResponse,
+  ProductionStatsBucket, ProductionStatsDay, ProductionStatsResponse,
 } from '../services/api.service';
 import { of, Subject, throwError } from 'rxjs';
 import { vi } from 'vitest';
@@ -81,14 +81,83 @@ describe('Dashboard', () => {
       expect(component.tiempoDetalle({mediana_min: 20, media_min: 20, paneles: 1, medidos: 0})).toBe('mediana de 1 panel, aproximado');
     });
 
-    it('shows all six zero-valued KPIs and the period target before production starts', () => {
+    it('builds the line charts with the daily target, the day in progress and the neighbouring periods', () => {
+      const dia = (fecha: string, modulos: number, extra: Partial<ProductionStatsDay> = {}): ProductionStatsDay => ({
+        fecha, modulos_completados: modulos, fases_completadas: modulos * 2, peso_malla_inicial_kg: 100, peso_malla_final_kg: 90,
+        desperdicio_kg: 10, cantidad_cortes: 0, cantidad_refuerzos: 0, cantidad_zunchos: 0, cantidad_separadores: 0,
+        cantidad_punzos: 0, dificultad_total: 50, ...extra,
+      });
+      // Semana del lunes 14 al viernes 18 de septiembre de 2026: 10 modulos de objetivo en 5 dias.
+      stats.range = {from: '2026-09-14', to: '2026-09-18', working_days: 5};
+      stats.esperado.modulos_esperados = 10;
+      stats.totals.modulos_completados = 7;
+      stats.totals.fases_completadas = 14;
+      stats.por_dia = [
+        dia('2026-09-14', 3, {tiempo_inferior_min: 40, tiempo_superior_min: 20}),
+        dia('2026-09-15', 1),
+        dia('2026-09-17', 3),
+      ];
+      stats.contexto = {anterior: [dia('2026-09-11', 4)], siguiente: [dia('2026-09-21', 2)]};
+      component.statsFrom = '2026-09-14';
+      component.statsTo = '2026-09-18';
+
+      const vista = component.statsVista()!;
+      expect(vista.labels).toEqual(['Lun 14', 'Mar 15', 'Mié 16', 'Jue 17', 'Vie 18']);
+      expect(vista.modulos[0].values).toEqual([3, 1, 0, 3, 0]);
+      expect(vista.objetivo).toEqual([2, 2, 2, 2, 2]);
+      expect(vista.objetivoLabel).toBe('Objetivo 2 al día');
+      // La linea se prolonga hacia el viernes anterior y el lunes siguiente.
+      expect(vista.modulos[0].prev).toBe(4);
+      expect(vista.modulos[0].next).toBe(2);
+      expect(vista.tiempo.map(serie => serie.values[0])).toEqual([40, 20]);
+      expect(vista.tiempo[0].values[1]).toBeNull();
+      expect(vista.desperdicio[0].values[0]).toBe(10);
+      expect(component.statsResumen()).toEqual({
+        cumplimiento: 70, diasCumplidos: {cumplidos: 2, total: 5}, mediaDiaria: 7 / 3,
+        mejorDia: {modulos: 3, label: 'Lun 14'}, kgPorModulo: 0, dificultadMedia: 0,
+      });
+
       render();
-      expect(fixture.nativeElement.querySelectorAll('.stats-kpi').length).toBe(6);
+      const filas = Array.from(fixture.nativeElement.querySelectorAll('.stats-table-periodos tbody tr')) as HTMLElement[];
+      expect(filas.length).toBe(5);
+      expect(Array.from(filas[0].querySelectorAll('td')).slice(0, 4).map(td => td.textContent?.trim()))
+        .toEqual(['Lun 14', '3', '2', '+1']);
+      expect(filas[1].querySelector('.stats-diferencia')?.classList.contains('is-bajo')).toBe(true);
+      expect(filas[0].querySelector('.stats-diferencia')?.classList.contains('is-ok')).toBe(true);
+    });
+
+    it('lists every finished module with its mesas, hours, minutes and weight', () => {
+      stats.totals.modulos_completados = 1;
+      stats.totals.fases_completadas = 2;
+      stats.modulos = [{
+        id: 5, nombre: 'A73', proyecto_id: 7, proyecto_nombre: 'Torre Norte', grupo: 'Grupo 2B',
+        completado_at: '2026-09-14T10:30:00+02:00',
+        inferior: {mesa_nombre: 'Mesa 1', done_at: '2026-09-14T09:05:00+02:00', minutos: 41.6, medido: true,
+          peso_kg: 40, desperdicio_kg: 2, cortes: 3, refuerzos: 1, dificultad: 80},
+        superior: {mesa_nombre: 'Mesa 3', done_at: '2026-09-14T10:30:00+02:00', minutos: 25, medido: false,
+          peso_kg: 60, desperdicio_kg: 0, cortes: 1, refuerzos: 0, dificultad: 40},
+        minutos: 66.6, peso_kg: 100, desperdicio_kg: 2, dificultad: 120,
+      }];
+      render();
+      const celdas = Array.from(fixture.nativeElement.querySelectorAll('.stats-table-modulos tbody td'))
+        .map(td => (td as HTMLElement).textContent?.trim());
+      expect(celdas.slice(0, 3)).toEqual(['A73', 'Torre Norte', 'Grupo 2B']);
+      expect(celdas[4]).toBe('Mesa 1');
+      expect(celdas[6]).toBe('42');
+      expect(celdas[7]).toBe('Mesa 3');
+      expect(celdas[9]).toBe('~25');
+      expect(celdas.slice(10)).toEqual(['~67', '100', '2', '120']);
+      expect(text('.stats-table-modulos').length).toBeGreaterThan(0);
+    });
+
+    it('shows every zero-valued KPI and the period target before production starts', () => {
+      render();
+      expect(fixture.nativeElement.querySelectorAll('.stats-kpi').length).toBe(13);
       expect(text('.stats-kpi-value')).toBe('0 / 9');
       expect(text('.stats-kpi')).toBe('Módulos 0 / 9');
       expect(text('.stats-empty')).toContain('No hay producción registrada');
       expect(fixture.nativeElement.querySelector('.stats-table')).toBeNull();
-      expect(fixture.nativeElement.querySelector('.weekly-charts-row')).toBeNull();
+      expect(fixture.nativeElement.querySelector('.stats-charts')).toBeNull();
       expect(fixture.nativeElement.querySelector('.deadline-summary')).toBeNull();
       expect(fixture.nativeElement.querySelector('#estadisticas-section .stats-module-target')).not.toBeNull();
     });
@@ -101,7 +170,8 @@ describe('Dashboard', () => {
       expect(text('.stats-kpi-value')).toBe('53 / 64');
       expect(text('.stats-kpi')).toBe('Módulos 53 / 64');
       expect(fixture.nativeElement.querySelector('.stats-table')).not.toBeNull();
-      expect(fixture.nativeElement.querySelector('.weekly-charts-row')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('.stats-charts')).not.toBeNull();
+      expect(fixture.nativeElement.querySelectorAll('app-stats-line-chart').length).toBe(5);
       expect(fixture.nativeElement.querySelector('.stats-empty')).toBeNull();
     });
 
@@ -187,7 +257,7 @@ describe('Dashboard', () => {
       render();
       expect(component.statsData).toBe(stats);
       expect(text('.stats-error')).toContain('últimos datos disponibles');
-      expect(fixture.nativeElement.querySelectorAll('.stats-kpi').length).toBe(6);
+      expect(fixture.nativeElement.querySelectorAll('.stats-kpi').length).toBe(13);
     });
 
     it('ignores responses for an older selected period', () => {
@@ -220,7 +290,7 @@ describe('Dashboard', () => {
     expect(component.getProyectoSemana(project)).toBe(0);
   });
 
-  it('shows only real production hours, including completions before 08h', () => {
+  it('draws one column per hour between the first and last production hour, with the hourly target', () => {
     const emptyTotals = (): ProductionStatsBucket => ({
       fases_completadas: 0,
       peso_malla_inicial_kg: 0,
@@ -255,9 +325,11 @@ describe('Dashboard', () => {
 
     const buckets = component.statsBuckets();
 
-    expect(buckets.map(bucket => bucket.key)).toEqual(['07', '09']);
-    expect(buckets.map(bucket => bucket.label)).toEqual(['07h', '09h']);
-    expect(buckets.every(bucket => bucket.meta_modulos === 0)).toBe(true);
+    expect(buckets.map(bucket => bucket.key)).toEqual(['07', '08', '09']);
+    expect(buckets.map(bucket => bucket.label)).toEqual(['07h', '08h', '09h']);
+    expect(buckets.map(bucket => bucket.modulos_completados)).toEqual([1, 0, 1]);
+    // 12 modulos de objetivo en el dia, repartidos en una jornada de 8 horas.
+    expect(buckets.every(bucket => bucket.meta_modulos === 1.5)).toBe(true);
   });
 
   it('keeps projects with pending validations out of the add-to-queue list', () => {
