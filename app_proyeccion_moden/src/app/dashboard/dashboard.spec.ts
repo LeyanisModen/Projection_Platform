@@ -111,7 +111,11 @@ describe('Dashboard', () => {
       expect(vista.modulos[0].next).toBe(2);
       expect(vista.tiempo.map(serie => serie.values[0])).toEqual([40, 20]);
       expect(vista.tiempo[0].values[1]).toBeNull();
-      expect(vista.desperdicio[0].values[0]).toBe(10);
+      // Desperdicio sobre el peso total: 10 kg de 130 kg fabricados.
+      expect(vista.desperdicio[0].values[0]).toBeCloseTo(7.69, 2);
+      expect(vista.desperdicio[0].prev).toBeCloseTo(7.69, 2);
+      expect(component.desperdicioPct({desperdicio_kg: 184.9, peso_total_kg: 10458, peso_malla_final_kg: 7089})).toBeCloseTo(1.77, 2);
+      expect(component.desperdicioPct({desperdicio_kg: 5, peso_total_kg: 0})).toBeNull();
       // El peso de las graficas y tablas es el total del modulo, no solo el mallazo.
       expect(vista.peso[0].values).toEqual([130, 130, 0, 130, 0]);
       expect(vista.peso[0].prev).toBe(130);
@@ -146,10 +150,15 @@ describe('Dashboard', () => {
       }];
       stats.totals.peso_total_kg = 140;
       stats.totals.peso_malla_final_kg = 100;
+      stats.totals.desperdicio_kg = 7;
       render();
-      const pesoKpi = text('.stats-kpi[title^="Peso total"] .stats-kpi-value');
-      expect(pesoKpi.startsWith('140 kg')).toBe(true);
-      expect(pesoKpi).toContain('100 kg de mallazo');
+      // El indicador de peso es solo el total; el mallazo queda en las tablas.
+      expect(text('.stats-kpi[title^="Peso total"] .stats-kpi-value')).toBe('140 kg');
+      // Desperdicio: kilos y, al lado, su porcentaje sobre el peso total (7 de 140).
+      const desperdicio = fixture.nativeElement.querySelector('.stats-kpi[title^="Kilos de mallazo desechados"] .stats-kpi-value') as HTMLElement;
+      expect(desperdicio.querySelector('.stats-kpi-sep')).not.toBeNull();
+      expect(desperdicio.querySelector('.stats-kpi-pct')?.textContent).toBe('5.0');
+      expect(desperdicio.textContent?.replace(/\s+/g, ' ').trim().startsWith('7 kg')).toBe(true);
       expect(component.statsResumen()?.kgPorModulo).toBe(140);
       const celdas = Array.from(fixture.nativeElement.querySelectorAll('.stats-table-modulos tbody td'))
         .map(td => (td as HTMLElement).textContent?.trim());
