@@ -114,6 +114,7 @@
 .stats-table th { padding: 8px 10px; border-bottom: 1px solid var(--line-strong); color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-align: left; text-transform: uppercase; }
 .stats-table td { padding: 8px 10px; border-bottom: 1px solid var(--line); color: var(--text); }
 .stats-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.stats-tiempo-nota { margin: 8px 0 0; color: var(--muted); font-size: 12px; }
 .stats-mesa-badge { display: inline-block; margin-right: 6px; padding: 1px 7px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 10px; font-weight: 700; }
 .weekly-charts-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
 .weekly-chart { padding: 12px 14px; border: 1px solid var(--line); background: var(--surface); }

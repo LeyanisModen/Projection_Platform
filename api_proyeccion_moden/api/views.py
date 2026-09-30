@@ -36,6 +36,7 @@ from api.models import (
     DetalleModuloFase, MesaQueueStatus, ModuloEstado, Fase,
     GrupoBastidor, MaterialPieza, MaterialInformado, MaterialOrigenCheck,
     MaterialTipo, MesaTipo, UserProfile, EstrategiaColaSuperior,
+    EventoFabricacion, EventoFabricacionTipo,
 )
 from api.project_media import (
     collect_module_media,
@@ -52,6 +53,8 @@ from api.queue_sync import (
     apply_queue_progress,
     capture_phase_assignment_hints,
     capture_queue_progress,
+    close_showing_interval,
+    record_step,
     module_fabrication_started_map,
     module_reorderability,
     module_reorderability_map,
@@ -3710,6 +3713,7 @@ class ModuloViewSet(viewsets.ModelViewSet):
                 item.done_at = now
             item.done_by = user
             item.save(update_fields=['status', 'done_at', 'done_by'])
+            close_showing_interval(item, EventoFabricacionTipo.FIN)
 
         for group in GrupoMesas.objects.filter(id__in=affected_group_ids):
             reconcile_superior_queue_if_adaptive(group)
@@ -3853,14 +3857,10 @@ def _promote_next_if_idle(mesa):
         )
         if next_item is None:
             return None
-        next_item.status = MesaQueueStatus.MOSTRANDO
-        next_item.save(update_fields=['status'])
-        locked.imagen_actual = next_item.imagen
-        locked.current_image_index = 0
-        locked.save(update_fields=['imagen_actual', 'current_image_index'])
+        activate_queue_item(locked, next_item)
         # Keep the caller's instance in sync without another query.
         mesa.imagen_actual = locked.imagen_actual
-        mesa.current_image_index = 0
+        mesa.current_image_index = locked.current_image_index
         return next_item
 
 
@@ -4040,6 +4040,7 @@ class MesaViewSet(viewsets.ModelViewSet):
             return Response({'detail': 'Index must be an integer'}, status=400)
 
         mesa.save(update_fields=['current_image_index', 'ultima_actualizacion'])
+        record_step(mesa, mesa.current_image_index)
         register_superior_demand_for_mesa(mesa)
         return Response({'status': 'ok', 'index': mesa.current_image_index})
 
@@ -5366,6 +5367,119 @@ def _compute_dificultad(detalle):
     return float(time_units + peso / Decimal('100'))
 
 
+def _horario_para_perfil(profile):
+    """Working window per weekday for a ferralla (or the historical default)."""
+    from datetime import time
+    if profile is not None and hasattr(profile, 'horario_por_dia'):
+        return profile.horario_por_dia()
+    return {day: (time(6, 50), time(15, 0)) for day in ['MON', 'TUE', 'WED', 'THU', 'FRI']}
+
+
+def _working_seconds_between(start, end, horario, current_tz):
+    """Seconds of configured working time between two aware datetimes."""
+    from datetime import timedelta
+    if start is None or end is None or end <= start:
+        return 0.0
+    day_codes = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']
+    total = 0.0
+    current = timezone.localtime(start, current_tz).date()
+    last = timezone.localtime(end, current_tz).date()
+    while current <= last:
+        tramo = horario.get(day_codes[current.weekday()])
+        if tramo:
+            start_time, end_time = tramo
+            day_start = timezone.make_aware(
+                timezone.datetime.combine(current, start_time), current_tz
+            )
+            day_end = timezone.make_aware(
+                timezone.datetime.combine(current, end_time), current_tz
+            )
+            if day_end <= day_start:
+                day_end += timedelta(days=1)
+            lo = max(day_start, start)
+            hi = min(day_end, end)
+            if hi > lo:
+                total += (hi - lo).total_seconds()
+        current += timedelta(days=1)
+    return total
+
+
+def _jornada_inicio(local_date, horario, current_tz):
+    day_codes = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']
+    tramo = horario.get(day_codes[local_date.weekday()])
+    if not tramo:
+        return None
+    return timezone.make_aware(
+        timezone.datetime.combine(local_date, tramo[0]), current_tz
+    )
+
+
+def _tiempos_fabricacion(items, horario, current_tz):
+    """Minutes of working time per finished phase, measured when possible.
+
+    Measured: sum of the intervals between INICIO/PASO and PAUSA/FIN events
+    (time with the phase on screen), clipped to the working schedule.
+    Approximated (phases finished before the log existed): working time
+    between the previous phase finished on the same mesa that day (or the
+    start of the working day) and this one. Returns
+    ``{item_id: (minutes, measured)}``.
+    """
+    items = [it for it in items if it.done_at is not None and it.mesa_id is not None]
+    if not items:
+        return {}
+    eventos = {}
+    for ev in EventoFabricacion.objects.filter(item_id__in=[it.id for it in items]).order_by('at', 'id'):
+        eventos.setdefault(ev.item_id, []).append(ev)
+
+    result = {}
+    by_mesa = {}
+    for it in sorted(items, key=lambda i: (i.done_at, i.id)):
+        by_mesa.setdefault(it.mesa_id, []).append(it)
+
+    for mesa_items in by_mesa.values():
+        previous_done = None
+        for it in mesa_items:
+            evs = eventos.get(it.id, [])
+            measured = any(ev.tipo == EventoFabricacionTipo.INICIO for ev in evs)
+            if measured:
+                seconds = 0.0
+                open_at = None
+                for ev in evs:
+                    if ev.tipo in (EventoFabricacionTipo.INICIO, EventoFabricacionTipo.PASO):
+                        if open_at is None:
+                            open_at = ev.at
+                    elif open_at is not None:
+                        seconds += _working_seconds_between(open_at, ev.at, horario, current_tz)
+                        open_at = None
+                if open_at is not None:
+                    seconds += _working_seconds_between(open_at, it.done_at, horario, current_tz)
+                result[it.id] = (seconds / 60.0, True)
+            else:
+                done_local = timezone.localtime(it.done_at, current_tz)
+                start = None
+                if previous_done is not None and timezone.localtime(previous_done, current_tz).date() == done_local.date():
+                    start = previous_done
+                else:
+                    start = _jornada_inicio(done_local.date(), horario, current_tz)
+                seconds = _working_seconds_between(start, it.done_at, horario, current_tz)
+                if seconds > 0:
+                    result[it.id] = (seconds / 60.0, False)
+            previous_done = it.done_at
+    return result
+
+
+def _resumen_tiempos(valores):
+    """``{mediana_min, media_min, paneles, medidos}`` for a list of (minutes, measured)."""
+    import statistics
+    minutos = [round(m, 1) for m, _ in valores]
+    return {
+        'mediana_min': round(statistics.median(minutos), 1) if minutos else None,
+        'media_min': round(sum(minutos) / len(minutos), 1) if minutos else None,
+        'paneles': len(minutos),
+        'medidos': sum(1 for _, measured in valores if measured),
+    }
+
+
 class ProductionStatsView(APIView):
     """
     Aggregated production stats for the statistics dashboard.
@@ -5665,6 +5779,47 @@ class ProductionStatsView(APIView):
             totals['peso_malla_final_kg'] / working_hours, 2
         ) if working_hours > 0 else 0.0
 
+        # Tiempo por panel: fases marcadas hechas en el rango, por mesa.
+        tiempo_items_qs = (
+            MesaQueueItem.objects.select_related('mesa')
+            .filter(status=MesaQueueStatus.HECHO, done_at__gte=from_dt, done_at__lt=to_dt_exclusive)
+            .exclude(mesa__isnull=True)
+        )
+        if proyecto_id:
+            tiempo_items_qs = tiempo_items_qs.filter(modulo__proyecto_id=proyecto_id)
+        if not _is_admin(request.user):
+            tiempo_items_qs = tiempo_items_qs.filter(mesa__usuario=request.user)
+        tiempo_items = list(tiempo_items_qs)
+        tiempos_por_item = _tiempos_fabricacion(
+            tiempo_items, _horario_para_perfil(profile), current_tz,
+        )
+        tiempos_fase = {'INFERIOR': [], 'SUPERIOR': []}
+        tiempos_mesa = {}
+        for it in tiempo_items:
+            valor = tiempos_por_item.get(it.id)
+            if valor is None:
+                continue
+            tiempos_fase.setdefault(it.fase, []).append(valor)
+            tiempos_mesa.setdefault(it.mesa_id, {'mesa': it.mesa, 'valores': []})['valores'].append(valor)
+        for mesa_id, data in tiempos_mesa.items():
+            if mesa_id not in por_mesa:
+                por_mesa[mesa_id] = {
+                    'mesa_id': mesa_id,
+                    'mesa_nombre': data['mesa'].nombre,
+                    'tipo': data['mesa'].tipo,
+                    'indice': data['mesa'].indice,
+                    **empty_totals(),
+                }
+        for mesa_id, bucket in por_mesa.items():
+            resumen = _resumen_tiempos(tiempos_mesa.get(mesa_id, {}).get('valores', []))
+            bucket['tiempo_mediana_min'] = resumen['mediana_min']
+            bucket['tiempo_paneles'] = resumen['paneles']
+            bucket['tiempo_medidos'] = resumen['medidos']
+        tiempos = {
+            'inferior': _resumen_tiempos(tiempos_fase.get('INFERIOR', [])),
+            'superior': _resumen_tiempos(tiempos_fase.get('SUPERIOR', [])),
+        }
+
         return Response({
             'range': {
                 'from': from_date.isoformat(),
@@ -5686,6 +5841,7 @@ class ProductionStatsView(APIView):
                 **period_target_summary(planning_projects, from_date, to_date),
             },
             'planificacion': planning,
+            'tiempos': tiempos,
         })
 
 
@@ -6163,6 +6319,7 @@ class DeviceViewSet(viewsets.ViewSet):
             mesa = Mesa.objects.select_for_update().get(pk=mesa.pk)
             mesa.current_image_index = index
             mesa.save(update_fields=['current_image_index', 'ultima_actualizacion'])
+            record_step(mesa, index)
             register_superior_demand_for_mesa(mesa)
         return Response({'status': 'ok', 'index': mesa.current_image_index})
 
@@ -6661,11 +6818,7 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
         ).exists()
         
         if not active_exists:
-            item.status = MesaQueueStatus.MOSTRANDO
-            item.save(update_fields=['status'])
-            item.mesa.imagen_actual = item.imagen
-            item.mesa.current_image_index = 0
-            item.mesa.save(update_fields=['imagen_actual', 'current_image_index'])
+            activate_queue_item(item.mesa, item)
 
     def perform_update(self, serializer):
         if not _is_admin(self.request.user) and any(

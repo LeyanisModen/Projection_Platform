@@ -5,6 +5,7 @@ from django.core.validators import MinValueValidator, RegexValidator
 from datetime import timedelta
 
 from django.db import models
+from django.utils import timezone
 from django.contrib.auth.models import User
 
 
@@ -1347,6 +1348,8 @@ class MesaQueueItem(models.Model):
         self.done_by = user
         self.done_at = timezone.now()
         self.save()  # Ensure HECHO status is persisted
+        from api.queue_sync import close_showing_interval
+        close_showing_interval(self, 'FIN')
         
         # Also update the module phase status
         if self.fase == Fase.INFERIOR:
@@ -1473,3 +1476,50 @@ class MaterialInformado(models.Model):
     def __str__(self):
         return f"{self.proyecto_id} · {self.clave_material} = {self.informado}"
 
+
+class EventoFabricacionTipo(models.TextChoices):
+    INICIO = 'INICIO', 'Empieza a mostrarse'
+    PASO = 'PASO', 'Cambio de imagen'
+    PAUSA = 'PAUSA', 'Se aparta de la mesa'
+    FIN = 'FIN', 'Marcado hecho'
+
+
+class EventoFabricacion(models.Model):
+    """Registro de lo que pasa con una fase mientras esta en una mesa.
+
+    Con estos eventos se mide el tiempo real de fabricacion: cada tramo
+    entre INICIO/PASO y PAUSA/FIN es tiempo con la fase en pantalla, y los
+    PASO dicen cuanto cuesta cada imagen. Se borra con su item.
+    """
+    id = models.AutoField(primary_key=True)
+    item = models.ForeignKey(
+        MesaQueueItem,
+        on_delete=models.CASCADE,
+        related_name='eventos',
+    )
+    mesa = models.ForeignKey(
+        Mesa,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='eventos_fabricacion',
+    )
+    modulo = models.ForeignKey(
+        Modulo,
+        on_delete=models.CASCADE,
+        related_name='eventos_fabricacion',
+    )
+    fase = models.CharField(max_length=20, choices=Fase.choices)
+    tipo = models.CharField(max_length=10, choices=EventoFabricacionTipo.choices)
+    paso = models.PositiveIntegerField(null=True, blank=True)
+    at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        db_table = 'api_evento_fabricacion'
+        ordering = ['at', 'id']
+        indexes = [
+            models.Index(fields=['item', 'at'], name='evento_fab_item_at_idx'),
+        ]
+
+    def __str__(self):
+        return f'{self.tipo} {self.fase} {self.modulo_id} @ {self.at:%d/%m %H:%M}'

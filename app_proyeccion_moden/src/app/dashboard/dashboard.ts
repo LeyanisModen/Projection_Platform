@@ -9,6 +9,7 @@ import {
   Proyecto, Modulo, Mesa, ModuloQueueItem, MesaQueueItem, Imagen, FotoFabricacion,
   EstrategiaColaSuperior, GrupoMesas, GrupoMesasProyectoEntry, ProductionStatsResponse, ModuloFase,
   GrupoBastidor, GrupoBastidorModulo, CaptureDay, FerrallaCaptureConfig, HorarioDia, GrupoMesaResumen,
+  TiempoFabricacion,
 } from '../services/api.service';
 import {
   ListaMaterialesService,
@@ -1999,6 +2000,31 @@ export class Dashboard implements OnInit, OnDestroy {
     const diff = (day === 0 ? -6 : 1 - day);
     result.setDate(result.getDate() + diff);
     return result;
+  }
+
+  /** Minutos por panel (mediana) o guion si no hay paneles en el rango. */
+  tiempoLabel(tiempo: TiempoFabricacion | undefined | null): string {
+    if (!tiempo || tiempo.mediana_min === null || tiempo.mediana_min === undefined) return '—';
+    return String(Math.round(tiempo.mediana_min));
+  }
+
+  tiempoDetalle(tiempo: TiempoFabricacion | undefined | null): string {
+    if (!tiempo || !tiempo.paneles) return 'sin paneles';
+    const base = `mediana de ${tiempo.paneles} ${tiempo.paneles === 1 ? 'panel' : 'paneles'}`;
+    if (tiempo.medidos >= tiempo.paneles) return base + ' medidos';
+    if (tiempo.medidos === 0) return base + ', aproximado';
+    return `${base}, ${tiempo.medidos} medidos`;
+  }
+
+  /** Nota al pie mientras el rango mezcle paneles aproximados y medidos. */
+  tiempoNota(): string {
+    const t = this.statsData?.tiempos;
+    if (!t) return '';
+    const paneles = t.inferior.paneles + t.superior.paneles;
+    const medidos = t.inferior.medidos + t.superior.medidos;
+    if (!paneles || medidos >= paneles) return '';
+    return 'Tiempo por panel: minutos de jornada entre un panel hecho y el anterior en la misma mesa '
+      + '(o desde el inicio de jornada). Los paneles fabricados desde ahora se miden con el tiempo real en pantalla.';
   }
 
   mesaStatsLabel(mesa: { tipo: string; indice: number }): string {
