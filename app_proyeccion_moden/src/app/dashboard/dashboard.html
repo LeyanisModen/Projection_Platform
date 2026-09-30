@@ -75,6 +75,7 @@
                         <div class="stats-loading">Cargando…</div>
                     } @else if (statsData) {
                         <!-- Shared KPIs -->
+                        @let resumen = statsResumen();
                         <div class="stats-kpi-row">
                             <div class="stats-kpi">
                                 <span class="stats-kpi-label">Módulos</span>
@@ -82,6 +83,18 @@
                                     {{ statsData.totals.modulos_completados }}
                                     <span class="stats-module-target"
                                           title="Objetivo del período según los pendientes a su inicio, los plazos de montaje actuales y los días laborables de la ferralla.">/ {{ statsPeriodTarget() ?? '?' }}</span>
+                                </span>
+                            </div>
+                            <div class="stats-kpi" title="Módulos fabricados sobre el objetivo del período">
+                                <span class="stats-kpi-label">Cumplimiento</span>
+                                <span class="stats-kpi-value">{{ resumen?.cumplimiento ?? '—' }} <small>%</small></span>
+                            </div>
+                            <div class="stats-kpi" title="Días laborables ya pasados en los que se llegó al objetivo diario">
+                                <span class="stats-kpi-label">Días en objetivo</span>
+                                <span class="stats-kpi-value">
+                                    @if (resumen?.diasCumplidos; as dias) {
+                                        {{ dias.cumplidos }} <small>de {{ dias.total }}</small>
+                                    } @else { — }
                                 </span>
                             </div>
                             <div class="stats-kpi">
@@ -99,6 +112,18 @@
                                     <small class="stats-kpi-expected" *ngIf="desperdicioPct(statsData.totals) !== null">· {{ desperdicioPct(statsData.totals) | number:'1.1-1' }}%</small>
                                 </span>
                             </div>
+                            <div class="stats-kpi" title="Módulos por día, contando solo los días con producción">
+                                <span class="stats-kpi-label">Media diaria</span>
+                                <span class="stats-kpi-value">{{ (resumen?.mediaDiaria | number:'1.0-1') ?? '—' }} <small>mód./día</small></span>
+                            </div>
+                            <div class="stats-kpi">
+                                <span class="stats-kpi-label">Mejor día</span>
+                                <span class="stats-kpi-value">
+                                    @if (resumen?.mejorDia; as mejor) {
+                                        {{ mejor.modulos }} <small>mód. · {{ mejor.label }}</small>
+                                    } @else { — }
+                                </span>
+                            </div>
                             <div class="stats-kpi">
                                 <span class="stats-kpi-label">Ritmo de módulos</span>
                                 <span class="stats-kpi-value">
@@ -111,19 +136,39 @@
                                     {{ statsData.totals.kg_por_hora | number:'1.0-1' }} <small>kg/h</small>
                                 </span>
                             </div>
-                            @if (statsData.tiempos) {
-                            <div class="stats-kpi stats-kpi-tiempo" [title]="'Inferior: ' + tiempoDetalle(statsData.tiempos.inferior)">
+                            <div class="stats-kpi">
+                                <span class="stats-kpi-label">Peso por módulo</span>
+                                <span class="stats-kpi-value">{{ (resumen?.kgPorModulo | number:'1.0-1') ?? '—' }} <small>kg</small></span>
+                            </div>
+                            <div class="stats-kpi" title="100 puntos es un módulo de dificultad media">
+                                <span class="stats-kpi-label">Dificultad media</span>
+                                <span class="stats-kpi-value">{{ (resumen?.dificultadMedia | number:'1.0-0') ?? '—' }} <small>puntos</small></span>
+                            </div>
+                            <div class="stats-kpi" title="Horas de jornada transcurridas en el período">
+                                <span class="stats-kpi-label">Horas de jornada</span>
+                                <span class="stats-kpi-value">{{ statsData.totals.horas_productivas | number:'1.0-1' }} <small>h</small></span>
+                            </div>
+                            @if (statsData.tiempos; as tiempos) {
+                            <div class="stats-kpi stats-kpi-tiempo" [title]="'Inferior: ' + tiempoDetalle(tiempos.inferior)">
                                 <span class="stats-kpi-label">Tiempo inferior</span>
                                 <span class="stats-kpi-value">
-                                    {{ tiempoLabel(statsData.tiempos.inferior) }} <small>min/panel</small>
+                                    {{ tiempoLabel(tiempos.inferior) }} <small>min/panel</small>
                                 </span>
                             </div>
-                            <div class="stats-kpi stats-kpi-tiempo" [title]="'Superior: ' + tiempoDetalle(statsData.tiempos.superior)">
+                            <div class="stats-kpi stats-kpi-tiempo" [title]="'Superior: ' + tiempoDetalle(tiempos.superior)">
                                 <span class="stats-kpi-label">Tiempo superior</span>
                                 <span class="stats-kpi-value">
-                                    {{ tiempoLabel(statsData.tiempos.superior) }} <small>min/panel</small>
+                                    {{ tiempoLabel(tiempos.superior) }} <small>min/panel</small>
                                 </span>
                             </div>
+                            @if (tiempos.modulo; as tiempoModulo) {
+                            <div class="stats-kpi stats-kpi-tiempo" title="Inferior más superior de cada módulo terminado">
+                                <span class="stats-kpi-label">Tiempo por módulo</span>
+                                <span class="stats-kpi-value">
+                                    {{ tiempoLabel(tiempoModulo) }} <small>min</small>
+                                </span>
+                            </div>
+                            }
                             }
                         </div>
 
@@ -136,6 +181,26 @@
                         @if (statsData.totals.fases_completadas === 0 && statsData.totals.modulos_completados === 0) {
                             <div class="stats-empty">No hay producción registrada en el rango seleccionado. El objetivo sigue visible para planificar el trabajo.</div>
                         } @else {
+                        @let vista = statsVista();
+                        @if (vista) {
+                        <h4 class="stats-subtitle">Evolución</h4>
+                        <div class="stats-charts">
+                            <app-stats-line-chart title="Módulos fabricados" unit="módulos" [height]="260"
+                                [labels]="vista.labels" [series]="vista.modulos" [target]="vista.objetivo"
+                                [targetLabel]="vista.objetivoLabel" [pending]="vista.pending" />
+                            <div class="stats-charts-grid">
+                                <app-stats-line-chart title="Peso producido (kg)" unit="kg"
+                                    [labels]="vista.labels" [series]="vista.peso" />
+                                <app-stats-line-chart title="Tiempo por panel (min)" unit="min"
+                                    [labels]="vista.labels" [series]="vista.tiempo" />
+                                <app-stats-line-chart title="Desperdicio (% de la malla)" unit="%" [decimals]="1"
+                                    [labels]="vista.labels" [series]="vista.desperdicio" />
+                                <app-stats-line-chart title="Dificultad ejecutada (puntos)" unit="puntos"
+                                    [labels]="vista.labels" [series]="vista.dificultad" />
+                            </div>
+                        </div>
+                        }
+
                         <h4 class="stats-subtitle">Detalle por mesa</h4>
                         <table class="stats-table">
                             <thead>
@@ -177,81 +242,106 @@
                             <p class="stats-tiempo-nota">{{ tiempoNota() }}</p>
                         }
 
-                        <h4 class="stats-subtitle">Infografía</h4>
-                        <div class="weekly-charts-row">
-                                <!-- Historical production; current deadline targets are shown separately. -->
-                                <div class="weekly-chart">
-                                    <div class="weekly-chart-header">
-                                        <h4>Módulos fabricados</h4>
-                                        <div class="weekly-legend">
-                                            <span class="legend-swatch swatch-primary"></span>Fabricados
-                                        </div>
-                                    </div>
-                                    <div class="weekly-chart-body">
-                                        @for (b of statsBuckets(); track b.key) {
-                                            <div class="chart-day">
-                                                <div class="chart-bar-area">
-                                                    <div class="chart-bar chart-bar-primary"
-                                                        [style.height.%]="modulosBarPct(b.modulos_completados)"
-                                                        [title]="b.label + ': ' + b.modulos_completados + ' módulos'">
-                                                    </div>
-                                                </div>
-                                                <span class="chart-day-label">{{ b.label }}</span>
-                                            </div>
+                        @if (vista) {
+                        <h4 class="stats-subtitle">{{ vista.detalleTitulo }}</h4>
+                        <div class="stats-table-scroll">
+                            <table class="stats-table stats-table-periodos">
+                                <thead>
+                                    <tr>
+                                        <th>{{ vista.periodoLabel }}</th>
+                                        <th class="num">Módulos</th>
+                                        @if (vista.objetivo) {
+                                            <th class="num">Objetivo</th>
+                                            <th class="num">Diferencia</th>
                                         }
-                                    </div>
-                                </div>
+                                        <th class="num">Paneles</th>
+                                        <th class="num">Peso (kg)</th>
+                                        <th class="num">Desperdicio (kg)</th>
+                                        <th class="num">Desperdicio (%)</th>
+                                        <th class="num">Min. inferior</th>
+                                        <th class="num">Min. superior</th>
+                                        <th class="num">Dificultad</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @for (fila of vista.filas; track fila.key) {
+                                        <tr>
+                                            <td>{{ fila.label }}@if (fila.en_curso) { <span class="stats-en-curso">en curso</span> }</td>
+                                            <td class="num">{{ fila.modulos_completados }}</td>
+                                            @if (vista.objetivo) {
+                                                <td class="num">{{ fila.meta_modulos > 0 ? (fila.meta_modulos | number:'1.0-1') : '—' }}</td>
+                                                <td class="num">
+                                                    @if (fila.meta_modulos > 0) {
+                                                        <span class="stats-diferencia" [class.is-ok]="llegaAlObjetivo(fila)"
+                                                            [class.is-bajo]="!llegaAlObjetivo(fila) && !fila.en_curso"
+                                                            [title]="llegaAlObjetivo(fila) ? 'Llega al objetivo' : fila.en_curso ? 'En curso' : 'Por debajo del objetivo'">{{ diferenciaLabel(fila) }}</span>
+                                                    } @else { — }
+                                                </td>
+                                            }
+                                            <td class="num">{{ fila.fases_completadas }}</td>
+                                            <td class="num">{{ fila.peso_malla_final_kg | number:'1.0-1' }}</td>
+                                            <td class="num">{{ fila.desperdicio_kg | number:'1.0-1' }}</td>
+                                            <td class="num">{{ (fila.desperdicio_pct | number:'1.1-1') ?? '—' }}</td>
+                                            <td class="num">{{ (fila.tiempo_inferior_min | number:'1.0-0') ?? '—' }}</td>
+                                            <td class="num">{{ (fila.tiempo_superior_min | number:'1.0-0') ?? '—' }}</td>
+                                            <td class="num">{{ fila.dificultad_total | number:'1.0-0' }}</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                        }
 
-                                <!-- Chart 2: Peso y desperdicio -->
-                                <div class="weekly-chart">
-                                    <div class="weekly-chart-header">
-                                        <h4>Peso y desperdicio</h4>
-                                        <div class="weekly-legend">
-                                            <span class="legend-swatch swatch-neutral"></span>Peso
-                                            <span class="legend-swatch swatch-waste"></span>Desperdicio
-                                        </div>
-                                    </div>
-                                    <div class="weekly-chart-body">
-                                        @for (b of statsBuckets(); track b.key) {
-                                            <div class="chart-day">
-                                                <div class="chart-bar-area">
-                                                    <div class="chart-bar chart-bar-neutral"
-                                                        [style.height.%]="pesoBarPct(b.peso_malla_final_kg)"
-                                                        [title]="b.label + ': ' + (b.peso_malla_final_kg | number:'1.0-1') + ' kg'">
-                                                    </div>
-                                                    <div class="chart-bar chart-bar-waste"
-                                                        [style.height.%]="pesoBarPct(b.desperdicio_kg)"
-                                                        [title]="'Desperdicio ' + b.label + ': ' + (b.desperdicio_kg | number:'1.0-1') + ' kg'"></div>
-                                                </div>
-                                                <span class="chart-day-label">{{ b.label }}</span>
-                                            </div>
-                                        }
-                                    </div>
-                                </div>
-
-                                <!-- Chart 3: Dificultad ejecutada -->
-                                <div class="weekly-chart">
-                                    <div class="weekly-chart-header">
-                                        <h4>Dificultad ejecutada</h4>
-                                        <div class="weekly-legend">
-                                            <span class="legend-swatch swatch-difficulty"></span>Puntos
-                                        </div>
-                                    </div>
-                                    <div class="weekly-chart-body">
-                                        @for (b of statsBuckets(); track b.key) {
-                                            <div class="chart-day">
-                                                <div class="chart-bar-area">
-                                                    <div class="chart-bar chart-bar-difficulty"
-                                                        [style.height.%]="dificultadBarPct(b.dificultad_total)"
-                                                        [title]="b.label + ': ' + (b.dificultad_total | number:'1.0-0') + ' puntos de dificultad'">
-                                                    </div>
-                                                </div>
-                                                <span class="chart-day-label">{{ b.label }}</span>
-                                            </div>
-                                        }
-                                    </div>
-                                </div>
-                            </div>
+                        @if (statsData.modulos?.length ? statsData.modulos : null; as modulos) {
+                        <h4 class="stats-subtitle">Módulos fabricados ({{ modulos.length }})</h4>
+                        <div class="stats-table-scroll">
+                            <table class="stats-table stats-table-modulos">
+                                <thead>
+                                    <tr>
+                                        <th rowspan="2">Módulo</th>
+                                        <th rowspan="2">Proyecto</th>
+                                        <th rowspan="2">Grupo</th>
+                                        <th rowspan="2">Terminado</th>
+                                        <th colspan="3" class="stats-th-group">Inferior</th>
+                                        <th colspan="3" class="stats-th-group">Superior</th>
+                                        <th rowspan="2" class="num">Min. total</th>
+                                        <th rowspan="2" class="num">Peso (kg)</th>
+                                        <th rowspan="2" class="num">Desperdicio (kg)</th>
+                                        <th rowspan="2" class="num">Dificultad</th>
+                                    </tr>
+                                    <tr>
+                                        <th class="stats-th-sub">Mesa</th>
+                                        <th class="stats-th-sub">Hecho</th>
+                                        <th class="stats-th-sub num">Min.</th>
+                                        <th class="stats-th-sub">Mesa</th>
+                                        <th class="stats-th-sub">Hecho</th>
+                                        <th class="stats-th-sub num">Min.</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @for (modulo of modulos; track modulo.id) {
+                                        <tr>
+                                            <td><strong>{{ modulo.nombre }}</strong></td>
+                                            <td>{{ modulo.proyecto_nombre }}</td>
+                                            <td>{{ modulo.grupo || '—' }}</td>
+                                            <td>{{ modulo.completado_at | date:'dd/MM HH:mm' }}</td>
+                                            <td>{{ modulo.inferior?.mesa_nombre || '—' }}</td>
+                                            <td>{{ (modulo.inferior?.done_at | date:'dd/MM HH:mm') ?? '—' }}</td>
+                                            <td class="num" [title]="minutosTitulo(modulo.inferior)">{{ minutosLabel(modulo.inferior) }}</td>
+                                            <td>{{ modulo.superior?.mesa_nombre || '—' }}</td>
+                                            <td>{{ (modulo.superior?.done_at | date:'dd/MM HH:mm') ?? '—' }}</td>
+                                            <td class="num" [title]="minutosTitulo(modulo.superior)">{{ minutosLabel(modulo.superior) }}</td>
+                                            <td class="num">{{ minutosModuloLabel(modulo) }}</td>
+                                            <td class="num">{{ modulo.peso_kg | number:'1.0-1' }}</td>
+                                            <td class="num">{{ modulo.desperdicio_kg | number:'1.0-1' }}</td>
+                                            <td class="num">{{ modulo.dificultad | number:'1.0-0' }}</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                        <p class="stats-tiempo-nota">Los minutos con ~ son aproximados; sin ~, medidos en la mesa.</p>
+                        }
                         }
                     }
                 </div>

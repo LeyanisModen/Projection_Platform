@@ -101,7 +101,9 @@
 .stats-period-dates input { height: 32px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); font: inherit; font-size: 13px; color: var(--ink); }
 .stats-error { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid #f1c9bf; background: #fdf3f0; color: var(--danger); font-size: 13px; }
 .stats-error .period-chip { border: 1px solid #f1c9bf; }
-.stats-kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.stats-kpi-row { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 1500px) { .stats-kpi-row { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .stats-kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .stats-kpi { display: grid; gap: 4px; padding: 12px 14px; border: 1px solid var(--line); background: var(--surface); }
 .stats-kpi-label { color: var(--muted); font-size: 12px; }
 .stats-kpi-value { color: var(--ink); font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1; }
@@ -116,24 +118,18 @@
 .stats-table .num { text-align: right; font-variant-numeric: tabular-nums; }
 .stats-tiempo-nota { margin: 8px 0 0; color: var(--muted); font-size: 12px; }
 .stats-mesa-badge { display: inline-block; margin-right: 6px; padding: 1px 7px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 10px; font-weight: 700; }
-.weekly-charts-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
-.weekly-chart { padding: 12px 14px; border: 1px solid var(--line); background: var(--surface); }
-.weekly-chart-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
-.weekly-chart-header h4 { margin: 0; color: var(--ink); font-size: 13px; font-weight: 600; }
-.weekly-legend { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; }
-.legend-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-left: 8px; }
-.legend-swatch:first-child { margin-left: 0; }
-.swatch-primary, .chart-bar-primary { background: var(--accent); }
-.swatch-neutral, .chart-bar-neutral { background: var(--line-strong); }
-.swatch-waste, .chart-bar-waste { background: var(--danger); }
-.swatch-difficulty, .chart-bar-difficulty { background: var(--ink); }
-.weekly-chart-body { position: relative; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(36px, 1fr); gap: 8px; height: 160px; padding: 6px 2px 22px; overflow-x: auto; }
-.chart-day { position: relative; display: flex; flex-direction: column; align-items: center; min-width: 0; }
-.chart-bar-area { position: relative; display: flex; align-items: flex-end; justify-content: center; flex: 1; width: 60%; max-width: 56px; border-bottom: 1px solid var(--line-strong); }
-.chart-bar { position: absolute; bottom: 0; width: 100%; border-radius: 2px 2px 0 0; transition: height 0.35s ease; }
-.chart-bar-waste { width: 45%; left: 55%; }
-.chart-bar-neutral { width: 45%; left: 0; }
-.chart-day-label { position: absolute; bottom: -20px; color: var(--muted); font-size: 11px; white-space: nowrap; }
+.stats-charts { display: grid; gap: 12px; }
+.stats-charts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 12px; }
+.stats-table-scroll { overflow-x: auto; }
+.stats-table-modulos { min-width: 1100px; }
+.stats-table-modulos td, .stats-table-periodos td { white-space: nowrap; }
+.stats-table .stats-th-group { text-align: center; border-bottom: 1px solid var(--line); }
+.stats-table .stats-th-sub { padding-top: 4px; }
+.stats-en-curso { margin-left: 8px; color: var(--muted); font-size: 11px; }
+.stats-diferencia { display: inline-flex; align-items: center; gap: 6px; }
+.stats-diferencia::before { content: ''; box-sizing: border-box; width: 8px; height: 8px; border: 2px solid var(--muted); border-radius: 50%; }
+.stats-diferencia.is-ok::before { border-color: var(--ok); background: var(--ok); }
+.stats-diferencia.is-bajo::before { border-color: var(--accent); }
 
 /* ---- Proyectos ------------------------------------------------------------ */
 .btn-materiales-general { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }

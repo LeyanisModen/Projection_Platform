@@ -1,5 +1,5 @@
 import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
-import { CommonModule, formatDate } from '@angular/common';
+import { CommonModule, formatDate, formatNumber } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { DragDropModule, CdkDragDrop, moveItemInArray, transferArrayItem } from '@angular/cdk/drag-drop';
@@ -9,8 +9,9 @@ import {
   Proyecto, Modulo, Mesa, ModuloQueueItem, MesaQueueItem, Imagen, FotoFabricacion,
   EstrategiaColaSuperior, GrupoMesas, GrupoMesasProyectoEntry, ProductionStatsResponse, ModuloFase,
   GrupoBastidor, GrupoBastidorModulo, CaptureDay, FerrallaCaptureConfig, HorarioDia, GrupoMesaResumen,
-  TiempoFabricacion,
+  TiempoFabricacion, ProductionStatsBucket, ProductionStatsTiempos, ProductionStatsModulo, ProductionStatsModuloFase,
 } from '../services/api.service';
+import { LineChartSeries, StatsLineChart } from './stats-line-chart';
 import {
   ListaMaterialesService,
   ListaMaterialesProyecto,
@@ -25,6 +26,68 @@ import { catchError } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
 import { ZoomableImageComponent } from '../shared/zoomable-image/zoomable-image.component';
 import { planningIssues, planningLabel } from '../shared/project-planning';
+
+// Graficas: naranja de marca para la serie principal, gris para las secundarias
+// y azul + naranja donde hay dos series (par validado para daltonismo).
+const CHART_NARANJA = '#f0640f';
+const CHART_AZUL = '#2a78d6';
+const CHART_GRIS = '#52606d';
+
+/** Una columna de las graficas y una fila de la tabla por periodo. */
+export interface StatsBucket {
+  key: string;
+  label: string;
+  modulos_completados: number;
+  fases_completadas: number;
+  peso_malla_inicial_kg: number;
+  peso_malla_final_kg: number;
+  desperdicio_kg: number;
+  desperdicio_pct: number | null;
+  dificultad_total: number;
+  tiempo_inferior_min: number | null;
+  tiempo_superior_min: number | null;
+  meta_modulos: number;
+  working_days: number;
+  granularity: 'hour' | 'day' | 'week';
+  /** Aun no ha llegado: no se dibuja. */
+  futuro: boolean;
+  /** Es la hora, el dia o la semana de ahora mismo: aun puede llegar al objetivo. */
+  en_curso: boolean;
+}
+
+interface StatsVecino {
+  modulos: number;
+  peso: number;
+  dificultad: number;
+  desperdicio_pct: number | null;
+  tiempo_inferior: number | null;
+  tiempo_superior: number | null;
+}
+
+/** Todo lo que pintan las graficas y la tabla por periodo de las estadisticas. */
+export interface StatsVista {
+  labels: string[];
+  pending: boolean[];
+  objetivo: Array<number | null> | null;
+  objetivoLabel: string;
+  modulos: LineChartSeries[];
+  peso: LineChartSeries[];
+  tiempo: LineChartSeries[];
+  desperdicio: LineChartSeries[];
+  dificultad: LineChartSeries[];
+  filas: StatsBucket[];
+  detalleTitulo: string;
+  periodoLabel: string;
+}
+
+export interface StatsResumen {
+  cumplimiento: number | null;
+  diasCumplidos: { cumplidos: number; total: number } | null;
+  mediaDiaria: number | null;
+  mejorDia: { modulos: number; label: string } | null;
+  kgPorModulo: number | null;
+  dificultadMedia: number | null;
+}
 
 /** Un bastidor del plan tal y como lo ve la ferralla: en orden de fabricacion. */
 export interface PlanSeccion {
@@ -73,7 +136,7 @@ interface Subfase {
   standalone: true,
   templateUrl: './dashboard.html',
   styleUrls: ['../admin/admin-theme.css', './dashboard.css', './dashboard-responsive.css'],
-  imports: [CommonModule, DragDropModule, FormsModule, ZoomableImageComponent]
+  imports: [CommonModule, DragDropModule, FormsModule, ZoomableImageComponent, StatsLineChart]
 })
 export class Dashboard implements OnInit, OnDestroy {
   readonly planningLabel = planningLabel;
@@ -106,6 +169,9 @@ export class Dashboard implements OnInit, OnDestroy {
   statsData: ProductionStatsResponse | null = null;
   loadingStats = false;
   statsError = '';
+  private statsVistaCache: {
+    data: ProductionStatsResponse; from: string; to: string; horario: FerrallaCaptureConfig | null; hora: number; vista: StatsVista;
+  } | null = null;
   private statsRequestId = 0;
   statsPreset: 'day' | 'week' | 'month' | 'custom' = 'day';
   statsFrom: string = '';
@@ -2041,99 +2107,94 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   // =========================================================================
-  // STATS BUCKETS (daily for short ranges, ISO-week for long ones)
+  // STATS BUCKETS (por hora en un dia, por dia hasta 45 dias, por semana mas alla)
   // =========================================================================
 
   /**
-   * Splits the selected range into chart buckets. Ranges up to 20 days
-   * produce one bucket per day so short views stay readable; longer
-   * ranges collapse each ISO week into a single bucket so a month+
-   * selection doesn't create a forest of skinny bars.
-   *
-   * Each bucket already includes its own expected meta (daily cap ×
-   * working days it covers), so the charts can draw the objetivo line
-   * correctly regardless of granularity.
+   * Parte el rango elegido en columnas para las graficas y la tabla por periodo.
+   * Cada columna lleva su objetivo: el del periodo repartido entre sus dias
+   * laborables, asi la linea de meta suma lo mismo que el "/ objetivo" del
+   * indicador de modulos.
    */
-  statsBuckets(): Array<{
-    key: string;
-    label: string;
-    modulos_completados: number;
-    fases_completadas: number;
-    peso_malla_inicial_kg: number;
-    peso_malla_final_kg: number;
-    desperdicio_kg: number;
-    dificultad_total: number;
-    meta_modulos: number;
-    working_days: number;
-    granularity: 'hour' | 'day' | 'week';
-  }> {
-    if (!this.statsData || !this.statsFrom || !this.statsTo) return [];
+  statsBuckets(): StatsBucket[] {
+    const data = this.statsData;
+    if (!data || !this.statsFrom || !this.statsTo) return [];
     const from = this.parseIsoDate(this.statsFrom);
     const to = this.parseIsoDate(this.statsTo);
     if (!from || !to || from > to) return [];
 
-    const dayCount = Math.floor((to.getTime() - from.getTime()) / 86400000) + 1;
-    const byDate = new Map(this.statsData.por_dia.map(d => [d.fecha, d]));
-    // Historical charts show observed output. Today's changing deadline demand
-    // must not be projected backwards as if it were a historical target.
-    const dailyCap = 0;
+    const dayCount = Math.round((to.getTime() - from.getTime()) / 86400000) + 1;
+    const byDate = new Map(data.por_dia.map(d => [d.fecha, d]));
+    const now = new Date();
+    const todayIso = this.toLocalIsoDate(now);
+    const target = this.statsPeriodTarget();
+    const workingDays = data.range.working_days || 0;
+    const dailyCap = target !== null && target > 0 && workingDays > 0 ? target / workingDays : 0;
+    const pct = (waste: number, initial: number): number | null => initial > 0 ? (waste / initial) * 100 : null;
+    const base = (found: (ProductionStatsBucket & ProductionStatsTiempos & { modulos_completados: number }) | undefined) => ({
+      modulos_completados: found?.modulos_completados || 0,
+      fases_completadas: found?.fases_completadas || 0,
+      peso_malla_inicial_kg: found?.peso_malla_inicial_kg || 0,
+      peso_malla_final_kg: found?.peso_malla_final_kg || 0,
+      desperdicio_kg: found?.desperdicio_kg || 0,
+      desperdicio_pct: pct(found?.desperdicio_kg || 0, found?.peso_malla_inicial_kg || 0),
+      dificultad_total: found?.dificultad_total || 0,
+      tiempo_inferior_min: found?.tiempo_inferior_min ?? null,
+      tiempo_superior_min: found?.tiempo_superior_min ?? null,
+    });
 
-    // Single-day view: show the real completion hours returned by the backend.
-    // This keeps work outside the configured schedule visible and avoids empty
-    // columns for hours where no module was completed.
-    if (dayCount === 1 && this.statsData.por_hora) {
-      const productiveHours = this.statsData.totals.horas_productivas;
-      const hourlyCap = dailyCap > 0 && productiveHours > 0
-        ? dailyCap / productiveHours
-        : 0;
-      return [...this.statsData.por_hora]
-        .sort((left, right) => Number(left.hora) - Number(right.hora))
-        .map((found) => {
-          const hh = found.hora.padStart(2, '0');
-          return {
-            key: hh,
-            label: `${hh}h`,
-            modulos_completados: found.modulos_completados || 0,
-            fases_completadas: found.fases_completadas || 0,
-            peso_malla_inicial_kg: found.peso_malla_inicial_kg || 0,
-            peso_malla_final_kg: found.peso_malla_final_kg || 0,
-            desperdicio_kg: found.desperdicio_kg || 0,
-            dificultad_total: found.dificultad_total || 0,
-            meta_modulos: hourlyCap,
-            working_days: 0,
-            granularity: 'hour' as const,
-          };
-        });
-    }
-
-    if (dayCount <= 20) {
-      // Daily view: skip weekends entirely so the X axis stays clean
-      // (no empty Sat/Sun columns breaking the visual).
-      const buckets = [];
-      for (let i = 0; i < dayCount; i++) {
-        const d = new Date(from);
-        d.setDate(from.getDate() + i);
-        if (!this.isWorkingDay(d)) continue;
-        const iso = this.toLocalIsoDate(d);
-        const found = byDate.get(iso);
+    // Un dia: una columna por hora, de la primera a la ultima con actividad
+    // o de la jornada si se conoce, para que la linea sea continua.
+    if (dayCount === 1 && data.por_hora) {
+      const byHour = new Map(data.por_hora.map(h => [Number(h.hora), h]));
+      const jornada = this.jornadaDe(from);
+      const horas = [...byHour.keys()];
+      if (jornada) horas.push(jornada.inicio, jornada.fin - 1);
+      if (!horas.length) return [];
+      const hourlyCap = dailyCap > 0 ? dailyCap / (jornada?.horas || 8) : 0;
+      const isToday = this.statsFrom === todayIso;
+      const buckets: StatsBucket[] = [];
+      for (let h = Math.min(...horas); h <= Math.max(...horas); h++) {
+        const hh = String(h).padStart(2, '0');
         buckets.push({
-          key: iso,
-          label: this.dayLabel(iso),
-          modulos_completados: found?.modulos_completados || 0,
-          fases_completadas: found?.fases_completadas || 0,
-          peso_malla_inicial_kg: found?.peso_malla_inicial_kg || 0,
-          peso_malla_final_kg: found?.peso_malla_final_kg || 0,
-          desperdicio_kg: found?.desperdicio_kg || 0,
-          dificultad_total: found?.dificultad_total || 0,
-          meta_modulos: dailyCap,
-          working_days: 1,
-          granularity: 'day' as const
+          key: hh,
+          label: `${hh}h`,
+          ...base(byHour.get(h)),
+          meta_modulos: hourlyCap,
+          working_days: 0,
+          granularity: 'hour',
+          futuro: this.statsFrom > todayIso || (isToday && h > now.getHours()),
+          en_curso: isToday && h === now.getHours(),
         });
       }
       return buckets;
     }
 
-    const buckets = [];
+    if (dayCount <= 45) {
+      // Por dia hasta mes y medio (una linea lo aguanta bien): sin fines de
+      // semana, salvo que se haya trabajado.
+      const buckets: StatsBucket[] = [];
+      for (let i = 0; i < dayCount; i++) {
+        const d = new Date(from);
+        d.setDate(from.getDate() + i);
+        const iso = this.toLocalIsoDate(d);
+        const found = byDate.get(iso);
+        if (!this.isWorkingDay(d) && !found) continue;
+        buckets.push({
+          key: iso,
+          label: this.dayLabel(iso),
+          ...base(found),
+          meta_modulos: this.isWorkingDay(d) ? dailyCap : 0,
+          working_days: 1,
+          granularity: 'day',
+          futuro: iso > todayIso,
+          en_curso: iso === todayIso,
+        });
+      }
+      return buckets;
+    }
+
+    const buckets: StatsBucket[] = [];
     const cursor = this.getMondayOfWeek(from);
     while (cursor <= to) {
       const weekStart = new Date(cursor);
@@ -2143,10 +2204,10 @@ export class Dashboard implements OnInit, OnDestroy {
       const segEnd = weekEnd > to ? new Date(to) : weekEnd;
 
       let modulos = 0, fases = 0, pi = 0, pf = 0, desp = 0, dif = 0, workDays = 0;
+      let tiSum = 0, tiN = 0, tsSum = 0, tsN = 0;
       const d = new Date(segStart);
       while (d <= segEnd) {
-        const iso = this.toLocalIsoDate(d);
-        const found = byDate.get(iso);
+        const found = byDate.get(this.toLocalIsoDate(d));
         if (found) {
           modulos += found.modulos_completados || 0;
           fases += found.fases_completadas || 0;
@@ -2154,11 +2215,23 @@ export class Dashboard implements OnInit, OnDestroy {
           pf += found.peso_malla_final_kg || 0;
           desp += found.desperdicio_kg || 0;
           dif += found.dificultad_total || 0;
+          // Media de las medianas diarias, ponderada por paneles.
+          if (typeof found.tiempo_inferior_min === 'number') {
+            const peso = found.tiempo_inferior_paneles || 1;
+            tiSum += found.tiempo_inferior_min * peso;
+            tiN += peso;
+          }
+          if (typeof found.tiempo_superior_min === 'number') {
+            const peso = found.tiempo_superior_paneles || 1;
+            tsSum += found.tiempo_superior_min * peso;
+            tsN += peso;
+          }
         }
         if (this.isWorkingDay(d)) workDays++;
         d.setDate(d.getDate() + 1);
       }
 
+      const segStartIso = this.toLocalIsoDate(segStart);
       buckets.push({
         key: this.toLocalIsoDate(weekStart),
         label: `S${this.getIsoWeek(weekStart)}`,
@@ -2167,15 +2240,219 @@ export class Dashboard implements OnInit, OnDestroy {
         peso_malla_inicial_kg: pi,
         peso_malla_final_kg: pf,
         desperdicio_kg: desp,
+        desperdicio_pct: pct(desp, pi),
         dificultad_total: dif,
+        tiempo_inferior_min: tiN ? tiSum / tiN : null,
+        tiempo_superior_min: tsN ? tsSum / tsN : null,
         meta_modulos: dailyCap * workDays,
         working_days: workDays,
-        granularity: 'week' as const
+        granularity: 'week',
+        futuro: segStartIso > todayIso,
+        en_curso: segStartIso <= todayIso && todayIso <= this.toLocalIsoDate(segEnd),
       });
 
       cursor.setDate(cursor.getDate() + 7);
     }
     return buckets;
+  }
+
+  /** Jornada de la ferralla ese dia de la semana, en horas enteras de reloj. */
+  private jornadaDe(date: Date): { inicio: number; fin: number; horas: number } | null {
+    const codes: CaptureDay[] = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+    const tramo = this.horario?.horario?.find(h => h.day === codes[date.getDay()]);
+    if (!tramo) return null;
+    const [sh, sm] = tramo.start_time.split(':').map(Number);
+    const [eh, em] = tramo.end_time.split(':').map(Number);
+    if ([sh, sm, eh, em].some(value => Number.isNaN(value))) return null;
+    const horas = (eh + em / 60) - (sh + sm / 60);
+    if (horas <= 0) return null;
+    return { inicio: sh, fin: em > 0 ? eh + 1 : eh, horas };
+  }
+
+  /** Periodo anterior y siguiente al rango, para prolongar las lineas desvanecidas. */
+  private statsVecinos(granularity: StatsBucket['granularity'] | undefined): { prev: StatsVecino | null; next: StatsVecino | null } {
+    const ctx = this.statsData?.contexto;
+    const from = this.parseIsoDate(this.statsFrom);
+    const to = this.parseIsoDate(this.statsTo);
+    if (!ctx || !from || !to || !granularity || granularity === 'hour') return { prev: null, next: null };
+    const dias = new Map([...ctx.anterior, ...ctx.siguiente].map(d => [d.fecha, d]));
+    const todayIso = this.toLocalIsoDate(new Date());
+    const mover = (date: Date, delta: number): Date => {
+      const d = new Date(date);
+      d.setDate(d.getDate() + delta);
+      return d;
+    };
+    const sumar = (start: Date, days: number): StatsVecino | null => {
+      // Lo que aun no ha pasado no es un cero: no hay linea hacia ahi.
+      if (this.toLocalIsoDate(start) > todayIso) return null;
+      let modulos = 0, peso = 0, inicial = 0, desperdicio = 0, dificultad = 0;
+      let tiSum = 0, tiN = 0, tsSum = 0, tsN = 0;
+      for (let k = 0; k < days; k++) {
+        const found = dias.get(this.toLocalIsoDate(mover(start, k)));
+        if (!found) continue;
+        modulos += found.modulos_completados || 0;
+        peso += found.peso_malla_final_kg || 0;
+        inicial += found.peso_malla_inicial_kg || 0;
+        desperdicio += found.desperdicio_kg || 0;
+        dificultad += found.dificultad_total || 0;
+        if (typeof found.tiempo_inferior_min === 'number') {
+          const w = found.tiempo_inferior_paneles || 1;
+          tiSum += found.tiempo_inferior_min * w;
+          tiN += w;
+        }
+        if (typeof found.tiempo_superior_min === 'number') {
+          const w = found.tiempo_superior_paneles || 1;
+          tsSum += found.tiempo_superior_min * w;
+          tsN += w;
+        }
+      }
+      return {
+        modulos, peso, dificultad,
+        desperdicio_pct: inicial > 0 ? (desperdicio / inicial) * 100 : null,
+        tiempo_inferior: tiN ? tiSum / tiN : null,
+        tiempo_superior: tsN ? tsSum / tsN : null,
+      };
+    };
+    if (granularity === 'day') {
+      let prev = mover(from, -1);
+      while (!this.isWorkingDay(prev)) prev = mover(prev, -1);
+      let next = mover(to, 1);
+      while (!this.isWorkingDay(next)) next = mover(next, 1);
+      return { prev: sumar(prev, 1), next: sumar(next, 1) };
+    }
+    return {
+      prev: sumar(mover(this.getMondayOfWeek(from), -7), 7),
+      next: sumar(mover(this.getMondayOfWeek(to), 7), 7),
+    };
+  }
+
+  /** Series de las graficas y filas de la tabla por periodo (se recalcula al cambiar los datos). */
+  statsVista(): StatsVista | null {
+    const data = this.statsData;
+    if (!data) return null;
+    const hora = new Date().getHours();
+    const cache = this.statsVistaCache;
+    if (cache && cache.data === data && cache.from === this.statsFrom && cache.to === this.statsTo
+      && cache.horario === this.horario && cache.hora === hora) {
+      return cache.vista;
+    }
+
+    const buckets = this.statsBuckets();
+    const granularity = buckets[0]?.granularity;
+    const { prev, next } = this.statsVecinos(granularity);
+    const valores = (pick: (b: StatsBucket) => number | null): Array<number | null> =>
+      buckets.map(b => b.futuro ? null : pick(b));
+    const hayObjetivo = buckets.some(b => b.meta_modulos > 0);
+    const cap = Math.max(0, ...buckets.map(b => b.granularity === 'week' ? 0 : b.meta_modulos));
+    const capLabel = formatNumber(cap, 'en-US', '1.0-1');
+    const vista: StatsVista = {
+      labels: buckets.map(b => b.label),
+      pending: buckets.map(b => b.en_curso),
+      objetivo: hayObjetivo ? buckets.map(b => b.meta_modulos > 0 ? b.meta_modulos : null) : null,
+      objetivoLabel: granularity === 'hour' ? `Objetivo ${capLabel} por hora`
+        : granularity === 'week' ? 'Objetivo de la semana'
+        : `Objetivo ${capLabel} al día`,
+      modulos: [{
+        name: 'Módulos', color: CHART_NARANJA, values: valores(b => b.modulos_completados),
+        prev: prev?.modulos ?? null, next: next?.modulos ?? null,
+      }],
+      peso: [{
+        name: 'Peso', color: CHART_GRIS, values: valores(b => b.peso_malla_final_kg),
+        prev: prev?.peso ?? null, next: next?.peso ?? null,
+      }],
+      tiempo: [
+        {
+          name: 'Inferior', color: CHART_AZUL, values: valores(b => b.tiempo_inferior_min),
+          prev: prev?.tiempo_inferior ?? null, next: next?.tiempo_inferior ?? null,
+        },
+        {
+          name: 'Superior', color: CHART_NARANJA, values: valores(b => b.tiempo_superior_min),
+          prev: prev?.tiempo_superior ?? null, next: next?.tiempo_superior ?? null,
+        },
+      ],
+      desperdicio: [{
+        name: 'Desperdicio', color: CHART_GRIS, values: valores(b => b.desperdicio_pct),
+        prev: prev?.desperdicio_pct ?? null, next: next?.desperdicio_pct ?? null,
+      }],
+      dificultad: [{
+        name: 'Dificultad', color: CHART_GRIS, values: valores(b => b.dificultad_total),
+        prev: prev?.dificultad ?? null, next: next?.dificultad ?? null,
+      }],
+      filas: buckets.filter(b => !b.futuro),
+      detalleTitulo: granularity === 'hour' ? 'Detalle por hora' : granularity === 'week' ? 'Detalle por semana' : 'Detalle por día',
+      periodoLabel: granularity === 'hour' ? 'Hora' : granularity === 'week' ? 'Semana' : 'Día',
+    };
+    this.statsVistaCache = { data, from: this.statsFrom, to: this.statsTo, horario: this.horario, hora, vista };
+    return vista;
+  }
+
+  /** Indicadores derivados del rango: cumplimiento, dias en objetivo, medias. */
+  statsResumen(): StatsResumen | null {
+    const data = this.statsData;
+    if (!data) return null;
+    const modulos = data.totals.modulos_completados || 0;
+    const target = this.statsPeriodTarget();
+    const workingDays = data.range.working_days || 0;
+    const cap = target !== null && target > 0 && workingDays > 0 ? target / workingDays : 0;
+    const conProduccion = data.por_dia.filter(d => d.modulos_completados > 0);
+    const mejor = conProduccion.reduce<typeof conProduccion[number] | null>(
+      (best, d) => !best || d.modulos_completados > best.modulos_completados ? d : best, null);
+
+    let diasCumplidos: StatsResumen['diasCumplidos'] = null;
+    const from = this.parseIsoDate(this.statsFrom);
+    const to = this.parseIsoDate(this.statsTo);
+    if (cap > 0 && from && to && from < to) {
+      const byDate = new Map(data.por_dia.map(d => [d.fecha, d.modulos_completados || 0]));
+      const todayIso = this.toLocalIsoDate(new Date());
+      let cumplidos = 0, total = 0;
+      for (const d = new Date(from); d <= to; d.setDate(d.getDate() + 1)) {
+        const iso = this.toLocalIsoDate(d);
+        if (iso > todayIso || !this.isWorkingDay(d)) continue;
+        const llega = (byDate.get(iso) || 0) >= cap - 1e-9;
+        // Hoy aun puede llegar: solo cuenta si ya lo ha hecho.
+        if (iso === todayIso && !llega) continue;
+        total++;
+        if (llega) cumplidos++;
+      }
+      if (total > 0) diasCumplidos = { cumplidos, total };
+    }
+
+    return {
+      cumplimiento: target !== null && target > 0 ? Math.round((modulos / target) * 100) : null,
+      diasCumplidos,
+      mediaDiaria: conProduccion.length ? modulos / conProduccion.length : null,
+      mejorDia: mejor ? { modulos: mejor.modulos_completados, label: this.dayLabel(mejor.fecha) } : null,
+      kgPorModulo: modulos > 0 ? (data.totals.peso_malla_final_kg || 0) / modulos : null,
+      dificultadMedia: modulos > 0 ? (data.totals.dificultad_total || 0) / modulos : null,
+    };
+  }
+
+  /** "+2" / "−1.5" frente al objetivo de la fila. */
+  diferenciaLabel(fila: StatsBucket): string {
+    const diff = fila.modulos_completados - fila.meta_modulos;
+    const valor = formatNumber(Math.abs(diff), 'en-US', '1.0-1');
+    return `${diff >= -1e-9 ? '+' : '−'}${valor}`;
+  }
+
+  llegaAlObjetivo(fila: StatsBucket): boolean {
+    return fila.modulos_completados >= fila.meta_modulos - 1e-9;
+  }
+
+  /** Minutos de una fase: "42" si se midio en la mesa, "~42" si es aproximado. */
+  minutosLabel(fase: ProductionStatsModuloFase | null): string {
+    if (!fase || fase.minutos === null) return '—';
+    return `${fase.medido ? '' : '~'}${Math.round(fase.minutos)}`;
+  }
+
+  minutosTitulo(fase: ProductionStatsModuloFase | null): string {
+    if (!fase || fase.minutos === null) return 'Sin tiempo registrado';
+    return fase.medido ? 'Medido en la mesa' : 'Aproximado entre paneles hechos';
+  }
+
+  minutosModuloLabel(modulo: ProductionStatsModulo): string {
+    if (modulo.minutos === null) return '—';
+    const medido = !!modulo.inferior?.medido && !!modulo.superior?.medido;
+    return `${medido ? '' : '~'}${Math.round(modulo.minutos)}`;
   }
 
   private parseIsoDate(iso: string): Date | null {
@@ -2200,21 +2477,6 @@ export class Dashboard implements OnInit, OnDestroy {
       target.setMonth(0, 1 + ((4 - target.getDay()) + 7) % 7);
     }
     return 1 + Math.ceil((firstThursday - target.getTime()) / 604800000);
-  }
-
-  /** Max Y value for the modules chart (uses meta as the floor). */
-  chartMaxModulos(): number {
-    const buckets = this.statsBuckets();
-    const maxReal = Math.max(0, ...buckets.map(b => b.modulos_completados || 0));
-    const maxMeta = Math.max(0, ...buckets.map(b => b.meta_modulos || 0));
-    return Math.max(maxReal, maxMeta, 1) * 1.15;
-  }
-
-  /** Max Y value for the weight chart. */
-  chartMaxPeso(): number {
-    const buckets = this.statsBuckets();
-    const max = Math.max(0, ...buckets.map(b => b.peso_malla_final_kg || 0));
-    return Math.max(max, 1) * 1.15;
   }
 
   /**
@@ -2255,38 +2517,6 @@ export class Dashboard implements OnInit, OnDestroy {
     if (initial <= 0) return null;
     const waste = totals.desperdicio_kg || 0;
     return (waste / initial) * 100;
-  }
-
-  /** % height (0..100) of a value on the modules chart. */
-  modulosBarPct(value: number): number {
-    const max = this.chartMaxModulos();
-    if (max <= 0) return 0;
-    return Math.min(100, (value / max) * 100);
-  }
-
-  pesoBarPct(value: number): number {
-    const max = this.chartMaxPeso();
-    if (max <= 0) return 0;
-    return Math.min(100, (value / max) * 100);
-  }
-
-  chartMaxDificultad(): number {
-    const buckets = this.statsBuckets();
-    const max = Math.max(0, ...buckets.map(b => b.dificultad_total || 0));
-    return Math.max(max, 1) * 1.15;
-  }
-
-  dificultadBarPct(value: number): number {
-    const max = this.chartMaxDificultad();
-    if (max <= 0) return 0;
-    return Math.min(100, (value / max) * 100);
-  }
-
-  /** Short label for large difficulty numbers (e.g. 1346 -> '1.3k'). */
-  formatDificultadShort(value: number): string {
-    if (!value) return '';
-    if (value >= 1000) return (value / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
-    return Math.round(value).toString();
   }
 
   loadModulosForProyecto(proyectoId: number): void {
