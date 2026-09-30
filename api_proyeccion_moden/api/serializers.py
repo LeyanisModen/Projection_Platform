@@ -583,7 +583,7 @@ class DetalleModuloFaseSerializer(serializers.ModelSerializer):
         fields = [
             "id", "modulo", "fase",
             "espesor_cm",
-            "peso_malla_inicial_kg", "peso_malla_final_kg", "desperdicio_kg",
+            "peso_malla_inicial_kg", "peso_malla_final_kg", "peso_malla_manual_kg", "desperdicio_kg",
             "cantidad_cortes",
             "cantidad_refuerzos", "peso_refuerzos_kg", "metros_refuerzos",
             "cantidad_zunchos", "peso_zunchos_kg", "metros_zunchos",

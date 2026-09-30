@@ -1582,6 +1582,56 @@ class PlanningFoundationTests(APITestCase):
             if temp_path and os.path.exists(temp_path):
                 os.unlink(temp_path)
 
+    def test_la_malla_hecha_a_mano_sale_del_peso_total_de_la_base_tecnica(self):
+        from api.views import ProyectoViewSet, _load_technical_records_from_sqlite, _normalize_technical_records
+
+        manual = Modulo.objects.create(nombre="M-02", proyecto=self.project)
+        columnas = [
+            "peso_mallazo_pedido_inf", "peso_mallazo_pedido_sup", "peso_mallazo_desperdicio_inf",
+            "peso_mallazo_desperdicio_sup", "peso_mallazo_recortado_inf", "peso_mallazo_recortado_sup",
+            "peso_refuerzos_inf", "peso_refuerzos_sup", "peso_zunchos", "peso_punzonamientos",
+            "peso_separadores", "peso_total",
+        ]
+        filas = [
+            # Modulo normal: peso_total es la suma de sus piezas.
+            ("M-01", 37.19, 18.9, 1.52, 1.41, 35.67, 17.49, 4.54, 20.86, 24.65, 0.0, 3.28, 106.49),
+            # Malla hecha a mano: sin pedido, sin recorte, y 62.82 kg que solo estan en peso_total.
+            ("M-02", 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 16.57, 23.6, 26.31, 0.0, 3.98, 133.28),
+            ("TOTAL", 37.19, 18.9, 1.52, 1.41, 35.67, 17.49, 21.11, 44.46, 50.96, 0.0, 7.26, 239.77),
+        ]
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as temp_file:
+            temp_path = temp_file.name
+        try:
+            connection = sqlite3.connect(temp_path)
+            definicion = ", ".join(columna + " REAL" for columna in columnas)
+            connection.execute(
+                "CREATE TABLE resumen (id INTEGER PRIMARY KEY, nombre_modulo TEXT, " + definicion + ")"
+            )
+            huecos = ", ".join(["?"] * (len(columnas) + 2))
+            for index, fila in enumerate(filas, start=1):
+                connection.execute("INSERT INTO resumen VALUES (" + huecos + ")", (index, *fila))
+            connection.commit()
+            connection.close()
+            uploaded = SimpleUploadedFile("base.db", Path(temp_path).read_bytes())
+        finally:
+            os.unlink(temp_path)
+
+        records, _ = _load_technical_records_from_sqlite(uploaded)
+        stats = ProyectoViewSet()._apply_technical_records(self.project, _normalize_technical_records(records))
+        self.assertEqual(stats["errors"], [])
+
+        inferior = DetalleModuloFase.objects.get(modulo=manual, fase="INFERIOR")
+        superior = DetalleModuloFase.objects.get(modulo=manual, fase="SUPERIOR")
+        self.assertEqual(inferior.peso_malla_manual_kg, Decimal("31.41"))
+        self.assertEqual(superior.peso_malla_manual_kg, Decimal("31.41"))
+        self.assertEqual(inferior.desperdicio_kg, Decimal("0.00"))
+        # El peso del modulo en la web es exactamente el peso_total de la base.
+        self.assertEqual(Modulo.objects.get(pk=manual.pk).peso_total_kg, Decimal("133.28"))
+        self.assertEqual(Modulo.objects.get(pk=self.modulo.pk).peso_total_kg, Decimal("106.49"))
+        self.assertEqual(
+            DetalleModuloFase.objects.get(modulo=self.modulo, fase="INFERIOR").peso_malla_manual_kg, Decimal("0.00"),
+        )
+
     def test_nombre_repetido_sigue_resolviendo_datos_tecnicos_originales(self):
         from api.views import _resolve_modulo_for_record
 

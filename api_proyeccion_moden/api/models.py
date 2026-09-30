@@ -600,6 +600,9 @@ class DetalleModuloFase(models.Model):
     espesor_cm = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
     peso_malla_inicial_kg = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
     peso_malla_final_kg = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    # Malla hecha a mano, barra a barra cortada a medida (sin pedido ni
+    # desperdicio). Su peso solo viene dentro del peso_total de la base tecnica.
+    peso_malla_manual_kg = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
     desperdicio_kg = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
     cantidad_cortes = models.PositiveIntegerField(null=True, blank=True)
     cantidad_refuerzos = models.PositiveIntegerField(null=True, blank=True)
@@ -644,6 +647,7 @@ class DetalleModuloFase(models.Model):
     def peso_total_kg(self):
         values = [
             self.peso_malla_final_kg,
+            self.peso_malla_manual_kg,
             self.peso_refuerzos_kg,
             self.peso_zunchos_kg,
             self.peso_separadores_kg,
