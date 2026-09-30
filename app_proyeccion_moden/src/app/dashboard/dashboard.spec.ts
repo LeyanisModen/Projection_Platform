@@ -111,7 +111,11 @@ describe('Dashboard', () => {
       expect(vista.modulos[0].next).toBe(2);
       expect(vista.tiempo.map(serie => serie.values[0])).toEqual([40, 20]);
       expect(vista.tiempo[0].values[1]).toBeNull();
-      expect(vista.desperdicio[0].values[0]).toBe(10);
+      // Desperdicio sobre el peso total: 10 kg de 130 kg fabricados.
+      expect(vista.desperdicio[0].values[0]).toBeCloseTo(7.69, 2);
+      expect(vista.desperdicio[0].prev).toBeCloseTo(7.69, 2);
+      expect(component.desperdicioPct({desperdicio_kg: 184.9, peso_total_kg: 10458, peso_malla_final_kg: 7089})).toBeCloseTo(1.77, 2);
+      expect(component.desperdicioPct({desperdicio_kg: 5, peso_total_kg: 0})).toBeNull();
       // El peso de las graficas y tablas es el total del modulo, no solo el mallazo.
       expect(vista.peso[0].values).toEqual([130, 130, 0, 130, 0]);
       expect(vista.peso[0].prev).toBe(130);

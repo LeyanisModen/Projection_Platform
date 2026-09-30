@@ -108,7 +108,7 @@
                                     <small class="stats-kpi-expected">· {{ statsData.totals.peso_malla_final_kg | number:'1.0-0' }} kg de mallazo</small>
                                 </span>
                             </div>
-                            <div class="stats-kpi">
+                            <div class="stats-kpi" title="Kilos de mallazo desechados y su porcentaje sobre el peso total producido">
                                 <span class="stats-kpi-label">Desperdicio</span>
                                 <span class="stats-kpi-value">
                                     {{ statsData.totals.desperdicio_kg | number:'1.0-1' }} <small>kg</small>
@@ -196,7 +196,7 @@
                                     [labels]="vista.labels" [series]="vista.peso" />
                                 <app-stats-line-chart title="Tiempo por panel (min)" unit="min"
                                     [labels]="vista.labels" [series]="vista.tiempo" />
-                                <app-stats-line-chart title="Desperdicio (% de la malla)" unit="%" [decimals]="1"
+                                <app-stats-line-chart title="Desperdicio (% del peso total)" unit="%" [decimals]="1"
                                     [labels]="vista.labels" [series]="vista.desperdicio" />
                                 <app-stats-line-chart title="Dificultad ejecutada (puntos)" unit="puntos"
                                     [labels]="vista.labels" [series]="vista.dificultad" />
@@ -263,7 +263,7 @@
                                         <th class="num" title="Mallazo más refuerzos, zunchos, separadores y punzonamientos">Peso (kg)</th>
                                         <th class="num" title="Mallazo del módulo: recortado o hecho a mano">Mallazo (kg)</th>
                                         <th class="num">Desperdicio (kg)</th>
-                                        <th class="num">Desperdicio (%)</th>
+                                        <th class="num" title="Desperdicio sobre el peso total producido">Desperdicio (%)</th>
                                         <th class="num">Min. inferior</th>
                                         <th class="num">Min. superior</th>
                                         <th class="num">Dificultad</th>

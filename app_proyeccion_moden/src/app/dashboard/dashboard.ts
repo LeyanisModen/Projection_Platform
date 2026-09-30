@@ -2132,7 +2132,8 @@ export class Dashboard implements OnInit, OnDestroy {
     const target = this.statsPeriodTarget();
     const workingDays = data.range.working_days || 0;
     const dailyCap = target !== null && target > 0 && workingDays > 0 ? target / workingDays : 0;
-    const pct = (waste: number, initial: number): number | null => initial > 0 ? (waste / initial) * 100 : null;
+    // Desperdicio sobre el peso total fabricado de la columna.
+    const pct = (waste: number, total: number): number | null => total > 0 ? (waste / total) * 100 : null;
     const base = (found: (ProductionStatsBucket & ProductionStatsTiempos & { modulos_completados: number }) | undefined) => ({
       modulos_completados: found?.modulos_completados || 0,
       fases_completadas: found?.fases_completadas || 0,
@@ -2140,7 +2141,7 @@ export class Dashboard implements OnInit, OnDestroy {
       peso_malla_inicial_kg: found?.peso_malla_inicial_kg || 0,
       peso_malla_final_kg: found?.peso_malla_final_kg || 0,
       desperdicio_kg: found?.desperdicio_kg || 0,
-      desperdicio_pct: pct(found?.desperdicio_kg || 0, found?.peso_malla_inicial_kg || 0),
+      desperdicio_pct: pct(found?.desperdicio_kg || 0, this.pesoTotal(found)),
       dificultad_total: found?.dificultad_total || 0,
       tiempo_inferior_min: found?.tiempo_inferior_min ?? null,
       tiempo_superior_min: found?.tiempo_superior_min ?? null,
@@ -2245,7 +2246,7 @@ export class Dashboard implements OnInit, OnDestroy {
         peso_malla_inicial_kg: pi,
         peso_malla_final_kg: pf,
         desperdicio_kg: desp,
-        desperdicio_pct: pct(desp, pi),
+        desperdicio_pct: pct(desp, pt),
         dificultad_total: dif,
         tiempo_inferior_min: tiN ? tiSum / tiN : null,
         tiempo_superior_min: tsN ? tsSum / tsN : null,
@@ -2290,14 +2291,13 @@ export class Dashboard implements OnInit, OnDestroy {
     const sumar = (start: Date, days: number): StatsVecino | null => {
       // Lo que aun no ha pasado no es un cero: no hay linea hacia ahi.
       if (this.toLocalIsoDate(start) > todayIso) return null;
-      let modulos = 0, peso = 0, inicial = 0, desperdicio = 0, dificultad = 0;
+      let modulos = 0, peso = 0, desperdicio = 0, dificultad = 0;
       let tiSum = 0, tiN = 0, tsSum = 0, tsN = 0;
       for (let k = 0; k < days; k++) {
         const found = dias.get(this.toLocalIsoDate(mover(start, k)));
         if (!found) continue;
         modulos += found.modulos_completados || 0;
         peso += this.pesoTotal(found);
-        inicial += found.peso_malla_inicial_kg || 0;
         desperdicio += found.desperdicio_kg || 0;
         dificultad += found.dificultad_total || 0;
         if (typeof found.tiempo_inferior_min === 'number') {
@@ -2313,7 +2313,7 @@ export class Dashboard implements OnInit, OnDestroy {
       }
       return {
         modulos, peso, dificultad,
-        desperdicio_pct: inicial > 0 ? (desperdicio / inicial) * 100 : null,
+        desperdicio_pct: peso > 0 ? (desperdicio / peso) * 100 : null,
         tiempo_inferior: tiN ? tiSum / tiN : null,
         tiempo_superior: tsN ? tsSum / tsN : null,
       };
@@ -2518,16 +2518,15 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   /**
-   * Desperdicio as a percentage of the material initially loaded.
-   * Returns null when there's nothing to compare against so the
-   * caller can decide whether to render the subtext at all.
+   * Desperdicio como porcentaje del peso total fabricado: los kilos de
+   * desperdicio entre los kilos de "Peso producido", los dos numeros que se
+   * ven en pantalla. Devuelve null si no hay peso con el que comparar.
    */
-  desperdicioPct(totals: { desperdicio_kg?: number; peso_malla_inicial_kg?: number } | null | undefined): number | null {
+  desperdicioPct(totals: { desperdicio_kg?: number; peso_total_kg?: number; peso_malla_final_kg?: number } | null | undefined): number | null {
     if (!totals) return null;
-    const initial = totals.peso_malla_inicial_kg || 0;
-    if (initial <= 0) return null;
-    const waste = totals.desperdicio_kg || 0;
-    return (waste / initial) * 100;
+    const total = this.pesoTotal(totals);
+    if (total <= 0) return null;
+    return ((totals.desperdicio_kg || 0) / total) * 100;
   }
 
   loadModulosForProyecto(proyectoId: number): void {
