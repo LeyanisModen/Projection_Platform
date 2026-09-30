@@ -39,6 +39,8 @@ describe('StatsLineChart', () => {
     expect(puntos[1].getAttribute('stroke')).toBe('#f0640f');
     expect(puntos[3].getAttribute('stroke')).toBeNull();
     expect(el().querySelector('path.lc-target')).not.toBeNull();
+    // Solo se etiqueta el maximo; el resto lo dicen el eje y la lectura.
+    expect(Array.from(el().querySelectorAll('.lc-pico')).map(t => t.textContent)).toEqual(['3']);
     expect(el().querySelector('.lc-target-label')?.textContent).toBe('Objetivo 2 al día');
     expect(Array.from(el().querySelectorAll('.lc-legend li')).map(li => li.textContent?.trim()))
       .toEqual(['Llega al objetivo', 'Por debajo', 'Objetivo 2 al día']);

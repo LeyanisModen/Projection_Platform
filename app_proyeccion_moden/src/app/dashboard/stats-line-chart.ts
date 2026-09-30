@@ -33,6 +33,8 @@ interface ChartLine {
   areaId: string;
   points: ChartPoint[];
   fades: ChartFade[];
+  /** Etiqueta directa del maximo cuando hay una sola serie; el resto lo dicen el eje y la lectura. */
+  pico: { x: number; y: number; text: string } | null;
 }
 
 interface LegendItem { kind: 'line' | 'cumple' | 'bajo' | 'target'; label: string; color: string; }
@@ -40,7 +42,7 @@ interface LegendItem { kind: 'line' | 'cumple' | 'bajo' | 'target'; label: strin
 /** Eje con pasos redondos: 0 / 5 / 10, nunca 0 / 3.7 / 7.4. */
 export function niceScale(max: number, decimals: number): { max: number; ticks: number[] } {
   if (!(max > 0)) return { max: 1, ticks: [0, 1] };
-  const raw = max / 4;
+  const raw = max / 5;
   const pow = Math.pow(10, Math.floor(Math.log10(raw)));
   const mults = decimals === 0 ? [1, 2, 5, 10] : [1, 2, 2.5, 5, 10];
   let step = mults.map(m => m * pow).find(s => s >= raw - 1e-9) ?? 10 * pow;
@@ -128,13 +130,18 @@ let nextChartId = 0;
             }
             <path class="lc-line" [attr.d]="line.path" [attr.stroke]="line.color" />
           }
+          @for (line of lines(); track line.name) {
+            @if (line.pico; as pico) {
+              <text class="lc-pico" [attr.x]="pico.x" [attr.y]="pico.y" text-anchor="middle">{{ pico.text }}</text>
+            }
+          }
           @if (active() !== null) {
             <line class="lc-cross" [attr.x1]="xAt(active()!)" [attr.x2]="xAt(active()!)"
               [attr.y1]="plot().y" [attr.y2]="plot().y + plot().h" />
           }
           @for (line of lines(); track line.name) {
             @for (point of line.points; track point.index) {
-              <circle [attr.cx]="point.x" [attr.cy]="point.y" [attr.r]="point.index === active() ? 6 : 4.5"
+              <circle [attr.cx]="point.x" [attr.cy]="point.y" [attr.r]="dotRadius() + (point.estado === 'normal' || point.estado === 'cumple' ? 0.75 : 0) + (point.index === active() ? 1.5 : 0)"
                 [class.lc-dot-cumple]="point.estado === 'cumple'"
                 [class.lc-dot-hueco]="point.estado === 'bajo' || point.estado === 'curso'"
                 [class.lc-dot-curso]="point.estado === 'curso'"
@@ -176,6 +183,7 @@ let nextChartId = 0;
     .lc-tick, .lc-xlabel { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
     .lc-target { fill: none; stroke: var(--text); stroke-width: 1.5; stroke-dasharray: 5 4; opacity: 0.8; }
     .lc-target-label { fill: var(--text); font-size: 11px; font-weight: 600; }
+    .lc-pico { fill: var(--ink); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
     .lc-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
     .lc-cross { stroke: var(--line-strong); stroke-width: 1; }
     circle { transition: r 0.12s ease; }
@@ -220,6 +228,12 @@ export class StatsLineChart implements AfterViewInit, OnDestroy {
   readonly plot = computed(() => {
     const m = this.margin;
     return { x: m.left, y: m.top, w: Math.max(this.width() - m.left - m.right, 80), h: Math.max(this.height() - m.top - m.bottom, 40) };
+  });
+
+  /** Con muchas columnas los puntos se encogen para no pisarse. */
+  readonly dotRadius = computed(() => {
+    const paso = this.plot().w / Math.max(this.labels().length, 1);
+    return paso < 16 ? 3 : paso < 26 ? 3.75 : 4.5;
   });
 
   readonly hasData = computed(() => this.labels().length > 0
@@ -274,7 +288,10 @@ export class StatsLineChart implements AfterViewInit, OnDestroy {
       if (last && last.index === n - 1 && typeof s.next === 'number') {
         fades.push({ id: `${this.uid}-out-${si}`, x1: last.x, y1: last.y, x2: plot.x + plot.w, y2: this.yAt((s.next + last.value) / 2), entra: false });
       }
-      return { name: s.name, color: s.color, path, area, areaId: `${this.uid}-area-${si}`, points, fades };
+      const maximo = points.reduce<ChartPoint | null>((best, p) => !best || p.value > best.value ? p : best, null);
+      const pico = single && maximo && maximo.value > 0
+        ? { x: maximo.x, y: maximo.y - 11, text: this.format(maximo.value) } : null;
+      return { name: s.name, color: s.color, path, area, areaId: `${this.uid}-area-${si}`, points, fades, pico };
     });
   });
 

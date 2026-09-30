@@ -2107,7 +2107,7 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   // =========================================================================
-  // STATS BUCKETS (por hora en un dia, por dia hasta 20 dias, por semana mas alla)
+  // STATS BUCKETS (por hora en un dia, por dia hasta 45 dias, por semana mas alla)
   // =========================================================================
 
   /**
@@ -2170,8 +2170,9 @@ export class Dashboard implements OnInit, OnDestroy {
       return buckets;
     }
 
-    if (dayCount <= 20) {
-      // Por dia: sin fines de semana, salvo que se haya trabajado.
+    if (dayCount <= 45) {
+      // Por dia hasta mes y medio (una linea lo aguanta bien): sin fines de
+      // semana, salvo que se haya trabajado.
       const buckets: StatsBucket[] = [];
       for (let i = 0; i < dayCount; i++) {
         const d = new Date(from);
