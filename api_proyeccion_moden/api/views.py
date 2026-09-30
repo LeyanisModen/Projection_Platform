@@ -5650,6 +5650,9 @@ class ProductionStatsView(APIView):
         def empty_totals():
             return {
                 'fases_completadas': 0,
+                # Peso real de lo fabricado: malla recortada mas refuerzos,
+                # zunchos, separadores y punzonamientos.
+                'peso_total_kg': 0.0,
                 'peso_malla_inicial_kg': 0.0,
                 'peso_malla_final_kg': 0.0,
                 'desperdicio_kg': 0.0,
@@ -5669,6 +5672,8 @@ class ProductionStatsView(APIView):
                 target['peso_malla_inicial_kg'] += float(detalle.peso_malla_inicial_kg)
             if detalle.peso_malla_final_kg is not None:
                 target['peso_malla_final_kg'] += float(detalle.peso_malla_final_kg)
+            if detalle.peso_total_kg is not None:
+                target['peso_total_kg'] += float(detalle.peso_total_kg)
             if detalle.desperdicio_kg is not None:
                 target['desperdicio_kg'] += float(detalle.desperdicio_kg)
             target['cantidad_cortes'] += detalle.cantidad_cortes or 0
@@ -5781,7 +5786,7 @@ class ProductionStatsView(APIView):
             modulos_completados / working_hours, 2
         ) if working_hours > 0 else 0.0
         totals['kg_por_hora'] = round(
-            totals['peso_malla_final_kg'] / working_hours, 2
+            totals['peso_total_kg'] / working_hours, 2
         ) if working_hours > 0 else 0.0
 
         # Tiempo por panel. La ventana es mas ancha que el rango: da contexto a
@@ -5928,7 +5933,9 @@ class ProductionStatsView(APIView):
                 ),
                 'minutos': round(valor[0], 1) if valor else None,
                 'medido': bool(valor and valor[1]),
-                'peso_kg': _decimal(detalle.peso_malla_final_kg) if detalle else None,
+                # peso_kg es el total de la fase; malla_kg, solo la malla recortada.
+                'peso_kg': _decimal(detalle.peso_total_kg) if detalle else None,
+                'malla_kg': _decimal(detalle.peso_malla_final_kg) if detalle else None,
                 'desperdicio_kg': _decimal(detalle.desperdicio_kg) if detalle else None,
                 'cortes': (detalle.cantidad_cortes or 0) if detalle else 0,
                 'refuerzos': (detalle.cantidad_refuerzos or 0) if detalle else 0,
@@ -5961,6 +5968,7 @@ class ProductionStatsView(APIView):
                 'superior': superior,
                 'minutos': minutos,
                 'peso_kg': round(sum(fase['peso_kg'] or 0 for fase in fases), 2),
+                'malla_kg': round(sum(fase['malla_kg'] or 0 for fase in fases), 2),
                 'desperdicio_kg': round(sum(fase['desperdicio_kg'] or 0 for fase in fases), 2),
                 'dificultad': round(sum(fase['dificultad'] for fase in fases), 1),
             })
