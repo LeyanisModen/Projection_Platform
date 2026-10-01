@@ -50,6 +50,8 @@ describe('Project detail rack order switch', () => {
         const component = fixture.componentInstance;
         const fila = () => (fixture.nativeElement.querySelector('.archivo-elementos') as HTMLElement).textContent!.replace(/\s+/g, '').trim();
         expect(fila()).toBe('Elementossueltos:sincargar');
+        // El plano ya no se sube desde el admin: se generara desde la base de datos.
+        expect(fixture.nativeElement.querySelector('.archivo-proyecto-list')?.textContent).not.toContain('Plano');
 
         component.proyectoId = 7;
         // Un PDF no vale: se avisa y no se sube nada.

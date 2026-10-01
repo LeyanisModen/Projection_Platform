@@ -591,6 +591,19 @@
                                         <path d="M15 6v14"></path>
                                     </svg>
                                 </button>
+                                <button class="project-icon project-icon-elementos" type="button"
+                                    [class.project-icon-disabled]="!proyecto.elementos_sueltos_archivo"
+                                    [title]="proyecto.elementos_sueltos_archivo ? 'Ver elementos sueltos' : 'Elementos sueltos no disponibles'"
+                                    aria-label="Ver elementos sueltos"
+                                    [disabled]="!proyecto.elementos_sueltos_archivo"
+                                    (click)="openElementosModal(proyecto, $event)">
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+                                        <path d="M3 9h18"></path>
+                                        <path d="M3 15h18"></path>
+                                        <path d="M9 3v18"></path>
+                                    </svg>
+                                </button>
                                 <button class="project-icon" type="button"
                                     [class.project-icon-disabled]="!proyecto.documentos_archivo"
                                     [title]="proyecto.documentos_archivo ? 'Descargar documentos ZIP' : 'Documentos no disponibles'"
@@ -603,19 +616,6 @@
                                         <path d="M16 13H8"></path>
                                         <path d="M16 17H8"></path>
                                         <path d="M10 9H8"></path>
-                                    </svg>
-                                </button>
-                                <button class="project-icon project-icon-elementos" type="button"
-                                    [class.project-icon-disabled]="!proyecto.elementos_sueltos_archivo"
-                                    [title]="proyecto.elementos_sueltos_archivo ? 'Ver elementos sueltos' : 'Elementos sueltos no disponibles'"
-                                    aria-label="Ver elementos sueltos"
-                                    [disabled]="!proyecto.elementos_sueltos_archivo"
-                                    (click)="openElementosModal(proyecto, $event)">
-                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                        <rect x="3" y="3" width="18" height="18" rx="2"></rect>
-                                        <path d="M3 9h18"></path>
-                                        <path d="M3 15h18"></path>
-                                        <path d="M9 3v18"></path>
                                     </svg>
                                 </button>
                             </div>

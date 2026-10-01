@@ -189,11 +189,6 @@
                 </div>
                 <ul class="archivo-proyecto-list mt-2">
                     <li>
-                        <strong>Plano:</strong>
-                        <span *ngIf="proyecto.plano_archivo" class="is-ok"><i class="fa fa-check" aria-hidden="true"></i> cargado</span>
-                        <span *ngIf="!proyecto.plano_archivo" class="meta">sin cargar</span>
-                    </li>
-                    <li>
                         <strong>Documentos:</strong>
                         <span *ngIf="proyecto.documentos_archivo" class="is-ok"><i class="fa fa-check" aria-hidden="true"></i> cargados</span>
                         <span *ngIf="!proyecto.documentos_archivo" class="meta">sin cargar</span>
@@ -815,57 +810,11 @@
 
                 <h4>Archivos del Proyecto</h4>
 
-                <small class="text-muted">Plano PDF, documentación comprimida y Excel de elementos sueltos.</small>
+                <small class="text-muted">Documentación comprimida y Excel de elementos sueltos.</small>
 
             </div>
 
             <button class="btn btn-sm btn-outline-secondary" (click)="closeProjectFilesModal()">Cerrar</button>
-
-        </div>
-
-
-
-        <div class="project-file-row">
-
-            <div class="project-file-info">
-
-                <strong>Plano (.pdf)</strong>
-
-                <span class="text-muted">
-
-                    {{ getProjectFileUrl('plano') ? 'Archivo cargado' : 'No hay archivo' }}
-
-                </span>
-
-            </div>
-
-            <div class="project-file-actions">
-
-                <button class="btn btn-sm btn-outline-dark"
-
-                    (click)="openProjectFile('plano')"
-
-                    [disabled]="!projectFileExists.plano || checkingProjectFiles || uploadingProjectFile">
-
-                    Ver actual
-
-                </button>
-
-                <button class="btn btn-sm btn-outline-primary"
-
-                    (click)="triggerProjectFileUpload(modalPlanoInput)"
-
-                    [disabled]="uploadingProjectFile">
-
-                    {{ getProjectFileUrl('plano') ? 'Cambiar' : 'Subir' }}
-
-                </button>
-
-                <input #modalPlanoInput type="file" accept=".pdf,application/pdf"
-
-                    (change)="onProjectFileSelected($event, 'plano')" hidden>
-
-            </div>
 
         </div>
 

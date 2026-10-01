@@ -423,6 +423,15 @@ describe('Dashboard', () => {
       ],
     };
 
+    it('sits between the plan and the documents in each project card', () => {
+      component.vista = 'produccion';
+      component.proyectos = [{ ...proyecto, modulos_count: 0 } as Proyecto];
+      render();
+      const etiquetas = Array.from(fixture.nativeElement.querySelectorAll('.project-actions button'))
+        .map(boton => (boton as HTMLElement).getAttribute('aria-label'));
+      expect(etiquetas.slice(-3)).toEqual(['Abrir plano PDF', 'Ver elementos sueltos', 'Descargar documentos ZIP']);
+    });
+
     it('opens the Excel as a table per sheet and offers the original for download', () => {
       const api = TestBed.inject(ApiService);
       const request = vi.spyOn(api, 'getElementosSueltos').mockReturnValue(of(datos));

@@ -26,11 +26,11 @@ import {
 } from './module-import.utils';
 import { getModuloPhaseAction } from './phase-action.utils';
 
-/** Ficheros del proyecto que la oficina sube desde "Archivos". */
-type ProjectFileType = 'plano' | 'documentos' | 'elementos';
+/** Ficheros del proyecto que la oficina sube desde "Archivos". El plano ya no se
+ *  sube: se generara a partir de la base de datos del proyecto. */
+type ProjectFileType = 'documentos' | 'elementos';
 
 const PROJECT_FILE_FIELDS = {
-    plano: 'plano_archivo',
     documentos: 'documentos_archivo',
     elementos: 'elementos_sueltos_archivo',
 } as const satisfies Record<ProjectFileType, keyof Proyecto>;
@@ -73,7 +73,7 @@ export class ProyectoDetailComponent implements OnInit {
     updatingSubmoduleId: number | null = null;
     showProjectFilesModal = false;
     checkingProjectFiles = false;
-    projectFileExists = { plano: false, documentos: false, elementos: false };
+    projectFileExists = { documentos: false, elementos: false };
     dropdownOpen = false;
     showFerrallaChangeModal = false;
     pendingFerrallaUrl: string | null = null;
@@ -1069,7 +1069,6 @@ export class ProyectoDetailComponent implements OnInit {
                         '',
                         `• Módulos creados: ${stats.modulos || 0}`,
                         `• Imágenes cargadas: ${stats.imagenes || 0}`,
-                        `• Plano de referencia: ${stats.plano_cargado ? 'sí' : 'no'}`,
                         `• Documentos ZIP: ${stats.documentos_cargados ? 'sí' : 'no'}`,
                     ];
                     if (technicalDbFile) {
@@ -1185,7 +1184,7 @@ export class ProyectoDetailComponent implements OnInit {
 
     closeProjectFilesModal(): void {
         this.showProjectFilesModal = false;
-        this.projectFileExists = { plano: false, documentos: false, elementos: false };
+        this.projectFileExists = { documentos: false, elementos: false };
         this.checkingProjectFiles = false;
     }
 
@@ -1196,17 +1195,13 @@ export class ProyectoDetailComponent implements OnInit {
         if (!this.proyectoId) return;
 
         const fileName = file.name.toLowerCase();
-        const validFile = fileType === 'plano'
-            ? fileName.endsWith('.pdf') || file.type === 'application/pdf'
-            : fileType === 'elementos'
-                ? ['.xlsx', '.xlsm', '.xls'].some(extension => fileName.endsWith(extension))
-                : fileName.endsWith('.zip');
+        const validFile = fileType === 'elementos'
+            ? ['.xlsx', '.xlsm', '.xls'].some(extension => fileName.endsWith(extension))
+            : fileName.endsWith('.zip');
         if (!validFile) {
-            alert(fileType === 'plano'
-                ? 'El plano debe ser un archivo PDF.'
-                : fileType === 'elementos'
-                    ? 'Los elementos sueltos deben estar en un Excel (.xlsx).'
-                    : 'Los documentos deben estar en un archivo ZIP.');
+            alert(fileType === 'elementos'
+                ? 'Los elementos sueltos deben estar en un Excel (.xlsx).'
+                : 'Los documentos deben estar en un archivo ZIP.');
             return;
         }
 
@@ -1247,10 +1242,8 @@ export class ProyectoDetailComponent implements OnInit {
 
     private async refreshProjectFileAvailability(): Promise<void> {
         this.checkingProjectFiles = true;
-        const planoUrl = this.getProjectFileUrl('plano');
         const documentosUrl = this.getProjectFileUrl('documentos');
         const elementosUrl = this.getProjectFileUrl('elementos');
-        this.projectFileExists.plano = await this.checkFileReachable(planoUrl);
         this.projectFileExists.documentos = await this.checkFileReachable(documentosUrl);
         this.projectFileExists.elementos = await this.checkFileReachable(elementosUrl);
         this.checkingProjectFiles = false;
