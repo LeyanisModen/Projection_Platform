@@ -547,6 +547,8 @@ export interface ProductionStatsModulo {
 /** Una hoja del Excel de elementos sueltos: la primera fila con contenido es la cabecera. */
 export interface ElementosSueltosHoja {
     nombre: string;
+    /** Titulos que hay encima de la cabecera (filas de una sola celda). */
+    notas?: string[];
     columnas: string[];
     filas: Array<Array<string | number | null>>;
     total_filas: number;

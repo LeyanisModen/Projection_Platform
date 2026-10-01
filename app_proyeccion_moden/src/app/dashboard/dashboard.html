@@ -1023,6 +1023,9 @@
                         </div>
                     }
                     @if (elementosHojaActual(); as hoja) {
+                        @for (nota of hoja.notas ?? []; track $index) {
+                            <p class="elementos-nota">{{ nota }}</p>
+                        }
                         <div class="elementos-tabla-scroll">
                             <table class="elementos-tabla">
                                 <thead>

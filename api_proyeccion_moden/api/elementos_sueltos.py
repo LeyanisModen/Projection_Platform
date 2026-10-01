@@ -3,8 +3,8 @@
 Son piezas que van a obra fuera de los modulos, antes o despues que ellos.
 La oficina sube el Excel tal cual; el dashboard de la ferralla lo ve como una
 tabla por hoja y puede descargar el original. Aqui solo se lee: no se asume
-ningun formato de columnas, se toma la primera fila con contenido de cada
-hoja como cabecera.
+ningun formato de columnas. La cabecera es la primera fila con al menos dos
+celdas; lo que haya encima (titulos de una sola celda) se devuelve como notas.
 """
 import os
 from datetime import date, datetime, time
@@ -41,27 +41,46 @@ def _valor(celda):
     return texto or None
 
 
+# Filas de titulo que se admiten encima de la cabecera.
+MAX_NOTAS = 10
+
+
+def _rellenas(fila):
+    return sum(1 for valor in fila if valor is not None)
+
+
 def _leer_hoja(hoja):
     filas = []
     total = 0
     for fila in hoja.iter_rows(values_only=True):
         valores = [_valor(celda) for celda in fila]
-        if not any(valor is not None for valor in valores):
+        if not _rellenas(valores):
             continue
         total += 1
-        # Una fila de mas que el tope: basta para saber que se ha recortado.
-        if len(filas) <= MAX_FILAS:
+        # Algo mas que el tope: notas de cabecera y una fila para saber que se recorta.
+        if len(filas) <= MAX_FILAS + MAX_NOTAS:
             filas.append(valores)
     if not filas:
         return None
 
-    cabecera, datos = filas[0], filas[1:]
-    total -= 1
-    ancho = max(len(fila) for fila in filas)
+    # La cabecera es la primera fila con dos o mas celdas; si ninguna tiene
+    # dos (hoja de una sola columna), la primera.
+    inicio = next(
+        (indice for indice, fila in enumerate(filas[:MAX_NOTAS + 1]) if _rellenas(fila) >= 2),
+        0,
+    )
+    notas = [
+        ' '.join(str(valor) for valor in fila if valor is not None)
+        for fila in filas[:inicio]
+    ]
+    cabecera, datos = filas[inicio], filas[inicio + 1:]
+    total -= inicio + 1
+    tabla = [cabecera, *datos]
+    ancho = max(len(fila) for fila in tabla)
     # Fuera las columnas sin nada, ni cabecera ni datos.
     usadas = [
         indice for indice in range(ancho)
-        if any(indice < len(fila) and fila[indice] is not None for fila in filas)
+        if any(indice < len(fila) and fila[indice] is not None for fila in tabla)
     ]
     columnas = []
     for posicion, indice in enumerate(usadas, start=1):
@@ -73,6 +92,7 @@ def _leer_hoja(hoja):
     ]
     return {
         'nombre': hoja.title,
+        'notas': notas,
         'columnas': columnas,
         'filas': datos,
         'total_filas': total,

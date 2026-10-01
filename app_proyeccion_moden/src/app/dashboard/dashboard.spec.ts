@@ -419,7 +419,7 @@ describe('Dashboard', () => {
       motivo: null,
       hojas: [
         { nombre: 'Barras', columnas: ['Elemento', 'Diámetro', 'Cantidad'], filas: [['B1', 12, 40], ['B2', 16, null]], total_filas: 2, recortado: false },
-        { nombre: 'Vigas', columnas: ['Viga', 'Peso (kg)'], filas: [['V-01', 182.5]], total_filas: 2400, recortado: true },
+        { nombre: 'Vigas', notas: ['Obra Torre Norte - vigas sueltas'], columnas: ['Viga', 'Peso (kg)'], filas: [['V-01', 182.5]], total_filas: 2400, recortado: true },
       ],
     };
 
@@ -444,6 +444,7 @@ describe('Dashboard', () => {
       (modal.querySelectorAll('.elementos-hojas button')[1] as HTMLButtonElement).click();
       render();
       expect(Array.from(modal.querySelectorAll('th')).map(th => th.textContent?.trim())).toEqual(['Viga', 'Peso (kg)']);
+      expect(modal.querySelector('.elementos-nota')?.textContent).toBe('Obra Torre Norte - vigas sueltas');
       expect(modal.querySelector('.elementos-pie')?.textContent?.replace(/\s+/g, ' ').trim())
         .toBe('2400 filas · se muestran las primeras 1; el resto está en el Excel');
 

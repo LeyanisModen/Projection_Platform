@@ -6268,6 +6268,8 @@ class ElementosSueltosTests(APITestCase):
         barras.append([None, None, None, None, None, None])
         barras.append(["B2", 16, 4.25, 12, None, None])
         vigas = libro.create_sheet("Vigas")
+        vigas.append(["Obra Torre Norte - vigas sueltas"])  # titulo de una celda encima de la tabla
+        vigas.append([])
         vigas.append(["Viga", "Peso (kg)"])
         vigas.append(["V-01", 182.5])
         oculta = libro.create_sheet("Calculos")
@@ -6302,7 +6304,12 @@ class ElementosSueltosTests(APITestCase):
         self.assertEqual(barras["filas"], [["B1", 12, 6, 40, "15/10/2026"], ["B2", 16, 4.25, 12, None]])
         self.assertEqual(barras["total_filas"], 2)
         self.assertFalse(barras["recortado"])
-        self.assertEqual(data["hojas"][1]["filas"], [["V-01", 182.5]])
+        self.assertEqual(barras["notas"], [])
+        vigas = data["hojas"][1]
+        self.assertEqual(vigas["notas"], ["Obra Torre Norte - vigas sueltas"])
+        self.assertEqual(vigas["columnas"], ["Viga", "Peso (kg)"])
+        self.assertEqual(vigas["filas"], [["V-01", 182.5]])
+        self.assertEqual(vigas["total_filas"], 1)
 
     def test_otra_ferralla_no_ve_el_excel_y_sin_excel_no_hay_nada(self):
         self._as(self.ferralla)
