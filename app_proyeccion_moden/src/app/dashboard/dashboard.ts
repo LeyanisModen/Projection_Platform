@@ -10,7 +10,7 @@ import {
   EstrategiaColaSuperior, GrupoMesas, GrupoMesasProyectoEntry, ProductionStatsResponse, ModuloFase,
   GrupoBastidor, GrupoBastidorModulo, CaptureDay, FerrallaCaptureConfig, HorarioDia, GrupoMesaResumen,
   TiempoFabricacion, ProductionStatsBucket, ProductionStatsTiempos, ProductionStatsModulo, ProductionStatsModuloFase,
-  ElementosSueltos, ElementosSueltosHoja,
+  ElementosSueltos, ElementosSueltosHoja, ElementosSueltosSeccion, ElementosSueltosCelda,
 } from '../services/api.service';
 import { LineChartSeries, StatsLineChart } from './stats-line-chart';
 import {
@@ -1143,8 +1143,18 @@ export class Dashboard implements OnInit, OnDestroy {
     return url ? this.resolveUrl(url) : '';
   }
 
-  elementosCeldaNumerica(valor: string | number | null): boolean {
+  elementosCeldaNumerica(valor: ElementosSueltosCelda): boolean {
     return typeof valor === 'number';
+  }
+
+  /** Columna con solo numeros en sus filas: cabecera y celdas alineadas a la derecha. */
+  elementosColumnaNumerica(seccion: ElementosSueltosSeccion, indice: number): boolean {
+    const valores = seccion.filas.map(fila => fila[indice]).filter(valor => valor !== null && valor !== undefined);
+    return valores.length > 0 && valores.every(valor => typeof valor === 'number');
+  }
+
+  elementosMomentoLabel(momento: ElementosSueltosSeccion['momento']): string {
+    return momento === 'antes' ? 'Antes de los módulos' : momento === 'despues' ? 'Después de los módulos' : '';
   }
 
   openProjectDocument(proyecto: Proyecto, type: 'plano' | 'documentos', event?: Event): void {

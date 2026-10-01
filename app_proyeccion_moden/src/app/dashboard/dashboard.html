@@ -1023,33 +1023,57 @@
                         </div>
                     }
                     @if (elementosHojaActual(); as hoja) {
-                        @for (nota of hoja.notas ?? []; track $index) {
-                            <p class="elementos-nota">{{ nota }}</p>
-                        }
-                        <div class="elementos-tabla-scroll">
-                            <table class="elementos-tabla">
-                                <thead>
-                                    <tr>
-                                        @for (columna of hoja.columnas; track $index) {
-                                            <th>{{ columna }}</th>
-                                        }
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @for (fila of hoja.filas; track $index) {
-                                        <tr>
-                                            @for (valor of fila; track $index) {
-                                                <td [class.num]="elementosCeldaNumerica(valor)">{{ valor ?? '' }}</td>
+                        <div class="elementos-cuerpo">
+                            @for (nota of hoja.notas; track $index) {
+                                <p class="elementos-nota">{{ nota }}</p>
+                            }
+                            @for (seccion of hoja.secciones; track $index) {
+                                <section class="elementos-seccion" [attr.aria-label]="seccion.titulo || hoja.nombre">
+                                    @if (seccion.titulo || seccion.momento) {
+                                        <div class="elementos-seccion-titulo">
+                                            @if (seccion.titulo) { <h4>{{ seccion.titulo }}</h4> }
+                                            @if (seccion.momento) {
+                                                <span class="elementos-momento" [class.is-antes]="seccion.momento === 'antes'">{{ elementosMomentoLabel(seccion.momento) }}</span>
                                             }
-                                        </tr>
+                                        </div>
                                     }
-                                </tbody>
-                            </table>
+                                    <div class="elementos-tabla-scroll">
+                                        <table class="elementos-tabla">
+                                            <thead>
+                                                <tr>
+                                                    @for (columna of seccion.columnas; track $index; let i = $index) {
+                                                        <th [class.num]="elementosColumnaNumerica(seccion, i)">{{ columna }}</th>
+                                                    }
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @for (fila of seccion.filas; track $index) {
+                                                    <tr>
+                                                        @for (valor of fila; track $index) {
+                                                            <td [class.num]="elementosCeldaNumerica(valor)">{{ valor ?? '' }}</td>
+                                                        }
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                            @if (seccion.totales.length) {
+                                                <tfoot>
+                                                    @for (fila of seccion.totales; track $index) {
+                                                        <tr>
+                                                            @for (valor of fila; track $index) {
+                                                                <td [class.num]="elementosCeldaNumerica(valor)">{{ valor ?? '' }}</td>
+                                                            }
+                                                        </tr>
+                                                    }
+                                                </tfoot>
+                                            }
+                                        </table>
+                                    </div>
+                                    @if (seccion.recortado) {
+                                        <p class="elementos-pie">Se muestran {{ seccion.filas.length }} de {{ seccion.total_filas }} filas; el resto está en el Excel.</p>
+                                    }
+                                </section>
+                            }
                         </div>
-                        <p class="elementos-pie">
-                            {{ hoja.total_filas }} {{ hoja.total_filas === 1 ? 'fila' : 'filas' }}
-                            @if (hoja.recortado) { · se muestran las primeras {{ hoja.filas.length }}; el resto está en el Excel }
-                        </p>
                     }
                 }
             </div>

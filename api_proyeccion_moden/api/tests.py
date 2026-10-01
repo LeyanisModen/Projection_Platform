@@ -6257,21 +6257,36 @@ class ElementosSueltosTests(APITestCase):
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
 
     def _excel(self, nombre="elementos.xlsx"):
+        """Como ESN27_P1_elementos_sueltos.xlsx: bloques apilados con titulo, cabecera, filas y total."""
         from openpyxl import Workbook
 
         libro = Workbook()
-        barras = libro.active
-        barras.title = "Barras"
-        barras.append([])  # fila vacia antes de la cabecera
-        barras.append(["Elemento", "Diámetro", "Longitud (m)", "Cantidad", None, "Entrega"])
-        barras.append(["B1", 12, 6.0, 40, None, datetime(2026, 10, 15)])
-        barras.append([None, None, None, None, None, None])
-        barras.append(["B2", 16, 4.25, 12, None, None])
+        hoja = libro.active
+        hoja.title = "ELEMENTOS SUELTOS"
+        bloques = [
+            ("ARMADURA SUPLEMENTARIA PILARES INFERIOR (PRE-MODULOS)", ["CANTIDAD", "DIAMETRO(mm)", "LONGITUD(m)"],
+             [[34, 8, 0.83], [116, 8, 1.32]], [150, "TOTAL"]),
+            ("ARMADURA SUPLEMENTARIA PILARES SUPERIOR (POST-MODULOS)", ["CANTIDAD", "DIAMETRO(mm)", "LONGITUD(m)"],
+             [[34, 8, 0.83]], [34, "TOTAL"]),
+            ("ZUNCHOS DE CANTO", ["CODIGO", "LONGITUD(m)"],
+             [["ESN27_B01_P01_VC1", 4.96], ["ESN27_B01_P01_VC2", 4.96]], ["TOTAL: 2 ud"]),
+            ("DETALLE ESPECIAL MURO ASCENSOR (UØ16)", ["UBICACIÓN", "CANTIDAD", "DEFINIDO EN"],
+             [["A27", 2, "DEFINIDOS EN EL PLANO DE DETALLE"]], None),
+        ]
+        for titulo, cabecera, filas, total in bloques:
+            hoja.append([titulo])
+            fila_titulo = hoja.max_row
+            hoja.merge_cells(start_row=fila_titulo, start_column=1, end_row=fila_titulo, end_column=3)
+            hoja.append(cabecera)
+            for fila in filas:
+                hoja.append(fila)
+            if total:
+                hoja.append(total)
+            hoja.append([])
+        # Una tabla sin titulo en otra hoja, con fecha y una columna vacia.
         vigas = libro.create_sheet("Vigas")
-        vigas.append(["Obra Torre Norte - vigas sueltas"])  # titulo de una celda encima de la tabla
-        vigas.append([])
-        vigas.append(["Viga", "Peso (kg)"])
-        vigas.append(["V-01", 182.5])
+        vigas.append(["Viga", None, "Peso (kg)", "Entrega"])
+        vigas.append(["V-01", None, 182.5, datetime(2026, 10, 15)])
         oculta = libro.create_sheet("Calculos")
         oculta.append(["no", "se", "ve"])
         oculta.sheet_state = "hidden"
@@ -6280,7 +6295,7 @@ class ElementosSueltosTests(APITestCase):
         libro.save(contenido)
         return SimpleUploadedFile(nombre, contenido.getvalue())
 
-    def test_la_oficina_sube_el_excel_y_la_ferralla_lo_ve_como_tabla(self):
+    def test_la_oficina_sube_el_excel_y_la_ferralla_lo_ve_por_bloques(self):
         self._as(self.admin)
         response = self.client.patch(
             f"/api/proyectos/{self.project.id}/",
@@ -6297,19 +6312,55 @@ class ElementosSueltosTests(APITestCase):
         self.assertTrue(data["previsualizable"])
         self.assertEqual(data["nombre_archivo"], "elementos.xlsx")
         self.assertTrue(data["url"].startswith("/media/elementos_sueltos/"))
-        # Ni la hoja oculta ni la vacia; la cabecera es la primera fila con algo.
-        self.assertEqual([hoja["nombre"] for hoja in data["hojas"]], ["Barras", "Vigas"])
-        barras = data["hojas"][0]
-        self.assertEqual(barras["columnas"], ["Elemento", "Diámetro", "Longitud (m)", "Cantidad", "Entrega"])
-        self.assertEqual(barras["filas"], [["B1", 12, 6, 40, "15/10/2026"], ["B2", 16, 4.25, 12, None]])
-        self.assertEqual(barras["total_filas"], 2)
-        self.assertFalse(barras["recortado"])
-        self.assertEqual(barras["notas"], [])
-        vigas = data["hojas"][1]
-        self.assertEqual(vigas["notas"], ["Obra Torre Norte - vigas sueltas"])
-        self.assertEqual(vigas["columnas"], ["Viga", "Peso (kg)"])
-        self.assertEqual(vigas["filas"], [["V-01", 182.5]])
-        self.assertEqual(vigas["total_filas"], 1)
+        # Ni la hoja oculta ni la vacia.
+        self.assertEqual([hoja["nombre"] for hoja in data["hojas"]], ["ELEMENTOS SUELTOS", "Vigas"])
+
+        secciones = data["hojas"][0]["secciones"]
+        self.assertEqual(
+            [(s["titulo"], s["momento"]) for s in secciones],
+            [
+                ("ARMADURA SUPLEMENTARIA PILARES INFERIOR (PRE-MODULOS)", "antes"),
+                ("ARMADURA SUPLEMENTARIA PILARES SUPERIOR (POST-MODULOS)", "despues"),
+                ("ZUNCHOS DE CANTO", None),
+                ("DETALLE ESPECIAL MURO ASCENSOR (UØ16)", None),
+            ],
+        )
+        inferior = secciones[0]
+        self.assertEqual(inferior["columnas"], ["CANTIDAD", "DIAMETRO(mm)", "LONGITUD(m)"])
+        self.assertEqual(inferior["filas"], [[34, 8, 0.83], [116, 8, 1.32]])
+        self.assertEqual(inferior["totales"], [[150, "TOTAL", None]])
+        self.assertEqual(inferior["total_filas"], 2)
+        self.assertFalse(inferior["recortado"])
+        # Cada bloque con su propia cabecera y su total.
+        zunchos = secciones[2]
+        self.assertEqual(zunchos["columnas"], ["CODIGO", "LONGITUD(m)"])
+        self.assertEqual(zunchos["totales"], [["TOTAL: 2 ud", None]])
+        self.assertEqual(secciones[3]["columnas"], ["UBICACIÓN", "CANTIDAD", "DEFINIDO EN"])
+        self.assertEqual(secciones[3]["totales"], [])
+
+        vigas = data["hojas"][1]["secciones"]
+        self.assertEqual(len(vigas), 1)
+        self.assertIsNone(vigas[0]["titulo"])
+        self.assertEqual(vigas[0]["columnas"], ["Viga", "Peso (kg)", "Entrega"])
+        self.assertEqual(vigas[0]["filas"], [["V-01", 182.5, "15/10/2026"]])
+
+    def test_dos_titulos_seguidos_dejan_el_primero_como_nota(self):
+        from openpyxl import Workbook
+
+        libro = Workbook()
+        hoja = libro.active
+        hoja.append(["OBRA ESNABIDE 27 - PLANTA 1"])
+        hoja.append(["BARRAS"])
+        hoja.append(["CANTIDAD", "DIAMETRO(mm)"])
+        hoja.append([4, 12])
+        contenido = io.BytesIO()
+        libro.save(contenido)
+        self.project.elementos_sueltos_archivo.save("notas.xlsx", SimpleUploadedFile("notas.xlsx", contenido.getvalue()))
+        self._as(self.ferralla)
+        hoja = self.client.get(f"/api/proyectos/{self.project.id}/elementos-sueltos/").data["hojas"][0]
+        self.assertEqual(hoja["notas"], ["OBRA ESNABIDE 27 - PLANTA 1"])
+        self.assertEqual([s["titulo"] for s in hoja["secciones"]], ["BARRAS"])
+        self.assertEqual(hoja["secciones"][0]["filas"], [[4, 12]])
 
     def test_otra_ferralla_no_ve_el_excel_y_sin_excel_no_hay_nada(self):
         self._as(self.ferralla)

@@ -544,16 +544,26 @@ export interface ProductionStatsModulo {
     dificultad: number;
 }
 
-/** Una hoja del Excel de elementos sueltos: la primera fila con contenido es la cabecera. */
-export interface ElementosSueltosHoja {
-    nombre: string;
-    /** Titulos que hay encima de la cabecera (filas de una sola celda). */
-    notas?: string[];
+export type ElementosSueltosCelda = string | number | null;
+
+/** Un bloque del Excel: titulo de una celda, su cabecera, sus filas y su fila de TOTAL. */
+export interface ElementosSueltosSeccion {
+    titulo: string | null;
+    /** Si el titulo dice PRE-MODULOS o POST-MODULOS. */
+    momento: 'antes' | 'despues' | null;
     columnas: string[];
-    filas: Array<Array<string | number | null>>;
+    filas: ElementosSueltosCelda[][];
+    totales: ElementosSueltosCelda[][];
     total_filas: number;
     /** Solo viajan las primeras filas; el resto esta en el Excel. */
     recortado: boolean;
+}
+
+export interface ElementosSueltosHoja {
+    nombre: string;
+    /** Titulos sueltos que no abren ningun bloque. */
+    notas: string[];
+    secciones: ElementosSueltosSeccion[];
 }
 
 export interface ElementosSueltos {
