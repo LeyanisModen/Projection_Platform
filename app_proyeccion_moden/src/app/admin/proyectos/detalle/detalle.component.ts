@@ -26,6 +26,15 @@ import {
 } from './module-import.utils';
 import { getModuloPhaseAction } from './phase-action.utils';
 
+/** Ficheros del proyecto que la oficina sube desde "Archivos". El plano ya no se
+ *  sube: se generara a partir de la base de datos del proyecto. */
+type ProjectFileType = 'documentos' | 'elementos';
+
+const PROJECT_FILE_FIELDS = {
+    documentos: 'documentos_archivo',
+    elementos: 'elementos_sueltos_archivo',
+} as const satisfies Record<ProjectFileType, keyof Proyecto>;
+
 @Component({
     selector: 'app-proyecto-detalle',
     standalone: true,
@@ -64,7 +73,7 @@ export class ProyectoDetailComponent implements OnInit {
     updatingSubmoduleId: number | null = null;
     showProjectFilesModal = false;
     checkingProjectFiles = false;
-    projectFileExists = { plano: false, documentos: false };
+    projectFileExists = { documentos: false, elementos: false };
     dropdownOpen = false;
     showFerrallaChangeModal = false;
     pendingFerrallaUrl: string | null = null;
@@ -1060,7 +1069,6 @@ export class ProyectoDetailComponent implements OnInit {
                         '',
                         `• Módulos creados: ${stats.modulos || 0}`,
                         `• Imágenes cargadas: ${stats.imagenes || 0}`,
-                        `• Plano de referencia: ${stats.plano_cargado ? 'sí' : 'no'}`,
                         `• Documentos ZIP: ${stats.documentos_cargados ? 'sí' : 'no'}`,
                     ];
                     if (technicalDbFile) {
@@ -1176,29 +1184,29 @@ export class ProyectoDetailComponent implements OnInit {
 
     closeProjectFilesModal(): void {
         this.showProjectFilesModal = false;
-        this.projectFileExists = { plano: false, documentos: false };
+        this.projectFileExists = { documentos: false, elementos: false };
         this.checkingProjectFiles = false;
     }
 
-    onProjectFileSelected(event: Event, fileType: 'plano' | 'documentos'): void {
+    onProjectFileSelected(event: Event, fileType: ProjectFileType): void {
         const input = event.target as HTMLInputElement;
         const file = input.files?.[0];
         if (!file) return;
         if (!this.proyectoId) return;
 
         const fileName = file.name.toLowerCase();
-        const validFile = fileType === 'plano'
-            ? fileName.endsWith('.pdf') || file.type === 'application/pdf'
+        const validFile = fileType === 'elementos'
+            ? ['.xlsx', '.xlsm', '.xls'].some(extension => fileName.endsWith(extension))
             : fileName.endsWith('.zip');
         if (!validFile) {
-            alert(fileType === 'plano'
-                ? 'El plano debe ser un archivo PDF.'
+            alert(fileType === 'elementos'
+                ? 'Los elementos sueltos deben estar en un Excel (.xlsx).'
                 : 'Los documentos deben estar en un archivo ZIP.');
             return;
         }
 
         const formData = new FormData();
-        const fieldName = fileType === 'plano' ? 'plano_archivo' : 'documentos_archivo';
+        const fieldName = PROJECT_FILE_FIELDS[fileType];
         formData.append(fieldName, file);
 
         this.uploadingProjectFile = true;
@@ -1219,14 +1227,12 @@ export class ProyectoDetailComponent implements OnInit {
         });
     }
 
-    getProjectFileUrl(fileType: 'plano' | 'documentos'): string | null {
-        const rawUrl = fileType === 'plano'
-            ? this.proyecto?.plano_archivo
-            : this.proyecto?.documentos_archivo;
+    getProjectFileUrl(fileType: ProjectFileType): string | null {
+        const rawUrl = this.proyecto?.[PROJECT_FILE_FIELDS[fileType]];
         return this.toAbsoluteFileUrl(rawUrl ?? null);
     }
 
-    openProjectFile(fileType: 'plano' | 'documentos'): void {
+    openProjectFile(fileType: ProjectFileType): void {
         const canOpen = this.projectFileExists[fileType];
         if (!canOpen) return;
         const url = this.getProjectFileUrl(fileType);
@@ -1236,10 +1242,10 @@ export class ProyectoDetailComponent implements OnInit {
 
     private async refreshProjectFileAvailability(): Promise<void> {
         this.checkingProjectFiles = true;
-        const planoUrl = this.getProjectFileUrl('plano');
         const documentosUrl = this.getProjectFileUrl('documentos');
-        this.projectFileExists.plano = await this.checkFileReachable(planoUrl);
+        const elementosUrl = this.getProjectFileUrl('elementos');
         this.projectFileExists.documentos = await this.checkFileReachable(documentosUrl);
+        this.projectFileExists.elementos = await this.checkFileReachable(elementosUrl);
         this.checkingProjectFiles = false;
         this.cdr.detectChanges();
     }

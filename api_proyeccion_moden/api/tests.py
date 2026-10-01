@@ -6235,3 +6235,186 @@ class BastidorSelfServiceTests(APITestCase):
                 status__in=[MesaQueueStatus.MOSTRANDO, MesaQueueStatus.EN_COLA],
             ).exists()
         )
+
+
+class ElementosSueltosTests(APITestCase):
+    """Excel de elementos sueltos: se sube desde el admin y la ferralla lo ve como tabla."""
+
+    def setUp(self):
+        self._media_temp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(self._media_temp.cleanup)
+        override = override_settings(MEDIA_ROOT=self._media_temp.name)
+        override.enable()
+        self.addCleanup(override.disable)
+
+        self.admin = User.objects.create_user("oficina_es", password="x", is_staff=True)
+        self.ferralla = User.objects.create_user("ferralla_es", password="x")
+        self.otra = User.objects.create_user("otra_es", password="x")
+        self.project = Proyecto.objects.create(nombre="Obra ES", usuario=self.ferralla)
+
+    def _as(self, user):
+        token, _ = Token.objects.get_or_create(user=user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+
+    def _excel(self, nombre="elementos.xlsx"):
+        """Como ESN27_P1_elementos_sueltos.xlsx: bloques apilados con titulo, cabecera, filas y total."""
+        from openpyxl import Workbook
+
+        libro = Workbook()
+        hoja = libro.active
+        hoja.title = "ELEMENTOS SUELTOS"
+        bloques = [
+            ("ARMADURA SUPLEMENTARIA PILARES INFERIOR (PRE-MODULOS)", ["CANTIDAD", "DIAMETRO(mm)", "LONGITUD(m)"],
+             [[34, 8, 0.83], [116, 8, 1.32]], [150, "TOTAL"]),
+            ("ARMADURA SUPLEMENTARIA PILARES SUPERIOR (POST-MODULOS)", ["CANTIDAD", "DIAMETRO(mm)", "LONGITUD(m)"],
+             [[34, 8, 0.83]], [34, "TOTAL"]),
+            ("ZUNCHOS DE CANTO", ["CODIGO", "LONGITUD(m)"],
+             [["ESN27_B01_P01_VC1", 4.96], ["ESN27_B01_P01_VC2", 4.96]], ["TOTAL: 2 ud"]),
+            ("DETALLE ESPECIAL MURO ASCENSOR (UØ16)", ["UBICACIÓN", "CANTIDAD", "DEFINIDO EN"],
+             [["A27", 2, "DEFINIDOS EN EL PLANO DE DETALLE"]], None),
+        ]
+        for titulo, cabecera, filas, total in bloques:
+            hoja.append([titulo])
+            fila_titulo = hoja.max_row
+            hoja.merge_cells(start_row=fila_titulo, start_column=1, end_row=fila_titulo, end_column=3)
+            hoja.append(cabecera)
+            for fila in filas:
+                hoja.append(fila)
+            if total:
+                hoja.append(total)
+            hoja.append([])
+        # Una tabla sin titulo en otra hoja, con fecha y una columna vacia.
+        vigas = libro.create_sheet("Vigas")
+        vigas.append(["Viga", None, "Peso (kg)", "Entrega"])
+        vigas.append(["V-01", None, 182.5, datetime(2026, 10, 15)])
+        oculta = libro.create_sheet("Calculos")
+        oculta.append(["no", "se", "ve"])
+        oculta.sheet_state = "hidden"
+        libro.create_sheet("Vacia")
+        contenido = io.BytesIO()
+        libro.save(contenido)
+        return SimpleUploadedFile(nombre, contenido.getvalue())
+
+    def test_la_oficina_sube_el_excel_y_la_ferralla_lo_ve_por_bloques(self):
+        self._as(self.admin)
+        response = self.client.patch(
+            f"/api/proyectos/{self.project.id}/",
+            {"elementos_sueltos_archivo": self._excel()},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(response.data["elementos_sueltos_archivo"].startswith("/media/elementos_sueltos/"))
+
+        self._as(self.ferralla)
+        response = self.client.get(f"/api/proyectos/{self.project.id}/elementos-sueltos/")
+        self.assertEqual(response.status_code, 200)
+        data = response.data
+        self.assertTrue(data["previsualizable"])
+        self.assertEqual(data["nombre_archivo"], "elementos.xlsx")
+        self.assertTrue(data["url"].startswith("/media/elementos_sueltos/"))
+        # Ni la hoja oculta ni la vacia.
+        self.assertEqual([hoja["nombre"] for hoja in data["hojas"]], ["ELEMENTOS SUELTOS", "Vigas"])
+
+        secciones = data["hojas"][0]["secciones"]
+        self.assertEqual(
+            [(s["titulo"], s["momento"]) for s in secciones],
+            [
+                ("ARMADURA SUPLEMENTARIA PILARES INFERIOR (PRE-MODULOS)", "antes"),
+                ("ARMADURA SUPLEMENTARIA PILARES SUPERIOR (POST-MODULOS)", "despues"),
+                ("ZUNCHOS DE CANTO", None),
+                ("DETALLE ESPECIAL MURO ASCENSOR (UØ16)", None),
+            ],
+        )
+        inferior = secciones[0]
+        self.assertEqual(inferior["columnas"], ["CANTIDAD", "DIAMETRO(mm)", "LONGITUD(m)"])
+        self.assertEqual(inferior["filas"], [[34, 8, 0.83], [116, 8, 1.32]])
+        self.assertEqual(inferior["totales"], [[150, "TOTAL", None]])
+        self.assertEqual(inferior["total_filas"], 2)
+        self.assertFalse(inferior["recortado"])
+        # Cada bloque con su propia cabecera y su total.
+        zunchos = secciones[2]
+        self.assertEqual(zunchos["columnas"], ["CODIGO", "LONGITUD(m)"])
+        self.assertEqual(zunchos["totales"], [["TOTAL: 2 ud", None]])
+        self.assertEqual(secciones[3]["columnas"], ["UBICACIÓN", "CANTIDAD", "DEFINIDO EN"])
+        self.assertEqual(secciones[3]["totales"], [])
+
+        vigas = data["hojas"][1]["secciones"]
+        self.assertEqual(len(vigas), 1)
+        self.assertIsNone(vigas[0]["titulo"])
+        self.assertEqual(vigas[0]["columnas"], ["Viga", "Peso (kg)", "Entrega"])
+        self.assertEqual(vigas[0]["filas"], [["V-01", 182.5, "15/10/2026"]])
+
+    def test_dos_titulos_seguidos_dejan_el_primero_como_nota(self):
+        from openpyxl import Workbook
+
+        libro = Workbook()
+        hoja = libro.active
+        hoja.append(["OBRA ESNABIDE 27 - PLANTA 1"])
+        hoja.append(["BARRAS"])
+        hoja.append(["CANTIDAD", "DIAMETRO(mm)"])
+        hoja.append([4, 12])
+        contenido = io.BytesIO()
+        libro.save(contenido)
+        self.project.elementos_sueltos_archivo.save("notas.xlsx", SimpleUploadedFile("notas.xlsx", contenido.getvalue()))
+        self._as(self.ferralla)
+        hoja = self.client.get(f"/api/proyectos/{self.project.id}/elementos-sueltos/").data["hojas"][0]
+        self.assertEqual(hoja["notas"], ["OBRA ESNABIDE 27 - PLANTA 1"])
+        self.assertEqual([s["titulo"] for s in hoja["secciones"]], ["BARRAS"])
+        self.assertEqual(hoja["secciones"][0]["filas"], [[4, 12]])
+
+    def test_otra_ferralla_no_ve_el_excel_y_sin_excel_no_hay_nada(self):
+        self._as(self.ferralla)
+        response = self.client.get(f"/api/proyectos/{self.project.id}/elementos-sueltos/")
+        self.assertEqual(response.status_code, 404)
+
+        self.project.elementos_sueltos_archivo.save("elementos.xlsx", self._excel())
+        self._as(self.otra)
+        response = self.client.get(f"/api/proyectos/{self.project.id}/elementos-sueltos/")
+        self.assertEqual(response.status_code, 404)
+
+    def test_solo_admite_excel_y_un_xls_antiguo_se_descarga_pero_no_se_ve(self):
+        self._as(self.admin)
+        response = self.client.patch(
+            f"/api/proyectos/{self.project.id}/",
+            {"elementos_sueltos_archivo": SimpleUploadedFile("plano.pdf", b"%PDF-1.4")},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("elementos_sueltos_archivo", response.data)
+
+        response = self.client.patch(
+            f"/api/proyectos/{self.project.id}/",
+            {"elementos_sueltos_archivo": SimpleUploadedFile("antiguo.xls", b"\xd0\xcf\x11\xe0")},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 200)
+        data = self.client.get(f"/api/proyectos/{self.project.id}/elementos-sueltos/").data
+        self.assertFalse(data["previsualizable"])
+        self.assertIn(".xls", data["motivo"])
+        self.assertEqual(data["hojas"], [])
+
+    def test_un_excel_roto_no_rompe_la_vista(self):
+        self.project.elementos_sueltos_archivo.save("roto.xlsx", SimpleUploadedFile("roto.xlsx", b"no es un excel"))
+        self._as(self.ferralla)
+        data = self.client.get(f"/api/proyectos/{self.project.id}/elementos-sueltos/").data
+        self.assertFalse(data["previsualizable"])
+        self.assertIn("No se ha podido leer", data["motivo"])
+
+    def test_cambiar_el_excel_borra_el_anterior_del_disco(self):
+        self._as(self.admin)
+        self.client.patch(
+            f"/api/proyectos/{self.project.id}/",
+            {"elementos_sueltos_archivo": self._excel("v1.xlsx")},
+            format="multipart",
+        )
+        self.project.refresh_from_db()
+        anterior = self.project.elementos_sueltos_archivo.path
+        self.assertTrue(os.path.exists(anterior))
+        with self.captureOnCommitCallbacks(execute=True):
+            self.client.patch(
+                f"/api/proyectos/{self.project.id}/",
+                {"elementos_sueltos_archivo": self._excel("v2.xlsx")},
+                format="multipart",
+            )
+        self.assertFalse(os.path.exists(anterior))
+

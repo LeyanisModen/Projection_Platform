@@ -34,6 +34,7 @@ COOKIE_MAX_AGE = 365 * 24 * 3600
 PROJECT_FILE_FIELDS = {
     'planos': 'plano_archivo',
     'documentos': 'documentos_archivo',
+    'elementos_sueltos': 'elementos_sueltos_archivo',
     'datos_tecnicos': 'fichero_datos_tecnicos',
 }
 # Folders laid out as <folder>/<proyecto_id>/<modulo_id>/<file>.

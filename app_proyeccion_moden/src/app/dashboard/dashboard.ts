@@ -10,6 +10,7 @@ import {
   EstrategiaColaSuperior, GrupoMesas, GrupoMesasProyectoEntry, ProductionStatsResponse, ModuloFase,
   GrupoBastidor, GrupoBastidorModulo, CaptureDay, FerrallaCaptureConfig, HorarioDia, GrupoMesaResumen,
   TiempoFabricacion, ProductionStatsBucket, ProductionStatsTiempos, ProductionStatsModulo, ProductionStatsModuloFase,
+  ElementosSueltos, ElementosSueltosHoja, ElementosSueltosSeccion, ElementosSueltosCelda,
 } from '../services/api.service';
 import { LineChartSeries, StatsLineChart } from './stats-line-chart';
 import {
@@ -257,6 +258,14 @@ export class Dashboard implements OnInit, OnDestroy {
   downloadingPlanFotosZip = false;
 
   // Materiales-list Modal State (per-project)
+  // Excel de elementos sueltos (barras, vigas, zunchos que van a obra fuera de los modulos).
+  elementosModalProyecto: Proyecto | null = null;
+  elementosModalData: ElementosSueltos | null = null;
+  elementosModalLoading = false;
+  elementosModalError = '';
+  elementosModalHoja = 0;
+  private elementosModalRequest = 0;
+
   showMaterialesModal = false;
   materialesModalProyecto: Proyecto | null = null;
   materialesModalData: ListaMaterialesProyecto | null = null;
@@ -1088,6 +1097,64 @@ export class Dashboard implements OnInit, OnDestroy {
 
   planModalDoneCount(): number {
     return this.planModalModulos.filter(m => m.inferior_hecho && m.superior_hecho).length;
+  }
+
+  openElementosModal(proyecto: Proyecto, event?: Event): void {
+    event?.stopPropagation();
+    if (!proyecto.elementos_sueltos_archivo) return;
+    const request = ++this.elementosModalRequest;
+    this.elementosModalProyecto = proyecto;
+    this.elementosModalData = null;
+    this.elementosModalError = '';
+    this.elementosModalHoja = 0;
+    this.elementosModalLoading = true;
+    this.cdr.detectChanges();
+    this.api.getElementosSueltos(proyecto.id).pipe(takeUntil(this.destroy$)).subscribe({
+      next: data => {
+        if (request !== this.elementosModalRequest) return;
+        this.elementosModalData = data;
+        this.elementosModalLoading = false;
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        if (request !== this.elementosModalRequest) return;
+        this.elementosModalError = 'No se ha podido cargar el Excel. Puedes descargarlo para abrirlo.';
+        this.elementosModalLoading = false;
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  closeElementosModal(): void {
+    this.elementosModalRequest++;
+    this.elementosModalProyecto = null;
+    this.elementosModalData = null;
+    this.elementosModalError = '';
+    this.elementosModalLoading = false;
+  }
+
+  elementosHojaActual(): ElementosSueltosHoja | null {
+    return this.elementosModalData?.hojas[this.elementosModalHoja] ?? null;
+  }
+
+  /** Enlace de descarga del Excel original (mismo origen: viaja la cookie de /media/). */
+  elementosDescargaUrl(): string {
+    const url = this.elementosModalData?.url || this.elementosModalProyecto?.elementos_sueltos_archivo || '';
+    return url ? this.resolveUrl(url) : '';
+  }
+
+  elementosCeldaNumerica(valor: ElementosSueltosCelda): boolean {
+    return typeof valor === 'number';
+  }
+
+  /** Columna con solo numeros en sus filas: cabecera y celdas alineadas a la derecha. */
+  elementosColumnaNumerica(seccion: ElementosSueltosSeccion, indice: number): boolean {
+    const valores = seccion.filas.map(fila => fila[indice]).filter(valor => valor !== null && valor !== undefined);
+    return valores.length > 0 && valores.every(valor => typeof valor === 'number');
+  }
+
+  elementosMomentoLabel(momento: ElementosSueltosSeccion['momento']): string {
+    return momento === 'antes' ? 'Antes de los módulos' : momento === 'despues' ? 'Después de los módulos' : '';
   }
 
   openProjectDocument(proyecto: Proyecto, type: 'plano' | 'documentos', event?: Event): void {

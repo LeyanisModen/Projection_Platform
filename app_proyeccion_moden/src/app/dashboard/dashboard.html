@@ -591,6 +591,19 @@
                                         <path d="M15 6v14"></path>
                                     </svg>
                                 </button>
+                                <button class="project-icon project-icon-elementos" type="button"
+                                    [class.project-icon-disabled]="!proyecto.elementos_sueltos_archivo"
+                                    [title]="proyecto.elementos_sueltos_archivo ? 'Ver elementos sueltos' : 'Elementos sueltos no disponibles'"
+                                    aria-label="Ver elementos sueltos"
+                                    [disabled]="!proyecto.elementos_sueltos_archivo"
+                                    (click)="openElementosModal(proyecto, $event)">
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+                                        <path d="M3 9h18"></path>
+                                        <path d="M3 15h18"></path>
+                                        <path d="M9 3v18"></path>
+                                    </svg>
+                                </button>
                                 <button class="project-icon" type="button"
                                     [class.project-icon-disabled]="!proyecto.documentos_archivo"
                                     [title]="proyecto.documentos_archivo ? 'Descargar documentos ZIP' : 'Documentos no disponibles'"
@@ -963,6 +976,105 @@
                             }
                         </div>
                     </div>
+                }
+            </div>
+        </div>
+    }
+
+    @if (elementosModalProyecto) {
+        <div class="modal-overlay" (click)="closeElementosModal()">
+            <div class="modal-content elementos-modal" role="dialog" aria-modal="true" aria-labelledby="elementos-modal-title"
+                (click)="$event.stopPropagation()">
+                <div class="plan-modal-header">
+                    <div>
+                        <h3 id="elementos-modal-title">Elementos sueltos · {{ elementosModalProyecto.nombre }}</h3>
+                        @if (elementosModalData) {
+                            <span class="plan-modal-subtitle">{{ elementosModalData.nombre_archivo }}</span>
+                        }
+                    </div>
+                    <div class="plan-modal-header-actions">
+                        @if (elementosDescargaUrl()) {
+                            <a class="plan-modal-download elementos-descargar" [href]="elementosDescargaUrl()"
+                                [attr.download]="elementosModalData?.nombre_archivo || ''" title="Descargar el Excel original">
+                                <i class="fa fa-download" aria-hidden="true"></i>
+                                Descargar Excel
+                            </a>
+                        }
+                        <button type="button" class="plan-modal-close" (click)="closeElementosModal()" title="Cerrar" aria-label="Cerrar">×</button>
+                    </div>
+                </div>
+
+                @if (elementosModalLoading) {
+                    <div class="plan-modal-loading">Cargando Excel…</div>
+                } @else if (elementosModalError) {
+                    <div class="plan-modal-loading elementos-aviso">{{ elementosModalError }}</div>
+                } @else if (elementosModalData && !elementosModalData.previsualizable) {
+                    <div class="plan-modal-loading elementos-aviso">{{ elementosModalData.motivo }}</div>
+                } @else if (elementosModalData && elementosModalData.hojas.length === 0) {
+                    <div class="plan-modal-loading elementos-aviso">El Excel no tiene datos.</div>
+                } @else if (elementosModalData) {
+                    @if (elementosModalData.hojas.length > 1) {
+                        <div class="elementos-hojas" role="tablist" aria-label="Hojas del Excel">
+                            @for (hoja of elementosModalData.hojas; track hoja.nombre; let i = $index) {
+                                <button type="button" class="period-chip" role="tab"
+                                    [class.active]="i === elementosModalHoja" [attr.aria-selected]="i === elementosModalHoja"
+                                    (click)="elementosModalHoja = i">{{ hoja.nombre }}</button>
+                            }
+                        </div>
+                    }
+                    @if (elementosHojaActual(); as hoja) {
+                        <div class="elementos-cuerpo">
+                            @for (nota of hoja.notas; track $index) {
+                                <p class="elementos-nota">{{ nota }}</p>
+                            }
+                            @for (seccion of hoja.secciones; track $index) {
+                                <section class="elementos-seccion" [attr.aria-label]="seccion.titulo || hoja.nombre">
+                                    @if (seccion.titulo || seccion.momento) {
+                                        <div class="elementos-seccion-titulo">
+                                            @if (seccion.titulo) { <h4>{{ seccion.titulo }}</h4> }
+                                            @if (seccion.momento) {
+                                                <span class="elementos-momento" [class.is-antes]="seccion.momento === 'antes'">{{ elementosMomentoLabel(seccion.momento) }}</span>
+                                            }
+                                        </div>
+                                    }
+                                    <div class="elementos-tabla-scroll">
+                                        <table class="elementos-tabla">
+                                            <thead>
+                                                <tr>
+                                                    @for (columna of seccion.columnas; track $index; let i = $index) {
+                                                        <th [class.num]="elementosColumnaNumerica(seccion, i)">{{ columna }}</th>
+                                                    }
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @for (fila of seccion.filas; track $index) {
+                                                    <tr>
+                                                        @for (valor of fila; track $index) {
+                                                            <td [class.num]="elementosCeldaNumerica(valor)">{{ valor ?? '' }}</td>
+                                                        }
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                            @if (seccion.totales.length) {
+                                                <tfoot>
+                                                    @for (fila of seccion.totales; track $index) {
+                                                        <tr>
+                                                            @for (valor of fila; track $index) {
+                                                                <td [class.num]="elementosCeldaNumerica(valor)">{{ valor ?? '' }}</td>
+                                                            }
+                                                        </tr>
+                                                    }
+                                                </tfoot>
+                                            }
+                                        </table>
+                                    </div>
+                                    @if (seccion.recortado) {
+                                        <p class="elementos-pie">Se muestran {{ seccion.filas.length }} de {{ seccion.total_filas }} filas; el resto está en el Excel.</p>
+                                    }
+                                </section>
+                            }
+                        </div>
+                    }
                 }
             </div>
         </div>

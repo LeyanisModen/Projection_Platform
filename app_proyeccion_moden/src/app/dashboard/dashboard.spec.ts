@@ -3,7 +3,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Dashboard } from './dashboard';
 import {
   ApiService, FerrallaCaptureConfig, GrupoBastidor, GrupoBastidorModulo, GrupoMesas, Mesa, MesaQueueItem, Modulo, Proyecto,
-  ProductionStatsBucket, ProductionStatsDay, ProductionStatsResponse,
+  ProductionStatsBucket, ProductionStatsDay, ProductionStatsResponse, ElementosSueltos,
 } from '../services/api.service';
 import { of, Subject, throwError } from 'rxjs';
 import { vi } from 'vitest';
@@ -404,6 +404,120 @@ describe('Dashboard', () => {
 
     expect(component.proyectosDisponibles(null).map(p => p.nombre)).toEqual(['Libre']);
     expect(component.proyectosBloqueados(null).map(p => p.nombre)).toEqual(['Bloqueado']);
+  });
+
+  describe('loose elements Excel', () => {
+    const proyecto = { id: 7, nombre: 'Torre Norte', elementos_sueltos_archivo: '/media/elementos_sueltos/obra.xlsx' } as Proyecto;
+    const render = () => {
+      fixture.changeDetectorRef.markForCheck();
+      fixture.detectChanges();
+    };
+    const datos: ElementosSueltos = {
+      nombre_archivo: 'ESN27_P1_elementos_sueltos.xlsx',
+      url: '/media/elementos_sueltos/ESN27_P1_elementos_sueltos.xlsx',
+      previsualizable: true,
+      motivo: null,
+      hojas: [
+        {
+          nombre: 'ELEMENTOS SUELTOS', notas: [], secciones: [
+            {
+              titulo: 'ARMADURA SUPLEMENTARIA PILARES INFERIOR (PRE-MODULOS)', momento: 'antes',
+              columnas: ['CANTIDAD', 'DIAMETRO(mm)', 'LONGITUD(m)'], filas: [[34, 8, 0.83], [116, 8, 1.32]],
+              totales: [[150, 'TOTAL', null]], total_filas: 2, recortado: false,
+            },
+            {
+              titulo: 'ZUNCHOS DE CANTO', momento: null, columnas: ['CODIGO', 'LONGITUD(m)'],
+              filas: [['ESN27_B01_P01_VC1', 4.96]], totales: [['TOTAL: 1 ud', null]], total_filas: 1, recortado: false,
+            },
+          ],
+        },
+        {
+          nombre: 'Vigas', notas: ['Obra Torre Norte'], secciones: [{
+            titulo: null, momento: null, columnas: ['Viga', 'Peso (kg)'], filas: [['V-01', 182.5]],
+            totales: [], total_filas: 2400, recortado: true,
+          }],
+        },
+      ],
+    };
+
+    it('sits between the plan and the documents in each project card', () => {
+      component.vista = 'produccion';
+      component.proyectos = [{ ...proyecto, modulos_count: 0 } as Proyecto];
+      render();
+      const etiquetas = Array.from(fixture.nativeElement.querySelectorAll('.project-actions button'))
+        .map(boton => (boton as HTMLElement).getAttribute('aria-label'));
+      expect(etiquetas.slice(-3)).toEqual(['Abrir plano PDF', 'Ver elementos sueltos', 'Descargar documentos ZIP']);
+    });
+
+    it('shows each block of the Excel with its title, header, rows and total, and offers the original', () => {
+      const api = TestBed.inject(ApiService);
+      const request = vi.spyOn(api, 'getElementosSueltos').mockReturnValue(of(datos));
+      component.openElementosModal(proyecto);
+      render();
+      expect(request).toHaveBeenCalledWith(7);
+      const modal: HTMLElement = fixture.nativeElement.querySelector('.elementos-modal');
+      expect(modal.querySelector('h3')?.textContent).toBe('Elementos sueltos · Torre Norte');
+      expect(Array.from(modal.querySelectorAll('.elementos-hojas button')).map(b => b.textContent?.trim())).toEqual(['ELEMENTOS SUELTOS', 'Vigas']);
+
+      const secciones = Array.from(modal.querySelectorAll('.elementos-seccion')) as HTMLElement[];
+      expect(secciones.map(sec => sec.querySelector('h4')?.textContent)).toEqual([
+        'ARMADURA SUPLEMENTARIA PILARES INFERIOR (PRE-MODULOS)', 'ZUNCHOS DE CANTO',
+      ]);
+      expect(secciones[0].querySelector('.elementos-momento')?.textContent).toBe('Antes de los módulos');
+      expect(secciones[1].querySelector('.elementos-momento')).toBeNull();
+      // Cada bloque con su cabecera; las columnas de numeros, a la derecha.
+      const cabecera = Array.from(secciones[0].querySelectorAll('th')) as HTMLElement[];
+      expect(cabecera.map(th => th.textContent?.trim())).toEqual(['CANTIDAD', 'DIAMETRO(mm)', 'LONGITUD(m)']);
+      expect(cabecera.map(th => th.classList.contains('num'))).toEqual([true, true, true]);
+      expect(Array.from(secciones[1].querySelectorAll('th')).map(th => th.textContent?.trim())).toEqual(['CODIGO', 'LONGITUD(m)']);
+      expect(Array.from(secciones[0].querySelectorAll('tbody tr:first-child td')).map(td => td.textContent?.trim())).toEqual(['34', '8', '0.83']);
+      // La fila de TOTAL va como pie de su tabla.
+      expect(Array.from(secciones[0].querySelectorAll('tfoot td')).map(td => td.textContent?.trim())).toEqual(['150', 'TOTAL', '']);
+      expect(secciones[1].querySelector('tfoot td')?.textContent?.trim()).toBe('TOTAL: 1 ud');
+
+      const descarga = modal.querySelector('.elementos-descargar') as HTMLAnchorElement;
+      expect(descarga.getAttribute('href')).toContain('/media/elementos_sueltos/ESN27_P1_elementos_sueltos.xlsx');
+      expect(descarga.getAttribute('download')).toBe('ESN27_P1_elementos_sueltos.xlsx');
+
+      (modal.querySelectorAll('.elementos-hojas button')[1] as HTMLButtonElement).click();
+      render();
+      expect(modal.querySelector('.elementos-nota')?.textContent).toBe('Obra Torre Norte');
+      expect(modal.querySelector('.elementos-seccion h4')).toBeNull();
+      expect(Array.from(modal.querySelectorAll('th')).map(th => th.textContent?.trim())).toEqual(['Viga', 'Peso (kg)']);
+      expect(modal.querySelector('.elementos-pie')?.textContent?.trim()).toBe('Se muestran 1 de 2400 filas; el resto está en el Excel.');
+
+      component.closeElementosModal();
+      render();
+      expect(fixture.nativeElement.querySelector('.elementos-modal')).toBeNull();
+    });
+
+    it('explains when the Excel cannot be shown and still lets it be downloaded', () => {
+      const api = TestBed.inject(ApiService);
+      vi.spyOn(api, 'getElementosSueltos').mockReturnValue(of({
+        ...datos, nombre_archivo: 'antiguo.xls', url: '/media/elementos_sueltos/antiguo.xls', previsualizable: false,
+        motivo: 'Este Excel está en formato antiguo (.xls) y no se puede ver aquí. Descárgalo para abrirlo.', hojas: [],
+      }));
+      component.openElementosModal(proyecto);
+      render();
+      const modal: HTMLElement = fixture.nativeElement.querySelector('.elementos-modal');
+      expect(modal.querySelector('.elementos-aviso')?.textContent).toContain('formato antiguo (.xls)');
+      expect(modal.querySelector('table')).toBeNull();
+      expect(modal.querySelector('.elementos-descargar')?.getAttribute('href')).toContain('antiguo.xls');
+    });
+
+    it('keeps the download when the server cannot read the Excel, and needs a file to open', () => {
+      const api = TestBed.inject(ApiService);
+      const request = vi.spyOn(api, 'getElementosSueltos').mockReturnValue(throwError(() => new Error('500')));
+      component.openElementosModal({ ...proyecto, elementos_sueltos_archivo: null });
+      expect(request).not.toHaveBeenCalled();
+      expect(component.elementosModalProyecto).toBeNull();
+
+      component.openElementosModal(proyecto);
+      render();
+      const modal: HTMLElement = fixture.nativeElement.querySelector('.elementos-modal');
+      expect(modal.querySelector('.elementos-aviso')?.textContent).toContain('No se ha podido cargar el Excel');
+      expect(modal.querySelector('.elementos-descargar')?.getAttribute('href')).toContain('/media/elementos_sueltos/obra.xlsx');
+    });
   });
 
   describe('two dashboards on one component', () => {
