@@ -170,7 +170,7 @@
 .modal-content.materiales-modal { display: flex; flex-direction: column; width: 92vw; max-width: 640px; max-height: 84vh; text-align: left; }
 .modal-content.materiales-modal-general { max-width: 760px; }
 /* Excel de elementos sueltos: un bloque por titulo, cada uno con su tabla y su total. */
-.modal-content.elementos-modal { display: flex; flex-direction: column; gap: 14px; width: 94vw; max-width: 980px; max-height: 88vh; text-align: left; }
+.modal-content.elementos-modal { display: flex; flex-direction: column; gap: 14px; width: 94vw; max-width: 820px; max-height: 88vh; text-align: left; }
 a.plan-modal-download { text-decoration: none; }
 .elementos-hojas { display: flex; flex-wrap: wrap; gap: 6px; }
 .elementos-aviso { padding: 18px 0; }
