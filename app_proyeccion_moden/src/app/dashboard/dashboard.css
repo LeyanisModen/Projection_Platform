@@ -98,6 +98,9 @@
 .period-chip.active { color: #fff; background: var(--ink); }
 .stats-period-dates { display: flex; gap: 10px; }
 .stats-period-dates label { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--muted); font-size: 12px; }
+.stats-proyecto-select { height: 32px; max-width: 280px; margin-left: 8px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); font: inherit; font-size: 13px; }
+.stats-scope { margin: -6px 0 0; color: var(--muted); font-size: 12px; }
+.stats-scope strong { color: var(--ink); font-weight: 600; }
 .stats-period-dates input { height: 32px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); font: inherit; font-size: 13px; color: var(--ink); }
 .stats-error { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid #f1c9bf; background: #fdf3f0; color: var(--danger); font-size: 13px; }
 .stats-error .period-chip { border: 1px solid #f1c9bf; }

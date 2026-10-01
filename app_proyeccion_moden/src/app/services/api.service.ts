@@ -558,6 +558,14 @@ export interface ProductionStatsResponse {
     contexto?: { anterior: ProductionStatsDay[]; siguiente: ProductionStatsDay[] };
     /** Modulos terminados en el rango, del mas reciente al mas antiguo. */
     modulos?: ProductionStatsModulo[];
+    /** Presente cuando las estadisticas son de un solo proyecto. */
+    proyecto?: {
+        id: number;
+        nombre: string;
+        modulos_total: number;
+        modulos_completados: number;
+        fecha_montaje: string | null;
+    } | null;
     esperado: {
         capacidad_diaria_modulos: number;
         modulos_esperados: number | null;
@@ -879,11 +887,13 @@ export class ApiService {
         );
     }
 
-    getProductionStats(params: { from?: string; to?: string; proyecto?: number } = {}): Observable<ProductionStatsResponse> {
+    getProductionStats(params: { from?: string; to?: string; proyecto?: number; rango?: 'proyecto' } = {}): Observable<ProductionStatsResponse> {
         const query = new URLSearchParams();
         if (params.from) query.set('from', params.from);
         if (params.to) query.set('to', params.to);
         if (params.proyecto != null) query.set('proyecto', String(params.proyecto));
+        // rango=proyecto: el servidor decide las fechas (del primer modulo terminado a hoy).
+        if (params.rango) query.set('rango', params.rango);
         const qs = query.toString();
         const url = `${this.baseUrl}/stats/production/${qs ? '?' + qs : ''}`;
         return this.http.get<ProductionStatsResponse>(url, { headers: this.getHeaders() });

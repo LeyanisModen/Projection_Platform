@@ -5534,9 +5534,31 @@ class ProductionStatsView(APIView):
         from_date = _parse_iso_date(request.query_params.get('from'), today)
         to_date = _parse_iso_date(request.query_params.get('to'), from_date)
         proyecto_id = request.query_params.get('proyecto')
+        current_tz = timezone.get_current_timezone()
+
+        # Estadisticas de un proyecto: solo lo suyo y, con rango=proyecto,
+        # desde su primera fase o modulo terminado hasta hoy, empezara cuando
+        # empezara.
+        proyecto_filtrado = None
+        if proyecto_id:
+            proyectos_visibles = Proyecto.objects.filter(pk=proyecto_id)
+            if not _is_admin(request.user):
+                proyectos_visibles = proyectos_visibles.filter(usuario=request.user)
+            # Un proyecto ajeno o inexistente no da error: simplemente no hay datos.
+            proyecto_filtrado = proyectos_visibles.first()
+        if proyecto_filtrado is not None and request.query_params.get('rango') == 'proyecto':
+            inicios = [
+                Modulo.objects.filter(proyecto=proyecto_filtrado, completado_at__isnull=False)
+                .order_by('completado_at').values_list('completado_at', flat=True).first(),
+                MesaQueueItem.objects.filter(
+                    modulo__proyecto=proyecto_filtrado, status=MesaQueueStatus.HECHO, done_at__isnull=False,
+                ).order_by('done_at').values_list('done_at', flat=True).first(),
+            ]
+            inicios = [inicio for inicio in inicios if inicio is not None]
+            from_date = timezone.localtime(min(inicios), current_tz).date() if inicios else today
+            to_date = max(today, from_date)
 
         # Build a tz-aware range for filtering done_at (local midnights)
-        current_tz = timezone.get_current_timezone()
         from_dt = timezone.make_aware(
             timezone.datetime.combine(from_date, timezone.datetime.min.time()),
             current_tz,
@@ -6042,6 +6064,13 @@ class ProductionStatsView(APIView):
             'tiempos': tiempos,
             'contexto': contexto,
             'modulos': modulos_detalle,
+            'proyecto': {
+                'id': proyecto_filtrado.id,
+                'nombre': proyecto_filtrado.nombre,
+                'modulos_total': proyecto_filtrado.modulos.count(),
+                'modulos_completados': proyecto_filtrado.modulos.filter(completado_at__isnull=False).count(),
+                'fecha_montaje': proyecto_filtrado.fecha_montaje.isoformat() if proyecto_filtrado.fecha_montaje else None,
+            } if proyecto_filtrado is not None else None,
         })
 
 
