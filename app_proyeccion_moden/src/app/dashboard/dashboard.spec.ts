@@ -178,6 +178,7 @@ describe('Dashboard', () => {
       ];
       const request = vi.spyOn(TestBed.inject(ApiService), 'getProductionStats').mockImplementation((params = {}) => of({
         ...stats,
+        totals: { ...stats.totals, modulos_completados: params.proyecto ? 73 : 0 },
         range: { from: params.rango === 'proyecto' ? '2026-08-04' : params.from!, to: params.rango === 'proyecto' ? '2026-09-30' : params.to!, working_days: 41 },
         proyecto: params.proyecto ? { id: 7, nombre: 'Torre Norte', modulos_total: 110, modulos_completados: 73, fecha_montaje: '2026-11-12' } : null,
       }));
@@ -194,6 +195,9 @@ describe('Dashboard', () => {
       expect(component.statsFrom).toBe('2026-08-04');
       expect(component.statsTo).toBe('2026-09-30');
       expect(text('.stats-scope')).toBe('Torre Norte · 73 de 110 módulos terminados · desde el 04/08/2026 · montaje el 12/11/2026');
+      // Con un proyecto, el indicador dice cuántos lleva de los que tiene, no el objetivo del periodo.
+      expect(text('.stats-kpi-modulos .stats-kpi-value')).toBe('73 / 110');
+      expect(text('.stats-kpi-avance .stats-kpi-value')).toBe('66 %');
       expect(fixture.nativeElement.querySelector('.period-chip[title^="Desde el primer"]')?.classList.contains('active')).toBe(true);
 
       // Dentro del proyecto se puede acotar por fechas sin perder el proyecto.
