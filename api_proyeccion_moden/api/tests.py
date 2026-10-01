@@ -1397,6 +1397,46 @@ class PlanningFoundationTests(APITestCase):
         self.assertEqual(fila["tiempo_paneles"], 3)
         self.assertEqual(fila["tiempo_medidos"], 1)
 
+    def test_estadisticas_de_todo_un_proyecto_desde_su_primer_modulo(self):
+        aware = lambda *args: timezone.make_aware(datetime(*args))  # noqa: E731
+
+        def terminar(modulo, cuando):
+            modulo.inferior_hecho = True
+            modulo.superior_hecho = True
+            modulo.estado = ModuloEstado.COMPLETADO
+            modulo.completado_at = cuando
+            modulo.save(update_fields=["inferior_hecho", "superior_hecho", "estado", "completado_at"])
+
+        terminar(self.modulo, aware(2026, 9, 28, 9, 0))
+        antiguo = Modulo.objects.create(nombre="M-00", proyecto=self.project)
+        terminar(antiguo, aware(2026, 8, 4, 10, 0))
+        Modulo.objects.create(nombre="M-02", proyecto=self.project)  # pendiente
+        otro_proyecto = Proyecto.objects.create(nombre="Otro", usuario=self.user)
+        ajeno = Modulo.objects.create(nombre="X-01", proyecto=otro_proyecto)
+        terminar(ajeno, aware(2026, 9, 10, 10, 0))
+
+        response = self.client.get(f"/api/stats/production/?proyecto={self.project.id}&rango=proyecto")
+        self.assertEqual(response.status_code, 200)
+        # Desde el primer modulo terminado (4 de agosto) hasta hoy, solo este proyecto.
+        self.assertEqual(response.data["range"]["from"], "2026-08-04")
+        self.assertEqual(response.data["range"]["to"], timezone.localdate().isoformat())
+        self.assertEqual(response.data["totals"]["modulos_completados"], 2)
+        self.assertEqual([d["fecha"] for d in response.data["por_dia"]], ["2026-08-04", "2026-09-28"])
+        self.assertEqual(
+            response.data["proyecto"],
+            {"id": self.project.id, "nombre": "Proyecto Plan", "modulos_total": 3, "modulos_completados": 2, "fecha_montaje": None},
+        )
+        self.assertEqual([m["nombre"] for m in response.data["modulos"]], ["M-01", "M-00"])
+
+        # Un proyecto que no es suyo no se ve: ni datos ni ficha del proyecto.
+        intruso = User.objects.create_user(username="intruso", password="pass123")
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=intruso).key}")
+        response = self.client.get(f"/api/stats/production/?proyecto={self.project.id}&rango=proyecto")
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.data["proyecto"])
+        self.assertEqual(response.data["totals"]["modulos_completados"], 0)
+        self.assertEqual(response.data["modulos"], [])
+
     def test_estadisticas_detallan_modulos_tiempos_por_dia_y_contexto(self):
         UserProfile.objects.create(
             user=self.user,

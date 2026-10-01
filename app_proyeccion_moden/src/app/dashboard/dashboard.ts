@@ -175,7 +175,9 @@ export class Dashboard implements OnInit, OnDestroy {
     data: ProductionStatsResponse; from: string; to: string; horario: FerrallaCaptureConfig | null; hora: number; vista: StatsVista;
   } | null = null;
   private statsRequestId = 0;
-  statsPreset: 'day' | 'week' | 'month' | 'custom' = 'day';
+  statsPreset: 'day' | 'week' | 'month' | 'proyecto' | 'custom' = 'day';
+  /** Proyecto al que se limitan las estadisticas; null = todos. */
+  statsProyecto: number | null = null;
   statsFrom: string = '';
   statsTo: string = '';
 
@@ -1997,11 +1999,22 @@ export class Dashboard implements OnInit, OnDestroy {
     if (!silent || !this.statsData) this.loadingStats = true;
     if (!silent) this.statsData = null;
     this.statsError = '';
-    this.api.getProductionStats({ from: this.statsFrom, to: this.statsTo })
+    const todoElProyecto = this.statsPreset === 'proyecto' && this.statsProyecto !== null;
+    this.api.getProductionStats({
+      from: this.statsFrom,
+      to: this.statsTo,
+      proyecto: this.statsProyecto ?? undefined,
+      rango: todoElProyecto ? 'proyecto' : undefined,
+    })
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (res) => {
           if (requestId !== this.statsRequestId) return;
+          if (todoElProyecto && res.range) {
+            // El servidor fija el rango: del primer modulo terminado a hoy.
+            this.statsFrom = res.range.from;
+            this.statsTo = res.range.to;
+          }
           this.statsData = res;
           this.loadingStats = false;
           this.cdr.detectChanges();
@@ -2030,8 +2043,19 @@ export class Dashboard implements OnInit, OnDestroy {
     return this.statsData?.esperado.modulos_esperados ?? null;
   }
 
-  selectStatsPreset(preset: 'day' | 'week' | 'month'): void {
+  /** Limita las estadisticas a un proyecto (null = todos). Al elegir uno se ve entero. */
+  selectStatsProyecto(proyectoId: number | null): void {
+    this.statsProyecto = proyectoId;
+    if (proyectoId === null) {
+      this.selectStatsPreset(this.statsPreset === 'proyecto' ? 'month' : this.statsPreset);
+      return;
+    }
+    this.selectStatsPreset('proyecto');
+  }
+
+  selectStatsPreset(preset: 'day' | 'week' | 'month' | 'proyecto' | 'custom'): void {
     const today = new Date();
+    if (preset === 'proyecto' && this.statsProyecto === null) preset = 'month';
     this.statsPreset = preset;
     if (preset === 'day') {
       this.statsFrom = this.toLocalIsoDate(today);

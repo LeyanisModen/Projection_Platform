@@ -171,6 +171,44 @@ describe('Dashboard', () => {
       expect(text('.stats-table-modulos').length).toBeGreaterThan(0);
     });
 
+    it('shows one project in full, from its first finished module to today', () => {
+      component.proyectos = [
+        { id: 7, nombre: 'Torre Norte', modulos_count: 110, modulos_completados: 73 } as Proyecto,
+        { id: 8, nombre: 'Planta 1', modulos_count: 89, modulos_completados: 0 } as Proyecto,
+      ];
+      const request = vi.spyOn(TestBed.inject(ApiService), 'getProductionStats').mockImplementation((params = {}) => of({
+        ...stats,
+        range: { from: params.rango === 'proyecto' ? '2026-08-04' : params.from!, to: params.rango === 'proyecto' ? '2026-09-30' : params.to!, working_days: 41 },
+        proyecto: params.proyecto ? { id: 7, nombre: 'Torre Norte', modulos_total: 110, modulos_completados: 73, fecha_montaje: '2026-11-12' } : null,
+      }));
+      render();
+      expect(Array.from(fixture.nativeElement.querySelectorAll('.stats-proyecto-select option')).map(o => (o as HTMLOptionElement).textContent?.trim()))
+        .toEqual(['Todos los proyectos', 'Torre Norte', 'Planta 1']);
+      expect(fixture.nativeElement.querySelector('.period-chip[title^="Desde el primer"]')).toBeNull();
+
+      component.selectStatsProyecto(7);
+      render();
+      expect(request).toHaveBeenLastCalledWith({ from: '2026-09-01', to: '2026-09-14', proyecto: 7, rango: 'proyecto' });
+      // El servidor fija las fechas y la pagina las adopta.
+      expect(component.statsPreset).toBe('proyecto');
+      expect(component.statsFrom).toBe('2026-08-04');
+      expect(component.statsTo).toBe('2026-09-30');
+      expect(text('.stats-scope')).toBe('Torre Norte · 73 de 110 módulos terminados · desde el 04/08/2026 · montaje el 12/11/2026');
+      expect(fixture.nativeElement.querySelector('.period-chip[title^="Desde el primer"]')?.classList.contains('active')).toBe(true);
+
+      // Dentro del proyecto se puede acotar por fechas sin perder el proyecto.
+      component.statsFrom = '2026-09-01';
+      component.onStatsDateChange();
+      expect(request).toHaveBeenLastCalledWith({ from: '2026-09-01', to: '2026-09-30', proyecto: 7, rango: undefined });
+      expect(component.statsPreset).toBe('custom');
+
+      // Volver a todos los proyectos recupera el mes en curso.
+      component.selectStatsProyecto(null);
+      expect(component.statsProyecto).toBeNull();
+      expect(component.statsPreset).toBe('custom');
+      expect(request).toHaveBeenLastCalledWith({ from: '2026-09-01', to: '2026-09-30', proyecto: undefined, rango: undefined });
+    });
+
     it('shows every zero-valued KPI and the period target before production starts', () => {
       render();
       expect(fixture.nativeElement.querySelectorAll('.stats-kpi').length).toBe(13);

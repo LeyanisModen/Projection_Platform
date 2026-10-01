@@ -53,6 +53,19 @@
                             <button type="button" class="period-chip"
                                 [class.active]="statsPreset === 'month'"
                                 (click)="selectStatsPreset('month')">Este mes</button>
+                            <select class="stats-proyecto-select" aria-label="Proyecto de las estadísticas"
+                                [ngModel]="statsProyecto" (ngModelChange)="selectStatsProyecto($event)">
+                                <option [ngValue]="null">Todos los proyectos</option>
+                                @for (proyecto of proyectos; track proyecto.id) {
+                                    <option [ngValue]="proyecto.id">{{ proyecto.nombre }}</option>
+                                }
+                            </select>
+                            @if (statsProyecto !== null) {
+                                <button type="button" class="period-chip"
+                                    [class.active]="statsPreset === 'proyecto'"
+                                    title="Desde el primer módulo terminado del proyecto hasta hoy"
+                                    (click)="selectStatsPreset('proyecto')">Todo el proyecto</button>
+                            }
                         </div>
                         <div class="stats-period-dates">
                             <label>
@@ -65,6 +78,13 @@
                             </label>
                         </div>
                     </div>
+                    @if (statsData?.proyecto; as proyectoStats) {
+                        <p class="stats-scope">
+                            <strong>{{ proyectoStats.nombre }}</strong> · {{ proyectoStats.modulos_completados }} de {{ proyectoStats.modulos_total }} módulos terminados
+                            @if (statsPreset === 'proyecto') { · desde el {{ statsFrom | date:'dd/MM/yyyy' }} }
+                            @if (proyectoStats.fecha_montaje) { · montaje el {{ proyectoStats.fecha_montaje | date:'dd/MM/yyyy' }} }
+                        </p>
+                    }
                     @if (statsError) {
                         <div class="stats-error" role="alert">
                             {{ statsError }}
