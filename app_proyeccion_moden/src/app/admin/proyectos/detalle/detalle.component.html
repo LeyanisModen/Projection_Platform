@@ -198,6 +198,11 @@
                         <span *ngIf="proyecto.documentos_archivo" class="is-ok"><i class="fa fa-check" aria-hidden="true"></i> cargados</span>
                         <span *ngIf="!proyecto.documentos_archivo" class="meta">sin cargar</span>
                     </li>
+                    <li class="archivo-elementos">
+                        <strong>Elementos sueltos:</strong>
+                        <span *ngIf="proyecto.elementos_sueltos_archivo" class="is-ok"><i class="fa fa-check" aria-hidden="true"></i> cargado</span>
+                        <span *ngIf="!proyecto.elementos_sueltos_archivo" class="meta">sin cargar</span>
+                    </li>
                 </ul>
             </div>
 
@@ -810,7 +815,7 @@
 
                 <h4>Archivos del Proyecto</h4>
 
-                <small class="text-muted">Plano PDF y documentación comprimida del proyecto.</small>
+                <small class="text-muted">Plano PDF, documentación comprimida y Excel de elementos sueltos.</small>
 
             </div>
 
@@ -908,6 +913,30 @@
 
             </div>
 
+        </div>
+
+        <div class="project-file-row project-file-row-elementos">
+            <div class="project-file-info">
+                <strong>Elementos sueltos (.xlsx)</strong>
+                <span class="text-muted">
+                    {{ getProjectFileUrl('elementos') ? 'Archivo cargado' : 'No hay archivo' }}
+                </span>
+            </div>
+            <div class="project-file-actions">
+                <button class="btn btn-sm btn-outline-dark"
+                    (click)="openProjectFile('elementos')"
+                    [disabled]="!projectFileExists.elementos || checkingProjectFiles || uploadingProjectFile">
+                    Descargar actual
+                </button>
+                <button class="btn btn-sm btn-outline-secondary"
+                    (click)="triggerProjectFileUpload(modalElementosInput)"
+                    [disabled]="uploadingProjectFile">
+                    {{ getProjectFileUrl('elementos') ? 'Cambiar' : 'Subir' }}
+                </button>
+                <input #modalElementosInput type="file"
+                    accept=".xlsx,.xlsm,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+                    (change)="onProjectFileSelected($event, 'elementos')" hidden>
+            </div>
         </div>
 
     </div>

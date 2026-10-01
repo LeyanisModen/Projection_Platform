@@ -1512,7 +1512,7 @@ class ProyectoViewSet(viewsets.ModelViewSet):
                     })
 
         replaced_files = []
-        for field_name in ('plano_archivo', 'documentos_archivo'):
+        for field_name in ('plano_archivo', 'documentos_archivo', 'elementos_sueltos_archivo'):
             if field_name not in serializer.validated_data:
                 continue
             current_file = getattr(serializer.instance, field_name)
@@ -1645,6 +1645,23 @@ class ProyectoViewSet(viewsets.ModelViewSet):
                 )
 
         return stats
+
+    @action(detail=True, methods=['get'], url_path='elementos-sueltos')
+    def elementos_sueltos(self, request, pk=None):
+        """Excel de elementos sueltos leido como tablas, una por hoja visible."""
+        from urllib.parse import urlsplit
+        from api.elementos_sueltos import leer_elementos_sueltos
+
+        proyecto = self.get_object()
+        archivo = proyecto.elementos_sueltos_archivo
+        if not archivo:
+            return Response(
+                {'detail': 'Este proyecto no tiene Excel de elementos sueltos.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        data = leer_elementos_sueltos(archivo)
+        data['url'] = urlsplit(archivo.url).path
+        return Response(data)
 
     @action(detail=True, methods=['get'])
     def modulos(self, request, pk=None):

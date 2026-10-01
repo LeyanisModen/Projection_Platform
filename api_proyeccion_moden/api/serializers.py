@@ -257,6 +257,7 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
             "bastidor_longitud_cm", "peso_maximo_grua_kg", "datos_tecnicos_importados",
             "datos_tecnicos_archivo", "datos_tecnicos_actualizados_at",
             "plano_archivo", "documentos_archivo", "planilla_archivo",
+            "elementos_sueltos_archivo",
             "estrategia_bastidor",
             "capacidad_diaria_usuario",
             "grupos_count", "modulos_count", "modulos_completados",
@@ -274,7 +275,7 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
         # browser must fetch media through the frontend's nginx (same origin)
         # so the /media/ auth cookie travels with the request, so keep the
         # path only. Also removes the http/https mixed-content edge case.
-        for field in ('plano_archivo', 'documentos_archivo', 'planilla_archivo'):
+        for field in ('plano_archivo', 'documentos_archivo', 'planilla_archivo', 'elementos_sueltos_archivo'):
             value = data.get(field)
             if isinstance(value, str) and '://' in value:
                 data[field] = urlsplit(value).path
@@ -326,6 +327,14 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
 
     def validate_planilla_archivo(self, value):
         return self._validate_documents_zip(value)
+
+    def validate_elementos_sueltos_archivo(self, value):
+        from api.elementos_sueltos import EXTENSIONES
+        if value and os.path.splitext(value.name)[1].lower() not in EXTENSIONES:
+            raise serializers.ValidationError(
+                'Los elementos sueltos deben estar en un Excel (.xlsx).'
+            )
+        return value
 
     def get_capacidad_diaria_usuario(self, obj):
         if obj.usuario and hasattr(obj.usuario, 'profile'):

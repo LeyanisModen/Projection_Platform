@@ -1,6 +1,7 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { vi } from 'vitest';
 import { provideRouter } from '@angular/router';
 import { Modulo, Proyecto } from '../../../services/api.service';
 import { ProyectoDetailComponent } from './detalle.component';
@@ -44,6 +45,32 @@ describe('Project detail rack order switch', () => {
         return Array.from(fixture.nativeElement.querySelectorAll('.grupo-modulo-nombre-texto'))
             .map(element => (element as HTMLElement).textContent!.trim());
     }
+
+    it('lists the loose elements Excel among the project files and uploads it', () => {
+        const component = fixture.componentInstance;
+        const fila = () => (fixture.nativeElement.querySelector('.archivo-elementos') as HTMLElement).textContent!.replace(/\s+/g, '').trim();
+        expect(fila()).toBe('Elementossueltos:sincargar');
+
+        component.proyectoId = 7;
+        // Un PDF no vale: se avisa y no se sube nada.
+        const alerta = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
+        const input = (name: string) => ({ target: { files: [new File(['x'], name)] } } as unknown as Event);
+        component.onProjectFileSelected(input('plano.pdf'), 'elementos');
+        expect(alerta).toHaveBeenCalledWith('Los elementos sueltos deben estar en un Excel (.xlsx).');
+        http.expectNone('/api/proyectos/7/');
+
+        component.onProjectFileSelected(input('obra.xlsx'), 'elementos');
+        const request = http.expectOne('/api/proyectos/7/');
+        expect(request.request.method).toBe('PATCH');
+        expect((request.request.body as FormData).get('elementos_sueltos_archivo')).toBeInstanceOf(File);
+        request.flush({...component.proyecto, elementos_sueltos_archivo: '/media/elementos_sueltos/obra.xlsx'});
+        fixture.detectChanges();
+        expect(fila()).toBe('Elementossueltos:cargado');
+        expect(component.getProjectFileUrl('elementos')).toContain('/media/elementos_sueltos/obra.xlsx');
+        // El proyecto actualizado hace que la lista de control se recargue.
+        http.match('/api/proyecto-checklist/7/').forEach(pendiente => pendiente.flush([]));
+        alerta.mockRestore();
+    });
 
     it('defaults to fabrication order with an accessible selected option', () => {
         expect(fixture.nativeElement.querySelector('.rack-view-toggle .segmented').getAttribute('role')).toBe('group');

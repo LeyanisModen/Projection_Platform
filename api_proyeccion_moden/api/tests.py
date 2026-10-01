@@ -6235,3 +6235,128 @@ class BastidorSelfServiceTests(APITestCase):
                 status__in=[MesaQueueStatus.MOSTRANDO, MesaQueueStatus.EN_COLA],
             ).exists()
         )
+
+
+class ElementosSueltosTests(APITestCase):
+    """Excel de elementos sueltos: se sube desde el admin y la ferralla lo ve como tabla."""
+
+    def setUp(self):
+        self._media_temp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(self._media_temp.cleanup)
+        override = override_settings(MEDIA_ROOT=self._media_temp.name)
+        override.enable()
+        self.addCleanup(override.disable)
+
+        self.admin = User.objects.create_user("oficina_es", password="x", is_staff=True)
+        self.ferralla = User.objects.create_user("ferralla_es", password="x")
+        self.otra = User.objects.create_user("otra_es", password="x")
+        self.project = Proyecto.objects.create(nombre="Obra ES", usuario=self.ferralla)
+
+    def _as(self, user):
+        token, _ = Token.objects.get_or_create(user=user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+
+    def _excel(self, nombre="elementos.xlsx"):
+        from openpyxl import Workbook
+
+        libro = Workbook()
+        barras = libro.active
+        barras.title = "Barras"
+        barras.append([])  # fila vacia antes de la cabecera
+        barras.append(["Elemento", "Diámetro", "Longitud (m)", "Cantidad", None, "Entrega"])
+        barras.append(["B1", 12, 6.0, 40, None, datetime(2026, 10, 15)])
+        barras.append([None, None, None, None, None, None])
+        barras.append(["B2", 16, 4.25, 12, None, None])
+        vigas = libro.create_sheet("Vigas")
+        vigas.append(["Viga", "Peso (kg)"])
+        vigas.append(["V-01", 182.5])
+        oculta = libro.create_sheet("Calculos")
+        oculta.append(["no", "se", "ve"])
+        oculta.sheet_state = "hidden"
+        libro.create_sheet("Vacia")
+        contenido = io.BytesIO()
+        libro.save(contenido)
+        return SimpleUploadedFile(nombre, contenido.getvalue())
+
+    def test_la_oficina_sube_el_excel_y_la_ferralla_lo_ve_como_tabla(self):
+        self._as(self.admin)
+        response = self.client.patch(
+            f"/api/proyectos/{self.project.id}/",
+            {"elementos_sueltos_archivo": self._excel()},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(response.data["elementos_sueltos_archivo"].startswith("/media/elementos_sueltos/"))
+
+        self._as(self.ferralla)
+        response = self.client.get(f"/api/proyectos/{self.project.id}/elementos-sueltos/")
+        self.assertEqual(response.status_code, 200)
+        data = response.data
+        self.assertTrue(data["previsualizable"])
+        self.assertEqual(data["nombre_archivo"], "elementos.xlsx")
+        self.assertTrue(data["url"].startswith("/media/elementos_sueltos/"))
+        # Ni la hoja oculta ni la vacia; la cabecera es la primera fila con algo.
+        self.assertEqual([hoja["nombre"] for hoja in data["hojas"]], ["Barras", "Vigas"])
+        barras = data["hojas"][0]
+        self.assertEqual(barras["columnas"], ["Elemento", "Diámetro", "Longitud (m)", "Cantidad", "Entrega"])
+        self.assertEqual(barras["filas"], [["B1", 12, 6, 40, "15/10/2026"], ["B2", 16, 4.25, 12, None]])
+        self.assertEqual(barras["total_filas"], 2)
+        self.assertFalse(barras["recortado"])
+        self.assertEqual(data["hojas"][1]["filas"], [["V-01", 182.5]])
+
+    def test_otra_ferralla_no_ve_el_excel_y_sin_excel_no_hay_nada(self):
+        self._as(self.ferralla)
+        response = self.client.get(f"/api/proyectos/{self.project.id}/elementos-sueltos/")
+        self.assertEqual(response.status_code, 404)
+
+        self.project.elementos_sueltos_archivo.save("elementos.xlsx", self._excel())
+        self._as(self.otra)
+        response = self.client.get(f"/api/proyectos/{self.project.id}/elementos-sueltos/")
+        self.assertEqual(response.status_code, 404)
+
+    def test_solo_admite_excel_y_un_xls_antiguo_se_descarga_pero_no_se_ve(self):
+        self._as(self.admin)
+        response = self.client.patch(
+            f"/api/proyectos/{self.project.id}/",
+            {"elementos_sueltos_archivo": SimpleUploadedFile("plano.pdf", b"%PDF-1.4")},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("elementos_sueltos_archivo", response.data)
+
+        response = self.client.patch(
+            f"/api/proyectos/{self.project.id}/",
+            {"elementos_sueltos_archivo": SimpleUploadedFile("antiguo.xls", b"\xd0\xcf\x11\xe0")},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 200)
+        data = self.client.get(f"/api/proyectos/{self.project.id}/elementos-sueltos/").data
+        self.assertFalse(data["previsualizable"])
+        self.assertIn(".xls", data["motivo"])
+        self.assertEqual(data["hojas"], [])
+
+    def test_un_excel_roto_no_rompe_la_vista(self):
+        self.project.elementos_sueltos_archivo.save("roto.xlsx", SimpleUploadedFile("roto.xlsx", b"no es un excel"))
+        self._as(self.ferralla)
+        data = self.client.get(f"/api/proyectos/{self.project.id}/elementos-sueltos/").data
+        self.assertFalse(data["previsualizable"])
+        self.assertIn("No se ha podido leer", data["motivo"])
+
+    def test_cambiar_el_excel_borra_el_anterior_del_disco(self):
+        self._as(self.admin)
+        self.client.patch(
+            f"/api/proyectos/{self.project.id}/",
+            {"elementos_sueltos_archivo": self._excel("v1.xlsx")},
+            format="multipart",
+        )
+        self.project.refresh_from_db()
+        anterior = self.project.elementos_sueltos_archivo.path
+        self.assertTrue(os.path.exists(anterior))
+        with self.captureOnCommitCallbacks(execute=True):
+            self.client.patch(
+                f"/api/proyectos/{self.project.id}/",
+                {"elementos_sueltos_archivo": self._excel("v2.xlsx")},
+                format="multipart",
+            )
+        self.assertFalse(os.path.exists(anterior))
+

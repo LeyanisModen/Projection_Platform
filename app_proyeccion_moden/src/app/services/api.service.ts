@@ -125,6 +125,8 @@ export interface Proyecto {
     datos_tecnicos_actualizados_at?: string | null;
     plano_archivo?: string | null;
     documentos_archivo?: string | null;
+    /** Excel de elementos sueltos a llevar a obra (barras, vigas, zunchos fuera de modulo). */
+    elementos_sueltos_archivo?: string | null;
     estrategia_bastidor: EstrategiaBastidor;
     capacidad_diaria_usuario?: number;
     grupos_count?: number;
@@ -542,6 +544,25 @@ export interface ProductionStatsModulo {
     dificultad: number;
 }
 
+/** Una hoja del Excel de elementos sueltos: la primera fila con contenido es la cabecera. */
+export interface ElementosSueltosHoja {
+    nombre: string;
+    columnas: string[];
+    filas: Array<Array<string | number | null>>;
+    total_filas: number;
+    /** Solo viajan las primeras filas; el resto esta en el Excel. */
+    recortado: boolean;
+}
+
+export interface ElementosSueltos {
+    nombre_archivo: string;
+    url: string;
+    /** false con un .xls antiguo o un fichero que no se puede leer: queda la descarga. */
+    previsualizable: boolean;
+    motivo: string | null;
+    hojas: ElementosSueltosHoja[];
+}
+
 export interface ProductionStatsResponse {
     range: { from: string; to: string; working_days: number };
     totals: ProductionStatsBucket & {
@@ -736,6 +757,13 @@ export class ApiService {
 
     getProyecto(id: number): Observable<Proyecto> {
         return this.http.get<Proyecto>(`${this.baseUrl}/proyectos/${id}/`, { headers: this.getHeaders() });
+    }
+
+    /** Excel de elementos sueltos del proyecto, leido como tablas (una por hoja). */
+    getElementosSueltos(proyectoId: number): Observable<ElementosSueltos> {
+        return this.http.get<ElementosSueltos>(
+            `${this.baseUrl}/proyectos/${proyectoId}/elementos-sueltos/`, { headers: this.getHeaders() },
+        );
     }
 
     getProyectoModulos(id: number): Observable<Modulo[]> {

@@ -33,7 +33,7 @@ def collect_project_media(project):
     """Collect file references before the project's cascade delete runs."""
     storage_files = {
         field_file.name
-        for field_file in (project.plano_archivo, project.documentos_archivo)
+        for field_file in (project.plano_archivo, project.documentos_archivo, project.elementos_sueltos_archivo)
         if field_file and field_file.name
     }
     if project.fichero_datos_tecnicos:
@@ -116,6 +116,7 @@ def _storage_file_is_referenced(file_name):
         Proyecto.objects.filter(
             Q(plano_archivo=file_name)
             | Q(documentos_archivo=file_name)
+            | Q(elementos_sueltos_archivo=file_name)
             | Q(fichero_datos_tecnicos=file_name)
         ).exists()
         or Imagen.objects.filter(archivo=file_name).exists()
@@ -146,7 +147,9 @@ def _directory_has_references(relative_directory):
     url_prefix = f'{media_prefix}{prefix}'
     return (
         Proyecto.objects.filter(
-            Q(plano_archivo__startswith=prefix) | Q(documentos_archivo__startswith=prefix)
+            Q(plano_archivo__startswith=prefix)
+            | Q(documentos_archivo__startswith=prefix)
+            | Q(elementos_sueltos_archivo__startswith=prefix)
         ).exists()
         or Imagen.objects.filter(
             Q(archivo__startswith=prefix) | Q(url__startswith=url_prefix)

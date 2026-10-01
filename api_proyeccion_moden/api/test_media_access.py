@@ -104,6 +104,13 @@ class MediaAccessTests(APITestCase):
         denied = self._get(self.plano_a, HTTP_AUTHORIZATION=f'Token {self.token_b.key}')
         self.assertEqual(denied.status_code, 403)
 
+    def test_elementos_sueltos_follow_project_owner(self):
+        self.project_a.elementos_sueltos_archivo.name = 'elementos_sueltos/obra_a.xlsx'
+        self.project_a.save(update_fields=['elementos_sueltos_archivo'])
+        url = self._write('elementos_sueltos/obra_a.xlsx')
+        self.assertEqual(self._get(url, HTTP_AUTHORIZATION=f'Token {self.token_a.key}').status_code, 200)
+        self.assertEqual(self._get(url, HTTP_AUTHORIZATION=f'Token {self.token_b.key}').status_code, 403)
+
     def test_legacy_folder_is_admin_only(self):
         response = self._get(self.legacy, HTTP_AUTHORIZATION=f'Token {self.token_a.key}')
         self.assertEqual(response.status_code, 403)

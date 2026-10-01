@@ -169,6 +169,18 @@
 .modal-content.gestionar-modal { display: flex; flex-direction: column; gap: 14px; width: 92vw; max-width: 560px; max-height: 86vh; text-align: left; }
 .modal-content.materiales-modal { display: flex; flex-direction: column; width: 92vw; max-width: 640px; max-height: 84vh; text-align: left; }
 .modal-content.materiales-modal-general { max-width: 760px; }
+/* Excel de elementos sueltos: tabla ancha con cabecera fija. */
+.modal-content.elementos-modal { display: flex; flex-direction: column; gap: 14px; width: 94vw; max-width: 1200px; max-height: 88vh; text-align: left; }
+a.plan-modal-download { text-decoration: none; }
+.elementos-hojas { display: flex; flex-wrap: wrap; gap: 6px; }
+.elementos-aviso { padding: 18px 0; }
+.elementos-tabla-scroll { min-height: 0; overflow: auto; border: 1px solid var(--line); }
+.elementos-tabla { width: 100%; border-collapse: collapse; font-size: 13px; }
+.elementos-tabla th { position: sticky; top: 0; z-index: 1; padding: 8px 10px; border-bottom: 1px solid var(--line-strong); background: var(--surface-2); color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-align: left; text-transform: uppercase; white-space: nowrap; }
+.elementos-tabla td { padding: 7px 10px; border-bottom: 1px solid var(--line); color: var(--text); white-space: nowrap; }
+.elementos-tabla td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.elementos-tabla tbody tr:hover td { background: var(--surface-2); }
+.elementos-pie { margin: 0; color: var(--muted); font-size: 12px; }
 .modal-content.plan-fotos-modal { display: flex; flex-direction: column; gap: 16px; width: 90vw; height: 90vh; max-width: none; max-height: 90vh; box-sizing: border-box; overflow: hidden; text-align: left; }
 .plan-modal-header, .gestionar-modal-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .plan-modal-subtitle { display: block; margin-top: 2px; color: var(--muted); font-size: 13px; }

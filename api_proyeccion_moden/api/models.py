@@ -121,6 +121,15 @@ class Proyecto(models.Model):
         null=True,
         help_text='Archivo ZIP con la documentacion del proyecto.',
     )
+    elementos_sueltos_archivo = models.FileField(
+        upload_to='elementos_sueltos/',
+        blank=True,
+        null=True,
+        help_text=(
+            'Excel con los elementos sueltos a llevar a obra (barras, vigas, '
+            'zunchos) que no van dentro de un modulo.'
+        ),
+    )
     estrategia_bastidor = models.CharField(
         max_length=32,
         choices=EstrategiaBastidor.choices,
