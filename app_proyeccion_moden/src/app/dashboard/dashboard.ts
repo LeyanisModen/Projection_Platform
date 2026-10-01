@@ -2462,6 +2462,12 @@ export class Dashboard implements OnInit, OnDestroy {
     return bucket?.peso_total_kg ?? bucket?.peso_malla_final_kg ?? 0;
   }
 
+  /** Porcentaje de modulos terminados de un proyecto sobre su total (sin decimales). */
+  avanceProyecto(proyecto: { modulos_total: number; modulos_completados: number } | null | undefined): number | null {
+    if (!proyecto || !proyecto.modulos_total) return null;
+    return Math.round((proyecto.modulos_completados / proyecto.modulos_total) * 100);
+  }
+
   /** "+2" / "−1.5" frente al objetivo de la fila. */
   diferenciaLabel(fila: StatsBucket): string {
     const diff = fila.modulos_completados - fila.meta_modulos;

@@ -97,18 +97,33 @@
                         <!-- Shared KPIs -->
                         @let resumen = statsResumen();
                         <div class="stats-kpi-row">
-                            <div class="stats-kpi">
+                            @if (statsData.proyecto; as proyectoStats) {
+                            <!-- Un proyecto: cuántos lleva de los que tiene. -->
+                            <div class="stats-kpi stats-kpi-modulos" [title]="'Módulos terminados en el período, de los ' + proyectoStats.modulos_total + ' del proyecto'">
+                                <span class="stats-kpi-label">Módulos</span>
+                                <span class="stats-kpi-value">
+                                    {{ statsData.totals.modulos_completados }}
+                                    <span class="stats-module-target">/ {{ proyectoStats.modulos_total }}</span>
+                                </span>
+                            </div>
+                            <div class="stats-kpi stats-kpi-avance" title="Módulos terminados del proyecto sobre su total">
+                                <span class="stats-kpi-label">Avance del proyecto</span>
+                                <span class="stats-kpi-value">{{ avanceProyecto(proyectoStats) ?? '—' }} <small>%</small></span>
+                            </div>
+                            } @else {
+                            <div class="stats-kpi stats-kpi-modulos">
                                 <span class="stats-kpi-label">Módulos</span>
                                 <span class="stats-kpi-value">
                                     {{ statsData.totals.modulos_completados }}
                                     <span class="stats-module-target"
-                                          title="Objetivo del período según los pendientes a su inicio, los plazos de montaje actuales y los días laborables de la ferralla.">/ {{ statsPeriodTarget() ?? '?' }}</span>
+                                          title="Objetivo del período según los pendientes a su inicio, los plazos de montaje actuales y los días laborables de la ferralla.">/ {{ statsPeriodTarget() ?? '?' }} objetivo</span>
                                 </span>
                             </div>
                             <div class="stats-kpi" title="Módulos fabricados sobre el objetivo del período">
                                 <span class="stats-kpi-label">Cumplimiento</span>
                                 <span class="stats-kpi-value">{{ resumen?.cumplimiento ?? '—' }} <small>%</small></span>
                             </div>
+                            }
                             <div class="stats-kpi" title="Días laborables ya pasados en los que se llegó al objetivo diario">
                                 <span class="stats-kpi-label">Días en objetivo</span>
                                 <span class="stats-kpi-value">
