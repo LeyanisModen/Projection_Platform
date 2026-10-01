@@ -216,8 +216,8 @@ describe('Dashboard', () => {
     it('shows every zero-valued KPI and the period target before production starts', () => {
       render();
       expect(fixture.nativeElement.querySelectorAll('.stats-kpi').length).toBe(13);
-      expect(text('.stats-kpi-value')).toBe('0 / 9');
-      expect(text('.stats-kpi')).toBe('Módulos 0 / 9');
+      expect(text('.stats-kpi-value')).toBe('0 / 9 objetivo');
+      expect(text('.stats-kpi')).toBe('Módulos 0 / 9 objetivo');
       expect(text('.stats-empty')).toContain('No hay producción registrada');
       expect(fixture.nativeElement.querySelector('.stats-table')).toBeNull();
       expect(fixture.nativeElement.querySelector('.stats-charts')).toBeNull();
@@ -230,8 +230,8 @@ describe('Dashboard', () => {
       stats.totals.fases_completadas = 106;
       stats.esperado.modulos_esperados = 64;
       render();
-      expect(text('.stats-kpi-value')).toBe('53 / 64');
-      expect(text('.stats-kpi')).toBe('Módulos 53 / 64');
+      expect(text('.stats-kpi-value')).toBe('53 / 64 objetivo');
+      expect(text('.stats-kpi')).toBe('Módulos 53 / 64 objetivo');
       expect(fixture.nativeElement.querySelector('.stats-table')).not.toBeNull();
       expect(fixture.nativeElement.querySelector('.stats-charts')).not.toBeNull();
       expect(fixture.nativeElement.querySelectorAll('app-stats-line-chart').length).toBe(5);
@@ -247,23 +247,23 @@ describe('Dashboard', () => {
       stats.planificacion!.modulos_hoy = 0;
       render();
       expect(component.statsPeriodTarget()).toBe(9);
-      expect(text('.stats-kpi-value')).toBe('0 / 9');
+      expect(text('.stats-kpi-value')).toBe('0 / 9 objetivo');
     });
 
     it('advances actual production without subtracting it from the period target', () => {
       stats.totals.modulos_completados = 3;
       render();
-      expect(text('.stats-kpi-value')).toBe('3 / 9');
+      expect(text('.stats-kpi-value')).toBe('3 / 9 objetivo');
       stats.totals.modulos_completados = 11;
       render();
-      expect(text('.stats-kpi-value')).toBe('11 / 9');
+      expect(text('.stats-kpi-value')).toBe('11 / 9 objetivo');
     });
 
     it('keeps a historical target even when current deadlines have elapsed', () => {
       stats.planificacion!.modulos_por_dia = 0;
       stats.planificacion!.urgentes = 1;
       render();
-      expect(text('.stats-kpi-value')).toBe('0 / 9');
+      expect(text('.stats-kpi-value')).toBe('0 / 9 objetivo');
       expect(fixture.nativeElement.querySelector('.stats-planning-warning')).toBeNull();
     });
 
@@ -275,8 +275,8 @@ describe('Dashboard', () => {
       stats.esperado.proyectos_sin_objetivo = 2;
       render();
       expect(component.statsPeriodTarget()).toBeNull();
-      expect(text('.stats-kpi-value')).toBe('0 / ?');
-      expect(text('.stats-kpi')).toBe('Módulos 0 / ?');
+      expect(text('.stats-kpi-value')).toBe('0 / ? objetivo');
+      expect(text('.stats-kpi')).toBe('Módulos 0 / ? objetivo');
       expect(text('.stats-planning-warning')).toContain('2 proyecto(s)');
     });
 
@@ -284,7 +284,7 @@ describe('Dashboard', () => {
       stats.planificacion!.sin_planificar = 1;
       stats.esperado.proyectos_sin_objetivo = 1;
       render();
-      expect(text('.stats-kpi-value')).toBe('0 / 9');
+      expect(text('.stats-kpi-value')).toBe('0 / 9 objetivo');
       expect(text('.stats-planning-warning')).toContain('1 proyecto(s)');
     });
 
@@ -292,7 +292,7 @@ describe('Dashboard', () => {
       stats.planificacion!.modulos_por_dia = 0;
       stats.esperado.modulos_esperados = 0;
       render();
-      expect(text('.stats-kpi-value')).toBe('0 / 0');
+      expect(text('.stats-kpi-value')).toBe('0 / 0 objetivo');
       expect(fixture.nativeElement.querySelector('.stats-planning-warning')).toBeNull();
     });
 
@@ -310,7 +310,7 @@ describe('Dashboard', () => {
       render();
       expect(request).toHaveBeenCalledTimes(2);
       expect(fixture.nativeElement.querySelector('.stats-error')).toBeNull();
-      expect(text('.stats-kpi-value')).toBe('0 / 9');
+      expect(text('.stats-kpi-value')).toBe('0 / 9 objetivo');
     });
 
     it('labels retained statistics as stale after a failed silent refresh', () => {
