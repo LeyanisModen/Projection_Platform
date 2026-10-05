@@ -119,6 +119,13 @@ async function imageEntriesOf(directoryHandle: any): Promise<Array<[string, any]
     return entries;
 }
 
+/** Nombre para emparejar PLAYER con MONITOR: sin extension ni mayusculas
+ *  (el monitor puede venir en PNG y el player en JPG). */
+function pairingKey(fileName: string): string {
+    const dotIndex = fileName.lastIndexOf('.');
+    return (dotIndex > 0 ? fileName.slice(0, dotIndex) : fileName).toLowerCase();
+}
+
 function namesList(names: string[]): string {
     const shown = names.slice(0, 5).join(', ');
     return names.length > 5 ? `${shown} y ${names.length - 5} mas` : shown;
@@ -283,10 +290,10 @@ export async function scanModuleImportFolder(
                 if (playerHandle && monitorHandle) {
                     // Cada imagen del player con la suya del monitor, por nombre.
                     const monitorEntries = await imageEntriesOf(monitorHandle);
-                    const monitorByName = new Map(monitorEntries.map(entry => [entry[0].toLowerCase(), entry]));
-                    const playerNames = new Set(imageEntries.map(([name]) => name.toLowerCase()));
-                    const faltan = imageEntries.map(([name]) => name).filter(name => !monitorByName.has(name.toLowerCase()));
-                    const sobran = monitorEntries.map(([name]) => name).filter(name => !playerNames.has(name.toLowerCase()));
+                    const monitorByName = new Map(monitorEntries.map(entry => [pairingKey(entry[0]), entry]));
+                    const playerNames = new Set(imageEntries.map(([name]) => pairingKey(name)));
+                    const faltan = imageEntries.map(([name]) => name).filter(name => !monitorByName.has(pairingKey(name)));
+                    const sobran = monitorEntries.map(([name]) => name).filter(name => !playerNames.has(pairingKey(name)));
                     if (faltan.length) {
                         issues.push(`${normalizedPhase}/MONITOR: falta ${namesList(faltan)}.`);
                     }
@@ -294,7 +301,7 @@ export async function scanModuleImportFolder(
                         issues.push(`${normalizedPhase}/MONITOR: sobra ${namesList(sobran)} (no esta en PLAYER).`);
                     }
                     for (const image of images) {
-                        const pareja = monitorByName.get(image.fileName.toLowerCase());
+                        const pareja = monitorByName.get(pairingKey(image.fileName));
                         if (!pareja) continue;
                         try {
                             const monitorFile = await pareja[1].getFile() as File;

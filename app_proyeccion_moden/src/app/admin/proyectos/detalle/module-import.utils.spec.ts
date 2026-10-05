@@ -129,6 +129,26 @@ describe('module import folder helpers', () => {
         expect((formData.append as ReturnType<typeof vi.fn>).mock.calls.length).toBe(5);
     });
 
+    it('pairs a PNG monitor image with its JPG player image by name, ignoring the extension', async () => {
+        const root = fakeDirectory('Proyecto', {
+            'MOD-A03_ymgc': fakeDirectory('MOD-A03_ymgc', {
+                INF: fakeDirectory('INF', {
+                    PLAYER: fakeDirectory('PLAYER', { '01_check.jpg': fakeFile('01_check.jpg') }),
+                    MONITOR: fakeDirectory('MONITOR', { '01_check.png': fakeFile('01_check.png') }),
+                }),
+                SUP: fakeDirectory('SUP', { '01.jpg': fakeFile('01.jpg') }),
+            }),
+        });
+        const candidate = (await scanModuleImportFolder(root)).candidates[0];
+        expect(candidate.issues).toEqual([]);
+        const paso = candidate.phaseFolders.get('INF')!.images[0];
+        expect([paso.fileName, paso.monitorFileName]).toEqual(['01_check.jpg', '01_check.png']);
+
+        const formData = { append: vi.fn() } as unknown as FormData;
+        const payload = appendModuleImportCandidate(formData, candidate);
+        expect(payload.imagenes[0].monitor_filename).toBe('MOD_MOD-A03_ymgc_INF_MONITOR_01_check.png');
+    });
+
     it('rejects a module whose MONITOR folder does not match PLAYER', async () => {
         const root = fakeDirectory('Proyecto', {
             'MOD-A02_ymgc': fakeDirectory('MOD-A02_ymgc', {
