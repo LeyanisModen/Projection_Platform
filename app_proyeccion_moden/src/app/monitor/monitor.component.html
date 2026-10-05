@@ -4,6 +4,28 @@
         <div class="spinner" aria-hidden="true"></div>
         <p>Esperando al player de esta mesa…</p>
     </div>
+    } @else if (pantallaCompleta()) {
+    <!-- Imagen de monitor del paso: a pantalla completa, tal como se diseña. -->
+    <main class="monitor-full">
+        <div class="monitor-frame">
+            <img [src]="imageUrl()" alt="Paso que se está proyectando en la mesa">
+            @if (state()?.blackout || state()?.locked) {
+            <div class="monitor-estado">
+                @if (state()?.blackout) { <span class="chip">Proyección en negro</span> }
+                @if (state()?.locked) { <span class="chip">Bloqueada</span> }
+            </div>
+            }
+            @if (checkAviso(); as aviso) {
+            <!-- Sobre el recuadro "MÓDULO COMPLETO" del diseño. -->
+            <div class="monitor-check" [ngClass]="aviso.clase" role="status">
+                <b aria-hidden="true">{{ aviso.icono }}</b>
+                <strong>{{ aviso.titulo }}</strong>
+                <span>{{ aviso.detalle }}</span>
+            </div>
+            }
+        </div>
+        @if (checkAviso(); as aviso) { <div class="monitor-marco" [ngClass]="aviso.clase" aria-hidden="true"></div> }
+    </main>
     } @else {
     <header class="monitor-bar">
         <span class="mesa-name">{{ state()?.nombre || 'Mesa ' + state()?.id }}</span>

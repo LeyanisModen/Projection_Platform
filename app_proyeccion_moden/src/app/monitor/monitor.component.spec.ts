@@ -89,13 +89,48 @@ describe('MonitorComponent', () => {
         fixture.detectChanges();
         const element: HTMLElement = fixture.nativeElement;
         expect(element.querySelector('img')?.getAttribute('src')).toBe('/media/imagenes/1/a_monitor.jpg');
+        // La imagen de monitor ya trae mesa, modulo y paso: a pantalla completa, sin barra.
+        expect(element.querySelector('.monitor-full .monitor-frame img')).not.toBeNull();
+        expect(element.querySelector('.monitor-bar')).toBeNull();
         expect(fixture.componentInstance['preloaded'].map((img: HTMLImageElement) => img.getAttribute('src')))
             .toEqual(['/media/imagenes/1/a_monitor.jpg', '/media/imagenes/1/b.jpg']);
 
         vi.advanceTimersByTime(1000);
         http.expectOne('/api/device/state/').flush(state(1));
         fixture.detectChanges();
+        // Paso sin imagen de monitor: la del player, con la barra de siempre.
         expect(element.querySelector('img')?.getAttribute('src')).toBe('/media/imagenes/1/b.jpg');
+        expect(element.querySelector('.monitor-bar')).not.toBeNull();
+        expect(element.querySelector('.monitor-full')).toBeNull();
+        http.verify();
+    });
+
+    it('paints the colour check result over the full module box, with a coloured frame', () => {
+        pair();
+        http.expectOne('/api/device/state/').flush(state(0, {check_overlay: 'error'}));
+        http.expectOne('/api/device/current_item/').flush({
+            ...item, images: [{url: '/media/imagenes/1/a.jpg', url_monitor: '/media/imagenes/1/a_monitor.png'}],
+        });
+        fixture.detectChanges();
+        const element: HTMLElement = fixture.nativeElement;
+        const aviso = element.querySelector('.monitor-check') as HTMLElement;
+        expect(aviso.classList.contains('is-error')).toBe(true);
+        expect(Array.from(aviso.children).map(parte => parte.textContent?.trim()))
+            .toEqual(['✗', 'COMPROBACIÓN FALLIDA', 'Revisa los colores y pasa a la revisión visual']);
+        expect(element.querySelector('.monitor-marco')?.classList.contains('is-error')).toBe(true);
+
+        vi.advanceTimersByTime(1000);
+        http.expectOne('/api/device/state/').flush(state(0, {check_overlay: 'no_camera', locked: true}));
+        fixture.detectChanges();
+        expect(element.querySelector('.monitor-check')?.classList.contains('is-no-camera')).toBe(true);
+        expect(element.querySelector('.monitor-check strong')?.textContent).toBe('SIN CÁMARA');
+        expect(element.querySelector('.monitor-estado')?.textContent).toContain('Bloqueada');
+
+        vi.advanceTimersByTime(1000);
+        http.expectOne('/api/device/state/').flush(state(0, {check_overlay: 'none'}));
+        fixture.detectChanges();
+        expect(element.querySelector('.monitor-check')).toBeNull();
+        expect(element.querySelector('.monitor-marco')).toBeNull();
         http.verify();
     });
 
