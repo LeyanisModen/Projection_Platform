@@ -18,7 +18,8 @@ interface MonitorItem {
   id: number;
   modulo_nombre?: string;
   fase?: string;
-  images?: { url?: string; src?: string }[];
+  /** url/src: imagen del player; url_monitor: la del mismo paso para esta pantalla. */
+  images?: { url?: string; src?: string; url_monitor?: string | null }[];
 }
 
 /**
@@ -69,7 +70,7 @@ export class MonitorComponent implements OnInit, OnDestroy {
     const index = this.index();
     if (index < images.length) {
       const image = images[index];
-      return image?.url || image?.src || null;
+      return image?.url_monitor || image?.url || image?.src || null;
     }
     return this.state()?.image_url ?? null;
   });
@@ -140,7 +141,7 @@ export class MonitorComponent implements OnInit, OnDestroy {
     if (id === this.preloadedItemId) return;
     this.preloadedItemId = id;
     this.preloaded = (item?.images ?? [])
-      .map(image => image?.url || image?.src || '')
+      .map(image => image?.url_monitor || image?.url || image?.src || '')
       .filter(Boolean)
       .map(url => { const img = new Image(); img.src = url; return img; });
   }

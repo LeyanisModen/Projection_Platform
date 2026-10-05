@@ -269,6 +269,9 @@ export interface Imagen {
     id: number;
     url: string;
     src: string;
+    /** Imagen del mismo paso para el monitor; sin ella el monitor usa la del player. */
+    url_monitor?: string | null;
+    monitor_nombre?: string | null;
     nombre: string;
     archivo_nombre: string;
     modulo: string;

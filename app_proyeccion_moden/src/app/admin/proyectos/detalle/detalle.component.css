@@ -240,6 +240,9 @@
 .module-import-invalid-badge { color: var(--danger); background: #fbeae7; }
 .module-import-phases { display: flex; gap: 4px; }
 .module-import-phases span { padding: 1px 7px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 11px; font-weight: 600; }
+.module-import-phases .module-import-monitor { border-color: var(--line-strong); color: var(--text); }
+.module-import-size { align-self: center; margin-right: auto; color: var(--muted); font-size: 12px; }
+.module-import-size.is-too-large { color: var(--danger); font-weight: 600; }
 .module-import-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
 
 /* Descarga por bastidor */

@@ -614,9 +614,14 @@ class ImagenSerializer(serializers.HyperlinkedModelSerializer):
     class Meta:
         model = Imagen
         fields = [
-            "id", "url", "src", "nombre", "archivo_nombre", "modulo",
+            "id", "url", "src", "url_monitor", "monitor_nombre", "nombre", "archivo_nombre", "modulo",
             "fase", "orden", "version", "status", "activo", "checksum"
         ]
+
+    monitor_nombre = serializers.SerializerMethodField()
+
+    def get_monitor_nombre(self, obj):
+        return os.path.basename(obj.url_monitor) if obj.url_monitor else None
 
     def get_nombre(self, obj):
         # Format: INF-001-MOD-A1

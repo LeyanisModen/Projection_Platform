@@ -46,6 +46,42 @@ describe('Project detail rack order switch', () => {
             .map(element => (element as HTMLElement).textContent!.trim());
     }
 
+    it('previews the monitor images in their own tabs, on the same step', () => {
+        const component = fixture.componentInstance;
+        component.openSecuenciaModal({ id: 1, nombre: 'A01' });
+        http.expectOne('/api/modulos/1/imagenes/').flush([
+            { id: 11, url: '/media/imagenes/7/1/inf_01.jpg', src: '/media/imagenes/7/1/inf_01.jpg', url_monitor: '/media/imagenes/7/1/inf_01_mon.jpg',
+              monitor_nombre: 'inf_01_mon.jpg', archivo_nombre: 'inf_01.jpg', fase: 'INFERIOR', orden: 1, version: 1 },
+            { id: 12, url: '/media/imagenes/7/1/inf_02.jpg', src: '/media/imagenes/7/1/inf_02.jpg', url_monitor: '/media/imagenes/7/1/inf_02_mon.jpg',
+              monitor_nombre: 'inf_02_mon.jpg', archivo_nombre: 'inf_02.jpg', fase: 'INFERIOR', orden: 2, version: 1 },
+            { id: 13, url: '/media/imagenes/7/1/sup_01.jpg', src: '/media/imagenes/7/1/sup_01.jpg', url_monitor: null,
+              monitor_nombre: null, archivo_nombre: 'sup_01.jpg', fase: 'SUPERIOR', orden: 1, version: 1 },
+        ]);
+        fixture.detectChanges();
+        const tabs = () => Array.from(fixture.nativeElement.querySelectorAll('.secuencia-tabs button'))
+            .map(b => (b as HTMLElement).textContent!.replace(/\s+/g, ' ').trim());
+        // Solo la fase inferior trae imagenes de monitor.
+        expect(tabs()).toEqual(['INF 2', 'SUP + SD 1', 'INF monitor 2']);
+        const src = () => (fixture.nativeElement.querySelector('.secuencia-stage img') as HTMLImageElement).getAttribute('src');
+        expect(src()).toContain('inf_01.jpg');
+
+        const pulsar = (selector: string) => {
+            (fixture.nativeElement.querySelector(selector) as HTMLButtonElement).click();
+            fixture.detectChanges();
+        };
+        pulsar('.secuencia-nav.next');
+        pulsar('.secuencia-tab-monitor');
+        // Misma fase: se queda en el mismo paso para comparar.
+        expect(component.selectedSecuenciaIndex).toBe(1);
+        expect(src()).toContain('inf_02_mon.jpg');
+        expect(fixture.nativeElement.querySelector('.secuencia-file strong').textContent).toBe('inf_02_mon.jpg');
+
+        pulsar('.secuencia-tabs button:nth-child(2)');
+        expect(component.selectedSecuenciaIndex).toBe(0);
+        expect(src()).toContain('sup_01.jpg');
+        component.closeSecuenciaModal();
+    });
+
     it('lists the loose elements Excel among the project files and uploads it', () => {
         const component = fixture.componentInstance;
         const fila = () => (fixture.nativeElement.querySelector('.archivo-elementos') as HTMLElement).textContent!.replace(/\s+/g, '').trim();

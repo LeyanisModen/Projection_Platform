@@ -633,6 +633,7 @@
                 </span>
                 <span class="module-import-phases" aria-label="Carpetas encontradas">
                     <span *ngFor="let phase of candidate.phases">{{ phase }}</span>
+                    <span *ngIf="candidate.hasMonitor" class="module-import-monitor" title="Trae imagenes para el monitor">MONITOR</span>
                 </span>
             </label>
         </div>
@@ -645,8 +646,12 @@
                 (click)="closeModuleImportSelection()">
                 Cancelar
             </button>
+            <span class="module-import-size" [class.is-too-large]="moduleImportTooLarge"
+                *ngIf="selectedModuleImportCount > 0">
+                {{ selectedModuleImportMb }} MB<ng-container *ngIf="moduleImportTooLarge"> · máximo 450 MB por subida, sube en varias tandas</ng-container>
+            </span>
             <button type="button" class="btn btn-sm module-import-confirm"
-                [disabled]="selectedModuleImportCount === 0"
+                [disabled]="selectedModuleImportCount === 0 || moduleImportTooLarge"
                 (click)="confirmModuleImportSelection()">
                 <i class="fa fa-upload" aria-hidden="true"></i>
                 Importar {{ selectedModuleImportCount }}
@@ -946,15 +951,25 @@
 
             <ng-container *ngIf="secuenciaImagenes.length > 0">
                 <nav class="secuencia-tabs" aria-label="Fase de la secuencia">
-                    <button type="button" [class.active]="secuenciaFase === 'INFERIOR'"
+                    <button type="button" [class.active]="secuenciaFase === 'INFERIOR' && secuenciaPantalla === 'player'"
                         [class.is-missing]="secuenciaFaseCount('INFERIOR') === 0"
                         (click)="selectSecuenciaFase('INFERIOR')">
                         INF <span>{{ secuenciaFaseCount('INFERIOR') }}</span>
                     </button>
-                    <button type="button" [class.active]="secuenciaFase === 'SUPERIOR'"
+                    <button type="button" [class.active]="secuenciaFase === 'SUPERIOR' && secuenciaPantalla === 'player'"
                         [class.is-missing]="secuenciaFaseCount('SUPERIOR') === 0"
                         (click)="selectSecuenciaFase('SUPERIOR')">
                         SUP + SD <span>{{ secuenciaFaseCount('SUPERIOR') }}</span>
+                    </button>
+                    <button type="button" *ngIf="secuenciaMonitorCount('INFERIOR') > 0" class="secuencia-tab-monitor"
+                        [class.active]="secuenciaFase === 'INFERIOR' && secuenciaPantalla === 'monitor'"
+                        (click)="selectSecuenciaFase('INFERIOR', 'monitor')">
+                        INF monitor <span>{{ secuenciaMonitorCount('INFERIOR') }}</span>
+                    </button>
+                    <button type="button" *ngIf="secuenciaMonitorCount('SUPERIOR') > 0" class="secuencia-tab-monitor"
+                        [class.active]="secuenciaFase === 'SUPERIOR' && secuenciaPantalla === 'monitor'"
+                        (click)="selectSecuenciaFase('SUPERIOR', 'monitor')">
+                        SUP + SD monitor <span>{{ secuenciaMonitorCount('SUPERIOR') }}</span>
                     </button>
                 </nav>
 
@@ -976,7 +991,7 @@
                         <div class="secuencia-stage">
                             <img *ngIf="!secuenciaImageErrors.has(imagen.id)"
                                 [src]="getSecuenciaImagenUrl(imagen)"
-                                [alt]="getSecuenciaArchivoNombre(imagen)"
+                                [alt]="getSecuenciaArchivoVisible(imagen)"
                                 (error)="onSecuenciaImageError(imagen)">
                             <div class="secuencia-broken" *ngIf="secuenciaImageErrors.has(imagen.id)">
                                 <i class="fa fa-chain-broken" aria-hidden="true"></i>
@@ -1001,8 +1016,8 @@
 
                     <div class="secuencia-meta">
                         <div class="secuencia-file">
-                            <strong>{{ getSecuenciaArchivoNombre(imagen) }}</strong>
-                            <span>{{ secuenciaFase === 'INFERIOR' ? 'Inferior' : 'Superior + SD' }}</span>
+                            <strong>{{ getSecuenciaArchivoVisible(imagen) }}</strong>
+                            <span>{{ secuenciaFase === 'INFERIOR' ? 'Inferior' : 'Superior + SD' }}{{ secuenciaPantalla === 'monitor' ? ' · monitor' : '' }}</span>
                         </div>
                         <div class="secuencia-position">
                             <strong>{{ selectedSecuenciaIndex + 1 }} / {{ secuenciaImagenesFase.length }}</strong>

@@ -6418,3 +6418,97 @@ class ElementosSueltosTests(APITestCase):
             )
         self.assertFalse(os.path.exists(anterior))
 
+
+class ImagenesMonitorTests(APITestCase):
+    """Cada paso puede traer su imagen de monitor: mismo indice que la del player."""
+
+    def setUp(self):
+        self._media_temp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(self._media_temp.cleanup)
+        override = override_settings(MEDIA_ROOT=self._media_temp.name)
+        override.enable()
+        self.addCleanup(override.disable)
+        self.admin = User.objects.create_user("oficina_mon", password="x", is_staff=True)
+        token = Token.objects.create(user=self.admin)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+        self.project = Proyecto.objects.create(nombre="Obra Monitor", usuario=self.admin)
+
+    def _import(self, imagenes, files):
+        modulos = [{"nombre": "A01", "codigos_color": "ymgc", "source_folder": "MOD-A01_ymgc", "imagenes": imagenes}]
+        data = {"modulos": json.dumps(modulos), "strict_validation": "true", **files}
+        return self.client.post(f"/api/proyectos/{self.project.id}/import-structure/", data, format="multipart")
+
+    def test_importa_la_imagen_de_monitor_de_cada_paso_y_la_sirve_al_monitor(self):
+        imagenes = [
+            {"filename": "MOD_A01_INF_01.jpg", "monitor_filename": "MOD_A01_INF_MONITOR_01.jpg",
+             "fase": "INFERIOR", "source_phase": "INF", "orden": 1},
+            {"filename": "MOD_A01_INF_02_foto.jpg", "monitor_filename": "MOD_A01_INF_MONITOR_02_foto.jpg",
+             "fase": "INFERIOR", "source_phase": "INF", "orden": 2},
+            # Sin imagen de monitor: el monitor enseña la del player.
+            {"filename": "MOD_A01_SUP_01.jpg", "fase": "SUPERIOR", "source_phase": "SUP", "orden": 1},
+        ]
+        files = {
+            nombre: SimpleUploadedFile(nombre, b"jpg-" + nombre.encode())
+            for nombre in (
+                "MOD_A01_INF_01.jpg", "MOD_A01_INF_MONITOR_01.jpg", "MOD_A01_INF_02_foto.jpg",
+                "MOD_A01_INF_MONITOR_02_foto.jpg", "MOD_A01_SUP_01.jpg",
+            )
+        }
+        response = self._import(imagenes, files)
+        self.assertEqual(response.status_code, 200, response.data)
+        modulo = Modulo.objects.get(proyecto=self.project, nombre="A01")
+        pasos = list(modulo.imagenes.order_by("fase", "orden"))
+        self.assertEqual(len(pasos), 3)
+        inf1, inf2, sup1 = pasos
+        self.assertTrue(inf1.url.endswith("/MOD_A01_INF_01.jpg"))
+        self.assertTrue(inf1.url_monitor.endswith("/MOD_A01_INF_MONITOR_01.jpg"))
+        self.assertTrue(inf2.url_monitor.endswith("/MOD_A01_INF_MONITOR_02_foto.jpg"))
+        self.assertIsNone(sup1.url_monitor)
+        ruta = os.path.join(self._media_temp.name, inf1.url_monitor.replace("/media/", "", 1))
+        with open(ruta, "rb") as fh:
+            self.assertEqual(fh.read(), b"jpg-MOD_A01_INF_MONITOR_01.jpg")
+
+        datos = self.client.get(f"/api/modulos/{modulo.id}/imagenes/").data
+        por_orden = {(d["fase"], d["orden"]): d for d in datos}
+        self.assertEqual(por_orden[("INFERIOR", 1)]["monitor_nombre"], "MOD_A01_INF_MONITOR_01.jpg")
+        self.assertIsNone(por_orden[("SUPERIOR", 1)]["url_monitor"])
+        # El player sigue usando la suya.
+        self.assertTrue(por_orden[("INFERIOR", 2)]["src"].endswith("/MOD_A01_INF_02_foto.jpg"))
+
+    def test_rechaza_el_modulo_si_falta_la_imagen_de_monitor_anunciada(self):
+        imagenes = [
+            {"filename": "MOD_A01_INF_01.jpg", "monitor_filename": "MOD_A01_INF_MONITOR_01.jpg",
+             "fase": "INFERIOR", "source_phase": "INF", "orden": 1},
+            {"filename": "MOD_A01_SUP_01.jpg", "fase": "SUPERIOR", "source_phase": "SUP", "orden": 1},
+        ]
+        files = {
+            "MOD_A01_INF_01.jpg": SimpleUploadedFile("MOD_A01_INF_01.jpg", b"x"),
+            "MOD_A01_SUP_01.jpg": SimpleUploadedFile("MOD_A01_SUP_01.jpg", b"x"),
+        }
+        response = self._import(imagenes, files)
+        self.assertFalse(Modulo.objects.filter(proyecto=self.project, nombre="A01").exists())
+        errores = json.dumps(response.data.get("stats", {}).get("module_errors", []), ensure_ascii=False)
+        self.assertIn("MOD_A01_INF_MONITOR_01.jpg", errores)
+
+    def test_borrar_el_modulo_borra_tambien_las_imagenes_de_monitor(self):
+        imagenes = [
+            {"filename": "MOD_A01_INF_01.jpg", "monitor_filename": "MOD_A01_INF_MONITOR_01.jpg",
+             "fase": "INFERIOR", "source_phase": "INF", "orden": 1},
+            {"filename": "MOD_A01_SUP_01.jpg", "fase": "SUPERIOR", "source_phase": "SUP", "orden": 1},
+        ]
+        files = {
+            nombre: SimpleUploadedFile(nombre, b"x")
+            for nombre in ("MOD_A01_INF_01.jpg", "MOD_A01_INF_MONITOR_01.jpg", "MOD_A01_SUP_01.jpg")
+        }
+        self.assertEqual(self._import(imagenes, files).status_code, 200)
+        modulo = Modulo.objects.get(proyecto=self.project, nombre="A01")
+        imagen = modulo.imagenes.get(fase="INFERIOR")
+        player = os.path.join(self._media_temp.name, imagen.url.replace("/media/", "", 1))
+        monitor = os.path.join(self._media_temp.name, imagen.url_monitor.replace("/media/", "", 1))
+        self.assertTrue(os.path.exists(monitor))
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.delete(f"/api/modulos/{modulo.id}/")
+        self.assertIn(response.status_code, (200, 204))
+        self.assertFalse(os.path.exists(player))
+        self.assertFalse(os.path.exists(monitor))
+

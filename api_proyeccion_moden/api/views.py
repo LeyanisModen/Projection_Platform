@@ -1749,6 +1749,12 @@ class ProyectoViewSet(viewsets.ModelViewSet):
                 errors.append(f'No se recibio el archivo {filename or image_index}.')
             elif getattr(files[filename], 'size', 0) <= 0:
                 errors.append(f'El archivo {filename} esta vacio.')
+            monitor_filename = str(image_data.get('monitor_filename') or '').strip()
+            if monitor_filename:
+                if monitor_filename not in files:
+                    errors.append(f'No se recibio la imagen de monitor {monitor_filename}.')
+                elif getattr(files[monitor_filename], 'size', 0) <= 0:
+                    errors.append(f'La imagen de monitor {monitor_filename} esta vacia.')
             try:
                 normalized_order = int(order)
                 order_key = (phase, normalized_order)
@@ -2172,8 +2178,33 @@ class ProyectoViewSet(viewsets.ModelViewSet):
                                         destination.write(chunk)
 
                                 url = f'/media/{media_path}/{stored_filename}'
+
+                                # Imagen del monitor para el mismo paso (opcional).
+                                url_monitor = None
+                                monitor_filename = imagen_data.get('monitor_filename')
+                                if monitor_filename:
+                                    monitor_file = files.get(monitor_filename)
+                                    if not monitor_file:
+                                        message = f'No se recibio la imagen de monitor {monitor_filename}.'
+                                        if strict_validation:
+                                            raise ValueError(message)
+                                        module_warnings.append(message)
+                                    else:
+                                        monitor_stored = get_valid_filename(
+                                            os.path.basename(str(monitor_filename))
+                                        )
+                                        if monitor_stored == stored_filename:
+                                            monitor_stored = f'monitor_{monitor_stored}'
+                                        monitor_path = os.path.join(full_path, monitor_stored)
+                                        written_paths.append(monitor_path)
+                                        with open(monitor_path, 'wb+') as destination:
+                                            for chunk in monitor_file.chunks():
+                                                destination.write(chunk)
+                                        url_monitor = f'/media/{media_path}/{monitor_stored}'
+
                                 Imagen.objects.create(
                                     url=url,
+                                    url_monitor=url_monitor,
                                     modulo=modulo,
                                     fase=fase,
                                     orden=orden,

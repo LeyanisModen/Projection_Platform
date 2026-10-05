@@ -1,9 +1,12 @@
 import {
+    appendModuleImportCandidate,
     moduleAlreadyExists,
     normalizeModuleImportIdentity,
     parseModuleImportFolder,
     scanModuleImportFolder,
 } from './module-import.utils';
+
+import { vi } from 'vitest';
 
 type FakeEntry = [string, FakeHandle];
 
@@ -84,6 +87,75 @@ describe('module import folder helpers', () => {
         expect(
             result.candidates[0].phaseFolders.get('INF')?.images.map(image => image.fileName)
         ).toEqual(['01.jpg', '02.jpg']);
+    });
+
+    it('pairs every PLAYER image with its MONITOR image by name and uploads both', async () => {
+        const root = fakeDirectory('Proyecto', {
+            'MOD-A01_ymgc': fakeDirectory('MOD-A01_ymgc', {
+                INF: fakeDirectory('INF', {
+                    PLAYER: fakeDirectory('PLAYER', {
+                        '02_foto.jpg': fakeFile('02_foto.jpg', 100),
+                        '01.jpg': fakeFile('01.jpg', 100),
+                    }),
+                    MONITOR: fakeDirectory('MONITOR', {
+                        '01.JPG': fakeFile('01.JPG', 300),
+                        '02_foto.jpg': fakeFile('02_foto.jpg', 300),
+                    }),
+                }),
+                // Formato antiguo en la misma carpeta: vale como solo player.
+                SUP: fakeDirectory('SUP', {
+                    '01.jpg': fakeFile('01.jpg', 100),
+                }),
+            }),
+        });
+
+        const result = await scanModuleImportFolder(root);
+        const candidate = result.candidates[0];
+        expect(candidate.issues).toEqual([]);
+        expect(candidate.valid).toBe(true);
+        expect(candidate.hasMonitor).toBe(true);
+        expect(candidate.totalBytes).toBe(900);
+        const inf = candidate.phaseFolders.get('INF')!.images;
+        expect(inf.map(image => [image.fileName, image.monitorFileName])).toEqual([['01.jpg', '01.JPG'], ['02_foto.jpg', '02_foto.jpg']]);
+        expect(candidate.phaseFolders.get('SUP')!.images[0].monitor).toBeUndefined();
+
+        const formData = { append: vi.fn() } as unknown as FormData;
+        const payload = appendModuleImportCandidate(formData, candidate);
+        expect(payload.imagenes).toEqual([
+            { filename: 'MOD_MOD-A01_ymgc_INF_01.jpg', fase: 'INFERIOR', source_phase: 'INF', orden: 1, monitor_filename: 'MOD_MOD-A01_ymgc_INF_MONITOR_01.JPG' },
+            { filename: 'MOD_MOD-A01_ymgc_INF_02_foto.jpg', fase: 'INFERIOR', source_phase: 'INF', orden: 2, monitor_filename: 'MOD_MOD-A01_ymgc_INF_MONITOR_02_foto.jpg' },
+            { filename: 'MOD_MOD-A01_ymgc_SUP_01.jpg', fase: 'SUPERIOR', source_phase: 'SUP', orden: 1 },
+        ]);
+        expect((formData.append as ReturnType<typeof vi.fn>).mock.calls.length).toBe(5);
+    });
+
+    it('rejects a module whose MONITOR folder does not match PLAYER', async () => {
+        const root = fakeDirectory('Proyecto', {
+            'MOD-A02_ymgc': fakeDirectory('MOD-A02_ymgc', {
+                INF: fakeDirectory('INF', {
+                    PLAYER: fakeDirectory('PLAYER', {
+                        '01.jpg': fakeFile('01.jpg'),
+                        '02.jpg': fakeFile('02.jpg'),
+                    }),
+                    MONITOR: fakeDirectory('MONITOR', {
+                        '01.jpg': fakeFile('01.jpg'),
+                        '03.jpg': fakeFile('03.jpg'),
+                    }),
+                }),
+                SUP: fakeDirectory('SUP', {
+                    MONITOR: fakeDirectory('MONITOR', { '01.jpg': fakeFile('01.jpg') }),
+                    '01.jpg': fakeFile('01.jpg'),
+                }),
+            }),
+        });
+
+        const candidate = (await scanModuleImportFolder(root)).candidates[0];
+        expect(candidate.valid).toBe(false);
+        expect(candidate.issues).toEqual([
+            'INF/MONITOR: falta 02.jpg.',
+            'INF/MONITOR: sobra 03.jpg (no esta en PLAYER).',
+            'SUP/MONITOR necesita su carpeta SUP/PLAYER.',
+        ]);
     });
 
     it('identifies the module and missing required phase', async () => {

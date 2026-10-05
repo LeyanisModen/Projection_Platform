@@ -9,6 +9,9 @@ export type ModuleImportPhase = typeof MODULE_IMPORT_PHASE_ORDER[number];
 export interface ModuleImportImageFile {
     fileName: string;
     file: File;
+    /** Imagen del mismo paso para el monitor (carpeta MONITOR, mismo nombre). */
+    monitor?: File;
+    monitorFileName?: string;
 }
 
 export interface ModuleImportPhaseFolder {
@@ -22,6 +25,10 @@ export interface ModuleImportCandidate {
     colorCode: string;
     phaseFolders: Map<ModuleImportPhase, ModuleImportPhaseFolder>;
     phases: ModuleImportPhase[];
+    /** Alguna fase trae imagenes de monitor. */
+    hasMonitor: boolean;
+    /** Bytes de todas sus imagenes (player y monitor), para no pasar del limite de subida. */
+    totalBytes: number;
     alreadyImported: boolean;
     selected: boolean;
     issues: string[];
@@ -50,8 +57,12 @@ export interface ModuleImportPayload {
         fase: 'INFERIOR' | 'SUPERIOR';
         source_phase: ModuleImportPhase;
         orden: number;
+        monitor_filename?: string;
     }>;
 }
+
+/** Tope de una subida (nginx y Django admiten 500 MB; se deja margen). */
+export const MODULE_IMPORT_MAX_UPLOAD_BYTES = 450 * 1024 * 1024;
 
 const VALID_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg']);
 const TECHNICAL_EXTENSIONS = new Set(['.db', '.sqlite', '.sqlite3']);
@@ -95,6 +106,22 @@ export function moduleAlreadyExists(
 function fileExtension(fileName: string): string {
     const dotIndex = fileName.lastIndexOf('.');
     return dotIndex >= 0 ? fileName.slice(dotIndex).toLowerCase() : '';
+}
+
+async function imageEntriesOf(directoryHandle: any): Promise<Array<[string, any]>> {
+    const entries: Array<[string, any]> = [];
+    for await (const [fileName, fileHandle] of directoryHandle.entries()) {
+        if (fileHandle.kind !== 'file') continue;
+        if (!VALID_IMAGE_EXTENSIONS.has(fileExtension(fileName))) continue;
+        entries.push([fileName, fileHandle]);
+    }
+    entries.sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }));
+    return entries;
+}
+
+function namesList(names: string[]): string {
+    const shown = names.slice(0, 5).join(', ');
+    return names.length > 5 ? `${shown} y ${names.length - 5} mas` : shown;
 }
 
 async function readProjectFile(
@@ -210,33 +237,79 @@ export async function scanModuleImportFolder(
                     continue;
                 }
 
-                const imageEntries: Array<[string, any]> = [];
-                for await (const [fileName, fileHandle] of phaseHandle.entries()) {
-                    if (fileHandle.kind !== 'file') continue;
-                    if (!VALID_IMAGE_EXTENSIONS.has(fileExtension(fileName))) continue;
-                    imageEntries.push([fileName, fileHandle]);
+                // Estructura nueva: <FASE>/PLAYER y <FASE>/MONITOR con los mismos
+                // nombres. La antigua (imagenes sueltas en la fase) vale como player.
+                const looseEntries = await imageEntriesOf(phaseHandle);
+                let playerHandle: any = null;
+                let monitorHandle: any = null;
+                for await (const [childName, childHandle] of phaseHandle.entries()) {
+                    if (childHandle.kind !== 'directory') continue;
+                    const upper = childName.toUpperCase();
+                    if (upper === 'PLAYER') playerHandle = childHandle;
+                    else if (upper === 'MONITOR') monitorHandle = childHandle;
                 }
-                imageEntries.sort((a, b) =>
-                    a[0].localeCompare(b[0], undefined, { numeric: true })
-                );
+                let imageEntries = looseEntries;
+                let location: string = normalizedPhase;
+                if (playerHandle) {
+                    location = `${normalizedPhase}/PLAYER`;
+                    if (looseEntries.length) {
+                        issues.push(`${normalizedPhase} tiene imagenes sueltas y carpeta PLAYER: deja solo PLAYER.`);
+                    }
+                    imageEntries = await imageEntriesOf(playerHandle);
+                } else if (monitorHandle) {
+                    issues.push(`${normalizedPhase}/MONITOR necesita su carpeta ${normalizedPhase}/PLAYER.`);
+                }
 
                 const images: ModuleImportImageFile[] = [];
                 if (imageEntries.length === 0) {
-                    issues.push(`La carpeta ${normalizedPhase} no contiene imagenes JPG o PNG.`);
+                    issues.push(`La carpeta ${location} no contiene imagenes JPG o PNG.`);
                 }
                 for (const [fileName, fileHandle] of imageEntries) {
                     try {
                         const file = await fileHandle.getFile() as File;
                         if (typeof file.size === 'number' && file.size <= 0) {
-                            issues.push(`${normalizedPhase}/${fileName} esta vacia.`);
+                            issues.push(`${location}/${fileName} esta vacia.`);
                             continue;
                         }
                         images.push({ fileName, file });
                     } catch (error: any) {
                         issues.push(
-                            `No se pudo leer ${normalizedPhase}/${fileName}: ` +
+                            `No se pudo leer ${location}/${fileName}: ` +
                             `${error?.message || 'error desconocido'}.`
                         );
+                    }
+                }
+
+                if (playerHandle && monitorHandle) {
+                    // Cada imagen del player con la suya del monitor, por nombre.
+                    const monitorEntries = await imageEntriesOf(monitorHandle);
+                    const monitorByName = new Map(monitorEntries.map(entry => [entry[0].toLowerCase(), entry]));
+                    const playerNames = new Set(imageEntries.map(([name]) => name.toLowerCase()));
+                    const faltan = imageEntries.map(([name]) => name).filter(name => !monitorByName.has(name.toLowerCase()));
+                    const sobran = monitorEntries.map(([name]) => name).filter(name => !playerNames.has(name.toLowerCase()));
+                    if (faltan.length) {
+                        issues.push(`${normalizedPhase}/MONITOR: falta ${namesList(faltan)}.`);
+                    }
+                    if (sobran.length) {
+                        issues.push(`${normalizedPhase}/MONITOR: sobra ${namesList(sobran)} (no esta en PLAYER).`);
+                    }
+                    for (const image of images) {
+                        const pareja = monitorByName.get(image.fileName.toLowerCase());
+                        if (!pareja) continue;
+                        try {
+                            const monitorFile = await pareja[1].getFile() as File;
+                            if (typeof monitorFile.size === 'number' && monitorFile.size <= 0) {
+                                issues.push(`${normalizedPhase}/MONITOR/${pareja[0]} esta vacia.`);
+                                continue;
+                            }
+                            image.monitor = monitorFile;
+                            image.monitorFileName = pareja[0];
+                        } catch (error: any) {
+                            issues.push(
+                                `No se pudo leer ${normalizedPhase}/MONITOR/${pareja[0]}: ` +
+                                `${error?.message || 'error desconocido'}.`
+                            );
+                        }
                     }
                 }
                 phaseFolders.set(normalizedPhase, {
@@ -263,12 +336,17 @@ export async function scanModuleImportFolder(
 
         const alreadyImported = moduleAlreadyExists(parsedFolder.moduleName, existingNames);
         const valid = issues.length === 0;
+        const allImages = Array.from(phaseFolders.values()).flatMap(folder => folder.images);
         candidates.push({
             folderName,
             moduleName: parsedFolder.moduleName || folderName,
             colorCode: parsedFolder.colorCode,
             phaseFolders,
             phases: MODULE_IMPORT_PHASE_ORDER.filter(phase => phaseFolders.has(phase)),
+            hasMonitor: allImages.some(image => !!image.monitor),
+            totalBytes: allImages.reduce(
+                (total, image) => total + (image.file?.size || 0) + (image.monitor?.size || 0), 0,
+            ),
             alreadyImported,
             selected: valid && !alreadyImported,
             issues,
@@ -314,12 +392,19 @@ export function appendModuleImportCandidate(
             const formFileKey =
                 `${keyPrefix}_${candidate.folderName}_${phaseFolder.name}_${image.fileName}`;
             formData.append(formFileKey, image.file, formFileKey);
-            payload.imagenes.push({
+            const entry: ModuleImportPayload['imagenes'][number] = {
                 filename: formFileKey,
                 fase,
                 source_phase: phaseName,
                 orden: nextImageOrder[fase]++,
-            });
+            };
+            if (image.monitor) {
+                const monitorKey = `${keyPrefix}_${candidate.folderName}_${phaseFolder.name}_MONITOR_`
+                    + (image.monitorFileName || image.fileName);
+                formData.append(monitorKey, image.monitor, monitorKey);
+                entry.monitor_filename = monitorKey;
+            }
+            payload.imagenes.push(entry);
         }
     }
     return payload;

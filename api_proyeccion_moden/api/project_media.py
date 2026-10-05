@@ -50,9 +50,12 @@ def collect_project_media(project):
         .values_list('archivo', flat=True)
     )
 
-    image_urls = Imagen.objects.filter(modulo__proyecto=project).exclude(
+    image_urls = list(Imagen.objects.filter(modulo__proyecto=project).exclude(
         url=''
-    ).exclude(url__isnull=True).values_list('url', flat=True)
+    ).exclude(url__isnull=True).values_list('url', flat=True))
+    image_urls += list(Imagen.objects.filter(modulo__proyecto=project).exclude(
+        url_monitor=''
+    ).exclude(url_monitor__isnull=True).values_list('url_monitor', flat=True))
     photo_urls = FotoFabricacion.objects.filter(modulo__proyecto=project).exclude(
         url=''
     ).values_list('url', flat=True)
@@ -71,9 +74,12 @@ def collect_module_media(module):
         .exclude(archivo__isnull=True)
         .values_list('archivo', flat=True)
     ))
-    image_urls = Imagen.objects.filter(modulo=module).exclude(
+    image_urls = list(Imagen.objects.filter(modulo=module).exclude(
         url=''
-    ).exclude(url__isnull=True).values_list('url', flat=True)
+    ).exclude(url__isnull=True).values_list('url', flat=True))
+    image_urls += list(Imagen.objects.filter(modulo=module).exclude(
+        url_monitor=''
+    ).exclude(url_monitor__isnull=True).values_list('url_monitor', flat=True))
     photo_urls = FotoFabricacion.objects.filter(modulo=module).exclude(
         url=''
     ).values_list('url', flat=True)
@@ -136,7 +142,7 @@ def delete_unreferenced_storage_files(file_names):
 
 def _media_url_is_referenced(url):
     return (
-        Imagen.objects.filter(url=url).exists()
+        Imagen.objects.filter(Q(url=url) | Q(url_monitor=url)).exists()
         or FotoFabricacion.objects.filter(url=url).exists()
     )
 
@@ -152,7 +158,9 @@ def _directory_has_references(relative_directory):
             | Q(elementos_sueltos_archivo__startswith=prefix)
         ).exists()
         or Imagen.objects.filter(
-            Q(archivo__startswith=prefix) | Q(url__startswith=url_prefix)
+            Q(archivo__startswith=prefix)
+            | Q(url__startswith=url_prefix)
+            | Q(url_monitor__startswith=url_prefix)
         ).exists()
         or FotoFabricacion.objects.filter(url__startswith=url_prefix).exists()
         or ProyectoCheckAdjunto.objects.filter(archivo__startswith=prefix).exists()

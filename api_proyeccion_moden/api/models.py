@@ -752,6 +752,10 @@ class ImagenStatus(models.TextChoices):
 class Imagen(models.Model):
     id = models.AutoField(primary_key=True)
     url = models.CharField(max_length=500, blank=True, null=True)
+    # Imagen del mismo paso para el monitor (pantalla principal del mini-PC).
+    # El player y el supervisor usan siempre ``url``; sin esta, el monitor
+    # tambien. Mismo indice: un paso, una fila, dos archivos.
+    url_monitor = models.CharField(max_length=500, blank=True, null=True)
     archivo = models.FileField(upload_to='imagenes/', blank=True, null=True)
     uploaded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     tipo = models.CharField(max_length=200, blank=True, null=True)  # Legacy field
