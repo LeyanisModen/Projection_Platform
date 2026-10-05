@@ -76,6 +76,29 @@ describe('MonitorComponent', () => {
         http.verify();
     });
 
+    it('shows the monitor image of each step when the module has one, and the player one otherwise', () => {
+        pair();
+        http.expectOne('/api/device/state/').flush(state(0));
+        http.expectOne('/api/device/current_item/').flush({
+            ...item,
+            images: [
+                {url: '/media/imagenes/1/a.jpg', url_monitor: '/media/imagenes/1/a_monitor.jpg'},
+                {url: '/media/imagenes/1/b.jpg', url_monitor: null},
+            ],
+        });
+        fixture.detectChanges();
+        const element: HTMLElement = fixture.nativeElement;
+        expect(element.querySelector('img')?.getAttribute('src')).toBe('/media/imagenes/1/a_monitor.jpg');
+        expect(fixture.componentInstance['preloaded'].map((img: HTMLImageElement) => img.getAttribute('src')))
+            .toEqual(['/media/imagenes/1/a_monitor.jpg', '/media/imagenes/1/b.jpg']);
+
+        vi.advanceTimersByTime(1000);
+        http.expectOne('/api/device/state/').flush(state(1));
+        fixture.detectChanges();
+        expect(element.querySelector('img')?.getAttribute('src')).toBe('/media/imagenes/1/b.jpg');
+        http.verify();
+    });
+
     it('shows a note instead of an image during projector adjustment or without work', () => {
         pair();
         http.expectOne('/api/device/state/').flush(state(-1));

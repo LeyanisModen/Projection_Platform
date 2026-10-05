@@ -21,6 +21,7 @@ import { RackViewOrder, rackInsertionIndex } from './rack-order.utils';
 import { ZoomableImageComponent } from '../../../shared/zoomable-image/zoomable-image.component';
 import {
     appendModuleImportCandidate,
+    MODULE_IMPORT_MAX_UPLOAD_BYTES,
     ModuleImportCandidate,
     scanModuleImportFolder,
 } from './module-import.utils';
@@ -104,6 +105,8 @@ export class ProyectoDetailComponent implements OnInit {
     secuenciaTarget: { id: number; nombre: string } | null = null;
     secuenciaImagenes: Imagen[] = [];
     secuenciaFase: ModuloFase = 'INFERIOR';
+    /** Imagen que se previsualiza: la del player (proyector) o la del monitor. */
+    secuenciaPantalla: 'player' | 'monitor' = 'player';
     selectedSecuenciaIndex = 0;
     loadingSecuencia = false;
     secuenciaImageErrors = new Set<number>();
@@ -980,6 +983,19 @@ export class ProyectoDetailComponent implements OnInit {
         return this.moduleImportCandidates.filter(candidate => candidate.selected).length;
     }
 
+    /** Megas de lo seleccionado (player y monitor). */
+    get selectedModuleImportMb(): number {
+        const bytes = this.moduleImportCandidates
+            .filter(candidate => candidate.selected)
+            .reduce((total, candidate) => total + (candidate.totalBytes || 0), 0);
+        return Math.round(bytes / (1024 * 1024));
+    }
+
+    /** Una subida no puede pasar de 450 MB: con monitor, mejor por tandas. */
+    get moduleImportTooLarge(): boolean {
+        return this.selectedModuleImportMb * 1024 * 1024 > MODULE_IMPORT_MAX_UPLOAD_BYTES;
+    }
+
     get newModuleImportCount(): number {
         return this.moduleImportCandidates.filter(
             candidate => candidate.valid && !candidate.alreadyImported
@@ -1008,7 +1024,7 @@ export class ProyectoDetailComponent implements OnInit {
     }
 
     confirmModuleImportSelection(): void {
-        if (!this.proyectoId || this.selectedModuleImportCount === 0) return;
+        if (!this.proyectoId || this.selectedModuleImportCount === 0 || this.moduleImportTooLarge) return;
 
         const selectedCandidates = this.moduleImportCandidates.filter(candidate => candidate.selected);
         const invalidCandidates = this.moduleImportCandidates.filter(candidate => !candidate.valid);
@@ -1285,6 +1301,7 @@ export class ProyectoDetailComponent implements OnInit {
         this.showSecuenciaModal = true;
         this.secuenciaImagenes = [];
         this.secuenciaFase = 'INFERIOR';
+        this.secuenciaPantalla = 'player';
         this.selectedSecuenciaIndex = 0;
         this.secuenciaImageErrors.clear();
         this.loadingSecuencia = true;
@@ -1333,9 +1350,16 @@ export class ProyectoDetailComponent implements OnInit {
         return this.secuenciaImagenes.filter(imagen => !!this.getSecuenciaMarker(imagen)).length;
     }
 
-    selectSecuenciaFase(fase: ModuloFase): void {
+    selectSecuenciaFase(fase: ModuloFase, pantalla: 'player' | 'monitor' = 'player'): void {
+        // Misma fase, otra pantalla: se queda en el mismo paso para comparar.
+        if (fase !== this.secuenciaFase) this.selectedSecuenciaIndex = 0;
         this.secuenciaFase = fase;
-        this.selectedSecuenciaIndex = 0;
+        this.secuenciaPantalla = pantalla;
+    }
+
+    /** Imagenes de monitor de una fase (0 si el modulo no las trae). */
+    secuenciaMonitorCount(fase: ModuloFase): number {
+        return this.secuenciaImagenes.filter(imagen => imagen.fase === fase && !!imagen.url_monitor).length;
     }
 
     selectSecuenciaImagen(index: number): void {
@@ -1354,7 +1378,16 @@ export class ProyectoDetailComponent implements OnInit {
     }
 
     getSecuenciaImagenUrl(imagen: Imagen): string {
+        if (this.secuenciaPantalla === 'monitor' && imagen.url_monitor) {
+            return this.toAbsoluteFileUrl(imagen.url_monitor) || '';
+        }
         return this.toAbsoluteFileUrl(imagen.src || imagen.url) || '';
+    }
+
+    /** Nombre del archivo que se ve: el del monitor en su pestaña. */
+    getSecuenciaArchivoVisible(imagen: Imagen): string {
+        if (this.secuenciaPantalla === 'monitor' && imagen.monitor_nombre) return imagen.monitor_nombre;
+        return this.getSecuenciaArchivoNombre(imagen);
     }
 
     getSecuenciaArchivoNombre(imagen: Imagen): string {
