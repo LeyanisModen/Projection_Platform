@@ -83,6 +83,49 @@ class RemovePlantaMigrationTests(TransactionTestCase):
         self.assertNotIn('api_planta', connection.introspection.table_names())
 
 
+class RetirarProyectosTerminadosMigrationTests(TransactionTestCase):
+    migrate_from = [('api', '0069_imagen_monitor')]
+    migrate_to = [('api', '0070_retirar_proyectos_terminados_de_cola')]
+
+    def test_migration_quita_de_la_cola_los_proyectos_terminados(self):
+        executor = MigrationExecutor(connection)
+        executor.migrate(self.migrate_from)
+        old_apps = executor.loader.project_state(self.migrate_from).apps
+        UserModel = old_apps.get_model('auth', 'User')
+        ProyectoModel = old_apps.get_model('api', 'Proyecto')
+        ModuloModel = old_apps.get_model('api', 'Modulo')
+        GrupoModel = old_apps.get_model('api', 'GrupoMesas')
+        ColaModel = old_apps.get_model('api', 'GrupoMesasProyecto')
+
+        user = UserModel.objects.create(username='migration-cola')
+        terminado = ProyectoModel.objects.create(nombre='Terminado', usuario_id=user.pk)
+        en_curso = ProyectoModel.objects.create(nombre='En curso', usuario_id=user.pk)
+        sin_importar = ProyectoModel.objects.create(nombre='Sin importar', usuario_id=user.pk)
+        ModuloModel.objects.create(nombre='T-01', proyecto_id=terminado.pk, inferior_hecho=True, superior_hecho=True)
+        ModuloModel.objects.create(nombre='C-01', proyecto_id=en_curso.pk, inferior_hecho=True)
+        linea = GrupoModel.objects.create(nombre='Linea', usuario_id=user.pk, proyecto_actual_id=terminado.pk)
+        solo_terminado = GrupoModel.objects.create(
+            nombre='Linea parada', usuario_id=user.pk, proyecto_actual_id=terminado.pk,
+        )
+        for orden, proyecto in enumerate((terminado, en_curso, sin_importar)):
+            ColaModel.objects.create(grupo_mesas_id=linea.pk, proyecto_id=proyecto.pk, orden=orden)
+        ColaModel.objects.create(grupo_mesas_id=solo_terminado.pk, proyecto_id=terminado.pk, orden=0)
+
+        executor = MigrationExecutor(connection)
+        executor.migrate(self.migrate_to)
+        new_apps = executor.loader.project_state(self.migrate_to).apps
+        NewGrupo = new_apps.get_model('api', 'GrupoMesas')
+        NewCola = new_apps.get_model('api', 'GrupoMesasProyecto')
+
+        self.assertEqual(
+            list(NewCola.objects.filter(grupo_mesas_id=linea.pk).order_by('orden').values_list('proyecto_id', 'orden')),
+            [(en_curso.pk, 0), (sin_importar.pk, 1)],
+        )
+        self.assertEqual(NewGrupo.objects.get(pk=linea.pk).proyecto_actual_id, en_curso.pk)
+        self.assertFalse(NewCola.objects.filter(grupo_mesas_id=solo_terminado.pk).exists())
+        self.assertIsNone(NewGrupo.objects.get(pk=solo_terminado.pk).proyecto_actual_id)
+
+
 @override_settings(
     REST_FRAMEWORK={
         "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
@@ -1931,6 +1974,63 @@ class PlanningFoundationTests(APITestCase):
         )
         self.assertEqual(response.status_code, 201)
         return GrupoMesas.objects.get(id=response.data["id"])
+
+    def test_proyecto_terminado_sale_de_la_cola_y_el_siguiente_pasa_a_cabeza(self):
+        self.user.is_staff = True
+        self.user.save(update_fields=['is_staff'])
+        grupo = self._crear_grupo("Grupo Cola Terminados")
+        mesa_inf = grupo.mesas.get(tipo="INFERIOR", indice=1)
+        mesa_sup = grupo.mesas.get(tipo="SUPERIOR", indice=3)
+        siguiente = Proyecto.objects.create(nombre="Proyecto Siguiente", usuario=self.user)
+        Modulo.objects.create(nombre="S-01", proyecto=siguiente)
+        sin_importar = Proyecto.objects.create(nombre="Proyecto Sin Importar", usuario=self.user)
+        for orden, proyecto in enumerate((self.project, siguiente, sin_importar)):
+            GrupoMesasProyecto.objects.create(grupo_mesas=grupo, proyecto=proyecto, orden=orden)
+        grupo.proyecto_actual = self.project
+        grupo.save(update_fields=["proyecto_actual"])
+        ultimo = Modulo.objects.create(nombre="M-02", proyecto=self.project)
+        MesaQueueItem.objects.create(
+            mesa=mesa_inf, modulo=ultimo, fase="INFERIOR", status=MesaQueueStatus.EN_COLA, position=0,
+        )
+        sup = MesaQueueItem.objects.create(
+            mesa=mesa_sup, modulo=ultimo, fase="SUPERIOR", status=MesaQueueStatus.EN_COLA, position=0,
+        )
+
+        def cola():
+            return list(
+                GrupoMesasProyecto.objects.filter(grupo_mesas=grupo)
+                .order_by("orden").values_list("proyecto_id", "orden")
+            )
+
+        # Queda un modulo por hacer: el proyecto sigue de cabeza.
+        response = self.client.post(f"/api/modulos/{self.modulo.id}/completar/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(cola(), [(self.project.id, 0), (siguiente.id, 1), (sin_importar.id, 2)])
+        response = self.client.post(
+            f"/api/modulos/{ultimo.id}/completar-fase/", {"fase": "INFERIOR"}, format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(cola()[0], (self.project.id, 0))
+
+        # El player termina la ultima fase: sale de la cola y el siguiente pasa a cabeza.
+        # El proyecto sin modulos no esta terminado: sigue esperando su importacion.
+        sup.refresh_from_db()
+        sup.marcar_hecho(user=None)
+        self.assertEqual(cola(), [(siguiente.id, 0), (sin_importar.id, 1)])
+        grupo.refresh_from_db()
+        self.assertEqual(grupo.proyecto_actual_id, siguiente.id)
+        response = self.client.get(f"/api/grupos-mesas/{grupo.id}/")
+        self.assertEqual(
+            [entry["proyecto"] for entry in response.data["proyectos_cola"]],
+            [siguiente.id, sin_importar.id],
+        )
+
+        # Reiniciar un modulo suyo lo vuelve a poner en la cola, al final.
+        response = self.client.post(f"/api/modulos/{ultimo.id}/reiniciar/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(cola(), [(siguiente.id, 0), (sin_importar.id, 1), (self.project.id, 2)])
+        grupo.refresh_from_db()
+        self.assertEqual(grupo.proyecto_actual_id, siguiente.id)
 
     def test_reiniciar_modulo_limpia_colas_historicas_duplicadas(self):
         self.user.is_staff = True

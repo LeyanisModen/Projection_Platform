@@ -22,6 +22,20 @@ interface MonitorItem {
   images?: { url?: string; src?: string; url_monitor?: string | null }[];
 }
 
+/** Aviso de la comprobacion de colores sobre la imagen del monitor. */
+interface CheckAviso {
+  clase: 'is-success' | 'is-error' | 'is-no-camera';
+  icono: string;
+  titulo: string;
+  detalle: string;
+}
+
+const CHECK_AVISOS: Record<'success' | 'error' | 'no_camera', CheckAviso> = {
+  success: { clase: 'is-success', icono: '✓', titulo: 'COMPROBACIÓN CORRECTA', detalle: 'Los colores están bien. Puedes seguir.' },
+  error: { clase: 'is-error', icono: '✗', titulo: 'COMPROBACIÓN FALLIDA', detalle: 'Revisa los colores y pasa a la revisión visual' },
+  no_camera: { clase: 'is-no-camera', icono: '!', titulo: 'SIN CÁMARA', detalle: 'No se ha podido comprobar. Revísalo a ojo.' },
+};
+
 /**
  * Second screen of a mini-PC (/monitor): a read-only mirror of what the player
  * is projecting, meant for a monitor at operator height.
@@ -79,6 +93,20 @@ export class MonitorComponent implements OnInit, OnDestroy {
     return total && !this.adjusting() ? `${Math.min(this.index() + 1, total)} / ${total}` : '';
   });
   readonly check = computed(() => this.state()?.check_overlay ?? 'none');
+  /**
+   * El paso trae su propia imagen de monitor (1920x1080 con modulo, paso y
+   * materiales): se ve a pantalla completa, sin la barra de esta vista.
+   */
+  readonly pantallaCompleta = computed(() => {
+    if (this.adjusting()) return false;
+    const image = this.images()[this.index()];
+    return !!image?.url_monitor;
+  });
+  /** Resultado de la comprobacion de colores, que la imagen no puede traer dibujado. */
+  readonly checkAviso = computed<CheckAviso | null>(() => {
+    const check = this.check();
+    return check === 'success' || check === 'error' || check === 'no_camera' ? CHECK_AVISOS[check] : null;
+  });
 
   ngOnInit(): void {
     this.startTokenLookup();

@@ -399,6 +399,10 @@ class Modulo(models.Model):
             'estado', 'inferior_hecho', 'superior_hecho', 'completado_at',
             'superior_needed_at',
         ])
+        if self.estado in (ModuloEstado.COMPLETADO, ModuloEstado.CERRADO):
+            # Ultimo modulo del proyecto: la cola de la linea pasa al siguiente.
+            from api.queue_sync import retirar_proyecto_terminado
+            retirar_proyecto_terminado(self.proyecto_id)
 
     def save(self, *args, **kwargs):
         from django.utils import timezone

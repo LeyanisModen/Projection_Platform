@@ -53,6 +53,73 @@
     object-fit: contain;
 }
 
+/* Imagen de monitor a pantalla completa: el marco guarda la proporcion del
+   diseño (1920x1080) para que el aviso caiga siempre sobre "MÓDULO COMPLETO". */
+.monitor-full {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    display: grid;
+    place-items: center;
+    background: #000;
+}
+
+.monitor-frame {
+    position: relative;
+    width: min(100vw, calc(100vh * 16 / 9));
+    aspect-ratio: 16 / 9;
+}
+
+.monitor-frame img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.monitor-estado {
+    position: absolute;
+    top: 1.5%;
+    left: 1%;
+    display: flex;
+    gap: 10px;
+    font-size: clamp(16px, 1.4vw, 26px);
+}
+
+/* Recuadro "MÓDULO COMPLETO" del diseño: x 862-1440, y 643-1080 de 1920x1080. */
+.monitor-check {
+    position: absolute;
+    left: 44.9%;
+    top: 59.54%;
+    width: 30.1%;
+    height: 40.46%;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 0.6vw;
+    padding: 1vw;
+    box-sizing: border-box;
+    color: #fff;
+    text-align: center;
+}
+.monitor-check b { font-size: 5vw; line-height: 1; }
+.monitor-check strong { font-size: 2.1vw; letter-spacing: 0.02em; line-height: 1.15; }
+.monitor-check span { font-size: 1.25vw; opacity: 0.9; }
+.monitor-check.is-success { background: #14532d; }
+.monitor-check.is-error { background: #7f1d1d; }
+.monitor-check.is-no-camera { background: #78350f; }
+
+.monitor-marco {
+    position: absolute;
+    inset: 0;
+    border: 10px solid;
+    pointer-events: none;
+}
+.monitor-marco.is-success { border-color: #16a34a; }
+.monitor-marco.is-error { border-color: #dc2626; }
+.monitor-marco.is-no-camera { border-color: #d97706; }
+
 .monitor-note,
 .monitor-message p {
     margin: 0;
