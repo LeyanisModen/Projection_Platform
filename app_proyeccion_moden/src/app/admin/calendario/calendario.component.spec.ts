@@ -289,6 +289,31 @@ describe('CalendarioComponent', () => {
         expect(component.editorOpen()).toBe(false);
     });
 
+    it('adds a holiday for every factory or one, without people, always visible on the calendar', () => {
+        const component = fixture.componentInstance;
+        openEditor(); component.setEventType('FESTIVO');
+        http.expectOne('/api/users/').flush({results: [{id: 7, username: 'sancho_amorebieta', first_name: 'Hierros Sancho'}], next: null, count: 1});
+        fixture.detectChanges();
+        expect(fixture.nativeElement.querySelector('.people-fieldset')).toBeNull();
+        expect(fixture.nativeElement.querySelector('#day-off-tab').getAttribute('aria-selected')).toBe('true');
+        expect(fixture.nativeElement.querySelector('select[name=dayOffFactory]').textContent).toContain('Hierros Sancho');
+        component.saveEvent();
+        expect(component.editorError()).toContain('festivo');
+        http.expectNone('/api/eventos/');
+        component.draft.titulo = 'San Ignacio'; component.draft.ferralla = 7; component.setWorker(1, true);
+        component.draft.inicio = '2026-09-30'; component.draft.fin = '2026-09-30';
+        component.saveEvent();
+        const request = http.expectOne(r => r.url === '/api/eventos/' && r.method === 'POST');
+        expect(request.request.body).toEqual({tipo: 'FESTIVO', titulo: 'San Ignacio', inicio: '2026-09-30', fin: '2026-09-30',
+            proyecto: null, trabajadores: [], ferralla: 7, notas: ''});
+        request.flush({});
+        const festivo: CalendarEvent = {id: 3, titulo: 'San Ignacio', tipo: 'FESTIVO', inicio: '2026-09-30', fin: '2026-09-30',
+            trabajadores: [], proyecto: null, notas: '', ferralla: 7, ferralla_nombre: 'Hierros Sancho'};
+        finishLoad(component.range().start, component.range().end, [...events, festivo]);
+        component.workerFilter.set(2); fixture.detectChanges();
+        expect(fixture.nativeElement.textContent).toContain('Festivo · San Ignacio · Hierros Sancho');
+    });
+
     it('keeps the event draft when switching tabs and validates title and dates', () => {
         const component = fixture.componentInstance;
         openEditor(); component.saveEvent();

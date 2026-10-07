@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { A11yModule } from '@angular/cdk/a11y';
 import { Observable } from 'rxjs';
 import { ApiService, Proyecto, ProjectCheck, ProjectCheckAttachment } from '../../../services/api.service';
+import { planningMargin, planningWindow } from '../../../shared/project-planning';
 
 @Component({
     selector: 'app-project-controls',
@@ -21,8 +22,11 @@ import { ApiService, Proyecto, ProjectCheck, ProjectCheckAttachment } from '../.
                 <button type="button" class="primary" [disabled]="saving() || !dirty()" (click)="saveDeadline()">Guardar</button>
             </div>
             @if (project().planificacion; as plan) {
-                <div class="demand" [class.urgent]="plan.estado === 'VENCIDO' || plan.estado === 'SIN_DIAS'">
-                    @if (plan.estado === 'PLANIFICADO') {
+                <div class="demand" [class.urgent]="plan.estado === 'VENCIDO' || plan.estado === 'SIN_DIAS' || !!plan.modulos_extra">
+                    @if (plan.estado === 'PLANIFICADO' && plan.fabricacion_inicio) {
+                        <strong>{{ planningWindow(plan) }}</strong>
+                        <span>{{ plan.modulos_pendientes }} pendientes@if (!plan.modulos_extra) { · {{ planningMargin(plan.margen_dias) }} } · la ferralla necesita {{ plan.ritmo_ferralla }} módulos/día y saca {{ plan.capacidad_ferralla }}@if ((plan.modulos_previstos || 0) > (plan.modulos_subidos ?? 0)) { · {{ plan.modulos_subidos }} de {{ plan.modulos_previstos }} subidos }</span>
+                    } @else if (plan.estado === 'PLANIFICADO') {
                         <strong>{{ plan.modulos_por_dia }} módulos / día</strong>
                         <span>{{ plan.modulos_pendientes }} pendientes · {{ plan.dias_disponibles }} días disponibles@if ((plan.modulos_previstos || 0) > (plan.modulos_subidos ?? 0)) { · {{ plan.modulos_subidos }} de {{ plan.modulos_previstos }} subidos }</span>
                     } @else if (plan.estado === 'COMPLETADO') { <strong>Fabricación completada</strong>
@@ -215,6 +219,8 @@ import { ApiService, Proyecto, ProjectCheck, ProjectCheckAttachment } from '../.
 })
 export class ProjectControlsComponent {
     readonly project = input.required<Proyecto>();
+    readonly planningWindow = planningWindow;
+    readonly planningMargin = planningMargin;
     readonly saved = output<Proyecto>();
     private readonly api = inject(ApiService);
     readonly date = signal('');

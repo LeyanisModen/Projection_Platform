@@ -5,8 +5,13 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { A11yModule } from '@angular/cdk/a11y';
 import { forkJoin, Subscription } from 'rxjs';
-import { ApiService, CalendarEvent, CheckDeadline, OfficeWorker, Proyecto } from '../../services/api.service';
+import { ApiService, CalendarEvent, CheckDeadline, OfficeWorker, Proyecto, User } from '../../services/api.service';
 import { CalendarItem, CalendarSegment, CalendarView, calendarMonths, calendarRange, calendarWeeks, localDate, monthDays, nextWorkerColor, workerColor, WORKER_COLORS } from './calendar-layout';
+
+/** Festivos: dias sin fabricacion que el plan de las ferrallas no cuenta. */
+const FESTIVO_COLOR = '#be123c';
+const TIPOS: CalendarEvent['tipo'][] = ['EVENTO', 'VACACIONES', 'FESTIVO'];
+const TAB_IDS: Record<CalendarEvent['tipo'], string> = {EVENTO: 'event-tab', VACACIONES: 'holiday-tab', FESTIVO: 'day-off-tab'};
 
 @Component({
     selector: 'app-calendario',
@@ -31,6 +36,9 @@ export class CalendarioComponent {
     readonly events = signal<CalendarEvent[]>([]);
     readonly projects = signal<Proyecto[]>([]);
     readonly workers = signal<OfficeWorker[]>([]);
+    /** Para elegir a que ferralla aplica un festivo; se pide al abrir esa pestana. */
+    readonly ferrallas = signal<User[]>([]);
+    private ferrallasLoaded = false;
     readonly loading = signal(false);
     readonly error = signal('');
     readonly busy = signal(false);
@@ -75,9 +83,9 @@ export class CalendarioComponent {
         const label = (date: Date) => date.toLocaleDateString('es-ES', {month: 'long', year: 'numeric'});
         return this.view() === 'quarter' ? `${label(months[0])} - ${label(months[2])}` : label(months[0]);
     });
-    readonly filteredEvents = computed(() => this.events().filter(e =>
+    readonly filteredEvents = computed(() => this.events().filter(e => e.tipo === 'FESTIVO' || (
         (this.projectFilter() === null || e.proyecto === this.projectFilter()) &&
-        (this.workerFilter() === null || e.trabajadores.includes(this.workerFilter()!)),
+        (this.workerFilter() === null || e.trabajadores.includes(this.workerFilter()!))),
     ));
     /** Panel de filtros plegado: los filtros son la excepcion, no lo habitual. */
     readonly filtersOpen = signal(false);
@@ -198,9 +206,11 @@ export class CalendarioComponent {
     mountsOn(day: string): Proyecto[] {
         return this.projects().filter(p => p.fecha_montaje === day && (this.projectFilter() === null || this.projectFilter()===p.id) && this.workerFilter()===null);
     }
-    eventTitle(event: Pick<CalendarEvent, 'titulo' | 'tipo' | 'trabajadores'>): string {
+    eventTitle(event: Pick<CalendarEvent, 'titulo' | 'tipo' | 'trabajadores'> & {ferralla_nombre?: string | null}): string {
+        if (event.tipo === 'FESTIVO') return `Festivo · ${event.titulo}${event.ferralla_nombre ? ' · ' + event.ferralla_nombre : ''}`;
         return event.tipo === 'VACACIONES' ? `Vacaciones de ${this.workerNames(event.trabajadores) || 'la persona seleccionada'}` : event.titulo;
     }
+    ferrallaNombre(user: User): string { return user.first_name || user.username; }
     printCalendar(): void {
         if (!this.loading() && !this.error() && !this.editorOpen() && !this.teamOpen()) window.print();
     }
@@ -208,6 +218,7 @@ export class CalendarioComponent {
     workerNames(ids: number[]): string { return this.workers().filter(w => ids.includes(w.id)).map(w => w.nombre).join(', '); }
     namesOf(workers: OfficeWorker[]): string { return workers.map(worker => worker.nombre).join(', '); }
     eventColors(event: CalendarEvent): string[] {
+        if (event.tipo === 'FESTIVO') return [FESTIVO_COLOR];
         const colors = this.workers().filter(worker => event.trabajadores.includes(worker.id)).map(this.colorOf);
         return colors.length ? colors : ['#64748b'];
     }
@@ -228,6 +239,7 @@ export class CalendarioComponent {
     }
     editEvent(event?: CalendarEvent): void {
         this.draft = event ? {...event, trabajadores:[...event.trabajadores]} : this.newDraft();
+        if (this.draft.tipo === 'FESTIVO') this.loadFerrallas();
         this.addingPerson.set(false); this.personError.set('');
         this.editorError.set(''); this.editorOpen.set(true);
         this.checkConflicts();
@@ -262,12 +274,25 @@ export class CalendarioComponent {
     setEventType(type: CalendarEvent['tipo']): void {
         if (this.busy()) return;
         this.draft.tipo = type; this.editorError.set('');
+        if (type === 'FESTIVO') this.loadFerrallas();
     }
+    tabId(type: CalendarEvent['tipo']): string { return TAB_IDS[type]; }
     switchTab(event: KeyboardEvent): void {
         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key) || this.busy()) return;
         event.preventDefault();
-        this.setEventType(event.key === 'Home' ? 'EVENTO' : event.key === 'End' ? 'VACACIONES' : this.draft.tipo === 'EVENTO' ? 'VACACIONES' : 'EVENTO');
-        (event.currentTarget as HTMLElement).querySelector<HTMLButtonElement>(this.draft.tipo === 'EVENTO' ? '#event-tab' : '#holiday-tab')?.focus();
+        const current = TIPOS.indexOf(this.draft.tipo);
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? TIPOS.length - 1
+            : (current + (event.key === 'ArrowRight' ? 1 : TIPOS.length - 1)) % TIPOS.length;
+        this.setEventType(TIPOS[next]);
+        (event.currentTarget as HTMLElement).querySelector<HTMLButtonElement>('#' + TAB_IDS[this.draft.tipo])?.focus();
+    }
+    private loadFerrallas(): void {
+        if (this.ferrallasLoaded) return;
+        this.ferrallasLoaded = true;
+        this.api.getUsers().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+            next: users => this.ferrallas.set(users),
+            error: () => { this.ferrallasLoaded = false; },
+        });
     }
     openAddPerson(): void {
         this.newPersonName = ''; this.newPersonColor = nextWorkerColor(this.workers().map(this.colorOf));
@@ -306,9 +331,16 @@ export class CalendarioComponent {
         if (this.draft.tipo === 'VACACIONES' && !this.draft.trabajadores.length) {
             this.editorError.set('Selecciona al menos una persona para las vacaciones.'); return;
         }
+        if (this.draft.tipo === 'FESTIVO' && !this.draft.titulo.trim()) {
+            this.editorError.set('Indica qué festivo es.'); return;
+        }
         this.busy.set(true);
-        this.api.saveEvent({...this.draft, titulo:this.eventTitle(this.draft).trim().slice(0, 200),
-            proyecto: this.draft.tipo === 'VACACIONES' ? null : this.draft.proyecto}).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+        // La ferralla solo viaja en los festivos; un festivo no lleva personas ni proyecto.
+        const {ferralla, ferralla_nombre, ...draft} = this.draft;
+        const festivo = draft.tipo === 'FESTIVO';
+        this.api.saveEvent({...draft, titulo:(festivo ? draft.titulo : this.eventTitle(draft)).trim().slice(0, 200),
+            proyecto: draft.tipo === 'EVENTO' ? draft.proyecto : null,
+            ...(festivo ? {trabajadores: [], ferralla: ferralla ?? null} : {})}).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
             next: () => { this.busy.set(false); this.closeEditor(); this.load(); },
             error: () => { this.busy.set(false); this.editorError.set('No se pudo guardar el evento. Revisa los datos e inténtalo de nuevo.'); },
         });

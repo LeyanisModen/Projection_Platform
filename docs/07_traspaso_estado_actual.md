@@ -278,7 +278,7 @@ proyection_platform/
 | `api/media_access.py` | Autenticación y reglas de propietario para `/media/` |
 | `api/health.py` | Endpoint de salud |
 | `api/office.py` | Checklist de proyecto, trabajadores y calendario de oficina |
-| `api/planning.py` | Cálculo de demanda/planificación por proyecto |
+| `api/planning.py` | Plan de fabricación por ferralla (proyectos en serie, ritmo necesario, capacidad, festivos) y objetivo de Estadísticas |
 | `api/tests.py` | Suite principal de permisos, importación, colas y planner |
 | `api/test_*.py` | Detector de colores, oficina, objetivos, salud, media, colas en bloque |
 | `api/migrations/` | Migraciones `0001` a `0058_checklist_dates_and_attachments` |
@@ -369,6 +369,7 @@ añadir una regresión para el caso nuevo.
 - Un bastidor queda asociado a una única mesa inferior.
 - Las colas superiores se derivan del avance previsto de las inferiores.
 - Reconciliación automática al añadir, mover, borrar o reiniciar módulos.
+- Plan de fabricación (2026-10-07, `api/planning.py`, `plan_ferralla`). Cada ferralla fabrica sus proyectos uno detrás de otro: primero los de la cola de sus líneas (en ese orden) y después el resto por fecha de montaje. Los módulos deben estar hechos el día laborable anterior al montaje; no cuentan los días que la ferralla no trabaja ni los festivos del calendario (tipo `FESTIVO` de `EventoCalendario`, con `ferralla` vacía para todas o una ferralla concreta; la migración 0071 precarga los nacionales de 2026-2027). **Ritmo necesario** de la ferralla = todos sus pendientes ÷ días laborables hasta su último montaje (la media que hay que sostener); sustituye a la suma de ritmos por proyecto, que daba 91/día en Sanchos con 25 proyectos cargados. **Capacidad** = `UserProfile.capacidad_diaria_modulos` (por defecto 35, la media que se espera; editable en Ferrallas): a ese ritmo se calcula cuándo se fabrica cada proyecto (`fabricacion_inicio/fin`, `margen_dias`) y solo se avisa ("Aprieta: +N módulos para el dd/mm", `modulos_extra`) cuando a esa capacidad un proyecto no llega; se supone que lo cubren con horas extra y el siguiente empieza a tiempo, así el retraso no se arrastra. `modulos_hoy`/`modulos_semana` alimentan el donut del dashboard. Los proyectos vencidos, sin fecha o sin módulos no entran en el plan. `modulos_por_dia` por proyecto se mantiene (ritmo si se fabricara solo) pero ya no se muestra.
 - Cola de proyectos de cada línea: el primero es el que se fabrica ("En fabricación"). Al completarse el último módulo de un proyecto sale solo de la cola de todas las líneas y el siguiente pasa a cabeza (`queue_sync.retirar_proyecto_terminado`, desde `Modulo.actualizar_estado`); antes solo salía al pulsar "Planificar" y se quedaba de cabeza con las mesas ya en el siguiente. No toca las mesas. Un proyecto sin módulos no cuenta como terminado (espera su importación). Si se reinicia un módulo de un proyecto ya retirado, vuelve a la cola al final. La migración 0070 limpió los que ya estaban así (2026-10-07: ESNABIDE_27_PB en Sanchos y los dos VALDEBEBAS946 de Ferralia Seseña).
 - Preservación de trabajo ya empezado mediante prefijos/anclas.
 - Reubicación de fases al cambiar tipos/activación de mesas.
@@ -755,8 +756,14 @@ Fuente de verdad: módulos con `completado_at` dentro del rango local
 ```text
 módulos/hora = módulos completados / horas productivas del rango
 kg/hora      = suma de peso_malla_final_kg / horas productivas del rango
-esperado     = capacidad_diaria_modulos * días laborables
+esperado     = módulos que el plan en serie de la ferralla hace dentro del rango
 ```
+
+El objetivo sale del mismo plan que los proyectos (ver "Plan de fabricación"
+en 5.3): pendientes al inicio del rango, al ritmo necesario de la ferralla
+desde ese día, con sus proyectos uno detrás de otro. Filtrado por proyecto,
+cuenta solo lo que a ese proyecto le toca dentro del rango. Los festivos del
+calendario no son días laborables (`range.festivos`, `range.working_days`).
 
 Las horas productivas se calculan usando la jornada configurada, no ocho horas
 fijas. Para un solo día, `por_hora` solo crea buckets donde hubo datos; así

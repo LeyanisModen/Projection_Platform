@@ -30,8 +30,10 @@
             <div class="group-title" [class.is-unassigned]="!group.userUrl">
                 <span class="group-name">{{ group.username }}</span>
                 <span class="meta">{{ group.projects.length }} {{ group.projects.length === 1 ? 'proyecto' : 'proyectos' }}</span>
-                <span class="meta group-demand">
-                    {{ requiredDaily(group.projects) }} módulos/día
+                <span class="meta group-demand" title="Ritmo para llegar a todos los montajes fabricando un proyecto detrás de otro">
+                    <span [class.is-warn]="(factoryCapacity(group.projects) ?? 0) > 0 && requiredDaily(group.projects) > factoryCapacity(group.projects)!">{{ requiredDaily(group.projects) }} módulos/día</span>
+                    @if (factoryCapacity(group.projects); as capacidad) { <span> · capacidad {{ capacidad }}</span> }
+                    @if (tightProjects(group.projects)) { <span class="is-warn"> · {{ tightProjects(group.projects) }} {{ tightProjects(group.projects) === 1 ? 'aprieta' : 'aprietan' }}</span> }
                     @if (planningIssues(group.projects)) { <span class="is-warn"> · {{ planningIssues(group.projects) }} sin planificar</span> }
                 </span>
             </div>
@@ -46,7 +48,7 @@
                     <div class="project-name">{{ project.nombre }}</div>
                     <div class="meta project-info">
                         @if (project.fecha_montaje) { <span>Montaje {{ project.fecha_montaje | date:'dd/MM/yyyy' }}</span> }
-                        <span>{{ planningLabel(project) }}</span>
+                        <span [class.is-warn]="planningTight(project)">{{ planningLabel(project) }}</span>
                         <span *ngIf="(project.grupos_count || 0) > 0">{{ project.grupos_count }} grupos</span>
                         <span *ngIf="!project.grupos_count && (project.modulos_count || 0) > 0" class="is-warn">sin grupos</span>
                         <span *ngIf="(project.modulos_count || 0) > 0"

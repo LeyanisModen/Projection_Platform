@@ -64,6 +64,19 @@ export interface PlanificacionProyecto {
     estado: 'COMPLETADO' | 'SIN_FECHA' | 'SIN_MODULOS' | 'SIN_FERRALLA' | 'VENCIDO' | 'SIN_DIAS' | 'PLANIFICADO';
     fecha_calculo: string;
     dias_produccion: string[];
+    /** Plan de la ferralla: sus proyectos uno detras de otro. */
+    ritmo_ferralla?: number | null;
+    capacidad_ferralla?: number | null;
+    aprietan_ferralla?: number;
+    fabricacion_inicio?: string | null;
+    fabricacion_fin?: string | null;
+    /** Ultimo dia de fabricacion: el laborable anterior al montaje. */
+    ultimo_dia?: string | null;
+    margen_dias?: number | null;
+    /** Modulos que no salen a la capacidad de la ferralla (horas extra, sabados...). */
+    modulos_extra?: number;
+    modulos_hoy?: number;
+    modulos_semana?: number;
 }
 /** Documento de confirmación adjunto a un paso (correo de aprobación, PDF...). */
 export interface ProjectCheckAttachment {
@@ -106,8 +119,10 @@ export interface CheckDeadline {
 export type NewProjectCheck = Pick<ProjectCheck, 'titulo'> & Partial<Pick<ProjectCheck, 'requiere_fecha' | 'requiere_documento' | 'fecha_limite'>>;
 export interface OfficeWorker { id: number; nombre: string; activo: boolean; color: string; }
 export interface CalendarEvent {
-    id: number; titulo: string; tipo: 'EVENTO' | 'VACACIONES';
+    id: number; titulo: string; tipo: 'EVENTO' | 'VACACIONES' | 'FESTIVO';
     inicio: string; fin: string; proyecto: number | null; trabajadores: number[]; notas: string;
+    /** Solo festivos: ferralla a la que aplica; null, a todas. */
+    ferralla?: number | null; ferralla_nombre?: string | null;
 }
 
 export interface Proyecto {
@@ -579,7 +594,7 @@ export interface ElementosSueltos {
 }
 
 export interface ProductionStatsResponse {
-    range: { from: string; to: string; working_days: number };
+    range: { from: string; to: string; working_days: number; festivos?: string[] };
     totals: ProductionStatsBucket & {
         modulos_completados: number;
         horas_productivas: number;

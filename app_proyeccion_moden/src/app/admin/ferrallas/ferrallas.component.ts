@@ -20,6 +20,7 @@ interface FichaDraft {
   username: string;
   password: string;
   bastidor_longitud_cm: number | string;
+  capacidad_diaria_modulos: number | string;
   contactos: FerrallaContacto[];
   direcciones: FerrallaDireccion[];
 }
@@ -114,6 +115,7 @@ export class FerrallasComponent implements OnInit, OnDestroy {
       username: user.username || '',
       password: '',
       bastidor_longitud_cm: user.bastidor_longitud_cm || 114,
+      capacidad_diaria_modulos: user.capacidad_diaria_modulos || 35,
       contactos: this.getEditableContactos(user),
       direcciones: this.getEditableDirecciones(user),
     };
@@ -132,6 +134,7 @@ export class FerrallasComponent implements OnInit, OnDestroy {
       username: (ficha.username || '').trim(),
       password: ficha.password || '',
       bastidor_longitud_cm: Number(ficha.bastidor_longitud_cm),
+      capacidad_diaria_modulos: Number(ficha.capacidad_diaria_modulos),
       contactos: this.normalizeContactos(ficha.contactos || []),
       direcciones: this.normalizeDirecciones(ficha.direcciones || []),
     });
@@ -186,11 +189,18 @@ export class FerrallasComponent implements OnInit, OnDestroy {
       this.cdr.detectChanges();
       return;
     }
+    const capacidad = Number(ficha.capacidad_diaria_modulos);
+    if (!Number.isInteger(capacidad) || capacidad < 1) {
+      this.fichaError = 'Indica cuántos módulos al día se espera que saque la ferralla.';
+      this.cdr.detectChanges();
+      return;
+    }
 
     const payload: any = {
       first_name: ficha.first_name.trim(),
       username: ficha.username.trim(),
       bastidor_longitud_cm: Number(bastidor.toFixed(2)),
+      capacidad_diaria_modulos: capacidad,
       contactos: this.normalizeContactos(ficha.contactos),
       direcciones: this.normalizeDirecciones(ficha.direcciones),
     };
@@ -264,7 +274,7 @@ export class FerrallasComponent implements OnInit, OnDestroy {
       password: '',
       contactos: [] as FerrallaContacto[],
       direcciones: [] as FerrallaDireccion[],
-      capacidad_diaria_modulos: 12,
+      capacidad_diaria_modulos: 35,
       bastidor_longitud_cm: 114
     };
   }

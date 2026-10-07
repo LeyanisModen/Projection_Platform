@@ -579,6 +579,8 @@ class EventoCalendario(models.Model):
     class Tipo(models.TextChoices):
         EVENTO = 'EVENTO', 'Evento'
         VACACIONES = 'VACACIONES', 'Vacaciones'
+        # Dia sin fabricacion: no cuenta en el plan de las ferrallas.
+        FESTIVO = 'FESTIVO', 'Festivo'
 
     titulo = models.CharField(max_length=200)
     tipo = models.CharField(max_length=16, choices=Tipo.choices, default=Tipo.EVENTO)
@@ -586,6 +588,10 @@ class EventoCalendario(models.Model):
     fin = models.DateField()
     proyecto = models.ForeignKey(Proyecto, null=True, blank=True, on_delete=models.SET_NULL, related_name='eventos')
     trabajadores = models.ManyToManyField(TrabajadorOficina, blank=True, related_name='eventos')
+    # Solo festivos: la ferralla a la que aplica; vacio, a todas (nacional).
+    ferralla = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.CASCADE, related_name='festivos',
+    )
     notas = models.TextField(blank=True, max_length=4000)
     creado_por = models.ForeignKey(User, null=True, on_delete=models.SET_NULL)
 
@@ -1116,8 +1122,11 @@ class UserProfile(models.Model):
     coordinador = models.CharField(max_length=100, blank=True, null=True)
     password_texto_plano = models.CharField(max_length=128, blank=True, null=True)
     capacidad_diaria_modulos = models.PositiveIntegerField(
-        default=12,
-        help_text='Modulos que la ferralla produce por dia (se reparten entre sus mesas INF).'
+        default=35,
+        help_text=(
+            'Modulos por dia que se espera que saque la ferralla. El plan de '
+            'fabricacion solo avisa de los proyectos que piden mas.'
+        ),
     )
     bastidor_longitud_cm = models.DecimalField(
         max_digits=6,

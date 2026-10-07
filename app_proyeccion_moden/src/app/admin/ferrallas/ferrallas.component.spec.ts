@@ -100,6 +100,7 @@ describe('FerrallasComponent', () => {
         expect(request.request.method).toBe('PATCH');
         expect(request.request.body).toEqual({
             first_name: 'Ferralia SL', username: 'ferralia', bastidor_longitud_cm: 120.5,
+            capacidad_diaria_modulos: 35,
             contactos: [{nombre: 'Ana', cargo: '', telefono: '600', email: '', orden: 0}],
             direcciones: [],
         });

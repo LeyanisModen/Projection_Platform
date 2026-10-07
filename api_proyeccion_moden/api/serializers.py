@@ -13,7 +13,7 @@ from api.models import (
 )
 from api.queue_sync import module_operational_state, module_reorderability
 from api.module_features import module_has_sd
-from api.planning import project_demand
+from api.planning import plan_ferralla, project_demand
 
 
 class FerrallaContactoSerializer(serializers.ModelSerializer):
@@ -290,7 +290,14 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
         return obj.bastidor_longitud_efectiva_cm
 
     def get_planificacion(self, obj):
-        return project_demand(obj)
+        if obj.usuario_id is None:
+            return project_demand(obj)
+        # Un plan por ferralla y peticion: en la lista todos sus proyectos lo comparten.
+        planes = self.context.setdefault('_planes_ferralla', {})
+        plan = planes.get(obj.usuario_id)
+        if plan is None or obj.pk not in plan['proyectos']:
+            plan = planes[obj.usuario_id] = plan_ferralla(obj.usuario_id, override=obj)
+        return plan['proyectos'][obj.pk]
 
     def validate(self, attrs):
         if 'dias_produccion' in self.initial_data:

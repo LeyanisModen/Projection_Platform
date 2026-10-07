@@ -620,7 +620,7 @@
                                 </button>
                             </div>
                             @if (proyecto.modulos_count) {
-                            <div class="project-deadline"><span>{{ planningLabel(proyecto) }}</span>@if (proyecto.fecha_montaje) { <time>Montaje: {{ proyecto.fecha_montaje | date:'dd/MM/yyyy' }}</time> }</div>
+                            <div class="project-deadline"><span [class.aprieta]="planningTight(proyecto)">{{ planningLabel(proyecto) }}</span>@if (proyecto.fecha_montaje) { <time>Montaje: {{ proyecto.fecha_montaje | date:'dd/MM/yyyy' }}</time> }</div>
                             }
                         </div>
                         @if (proyecto.modulos_count) {

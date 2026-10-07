@@ -209,6 +209,16 @@
                                         <span class="ficha-unit">cm utiles</span>
                                     </div>
                                 </label>
+                                <label class="capture-field ficha-field">
+                                    <span>Capacidad</span>
+                                    <div class="ficha-inline">
+                                        <input type="number" class="form-control ficha-number" name="ficha_capacidad"
+                                            min="1" step="1" required
+                                            aria-label="Modulos al dia que se espera que saque la ferralla"
+                                            [(ngModel)]="f.capacidad_diaria_modulos" [disabled]="savingFicha">
+                                        <span class="ficha-unit">módulos/día</span>
+                                    </div>
+                                </label>
                             </div>
 
                             <div class="ficha-section">
