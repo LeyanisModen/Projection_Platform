@@ -343,6 +343,24 @@ class OfficePlanningTests(APITestCase):
         self.assertEqual(self.client.get('/api/proyecto-checklist/vencimientos/?desde=mal').status_code, 400)
         self.assertEqual(len(self.client.get('/api/proyecto-checklist/vencimientos/').data), 4, 'sin rango devuelve todas las fechas')
 
+    def test_calendar_deadlines_carry_what_is_needed_to_check_them_there(self):
+        from .models import ProyectoCheck
+        url = f'/api/proyecto-checklist/{self.project.pk}/checks/'
+        previo = self.client.post(url, {'titulo': 'Planos', 'requiere_fecha': True, 'fecha_limite': '2026-10-05'}, format='json').data[0]
+        self.client.post(url, {'titulo': 'Equivalencias', 'requiere_fecha': True, 'requiere_documento': True, 'fecha_limite': '2026-10-06'}, format='json')
+        paso = ProyectoCheck.objects.get(proyecto=self.project, titulo='Equivalencias')
+        paso.requisitos.add(previo['id'])
+        rows = {r['titulo']: r for r in self.client.get('/api/proyecto-checklist/vencimientos/?desde=2026-10-01&hasta=2026-10-31').data}
+        self.assertEqual(
+            (rows['Equivalencias']['requisitos_pendientes'], rows['Equivalencias']['requiere_documento'], rows['Equivalencias']['documentos']),
+            (['Planos'], True, 0),
+        )
+        # Marcado desde el calendario: el paso previo deja de bloquear.
+        self.client.patch(f"{url}{previo['id']}/", {'completado': True}, format='json')
+        rows = {r['titulo']: r for r in self.client.get('/api/proyecto-checklist/vencimientos/?desde=2026-10-01&hasta=2026-10-31').data}
+        self.assertTrue(rows['Planos']['completado'])
+        self.assertEqual(rows['Equivalencias']['requisitos_pendientes'], [])
+
     def test_attachments_upload_list_download_and_delete(self):
         row = self.client.post(f'/api/proyecto-checklist/{self.project.pk}/checks/', {'titulo': 'Aprobacion', 'requiere_documento': True}, format='json').data[0]
         url = f'/api/proyecto-checklist/{self.project.pk}/checks/{row["id"]}/adjuntos/'

@@ -2,7 +2,7 @@
 from datetime import date
 
 from django.db import transaction
-from django.db.models import Max, Q
+from django.db.models import Count, Max, Q
 from django.utils import timezone
 from rest_framework import serializers, viewsets, permissions, status
 from rest_framework.decorators import action
@@ -314,7 +314,11 @@ class ProjectChecklistViewSet(viewsets.GenericViewSet):
 
     @action(detail=False, methods=['get'])
     def vencimientos(self, request):
-        """Pasos con fecha limite dentro de [desde, hasta], para el calendario."""
+        """Pasos con fecha limite dentro de [desde, hasta], para el calendario.
+
+        Llevan lo necesario para marcarlos desde alli: los pasos previos que
+        faltan y si piden documento.
+        """
         bounds = {}
         for param, lookup in [('desde', 'fecha_limite__gte'), ('hasta', 'fecha_limite__lte')]:
             raw = request.query_params.get(param)
@@ -326,6 +330,8 @@ class ProjectChecklistViewSet(viewsets.GenericViewSet):
         rows = (
             ProyectoCheck.objects.filter(fecha_limite__isnull=False, **bounds)
             .select_related('proyecto')
+            .prefetch_related('requisitos')
+            .annotate(_documentos=Count('adjuntos', distinct=True))
             .order_by('fecha_limite', 'proyecto_id', 'orden')
         )
         return Response([{
@@ -335,6 +341,9 @@ class ProjectChecklistViewSet(viewsets.GenericViewSet):
             'titulo': row.titulo,
             'fecha_limite': row.fecha_limite.isoformat(),
             'completado': row.completado,
+            'requisitos_pendientes': [r.titulo for r in row.requisitos.all() if not r.completado],
+            'requiere_documento': row.requiere_documento,
+            'documentos': row._documentos,
         } for row in rows])
 
     @action(detail=True, methods=['post'], url_path='checks')

@@ -922,6 +922,7 @@ Septiembre de 2026 (auditoría; detalle por punto en
   `Procfile` y `merge=ours` eliminados.
 - Frontend sin SSR ni SSE; rutas lazy (bundle inicial 355 kB).
 - Calendario/planificación de oficina (`api/office.py`, `admin/calendario/`).
+- Controles de la lista desde el calendario (2026-10-07): en la agenda del día cada fecha límite lleva su casilla y se marca o desmarca sin ir al proyecto (mismo `PATCH proyecto-checklist/<id>/checks/<id>/` que la ficha). `vencimientos/` devuelve también `requisitos_pendientes`, `requiere_documento` y `documentos`: con pasos previos sin hacer la casilla queda bloqueada ("Antes: …") y si pide documento y no lo tiene avisa "Completado sin documento", igual que en la ficha. Festivos (`tipo=FESTIVO`) en la pestaña Festivo del editor, para todas las ferrallas o una; siempre visibles aunque haya filtros.
 
 Commits de referencia anteriores, de nuevo a antiguo:
 

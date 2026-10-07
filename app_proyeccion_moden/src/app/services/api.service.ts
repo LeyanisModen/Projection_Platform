@@ -115,6 +115,10 @@ export interface CheckDefinition {
 export interface CheckDeadline {
     id: number; proyecto: number; proyecto_nombre: string; titulo: string;
     fecha_limite: string; completado: boolean;
+    /** Pasos previos sin completar: hasta entonces no se puede marcar. */
+    requisitos_pendientes?: string[];
+    requiere_documento?: boolean;
+    documentos?: number;
 }
 export type NewProjectCheck = Pick<ProjectCheck, 'titulo'> & Partial<Pick<ProjectCheck, 'requiere_fecha' | 'requiere_documento' | 'fecha_limite'>>;
 export interface OfficeWorker { id: number; nombre: string; activo: boolean; color: string; }

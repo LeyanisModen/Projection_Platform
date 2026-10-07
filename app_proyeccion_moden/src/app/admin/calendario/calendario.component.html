@@ -115,10 +115,18 @@
                 <a [routerLink]="['/admin-dashboard/proyectos',project.id]">Ver proyecto y plazo</a>
             </article>
         }
+        @if (deadlineError()) { <p class="error" role="alert">{{ deadlineError() }}</p> }
         @for (deadline of selectedDeadlines(); track deadline.id) {
             <article class="agenda-event control" [class.done]="deadline.completado">
-                <strong>{{ deadline.completado ? 'Completado' : 'Fecha límite' }} · {{ deadline.titulo }}</strong>
+                <label class="control-check">
+                    <input type="checkbox" [checked]="deadline.completado"
+                        [disabled]="busyDeadline() !== null || deadlineWaiting(deadline)"
+                        (change)="toggleDeadline(deadline, $event)" />
+                    <strong>{{ deadline.completado ? 'Completado' : 'Fecha límite' }} · {{ deadline.titulo }}</strong>
+                </label>
                 <span>{{ deadline.proyecto_nombre }}</span>
+                @if (deadlineWaiting(deadline)) { <small class="control-note">Antes: {{ deadline.requisitos_pendientes!.join(', ') }}</small> }
+                @if (deadline.completado && deadline.requiere_documento && !deadline.documentos) { <small class="control-note warn">Completado sin documento</small> }
                 <a [routerLink]="['/admin-dashboard/proyectos',deadline.proyecto]">Ver lista de control del proyecto</a>
             </article>
         }
