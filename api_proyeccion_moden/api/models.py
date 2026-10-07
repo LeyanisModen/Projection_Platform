@@ -535,10 +535,12 @@ class ProyectoCheck(models.Model):
         return f'{self.proyecto_id}: {self.titulo}'
 
     @staticmethod
-    def fecha_limite_para(fecha_montaje, dias_antes_montaje):
+    def fecha_limite_para(fecha_montaje, dias_antes_montaje, festivos=None):
+        """D - n; si cae en fin de semana o festivo, el dia laborable anterior de la oficina."""
         if fecha_montaje is None or dias_antes_montaje is None:
             return None
-        return fecha_montaje - timedelta(days=dias_antes_montaje)
+        from api.planning import laborable_oficina_anterior
+        return laborable_oficina_anterior(fecha_montaje - timedelta(days=dias_antes_montaje), festivos)
 
 
 class ProyectoCheckAdjunto(models.Model):

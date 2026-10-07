@@ -233,10 +233,21 @@ export class CalendarioComponent {
         event.dataTransfer?.setData('text/plain', segment.item.key);
         if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
     }
+    /** La oficina no trabaja fines de semana ni festivos de todas las ferrallas. */
+    officeWorkingDay(day: string): boolean {
+        const weekday = new Date(`${day}T00:00:00Z`).getUTCDay();
+        return weekday !== 0 && weekday !== 6 && !this.events().some(event =>
+            event.tipo === 'FESTIVO' && !event.ferralla && event.inicio <= day && event.fin >= day);
+    }
+    /** Un control no se puede soltar en un dia que la oficina no trabaja. */
+    private canDropOn(key: string, day: string): boolean {
+        return !key.startsWith('control-') || this.officeWorkingDay(day);
+    }
     dragOver(event: DragEvent): void {
         const drag = this.dragging;
         const day = drag && this.dayAt(event);
         if (!drag || !day) return;
+        if (!this.canDropOn(drag.key, day)) { if (this.dropRange()) this.dropRange.set(null); return; }
         event.preventDefault();
         if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
         const delta = daysBetween(drag.grabbed, day);
@@ -250,7 +261,7 @@ export class CalendarioComponent {
         const day = drag && this.dayAt(event);
         event.preventDefault();
         this.endDrag();
-        if (!drag || !day) return;
+        if (!drag || !day || !this.canDropOn(drag.key, day)) return;
         const delta = daysBetween(drag.grabbed, day);
         if (delta) this.moveItem(drag.key, delta);
     }

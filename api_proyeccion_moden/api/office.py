@@ -12,6 +12,7 @@ from rest_framework.response import Response
 
 from .models import (Proyecto, ProyectoCheck, ProyectoCheckAdjunto,
                      ProyectoCheckDefinicion, TrabajadorOficina, EventoCalendario)
+from .planning import es_laborable_oficina, festivos_oficina
 
 # Documento de confirmacion por paso: correos exportados, PDF, capturas...
 CHECK_ATTACHMENT_MAX_BYTES = 20 * 1024 * 1024
@@ -138,13 +139,14 @@ def sembrar_checklist(proyecto):
     definiciones = list(ProyectoCheckDefinicion.objects.prefetch_related('requisitos'))
     existentes = set(proyecto.checks.filter(definicion__isnull=False).values_list('definicion_id', flat=True))
     titulos = {_clave_titulo(t) for t in proyecto.checks.values_list('titulo', flat=True)}
+    festivos = festivos_oficina()
     nuevos = []
     for definicion in definiciones:
         if definicion.id in existentes or _clave_titulo(definicion.titulo) in titulos:
             continue
         nuevos.append(ProyectoCheck(
             proyecto=proyecto, definicion=definicion,
-            fecha_limite=ProyectoCheck.fecha_limite_para(proyecto.fecha_montaje, definicion.dias_antes_montaje),
+            fecha_limite=ProyectoCheck.fecha_limite_para(proyecto.fecha_montaje, definicion.dias_antes_montaje, festivos),
             **_campos_copia(definicion, proyecto),
         ))
     if nuevos:
@@ -161,6 +163,7 @@ def propagar_definicion(definicion):
     pendientes con plazo relativo; lo completado no se toca.
     """
     proyectos = list(Proyecto.objects.all())
+    festivos = festivos_oficina()
     for proyecto in proyectos:
         copia = proyecto.checks.filter(definicion=definicion).first()
         if copia is None:
@@ -173,7 +176,7 @@ def propagar_definicion(definicion):
         if copia is None:
             ProyectoCheck.objects.create(
                 proyecto=proyecto, definicion=definicion,
-                fecha_limite=ProyectoCheck.fecha_limite_para(proyecto.fecha_montaje, definicion.dias_antes_montaje),
+                fecha_limite=ProyectoCheck.fecha_limite_para(proyecto.fecha_montaje, definicion.dias_antes_montaje, festivos),
                 **campos,
             )
             continue
@@ -185,7 +188,7 @@ def propagar_definicion(definicion):
                 copia.fecha_limite = None
             elif definicion.dias_antes_montaje is not None:
                 copia.fecha_limite = ProyectoCheck.fecha_limite_para(
-                    proyecto.fecha_montaje, definicion.dias_antes_montaje,
+                    proyecto.fecha_montaje, definicion.dias_antes_montaje, festivos,
                 )
         copia.save()
     _sincronizar_requisitos(
@@ -212,8 +215,9 @@ def recalcular_fechas_checklist(proyecto):
     se tocan. Devuelve cuantos pasos han cambiado de fecha.
     """
     cambiados = 0
+    festivos = festivos_oficina()
     for paso in proyecto.checks.filter(completado=False, dias_antes_montaje__isnull=False):
-        nueva = ProyectoCheck.fecha_limite_para(proyecto.fecha_montaje, paso.dias_antes_montaje)
+        nueva = ProyectoCheck.fecha_limite_para(proyecto.fecha_montaje, paso.dias_antes_montaje, festivos)
         if nueva != paso.fecha_limite:
             paso.fecha_limite = nueva
             paso.save(update_fields=['fecha_limite'])
@@ -291,6 +295,10 @@ class ProjectCheckSerializer(serializers.ModelSerializer):
         requiere = attrs.get('requiere_fecha', getattr(self.instance, 'requiere_fecha', False))
         if not requiere:
             attrs['fecha_limite'] = None
+        elif attrs.get('fecha_limite') and not es_laborable_oficina(attrs['fecha_limite'], festivos_oficina()):
+            raise serializers.ValidationError({
+                'fecha_limite': 'La oficina no trabaja ese día (fin de semana o festivo). Elige otro.',
+            })
         return attrs
 
 
