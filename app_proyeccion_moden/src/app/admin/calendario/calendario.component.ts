@@ -43,6 +43,9 @@ export class CalendarioComponent {
     readonly error = signal('');
     readonly busy = signal(false);
     readonly projectFilter = signal<number | null>(null);
+    /** Control de la lista que se esta marcando desde la agenda. */
+    readonly busyDeadline = signal<number | null>(null);
+    readonly deadlineError = signal('');
     readonly workerFilter = signal<number | null>(null);
     readonly editorOpen = signal(false);
     readonly teamOpen = signal(false);
@@ -200,6 +203,34 @@ export class CalendarioComponent {
         this.selected.set(this.today); this.load();
     }
     eventsOn(day: string): CalendarEvent[] { return this.filteredEvents().filter(e => e.inicio <= day && e.fin >= day); }
+    /** Pendiente de otros pasos: como en la ficha, no se puede marcar hasta que esten hechos. */
+    deadlineWaiting(deadline: CheckDeadline): boolean {
+        return !deadline.completado && !!deadline.requisitos_pendientes?.length;
+    }
+    toggleDeadline(deadline: CheckDeadline, event: Event): void {
+        // La casilla sigue al servidor: se pinta cuando responde.
+        (event.target as HTMLInputElement).checked = deadline.completado;
+        if (this.busyDeadline() !== null || this.deadlineWaiting(deadline)) return;
+        this.busyDeadline.set(deadline.id); this.deadlineError.set('');
+        this.api.updateProjectCheck(deadline.proyecto, deadline.id, {completado: !deadline.completado})
+            .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+                next: checks => {
+                    // Devuelve toda la lista del proyecto: marcar uno puede desbloquear otros.
+                    const byId = new Map(checks.map(check => [check.id, check]));
+                    this.deadlines.update(list => list.map(row => {
+                        const check = byId.get(row.id);
+                        return check ? {...row, completado: check.completado, requisitos_pendientes: check.requisitos_pendientes,
+                            documentos: check.adjuntos.length} : row;
+                    }));
+                    this.busyDeadline.set(null);
+                },
+                error: err => {
+                    const detail = err?.error?.completado;
+                    this.deadlineError.set((Array.isArray(detail) ? detail[0] : detail) || 'No se pudo guardar el paso.');
+                    this.busyDeadline.set(null);
+                },
+            });
+    }
     deadlinesOn(day: string): CheckDeadline[] {
         return this.workerFilter() !== null ? [] : this.filteredDeadlines().filter(d => d.fecha_limite === day);
     }

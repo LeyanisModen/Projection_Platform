@@ -243,6 +243,43 @@ describe('CalendarioComponent', () => {
         expect(fixture.nativeElement.querySelectorAll('.event-bar.control').length).toBe(0);
     });
 
+    it('marca los controles desde la agenda del día, respetando los pasos previos', () => {
+        const component = fixture.componentInstance;
+        component.load();
+        finishLoad('2026-08-31', '2026-10-11', events, [
+            {id: 5, proyecto: 3, proyecto_nombre: 'Valdebebas', titulo: 'Planos', fecha_limite: '2026-09-10', completado: false,
+                requisitos_pendientes: [], requiere_documento: true, documentos: 0},
+            {id: 6, proyecto: 3, proyecto_nombre: 'Valdebebas', titulo: 'Equivalencias', fecha_limite: '2026-09-10', completado: false,
+                requisitos_pendientes: ['Planos'], requiere_documento: false, documentos: 0},
+        ]);
+        component.selected.set('2026-09-10'); fixture.detectChanges();
+        const boxes = () => Array.from(fixture.nativeElement.querySelectorAll('.control-check input')) as HTMLInputElement[];
+        expect(boxes()[1].disabled).toBe(true);
+        expect(fixture.nativeElement.querySelector('.day-agenda').textContent).toContain('Antes: Planos');
+
+        boxes()[0].click();
+        const request = http.expectOne('/api/proyecto-checklist/3/checks/5/');
+        expect(request.request.method).toBe('PATCH');
+        expect(request.request.body).toEqual({completado: true});
+        request.flush([
+            {id: 5, completado: true, requisitos_pendientes: [], adjuntos: []},
+            {id: 6, completado: false, requisitos_pendientes: [], adjuntos: []},
+        ]);
+        fixture.detectChanges();
+        const agenda = fixture.nativeElement.querySelector('.day-agenda').textContent;
+        expect(agenda).toContain('Completado · Planos');
+        expect(agenda).toContain('Completado sin documento');
+        expect(boxes()[0].checked).toBe(true);
+        expect(boxes()[1].disabled).toBe(false);
+        expect(fixture.nativeElement.querySelector('.event-bar.control.done')).not.toBeNull();
+
+        boxes()[1].click();
+        http.expectOne('/api/proyecto-checklist/3/checks/6/').flush({completado: ['Antes hay que completar: Planos.']}, {status: 400, statusText: 'Bad Request'});
+        fixture.detectChanges();
+        expect(component.deadlineError()).toBe('Antes hay que completar: Planos.');
+        expect(boxes()[1].checked).toBe(false);
+    });
+
     it('cancels older loads so stale responses cannot overwrite the current range', () => {
         const component = fixture.componentInstance;
         component.setView('year');
