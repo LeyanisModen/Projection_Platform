@@ -330,7 +330,7 @@ class OfficePlanningTests(APITestCase):
         self.assertIsNone(cleared['fecha_limite'], 'quitar la fecha requerida limpia la fecha limite')
 
     def test_deadlines_feed_the_calendar_within_a_range(self):
-        for titulo, fecha in [('Antes', '2026-09-30'), ('Dentro', '2026-10-10'), ('Despues', '2026-11-02')]:
+        for titulo, fecha in [('Antes', '2026-09-30'), ('Dentro', '2026-10-09'), ('Despues', '2026-11-02')]:
             self.client.post(f'/api/proyecto-checklist/{self.project.pk}/checks/', {'titulo': titulo, 'requiere_fecha': True, 'fecha_limite': fecha}, format='json')
         self.client.post(f'/api/proyecto-checklist/{self.project2.pk}/checks/', {'titulo': 'Otro proyecto', 'requiere_fecha': True, 'fecha_limite': '2026-10-20'}, format='json')
         self.client.post(f'/api/proyecto-checklist/{self.project.pk}/checks/', {'titulo': 'Sin fecha', 'requiere_fecha': True}, format='json')
@@ -338,7 +338,7 @@ class OfficePlanningTests(APITestCase):
         response = self.client.get('/api/proyecto-checklist/vencimientos/?desde=2026-10-01&hasta=2026-10-31')
         self.assertEqual(response.status_code, 200)
         self.assertEqual([(r['titulo'], r['fecha_limite'], r['proyecto_nombre']) for r in response.data],
-                         [('Dentro', '2026-10-10', 'P1'), ('Otro proyecto', '2026-10-20', 'P2')])
+                         [('Dentro', '2026-10-09', 'P1'), ('Otro proyecto', '2026-10-20', 'P2')])
         self.assertFalse(response.data[0]['completado'])
         self.assertEqual(self.client.get('/api/proyecto-checklist/vencimientos/?desde=mal').status_code, 400)
         self.assertEqual(len(self.client.get('/api/proyecto-checklist/vencimientos/').data), 4, 'sin rango devuelve todas las fechas')
@@ -347,7 +347,7 @@ class OfficePlanningTests(APITestCase):
         from .models import ProyectoCheck
         self.client.patch(f'/api/proyectos/{self.project.pk}/', {'fecha_montaje': '2026-10-20'}, format='json')
         url = f'/api/proyecto-checklist/{self.project.pk}/checks/'
-        row = self.client.post(url, {'titulo': 'Planos', 'requiere_fecha': True, 'fecha_limite': '2026-10-10'}, format='json').data[0]
+        row = self.client.post(url, {'titulo': 'Planos', 'requiere_fecha': True, 'fecha_limite': '2026-10-09'}, format='json').data[0]
         ProyectoCheck.objects.filter(pk=row['id']).update(dias_antes_montaje=10)
         # Arrastrado tres dias: queda a 7 del montaje...
         self.client.patch(f"{url}{row['id']}/", {'fecha_limite': '2026-10-13'}, format='json')
@@ -360,6 +360,34 @@ class OfficePlanningTests(APITestCase):
         self.client.patch(f'/api/proyectos/{self.project.pk}/', {'fecha_montaje': '2026-11-03'}, format='json')
         paso = ProyectoCheck.objects.get(pk=row['id'])
         self.assertEqual((paso.dias_antes_montaje, paso.fecha_limite), (None, date(2026, 10, 29)))
+
+    def test_step_dates_never_fall_on_weekends_or_holidays(self):
+        url = f'/api/proyecto-checklist/{self.project.pk}/checks/'
+        # A mano: ni sabado ni festivo (el 12 de octubre viene precargado).
+        for dia in ('2026-10-10', '2026-10-12'):
+            response = self.client.post(url, {'titulo': f'Paso {dia}', 'requiere_fecha': True, 'fecha_limite': dia}, format='json')
+            self.assertEqual(response.status_code, 400)
+            self.assertIn('no trabaja', str(response.data['fecha_limite']))
+        # Calculadas desde el montaje: D-30 de un lunes cae en sabado -> viernes.
+        self._definir('Geometria', dias_antes_montaje=30)
+        self.client.patch(f'/api/proyectos/{self.project.pk}/', {'fecha_montaje': '2026-11-09'}, format='json')
+        rows = {row['titulo']: row for row in self._rows(self.project)}
+        self.assertEqual(rows['Geometria']['fecha_limite'], '2026-10-09')
+        # D-30 del miercoles 11 de noviembre es el lunes 12 de octubre, festivo -> viernes 9.
+        self.client.patch(f'/api/proyectos/{self.project.pk}/', {'fecha_montaje': '2026-11-11'}, format='json')
+        rows = {row['titulo']: row for row in self._rows(self.project)}
+        self.assertEqual(rows['Geometria']['fecha_limite'], '2026-10-09')
+
+    def test_migration_moves_pending_steps_out_of_weekends_and_holidays(self):
+        from .models import ProyectoCheck
+        migration = import_module('api.migrations.0073_controles_en_dias_laborables')
+        sabado = ProyectoCheck.objects.create(proyecto=self.project, titulo='Sabado', requiere_fecha=True, fecha_limite=date(2026, 10, 10))
+        festivo = ProyectoCheck.objects.create(proyecto=self.project, titulo='Festivo', requiere_fecha=True, fecha_limite=date(2026, 10, 12))
+        hecho = ProyectoCheck.objects.create(proyecto=self.project, titulo='Hecho', requiere_fecha=True, fecha_limite=date(2026, 10, 11), completado=True)
+        migration.mover_a_dia_laborable(apps, None)
+        for paso, esperado in ((sabado, date(2026, 10, 9)), (festivo, date(2026, 10, 9)), (hecho, date(2026, 10, 11))):
+            paso.refresh_from_db()
+            self.assertEqual(paso.fecha_limite, esperado, paso.titulo)
 
     def test_steps_completed_before_their_date_show_on_the_day_they_were_done(self):
         from .models import ProyectoCheck

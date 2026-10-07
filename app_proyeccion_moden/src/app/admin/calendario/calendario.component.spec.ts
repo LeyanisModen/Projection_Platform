@@ -316,6 +316,13 @@ describe('CalendarioComponent', () => {
             check.flush([{id: 5, fecha_limite: '2026-09-11', completado: false, requisitos_pendientes: [], adjuntos: []}]);
             expect(component.deadlines().find(d => d.id === 5)!.fecha_limite).toBe('2026-09-11');
 
+            // Un control no se suelta en sabado.
+            under = '2026-09-11'; component.startDrag(drag(), segment('control-5'));
+            under = '2026-09-12'; component.dragOver(drag()); fixture.detectChanges();
+            expect(component.dropRange()).toBeNull();
+            component.drop(drag());
+            http.expectNone('/api/proyecto-checklist/3/checks/5/');
+
             // Soltar en el mismo dia no guarda nada; los completados no se arrastran.
             component.startDrag(drag(), segment('event-2')); component.drop(drag());
             http.expectNone('/api/eventos/2/');

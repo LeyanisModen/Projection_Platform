@@ -290,7 +290,12 @@ export class ProjectControlsComponent {
         this.busyCheck.set(busyId); this.checkError.set('');
         request.subscribe({
             next: rows => { this.checks.set(rows); this.busyCheck.set(null); this.uploadingFor.set(null); after?.(); },
-            error: () => { this.checkError.set(message); this.busyCheck.set(null); this.uploadingFor.set(null); },
+            error: err => {
+                // Si el servidor dice por que (fecha en dia no laborable, pasos previos...), eso.
+                const detail = err?.error?.fecha_limite ?? err?.error?.completado;
+                this.checkError.set((Array.isArray(detail) ? detail[0] : detail) || message);
+                this.busyCheck.set(null); this.uploadingFor.set(null);
+            },
         });
     }
     /** Pendiente de otros pasos: no se puede marcar hasta que estén completos. */

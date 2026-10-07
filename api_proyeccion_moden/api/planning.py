@@ -80,6 +80,23 @@ def festivos_de(usuario_id):
     return frozenset(dias)
 
 
+def festivos_oficina():
+    """Los festivos de todas las ferrallas tampoco los trabaja la oficina."""
+    return festivos_de(None)
+
+
+def es_laborable_oficina(dia, festivos):
+    return dia.weekday() < 5 and dia not in festivos
+
+
+def laborable_oficina_anterior(dia, festivos=None):
+    """La oficina no trabaja fines de semana ni festivos: el dia laborable anterior."""
+    festivos = festivos_oficina() if festivos is None else festivos
+    while not es_laborable_oficina(dia, festivos):
+        dia -= timedelta(days=1)
+    return dia
+
+
 class _DiasDeFabricacion:
     """Dias de fabricacion desde una fecha: el indice 0 es el primero."""
 
