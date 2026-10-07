@@ -369,6 +369,7 @@ añadir una regresión para el caso nuevo.
 - Un bastidor queda asociado a una única mesa inferior.
 - Las colas superiores se derivan del avance previsto de las inferiores.
 - Reconciliación automática al añadir, mover, borrar o reiniciar módulos.
+- Cola de proyectos de cada línea: el primero es el que se fabrica ("En fabricación"). Al completarse el último módulo de un proyecto sale solo de la cola de todas las líneas y el siguiente pasa a cabeza (`queue_sync.retirar_proyecto_terminado`, desde `Modulo.actualizar_estado`); antes solo salía al pulsar "Planificar" y se quedaba de cabeza con las mesas ya en el siguiente. No toca las mesas. Un proyecto sin módulos no cuenta como terminado (espera su importación). Si se reinicia un módulo de un proyecto ya retirado, vuelve a la cola al final. La migración 0070 limpió los que ya estaban así (2026-10-07: ESNABIDE_27_PB en Sanchos y los dos VALDEBEBAS946 de Ferralia Seseña).
 - Preservación de trabajo ya empezado mediante prefijos/anclas.
 - Reubicación de fases al cambiar tipos/activación de mesas.
 - Recuperación de fases superiores omitidas tras redistribuciones.

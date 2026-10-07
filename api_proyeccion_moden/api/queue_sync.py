@@ -431,6 +431,53 @@ def _ensure_project_in_group_queue(group, proyecto):
         group.save(update_fields=["proyecto_actual"])
 
 
+def proyecto_terminado(proyecto_id):
+    """Tiene modulos y todos tienen las dos fases hechas.
+
+    Un proyecto sin modulos (aun sin importar) no esta terminado: tiene que
+    seguir en la cola para que la importacion lo planifique.
+    """
+    modulos = Modulo.objects.filter(proyecto_id=proyecto_id)
+    if not modulos.exists():
+        return False
+    return not modulos.filter(cerrado=False).filter(
+        Q(inferior_hecho=False) | Q(superior_hecho=False)
+    ).exists()
+
+
+def compactar_cola_proyectos(group):
+    """Orden 0, 1, 2... y proyecto_actual = cabeza de la cola."""
+    entries = list(group.proyectos_cola.order_by("orden", "id"))
+    for index, entry in enumerate(entries):
+        if entry.orden != index:
+            entry.orden = index
+            entry.save(update_fields=["orden"])
+    head_id = entries[0].proyecto_id if entries else None
+    if group.proyecto_actual_id != head_id:
+        group.proyecto_actual_id = head_id
+        group.save(update_fields=["proyecto_actual"])
+
+
+def retirar_proyecto_terminado(proyecto_id):
+    """Saca de la cola de proyectos de cada linea un proyecto ya fabricado entero.
+
+    Antes solo salia al pulsar "Planificar": seguia de cabeza ("En
+    fabricacion") con las mesas ya en el siguiente. No toca las mesas: un
+    proyecto terminado no tiene fases activas. Si luego se reinicia un modulo
+    suyo, sync_module_phases lo vuelve a poner en la cola.
+    """
+    if not proyecto_terminado(proyecto_id):
+        return []
+    entries = GrupoMesasProyecto.objects.filter(proyecto_id=proyecto_id)
+    group_ids = list(entries.values_list("grupo_mesas_id", flat=True))
+    if not group_ids:
+        return []
+    entries.delete()
+    for group in GrupoMesas.objects.filter(id__in=group_ids):
+        compactar_cola_proyectos(group)
+    return group_ids
+
+
 def _peer_assignment(modulo, fase, group):
     bastidor_id = getattr(modulo, "grupo_bastidor_id", None)
     if not bastidor_id:
