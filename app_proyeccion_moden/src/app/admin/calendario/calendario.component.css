@@ -149,7 +149,7 @@ legend { color: var(--muted); font-size: 12px; font-weight: 500; }
 .color-palette button.chosen { box-shadow: 0 0 0 2px var(--ink); }
 .error { padding: 10px 12px; border: 1px solid #f1c9bf; border-radius: var(--radius-sm); background: #fdf3f0; color: var(--danger); }
 .print-heading { display: none; }
-.editor-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; padding: 3px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); }
+.editor-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; padding: 3px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); }
 .editor-tabs button { height: 30px; border-color: transparent; color: var(--muted); font-weight: 500; }
 .editor-tabs [aria-selected="true"] { color: #fff; background: var(--ink); }
 .event-fields { border: 0; padding: 0; margin: 0; max-height: none; overflow: visible; min-width: 0; }

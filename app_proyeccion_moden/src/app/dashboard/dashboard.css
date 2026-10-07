@@ -156,6 +156,7 @@
 .project-icon svg { width: 18px; height: 18px; }
 .project-icon-disabled, .project-icon:disabled { opacity: 0.35; cursor: default; }
 .project-deadline { display: flex; flex-wrap: wrap; gap: 4px 10px; flex-basis: 100%; color: var(--muted); font-size: 12px; }
+.project-deadline .aprieta { color: #c2410c; font-weight: 600; }
 .project-progress-donut { flex: 0 0 64px; width: 64px; height: 64px; }
 .project-progress-donut svg { width: 64px; height: 64px; }
 .donut-pct { fill: var(--ink); font-size: 16px; font-weight: 600; }

@@ -5309,15 +5309,15 @@ def _parse_iso_date(value, default):
         return default
 
 
-def _count_working_days(start_date, end_date):
-    """Count Mon-Fri days inclusive between start_date and end_date."""
+def _count_working_days(start_date, end_date, festivos=frozenset()):
+    """Count Mon-Fri days inclusive between start_date and end_date, minus holidays."""
     from datetime import timedelta
     if end_date < start_date:
         return 0
     total = 0
     current = start_date
     while current <= end_date:
-        if current.weekday() < 5:
+        if current.weekday() < 5 and current not in festivos:
             total += 1
         current += timedelta(days=1)
     return total
@@ -5872,7 +5872,7 @@ class ProductionStatsView(APIView):
             profile = profile_user.profile
         else:
             profile = None
-        from api.planning import annotated_projects, demand_summary, period_target_summary
+        from api.planning import annotated_projects, demand_summary, festivos_de, period_target_summary
         planning_projects = Proyecto.objects.all()
         if proyecto_id:
             planning_projects = planning_projects.filter(pk=proyecto_id)
@@ -5880,7 +5880,10 @@ class ProductionStatsView(APIView):
             planning_projects = planning_projects.filter(usuario=request.user)
         planning = demand_summary(annotated_projects(planning_projects))
         capacidad_diaria = planning['modulos_por_dia']
-        working_days = _count_working_days(from_date, to_date)
+        # Festivos de la ferralla (y los de todas): no son dias de trabajo.
+        festivos = festivos_de(profile_user.id if profile_user is not None else None)
+        festivos_rango = sorted(dia for dia in festivos if from_date <= dia <= to_date)
+        working_days = _count_working_days(from_date, to_date, festivos)
         working_hours = _working_hours_in_range(
             from_date, to_date, profile, timezone.localtime(timezone.now(), current_tz)
         )
@@ -6093,6 +6096,7 @@ class ProductionStatsView(APIView):
                 'from': from_date.isoformat(),
                 'to': to_date.isoformat(),
                 'working_days': working_days,
+                'festivos': [dia.isoformat() for dia in festivos_rango],
             },
             'totals': {
                 'modulos_completados': modulos_completados,

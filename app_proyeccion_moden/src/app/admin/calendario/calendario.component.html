@@ -127,6 +127,7 @@
                 <div class="agenda-colors" aria-hidden="true">@for (color of eventColors(event); track $index) { <span [style.background-color]="color"></span> }</div>
                 <strong>{{ eventTitle(event) }}</strong>
                 <span>{{ event.inicio | date:'dd/MM/yyyy' }} – {{ event.fin | date:'dd/MM/yyyy' }} (inclusive)</span>
+                @if (event.tipo==='FESTIVO') { <span>{{ event.ferralla_nombre || 'Todas las ferrallas' }} · sin fabricación</span> }
                 @if (event.proyecto) { <a [routerLink]="['/admin-dashboard/proyectos',event.proyecto]">{{ projectName(event.proyecto) }}</a> }
                 @if (event.trabajadores.length) { <span>{{ workerNames(event.trabajadores) }}</span> }
                 @if (event.notas) { <p>{{ event.notas }}</p> }
@@ -143,18 +144,24 @@
             <div class="editor-tabs" role="tablist" aria-label="Tipo de entrada" (keydown)="switchTab($event)">
                 <button type="button" id="event-tab" role="tab" aria-controls="event-panel" [attr.aria-selected]="draft.tipo==='EVENTO'" [tabIndex]="draft.tipo==='EVENTO' ? 0 : -1" [disabled]="busy()" (click)="setEventType('EVENTO')">Evento</button>
                 <button type="button" id="holiday-tab" role="tab" aria-controls="event-panel" [attr.aria-selected]="draft.tipo==='VACACIONES'" [tabIndex]="draft.tipo==='VACACIONES' ? 0 : -1" [disabled]="busy()" (click)="setEventType('VACACIONES')">Vacaciones</button>
+                <button type="button" id="day-off-tab" role="tab" aria-controls="event-panel" [attr.aria-selected]="draft.tipo==='FESTIVO'" [tabIndex]="draft.tipo==='FESTIVO' ? 0 : -1" [disabled]="busy()" (click)="setEventType('FESTIVO')">Festivo</button>
             </div>
             <form (ngSubmit)="saveEvent()">
-                <fieldset class="event-fields" [disabled]="busy()" id="event-panel" role="tabpanel" [attr.aria-labelledby]="draft.tipo==='EVENTO' ? 'event-tab' : 'holiday-tab'">
+                <fieldset class="event-fields" [disabled]="busy()" id="event-panel" role="tabpanel" [attr.aria-labelledby]="tabId(draft.tipo)">
                 @if (draft.tipo==='EVENTO') {
                     <p class="editor-intro">Organiza una visita, reunión o entrega. El proyecto y las personas son opcionales.</p>
                     <label>Título<input name="title" [(ngModel)]="draft.titulo" maxlength="200" required placeholder="Por ejemplo: visita a obra" /></label>
                     <label>Proyecto <small>Opcional</small><select name="project" [(ngModel)]="draft.proyecto"><option [ngValue]="null">Sin proyecto</option>@for (project of projects(); track project.id) { <option [ngValue]="project.id">{{ project.nombre }}</option> }</select></label>
-                } @else {
+                } @else if (draft.tipo==='VACACIONES') {
                     <p class="editor-intro">Selecciona quién se va y las fechas. El título se completa automáticamente.</p>
                     <div class="holiday-preview" aria-live="polite">{{ eventTitle(draft) }}</div>
+                } @else {
+                    <p class="editor-intro">Día sin fabricación: no cuenta en el plan de la ferralla.</p>
+                    <label>Festivo<input name="dayOffTitle" [(ngModel)]="draft.titulo" maxlength="200" required placeholder="Por ejemplo: San Ignacio" /></label>
+                    <label>Ferralla<select name="dayOffFactory" [(ngModel)]="draft.ferralla"><option [ngValue]="null">Todas las ferrallas</option>@for (ferralla of ferrallas(); track ferralla.id) { <option [ngValue]="ferralla.id">{{ ferrallaNombre(ferralla) }}</option> }</select></label>
                 }
                 <div class="dates"><label>Desde<input type="date" name="start" [ngModel]="draft.inicio" (ngModelChange)="setDraftDate('inicio', $event)" required /></label><label>Hasta (inclusive)<input type="date" name="end" [ngModel]="draft.fin" (ngModelChange)="setDraftDate('fin', $event)" [min]="draft.inicio" required /></label></div>
+                @if (draft.tipo!=='FESTIVO') {
                 <div class="conflict-status" role="status" aria-live="polite">
                     @if (checkingConflicts()) { <p>Comprobando otras citas y vacaciones...</p>
                     } @else if (conflictError()) {
@@ -195,10 +202,11 @@
                         <small>La persona se guarda en el equipo aunque después canceles el evento.</small>
                     </section>
                 }
+                }
                 <label>{{ draft.tipo==='EVENTO' ? 'Descripción (opcional)' : 'Notas (opcional)' }}<textarea name="notes" [(ngModel)]="draft.notas" maxlength="4000" rows="3"></textarea></label>
                 </fieldset>
                 @if (editorError()) { <p class="error" role="alert">{{ editorError() }}</p> }
-                <div class="actions editor-footer"><button type="button" (click)="closeEditor()" [disabled]="busy()">Cancelar</button><button type="submit" class="primary" [disabled]="busy() || addingPerson()">{{ busy() ? 'Guardando...' : draft.tipo==='VACACIONES' ? 'Guardar vacaciones' : 'Guardar evento' }}</button></div>
+                <div class="actions editor-footer"><button type="button" (click)="closeEditor()" [disabled]="busy()">Cancelar</button><button type="submit" class="primary" [disabled]="busy() || addingPerson()">{{ busy() ? 'Guardando...' : draft.tipo==='VACACIONES' ? 'Guardar vacaciones' : draft.tipo==='FESTIVO' ? 'Guardar festivo' : 'Guardar evento' }}</button></div>
             </form>
         </section>
     </div>

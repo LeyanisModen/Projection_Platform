@@ -338,19 +338,18 @@ describe('Dashboard', () => {
     });
   });
 
-  it('uses inherited factory weekdays for today and the coming week', () => {
+  it('takes today and the coming week from the factory plan, never more than what is pending', () => {
     const project = {
       modulos_count: 10, modulos_completados: 0, fecha_montaje: '2026-09-08',
-      planificacion: {modulos_por_dia: 3, fecha_calculo: '2026-09-04', dias_produccion: ['SAT', 'SUN']},
+      planificacion: {modulos_hoy: 3, modulos_semana: 6},
     } as Proyecto;
-    expect(component.getProyectoHoy(project)).toBe(0);
-    expect(component.getProyectoSemana(project)).toBe(6);
-    project.planificacion!.fecha_calculo = '2026-09-05';
     expect(component.getProyectoHoy(project)).toBe(3);
-    expect(component.getProyectoSemana(project)).toBe(3);
-    project.planificacion!.dias_produccion = [];
-    expect(component.getProyectoHoy(project)).toBe(0);
+    expect(component.getProyectoSemana(project)).toBe(6);
+    project.modulos_completados = 8;
+    expect(component.getProyectoHoy(project)).toBe(2);
     expect(component.getProyectoSemana(project)).toBe(0);
+    project.planificacion = undefined;
+    expect(component.getProyectoHoy(project)).toBe(0);
   });
 
   it('draws one column per hour between the first and last production hour, with the hourly target', () => {

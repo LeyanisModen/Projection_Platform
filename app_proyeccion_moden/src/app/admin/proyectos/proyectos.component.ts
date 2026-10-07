@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ApiService, User, Proyecto } from '../../services/api.service';
 import { forkJoin } from 'rxjs';
 import { Router } from '@angular/router';
-import { requiredDaily, planningIssues, planningLabel } from '../../shared/project-planning';
+import { factoryCapacity, planningIssues, planningLabel, planningTight, requiredDaily, tightProjects } from '../../shared/project-planning';
 
 interface ProjectGroup {
   username: string;
@@ -29,6 +29,9 @@ interface ProjectGroup {
 })
 export class ProyectosComponent implements OnInit {
   readonly requiredDaily = requiredDaily;
+  readonly factoryCapacity = factoryCapacity;
+  readonly tightProjects = tightProjects;
+  readonly planningTight = planningTight;
   readonly planningIssues = planningIssues;
   readonly planningLabel = planningLabel;
   users: User[] = [];

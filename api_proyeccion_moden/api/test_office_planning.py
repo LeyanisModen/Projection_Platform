@@ -13,7 +13,7 @@ from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
 from .models import (
-    EventoCalendario, GrupoMesas, Mesa, MesaQueueItem, Modulo, Proyecto,
+    EventoCalendario, GrupoMesas, GrupoMesasProyecto, Mesa, MesaQueueItem, Modulo, Proyecto,
     ProyectoCheckAdjunto, ProyectoCheckDefinicion, TrabajadorOficina, UserProfile,
 )
 from .office import CHECK_ATTACHMENT_MAX_BYTES
@@ -400,7 +400,7 @@ class OfficePlanningTests(APITestCase):
         url = f"/api/eventos/{response.data['id']}/"
         self.assertEqual(self.client.patch(url, {'fin': '2026-09-09'}, format='json').status_code, 400)
         self.assertEqual(self.client.patch(url, {'trabajadores': []}, format='json').status_code, 400)
-        self.assertEqual(EventoCalendario.objects.get().creado_por_id, self.admin.pk)
+        self.assertEqual(EventoCalendario.objects.get(pk=response.data['id']).creado_por_id, self.admin.pk)
 
     def test_overlapping_office_entries_remain_allowed_for_the_same_person(self):
         worker = TrabajadorOficina.objects.create(nombre='Ana')
@@ -553,8 +553,9 @@ class OfficePlanningTests(APITestCase):
         self.client.force_authenticate(self.factory)
         stats = self.client.get('/api/stats/production/?from=2026-09-04&to=2026-09-04')
         self.assertEqual(stats.status_code, 200)
-        self.assertEqual(stats.data['planificacion']['modulos_por_dia'], 4)
-        self.assertEqual(stats.data['planificacion']['modulos_hoy'], 4)
+        # Los dos proyectos en serie: 12 modulos entre 4 dias, no 2 + 2.
+        self.assertEqual(stats.data['planificacion']['modulos_por_dia'], 3)
+        self.assertEqual(stats.data['planificacion']['modulos_hoy'], 3)
 
     @patch('api.planning.timezone.localdate', return_value=date(2026, 9, 4))
     def test_reassignment_uses_new_factory_schedule_immediately(self, _today):
@@ -611,7 +612,7 @@ class OfficePlanningTests(APITestCase):
         self.project.modulos_previstos = 0
         self.assertEqual(project_demand(self.project, date(2026, 9, 4))['modulos_pendientes'], 1)
 
-    def test_demand_rounds_up_and_sums_projects_not_nominal_capacity(self):
+    def test_demand_rounds_up_and_uses_the_factory_pace_not_the_sum_of_projects(self):
         self.project.fecha_montaje = date(2026, 9, 8)
         self.project.save()
         for _ in range(5):
@@ -624,9 +625,88 @@ class OfficePlanningTests(APITestCase):
         plan = project_demand(self.project, today)
         self.assertEqual((plan['modulos_pendientes'], plan['dias_disponibles'], plan['modulos_por_dia']), (5, 2, 3))
         summary = demand_summary([self.project, self.project2], today)
-        self.assertEqual(summary['modulos_por_dia'], 4)
-        self.assertEqual(summary['modulos_hoy'], 4)
+        # Uno detras de otro: 6 modulos entre los 2 dias hasta el ultimo montaje.
+        self.assertEqual(summary['modulos_por_dia'], 3)
+        self.assertEqual(summary['modulos_hoy'], 3)
         self.assertEqual(demand_summary([self.project], date(2026, 9, 5))['modulos_hoy'], 0)
+
+    @patch('api.planning.timezone.localdate', return_value=date(2026, 9, 7))
+    def test_factory_plan_goes_project_after_project_and_warns_only_above_capacity(self, _today):
+        self.profile.capacidad_diaria_modulos = 10
+        self.profile.save()
+        # P1: 20 modulos, montaje viernes 18 (9 dias). P2: 30, montaje jueves 10 (3 dias).
+        self.project.fecha_montaje = date(2026, 9, 18)
+        self.project.save()
+        self.project2.fecha_montaje = date(2026, 9, 10)
+        self.project2.save()
+        Modulo.objects.bulk_create([Modulo(nombre=f'A{i}', proyecto=self.project) for i in range(20)])
+        Modulo.objects.bulk_create([Modulo(nombre=f'B{i}', proyecto=self.project2) for i in range(30)])
+        # P1 esta en la cola de la linea: va primero aunque monte mas tarde.
+        linea = GrupoMesas.objects.create(nombre='Linea', usuario=self.factory)
+        GrupoMesasProyecto.objects.create(grupo_mesas=linea, proyecto=self.project, orden=0)
+
+        def plan(project):
+            return self.client.get(f'/api/proyectos/{project.pk}/').data['planificacion']
+
+        primero, segundo = plan(self.project), plan(self.project2)
+        # Ritmo necesario: 50 modulos entre los 9 dias hasta el ultimo montaje.
+        self.assertEqual((primero['ritmo_ferralla'], primero['capacidad_ferralla'], primero['aprietan_ferralla']), (6, 10, 1))
+        # A 10/dia, P1 se hace lunes y martes y le sobran 7 dias.
+        self.assertEqual(
+            (primero['fabricacion_inicio'], primero['fabricacion_fin'], primero['margen_dias'], primero['modulos_extra']),
+            ('2026-09-07', '2026-09-08', 7, 0),
+        )
+        self.assertEqual((primero['modulos_hoy'], primero['modulos_semana']), (10, 10))
+        # P2 empieza el miercoles y tiene que estar el miercoles: le faltan 20 modulos.
+        self.assertEqual(
+            (segundo['fabricacion_inicio'], segundo['ultimo_dia'], segundo['margen_dias'], segundo['modulos_extra']),
+            ('2026-09-09', '2026-09-09', 0, 20),
+        )
+        self.assertEqual((segundo['modulos_hoy'], segundo['modulos_semana']), (0, 30))
+        # La lista comparte el mismo plan.
+        listed = {row['id']: row['planificacion'] for row in self.client.get('/api/proyectos/').data['results']}
+        self.assertEqual(listed[self.project2.pk]['modulos_extra'], 20)
+        # Con capacidad suficiente no hay aviso.
+        self.profile.capacidad_diaria_modulos = 30
+        self.profile.save()
+        self.assertEqual((plan(self.project2)['modulos_extra'], plan(self.project2)['aprietan_ferralla']), (0, 0))
+
+    @patch('api.planning.timezone.localdate', return_value=date(2026, 9, 7))
+    def test_holidays_of_all_factories_and_of_its_own_are_not_working_days(self, _today):
+        self.project.fecha_montaje = date(2026, 9, 14)
+        self.project.save()
+        self.create_module()
+        festivo = {'tipo': 'FESTIVO', 'notas': ''}
+        EventoCalendario.objects.create(titulo='Nacional', inicio=date(2026, 9, 9), fin=date(2026, 9, 9), **festivo)
+        EventoCalendario.objects.create(titulo='Local suyo', inicio=date(2026, 9, 11), fin=date(2026, 9, 11), ferralla=self.factory, **festivo)
+        EventoCalendario.objects.create(titulo='Local de otra', inicio=date(2026, 9, 10), fin=date(2026, 9, 10), ferralla=self.other, **festivo)
+        EventoCalendario.objects.create(titulo='En sabado', inicio=date(2026, 9, 12), fin=date(2026, 9, 12), **festivo)
+        # Lunes 7 a viernes 11 son 5 dias; sin el 9 ni el 11 quedan 3.
+        self.assertEqual(project_demand(self.project, date(2026, 9, 7))['dias_disponibles'], 3)
+        self.assertEqual(project_demand(self.project, date(2026, 9, 7))['ultimo_dia'], '2026-09-10')
+        self.client.force_authenticate(self.factory)
+        stats = self.client.get('/api/stats/production/?from=2026-09-07&to=2026-09-13').data
+        self.assertEqual(stats['range']['working_days'], 3)
+        self.assertEqual(stats['range']['festivos'], ['2026-09-09', '2026-09-11', '2026-09-12'])
+
+    def test_calendar_holidays_belong_to_all_factories_or_one(self):
+        worker = TrabajadorOficina.objects.create(nombre='Ana')
+        data = {'tipo': 'FESTIVO', 'inicio': '2027-07-31', 'fin': '2027-07-31', 'trabajadores': [worker.pk]}
+        self.assertEqual(self.client.post('/api/eventos/', data, format='json').status_code, 400)
+        response = self.client.post('/api/eventos/', {**data, 'titulo': 'San Ignacio', 'ferralla': self.factory.pk}, format='json')
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual((response.data['ferralla'], response.data['trabajadores'], response.data['proyecto']), (self.factory.pk, [], None))
+        # Solo los festivos llevan ferralla.
+        event = self.client.post('/api/eventos/', {
+            'titulo': 'Visita', 'tipo': 'EVENTO', 'inicio': '2027-07-30', 'fin': '2027-07-30', 'ferralla': self.factory.pk,
+        }, format='json')
+        self.assertEqual(event.status_code, 201)
+        self.assertIsNone(event.data['ferralla'])
+        # Los nacionales vienen precargados y la capacidad por defecto es la media esperada.
+        self.assertTrue(EventoCalendario.objects.filter(
+            tipo='FESTIVO', inicio=date(2026, 10, 12), ferralla__isnull=True,
+        ).exists())
+        self.assertEqual(UserProfile.objects.create(user=self.other).capacidad_diaria_modulos, 35)
 
     def test_unplanned_overdue_and_complete_demand(self):
         module = self.create_module()

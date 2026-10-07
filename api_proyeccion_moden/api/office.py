@@ -438,10 +438,19 @@ class WorkerViewSet(viewsets.ModelViewSet):
 
 class EventSerializer(serializers.ModelSerializer):
     titulo = serializers.CharField(required=False, allow_blank=True, max_length=200)
+    ferralla_nombre = serializers.SerializerMethodField()
 
     class Meta:
         model = EventoCalendario
-        fields = ['id', 'titulo', 'tipo', 'inicio', 'fin', 'proyecto', 'trabajadores', 'notas']
+        fields = [
+            'id', 'titulo', 'tipo', 'inicio', 'fin', 'proyecto', 'trabajadores',
+            'ferralla', 'ferralla_nombre', 'notas',
+        ]
+
+    def get_ferralla_nombre(self, obj):
+        if obj.ferralla is None:
+            return None
+        return obj.ferralla.first_name or obj.ferralla.username
 
     def validate(self, attrs):
         def value(key):
@@ -451,6 +460,16 @@ class EventSerializer(serializers.ModelSerializer):
         workers = attrs.get('trabajadores')
         if workers is None:
             workers = list(self.instance.trabajadores.all()) if self.instance else []
+        if value('tipo') == EventoCalendario.Tipo.FESTIVO:
+            # Dia sin fabricacion de una ferralla (o de todas): sin personas ni proyecto.
+            if not (value('titulo') or '').strip():
+                raise serializers.ValidationError({'titulo': 'Indica qué festivo es.'})
+            if (value('fin') - value('inicio')).days > 31:
+                raise serializers.ValidationError({'fin': 'Un festivo no puede durar más de un mes.'})
+            attrs['trabajadores'] = []
+            attrs['proyecto'] = None
+            return attrs
+        attrs['ferralla'] = None
         if value('tipo') == EventoCalendario.Tipo.VACACIONES and not workers:
             raise serializers.ValidationError({'trabajadores': 'Selecciona al menos una persona.'})
         if value('tipo') == EventoCalendario.Tipo.VACACIONES:
@@ -477,7 +496,7 @@ class EventSerializer(serializers.ModelSerializer):
 
 
 class EventViewSet(viewsets.ModelViewSet):
-    queryset = EventoCalendario.objects.prefetch_related('trabajadores')
+    queryset = EventoCalendario.objects.select_related('ferralla').prefetch_related('trabajadores')
     serializer_class = EventSerializer
     permission_classes = [permissions.IsAdminUser]
     pagination_class = None

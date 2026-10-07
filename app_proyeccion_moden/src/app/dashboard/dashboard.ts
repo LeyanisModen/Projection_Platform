@@ -26,7 +26,7 @@ import { Subject, takeUntil, interval, forkJoin, Observable, of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
 import { ZoomableImageComponent } from '../shared/zoomable-image/zoomable-image.component';
-import { planningIssues, planningLabel } from '../shared/project-planning';
+import { planningIssues, planningLabel, planningTight } from '../shared/project-planning';
 
 // Graficas: naranja de marca para la serie principal, gris para las secundarias
 // y azul + naranja donde hay dos series (par validado para daltonismo).
@@ -143,6 +143,7 @@ interface Subfase {
 })
 export class Dashboard implements OnInit, OnDestroy {
   readonly planningLabel = planningLabel;
+  readonly planningTight = planningTight;
   // Sidebar State
   panelState: 'collapsed' | 'expanded' = 'expanded';
   // Data
@@ -2572,7 +2573,9 @@ export class Dashboard implements OnInit, OnDestroy {
 
   private isWorkingDay(d: Date): boolean {
     const day = d.getDay();
-    return day >= 1 && day <= 5;
+    if (day < 1 || day > 5) return false;
+    // Los festivos del calendario no tienen objetivo.
+    return !(this.statsData?.range.festivos || []).includes(this.toLocalIsoDate(d));
   }
 
   private getIsoWeek(d: Date): number {
@@ -3299,20 +3302,9 @@ export class Dashboard implements OnInit, OnDestroy {
     const total = p.modulos_count || 0;
     const done = p.modulos_completados || 0;
     const pending = Math.max(total - done, 0);
-    const daily = p.planificacion?.modulos_por_dia || 0;
-    const start = this.parseIsoDate(p.planificacion?.fecha_calculo || '');
-    const codes = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
-    const activeDays = p.planificacion?.dias_produccion || [];
-    const hoy = Math.min(pending, start && activeDays.includes(codes[start.getDay()]) ? daily : 0);
-    let upcomingDays = 0;
-    if (start && p.fecha_montaje) {
-      for (let offset = 1; offset < 7; offset++) {
-        const date = new Date(start); date.setDate(start.getDate()+offset);
-        const mounting = this.parseIsoDate(p.fecha_montaje);
-        if (mounting && date < mounting && activeDays.includes(codes[date.getDay()])) upcomingDays++;
-      }
-    }
-    const semana = Math.min(Math.max(pending - hoy, 0), daily * upcomingDays);
+    // Lo que le toca hoy y el resto de la semana en el plan de la ferralla.
+    const hoy = Math.min(pending, p.planificacion?.modulos_hoy || 0);
+    const semana = Math.min(Math.max(pending - hoy, 0), p.planificacion?.modulos_semana || 0);
     const resto = Math.max(pending - hoy - semana, 0);
     return { total, done, hoy, semana, resto };
   }
