@@ -5,13 +5,20 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { A11yModule } from '@angular/cdk/a11y';
 import { forkJoin, Subscription } from 'rxjs';
-import { ApiService, CalendarEvent, CheckDeadline, OfficeWorker, Proyecto, User } from '../../services/api.service';
-import { CalendarItem, CalendarSegment, CalendarView, calendarMonths, calendarRange, calendarWeeks, localDate, monthDays, nextWorkerColor, workerColor, WORKER_COLORS } from './calendar-layout';
+import { ApiService, CalendarEvent, CheckDeadline, OfficeWorker, ProjectCheck, Proyecto, User } from '../../services/api.service';
+import { CalendarItem, CalendarSegment, CalendarView, calendarMonths, calendarRange, calendarWeeks, daysBetween, localDate, monthDays, nextWorkerColor, shiftDate, workerColor, WORKER_COLORS } from './calendar-layout';
 
 /** Festivos: dias sin fabricacion que el plan de las ferrallas no cuenta. */
 const FESTIVO_COLOR = '#be123c';
 const TIPOS: CalendarEvent['tipo'][] = ['EVENTO', 'VACACIONES', 'FESTIVO'];
 const TAB_IDS: Record<CalendarEvent['tipo'], string> = {EVENTO: 'event-tab', VACACIONES: 'holiday-tab', FESTIVO: 'day-off-tab'};
+/** Dia en que se ve un control: el de su fecha o, si se completo antes, el de completarlo. */
+const deadlineDay = (deadline: CheckDeadline): string => deadline.fecha ?? deadline.fecha_limite;
+function dayOfCheck(check: ProjectCheck, limite: string): string {
+    if (!check.completado || !check.completado_at) return limite;
+    const hecho = localDate(new Date(check.completado_at));
+    return hecho < limite ? hecho : limite;
+}
 
 @Component({
     selector: 'app-calendario',
@@ -43,6 +50,10 @@ export class CalendarioComponent {
     readonly error = signal('');
     readonly busy = signal(false);
     readonly projectFilter = signal<number | null>(null);
+    /** Barra que se esta arrastrando: el dia por el que se cogio y su intervalo. */
+    private dragging: {key: string; grabbed: string; start: string; end: string} | null = null;
+    /** Donde quedaria la barra si se suelta ahora. */
+    readonly dropRange = signal<{start: string; end: string} | null>(null);
     /** Control de la lista que se esta marcando desde la agenda. */
     readonly busyDeadline = signal<number | null>(null);
     readonly deadlineError = signal('');
@@ -101,7 +112,8 @@ export class CalendarioComponent {
         this.workerFilter() === null ? 'Todo el equipo' : this.workerNames([this.workerFilter()!]),
     ].join(' · '));
     readonly calendarItems = computed(() => {
-        const items: CalendarItem[] = this.filteredEvents().filter(event => event.tipo !== 'VACACIONES').map(event => ({
+        // Vacaciones y festivos se ven como fondo del dia, no como barra.
+        const items: CalendarItem[] = this.filteredEvents().filter(event => event.tipo === 'EVENTO').map(event => ({
             key: `event-${event.id}`, title: this.eventTitle(event), start: event.inicio, end: event.fin,
             colors: this.eventColors(event), people: this.workerNames(event.trabajadores), mounting: false,
         }));
@@ -115,7 +127,7 @@ export class CalendarioComponent {
             }
             for (const deadline of this.filteredDeadlines()) {
                 items.push({key: `control-${deadline.id}`, title: `${deadline.completado ? '✓ ' : ''}Control · ${deadline.proyecto_nombre} · ${deadline.titulo}`,
-                    start: deadline.fecha_limite, end: deadline.fecha_limite,
+                    start: deadlineDay(deadline), end: deadlineDay(deadline),
                     colors: [deadline.completado ? '#2f9e5b' : '#0f766e'], people: '', mounting: false,
                     control: true, done: deadline.completado});
             }
@@ -136,6 +148,7 @@ export class CalendarioComponent {
                 .map(week => ({...week, days: week.days.map(day => {
                     const dayEvents = day.current || !compact ? this.eventsOn(day.key) : [];
                     const vacations = dayEvents.filter(event => event.tipo === 'VACACIONES');
+                    const festivos = dayEvents.filter(event => event.tipo === 'FESTIVO');
                     const ids = new Set(vacations.flatMap(event => event.trabajadores));
                     const vacationWorkers = workers.filter(worker => ids.has(worker.id));
                     const marks = annual && day.current
@@ -143,9 +156,12 @@ export class CalendarioComponent {
                             .map(item => item.colors.length === 1 ? item.colors[0] : '#64748b')
                         : [];
                     return {
-                        ...day, vacationWorkers, marks,
+                        ...day, vacationWorkers, marks, festivos,
+                        festivoLabel: festivos.map(event => this.eventTitle(event)).join(' · '),
                         vacationLabel: vacationWorkers.length ? `Vacaciones de ${this.namesOf(vacationWorkers)}` : 'Sin vacaciones',
-                        eventCount: dayEvents.length - vacations.length + this.mountsOn(day.key).length + this.deadlinesOn(day.key).length,
+                        dayTitle: [...festivos.map(event => this.eventTitle(event)),
+                            ...(vacationWorkers.length ? [`Vacaciones de ${this.namesOf(vacationWorkers)}`] : [])].join(' · '),
+                        eventCount: dayEvents.length - vacations.length - festivos.length + this.mountsOn(day.key).length + this.deadlinesOn(day.key).length,
                     };
                 })})),
         }));
@@ -155,7 +171,7 @@ export class CalendarioComponent {
     ));
     readonly selectedEvents = computed(() => this.eventsOn(this.selected()));
     readonly selectedDeadlines = computed(() => this.workerFilter() !== null
-        ? [] : this.filteredDeadlines().filter(d => d.fecha_limite === this.selected()));
+        ? [] : this.filteredDeadlines().filter(d => deadlineDay(d) === this.selected()));
     readonly mountingProjects = computed(() => this.projects().filter(p =>
         p.fecha_montaje === this.selected() && (this.projectFilter() === null || p.id === this.projectFilter()) && this.workerFilter() === null,
     ));
@@ -203,6 +219,99 @@ export class CalendarioComponent {
         this.selected.set(this.today); this.load();
     }
     eventsOn(day: string): CalendarEvent[] { return this.filteredEvents().filter(e => e.inicio <= day && e.fin >= day); }
+    /**
+     * Se arrastran los eventos, los montajes (con ellos se recalculan las fechas
+     * pendientes de su lista de control) y las fechas limite sin completar.
+     */
+    canDrag(item: CalendarItem): boolean {
+        return item.key.startsWith('event-') || item.mounting || (!!item.control && !item.done);
+    }
+    startDrag(event: DragEvent, segment: CalendarSegment): void {
+        if (this.busy() || !this.canDrag(segment.item)) { event.preventDefault(); return; }
+        this.dragging = {key: segment.item.key, grabbed: this.dayAt(event) ?? segment.start,
+            start: segment.item.start, end: segment.item.end};
+        event.dataTransfer?.setData('text/plain', segment.item.key);
+        if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+    }
+    dragOver(event: DragEvent): void {
+        const drag = this.dragging;
+        const day = drag && this.dayAt(event);
+        if (!drag || !day) return;
+        event.preventDefault();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+        const delta = daysBetween(drag.grabbed, day);
+        const range = {start: shiftDate(drag.start, delta), end: shiftDate(drag.end, delta)};
+        const current = this.dropRange();
+        if (current?.start !== range.start || current?.end !== range.end) this.dropRange.set(range);
+    }
+    endDrag(): void { this.dragging = null; this.dropRange.set(null); }
+    drop(event: DragEvent): void {
+        const drag = this.dragging;
+        const day = drag && this.dayAt(event);
+        event.preventDefault();
+        this.endDrag();
+        if (!drag || !day) return;
+        const delta = daysBetween(drag.grabbed, day);
+        if (delta) this.moveItem(drag.key, delta);
+    }
+    inDropRange(day: string): boolean {
+        const range = this.dropRange();
+        return !!range && range.start <= day && day <= range.end;
+    }
+    /** Dia de la rejilla bajo el puntero, aunque encima haya una barra. */
+    private dayAt(event: DragEvent): string | null {
+        for (const element of document.elementsFromPoint(event.clientX, event.clientY)) {
+            const day = (element as HTMLElement).dataset?.['day'];
+            if (day) return day;
+        }
+        return null;
+    }
+    private moveItem(key: string, delta: number): void {
+        const id = Number(key.slice(key.indexOf('-') + 1));
+        const range = this.range();
+        const follow = (day: string) => { if (day >= range.start && day <= range.end) this.selected.set(day); };
+        if (key.startsWith('mount-')) {
+            const project = this.projects().find(p => p.id === id);
+            if (!project?.fecha_montaje) return;
+            const fecha = shiftDate(project.fecha_montaje, delta);
+            const [y, m, d] = fecha.split('-');
+            if (!confirm(`¿Mover el montaje de ${project.nombre} al ${d}/${m}/${y}? Las fechas de su lista de control que no estén completadas se mueven con él.`)) return;
+            this.busy.set(true); this.error.set('');
+            this.api.updateProyecto(id, {fecha_montaje: fecha}).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+                // Recarga todo: el servidor ha recalculado los controles pendientes.
+                next: () => { this.busy.set(false); follow(fecha); this.load(); },
+                error: () => { this.busy.set(false); this.error.set('No se pudo mover el montaje.'); },
+            });
+            return;
+        }
+        if (key.startsWith('event-')) {
+            const event = this.events().find(e => e.id === id);
+            if (!event) return;
+            this.busy.set(true); this.error.set('');
+            this.api.moveEvent(id, shiftDate(event.inicio, delta), shiftDate(event.fin, delta))
+                .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+                    next: moved => {
+                        this.events.update(list => list.map(e => e.id === id ? {...e, inicio: moved.inicio, fin: moved.fin} : e));
+                        follow(moved.inicio); this.busy.set(false);
+                    },
+                    error: () => { this.busy.set(false); this.error.set('No se pudo mover el evento.'); },
+                });
+            return;
+        }
+        const deadline = this.deadlines().find(d => d.id === id);
+        if (!deadline) return;
+        const fecha = shiftDate(deadline.fecha_limite, delta);
+        this.busy.set(true); this.error.set('');
+        this.api.updateProjectCheck(deadline.proyecto, id, {fecha_limite: fecha})
+            .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+                next: checks => {
+                    const moved = checks.find(check => check.id === id);
+                    this.deadlines.update(list => list.map(row => row.id === id && moved?.fecha_limite ? {...row, fecha_limite: moved.fecha_limite} : row));
+                    follow(fecha); this.busy.set(false);
+                },
+                error: () => { this.busy.set(false); this.error.set('No se pudo mover la fecha límite.'); },
+            });
+    }
     /** Pendiente de otros pasos: como en la ficha, no se puede marcar hasta que esten hechos. */
     deadlineWaiting(deadline: CheckDeadline): boolean {
         return !deadline.completado && !!deadline.requisitos_pendientes?.length;
@@ -220,8 +329,14 @@ export class CalendarioComponent {
                     this.deadlines.update(list => list.map(row => {
                         const check = byId.get(row.id);
                         return check ? {...row, completado: check.completado, requisitos_pendientes: check.requisitos_pendientes,
-                            documentos: check.adjuntos.length} : row;
+                            documentos: check.adjuntos.length, fecha: dayOfCheck(check, row.fecha_limite)} : row;
                     }));
+                    // Completado antes de tiempo: se va al dia de hoy, y la agenda con el.
+                    const moved = this.deadlines().find(row => row.id === deadline.id);
+                    const range = this.range();
+                    if (moved && deadlineDay(moved) !== this.selected() && deadlineDay(moved) >= range.start && deadlineDay(moved) <= range.end) {
+                        this.selected.set(deadlineDay(moved));
+                    }
                     this.busyDeadline.set(null);
                 },
                 error: err => {
@@ -232,7 +347,7 @@ export class CalendarioComponent {
             });
     }
     deadlinesOn(day: string): CheckDeadline[] {
-        return this.workerFilter() !== null ? [] : this.filteredDeadlines().filter(d => d.fecha_limite === day);
+        return this.workerFilter() !== null ? [] : this.filteredDeadlines().filter(d => deadlineDay(d) === day);
     }
     mountsOn(day: string): Proyecto[] {
         return this.projects().filter(p => p.fecha_montaje === day && (this.projectFilter() === null || this.projectFilter()===p.id) && this.workerFilter()===null);

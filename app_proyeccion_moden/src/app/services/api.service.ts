@@ -115,6 +115,8 @@ export interface CheckDefinition {
 export interface CheckDeadline {
     id: number; proyecto: number; proyecto_nombre: string; titulo: string;
     fecha_limite: string; completado: boolean;
+    /** Dia en el calendario: el de su fecha o, si se completo antes, el dia en que se hizo. */
+    fecha?: string;
     /** Pasos previos sin completar: hasta entonces no se puede marcar. */
     requisitos_pendientes?: string[];
     requiere_documento?: boolean;
@@ -784,6 +786,10 @@ export class ApiService {
         return data.id
             ? this.http.patch<CalendarEvent>(`${this.baseUrl}/eventos/${data.id}/`, data, { headers: this.getHeaders() })
             : this.http.post<CalendarEvent>(`${this.baseUrl}/eventos/`, data, { headers: this.getHeaders() });
+    }
+    /** Solo cambia las fechas: lo usa el arrastre del calendario. */
+    moveEvent(id: number, inicio: string, fin: string): Observable<CalendarEvent> {
+        return this.http.patch<CalendarEvent>(`${this.baseUrl}/eventos/${id}/`, { inicio, fin }, { headers: this.getHeaders() });
     }
     deleteEvent(id: number): Observable<void> {
         return this.http.delete<void>(`${this.baseUrl}/eventos/${id}/`, { headers: this.getHeaders() });

@@ -51,14 +51,15 @@
         }
         <div class="week-heading">@for (label of weekLabels; track label) { <span class="weekday">{{ label }}</span> }</div>
         @for (week of calendar.weeks; track week.days[0].key) {
-            <div class="calendar-week" [style.grid-template-rows]="'var(--day-header) ' + (week.lanes ? 'repeat(' + week.lanes + ', minmax(var(--event-row), auto)) ' : '') + 'minmax(6px, 1fr)'">
+            <div class="calendar-week" (dragover)="dragOver($event)" (drop)="drop($event)" [style.grid-template-rows]="'var(--day-header) ' + (week.lanes ? 'repeat(' + week.lanes + ', minmax(var(--event-row), auto)) ' : '') + 'minmax(6px, 1fr)'">
                 @for (day of week.days; track day.key; let column = $index) {
                     @if (day.current || view()==='month') {
                     <button type="button" class="day" [style.grid-column]="column+1" [class.outside]="!day.current" [class.today]="day.key===today"
                         [class.selected]="day.key===selected()" [attr.aria-pressed]="day.key===selected()"
                         [class.has-vacations]="day.vacationWorkers.length > 0"
-                        [attr.aria-label]="(day.key | date:'dd/MM/yyyy') + ', ' + day.vacationLabel + ', ' + day.eventCount + ' eventos'"
-                        [title]="day.vacationWorkers.length ? day.vacationLabel : ''"
+                        [attr.data-day]="day.key" [class.drop-target]="inDropRange(day.key)" [class.is-festivo]="day.festivos.length > 0"
+                        [attr.aria-label]="(day.key | date:'dd/MM/yyyy') + ', ' + (day.festivoLabel ? day.festivoLabel + ', ' : '') + day.vacationLabel + ', ' + day.eventCount + ' eventos'"
+                        [title]="day.dayTitle"
                         (click)="selected.set(day.key)">
                         @if (day.vacationWorkers.length) {
                             <span class="vacation-shading" aria-hidden="true">@for (worker of day.vacationWorkers; track worker.id) {
@@ -66,6 +67,7 @@
                             }</span>
                         }
                         <span class="day-number">{{ day.number }}</span>
+                        @if (day.festivos.length && view()==='month') { <span class="festivo-name">{{ day.festivos[0].titulo }}</span> }
                         @if (day.marks.length) {
                             <span class="day-marks" aria-hidden="true">@for (color of day.marks.slice(0, 4); track $index) {
                                 <span [style.background-color]="color"></span>
@@ -77,6 +79,8 @@
                 @for (segment of week.segments; track segment.item.key) {
                     <button type="button" class="event-bar" [class.continues-before]="segment.continuesBefore" [class.continues-after]="segment.continuesAfter"
                         [class.mounting]="segment.item.mounting" [class.control]="segment.item.control" [class.done]="segment.item.done" [style.grid-column]="segment.column + ' / span ' + segment.span"
+                        [class.draggable]="canDrag(segment.item)" [attr.draggable]="canDrag(segment.item) ? 'true' : null"
+                        (dragstart)="startDrag($event, segment)" (dragend)="endDrag()"
                         [style.grid-row]="segment.lane+2" [style.--event-color]="segment.item.colors.length===1 ? segment.item.colors[0] : '#64748b'"
                         [attr.aria-label]="segment.item.title + ', ' + (segment.item.start | date:'dd/MM/yyyy') + ' a ' + (segment.item.end | date:'dd/MM/yyyy') + ', ' + segment.item.people"
                         [title]="segment.item.title + ' · ' + segment.item.people + ' · ' + (segment.item.start | date:'dd/MM/yyyy') + ' - ' + (segment.item.end | date:'dd/MM/yyyy')"
@@ -125,6 +129,7 @@
                     <strong>{{ deadline.completado ? 'Completado' : 'Fecha límite' }} · {{ deadline.titulo }}</strong>
                 </label>
                 <span>{{ deadline.proyecto_nombre }}</span>
+                @if (deadline.fecha && deadline.fecha !== deadline.fecha_limite) { <small class="control-note">Fecha límite {{ deadline.fecha_limite | date:'dd/MM/yyyy' }}</small> }
                 @if (deadlineWaiting(deadline)) { <small class="control-note">Antes: {{ deadline.requisitos_pendientes!.join(', ') }}</small> }
                 @if (deadline.completado && deadline.requiere_documento && !deadline.documentos) { <small class="control-note warn">Completado sin documento</small> }
                 <a [routerLink]="['/admin-dashboard/proyectos',deadline.proyecto]">Ver lista de control del proyecto</a>

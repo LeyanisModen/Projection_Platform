@@ -221,6 +221,15 @@ def recalcular_fechas_checklist(proyecto):
     return cambiados
 
 
+def dia_en_calendario(paso):
+    """Completado antes de su fecha limite: el calendario lo pone el dia en que se hizo."""
+    if paso.completado and paso.completado_at:
+        hecho = timezone.localtime(paso.completado_at).date()
+        if hecho < paso.fecha_limite:
+            return hecho
+    return paso.fecha_limite
+
+
 def checks_bloqueantes_pendientes(proyecto):
     """Titulos de los pasos que impiden meter el proyecto en produccion."""
     return list(
@@ -327,8 +336,17 @@ class ProjectChecklistViewSet(viewsets.GenericViewSet):
                     bounds[lookup] = date.fromisoformat(raw)
                 except ValueError:
                     raise ValidationError({param: 'Usa una fecha AAAA-MM-DD.'})
+        en_rango = Q(**bounds)
+        if bounds:
+            # Los completados antes de su fecha se ven el dia en que se hicieron.
+            hechos = Q(completado=True, completado_at__isnull=False)
+            if 'fecha_limite__gte' in bounds:
+                hechos &= Q(completado_at__date__gte=bounds['fecha_limite__gte'])
+            if 'fecha_limite__lte' in bounds:
+                hechos &= Q(completado_at__date__lte=bounds['fecha_limite__lte'])
+            en_rango |= hechos
         rows = (
-            ProyectoCheck.objects.filter(fecha_limite__isnull=False, **bounds)
+            ProyectoCheck.objects.filter(en_rango, fecha_limite__isnull=False)
             .select_related('proyecto')
             .prefetch_related('requisitos')
             .annotate(_documentos=Count('adjuntos', distinct=True))
@@ -340,6 +358,7 @@ class ProjectChecklistViewSet(viewsets.GenericViewSet):
             'proyecto_nombre': row.proyecto.nombre,
             'titulo': row.titulo,
             'fecha_limite': row.fecha_limite.isoformat(),
+            'fecha': dia_en_calendario(row).isoformat(),
             'completado': row.completado,
             'requisitos_pendientes': [r.titulo for r in row.requisitos.all() if not r.completado],
             'requiere_documento': row.requiere_documento,
@@ -391,6 +410,15 @@ class ProjectChecklistViewSet(viewsets.GenericViewSet):
             else:
                 check.completado_at = None
                 check.completado_por = None
+        nueva_fecha = data.validated_data.get('fecha_limite')
+        if (
+            nueva_fecha and nueva_fecha != check.fecha_limite
+            and check.dias_antes_montaje is not None and project.fecha_montaje
+        ):
+            # Movido a mano: sigue al montaje con la distancia nueva. Si queda
+            # despues del montaje ya no puede ser relativo y se queda fijo.
+            dias = (project.fecha_montaje - nueva_fecha).days
+            check.dias_antes_montaje = dias if dias >= 0 else None
         data.save()
         return Response(self._rows(project))
 
