@@ -1,5 +1,5 @@
 import math
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from importlib import import_module
 from unittest.mock import patch
 
@@ -342,6 +342,37 @@ class OfficePlanningTests(APITestCase):
         self.assertFalse(response.data[0]['completado'])
         self.assertEqual(self.client.get('/api/proyecto-checklist/vencimientos/?desde=mal').status_code, 400)
         self.assertEqual(len(self.client.get('/api/proyecto-checklist/vencimientos/').data), 4, 'sin rango devuelve todas las fechas')
+
+    def test_moving_a_step_by_hand_keeps_it_following_the_mounting_date(self):
+        from .models import ProyectoCheck
+        self.client.patch(f'/api/proyectos/{self.project.pk}/', {'fecha_montaje': '2026-10-20'}, format='json')
+        url = f'/api/proyecto-checklist/{self.project.pk}/checks/'
+        row = self.client.post(url, {'titulo': 'Planos', 'requiere_fecha': True, 'fecha_limite': '2026-10-10'}, format='json').data[0]
+        ProyectoCheck.objects.filter(pk=row['id']).update(dias_antes_montaje=10)
+        # Arrastrado tres dias: queda a 7 del montaje...
+        self.client.patch(f"{url}{row['id']}/", {'fecha_limite': '2026-10-13'}, format='json')
+        self.assertEqual(ProyectoCheck.objects.get(pk=row['id']).dias_antes_montaje, 7)
+        # ...y al mover el montaje una semana va detras.
+        self.client.patch(f'/api/proyectos/{self.project.pk}/', {'fecha_montaje': '2026-10-27'}, format='json')
+        self.assertEqual(ProyectoCheck.objects.get(pk=row['id']).fecha_limite, date(2026, 10, 20))
+        # Despues del montaje ya no puede ser relativo: se queda en su fecha.
+        self.client.patch(f"{url}{row['id']}/", {'fecha_limite': '2026-10-29'}, format='json')
+        self.client.patch(f'/api/proyectos/{self.project.pk}/', {'fecha_montaje': '2026-11-03'}, format='json')
+        paso = ProyectoCheck.objects.get(pk=row['id'])
+        self.assertEqual((paso.dias_antes_montaje, paso.fecha_limite), (None, date(2026, 10, 29)))
+
+    def test_steps_completed_before_their_date_show_on_the_day_they_were_done(self):
+        from .models import ProyectoCheck
+        url = f'/api/proyecto-checklist/{self.project.pk}/checks/'
+        row = self.client.post(url, {'titulo': 'Planos', 'requiere_fecha': True, 'fecha_limite': '2026-11-20'}, format='json').data[0]
+        hecho = timezone.make_aware(datetime(2026, 10, 7, 10, 0))
+        ProyectoCheck.objects.filter(pk=row['id']).update(completado=True, completado_at=hecho)
+        october = self.client.get('/api/proyecto-checklist/vencimientos/?desde=2026-10-01&hasta=2026-10-31').data
+        self.assertEqual([(r['titulo'], r['fecha'], r['fecha_limite']) for r in october], [('Planos', '2026-10-07', '2026-11-20')])
+        # Hecho tarde o sin marcar: sigue en su fecha limite.
+        ProyectoCheck.objects.filter(pk=row['id']).update(completado=False, completado_at=None)
+        self.assertEqual(self.client.get('/api/proyecto-checklist/vencimientos/?desde=2026-10-01&hasta=2026-10-31').data, [])
+        self.assertEqual(self.client.get('/api/proyecto-checklist/vencimientos/?desde=2026-11-01&hasta=2026-11-30').data[0]['fecha'], '2026-11-20')
 
     def test_calendar_deadlines_carry_what_is_needed_to_check_them_there(self):
         from .models import ProyectoCheck

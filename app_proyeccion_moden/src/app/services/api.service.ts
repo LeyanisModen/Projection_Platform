@@ -115,6 +115,8 @@ export interface CheckDefinition {
 export interface CheckDeadline {
     id: number; proyecto: number; proyecto_nombre: string; titulo: string;
     fecha_limite: string; completado: boolean;
+    /** Dia en el calendario: el de su fecha o, si se completo antes, el dia en que se hizo. */
+    fecha?: string;
     /** Pasos previos sin completar: hasta entonces no se puede marcar. */
     requisitos_pendientes?: string[];
     requiere_documento?: boolean;

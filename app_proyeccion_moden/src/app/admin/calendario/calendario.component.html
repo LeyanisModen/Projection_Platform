@@ -57,9 +57,9 @@
                     <button type="button" class="day" [style.grid-column]="column+1" [class.outside]="!day.current" [class.today]="day.key===today"
                         [class.selected]="day.key===selected()" [attr.aria-pressed]="day.key===selected()"
                         [class.has-vacations]="day.vacationWorkers.length > 0"
-                        [attr.data-day]="day.key" [class.drop-target]="inDropRange(day.key)"
-                        [attr.aria-label]="(day.key | date:'dd/MM/yyyy') + ', ' + day.vacationLabel + ', ' + day.eventCount + ' eventos'"
-                        [title]="day.vacationWorkers.length ? day.vacationLabel : ''"
+                        [attr.data-day]="day.key" [class.drop-target]="inDropRange(day.key)" [class.is-festivo]="day.festivos.length > 0"
+                        [attr.aria-label]="(day.key | date:'dd/MM/yyyy') + ', ' + (day.festivoLabel ? day.festivoLabel + ', ' : '') + day.vacationLabel + ', ' + day.eventCount + ' eventos'"
+                        [title]="day.dayTitle"
                         (click)="selected.set(day.key)">
                         @if (day.vacationWorkers.length) {
                             <span class="vacation-shading" aria-hidden="true">@for (worker of day.vacationWorkers; track worker.id) {
@@ -67,6 +67,7 @@
                             }</span>
                         }
                         <span class="day-number">{{ day.number }}</span>
+                        @if (day.festivos.length && view()==='month') { <span class="festivo-name">{{ day.festivos[0].titulo }}</span> }
                         @if (day.marks.length) {
                             <span class="day-marks" aria-hidden="true">@for (color of day.marks.slice(0, 4); track $index) {
                                 <span [style.background-color]="color"></span>
@@ -128,6 +129,7 @@
                     <strong>{{ deadline.completado ? 'Completado' : 'Fecha límite' }} · {{ deadline.titulo }}</strong>
                 </label>
                 <span>{{ deadline.proyecto_nombre }}</span>
+                @if (deadline.fecha && deadline.fecha !== deadline.fecha_limite) { <small class="control-note">Fecha límite {{ deadline.fecha_limite | date:'dd/MM/yyyy' }}</small> }
                 @if (deadlineWaiting(deadline)) { <small class="control-note">Antes: {{ deadline.requisitos_pendientes!.join(', ') }}</small> }
                 @if (deadline.completado && deadline.requiere_documento && !deadline.documentos) { <small class="control-note warn">Completado sin documento</small> }
                 <a [routerLink]="['/admin-dashboard/proyectos',deadline.proyecto]">Ver lista de control del proyecto</a>

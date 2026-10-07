@@ -316,14 +316,70 @@ describe('CalendarioComponent', () => {
             check.flush([{id: 5, fecha_limite: '2026-09-11', completado: false, requisitos_pendientes: [], adjuntos: []}]);
             expect(component.deadlines().find(d => d.id === 5)!.fecha_limite).toBe('2026-09-11');
 
-            // Soltar en el mismo dia no guarda nada; completados y montajes no se arrastran.
+            // Soltar en el mismo dia no guarda nada; los completados no se arrastran.
             component.startDrag(drag(), segment('event-2')); component.drop(drag());
             http.expectNone('/api/eventos/2/');
             expect(component.canDrag(segment('control-6').item)).toBe(false);
-            expect(component.canDrag({key: 'mount-1', mounting: true} as CalendarItem)).toBe(false);
+            expect(component.canDrag({key: 'mount-1', mounting: true} as CalendarItem)).toBe(true);
         } finally {
             document.elementsFromPoint = original;
         }
+    });
+
+    it('mueve el montaje arrastrando, tras confirmarlo, y recarga los controles recalculados', () => {
+        const component = fixture.componentInstance;
+        const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+        component.load();
+        http.expectOne(r => r.url === '/api/eventos/').flush([]);
+        http.expectOne('/api/proyectos/').flush({results: [{id: 7, nombre: 'Esnabide', fecha_montaje: '2026-09-21'}], next: null, count: 1});
+        http.expectOne('/api/trabajadores/').flush(workers);
+        http.expectOne(r => r.url === '/api/proyecto-checklist/vencimientos/').flush([]);
+        fixture.detectChanges();
+        let under = '2026-09-21';
+        const original = document.elementsFromPoint;
+        document.elementsFromPoint = () => [fixture.nativeElement.querySelector(`[data-day="${under}"]`)];
+        const drag = () => ({clientX: 0, clientY: 0, preventDefault: () => undefined, dataTransfer: null} as unknown as DragEvent);
+        try {
+            const mount = component.calendars().flatMap(c => c.weeks.flatMap(w => w.segments)).find(s => s.item.key === 'mount-7')!;
+            component.startDrag(drag(), mount);
+            under = '2026-09-24'; component.drop(drag());
+            expect(confirmSpy.mock.calls[0][0]).toContain('24/09/2026');
+            const save = http.expectOne('/api/proyectos/7/');
+            expect(save.request.method).toBe('PATCH');
+            expect(save.request.body).toEqual({fecha_montaje: '2026-09-24'});
+            save.flush({id: 7, nombre: 'Esnabide', fecha_montaje: '2026-09-24'});
+            finishLoad(component.range().start, component.range().end, []);
+            expect(component.selected()).toBe('2026-09-24');
+
+            // Si no se confirma, no se toca nada.
+            confirmSpy.mockReturnValue(false);
+            under = '2026-09-21'; component.startDrag(drag(), mount);
+            under = '2026-09-28'; component.drop(drag());
+            http.expectNone('/api/proyectos/7/');
+        } finally {
+            document.elementsFromPoint = original;
+            confirmSpy.mockRestore();
+        }
+    });
+
+    it('un control completado antes de su fecha se va al día en que se completó', () => {
+        const component = fixture.componentInstance;
+        component.load();
+        finishLoad('2026-08-31', '2026-10-11', events, [
+            {id: 5, proyecto: 3, proyecto_nombre: 'Valdebebas', titulo: 'Planos', fecha_limite: '2026-09-25', completado: false,
+                requisitos_pendientes: [], requiere_documento: false, documentos: 0},
+        ]);
+        component.selected.set('2026-09-25'); fixture.detectChanges();
+        (fixture.nativeElement.querySelector('.control-check input') as HTMLInputElement).click();
+        http.expectOne('/api/proyecto-checklist/3/checks/5/').flush([
+            {id: 5, completado: true, completado_at: '2026-09-10T10:00:00', fecha_limite: '2026-09-25', requisitos_pendientes: [], adjuntos: []},
+        ]);
+        fixture.detectChanges();
+        expect(component.deadlines()[0].fecha).toBe('2026-09-10');
+        expect(component.selected()).toBe('2026-09-10');
+        const agenda = fixture.nativeElement.querySelector('.day-agenda').textContent;
+        expect(agenda).toContain('Completado · Planos');
+        expect(agenda).toContain('Fecha límite 25/09/2026');
     });
 
     it('cancels older loads so stale responses cannot overwrite the current range', () => {
@@ -395,7 +451,12 @@ describe('CalendarioComponent', () => {
             trabajadores: [], proyecto: null, notas: '', ferralla: 7, ferralla_nombre: 'Hierros Sancho'};
         finishLoad(component.range().start, component.range().end, [...events, festivo]);
         component.workerFilter.set(2); fixture.detectChanges();
-        expect(fixture.nativeElement.textContent).toContain('Festivo · San Ignacio · Hierros Sancho');
+        // Como las vacaciones: fondo del dia y su nombre, sin barra.
+        const day: HTMLElement = fixture.nativeElement.querySelector('[data-day="2026-09-30"]');
+        expect(day.classList.contains('is-festivo')).toBe(true);
+        expect(day.textContent).toContain('San Ignacio');
+        expect(day.getAttribute('title')).toContain('Festivo · San Ignacio · Hierros Sancho');
+        expect(fixture.nativeElement.querySelector('.event-bar')?.textContent ?? '').not.toContain('San Ignacio');
     });
 
     it('keeps the event draft when switching tabs and validates title and dates', () => {
