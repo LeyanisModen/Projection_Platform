@@ -6,7 +6,7 @@ import { RouterLink } from '@angular/router';
 import { A11yModule } from '@angular/cdk/a11y';
 import { forkJoin, Subscription } from 'rxjs';
 import { ApiService, CalendarEvent, CheckDeadline, OfficeWorker, Proyecto, User } from '../../services/api.service';
-import { CalendarItem, CalendarSegment, CalendarView, calendarMonths, calendarRange, calendarWeeks, localDate, monthDays, nextWorkerColor, workerColor, WORKER_COLORS } from './calendar-layout';
+import { CalendarItem, CalendarSegment, CalendarView, calendarMonths, calendarRange, calendarWeeks, daysBetween, localDate, monthDays, nextWorkerColor, shiftDate, workerColor, WORKER_COLORS } from './calendar-layout';
 
 /** Festivos: dias sin fabricacion que el plan de las ferrallas no cuenta. */
 const FESTIVO_COLOR = '#be123c';
@@ -43,6 +43,10 @@ export class CalendarioComponent {
     readonly error = signal('');
     readonly busy = signal(false);
     readonly projectFilter = signal<number | null>(null);
+    /** Barra que se esta arrastrando: el dia por el que se cogio y su intervalo. */
+    private dragging: {key: string; grabbed: string; start: string; end: string} | null = null;
+    /** Donde quedaria la barra si se suelta ahora. */
+    readonly dropRange = signal<{start: string; end: string} | null>(null);
     /** Control de la lista que se esta marcando desde la agenda. */
     readonly busyDeadline = signal<number | null>(null);
     readonly deadlineError = signal('');
@@ -203,6 +207,85 @@ export class CalendarioComponent {
         this.selected.set(this.today); this.load();
     }
     eventsOn(day: string): CalendarEvent[] { return this.filteredEvents().filter(e => e.inicio <= day && e.fin >= day); }
+    /**
+     * Se arrastran los eventos (y festivos) y las fechas limite pendientes.
+     * Los montajes no: cambiarian el plan de fabricacion y la lista de control.
+     */
+    canDrag(item: CalendarItem): boolean {
+        return item.key.startsWith('event-') || (!!item.control && !item.done);
+    }
+    startDrag(event: DragEvent, segment: CalendarSegment): void {
+        if (this.busy() || !this.canDrag(segment.item)) { event.preventDefault(); return; }
+        this.dragging = {key: segment.item.key, grabbed: this.dayAt(event) ?? segment.start,
+            start: segment.item.start, end: segment.item.end};
+        event.dataTransfer?.setData('text/plain', segment.item.key);
+        if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+    }
+    dragOver(event: DragEvent): void {
+        const drag = this.dragging;
+        const day = drag && this.dayAt(event);
+        if (!drag || !day) return;
+        event.preventDefault();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+        const delta = daysBetween(drag.grabbed, day);
+        const range = {start: shiftDate(drag.start, delta), end: shiftDate(drag.end, delta)};
+        const current = this.dropRange();
+        if (current?.start !== range.start || current?.end !== range.end) this.dropRange.set(range);
+    }
+    endDrag(): void { this.dragging = null; this.dropRange.set(null); }
+    drop(event: DragEvent): void {
+        const drag = this.dragging;
+        const day = drag && this.dayAt(event);
+        event.preventDefault();
+        this.endDrag();
+        if (!drag || !day) return;
+        const delta = daysBetween(drag.grabbed, day);
+        if (delta) this.moveItem(drag.key, delta);
+    }
+    inDropRange(day: string): boolean {
+        const range = this.dropRange();
+        return !!range && range.start <= day && day <= range.end;
+    }
+    /** Dia de la rejilla bajo el puntero, aunque encima haya una barra. */
+    private dayAt(event: DragEvent): string | null {
+        for (const element of document.elementsFromPoint(event.clientX, event.clientY)) {
+            const day = (element as HTMLElement).dataset?.['day'];
+            if (day) return day;
+        }
+        return null;
+    }
+    private moveItem(key: string, delta: number): void {
+        const id = Number(key.slice(key.indexOf('-') + 1));
+        const range = this.range();
+        const follow = (day: string) => { if (day >= range.start && day <= range.end) this.selected.set(day); };
+        if (key.startsWith('event-')) {
+            const event = this.events().find(e => e.id === id);
+            if (!event) return;
+            this.busy.set(true); this.error.set('');
+            this.api.moveEvent(id, shiftDate(event.inicio, delta), shiftDate(event.fin, delta))
+                .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+                    next: moved => {
+                        this.events.update(list => list.map(e => e.id === id ? {...e, inicio: moved.inicio, fin: moved.fin} : e));
+                        follow(moved.inicio); this.busy.set(false);
+                    },
+                    error: () => { this.busy.set(false); this.error.set('No se pudo mover el evento.'); },
+                });
+            return;
+        }
+        const deadline = this.deadlines().find(d => d.id === id);
+        if (!deadline) return;
+        const fecha = shiftDate(deadline.fecha_limite, delta);
+        this.busy.set(true); this.error.set('');
+        this.api.updateProjectCheck(deadline.proyecto, id, {fecha_limite: fecha})
+            .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+                next: checks => {
+                    const moved = checks.find(check => check.id === id);
+                    this.deadlines.update(list => list.map(row => row.id === id && moved?.fecha_limite ? {...row, fecha_limite: moved.fecha_limite} : row));
+                    follow(fecha); this.busy.set(false);
+                },
+                error: () => { this.busy.set(false); this.error.set('No se pudo mover la fecha límite.'); },
+            });
+    }
     /** Pendiente de otros pasos: como en la ficha, no se puede marcar hasta que esten hechos. */
     deadlineWaiting(deadline: CheckDeadline): boolean {
         return !deadline.completado && !!deadline.requisitos_pendientes?.length;

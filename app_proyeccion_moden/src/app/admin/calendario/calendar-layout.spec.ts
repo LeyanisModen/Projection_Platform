@@ -1,4 +1,4 @@
-import { CalendarDay, CalendarItem, calendarMonths, calendarRange, calendarWeeks, localDate, monthDays, nextWorkerColor, workerColor } from './calendar-layout';
+import { CalendarDay, CalendarItem, calendarMonths, calendarRange, calendarWeeks, daysBetween, localDate, monthDays, nextWorkerColor, shiftDate, workerColor } from './calendar-layout';
 
 const days: CalendarDay[] = Array.from({length: 42}, (_, i) => {
     const date = new Date(2026, 7, 31 + i);
@@ -18,6 +18,13 @@ describe('calendar periods', () => {
         expect(localDate(months[0])).toBe('2026-01-01');
         expect(localDate(months[11])).toBe('2026-12-01');
         expect(calendarRange(new Date(2026, 8, 1), 'year')).toEqual({start: '2026-01-01', end: '2026-12-31'});
+    });
+    it('moves dates by whole days across month ends, leap days and the clock change', () => {
+        expect(shiftDate('2026-10-24', 2)).toBe('2026-10-26');
+        expect(shiftDate('2026-09-29', 3)).toBe('2026-10-02');
+        expect(shiftDate('2028-03-01', -1)).toBe('2028-02-29');
+        expect(daysBetween('2026-10-24', '2026-10-26')).toBe(2);
+        expect(daysBetween('2026-09-22', '2026-09-15')).toBe(-7);
     });
     it('handles leap February and daylight-saving changes using local dates', () => {
         expect(monthDays(new Date(2028, 1, 1), true).filter(d => d.current)).toHaveLength(29);

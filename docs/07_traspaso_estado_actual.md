@@ -923,6 +923,7 @@ Septiembre de 2026 (auditoría; detalle por punto en
 - Frontend sin SSR ni SSE; rutas lazy (bundle inicial 355 kB).
 - Calendario/planificación de oficina (`api/office.py`, `admin/calendario/`).
 - Controles de la lista desde el calendario (2026-10-07): en la agenda del día cada fecha límite lleva su casilla y se marca o desmarca sin ir al proyecto (mismo `PATCH proyecto-checklist/<id>/checks/<id>/` que la ficha). `vencimientos/` devuelve también `requisitos_pendientes`, `requiere_documento` y `documentos`: con pasos previos sin hacer la casilla queda bloqueada ("Antes: …") y si pide documento y no lo tiene avisa "Completado sin documento", igual que en la ficha. Festivos (`tipo=FESTIVO`) en la pestaña Festivo del editor, para todas las ferrallas o una; siempre visibles aunque haya filtros.
+- Arrastrar en el calendario (2026-10-07): eventos, festivos y fechas límite pendientes se mueven arrastrando la barra a otro día (HTML5 drag and drop; el día de destino se busca con `elementsFromPoint` porque las barras tapan las celdas). Un evento de varios días conserva su duración. Montajes (cambiarían el plan y la lista de control), vacaciones (son sombreado, no barra) y controles completados no se arrastran. Una fecha límite movida a mano se recalcula si luego cambia el montaje o la plantilla, igual que si se edita en la ficha. No funciona en pantallas táctiles; ahí sigue el diálogo.
 
 Commits de referencia anteriores, de nuevo a antiguo:
 

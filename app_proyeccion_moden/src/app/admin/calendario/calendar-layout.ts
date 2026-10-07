@@ -5,6 +5,17 @@ export function localDate(date: Date): string {
     return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
 }
 
+/** Fecha AAAA-MM-DD desplazada unos dias, sin saltos por el cambio de hora. */
+export function shiftDate(iso: string, days: number): string {
+    const date = new Date(`${iso}T00:00:00Z`);
+    date.setUTCDate(date.getUTCDate() + days);
+    return date.toISOString().slice(0, 10);
+}
+
+export function daysBetween(from: string, to: string): number {
+    return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000);
+}
+
 export function calendarMonths(anchor: Date, view: CalendarView): Date[] {
     const annual = view === 'year';
     const start = annual ? 0 : anchor.getMonth();

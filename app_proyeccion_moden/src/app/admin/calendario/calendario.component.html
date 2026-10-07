@@ -51,12 +51,13 @@
         }
         <div class="week-heading">@for (label of weekLabels; track label) { <span class="weekday">{{ label }}</span> }</div>
         @for (week of calendar.weeks; track week.days[0].key) {
-            <div class="calendar-week" [style.grid-template-rows]="'var(--day-header) ' + (week.lanes ? 'repeat(' + week.lanes + ', minmax(var(--event-row), auto)) ' : '') + 'minmax(6px, 1fr)'">
+            <div class="calendar-week" (dragover)="dragOver($event)" (drop)="drop($event)" [style.grid-template-rows]="'var(--day-header) ' + (week.lanes ? 'repeat(' + week.lanes + ', minmax(var(--event-row), auto)) ' : '') + 'minmax(6px, 1fr)'">
                 @for (day of week.days; track day.key; let column = $index) {
                     @if (day.current || view()==='month') {
                     <button type="button" class="day" [style.grid-column]="column+1" [class.outside]="!day.current" [class.today]="day.key===today"
                         [class.selected]="day.key===selected()" [attr.aria-pressed]="day.key===selected()"
                         [class.has-vacations]="day.vacationWorkers.length > 0"
+                        [attr.data-day]="day.key" [class.drop-target]="inDropRange(day.key)"
                         [attr.aria-label]="(day.key | date:'dd/MM/yyyy') + ', ' + day.vacationLabel + ', ' + day.eventCount + ' eventos'"
                         [title]="day.vacationWorkers.length ? day.vacationLabel : ''"
                         (click)="selected.set(day.key)">
@@ -77,6 +78,8 @@
                 @for (segment of week.segments; track segment.item.key) {
                     <button type="button" class="event-bar" [class.continues-before]="segment.continuesBefore" [class.continues-after]="segment.continuesAfter"
                         [class.mounting]="segment.item.mounting" [class.control]="segment.item.control" [class.done]="segment.item.done" [style.grid-column]="segment.column + ' / span ' + segment.span"
+                        [class.draggable]="canDrag(segment.item)" [attr.draggable]="canDrag(segment.item) ? 'true' : null"
+                        (dragstart)="startDrag($event, segment)" (dragend)="endDrag()"
                         [style.grid-row]="segment.lane+2" [style.--event-color]="segment.item.colors.length===1 ? segment.item.colors[0] : '#64748b'"
                         [attr.aria-label]="segment.item.title + ', ' + (segment.item.start | date:'dd/MM/yyyy') + ' a ' + (segment.item.end | date:'dd/MM/yyyy') + ', ' + segment.item.people"
                         [title]="segment.item.title + ' · ' + segment.item.people + ' · ' + (segment.item.start | date:'dd/MM/yyyy') + ' - ' + (segment.item.end | date:'dd/MM/yyyy')"

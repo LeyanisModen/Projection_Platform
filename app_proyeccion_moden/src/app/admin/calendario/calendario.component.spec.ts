@@ -4,6 +4,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { CalendarEvent, OfficeWorker, CheckDeadline} from '../../services/api.service';
 import { CalendarioComponent } from './calendario.component';
+import { CalendarItem } from './calendar-layout';
 
 describe('CalendarioComponent', () => {
     let fixture: ComponentFixture<CalendarioComponent>;
@@ -278,6 +279,51 @@ describe('CalendarioComponent', () => {
         fixture.detectChanges();
         expect(component.deadlineError()).toBe('Antes hay que completar: Planos.');
         expect(boxes()[1].checked).toBe(false);
+    });
+
+    it('arrastra eventos y fechas límite a otro día, conservando la duración', () => {
+        const component = fixture.componentInstance;
+        component.load();
+        finishLoad('2026-08-31', '2026-10-11', events, [
+            {id: 5, proyecto: 3, proyecto_nombre: 'Valdebebas', titulo: 'Planos', fecha_limite: '2026-09-10', completado: false},
+            {id: 6, proyecto: 3, proyecto_nombre: 'Valdebebas', titulo: 'Hecho', fecha_limite: '2026-09-10', completado: true},
+        ]);
+        const dayEl = (key: string): HTMLElement => fixture.nativeElement.querySelector(`[data-day="${key}"]`);
+        let under = '2026-09-15';
+        const original = document.elementsFromPoint;
+        document.elementsFromPoint = () => [dayEl(under)];
+        const drag = () => ({clientX: 0, clientY: 0, preventDefault: () => undefined, dataTransfer: null} as unknown as DragEvent);
+        const segment = (key: string) => component.calendars().flatMap(c => c.weeks.flatMap(w => w.segments)).find(s => s.item.key === key)!;
+        try {
+            // Del 15 al 17, cogido por el 15 y soltado el 22: pasa al 22-24.
+            component.startDrag(drag(), segment('event-2'));
+            under = '2026-09-22'; component.dragOver(drag()); fixture.detectChanges();
+            expect(dayEl('2026-09-24').classList.contains('drop-target')).toBe(true);
+            expect(dayEl('2026-09-25').classList.contains('drop-target')).toBe(false);
+            component.drop(drag());
+            const move = http.expectOne('/api/eventos/2/');
+            expect(move.request.method).toBe('PATCH');
+            expect(move.request.body).toEqual({inicio: '2026-09-22', fin: '2026-09-24'});
+            move.flush({...events[1], inicio: '2026-09-22', fin: '2026-09-24'});
+            expect(component.events().find(e => e.id === 2)!.fin).toBe('2026-09-24');
+            expect(component.selected()).toBe('2026-09-22');
+
+            // Fecha limite pendiente.
+            under = '2026-09-10'; component.startDrag(drag(), segment('control-5'));
+            under = '2026-09-11'; component.drop(drag());
+            const check = http.expectOne('/api/proyecto-checklist/3/checks/5/');
+            expect(check.request.body).toEqual({fecha_limite: '2026-09-11'});
+            check.flush([{id: 5, fecha_limite: '2026-09-11', completado: false, requisitos_pendientes: [], adjuntos: []}]);
+            expect(component.deadlines().find(d => d.id === 5)!.fecha_limite).toBe('2026-09-11');
+
+            // Soltar en el mismo dia no guarda nada; completados y montajes no se arrastran.
+            component.startDrag(drag(), segment('event-2')); component.drop(drag());
+            http.expectNone('/api/eventos/2/');
+            expect(component.canDrag(segment('control-6').item)).toBe(false);
+            expect(component.canDrag({key: 'mount-1', mounting: true} as CalendarItem)).toBe(false);
+        } finally {
+            document.elementsFromPoint = original;
+        }
     });
 
     it('cancels older loads so stale responses cannot overwrite the current range', () => {

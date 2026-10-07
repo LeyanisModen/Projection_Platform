@@ -785,6 +785,10 @@ export class ApiService {
             ? this.http.patch<CalendarEvent>(`${this.baseUrl}/eventos/${data.id}/`, data, { headers: this.getHeaders() })
             : this.http.post<CalendarEvent>(`${this.baseUrl}/eventos/`, data, { headers: this.getHeaders() });
     }
+    /** Solo cambia las fechas: lo usa el arrastre del calendario. */
+    moveEvent(id: number, inicio: string, fin: string): Observable<CalendarEvent> {
+        return this.http.patch<CalendarEvent>(`${this.baseUrl}/eventos/${id}/`, { inicio, fin }, { headers: this.getHeaders() });
+    }
     deleteEvent(id: number): Observable<void> {
         return this.http.delete<void>(`${this.baseUrl}/eventos/${id}/`, { headers: this.getHeaders() });
     }
