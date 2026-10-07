@@ -297,6 +297,7 @@ describe('CalendarioComponent', () => {
         expect(fixture.nativeElement.querySelector('.people-fieldset')).toBeNull();
         expect(fixture.nativeElement.querySelector('#day-off-tab').getAttribute('aria-selected')).toBe('true');
         expect(fixture.nativeElement.querySelector('select[name=dayOffFactory]').textContent).toContain('Hierros Sancho');
+        expect(component.draft.ferralla).toBeNull();
         component.saveEvent();
         expect(component.editorError()).toContain('festivo');
         http.expectNone('/api/eventos/');

@@ -274,7 +274,11 @@ export class CalendarioComponent {
     setEventType(type: CalendarEvent['tipo']): void {
         if (this.busy()) return;
         this.draft.tipo = type; this.editorError.set('');
-        if (type === 'FESTIVO') this.loadFerrallas();
+        if (type === 'FESTIVO') {
+            // Sin elegir, el festivo es de todas las ferrallas.
+            this.draft.ferralla = this.draft.ferralla ?? null;
+            this.loadFerrallas();
+        }
     }
     tabId(type: CalendarEvent['tipo']): string { return TAB_IDS[type]; }
     switchTab(event: KeyboardEvent): void {
