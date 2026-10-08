@@ -73,6 +73,14 @@ export class ProyectoDetailComponent implements OnInit {
     uploadingProjectFile = false;
     updatingSubmoduleId: number | null = null;
     showProjectFilesModal = false;
+    // Archivar: descargar el .zip y, con el guardado, liberar el espacio.
+    showArchiveModal = false;
+    archivePreparing = false;
+    archiveDownloadStarted = false;
+    archiveConfirmed = false;
+    archiving = false;
+    archiveError = '';
+    archiveFileName = '';
     checkingProjectFiles = false;
     projectFileExists = { documentos: false, elementos: false };
     dropdownOpen = false;
@@ -1188,6 +1196,65 @@ export class ProyectoDetailComponent implements OnInit {
     triggerProjectFileUpload(fileInput: HTMLInputElement): void {
         fileInput.value = '';
         fileInput.click();
+    }
+
+    openArchiveModal(): void {
+        this.archivePreparing = false;
+        this.archiveDownloadStarted = false;
+        this.archiveConfirmed = false;
+        this.archiving = false;
+        this.archiveError = '';
+        this.archiveFileName = '';
+        this.showArchiveModal = true;
+    }
+
+    closeArchiveModal(): void {
+        if (this.archiving) return;
+        this.showArchiveModal = false;
+    }
+
+    downloadArchive(): void {
+        if (!this.proyecto || this.archivePreparing || this.archiving) return;
+        this.archivePreparing = true;
+        this.archiveError = '';
+        this.api.prepararArchivoProyecto(this.proyecto.id).subscribe({
+            next: ({ url, nombre }) => {
+                this.archivePreparing = false;
+                this.archiveDownloadStarted = true;
+                this.archiveFileName = nombre;
+                this.startDownload(url);
+                this.cdr.detectChanges();
+            },
+            error: err => {
+                this.archivePreparing = false;
+                this.archiveError = err?.error?.detail || 'No se pudo preparar el archivo.';
+                this.cdr.detectChanges();
+            },
+        });
+    }
+
+    /** Descarga normal del navegador: el .zip (~1 GB) no pasa por la memoria de la página. */
+    startDownload(url: string): void {
+        window.location.assign(url);
+    }
+
+    confirmArchive(): void {
+        if (!this.proyecto || !this.archiveConfirmed || this.archiving) return;
+        this.archiving = true;
+        this.archiveError = '';
+        this.api.archivarProyecto(this.proyecto.id).subscribe({
+            next: proyecto => {
+                this.archiving = false;
+                this.proyecto = proyecto;
+                this.showArchiveModal = false;
+                this.cdr.detectChanges();
+            },
+            error: err => {
+                this.archiving = false;
+                this.archiveError = err?.error?.detail || 'No se pudo archivar el proyecto.';
+                this.cdr.detectChanges();
+            },
+        });
     }
 
     openProjectFilesModal(event?: Event): void {

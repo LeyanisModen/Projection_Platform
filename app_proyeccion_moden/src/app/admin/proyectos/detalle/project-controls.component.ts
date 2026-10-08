@@ -30,6 +30,7 @@ import { planningMargin, planningWindow } from '../../../shared/project-planning
                         <strong>{{ plan.modulos_por_dia }} módulos / día</strong>
                         <span>{{ plan.modulos_pendientes }} pendientes · {{ plan.dias_disponibles }} días disponibles@if ((plan.modulos_previstos || 0) > (plan.modulos_subidos ?? 0)) { · {{ plan.modulos_subidos }} de {{ plan.modulos_previstos }} subidos }</span>
                     } @else if (plan.estado === 'COMPLETADO') { <strong>Fabricación completada</strong>
+                    } @else if (plan.estado === 'ARCHIVADO') { <strong>Proyecto archivado</strong>
                     } @else if (plan.estado === 'VENCIDO') {
                         <strong>Plazo agotado: {{ plan.modulos_pendientes }} pendientes</strong>
                     } @else if (plan.estado === 'SIN_DIAS') {

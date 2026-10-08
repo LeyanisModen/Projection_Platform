@@ -210,9 +210,14 @@ def plan_ferralla(usuario_id, today=None, override=None):
     from .models import Proyecto
 
     today = today or timezone.localdate()
-    proyectos = list(annotated_projects(Proyecto.objects.filter(usuario_id=usuario_id)))
+    # Los archivados ya no se fabrican: fuera del plan.
+    proyectos = list(annotated_projects(
+        Proyecto.objects.filter(usuario_id=usuario_id, archivado_at__isnull=True)
+    ))
     if override is not None:
-        proyectos = [p for p in proyectos if p.pk != override.pk] + [override]
+        proyectos = [p for p in proyectos if p.pk != override.pk]
+        if not override.archivado_at:
+            proyectos.append(override)
     if not proyectos:
         return {'ritmo': None, 'capacidad': None, 'aprietan': 0, 'proyectos': {}}
 
@@ -280,6 +285,10 @@ def plan_ferralla(usuario_id, today=None, override=None):
 
 def project_demand(project, today=None, plan=None):
     today = today or timezone.localdate()
+    if getattr(project, 'archivado_at', None):
+        demanda = _base_demand(project, today, [], frozenset())
+        demanda['estado'] = 'ARCHIVADO'
+        return demanda
     if project.usuario_id is None:
         return _base_demand(project, today, [], frozenset())
     if plan is None or project.pk not in plan['proyectos']:
@@ -346,13 +355,15 @@ def period_target_summary(projects, start, end):
     target = 0
     for factory_id in factories:
         factory_projects = list(
-            Proyecto.objects.filter(usuario_id=factory_id)
+            Proyecto.objects.filter(usuario_id=factory_id, archivado_at__isnull=True)
             .select_related('usuario__profile')
             .annotate(
                 _period_total=Count('modulos', distinct=True),
                 _period_done_before=Count('modulos', distinct=True, filter=done_before),
             )
         )
+        if not factory_projects:
+            continue
         days = factory_production_days(factory_projects[0])
         festivos = festivos_de(factory_id)
         rows = {}

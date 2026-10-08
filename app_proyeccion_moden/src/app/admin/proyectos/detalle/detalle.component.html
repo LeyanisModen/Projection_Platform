@@ -44,13 +44,30 @@
                 </form>
             </ng-template>
         </div>
-        <button type="button" class="icon-action-btn-borderless"
-            (click)="openBastidorDownloadModal($event)"
-            [disabled]="downloadingZip || !hasAnyGrupoFotos()"
-            title="Descargar fotos por bastidor">
-            <i class="fa fa-download" aria-hidden="true"></i>
-        </button>
+        <div class="header-actions">
+            <button type="button" class="icon-action-btn-borderless"
+                (click)="openBastidorDownloadModal($event)"
+                [disabled]="downloadingZip || !hasAnyGrupoFotos()"
+                title="Descargar fotos por bastidor">
+                <i class="fa fa-download" aria-hidden="true"></i>
+            </button>
+            @if (!proyecto.archivado_at) {
+                <button type="button" class="icon-action-btn-borderless archive-btn"
+                    (click)="openArchiveModal()"
+                    title="Archivar: descargar todo el proyecto y liberar espacio">
+                    <i class="fa fa-archive" aria-hidden="true"></i>
+                </button>
+            }
+        </div>
     </div>
+
+    @if (proyecto.archivado_at) {
+        <p class="archived-banner" role="status">
+            <i class="fa fa-archive" aria-hidden="true"></i>
+            Archivado el {{ proyecto.archivado_at | date:'dd/MM/yyyy' }}@if (proyecto.archivado_por_nombre) { por {{ proyecto.archivado_por_nombre }}}.
+            Sus presentaciones, fotos y documentos ya no están en la plataforma; sus datos de fabricación siguen en las estadísticas.
+        </p>
+    }
 
 
 
@@ -804,6 +821,41 @@
 </div>
 
 
+
+<div class="project-files-modal-backdrop" *ngIf="showArchiveModal" (click)="closeArchiveModal()">
+    <div class="project-files-modal archive-modal" role="dialog" aria-modal="true" aria-labelledby="archive-title" (click)="$event.stopPropagation()">
+        <div class="project-files-modal-header">
+            <h4 id="archive-title">Archivar {{ proyecto?.nombre }}</h4>
+            <button class="btn btn-sm btn-outline-secondary" (click)="closeArchiveModal()" [disabled]="archiving">Cerrar</button>
+        </div>
+        <ol class="archive-steps">
+            <li>
+                <strong>Descarga el archivo</strong>
+                <span>Presentaciones (player y monitor), fotos, estadísticas, datos de los módulos, documentos y lista de control en un .zip.</span>
+                <div>
+                    <button type="button" class="btn btn-sm btn-outline-secondary archive-download" (click)="downloadArchive()" [disabled]="archivePreparing || archiving">
+                        {{ archivePreparing ? 'Preparando...' : archiveDownloadStarted ? 'Volver a descargar' : 'Descargar .zip' }}
+                    </button>
+                </div>
+                @if (archiveDownloadStarted) { <small>Descargando {{ archiveFileName }}. Espera a que termine y ábrelo para comprobar que está completo.</small> }
+            </li>
+            <li>
+                <strong>Libera el espacio</strong>
+                <span>Se borran las presentaciones, fotos y documentos. Módulos, pesos y tiempos se quedan: las estadísticas de la ferralla no cambian.</span>
+                <label class="archive-confirm">
+                    <input type="checkbox" name="archiveConfirmed" [(ngModel)]="archiveConfirmed" [disabled]="!archiveDownloadStarted || archiving">
+                    Tengo el archivo guardado y lo he abierto
+                </label>
+                <div>
+                    <button type="button" class="btn btn-sm btn-danger archive-confirm-btn" (click)="confirmArchive()" [disabled]="!archiveConfirmed || archiving">
+                        {{ archiving ? 'Archivando...' : 'Archivar y liberar espacio' }}
+                    </button>
+                </div>
+            </li>
+        </ol>
+        @if (archiveError) { <p class="archive-error" role="alert">{{ archiveError }}</p> }
+    </div>
+</div>
 
 <div class="project-files-modal-backdrop" *ngIf="showProjectFilesModal" (click)="closeProjectFilesModal()">
 

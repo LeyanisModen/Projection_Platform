@@ -61,7 +61,7 @@ export interface PlanificacionProyecto {
     modulos_previstos?: number | null;
     dias_disponibles: number | null;
     modulos_por_dia: number | null;
-    estado: 'COMPLETADO' | 'SIN_FECHA' | 'SIN_MODULOS' | 'SIN_FERRALLA' | 'VENCIDO' | 'SIN_DIAS' | 'PLANIFICADO';
+    estado: 'COMPLETADO' | 'SIN_FECHA' | 'SIN_MODULOS' | 'SIN_FERRALLA' | 'VENCIDO' | 'SIN_DIAS' | 'PLANIFICADO' | 'ARCHIVADO';
     fecha_calculo: string;
     dias_produccion: string[];
     /** Plan de la ferralla: sus proyectos uno detras de otro. */
@@ -138,7 +138,11 @@ export interface Proyecto {
     fecha_montaje?: string | null;
     planificacion?: PlanificacionProyecto;
     modulos_previstos?: number | null;
+    /** Archivado: ficheros descargados y borrados; sus datos siguen en estadísticas. */
+    archivado_at?: string | null;
+    archivado_por_nombre?: string | null;
     usuario: string | null;
+    usuario_nombre?: string | null;
     bastidor_longitud_cm: number;
     peso_maximo_grua_kg: number | null;
     datos_tecnicos_importados: boolean;
@@ -824,6 +828,16 @@ export class ApiService {
 
     updateProyecto(id: number, data: any): Observable<Proyecto> {
         return this.http.patch<Proyecto>(`${this.baseUrl}/proyectos/${id}/`, data, { headers: this.getHeaders() });
+    }
+
+    /** Archivar, paso 1: enlace firmado al .zip con todo el proyecto. */
+    prepararArchivoProyecto(id: number): Observable<{ url: string; nombre: string }> {
+        return this.http.post<{ url: string; nombre: string }>(`${this.baseUrl}/proyectos/${id}/archivo/`, {}, { headers: this.getHeaders() });
+    }
+
+    /** Archivar, paso 2: con el .zip guardado, borra sus ficheros de la plataforma. */
+    archivarProyecto(id: number): Observable<Proyecto> {
+        return this.http.post<Proyecto>(`${this.baseUrl}/proyectos/${id}/archivar/`, { confirmado: true }, { headers: this.getHeaders() });
     }
 
     /**

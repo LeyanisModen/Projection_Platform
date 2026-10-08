@@ -1699,7 +1699,9 @@ export class Dashboard implements OnInit, OnDestroy {
     this.api.getProyectos()
       .pipe(takeUntil(this.destroy$))
       .subscribe({
-        next: (data) => {
+        next: (all) => {
+          // Los archivados ya no se fabrican: fuera del dashboard de la ferralla.
+          const data = all.filter(p => !p.archivado_at);
           this.proyectos = data;
           // Refresh the selected project reference so the donut picks
           // up updated modulos_completados / modulos_completados_hoy.
@@ -1731,7 +1733,9 @@ export class Dashboard implements OnInit, OnDestroy {
     this.api.getProyectos()
       .pipe(takeUntil(this.destroy$))
       .subscribe({
-        next: (data) => {
+        next: (all) => {
+          // Los archivados ya no se fabrican: fuera del dashboard de la ferralla.
+          const data = all.filter(p => !p.archivado_at);
           this.proyectos = data;
           if (this.selectedProyecto) {
             const updated = data.find(p => p.id === this.selectedProyecto?.id);

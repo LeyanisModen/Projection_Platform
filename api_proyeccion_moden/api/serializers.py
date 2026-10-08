@@ -229,6 +229,7 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
 class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
     planificacion = serializers.SerializerMethodField()
     usuario_nombre = serializers.ReadOnlyField(source='usuario.username')
+    archivado_por_nombre = serializers.SerializerMethodField()
     capacidad_diaria_usuario = serializers.SerializerMethodField()
     grupos_count = serializers.SerializerMethodField()
     modulos_count = serializers.SerializerMethodField()
@@ -263,10 +264,12 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
             "grupos_count", "modulos_count", "modulos_completados",
             "modulos_completados_hoy", "checks_total", "checks_completados",
             "checks_bloqueantes_pendientes", "produccion_bloqueada",
+            "archivado_at", "archivado_por_nombre",
         ]
         extra_kwargs = {
             'usuario': {'required': False, 'allow_null': True},
             'datos_tecnicos_importados': {'read_only': True},
+            'archivado_at': {'read_only': True},
         }
 
     def to_representation(self, instance):
@@ -289,8 +292,12 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
     def get_bastidor_longitud_cm(self, obj):
         return obj.bastidor_longitud_efectiva_cm
 
+    def get_archivado_por_nombre(self, obj):
+        usuario = obj.archivado_por
+        return (usuario.get_full_name() or usuario.username) if usuario else None
+
     def get_planificacion(self, obj):
-        if obj.usuario_id is None:
+        if obj.usuario_id is None or obj.archivado_at:
             return project_demand(obj)
         # Un plan por ferralla y peticion: en la lista todos sus proyectos lo comparten.
         planes = self.context.setdefault('_planes_ferralla', {})

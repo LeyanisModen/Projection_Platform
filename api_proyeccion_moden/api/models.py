@@ -137,6 +137,12 @@ class Proyecto(models.Model):
         help_text='Estrategia de agrupacion: SECUENCIAL = corte solo por longitud; '
                   'AISLAR_CENTRAL_GIRADO = separa modulos central_girado del resto.'
     )
+    # Archivado: sus ficheros se descargaron en un .zip y se borraron de la
+    # plataforma; sus datos de fabricacion siguen en las estadisticas.
+    archivado_at = models.DateTimeField(null=True, blank=True)
+    archivado_por = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL, related_name='+',
+    )
 
     def __str__(self):
         return self.nombre

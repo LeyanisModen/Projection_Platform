@@ -46,6 +46,35 @@ describe('Project detail rack order switch', () => {
             .map(element => (element as HTMLElement).textContent!.trim());
     }
 
+    it('archiva en dos pasos: descarga el .zip y, confirmado, libera el espacio', () => {
+        const component = fixture.componentInstance;
+        const download = vi.spyOn(component, 'startDownload').mockImplementation(() => undefined);
+        component.openArchiveModal(); fixture.detectChanges();
+        const confirmBtn = () => fixture.nativeElement.querySelector('.archive-confirm-btn') as HTMLButtonElement;
+        expect(confirmBtn().disabled).toBe(true);
+
+        (fixture.nativeElement.querySelector('.archive-download') as HTMLButtonElement).click();
+        http.expectOne('/api/proyectos/7/archivo/').flush({url: '/api/proyectos/archivo-descarga/abc/', nombre: 'Test_archivo_20261008.zip'});
+        fixture.detectChanges();
+        expect(download).toHaveBeenCalledWith('/api/proyectos/archivo-descarga/abc/');
+        expect(fixture.nativeElement.textContent).toContain('Descargando Test_archivo_20261008.zip');
+
+        (fixture.nativeElement.querySelector('.archive-confirm input') as HTMLInputElement).click();
+        fixture.detectChanges();
+        expect(component.archiveConfirmed).toBe(true);
+        confirmBtn().click();
+        const archive = http.expectOne('/api/proyectos/7/archivar/');
+        expect(archive.request.body).toEqual({confirmado: true});
+        archive.flush({id: 7, nombre: 'Test', usuario: null, archivado_at: '2026-10-08T10:00:00', archivado_por_nombre: 'Oficina'});
+        fixture.detectChanges();
+        // El proyecto nuevo recarga su lista de control.
+        http.expectOne('/api/proyecto-checklist/7/').flush([]);
+        fixture.detectChanges();
+        expect(component.showArchiveModal).toBe(false);
+        expect(fixture.nativeElement.querySelector('.archived-banner').textContent).toContain('Archivado el 08/10/2026 por Oficina');
+        expect(fixture.nativeElement.querySelector('.archive-btn')).toBeNull();
+    });
+
     it('previews the monitor images in their own tabs, on the same step', () => {
         const component = fixture.componentInstance;
         component.openSecuenciaModal({ id: 1, nombre: 'A01' });

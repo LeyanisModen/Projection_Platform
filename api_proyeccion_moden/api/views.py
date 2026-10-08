@@ -1646,6 +1646,79 @@ class ProyectoViewSet(viewsets.ModelViewSet):
 
         return stats
 
+    @action(detail=True, methods=['post'], url_path='archivo')
+    def preparar_archivo(self, request, pk=None):
+        """Enlace de descarga del .zip con todo el proyecto (paso 1 de archivar)."""
+        from api import archivo as archivo_proyecto
+
+        if not _is_admin(request.user):
+            raise PermissionDenied('Solo la oficina puede archivar proyectos.')
+        proyecto = self.get_object()
+        motivos = archivo_proyecto.motivos_para_no_archivar(proyecto)
+        if motivos:
+            return Response({'detail': ' '.join(motivos)}, status=status.HTTP_400_BAD_REQUEST)
+        token = archivo_proyecto.token_descarga(proyecto, request.user)
+        return Response({
+            'url': f'/api/proyectos/archivo-descarga/{token}/',
+            'nombre': archivo_proyecto.nombre_zip(proyecto),
+        })
+
+    @action(
+        detail=False, methods=['get'], url_path=r'archivo-descarga/(?P<token>[^/]+)',
+        permission_classes=[permissions.AllowAny], authentication_classes=[],
+    )
+    def descargar_archivo(self, request, token=None):
+        """El .zip, generado mientras se descarga. El enlace firmado sustituye
+        al token de sesion: el navegador lo abre como una descarga normal."""
+        from django.core import signing
+        from django.http import StreamingHttpResponse
+        from api import archivo as archivo_proyecto
+
+        try:
+            proyecto_id, usuario_id = archivo_proyecto.leer_token(token)
+        except signing.BadSignature:
+            return Response(
+                {'detail': 'El enlace de descarga no es válido o ha caducado. Vuelve a pedirlo.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        usuario = User.objects.filter(pk=usuario_id, is_active=True).first()
+        proyecto = Proyecto.objects.select_related('usuario').filter(pk=proyecto_id).first()
+        if usuario is None or not _is_admin(usuario) or proyecto is None:
+            return Response({'detail': 'Descarga no disponible.'}, status=status.HTTP_403_FORBIDDEN)
+        if proyecto.archivado_at:
+            return Response(
+                {'detail': 'El proyecto ya está archivado: sus ficheros se borraron de la plataforma.'},
+                status=status.HTTP_410_GONE,
+            )
+        respuesta = StreamingHttpResponse(
+            archivo_proyecto.zip_en_streaming(proyecto, usuario), content_type='application/zip',
+        )
+        respuesta['Content-Disposition'] = f'attachment; filename="{archivo_proyecto.nombre_zip(proyecto)}"'
+        # Que el nginx del frontend no lo acumule: ~1 GB por proyecto.
+        respuesta['X-Accel-Buffering'] = 'no'
+        respuesta['Cache-Control'] = 'no-store'
+        return respuesta
+
+    @action(detail=True, methods=['post'], url_path='archivar')
+    def archivar(self, request, pk=None):
+        """Paso 2: con el .zip guardado, borra los ficheros y lo marca archivado."""
+        from api import archivo as archivo_proyecto
+
+        if not _is_admin(request.user):
+            raise PermissionDenied('Solo la oficina puede archivar proyectos.')
+        proyecto = self.get_object()
+        if request.data.get('confirmado') is not True:
+            return Response(
+                {'detail': 'Confirma que tienes el archivo descargado y guardado.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        motivos = archivo_proyecto.motivos_para_no_archivar(proyecto)
+        if motivos:
+            return Response({'detail': ' '.join(motivos)}, status=status.HTTP_400_BAD_REQUEST)
+        archivo_proyecto.archivar(proyecto, request.user)
+        proyecto.refresh_from_db()
+        return Response(self.get_serializer(proyecto).data)
+
     @action(detail=True, methods=['get'], url_path='elementos-sueltos')
     def elementos_sueltos(self, request, pk=None):
         """Excel de elementos sueltos leido como tablas, una por hoja visible."""

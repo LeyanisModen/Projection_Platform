@@ -10,6 +10,8 @@ interface ProjectGroup {
   username: string;
   userUrl: string;
   projects: Proyecto[];
+  /** Proyectos archivados de todas las ferrallas, al final de la lista. */
+  archived?: boolean;
 }
 
 /**
@@ -89,8 +91,9 @@ export class ProyectosComponent implements OnInit {
       projects: [],
     };
 
-    // Distribute projects
-    this.projects.forEach(project => {
+    // Distribute projects (los archivados van aparte, al final)
+    const archived = this.projects.filter(project => project.archivado_at);
+    this.projects.filter(project => !project.archivado_at).forEach(project => {
       if (project.usuario && groups[project.usuario]) {
         groups[project.usuario].projects.push(project);
       } else {
@@ -105,6 +108,9 @@ export class ProyectosComponent implements OnInit {
     this.groupedProjects = Object.values(groups).filter(group => group.projects.length > 0);
     if (unassigned.projects.length > 0) {
       this.groupedProjects.unshift(unassigned);
+    }
+    if (archived.length > 0) {
+      this.groupedProjects.push({ username: 'Archivados', userUrl: '__archived__', projects: archived, archived: true });
     }
   }
 
