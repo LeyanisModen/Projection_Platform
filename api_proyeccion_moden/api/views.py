@@ -4296,7 +4296,7 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         if not _is_admin(self.request.user) and grupo.usuario_id != self.request.user.id:
             raise PermissionDenied('No puedes gestionar grupos de otra ferralla')
 
-    def _replan_after_plan_change(self, grupo, user, proyecto=None, ignore_pin_modulo_ids=()):
+    def _replan_after_plan_change(self, grupo, user, proyecto=None, ignore_pin_modulo_ids=(), repartir=False):
         """Rebuild the grupo's queues from the persisted plan.
 
         Work in progress is not an anchor any more: every bastidor already
@@ -4304,10 +4304,14 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         image it was on, so the ferralla can reorder, split and merge
         freely. Superior work with photos or past the setup images is still
         preserved in place.
+
+        ``repartir``: una mesa inferior acaba de entrar (activada o pasada a
+        inferior). Lo no empezado se reparte por carga entre las inferiores;
+        lo que se muestra, lo empezado y lo fijado a mano no se mueve.
         """
         # Cada bastidor se queda en la mesa donde ya estaba en cola: solo lo
-        # mueven la ferralla (mesa/dividir), una mesa apagada o "Planificar".
-        progress, pins = capture_queue_progress(grupo, ignore_pin_modulo_ids, pin_queued=True)
+        # mueven la ferralla (mesa/dividir), una mesa apagada o que entra, o "Planificar".
+        progress, pins = capture_queue_progress(grupo, ignore_pin_modulo_ids, pin_queued=not repartir)
         anchored_ids = _collect_replan_anchor_ids_for_grupo(grupo)
         recycle = self._collect_recyclable_items(grupo, exclude_ids=anchored_ids)
         if proyecto is not None:
@@ -4436,6 +4440,17 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         if not has_changes:
             return Response({'detail': 'No hay cambios que aplicar.'}, status=400)
 
+        # Una mesa que pasa a ser inferior activa tiene que recibir trabajo:
+        # si no, todo se queda en las mesas donde ya estaba en cola.
+        inferiores_antes = {
+            mid for mid, mesa in mesas_grupo.items()
+            if mesa.tipo == MesaTipo.INFERIOR and mesa.activa
+        }
+        entra_inferior = any(
+            s['tipo'] == MesaTipo.INFERIOR and s['activa'] and mid not in inferiores_antes
+            for mid, s in final_states.items()
+        )
+
         with transaction.atomic():
             # Primero el nuevo estado de las mesas: asi el replanificado ya
             # sabe que mesas siguen siendo inferiores activas y mueve el
@@ -4446,7 +4461,7 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
             GrupoBastidor.objects.filter(
                 mesa_preferida__in=grupo.mesas.exclude(tipo=MesaTipo.INFERIOR, activa=True),
             ).update(mesa_preferida=None)
-            plan_summaries = self._replan_after_plan_change(grupo, request.user)
+            plan_summaries = self._replan_after_plan_change(grupo, request.user, repartir=entra_inferior)
 
         fresh = self._refresh_grupo_with_prefetch(grupo)
         serializer = self.get_serializer(fresh)

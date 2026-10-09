@@ -4297,6 +4297,70 @@ class PlanningFoundationTests(APITestCase):
             2,
         )
 
+    def test_reactivar_mesa_reparte_los_bastidores_no_empezados(self):
+        """Como en Sanchos: con bastidores, al volver a activar una inferior
+        se le reparte lo no empezado; lo que se muestra y lo fijado a mano
+        a una mesa no se mueve."""
+        from api.queue_sync import activate_queue_item
+        self.project.bastidor_longitud_cm = 20
+        self.project.save(update_fields=["bastidor_longitud_cm"])
+        modulos = [self.modulo] + [
+            Modulo.objects.create(nombre=f"M-0{i}", proyecto=self.project, ancho_cm="15.00")
+            for i in range(2, 7)
+        ]
+        for indice, modulo in enumerate(modulos, start=1):
+            bastidor = GrupoBastidor.objects.create(proyecto=self.project, indice=indice, nombre=f"Grupo {indice}")
+            modulo.ancho_cm = "15.00"
+            modulo.grupo_bastidor = bastidor
+            modulo.orden_intra = 1
+            modulo.save(update_fields=["ancho_cm", "grupo_bastidor", "orden_intra"])
+            DetalleModuloFase.objects.create(modulo=modulo, fase="INFERIOR", espesor_cm="10.00")
+
+        grupo = self._crear_grupo("Grupo Repartir")
+        self.client.post(f"/api/grupos-mesas/{grupo.id}/planificar/", {"proyecto_id": self.project.id}, format="json")
+        inf1 = grupo.mesas.get(tipo="INFERIOR", indice=1)
+        inf2 = grupo.mesas.get(tipo="INFERIOR", indice=2)
+
+        def bastidores_en(mesa):
+            return set(
+                MesaQueueItem.objects.filter(
+                    mesa=mesa, fase="INFERIOR", status__in=["EN_COLA", "MOSTRANDO"],
+                ).values_list("modulo__grupo_bastidor__indice", flat=True)
+            )
+
+        # Se apaga la 2: todo pasa a la 1.
+        self.client.post(
+            f"/api/grupos-mesas/{grupo.id}/actualizar-mesas/",
+            {"cambios": [{"mesa_id": inf2.id, "activa": False}]}, format="json",
+        )
+        self.assertEqual(bastidores_en(inf1), {1, 2, 3, 4, 5, 6})
+        # En la 1 se esta fabricando un bastidor y otro esta fijado a ella a mano.
+        primero = MesaQueueItem.objects.filter(mesa=inf1, fase="INFERIOR", status="EN_COLA").order_by("position").first()
+        activate_queue_item(inf1, primero)
+        mostrando = primero.modulo.grupo_bastidor.indice
+        fijado = next(i for i in (6, 5) if i != mostrando)
+        GrupoBastidor.objects.filter(proyecto=self.project, indice=fijado).update(mesa_preferida=inf1)
+
+        respuesta = self.client.post(
+            f"/api/grupos-mesas/{grupo.id}/actualizar-mesas/",
+            {"cambios": [{"mesa_id": inf2.id, "activa": True}]}, format="json",
+        )
+        self.assertEqual(respuesta.status_code, 200)
+        en_1, en_2 = bastidores_en(inf1), bastidores_en(inf2)
+        self.assertEqual(en_1 | en_2, {1, 2, 3, 4, 5, 6})
+        self.assertTrue(en_2, "la mesa reactivada recibe bastidores")
+        self.assertIn(mostrando, en_1)
+        self.assertIn(fijado, en_1)
+
+        # Cambiar solo una mesa de tipo sin que entre una inferior no reparte nada.
+        antes = (bastidores_en(inf1), bastidores_en(inf2))
+        sup = grupo.mesas.get(tipo="SUPERIOR")
+        self.client.post(
+            f"/api/grupos-mesas/{grupo.id}/actualizar-mesas/",
+            {"cambios": [{"mesa_id": sup.id, "activa": False}]}, format="json",
+        )
+        self.assertEqual((bastidores_en(inf1), bastidores_en(inf2)), antes)
+
     def test_actualizar_mesas_combina_tipo_y_activa(self):
         """El endpoint unificado acepta cambios de tipo y activa juntos
         en una sola llamada y replanifica una sola vez."""
