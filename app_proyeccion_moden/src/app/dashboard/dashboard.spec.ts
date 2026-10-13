@@ -783,9 +783,11 @@ describe('Dashboard', () => {
       expect(columna.querySelector('[aria-label="Volver al orden automático en Mesa 3"]')).toBeNull();
 
       const [col] = component.planModalSuperiores();
-      expect(component.canMoverSupItem(col, col.items[0], 1)).toBe(false);
-      expect(component.canMoverSupItem(col, col.items[1], -1)).toBe(false);
-      expect(component.canMoverSupItem(col, col.items[2], -1)).toBe(true);
+      // Manual es manual: todo se mueve dentro de la columna.
+      expect(component.canMoverSupItem(col, col.items[0], -1)).toBe(false);
+      expect(component.canMoverSupItem(col, col.items[0], 1)).toBe(true);
+      expect(component.canMoverSupItem(col, col.items[1], -1)).toBe(true);
+      expect(component.canMoverSupItem(col, col.items[2], 1)).toBe(false);
 
       const reorder = vi.spyOn(api, 'reorderMesaQueue').mockReturnValue(of({status: 'ok'}));
       vi.spyOn(component, 'loadMesaQueueItems').mockImplementation(() => undefined);
@@ -796,10 +798,23 @@ describe('Dashboard', () => {
         {id: 31, position: 0}, {id: 33, position: 1}, {id: 32, position: 2}, {id: 99, position: 3},
       ]);
 
-      // En mesa pero en el primer paso (1/16): se puede mover y ponerle otra delante.
+      // La que esta en mesa ya empezada (paso 3): se pregunta antes de apartarla.
+      const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(false);
+      reorder.mockClear();
+      component.moverSupItem(col, col.items[1], -1);
+      expect(confirmar.mock.calls[0][0]).toContain('A1 va por el paso 3 en Mesa 3');
+      expect(reorder).not.toHaveBeenCalled();
+      confirmar.mockReturnValue(true);
+      component.moverSupItem(col, col.items[0], 1);
+      expect(reorder).toHaveBeenCalledWith([
+        {id: 32, position: 0}, {id: 31, position: 1}, {id: 99, position: 2}, {id: 33, position: 3},
+      ]);
+      // En el primer paso no pregunta.
+      confirmar.mockClear();
       col.items[0].current_image_index = 0;
-      expect(component.canMoverSupItem(col, col.items[0], 1)).toBe(true);
-      expect(component.canMoverSupItem(col, col.items[1], -1)).toBe(true);
+      component.moverSupItem(col, col.items[0], 1);
+      expect(confirmar).not.toHaveBeenCalled();
+      confirmar.mockRestore();
     });
 
     it('offers the way back to the automatic order when the superior mesa is manual', () => {
