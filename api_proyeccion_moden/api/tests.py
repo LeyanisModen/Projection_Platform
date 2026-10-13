@@ -5887,7 +5887,7 @@ class BastidorSelfServiceTests(APITestCase):
             ).order_by("position").values_list("modulo__nombre", flat=True)
         )
 
-    def test_la_superior_en_mesa_sin_empezar_se_puede_mover_y_pasa_a_mesa_la_primera(self):
+    def test_en_orden_manual_la_superior_en_mesa_se_mueve_aunque_este_empezada(self):
         from api.queue_sync import activate_queue_item
         self._planificar()
         cola = list(self.mesa_sup.queue_items.filter(
@@ -5915,21 +5915,26 @@ class BastidorSelfServiceTests(APITestCase):
         self.mesa_sup.refresh_from_db()
         self.assertEqual(self.mesa_sup.current_image_index, 0)
 
-        # Empezada (paso 3): no se le puede poner otra delante y no cambia nada.
+        # Empezada (paso 5 y con fotos): manual es manual. Vuelve a la cola
+        # guardando su paso, sus fotos se quedan, y retoma ahi cuando vuelva.
         siguiente.refresh_from_db()
         tercera.refresh_from_db()
-        Mesa.objects.filter(pk=self.mesa_sup.pk).update(current_image_index=2)
+        Mesa.objects.filter(pk=self.mesa_sup.pk).update(current_image_index=4)
+        FotoFabricacion.objects.create(modulo=siguiente.modulo, fase="SUPERIOR", paso=3, url="/media/fotos/x.jpg", mesa=self.mesa_sup)
         respuesta = poner_delante(tercera, siguiente)
-        self.assertEqual(respuesta.status_code, 400)
-        self.assertIn("ya está empezada", respuesta.data["detail"])
-        self.assertEqual(mostrando(), siguiente.id)
-        self.assertEqual(MesaQueueItem.objects.get(pk=tercera.pk).position, tercera.position)
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(mostrando(), tercera.id)
+        apartada = MesaQueueItem.objects.get(pk=siguiente.pk)
+        self.assertEqual((apartada.status, apartada.resume_image_index), (MesaQueueStatus.EN_COLA, 4))
+        self.assertTrue(FotoFabricacion.objects.filter(modulo=siguiente.modulo, fase="SUPERIOR").exists())
 
-        # Con fotos tampoco, aunque vuelva al primer paso.
-        Mesa.objects.filter(pk=self.mesa_sup.pk).update(current_image_index=0)
-        FotoFabricacion.objects.create(modulo=siguiente.modulo, fase="SUPERIOR", paso=0, url="/media/fotos/x.jpg", mesa=self.mesa_sup)
-        self.assertEqual(poner_delante(tercera, siguiente).status_code, 400)
+        # Al volver a ponerla delante retoma en su paso.
+        tercera.refresh_from_db()
+        apartada.refresh_from_db()
+        self.assertEqual(poner_delante(apartada, tercera).status_code, 200)
         self.assertEqual(mostrando(), siguiente.id)
+        self.mesa_sup.refresh_from_db()
+        self.assertEqual(self.mesa_sup.current_image_index, 4)
 
     def test_la_ferralla_ordena_la_mesa_superior_a_mano_y_el_automatismo_lo_respeta(self):
         from api.queue_sync import reconcile_superior_queue_for_group

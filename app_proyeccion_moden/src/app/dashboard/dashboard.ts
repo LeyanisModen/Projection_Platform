@@ -487,27 +487,27 @@ export class Dashboard implements OnInit, OnDestroy {
     return columnas;
   }
 
-  /**
-   * Una superior en mesa ya empezada (pasado el paso 2) no se mueve ni se le
-   * pone otra delante. Sin empezar si: al moverla pasa a mesa la que quede
-   * primera (el servidor la rechaza si ya tiene fotos).
-   */
+  /** Superior en mesa pasado el paso 2: se puede mover, pero se pregunta antes. */
   private supEmpezadaEnMesa(item: MesaQueueItem): boolean {
     return item.status === 'MOSTRANDO' && (item.current_image_index ?? 0) > 1;
   }
 
+  /** En orden manual manda la ferralla: todo se mueve, tambien la que esta en mesa. */
   canMoverSupItem(col: PlanColumnaSuperior, item: MesaQueueItem, dir: -1 | 1): boolean {
-    if (this.supEmpezadaEnMesa(item)) return false;
     const index = col.items.indexOf(item);
     const target = index + dir;
-    if (index < 0 || target < 0 || target >= col.items.length) return false;
-    return !this.supEmpezadaEnMesa(col.items[target]);
+    return index >= 0 && target >= 0 && target < col.items.length;
   }
 
   /** Mueve la fase superior de este proyecto delante o detras de su vecina en la mesa. */
   moverSupItem(col: PlanColumnaSuperior, item: MesaQueueItem, dir: -1 | 1): void {
     if (this.planModalBusy || !this.canMoverSupItem(col, item, dir)) return;
     const vecino = col.items[col.items.indexOf(item) + dir];
+    // La que esta en mesa deja de proyectarse si se mueve o se le pone otra delante.
+    const enMesa = [item, vecino].find(i => this.supEmpezadaEnMesa(i));
+    if (enMesa && (enMesa === item ? dir === 1 : dir === -1)
+        && !confirm(`${enMesa.modulo_nombre} va por el paso ${(enMesa.current_image_index ?? 0) + 1} en ${col.mesa.nombre}. `
+          + 'Volverá a la cola y retomará en ese paso cuando le toque. ¿Seguro?')) return;
     // Las posiciones son de toda la mesa (puede haber otros proyectos en cola).
     const todos = [...(this.mesaQueueItems.get(col.mesa.id) || [])].filter(i => i.status !== 'HECHO');
     const desde = todos.findIndex(i => i.id === item.id);
