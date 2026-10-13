@@ -5344,8 +5344,8 @@ def _count_working_days(start_date, end_date, festivos=frozenset()):
     return total
 
 
-def _working_hours_in_range(start_date, end_date, profile, now=None):
-    """Return elapsed configured working hours inside an inclusive date range."""
+def _working_hours_in_range(start_date, end_date, profile, now=None, festivos=frozenset()):
+    """Return elapsed configured working hours inside an inclusive date range (no holidays)."""
     from datetime import time, timedelta
     from django.utils import timezone
 
@@ -5366,7 +5366,7 @@ def _working_hours_in_range(start_date, end_date, profile, now=None):
     seconds = 0.0
     current = start_date
     while current <= end_date:
-        tramo = horario.get(day_codes[current.weekday()])
+        tramo = None if current in festivos else horario.get(day_codes[current.weekday()])
         if tramo:
             start_time, end_time = tramo
             day_start = timezone.make_aware(
@@ -5474,8 +5474,12 @@ def _horario_para_perfil(profile):
     return {day: (time(6, 50), time(15, 0)) for day in ['MON', 'TUE', 'WED', 'THU', 'FRI']}
 
 
-def _working_seconds_between(start, end, horario, current_tz):
-    """Seconds of configured working time between two aware datetimes."""
+def _working_seconds_between(start, end, horario, current_tz, festivos=frozenset()):
+    """Seconds of configured working time between two aware datetimes.
+
+    Holidays of the calendar are not working time: a panel left on the
+    table over a long weekend only counts the hours actually worked.
+    """
     from datetime import timedelta
     if start is None or end is None or end <= start:
         return 0.0
@@ -5484,7 +5488,7 @@ def _working_seconds_between(start, end, horario, current_tz):
     current = timezone.localtime(start, current_tz).date()
     last = timezone.localtime(end, current_tz).date()
     while current <= last:
-        tramo = horario.get(day_codes[current.weekday()])
+        tramo = None if current in festivos else horario.get(day_codes[current.weekday()])
         if tramo:
             start_time, end_time = tramo
             day_start = timezone.make_aware(
@@ -5518,7 +5522,7 @@ def _jornada_inicio(local_date, horario, current_tz):
 TIEMPO_PANEL_MINIMO_S = 120
 
 
-def _tiempos_fabricacion(items, horario, current_tz):
+def _tiempos_fabricacion(items, horario, current_tz, festivos=frozenset()):
     """Minutes of working time per finished phase, measured when possible.
 
     Measured: sum of the intervals between INICIO/PASO and PAUSA/FIN events
@@ -5553,10 +5557,10 @@ def _tiempos_fabricacion(items, horario, current_tz):
                         if open_at is None:
                             open_at = ev.at
                     elif open_at is not None:
-                        medido += _working_seconds_between(open_at, ev.at, horario, current_tz)
+                        medido += _working_seconds_between(open_at, ev.at, horario, current_tz, festivos)
                         open_at = None
                 if open_at is not None:
-                    medido += _working_seconds_between(open_at, it.done_at, horario, current_tz)
+                    medido += _working_seconds_between(open_at, it.done_at, horario, current_tz, festivos)
             if medido >= TIEMPO_PANEL_MINIMO_S:
                 result[it.id] = (medido / 60.0, True)
             else:
@@ -5565,7 +5569,7 @@ def _tiempos_fabricacion(items, horario, current_tz):
                     start = previous_done
                 else:
                     start = _jornada_inicio(done_local.date(), horario, current_tz)
-                seconds = _working_seconds_between(start, it.done_at, horario, current_tz)
+                seconds = _working_seconds_between(start, it.done_at, horario, current_tz, festivos)
                 if seconds >= TIEMPO_PANEL_MINIMO_S:
                     result[it.id] = (seconds / 60.0, False)
             previous_done = it.done_at
@@ -5906,7 +5910,7 @@ class ProductionStatsView(APIView):
         festivos_rango = sorted(dia for dia in festivos if from_date <= dia <= to_date)
         working_days = _count_working_days(from_date, to_date, festivos)
         working_hours = _working_hours_in_range(
-            from_date, to_date, profile, timezone.localtime(timezone.now(), current_tz)
+            from_date, to_date, profile, timezone.localtime(timezone.now(), current_tz), festivos,
         )
         totals['horas_productivas'] = round(working_hours, 2)
         totals['modulos_por_hora'] = round(
@@ -5940,7 +5944,7 @@ class ProductionStatsView(APIView):
             tiempo_items_qs = tiempo_items_qs.filter(mesa__usuario=profile_user)
         ventana_items = list(tiempo_items_qs)
         tiempos_por_item = _tiempos_fabricacion(
-            ventana_items, _horario_para_perfil(profile), current_tz,
+            ventana_items, _horario_para_perfil(profile), current_tz, festivos,
         )
         proyecto_filtro = int(proyecto_id) if proyecto_id and str(proyecto_id).isdigit() else None
 
