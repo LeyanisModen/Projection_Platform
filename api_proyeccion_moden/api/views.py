@@ -5526,7 +5526,9 @@ def _tiempos_fabricacion(items, horario, current_tz, festivos=frozenset()):
     """Minutes of working time per finished phase, measured when possible.
 
     Measured: sum of the intervals between INICIO/PASO and PAUSA/FIN events
-    (time with the phase on screen), clipped to the working schedule.
+    (time with the phase on screen), clipped to the working schedule and
+    without holidays. A gap between two steps on different days (the panel
+    stayed on the table overnight or over the weekend) does not count.
     Approximated (phases finished before the log existed, or on screen for
     less than the minimum): working time between the previous phase
     finished on the same mesa that day (or the start of the working day)
@@ -5551,16 +5553,21 @@ def _tiempos_fabricacion(items, horario, current_tz, festivos=frozenset()):
             evs = eventos.get(it.id, [])
             medido = 0.0
             if any(ev.tipo == EventoFabricacionTipo.INICIO for ev in evs):
-                open_at = None
+                # Se suma de paso en paso. Si entre dos pasos cambia el dia, el
+                # panel se quedo en la mesa (noche, fin de semana): no cuenta.
+                def tramo(desde, hasta):
+                    if timezone.localtime(desde, current_tz).date() != timezone.localtime(hasta, current_tz).date():
+                        return 0.0
+                    return _working_seconds_between(desde, hasta, horario, current_tz, festivos)
+
+                last_at = None
                 for ev in evs:
-                    if ev.tipo in (EventoFabricacionTipo.INICIO, EventoFabricacionTipo.PASO):
-                        if open_at is None:
-                            open_at = ev.at
-                    elif open_at is not None:
-                        medido += _working_seconds_between(open_at, ev.at, horario, current_tz, festivos)
-                        open_at = None
-                if open_at is not None:
-                    medido += _working_seconds_between(open_at, it.done_at, horario, current_tz, festivos)
+                    if last_at is not None:
+                        medido += tramo(last_at, ev.at)
+                    abre = ev.tipo in (EventoFabricacionTipo.INICIO, EventoFabricacionTipo.PASO)
+                    last_at = ev.at if abre else None
+                if last_at is not None:
+                    medido += tramo(last_at, it.done_at)
             if medido >= TIEMPO_PANEL_MINIMO_S:
                 result[it.id] = (medido / 60.0, True)
             else:
