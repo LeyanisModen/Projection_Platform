@@ -5951,6 +5951,50 @@ class BastidorSelfServiceTests(APITestCase):
             ).order_by("position").values_list("modulo__nombre", flat=True)
         )
 
+    def test_la_superior_en_mesa_sin_empezar_se_puede_mover_y_pasa_a_mesa_la_primera(self):
+        from api.queue_sync import activate_queue_item
+        self._planificar()
+        cola = list(self.mesa_sup.queue_items.filter(
+            status__in=[MesaQueueStatus.MOSTRANDO, MesaQueueStatus.EN_COLA],
+        ).order_by("position"))
+        self.assertGreaterEqual(len(cola), 3)
+        en_mesa, siguiente, tercera = cola[0], cola[1], cola[2]
+        activate_queue_item(self.mesa_sup, en_mesa)
+
+        def poner_delante(item, otro):
+            return self.client.post(
+                "/api/mesa-queue-items/reorder/",
+                {"items": [{"id": item.id, "position": otro.position}, {"id": otro.id, "position": item.position}]},
+                format="json",
+            )
+
+        def mostrando():
+            return self.mesa_sup.queue_items.get(status=MesaQueueStatus.MOSTRANDO).id
+
+        # En el primer paso: la que pasa delante se pone en mesa y la otra vuelve a la cola.
+        respuesta = poner_delante(siguiente, en_mesa)
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(mostrando(), siguiente.id)
+        self.assertEqual(MesaQueueItem.objects.get(pk=en_mesa.pk).status, MesaQueueStatus.EN_COLA)
+        self.mesa_sup.refresh_from_db()
+        self.assertEqual(self.mesa_sup.current_image_index, 0)
+
+        # Empezada (paso 3): no se le puede poner otra delante y no cambia nada.
+        siguiente.refresh_from_db()
+        tercera.refresh_from_db()
+        Mesa.objects.filter(pk=self.mesa_sup.pk).update(current_image_index=2)
+        respuesta = poner_delante(tercera, siguiente)
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertIn("ya está empezada", respuesta.data["detail"])
+        self.assertEqual(mostrando(), siguiente.id)
+        self.assertEqual(MesaQueueItem.objects.get(pk=tercera.pk).position, tercera.position)
+
+        # Con fotos tampoco, aunque vuelva al primer paso.
+        Mesa.objects.filter(pk=self.mesa_sup.pk).update(current_image_index=0)
+        FotoFabricacion.objects.create(modulo=siguiente.modulo, fase="SUPERIOR", paso=0, url="/media/fotos/x.jpg", mesa=self.mesa_sup)
+        self.assertEqual(poner_delante(tercera, siguiente).status_code, 400)
+        self.assertEqual(mostrando(), siguiente.id)
+
     def test_la_ferralla_ordena_la_mesa_superior_a_mano_y_el_automatismo_lo_respeta(self):
         from api.queue_sync import reconcile_superior_queue_for_group
         self._planificar()

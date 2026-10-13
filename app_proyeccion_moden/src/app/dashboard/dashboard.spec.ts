@@ -795,6 +795,11 @@ describe('Dashboard', () => {
       expect(reorder).toHaveBeenCalledWith([
         {id: 31, position: 0}, {id: 33, position: 1}, {id: 32, position: 2}, {id: 99, position: 3},
       ]);
+
+      // En mesa pero en el primer paso (1/16): se puede mover y ponerle otra delante.
+      col.items[0].current_image_index = 0;
+      expect(component.canMoverSupItem(col, col.items[0], 1)).toBe(true);
+      expect(component.canMoverSupItem(col, col.items[1], -1)).toBe(true);
     });
 
     it('offers the way back to the automatic order when the superior mesa is manual', () => {

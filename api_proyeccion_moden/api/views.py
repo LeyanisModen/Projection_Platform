@@ -1230,6 +1230,37 @@ def _collect_anchored_item_ids_for_grupo(grupo):
     return anchored
 
 
+def _mostrar_la_primera_superior(mesa):
+    """Mesa superior reordenada a mano: se proyecta la primera de su cola.
+
+    La que estaba en mesa vuelve a la cola guardando su paso si aun no esta
+    empezada (sin fotos y en los pasos de preparacion). Si ya lo esta, no se
+    le puede poner otra delante: devuelve el motivo.
+    """
+    mesa = Mesa.objects.select_for_update().get(pk=mesa.pk)
+    activos = list(
+        mesa.queue_items.filter(status__in=ACTIVE_QUEUE_STATUSES)
+        .select_related('modulo').order_by('position', 'id')
+    )
+    actual = next((item for item in activos if item.status == MesaQueueStatus.MOSTRANDO), None)
+    if not activos or actual is None or actual.pk == activos[0].pk:
+        return None
+    empezada = (
+        mesa.current_image_index > EARLY_IMAGE_INDEX_LIMIT
+        or FotoFabricacion.objects.filter(modulo=actual.modulo, fase='SUPERIOR').exists()
+    )
+    if empezada:
+        return (
+            f'{actual.modulo.nombre} ya está empezada en {mesa.nombre} '
+            f'(paso {mesa.current_image_index + 1} o con fotos): termínala antes de poner otra delante.'
+        )
+    stash_showing_progress(actual, mesa.current_image_index)
+    actual.status = MesaQueueStatus.EN_COLA
+    actual.save(update_fields=['status'])
+    activate_queue_item(mesa, activos[0])
+    return None
+
+
 def _collect_replan_anchor_ids_for_grupo(grupo):
     """Superior work that must survive a rebuild of the grupo's queues.
 
@@ -7345,6 +7376,12 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
                 item.save(update_fields=['position'])
                 mesas_tocadas[item.mesa_id] = item.mesa
             for mesa in mesas_tocadas.values():
+                if mesa.tipo == MesaTipo.SUPERIOR:
+                    # Lo que queda primero es lo que se proyecta.
+                    motivo = _mostrar_la_primera_superior(mesa)
+                    if motivo:
+                        transaction.set_rollback(True)
+                        return Response({'detail': motivo}, status=status.HTTP_400_BAD_REQUEST)
                 grupo = mesa.grupo
                 if (
                     mesa.tipo == MesaTipo.SUPERIOR
