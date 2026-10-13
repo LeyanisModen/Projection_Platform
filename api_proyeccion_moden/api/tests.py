@@ -1440,6 +1440,36 @@ class PlanningFoundationTests(APITestCase):
         self.assertEqual(fila["tiempo_paneles"], 3)
         self.assertEqual(fila["tiempo_medidos"], 1)
 
+    def test_el_tiempo_por_panel_no_cuenta_los_festivos_aunque_se_quede_en_la_mesa(self):
+        """Como A74 en Sanchos: empezado el viernes, lunes 12 festivo y
+        terminado el martes. Solo cuentan las horas trabajadas."""
+        from api.models import EventoFabricacion
+        UserProfile.objects.create(
+            user=self.user,
+            capture_active_days=["MON", "TUE", "WED", "THU", "FRI"],
+            capture_start_time=time(6, 0),
+            capture_end_time=time(14, 0),
+        )
+        mesa = Mesa.objects.create(nombre="Mesa 1", usuario=self.user, tipo="INFERIOR", indice=1)
+        aware = lambda *args: timezone.make_aware(datetime(*args))  # noqa: E731
+        item = MesaQueueItem.objects.create(
+            modulo=self.modulo, mesa=mesa, fase="INFERIOR", status=MesaQueueStatus.HECHO,
+            done_at=aware(2026, 10, 13, 7, 0),
+        )
+        for tipo, paso, at in (
+            ("INICIO", 0, aware(2026, 10, 9, 13, 0)),
+            ("PASO", 5, aware(2026, 10, 9, 13, 50)),
+            ("PASO", 6, aware(2026, 10, 13, 6, 30)),
+            ("FIN", None, aware(2026, 10, 13, 7, 0)),
+        ):
+            EventoFabricacion.objects.create(item=item, mesa=mesa, modulo=self.modulo, fase="INFERIOR", tipo=tipo, paso=paso, at=at)
+        # El 12 de octubre (festivo nacional) viene precargado en el calendario.
+        stats = self.client.get("/api/stats/production/?from=2026-10-13&to=2026-10-13").data
+        # Viernes 13:00-14:00 y martes 06:00-07:00: 120 minutos, no 600.
+        self.assertEqual(stats["tiempos"]["inferior"]["mediana_min"], 120.0)
+        festivo = self.client.get("/api/stats/production/?from=2026-10-12&to=2026-10-12").data
+        self.assertEqual(festivo["totals"]["horas_productivas"], 0)
+
     def test_estadisticas_de_todo_un_proyecto_desde_su_primer_modulo(self):
         aware = lambda *args: timezone.make_aware(datetime(*args))  # noqa: E731
 
