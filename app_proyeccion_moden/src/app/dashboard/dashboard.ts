@@ -487,12 +487,21 @@ export class Dashboard implements OnInit, OnDestroy {
     return columnas;
   }
 
+  /**
+   * Una superior en mesa ya empezada (pasado el paso 2) no se mueve ni se le
+   * pone otra delante. Sin empezar si: al moverla pasa a mesa la que quede
+   * primera (el servidor la rechaza si ya tiene fotos).
+   */
+  private supEmpezadaEnMesa(item: MesaQueueItem): boolean {
+    return item.status === 'MOSTRANDO' && (item.current_image_index ?? 0) > 1;
+  }
+
   canMoverSupItem(col: PlanColumnaSuperior, item: MesaQueueItem, dir: -1 | 1): boolean {
-    if (item.status === 'MOSTRANDO') return false;
+    if (this.supEmpezadaEnMesa(item)) return false;
     const index = col.items.indexOf(item);
     const target = index + dir;
     if (index < 0 || target < 0 || target >= col.items.length) return false;
-    return col.items[target].status !== 'MOSTRANDO';
+    return !this.supEmpezadaEnMesa(col.items[target]);
   }
 
   /** Mueve la fase superior de este proyecto delante o detras de su vecina en la mesa. */
