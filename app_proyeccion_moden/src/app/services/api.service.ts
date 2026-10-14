@@ -124,6 +124,10 @@ export interface CheckDeadline {
 }
 export type NewProjectCheck = Pick<ProjectCheck, 'titulo'> & Partial<Pick<ProjectCheck, 'requiere_fecha' | 'requiere_documento' | 'fecha_limite'>>;
 export interface OfficeWorker { id: number; nombre: string; activo: boolean; color: string; }
+/** Donde va un forjado en su edificio, de abajo arriba. */
+export type PlantaTipo = 'SOTANO' | 'SEMISOTANO' | 'BAJA' | 'ENTREPLANTA' | 'PLANTA' | 'CUBIERTA' | 'CASETON';
+/** Edificio: agrupa sus forjados (proyectos). Es de una sola ferralla. */
+export interface Edificio { id: number; nombre: string; usuario: number | null; forjados: number; }
 export interface CalendarEvent {
     id: number; titulo: string; tipo: 'EVENTO' | 'VACACIONES' | 'FESTIVO';
     inicio: string; fin: string; proyecto: number | null; trabajadores: number[]; notas: string;
@@ -143,6 +147,14 @@ export interface Proyecto {
     archivado_por_nombre?: string | null;
     usuario: string | null;
     usuario_nombre?: string | null;
+    edificio?: number | null;
+    edificio_nombre?: string | null;
+    planta_tipo?: PlantaTipo | null;
+    planta_numero?: number | null;
+    /** S2, SS, PB, M, P3, C... */
+    planta_etiqueta?: string | null;
+    /** De abajo arriba: sotanos, semisotano, baja, entreplanta, plantas, cubierta, casetones. */
+    orden_planta?: number;
     bastidor_longitud_cm: number;
     peso_maximo_grua_kg: number | null;
     datos_tecnicos_importados: boolean;
@@ -621,11 +633,18 @@ export interface ProductionStatsResponse {
     modulos?: ProductionStatsModulo[];
     /** Presente cuando las estadisticas son de un solo proyecto. */
     proyecto?: {
+        /** Un proyecto o un edificio entero (todos sus forjados). */
+        tipo?: 'proyecto' | 'edificio';
         id: number;
         nombre: string;
         modulos_total: number;
         modulos_completados: number;
         fecha_montaje: string | null;
+        forjados?: Array<{
+            id: number; nombre: string; planta: string | null; fecha_montaje: string | null;
+            modulos_total: number; modulos_completados: number; modulos_periodo: number;
+            peso_kg: number; desperdicio_kg: number; archivado: boolean;
+        }>;
     } | null;
     esperado: {
         capacidad_diaria_modulos: number;
@@ -830,6 +849,15 @@ export class ApiService {
         return this.http.patch<Proyecto>(`${this.baseUrl}/proyectos/${id}/`, data, { headers: this.getHeaders() });
     }
 
+    getEdificios(usuarioId?: number): Observable<Edificio[]> {
+        const params: Record<string, string> = usuarioId != null ? { usuario: String(usuarioId) } : {};
+        return this.http.get<Edificio[]>(`${this.baseUrl}/edificios/`, { headers: this.getHeaders(), params });
+    }
+
+    createEdificio(data: { nombre: string; usuario: number }): Observable<Edificio> {
+        return this.http.post<Edificio>(`${this.baseUrl}/edificios/`, data, { headers: this.getHeaders() });
+    }
+
     /** Archivar, paso 1: enlace firmado al .zip con todo el proyecto. */
     prepararArchivoProyecto(id: number): Observable<{ url: string; nombre: string }> {
         return this.http.post<{ url: string; nombre: string }>(`${this.baseUrl}/proyectos/${id}/archivo/`, {}, { headers: this.getHeaders() });
@@ -969,11 +997,12 @@ export class ApiService {
         );
     }
 
-    getProductionStats(params: { from?: string; to?: string; proyecto?: number; rango?: 'proyecto' } = {}): Observable<ProductionStatsResponse> {
+    getProductionStats(params: { from?: string; to?: string; proyecto?: number; edificio?: number; rango?: 'proyecto' | 'edificio' } = {}): Observable<ProductionStatsResponse> {
         const query = new URLSearchParams();
         if (params.from) query.set('from', params.from);
         if (params.to) query.set('to', params.to);
         if (params.proyecto != null) query.set('proyecto', String(params.proyecto));
+        if (params.edificio != null) query.set('edificio', String(params.edificio));
         // rango=proyecto: el servidor decide las fechas (del primer modulo terminado a hoy).
         if (params.rango) query.set('rango', params.rango);
         const qs = query.toString();

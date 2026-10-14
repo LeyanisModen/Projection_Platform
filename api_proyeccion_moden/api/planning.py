@@ -184,9 +184,10 @@ def _serie(proyectos, filas, usuario_id):
         .values_list('proyecto_id', 'pos')
     )
     pendientes = [p for p in proyectos if filas[p.pk]['estado'] == 'PLANIFICADO']
+    # Mismo dia de montaje: antes el forjado de abajo.
     return sorted(pendientes, key=lambda p: (
         (0, posiciones[p.pk]) if p.pk in posiciones else (1, 0),
-        p.fecha_montaje, p.pk,
+        p.fecha_montaje, p.orden_planta, p.pk,
     ))
 
 

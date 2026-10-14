@@ -1499,7 +1499,7 @@ class PlanningFoundationTests(APITestCase):
         self.assertEqual([d["fecha"] for d in response.data["por_dia"]], ["2026-08-04", "2026-09-28"])
         self.assertEqual(
             response.data["proyecto"],
-            {"id": self.project.id, "nombre": "Proyecto Plan", "modulos_total": 3, "modulos_completados": 2, "fecha_montaje": None},
+            {"tipo": "proyecto", "id": self.project.id, "nombre": "Proyecto Plan", "modulos_total": 3, "modulos_completados": 2, "fecha_montaje": None},
         )
         self.assertEqual([m["nombre"] for m in response.data["modulos"]], ["M-01", "M-00"])
 

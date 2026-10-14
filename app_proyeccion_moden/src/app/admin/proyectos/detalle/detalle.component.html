@@ -114,6 +114,38 @@
                 </div>
             </div>
 
+            @if (proyecto.usuario) {
+            <div class="side-panel edificio-panel">
+                <span class="section-label">Edificio y planta</span>
+                <div class="edificio-row">
+                    <select class="form-control" aria-label="Edificio" name="edificio"
+                        [ngModel]="proyecto.edificio ?? null" (ngModelChange)="cambiarEdificio($event)"
+                        (focus)="cargarEdificios()" [disabled]="guardandoEdificio">
+                        <option [ngValue]="null">Sin edificio</option>
+                        @for (edificio of edificiosOpciones(); track edificio.id) { <option [ngValue]="edificio.id">{{ edificio.nombre }}</option> }
+                    </select>
+                    <button type="button" class="btn btn-sm btn-outline-secondary nuevo-edificio" (click)="nuevoEdificio()"
+                        [disabled]="guardandoEdificio" title="Nuevo edificio de esta ferralla" aria-label="Nuevo edificio">
+                        <i class="fa fa-plus" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <div class="edificio-row">
+                    <select class="form-control" aria-label="Planta" name="plantaTipo"
+                        [ngModel]="proyecto.planta_tipo ?? null" (ngModelChange)="cambiarPlanta($event, proyecto.planta_numero ?? null)"
+                        [disabled]="guardandoEdificio">
+                        <option [ngValue]="null">Sin planta</option>
+                        @for (tipo of plantaTipos; track tipo.value) { <option [ngValue]="tipo.value">{{ tipo.label }}</option> }
+                    </select>
+                    @if (plantaConNumero(proyecto.planta_tipo)) {
+                        <input type="number" class="form-control planta-numero" min="0" max="999" aria-label="Número de planta"
+                            [ngModel]="proyecto.planta_numero" (change)="cambiarPlanta(proyecto.planta_tipo ?? null, $any($event.target).valueAsNumber)"
+                            [disabled]="guardandoEdificio">
+                    }
+                </div>
+                @if (edificioError) { <p class="edificio-error" role="alert">{{ edificioError }}</p> }
+            </div>
+            }
+
             <div class="side-panel project-config-card project-logistics-card">
                 <div class="project-config-header">
                     <span class="section-label">Límites de transporte</span>

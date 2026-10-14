@@ -54,17 +54,28 @@
                                 [class.active]="statsPreset === 'month'"
                                 (click)="selectStatsPreset('month')">Este mes</button>
                             <select class="stats-proyecto-select" aria-label="Proyecto de las estadísticas"
-                                [ngModel]="statsProyecto" (ngModelChange)="selectStatsProyecto($event)">
-                                <option [ngValue]="null">Todos los proyectos</option>
-                                @for (proyecto of proyectos; track proyecto.id) {
-                                    <option [ngValue]="proyecto.id">{{ proyecto.nombre }}</option>
+                                [ngModel]="statsAlcance()" (ngModelChange)="selectStatsAlcance($event)">
+                                <option value="todos">Todos los proyectos</option>
+                                @for (grupo of gruposEdificio(); track grupo.clave) {
+                                    @if (grupo.id !== null) {
+                                        <optgroup [label]="grupo.nombre">
+                                            <option [value]="'e:' + grupo.id">{{ grupo.nombre }} · todo el edificio</option>
+                                            @for (proyecto of grupo.proyectos; track proyecto.id) {
+                                                <option [value]="'p:' + proyecto.id">{{ proyecto.nombre }}</option>
+                                            }
+                                        </optgroup>
+                                    } @else {
+                                        @for (proyecto of grupo.proyectos; track proyecto.id) {
+                                            <option [value]="'p:' + proyecto.id">{{ proyecto.nombre }}</option>
+                                        }
+                                    }
                                 }
                             </select>
-                            @if (statsProyecto !== null) {
+                            @if (statsProyecto !== null || statsEdificio !== null) {
                                 <button type="button" class="period-chip"
                                     [class.active]="statsPreset === 'proyecto'"
-                                    title="Desde el primer módulo terminado del proyecto hasta hoy"
-                                    (click)="selectStatsPreset('proyecto')">Todo el proyecto</button>
+                                    [title]="statsEdificio !== null ? 'Desde el primer módulo terminado del edificio hasta hoy' : 'Desde el primer módulo terminado del proyecto hasta hoy'"
+                                    (click)="selectStatsPreset('proyecto')">{{ statsEdificio !== null ? 'Todo el edificio' : 'Todo el proyecto' }}</button>
                             }
                         </div>
                         <div class="stats-period-dates">
@@ -82,7 +93,7 @@
                         <p class="stats-scope">
                             <strong>{{ proyectoStats.nombre }}</strong> · {{ proyectoStats.modulos_completados }} de {{ proyectoStats.modulos_total }} módulos terminados
                             @if (statsPreset === 'proyecto') { · desde el {{ statsFrom | date:'dd/MM/yyyy' }} }
-                            @if (proyectoStats.fecha_montaje) { · montaje el {{ proyectoStats.fecha_montaje | date:'dd/MM/yyyy' }} }
+                            @if (proyectoStats.fecha_montaje) { · {{ proyectoStats.tipo === 'edificio' ? 'último montaje' : 'montaje' }} el {{ proyectoStats.fecha_montaje | date:'dd/MM/yyyy' }} }
                         </p>
                     }
                     @if (statsError) {
@@ -107,7 +118,7 @@
                                 </span>
                             </div>
                             <div class="stats-kpi stats-kpi-avance" title="Módulos terminados del proyecto sobre su total">
-                                <span class="stats-kpi-label">Avance del proyecto</span>
+                                <span class="stats-kpi-label">Avance del {{ proyectoStats.tipo === 'edificio' ? 'edificio' : 'proyecto' }}</span>
                                 <span class="stats-kpi-value">{{ avanceProyecto(proyectoStats) ?? '—' }} <small>%</small></span>
                             </div>
                             } @else {
@@ -333,6 +344,38 @@
                         </div>
                         }
 
+                        @if (statsData.proyecto?.forjados?.length ? statsData.proyecto!.forjados! : null; as forjados) {
+                        <h4 class="stats-subtitle">Por forjado ({{ forjados.length }})</h4>
+                        <div class="stats-table-scroll">
+                            <table class="stats-table stats-table-forjados">
+                                <thead>
+                                    <tr>
+                                        <th>Planta</th>
+                                        <th>Forjado</th>
+                                        <th>Montaje</th>
+                                        <th class="num" title="Módulos terminados del forjado sobre su total">Terminados</th>
+                                        <th class="num">En el período</th>
+                                        <th class="num">Peso (kg)</th>
+                                        <th class="num">Desperdicio (kg)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @for (forjado of forjados; track forjado.id) {
+                                    <tr>
+                                        <td>{{ forjado.planta || '—' }}</td>
+                                        <td>{{ forjado.nombre }}@if (forjado.archivado) { <small> · archivado</small> }</td>
+                                        <td>{{ forjado.fecha_montaje ? (forjado.fecha_montaje | date:'dd/MM/yyyy') : '—' }}</td>
+                                        <td class="num">{{ forjado.modulos_completados }} / {{ forjado.modulos_total }}</td>
+                                        <td class="num">{{ forjado.modulos_periodo }}</td>
+                                        <td class="num">{{ forjado.peso_kg | number:'1.0-1' }}</td>
+                                        <td class="num">{{ forjado.desperdicio_kg | number:'1.0-1' }}</td>
+                                    </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                        }
+
                         @if (statsData.modulos?.length ? statsData.modulos : null; as modulos) {
                         <h4 class="stats-subtitle">Módulos fabricados ({{ modulos.length }})</h4>
                         <div class="stats-table-scroll">
@@ -549,7 +592,15 @@
                 </div>
                 <div class="projects-inline-grid">
                     @if (loadingProyectos) { <div class="loading">Cargando...</div> }
-                    @for (proyecto of proyectos; track proyecto.id) {
+                    @for (grupoEdificio of gruposEdificio(); track grupoEdificio.clave) {
+                    @if (grupoEdificio.id !== null || hayEdificios()) {
+                        @let modulosEdificio = edificioModulos(grupoEdificio);
+                        <div class="edificio-header">
+                            <strong>{{ grupoEdificio.nombre }}</strong>
+                            <span>{{ grupoEdificio.proyectos.length }} {{ grupoEdificio.proyectos.length === 1 ? 'forjado' : 'forjados' }}@if (grupoEdificio.id !== null && modulosEdificio.total) { · {{ modulosEdificio.hechos }}/{{ modulosEdificio.total }} módulos }</span>
+                        </div>
+                    }
+                    @for (proyecto of grupoEdificio.proyectos; track proyecto.id) {
                     <article class="project-inline-card"
                         [class.selected]="selectedProyecto?.id === proyecto.id"
                         [class.estado-finalizado]="proyectoEstado(proyecto) === 'finalizado'"
@@ -648,6 +699,7 @@
                             </div>
                         }
                     </article>
+                    }
                     }
                 </div>
             </section>

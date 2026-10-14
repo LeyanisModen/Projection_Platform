@@ -139,6 +139,11 @@
 .btn-materiales-general { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
 .btn-materiales-general:hover { background: var(--surface-2); }
 .projects-inline-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 12px; }
+/* Edificio: ocupa toda la fila y agrupa sus forjados de abajo arriba. */
+.edificio-header { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 10px; margin-top: 6px; padding: 6px 2px 0; border-bottom: 1px solid var(--line, #e4e7eb); }
+.edificio-header:first-child { margin-top: 0; }
+.edificio-header strong { font-size: 14px; }
+.edificio-header span { color: var(--muted, #7b8794); font-size: 12px; }
 .project-inline-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border: 1px solid var(--line); border-left: 3px solid var(--line-strong); background: var(--surface); cursor: pointer; transition: background-color 120ms ease; }
 .project-inline-card:hover { background: var(--surface-2); }
 .project-inline-card.selected { border-color: var(--ink); }

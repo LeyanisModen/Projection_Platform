@@ -1485,6 +1485,9 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         # create-with-structure) go through here.
         from api.office import sembrar_checklist
         sembrar_checklist(serializer.instance)
+        # Edificio y planta segun el nombre (OBRA[_B<bloque>]_P<planta>).
+        from api.edificios import asignar_por_nombre
+        asignar_por_nombre(serializer.instance)
 
     def perform_update(self, serializer):
         instance = serializer.instance
@@ -1541,6 +1544,10 @@ class ProyectoViewSet(viewsets.ModelViewSet):
                 replaced_files.append(current_file.name)
 
         serializer.save()
+        # Edificio: si cambia de ferralla sale del de la anterior; si aun no
+        # tiene, se deduce del nombre.
+        from api.edificios import ajustar_a_ferralla
+        ajustar_a_ferralla(serializer.instance)
         if serializer.instance.fecha_montaje != fecha_montaje_anterior:
             # Plazos relativos a D: los pasos pendientes siguen a la fecha nueva.
             from api.office import recalcular_fechas_checklist
@@ -5683,6 +5690,53 @@ def _resumen_tiempos(valores):
     }
 
 
+def _resumen_edificio(edificio, modulos_detalle):
+    """Cabecera de estadisticas de un edificio y una fila por forjado.
+
+    Las columnas de kilos y modulos del periodo salen del detalle por modulo
+    ya calculado; los totales, de todos sus modulos.
+    """
+    from django.db.models import Count, Q
+
+    periodo = {}
+    for fila in modulos_detalle:
+        datos = periodo.setdefault(fila['proyecto_id'], {'modulos': 0, 'peso_kg': 0.0, 'desperdicio_kg': 0.0})
+        datos['modulos'] += 1
+        datos['peso_kg'] += float(fila.get('peso_kg') or 0)
+        datos['desperdicio_kg'] += float(fila.get('desperdicio_kg') or 0)
+    forjados = []
+    for forjado in sorted(
+        edificio.forjados.annotate(
+            _total=Count('modulos', distinct=True),
+            _hechos=Count('modulos', distinct=True, filter=Q(modulos__completado_at__isnull=False)),
+        ),
+        key=lambda p: (p.orden_planta, p.nombre),
+    ):
+        datos = periodo.get(forjado.id, {})
+        forjados.append({
+            'id': forjado.id,
+            'nombre': forjado.nombre,
+            'planta': forjado.planta_etiqueta,
+            'fecha_montaje': forjado.fecha_montaje.isoformat() if forjado.fecha_montaje else None,
+            'modulos_total': max(forjado._total, forjado.modulos_previstos or 0),
+            'modulos_completados': forjado._hechos,
+            'modulos_periodo': datos.get('modulos', 0),
+            'peso_kg': round(datos.get('peso_kg', 0.0), 1),
+            'desperdicio_kg': round(datos.get('desperdicio_kg', 0.0), 1),
+            'archivado': bool(forjado.archivado_at),
+        })
+    montajes = [f['fecha_montaje'] for f in forjados if f['fecha_montaje']]
+    return {
+        'tipo': 'edificio',
+        'id': edificio.id,
+        'nombre': edificio.nombre,
+        'modulos_total': sum(f['modulos_total'] for f in forjados),
+        'modulos_completados': sum(f['modulos_completados'] for f in forjados),
+        'fecha_montaje': max(montajes) if montajes else None,
+        'forjados': forjados,
+    }
+
+
 class ProductionStatsView(APIView):
     """
     Aggregated production stats for the statistics dashboard.
@@ -5702,24 +5756,36 @@ class ProductionStatsView(APIView):
         from_date = _parse_iso_date(request.query_params.get('from'), today)
         to_date = _parse_iso_date(request.query_params.get('to'), from_date)
         proyecto_id = request.query_params.get('proyecto')
+        edificio_id = request.query_params.get('edificio')
         current_tz = timezone.get_current_timezone()
 
-        # Estadisticas de un proyecto: solo lo suyo y, con rango=proyecto,
-        # desde su primera fase o modulo terminado hasta hoy, empezara cuando
-        # empezara.
+        # Estadisticas de un proyecto o de un edificio (todos sus forjados):
+        # solo lo suyo y, con rango=proyecto|edificio, desde su primera fase o
+        # modulo terminado hasta hoy, empezara cuando empezara.
         proyecto_filtrado = None
-        if proyecto_id:
+        edificio_filtrado = None
+        alcance_ids = None
+        if edificio_id:
+            from api.models import Edificio
+            edificios_visibles = Edificio.objects.filter(pk=edificio_id) if str(edificio_id).isdigit() else Edificio.objects.none()
+            if not _is_admin(request.user):
+                edificios_visibles = edificios_visibles.filter(usuario=request.user)
+            edificio_filtrado = edificios_visibles.first()
+            alcance_ids = list(edificio_filtrado.forjados.values_list('id', flat=True)) if edificio_filtrado else []
+            proyecto_id = None
+        elif proyecto_id:
             proyectos_visibles = Proyecto.objects.filter(pk=proyecto_id)
             if not _is_admin(request.user):
                 proyectos_visibles = proyectos_visibles.filter(usuario=request.user)
             # Un proyecto ajeno o inexistente no da error: simplemente no hay datos.
             proyecto_filtrado = proyectos_visibles.first()
-        if proyecto_filtrado is not None and request.query_params.get('rango') == 'proyecto':
+            alcance_ids = [int(proyecto_id)] if str(proyecto_id).isdigit() else []
+        if alcance_ids and request.query_params.get('rango') in ('proyecto', 'edificio') and (proyecto_filtrado or edificio_filtrado):
             inicios = [
-                Modulo.objects.filter(proyecto=proyecto_filtrado, completado_at__isnull=False)
+                Modulo.objects.filter(proyecto_id__in=alcance_ids, completado_at__isnull=False)
                 .order_by('completado_at').values_list('completado_at', flat=True).first(),
                 MesaQueueItem.objects.filter(
-                    modulo__proyecto=proyecto_filtrado, status=MesaQueueStatus.HECHO, done_at__isnull=False,
+                    modulo__proyecto_id__in=alcance_ids, status=MesaQueueStatus.HECHO, done_at__isnull=False,
                 ).order_by('done_at').values_list('done_at', flat=True).first(),
             ]
             inicios = [inicio for inicio in inicios if inicio is not None]
@@ -5748,8 +5814,8 @@ class ProductionStatsView(APIView):
                     completado_at__gte=from_dt,
                     completado_at__lt=to_dt_exclusive)
         )
-        if proyecto_id:
-            modulos_qs = modulos_qs.filter(proyecto_id=proyecto_id)
+        if alcance_ids is not None:
+            modulos_qs = modulos_qs.filter(proyecto_id__in=alcance_ids)
         if not _is_admin(request.user):
             modulos_qs = modulos_qs.filter(proyecto__usuario=request.user)
 
@@ -5982,6 +6048,8 @@ class ProductionStatsView(APIView):
         # Work hours still use the camera schedule. Required output comes
         # from current project deadlines, not the legacy nominal capacity.
         profile_user = None
+        if _is_admin(request.user) and edificio_filtrado is not None and edificio_filtrado.usuario_id:
+            profile_user = edificio_filtrado.usuario
         if _is_admin(request.user) and proyecto_id:
             proyecto = Proyecto.objects.select_related('usuario__profile').filter(id=proyecto_id).first()
             if proyecto and proyecto.usuario:
@@ -5994,8 +6062,8 @@ class ProductionStatsView(APIView):
             profile = None
         from api.planning import annotated_projects, demand_summary, festivos_de, period_target_summary
         planning_projects = Proyecto.objects.all()
-        if proyecto_id:
-            planning_projects = planning_projects.filter(pk=proyecto_id)
+        if alcance_ids is not None:
+            planning_projects = planning_projects.filter(pk__in=alcance_ids)
         if not _is_admin(request.user):
             planning_projects = planning_projects.filter(usuario=request.user)
         planning = demand_summary(annotated_projects(planning_projects))
@@ -6041,7 +6109,7 @@ class ProductionStatsView(APIView):
         tiempos_por_item = _tiempos_fabricacion(
             ventana_items, _horario_para_perfil(profile), current_tz, festivos,
         )
-        proyecto_filtro = int(proyecto_id) if proyecto_id and str(proyecto_id).isdigit() else None
+        proyecto_filtro = set(alcance_ids) if alcance_ids is not None else None
 
         def _mediana(valores):
             return round(statistics.median(valores), 1) if valores else None
@@ -6061,7 +6129,7 @@ class ProductionStatsView(APIView):
             valor = tiempos_por_item.get(it.id)
             if valor is None:
                 continue
-            if proyecto_filtro is not None and it.modulo.proyecto_id != proyecto_filtro:
+            if proyecto_filtro is not None and it.modulo.proyecto_id not in proyecto_filtro:
                 continue
             local_done = timezone.localtime(it.done_at, current_tz)
             tiempos_dia.setdefault(local_done.date().isoformat(), {}).setdefault(it.fase, []).append(valor[0])
@@ -6106,8 +6174,8 @@ class ProductionStatsView(APIView):
         # graficas prolonguen la linea hacia el periodo vecino.
         contexto_desde = from_dt - timedelta(days=contexto_dias)
         contexto_base = Modulo.objects.prefetch_related('detalles_fase').filter(completado_at__isnull=False)
-        if proyecto_id:
-            contexto_base = contexto_base.filter(proyecto_id=proyecto_id)
+        if alcance_ids is not None:
+            contexto_base = contexto_base.filter(proyecto_id__in=alcance_ids)
         if not _is_admin(request.user):
             contexto_base = contexto_base.filter(proyecto__usuario=request.user)
         contexto_modulos = list(
@@ -6236,13 +6304,18 @@ class ProductionStatsView(APIView):
             'tiempos': tiempos,
             'contexto': contexto,
             'modulos': modulos_detalle,
-            'proyecto': {
-                'id': proyecto_filtrado.id,
-                'nombre': proyecto_filtrado.nombre,
-                'modulos_total': proyecto_filtrado.modulos.count(),
-                'modulos_completados': proyecto_filtrado.modulos.filter(completado_at__isnull=False).count(),
-                'fecha_montaje': proyecto_filtrado.fecha_montaje.isoformat() if proyecto_filtrado.fecha_montaje else None,
-            } if proyecto_filtrado is not None else None,
+            'proyecto': (
+                {
+                    'tipo': 'proyecto',
+                    'id': proyecto_filtrado.id,
+                    'nombre': proyecto_filtrado.nombre,
+                    'modulos_total': proyecto_filtrado.modulos.count(),
+                    'modulos_completados': proyecto_filtrado.modulos.filter(completado_at__isnull=False).count(),
+                    'fecha_montaje': proyecto_filtrado.fecha_montaje.isoformat() if proyecto_filtrado.fecha_montaje else None,
+                } if proyecto_filtrado is not None
+                else _resumen_edificio(edificio_filtrado, modulos_detalle) if edificio_filtrado is not None
+                else None
+            ),
         })
 
 

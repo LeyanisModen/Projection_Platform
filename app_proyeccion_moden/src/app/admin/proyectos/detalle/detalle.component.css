@@ -345,3 +345,9 @@
 .text-muted { color: var(--muted) !important; }
 .text-danger { color: var(--danger) !important; }
 .text-success { color: var(--ok) !important; }
+
+.edificio-panel { display: grid; gap: 8px; }
+.edificio-row { display: flex; gap: 6px; align-items: center; }
+.edificio-row select { flex: 1 1 auto; min-width: 0; }
+.edificio-row .planta-numero { flex: 0 0 76px; }
+.edificio-error { margin: 0; color: var(--danger); font-size: 12px; }

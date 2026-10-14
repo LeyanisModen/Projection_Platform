@@ -39,7 +39,9 @@
                 </span>
                 }
             </div>
-            <div *ngFor="let project of group.projects"
+            <ng-container *ngFor="let project of group.projects; let i = index">
+            <div class="edificio-title" *ngIf="edificioCabecera(group, i) as cabecera">{{ cabecera }}</div>
+            <div
                 class="project-row"
                 role="link"
                 tabindex="0"
@@ -47,7 +49,7 @@
                 (click)="manageProject(project)"
                 (keydown)="onProjectRowKeydown($event, project)">
                 <div class="project-main">
-                    <div class="project-name">{{ project.nombre }}</div>
+                    <div class="project-name">{{ project.nombre }}@if (project.planta_etiqueta) { <span class="planta-chip">{{ project.planta_etiqueta }}</span> }</div>
                     <div class="meta project-info">
                         @if (group.archived && project.usuario_nombre) { <span>{{ project.usuario_nombre }}</span> }
                         @if (project.fecha_montaje) { <span>Montaje {{ project.fecha_montaje | date:'dd/MM/yyyy' }}</span> }
@@ -73,6 +75,7 @@
                     <i class="fa fa-chevron-right row-chevron" aria-hidden="true"></i>
                 </div>
             </div>
+            </ng-container>
         </ng-container>
 
         <div *ngIf="!loading && groupedProjects.length === 0" class="meta">No hay proyectos.</div>

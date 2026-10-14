@@ -68,6 +68,68 @@ class EstrategiaColaSuperior(models.TextChoices):
     MANUAL = 'MANUAL', 'Orden manual'
 
 
+class PlantaTipo(models.TextChoices):
+    """Donde va un forjado en su edificio, de abajo arriba."""
+    SOTANO = 'SOTANO', 'Sótano'
+    SEMISOTANO = 'SEMISOTANO', 'Semisótano'
+    BAJA = 'BAJA', 'Planta baja'
+    ENTREPLANTA = 'ENTREPLANTA', 'Entreplanta'
+    PLANTA = 'PLANTA', 'Planta'
+    CUBIERTA = 'CUBIERTA', 'Cubierta'
+    CASETON = 'CASETON', 'Casetón'
+
+
+_PLANTA_GRUPO = {
+    PlantaTipo.SOTANO: 0, PlantaTipo.SEMISOTANO: 1, PlantaTipo.BAJA: 2,
+    PlantaTipo.ENTREPLANTA: 3, PlantaTipo.PLANTA: 4, PlantaTipo.CUBIERTA: 5,
+    PlantaTipo.CASETON: 6,
+}
+
+
+def orden_planta(tipo, numero):
+    """Orden de abajo arriba: sotanos (el mas hondo primero), semisotano,
+    baja, entreplanta, plantas, cubiertas y casetones. Sin planta, al final."""
+    if not tipo or tipo not in _PLANTA_GRUPO:
+        return 9999
+    n = numero or 0
+    return _PLANTA_GRUPO[tipo] * 1000 + (500 - n if tipo == PlantaTipo.SOTANO else n)
+
+
+def etiqueta_planta(tipo, numero):
+    """Como se escribe en los nombres: S2, SS, PB, M, P3, C, Casetón."""
+    if not tipo:
+        return None
+    n = numero or ''
+    return {
+        PlantaTipo.SOTANO: f'S{n}',
+        PlantaTipo.SEMISOTANO: 'SS',
+        PlantaTipo.BAJA: 'PB',
+        PlantaTipo.ENTREPLANTA: f'M{n}',
+        PlantaTipo.PLANTA: f'P{n}',
+        PlantaTipo.CUBIERTA: f'C{n}',
+        PlantaTipo.CASETON: f'Casetón {n}'.strip(),
+    }.get(tipo)
+
+
+class Edificio(models.Model):
+    """Un edificio (cada bloque de una obra es uno) agrupa sus forjados, que
+    en la plataforma son proyectos. Todos sus forjados son de su ferralla."""
+    nombre = models.CharField(max_length=200)
+    usuario = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL, related_name='edificios',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['nombre', 'id']
+        constraints = [
+            models.UniqueConstraint(fields=['usuario', 'nombre'], name='unique_edificio_nombre_por_ferralla'),
+        ]
+
+    def __str__(self):
+        return self.nombre
+
+
 class Proyecto(models.Model):
     id = models.AutoField(primary_key=True)
     nombre = models.CharField(max_length=200)
@@ -137,6 +199,12 @@ class Proyecto(models.Model):
         help_text='Estrategia de agrupacion: SECUENCIAL = corte solo por longitud; '
                   'AISLAR_CENTRAL_GIRADO = separa modulos central_girado del resto.'
     )
+    # Forjado de un edificio y su planta: agrupa y ordena de abajo arriba.
+    edificio = models.ForeignKey(
+        Edificio, null=True, blank=True, on_delete=models.SET_NULL, related_name='forjados',
+    )
+    planta_tipo = models.CharField(max_length=16, choices=PlantaTipo.choices, null=True, blank=True)
+    planta_numero = models.SmallIntegerField(null=True, blank=True)
     # Archivado: sus ficheros se descargaron en un .zip y se borraron de la
     # plataforma; sus datos de fabricacion siguen en las estadisticas.
     archivado_at = models.DateTimeField(null=True, blank=True)
@@ -146,6 +214,14 @@ class Proyecto(models.Model):
 
     def __str__(self):
         return self.nombre
+
+    @property
+    def orden_planta(self):
+        return orden_planta(self.planta_tipo, self.planta_numero)
+
+    @property
+    def planta_etiqueta(self):
+        return etiqueta_planta(self.planta_tipo, self.planta_numero)
 
     @property
     def bastidor_longitud_efectiva_cm(self):

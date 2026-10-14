@@ -5,6 +5,7 @@ import { ApiService, User, Proyecto } from '../../services/api.service';
 import { forkJoin } from 'rxjs';
 import { Router } from '@angular/router';
 import { factoryCapacity, planningIssues, planningLabel, planningTight, requiredDaily, tightProjects } from '../../shared/project-planning';
+import { ordenarPorEdificio } from '../../shared/edificios';
 
 interface ProjectGroup {
   username: string;
@@ -105,6 +106,8 @@ export class ProyectosComponent implements OnInit {
     const unassigned = groups['__unassigned__'];
     delete groups['__unassigned__'];
 
+    // Dentro de cada ferralla, por edificio y de abajo arriba.
+    Object.values(groups).forEach(group => group.projects = ordenarPorEdificio(group.projects));
     this.groupedProjects = Object.values(groups).filter(group => group.projects.length > 0);
     if (unassigned.projects.length > 0) {
       this.groupedProjects.unshift(unassigned);
@@ -112,6 +115,17 @@ export class ProyectosComponent implements OnInit {
     if (archived.length > 0) {
       this.groupedProjects.push({ username: 'Archivados', userUrl: '__archived__', projects: archived, archived: true });
     }
+  }
+
+  /** Cabecera antes del primer forjado de cada edificio (si la ferralla tiene edificios). */
+  edificioCabecera(group: ProjectGroup, index: number): string | null {
+    if (group.archived || !group.projects.some(project => project.edificio)) return null;
+    const project = group.projects[index];
+    const anterior = group.projects[index - 1];
+    if (anterior && (anterior.edificio ?? null) === (project.edificio ?? null)) return null;
+    if (!project.edificio) return 'Sin edificio';
+    const forjados = group.projects.filter(other => other.edificio === project.edificio).length;
+    return `${project.edificio_nombre} · ${forjados} ${forjados === 1 ? 'forjado' : 'forjados'}`;
   }
 
   toggleForm() {
