@@ -25,7 +25,9 @@ describe('project planning', () => {
         expect(planningIssues(projects)).toBe(3);
         expect(planningLabel(projects[1])).toContain('9 pendientes');
     });
-    it('does not flag completed projects as unplanned', () => {
-        expect(planningIssues([project('COMPLETADO')])).toBe(0);
+    it('does not flag completed or archived projects as unplanned', () => {
+        expect(planningIssues([project('COMPLETADO'), project('ARCHIVADO')])).toBe(0);
+        const archived = {...project('ARCHIVADO'), archivado_at: '2026-10-08T10:00:00'} as Proyecto;
+        expect(planningLabel(archived)).toBe('Archivado el 08/10/2026');
     });
 });

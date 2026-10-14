@@ -306,8 +306,10 @@ def capture_queue_progress(group, ignore_pin_modulo_ids=(), pin_queued=False):
             progress[key] = item.mesa.current_image_index
         elif not showing and item.resume_image_index:
             progress[key] = item.resume_image_index
+        # Se queda en su mesa lo que se muestra, lo que se dejo a medias
+        # (paso guardado) y, con pin_queued, todo lo que ya esta en cola.
         if (
-            (showing or pin_queued)
+            (showing or pin_queued or item.resume_image_index)
             and item.fase == Fase.INFERIOR
             and item.modulo.grupo_bastidor_id is not None
             and item.modulo_id not in ignore_pin_modulo_ids

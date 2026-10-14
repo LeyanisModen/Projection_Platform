@@ -30,14 +30,18 @@
             <div class="group-title" [class.is-unassigned]="!group.userUrl">
                 <span class="group-name">{{ group.username }}</span>
                 <span class="meta">{{ group.projects.length }} {{ group.projects.length === 1 ? 'proyecto' : 'proyectos' }}</span>
+                @if (!group.archived) {
                 <span class="meta group-demand" title="Ritmo para llegar a todos los montajes fabricando un proyecto detrás de otro">
                     <span [class.is-warn]="(factoryCapacity(group.projects) ?? 0) > 0 && requiredDaily(group.projects) > factoryCapacity(group.projects)!">{{ requiredDaily(group.projects) }} módulos/día</span>
                     @if (factoryCapacity(group.projects); as capacidad) { <span> · capacidad {{ capacidad }}</span> }
                     @if (tightProjects(group.projects)) { <span class="is-warn"> · {{ tightProjects(group.projects) }} {{ tightProjects(group.projects) === 1 ? 'aprieta' : 'aprietan' }}</span> }
                     @if (planningIssues(group.projects)) { <span class="is-warn"> · {{ planningIssues(group.projects) }} sin planificar</span> }
                 </span>
+                }
             </div>
-            <div *ngFor="let project of group.projects"
+            <ng-container *ngFor="let project of group.projects; let i = index">
+            <div class="edificio-title" *ngIf="edificioCabecera(group, i) as cabecera">{{ cabecera }}</div>
+            <div
                 class="project-row"
                 role="link"
                 tabindex="0"
@@ -45,8 +49,9 @@
                 (click)="manageProject(project)"
                 (keydown)="onProjectRowKeydown($event, project)">
                 <div class="project-main">
-                    <div class="project-name">{{ project.nombre }}</div>
+                    <div class="project-name">{{ project.nombre }}@if (project.planta_etiqueta) { <span class="planta-chip">{{ project.planta_etiqueta }}</span> }</div>
                     <div class="meta project-info">
+                        @if (group.archived && project.usuario_nombre) { <span>{{ project.usuario_nombre }}</span> }
                         @if (project.fecha_montaje) { <span>Montaje {{ project.fecha_montaje | date:'dd/MM/yyyy' }}</span> }
                         <span [class.is-warn]="planningTight(project)">{{ planningLabel(project) }}</span>
                         <span *ngIf="(project.grupos_count || 0) > 0">{{ project.grupos_count }} grupos</span>
@@ -70,6 +75,7 @@
                     <i class="fa fa-chevron-right row-chevron" aria-hidden="true"></i>
                 </div>
             </div>
+            </ng-container>
         </ng-container>
 
         <div *ngIf="!loading && groupedProjects.length === 0" class="meta">No hay proyectos.</div>

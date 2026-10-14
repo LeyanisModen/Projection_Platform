@@ -6,6 +6,7 @@ from rest_framework import routers
 from api import views
 from api.health import HealthView
 from api.office import CheckDefinitionViewSet, ProjectChecklistViewSet, WorkerViewSet, EventViewSet
+from api.edificios import EdificioViewSet
 
 from django.contrib import admin
 
@@ -27,6 +28,7 @@ router.register(r"check-definiciones", CheckDefinitionViewSet)
 router.register(r"proyecto-checklist", ProjectChecklistViewSet, basename='proyecto-checklist')
 router.register(r"trabajadores", WorkerViewSet)
 router.register(r"eventos", EventViewSet)
+router.register(r"edificios", EdificioViewSet)
 
 from rest_framework.authtoken import views as drf_views
 

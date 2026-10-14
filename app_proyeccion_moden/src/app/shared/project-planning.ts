@@ -26,7 +26,7 @@ export function planningTight(project: Proyecto): boolean {
 }
 
 export function planningIssues(projects: Proyecto[]): number {
-    return projects.filter(p => p.planificacion && !['PLANIFICADO','COMPLETADO'].includes(p.planificacion.estado)).length;
+    return projects.filter(p => p.planificacion && !['PLANIFICADO','COMPLETADO','ARCHIVADO'].includes(p.planificacion.estado)).length;
 }
 
 export function planningMargin(margen: number | null | undefined): string {
@@ -57,6 +57,10 @@ export function planningLabel(project: Proyecto): string {
             return previstos > subidos ? `${base} · ${subidos} de ${previstos} subidos` : base;
         }
         case 'COMPLETADO': return 'Fabricación completada';
+        case 'ARCHIVADO': {
+            const fecha = project.archivado_at ? new Date(project.archivado_at) : null;
+            return fecha ? `Archivado el ${fecha.toLocaleDateString('es-ES', {day: '2-digit', month: '2-digit', year: 'numeric'})}` : 'Archivado';
+        }
         case 'SIN_MODULOS': return 'Pendiente de cargar módulos';
         case 'SIN_FERRALLA': return 'Falta asignar una ferralla';
         case 'VENCIDO': return `Plazo vencido · ${plan.modulos_pendientes} pendientes`;

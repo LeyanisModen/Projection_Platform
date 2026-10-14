@@ -6,7 +6,7 @@ from django.contrib.auth.models import User
 from rest_framework import serializers
 
 from api.models import (
-    Proyecto, Modulo, Imagen, Mesa,
+    Edificio, Proyecto, Modulo, Imagen, Mesa,
     ModuloQueue, ModuloQueueItem, MesaQueueItem, UserProfile, MesaQueueStatus,
     FotoFabricacion, GrupoMesas, GrupoMesasProyecto,
     DetalleModuloFase, GrupoBastidor, FerrallaContacto, FerrallaDireccion, Fase
@@ -229,6 +229,13 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
 class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
     planificacion = serializers.SerializerMethodField()
     usuario_nombre = serializers.ReadOnlyField(source='usuario.username')
+    archivado_por_nombre = serializers.SerializerMethodField()
+    edificio = serializers.PrimaryKeyRelatedField(
+        queryset=Edificio.objects.all(), allow_null=True, required=False,
+    )
+    edificio_nombre = serializers.ReadOnlyField(source='edificio.nombre')
+    planta_etiqueta = serializers.ReadOnlyField()
+    orden_planta = serializers.ReadOnlyField()
     capacidad_diaria_usuario = serializers.SerializerMethodField()
     grupos_count = serializers.SerializerMethodField()
     modulos_count = serializers.SerializerMethodField()
@@ -263,10 +270,14 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
             "grupos_count", "modulos_count", "modulos_completados",
             "modulos_completados_hoy", "checks_total", "checks_completados",
             "checks_bloqueantes_pendientes", "produccion_bloqueada",
+            "archivado_at", "archivado_por_nombre",
+            "edificio", "edificio_nombre", "planta_tipo", "planta_numero",
+            "planta_etiqueta", "orden_planta",
         ]
         extra_kwargs = {
             'usuario': {'required': False, 'allow_null': True},
             'datos_tecnicos_importados': {'read_only': True},
+            'archivado_at': {'read_only': True},
         }
 
     def to_representation(self, instance):
@@ -289,8 +300,12 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
     def get_bastidor_longitud_cm(self, obj):
         return obj.bastidor_longitud_efectiva_cm
 
+    def get_archivado_por_nombre(self, obj):
+        usuario = obj.archivado_por
+        return (usuario.get_full_name() or usuario.username) if usuario else None
+
     def get_planificacion(self, obj):
-        if obj.usuario_id is None:
+        if obj.usuario_id is None or obj.archivado_at:
             return project_demand(obj)
         # Un plan por ferralla y peticion: en la lista todos sus proyectos lo comparten.
         planes = self.context.setdefault('_planes_ferralla', {})
@@ -310,6 +325,15 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
                 raise serializers.ValidationError('Solo administracion puede fijar el plazo de montaje.')
             if 'modulos_previstos' in attrs:
                 raise serializers.ValidationError('Solo administracion puede fijar los modulos previstos.')
+            if {'edificio', 'planta_tipo', 'planta_numero'} & set(attrs):
+                raise serializers.ValidationError('Solo administracion puede fijar el edificio y la planta.')
+        # Un edificio es de una sola ferralla.
+        if attrs.get('edificio') is not None:
+            usuario = attrs['usuario'] if 'usuario' in attrs else getattr(self.instance, 'usuario', None)
+            if attrs['edificio'].usuario_id != getattr(usuario, 'id', None):
+                raise serializers.ValidationError({'edificio': 'Ese edificio es de otra ferralla.'})
+        if 'planta_tipo' in attrs and not attrs['planta_tipo']:
+            attrs['planta_numero'] = None
         return attrs
 
     @staticmethod

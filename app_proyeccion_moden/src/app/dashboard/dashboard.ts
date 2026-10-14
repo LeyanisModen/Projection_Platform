@@ -27,6 +27,7 @@ import { catchError } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
 import { ZoomableImageComponent } from '../shared/zoomable-image/zoomable-image.component';
 import { planningIssues, planningLabel, planningTight } from '../shared/project-planning';
+import { agruparPorEdificio, GrupoEdificio } from '../shared/edificios';
 
 // Graficas: naranja de marca para la serie principal, gris para las secundarias
 // y azul + naranja donde hay dos series (par validado para daltonismo).
@@ -180,6 +181,8 @@ export class Dashboard implements OnInit, OnDestroy {
   statsPreset: 'day' | 'week' | 'month' | 'proyecto' | 'custom' = 'day';
   /** Proyecto al que se limitan las estadisticas; null = todos. */
   statsProyecto: number | null = null;
+  /** Estadisticas de un edificio entero (todos sus forjados). */
+  statsEdificio: number | null = null;
   statsFrom: string = '';
   statsTo: string = '';
 
@@ -1708,7 +1711,9 @@ export class Dashboard implements OnInit, OnDestroy {
     this.api.getProyectos()
       .pipe(takeUntil(this.destroy$))
       .subscribe({
-        next: (data) => {
+        next: (all) => {
+          // Los archivados ya no se fabrican: fuera del dashboard de la ferralla.
+          const data = all.filter(p => !p.archivado_at);
           this.proyectos = data;
           // Refresh the selected project reference so the donut picks
           // up updated modulos_completados / modulos_completados_hoy.
@@ -1740,7 +1745,9 @@ export class Dashboard implements OnInit, OnDestroy {
     this.api.getProyectos()
       .pipe(takeUntil(this.destroy$))
       .subscribe({
-        next: (data) => {
+        next: (all) => {
+          // Los archivados ya no se fabrican: fuera del dashboard de la ferralla.
+          const data = all.filter(p => !p.archivado_at);
           this.proyectos = data;
           if (this.selectedProyecto) {
             const updated = data.find(p => p.id === this.selectedProyecto?.id);
@@ -2076,12 +2083,13 @@ export class Dashboard implements OnInit, OnDestroy {
     if (!silent || !this.statsData) this.loadingStats = true;
     if (!silent) this.statsData = null;
     this.statsError = '';
-    const todoElProyecto = this.statsPreset === 'proyecto' && this.statsProyecto !== null;
+    const todoElProyecto = this.statsPreset === 'proyecto' && (this.statsProyecto !== null || this.statsEdificio !== null);
     this.api.getProductionStats({
       from: this.statsFrom,
       to: this.statsTo,
       proyecto: this.statsProyecto ?? undefined,
-      rango: todoElProyecto ? 'proyecto' : undefined,
+      rango: todoElProyecto ? (this.statsEdificio !== null ? 'edificio' : 'proyecto') : undefined,
+      ...(this.statsEdificio !== null ? { edificio: this.statsEdificio } : {}),
     })
       .pipe(takeUntil(this.destroy$))
       .subscribe({
@@ -2120,8 +2128,42 @@ export class Dashboard implements OnInit, OnDestroy {
     return this.statsData?.esperado.modulos_esperados ?? null;
   }
 
+  /** Proyectos agrupados por edificio, de abajo arriba (tarjetas y selector). */
+  gruposEdificio(): GrupoEdificio[] {
+    return agruparPorEdificio(this.proyectos);
+  }
+
+  hayEdificios(): boolean {
+    return this.proyectos.some(proyecto => proyecto.edificio != null);
+  }
+
+  edificioModulos(grupo: GrupoEdificio): { hechos: number; total: number } {
+    return grupo.proyectos.reduce((acc, p) => ({
+      hechos: acc.hechos + (p.modulos_completados || 0),
+      total: acc.total + Math.max(p.modulos_count || 0, p.modulos_previstos || 0),
+    }), { hechos: 0, total: 0 });
+  }
+
+  /** Valor del selector: todos, un proyecto (p:id) o un edificio entero (e:id). */
+  statsAlcance(): string {
+    if (this.statsEdificio !== null) return `e:${this.statsEdificio}`;
+    return this.statsProyecto !== null ? `p:${this.statsProyecto}` : 'todos';
+  }
+
+  selectStatsAlcance(valor: string): void {
+    const [tipo, id] = (valor || '').split(':');
+    if (tipo === 'e' && id) {
+      this.statsProyecto = null;
+      this.statsEdificio = Number(id);
+      this.selectStatsPreset('proyecto');
+      return;
+    }
+    this.selectStatsProyecto(tipo === 'p' && id ? Number(id) : null);
+  }
+
   /** Limita las estadisticas a un proyecto (null = todos). Al elegir uno se ve entero. */
   selectStatsProyecto(proyectoId: number | null): void {
+    this.statsEdificio = null;
     this.statsProyecto = proyectoId;
     if (proyectoId === null) {
       this.selectStatsPreset(this.statsPreset === 'proyecto' ? 'month' : this.statsPreset);
@@ -2132,7 +2174,7 @@ export class Dashboard implements OnInit, OnDestroy {
 
   selectStatsPreset(preset: 'day' | 'week' | 'month' | 'proyecto' | 'custom'): void {
     const today = new Date();
-    if (preset === 'proyecto' && this.statsProyecto === null) preset = 'month';
+    if (preset === 'proyecto' && this.statsProyecto === null && this.statsEdificio === null) preset = 'month';
     this.statsPreset = preset;
     if (preset === 'day') {
       this.statsFrom = this.toLocalIsoDate(today);

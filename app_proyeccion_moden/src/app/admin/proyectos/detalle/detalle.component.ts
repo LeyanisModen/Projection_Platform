@@ -12,7 +12,7 @@ import {
 import {
     ApiService, Proyecto, Modulo, User, FotoFabricacion, Imagen,
     DetalleModuloFase, TechnicalImportStats, GrupoBastidor, GrupoBastidorModulo,
-    EstrategiaBastidor, ModuloFase
+    EstrategiaBastidor, ModuloFase, Edificio, PlantaTipo
 } from '../../../services/api.service';
 import { switchMap, forkJoin, of, Observable } from 'rxjs';
 import { environment } from '../../../../environments/environment';
@@ -73,6 +73,28 @@ export class ProyectoDetailComponent implements OnInit {
     uploadingProjectFile = false;
     updatingSubmoduleId: number | null = null;
     showProjectFilesModal = false;
+    // Edificio y planta del forjado.
+    edificios: Edificio[] = [];
+    private edificiosCargadosPara: number | null = null;
+    guardandoEdificio = false;
+    edificioError = '';
+    readonly plantaTipos: { value: PlantaTipo; label: string; numero: boolean }[] = [
+        { value: 'SOTANO', label: 'Sótano', numero: true },
+        { value: 'SEMISOTANO', label: 'Semisótano', numero: false },
+        { value: 'BAJA', label: 'Planta baja', numero: false },
+        { value: 'ENTREPLANTA', label: 'Entreplanta', numero: true },
+        { value: 'PLANTA', label: 'Planta', numero: true },
+        { value: 'CUBIERTA', label: 'Cubierta', numero: true },
+        { value: 'CASETON', label: 'Casetón', numero: true },
+    ];
+    // Archivar: descargar el .zip y, con el guardado, liberar el espacio.
+    showArchiveModal = false;
+    archivePreparing = false;
+    archiveDownloadStarted = false;
+    archiveConfirmed = false;
+    archiving = false;
+    archiveError = '';
+    archiveFileName = '';
     checkingProjectFiles = false;
     projectFileExists = { documentos: false, elementos: false };
     dropdownOpen = false;
@@ -181,6 +203,7 @@ export class ProyectoDetailComponent implements OnInit {
             next: (data) => {
                 if (data && data.proyecto) {
                     this.proyecto = data.proyecto;
+                    this.cargarEdificios();
                     this.craneLimitDraft = data.proyecto.peso_maximo_grua_kg;
                     this.projectConfigMessage = '';
                     this.users = data.users || [];
@@ -1188,6 +1211,138 @@ export class ProyectoDetailComponent implements OnInit {
     triggerProjectFileUpload(fileInput: HTMLInputElement): void {
         fileInput.value = '';
         fileInput.click();
+    }
+
+    /** Edificios de la ferralla del proyecto (un edificio es de una sola ferralla). */
+    cargarEdificios(): void {
+        const ferralla = this.proyectoUsuarioId;
+        if (!ferralla || this.edificiosCargadosPara === ferralla) return;
+        this.edificiosCargadosPara = ferralla;
+        this.api.getEdificios(ferralla).subscribe({
+            next: edificios => { this.edificios = edificios; this.cdr.detectChanges(); },
+            error: () => { this.edificiosCargadosPara = null; },
+        });
+    }
+
+    edificiosOpciones(): { id: number; nombre: string }[] {
+        const lista = this.edificios.map(e => ({ id: e.id, nombre: e.nombre }));
+        const actual = this.proyecto?.edificio;
+        if (actual && !lista.some(e => e.id === actual)) {
+            lista.unshift({ id: actual, nombre: this.proyecto?.edificio_nombre || 'Edificio' });
+        }
+        return lista;
+    }
+
+    plantaConNumero(tipo: PlantaTipo | null | undefined): boolean {
+        return !!this.plantaTipos.find(t => t.value === tipo)?.numero;
+    }
+
+    cambiarEdificio(edificio: number | null): void {
+        this.guardarEdificioPlanta({ edificio });
+    }
+
+    nuevoEdificio(): void {
+        const ferralla = this.proyectoUsuarioId;
+        const nombre = prompt('Nombre del edificio (por ejemplo RIPAGAINA108_BH)')?.trim();
+        if (!ferralla || !nombre || this.guardandoEdificio) return;
+        this.guardandoEdificio = true;
+        this.edificioError = '';
+        this.api.createEdificio({ nombre, usuario: ferralla }).subscribe({
+            next: edificio => {
+                this.edificios = [...this.edificios, edificio];
+                this.guardandoEdificio = false;
+                this.guardarEdificioPlanta({ edificio: edificio.id });
+            },
+            error: err => this.mostrarErrorEdificio(err),
+        });
+    }
+
+    cambiarPlanta(tipo: PlantaTipo | null, numero: number | null): void {
+        const conNumero = this.plantaConNumero(tipo);
+        this.guardarEdificioPlanta({
+            planta_tipo: tipo,
+            planta_numero: conNumero && numero != null && Number.isFinite(numero) ? numero : null,
+        });
+    }
+
+    private guardarEdificioPlanta(datos: Partial<Proyecto>): void {
+        if (!this.proyecto || this.guardandoEdificio) return;
+        this.guardandoEdificio = true;
+        this.edificioError = '';
+        this.api.updateProyecto(this.proyecto.id, datos).subscribe({
+            next: proyecto => {
+                this.proyecto = proyecto;
+                this.guardandoEdificio = false;
+                this.cdr.detectChanges();
+            },
+            error: err => this.mostrarErrorEdificio(err),
+        });
+    }
+
+    private mostrarErrorEdificio(err: any): void {
+        const detalle = err?.error?.edificio ?? err?.error?.nombre ?? err?.error?.detail;
+        this.edificioError = (Array.isArray(detalle) ? detalle[0] : detalle) || 'No se pudo guardar el edificio.';
+        this.guardandoEdificio = false;
+        this.cdr.detectChanges();
+    }
+
+    openArchiveModal(): void {
+        this.archivePreparing = false;
+        this.archiveDownloadStarted = false;
+        this.archiveConfirmed = false;
+        this.archiving = false;
+        this.archiveError = '';
+        this.archiveFileName = '';
+        this.showArchiveModal = true;
+    }
+
+    closeArchiveModal(): void {
+        if (this.archiving) return;
+        this.showArchiveModal = false;
+    }
+
+    downloadArchive(): void {
+        if (!this.proyecto || this.archivePreparing || this.archiving) return;
+        this.archivePreparing = true;
+        this.archiveError = '';
+        this.api.prepararArchivoProyecto(this.proyecto.id).subscribe({
+            next: ({ url, nombre }) => {
+                this.archivePreparing = false;
+                this.archiveDownloadStarted = true;
+                this.archiveFileName = nombre;
+                this.startDownload(url);
+                this.cdr.detectChanges();
+            },
+            error: err => {
+                this.archivePreparing = false;
+                this.archiveError = err?.error?.detail || 'No se pudo preparar el archivo.';
+                this.cdr.detectChanges();
+            },
+        });
+    }
+
+    /** Descarga normal del navegador: el .zip (~1 GB) no pasa por la memoria de la página. */
+    startDownload(url: string): void {
+        window.location.assign(url);
+    }
+
+    confirmArchive(): void {
+        if (!this.proyecto || !this.archiveConfirmed || this.archiving) return;
+        this.archiving = true;
+        this.archiveError = '';
+        this.api.archivarProyecto(this.proyecto.id).subscribe({
+            next: proyecto => {
+                this.archiving = false;
+                this.proyecto = proyecto;
+                this.showArchiveModal = false;
+                this.cdr.detectChanges();
+            },
+            error: err => {
+                this.archiving = false;
+                this.archiveError = err?.error?.detail || 'No se pudo archivar el proyecto.';
+                this.cdr.detectChanges();
+            },
+        });
     }
 
     openProjectFilesModal(event?: Event): void {
