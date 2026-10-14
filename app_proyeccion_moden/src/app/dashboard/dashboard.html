@@ -43,16 +43,7 @@
                 <div class="stats-board">
                     <!-- Period selector -->
                     <div class="stats-period-bar">
-                        <div class="stats-period-presets">
-                            <button type="button" class="period-chip"
-                                [class.active]="statsPreset === 'day'"
-                                (click)="selectStatsPreset('day')">Hoy</button>
-                            <button type="button" class="period-chip"
-                                [class.active]="statsPreset === 'week'"
-                                (click)="selectStatsPreset('week')">Esta semana</button>
-                            <button type="button" class="period-chip"
-                                [class.active]="statsPreset === 'month'"
-                                (click)="selectStatsPreset('month')">Este mes</button>
+                        <div class="stats-period-scope">
                             <select class="stats-proyecto-select" aria-label="Proyecto de las estadísticas"
                                 [ngModel]="statsAlcance()" (ngModelChange)="selectStatsAlcance($event)">
                                 <option value="todos">Todos los proyectos</option>
@@ -71,12 +62,23 @@
                                     }
                                 }
                             </select>
-                            @if (statsProyecto !== null || statsEdificio !== null) {
+                            <div class="stats-period-presets">
                                 <button type="button" class="period-chip"
-                                    [class.active]="statsPreset === 'proyecto'"
-                                    [title]="statsEdificio !== null ? 'Desde el primer módulo terminado del edificio hasta hoy' : 'Desde el primer módulo terminado del proyecto hasta hoy'"
-                                    (click)="selectStatsPreset('proyecto')">{{ statsEdificio !== null ? 'Todo el edificio' : 'Todo el proyecto' }}</button>
-                            }
+                                    [class.active]="statsPreset === 'day'"
+                                    (click)="selectStatsPreset('day')">Hoy</button>
+                                <button type="button" class="period-chip"
+                                    [class.active]="statsPreset === 'week'"
+                                    (click)="selectStatsPreset('week')">Esta semana</button>
+                                <button type="button" class="period-chip"
+                                    [class.active]="statsPreset === 'month'"
+                                    (click)="selectStatsPreset('month')">Este mes</button>
+                                @if (statsProyecto !== null || statsEdificio !== null) {
+                                    <button type="button" class="period-chip"
+                                        [class.active]="statsPreset === 'proyecto'"
+                                        [title]="statsEdificio !== null ? 'Desde el primer módulo terminado del edificio hasta hoy' : 'Desde el primer módulo terminado del proyecto hasta hoy'"
+                                        (click)="selectStatsPreset('proyecto')">Desde el inicio</button>
+                                }
+                            </div>
                         </div>
                         <div class="stats-period-dates">
                             <label>
