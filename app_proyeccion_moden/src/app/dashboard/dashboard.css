@@ -92,13 +92,14 @@
 .stats-schedule-sep { color: var(--muted); }
 .stats-schedule-error { color: var(--danger); font-size: 12px; }
 .stats-period-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+.stats-period-scope { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 .stats-period-presets { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); }
 .period-chip { height: 30px; padding: 0 12px; border: 0; border-radius: 5px; background: transparent; color: var(--muted); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
 .period-chip:hover { color: var(--ink); background: var(--surface-2); }
 .period-chip.active { color: #fff; background: var(--ink); }
 .stats-period-dates { display: flex; gap: 10px; }
 .stats-period-dates label { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--muted); font-size: 12px; }
-.stats-proyecto-select { height: 32px; max-width: 280px; margin-left: 8px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); font: inherit; font-size: 13px; }
+.stats-proyecto-select { height: 38px; max-width: 280px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); font: inherit; font-size: 13px; }
 .stats-scope { margin: -6px 0 0; color: var(--muted); font-size: 12px; }
 .stats-scope strong { color: var(--ink); font-weight: 600; }
 .stats-period-dates input { height: 32px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); font: inherit; font-size: 13px; color: var(--ink); }

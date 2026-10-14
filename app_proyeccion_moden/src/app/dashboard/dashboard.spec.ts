@@ -199,6 +199,8 @@ describe('Dashboard', () => {
       expect(text('.stats-kpi-modulos .stats-kpi-value')).toBe('73 / 110');
       expect(text('.stats-kpi-avance .stats-kpi-value')).toBe('66 %');
       expect(fixture.nativeElement.querySelector('.period-chip[title^="Desde el primer"]')?.classList.contains('active')).toBe(true);
+      // Es un periodo como Hoy o Este mes, no otro proyecto.
+      expect(fixture.nativeElement.querySelector('.stats-period-presets .period-chip[title^="Desde el primer"]')?.textContent?.trim()).toBe('Desde el inicio');
 
       // Dentro del proyecto se puede acotar por fechas sin perder el proyecto.
       component.statsFrom = '2026-09-01';
