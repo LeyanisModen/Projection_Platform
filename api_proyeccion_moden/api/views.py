@@ -6068,6 +6068,14 @@ class ProductionStatsView(APIView):
             planning_projects = planning_projects.filter(usuario=request.user)
         planning = demand_summary(annotated_projects(planning_projects))
         capacidad_diaria = planning['modulos_por_dia']
+        # El objetivo es lo que tiene que sacar la ferralla con todo su trabajo:
+        # mirar un proyecto o un edificio no cambia los modulos que necesita al dia.
+        target_projects = planning_projects
+        if alcance_ids is not None:
+            target_projects = Proyecto.objects.filter(
+                Q(usuario_id__in=planning_projects.filter(usuario__isnull=False).values('usuario_id'))
+                | Q(pk__in=planning_projects.filter(usuario__isnull=True).values('pk'))
+            )
         # Festivos de la ferralla (y los de todas): no son dias de trabajo.
         festivos = festivos_de(profile_user.id if profile_user is not None else None)
         festivos_rango = sorted(dia for dia in festivos if from_date <= dia <= to_date)
@@ -6298,7 +6306,7 @@ class ProductionStatsView(APIView):
             'por_hora': sorted(por_hora.values(), key=lambda x: x['hora']) if single_day else None,
             'esperado': {
                 'capacidad_diaria_modulos': capacidad_diaria,
-                **period_target_summary(planning_projects, from_date, to_date),
+                **period_target_summary(target_projects, from_date, to_date),
             },
             'planificacion': planning,
             'tiempos': tiempos,
