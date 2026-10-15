@@ -79,13 +79,25 @@ class ProductionTargetTests(APITestCase):
         other = User.objects.create_user('other-target-factory')
         foreign = Proyecto.objects.create(nombre='Other', usuario=other, fecha_montaje=date(2026, 9, 16))
         Modulo.objects.bulk_create([Modulo(nombre=f'C{i}', proyecto=foreign) for i in range(100)])
-        # 90 modulos entre los 10 dias hasta el ultimo montaje: 9 al dia, y
-        # el primero en montarse (Second) es el que se fabrica el lunes.
+        # 90 modulos entre los 10 dias hasta el ultimo montaje: 9 al dia.
         self.assertEqual(self.stats()['esperado']['modulos_esperados'], 9)
+        # Mirar un solo proyecto no cambia lo que la ferralla tiene que sacar.
         self.assertEqual(self.stats(project=second)['esperado']['modulos_esperados'], 9)
-        self.assertEqual(self.stats(project=self.project)['esperado']['modulos_esperados'], 0)
-        self.assertEqual(self.stats(end='2026-09-15', project=self.project)['esperado']['modulos_esperados'], 8)
+        self.assertEqual(self.stats(project=self.project)['esperado']['modulos_esperados'], 9)
+        self.assertEqual(self.stats(end='2026-09-15', project=self.project)['esperado']['modulos_esperados'], 18)
+        # Ni el de otra ferralla, que no se ve.
         self.assertEqual(self.stats(project=foreign)['esperado']['modulos_esperados'], 0)
+
+    def test_a_building_has_the_same_target_as_its_factory(self):
+        from .models import Edificio
+        edificio = Edificio.objects.create(nombre='Bloque', usuario=self.factory)
+        planta = Proyecto.objects.create(
+            nombre='Bloque P1', usuario=self.factory, edificio=edificio, fecha_montaje=date(2026, 9, 16),
+        )
+        Modulo.objects.bulk_create([Modulo(nombre=f'E{i}', proyecto=planta) for i in range(10)])
+        response = self.client.get('/api/stats/production/', {'from': '2026-09-14', 'to': '2026-09-14', 'edificio': edificio.pk})
+        self.assertEqual(response.data['esperado']['modulos_esperados'], self.stats()['esperado']['modulos_esperados'])
+        self.assertEqual(response.data['esperado']['modulos_esperados'], 9)
 
     def test_missing_or_impossible_plans_are_unknown_not_zero(self):
         for deadline in (None, date(2026, 9, 14), date(2026, 9, 11)):
