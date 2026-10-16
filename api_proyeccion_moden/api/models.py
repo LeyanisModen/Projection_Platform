@@ -211,6 +211,8 @@ class Proyecto(models.Model):
     archivado_por = models.ForeignKey(
         User, null=True, blank=True, on_delete=models.SET_NULL, related_name='+',
     )
+    # La oficina marca en el calendario que el montaje ya se hizo.
+    montaje_realizado_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
         return self.nombre

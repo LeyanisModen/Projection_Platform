@@ -140,6 +140,8 @@ export interface Proyecto {
     url: string;
     nombre: string;
     fecha_montaje?: string | null;
+    /** La oficina lo marca en el calendario cuando el montaje ya se hizo. */
+    montaje_realizado_at?: string | null;
     planificacion?: PlanificacionProyecto;
     modulos_previstos?: number | null;
     /** Archivado: ficheros descargados y borrados; sus datos siguen en estadísticas. */

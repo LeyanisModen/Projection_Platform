@@ -402,6 +402,22 @@ class OfficePlanningTests(APITestCase):
         self.assertEqual(self.client.get('/api/proyecto-checklist/vencimientos/?desde=2026-10-01&hasta=2026-10-31').data, [])
         self.assertEqual(self.client.get('/api/proyecto-checklist/vencimientos/?desde=2026-11-01&hasta=2026-11-30').data[0]['fecha'], '2026-11-20')
 
+    def test_mounting_is_marked_done_by_the_office_and_keeps_its_day(self):
+        url = f'/api/proyectos/{self.project.pk}/'
+        response = self.client.patch(url, {'montaje_realizado': True}, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        hecho = response.data['montaje_realizado_at']
+        self.assertIsNotNone(hecho)
+        self.assertNotIn('montaje_realizado', response.data)
+        # Volver a marcarlo no cambia el dia; desmarcarlo lo borra.
+        self.assertEqual(self.client.patch(url, {'montaje_realizado': True}, format='json').data['montaje_realizado_at'], hecho)
+        self.assertIsNone(self.client.patch(url, {'montaje_realizado': False}, format='json').data['montaje_realizado_at'])
+        # La ferralla no lo marca.
+        self.client.force_authenticate(self.factory)
+        self.assertEqual(self.client.patch(url, {'montaje_realizado': True}, format='json').status_code, 400)
+        self.project.refresh_from_db()
+        self.assertIsNone(self.project.montaje_realizado_at)
+
     def test_calendar_deadlines_carry_what_is_needed_to_check_them_there(self):
         from .models import ProyectoCheck
         url = f'/api/proyecto-checklist/{self.project.pk}/checks/'

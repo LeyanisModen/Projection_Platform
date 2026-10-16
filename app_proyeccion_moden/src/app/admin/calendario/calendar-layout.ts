@@ -16,10 +16,13 @@ export function daysBetween(from: string, to: string): number {
     return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000);
 }
 
-export function calendarMonths(anchor: Date, view: CalendarView): Date[] {
+/** Meses que se pueden ver juntos en la vista de varios meses. */
+export const MONTH_COUNTS = [2, 3, 4, 6];
+
+export function calendarMonths(anchor: Date, view: CalendarView, months = 3): Date[] {
     const annual = view === 'year';
     const start = annual ? 0 : anchor.getMonth();
-    const count = annual ? 12 : view === 'quarter' ? 3 : 1;
+    const count = annual ? 12 : view === 'quarter' ? months : 1;
     return Array.from({length: count}, (_, i) => new Date(anchor.getFullYear(), start + i, 1));
 }
 
@@ -33,12 +36,12 @@ export function monthDays(month: Date, compact = false): CalendarDay[] {
     });
 }
 
-export function calendarRange(anchor: Date, view: CalendarView): {start: string; end: string} {
+export function calendarRange(anchor: Date, view: CalendarView, count = 3): {start: string; end: string} {
     if (view === 'month') {
         const days = monthDays(anchor);
         return {start: days[0].key, end: days.at(-1)!.key};
     }
-    const months = calendarMonths(anchor, view);
+    const months = calendarMonths(anchor, view, count);
     const last = months.at(-1)!;
     return {start: localDate(months[0]), end: localDate(new Date(last.getFullYear(), last.getMonth() + 1, 0))};
 }
