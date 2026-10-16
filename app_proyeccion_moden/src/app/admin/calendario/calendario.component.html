@@ -14,6 +14,11 @@
                     [disabled]="loading()" (click)="setView(option.value)">{{ option.label }}</button>
             }
         </div>
+        @if (view()==='quarter') {
+            <select class="month-count" aria-label="Meses a la vista" [ngModel]="monthCount()" (ngModelChange)="setMonthCount($event)" [disabled]="loading()">
+                @for (count of monthCounts; track count) { <option [ngValue]="count">{{ count }} meses</option> }
+            </select>
+        }
     </div>
     <div class="toolbar-actions">
         <button type="button" class="icon-button" [class.active]="filtersOpen()" [class.has-filters]="filtersActive()"
@@ -25,6 +30,12 @@
 </section>
 @if (filtersOpen()) {
 <section class="filters-panel" id="calendar-filters" aria-label="Filtros del calendario">
+    <div class="kind-filter" role="group" aria-label="Qué se ve">
+        @for (kind of kinds; track kind.value) {
+            <button type="button" [class.active]="kindFilter().includes(kind.value)" [attr.aria-pressed]="kindFilter().includes(kind.value)"
+                (click)="toggleKind(kind.value)">{{ kind.label }}</button>
+        }
+    </div>
     <select aria-label="Filtrar por proyecto" [ngModel]="projectFilter()" (ngModelChange)="projectFilter.set($event)">
         <option [ngValue]="null">Todos los proyectos</option>
         @for (project of projects(); track project.id) { <option [ngValue]="project.id">{{ project.nombre }}</option> }
@@ -114,8 +125,13 @@
         }
         <h3>Agenda del día</h3>
         @for (project of mountingProjects(); track project.id) {
-            <article class="agenda-event mounting">
-                <strong>Montaje · {{ project.nombre }}</strong>
+            <article class="agenda-event mounting" [class.done]="!!project.montaje_realizado_at">
+                <label class="control-check">
+                    <input type="checkbox" [checked]="!!project.montaje_realizado_at" [disabled]="busyMount() !== null"
+                        (change)="toggleMount(project, $event)" />
+                    <strong>{{ project.montaje_realizado_at ? 'Montaje hecho' : 'Montaje' }} · {{ project.nombre }}</strong>
+                </label>
+                @if (mountMoved(project)) { <small class="control-note">Montaje previsto {{ project.fecha_montaje | date:'dd/MM/yyyy' }}</small> }
                 <a [routerLink]="['/admin-dashboard/proyectos',project.id]">Ver proyecto y plazo</a>
             </article>
         }

@@ -389,6 +389,94 @@ describe('CalendarioComponent', () => {
         expect(agenda).toContain('Fecha límite 25/09/2026');
     });
 
+    it('marca el montaje como hecho desde la agenda: se tacha y ya no se arrastra', () => {
+        const component = fixture.componentInstance;
+        component.load();
+        http.expectOne(r => r.url === '/api/eventos/').flush([]);
+        http.expectOne('/api/proyectos/').flush({results: [{id: 7, nombre: 'Esnabide PB', fecha_montaje: '2026-09-09'}], next: null, count: 1});
+        http.expectOne('/api/trabajadores/').flush(workers);
+        http.expectOne(r => r.url === '/api/proyecto-checklist/vencimientos/').flush([]);
+        component.selected.set('2026-09-09'); fixture.detectChanges();
+        const check = () => fixture.nativeElement.querySelector('.agenda-event.mounting input') as HTMLInputElement;
+        const bar = () => fixture.nativeElement.querySelector('.event-bar.mounting') as HTMLElement;
+        expect(bar().getAttribute('draggable')).toBe('true');
+
+        check().click();
+        const save = http.expectOne('/api/proyectos/7/');
+        expect(save.request.method).toBe('PATCH');
+        expect(save.request.body).toEqual({montaje_realizado: true});
+        save.flush({id: 7, nombre: 'Esnabide PB', fecha_montaje: '2026-09-09', montaje_realizado_at: '2026-09-10T08:00:00'});
+        fixture.detectChanges();
+        // Hecho despues de su fecha: sigue en su dia, tachado y fijo.
+        expect(component.selected()).toBe('2026-09-09');
+        expect(bar().classList.contains('done')).toBe(true);
+        expect(bar().getAttribute('draggable')).toBeNull();
+        expect(bar().textContent).toContain('✓ Montaje · Esnabide PB');
+        expect(fixture.nativeElement.querySelector('.day-agenda').textContent).toContain('Montaje hecho · Esnabide PB');
+        expect(check().checked).toBe(true);
+
+        check().click();
+        http.expectOne('/api/proyectos/7/').flush({id: 7, nombre: 'Esnabide PB', fecha_montaje: '2026-09-09', montaje_realizado_at: null});
+        fixture.detectChanges();
+        expect(bar().classList.contains('done')).toBe(false);
+
+        // Hecho antes de su fecha: se ve el dia en que se marco.
+        check().click();
+        http.expectOne('/api/proyectos/7/').flush({id: 7, nombre: 'Esnabide PB', fecha_montaje: '2026-09-09', montaje_realizado_at: '2026-09-04T08:00:00'});
+        fixture.detectChanges();
+        expect(component.selected()).toBe('2026-09-04');
+        expect(fixture.nativeElement.querySelector('.day-agenda').textContent).toContain('Montaje previsto 09/09/2026');
+    });
+
+    it('filtra por tipo: solo montajes, o montajes y controles', () => {
+        const component = fixture.componentInstance;
+        component.load();
+        http.expectOne(r => r.url === '/api/eventos/').flush(events);
+        http.expectOne('/api/proyectos/').flush({results: [{id: 7, nombre: 'Esnabide', fecha_montaje: '2026-09-15'}], next: null, count: 1});
+        http.expectOne('/api/trabajadores/').flush(workers);
+        http.expectOne(r => r.url === '/api/proyecto-checklist/vencimientos/').flush([
+            {id: 5, proyecto: 7, proyecto_nombre: 'Esnabide', titulo: 'Planos', fecha_limite: '2026-09-15', completado: false,
+                requisitos_pendientes: [], requiere_documento: false, documentos: 0},
+        ]);
+        fixture.detectChanges();
+        const kinds = () => component.calendarItems().map(item => item.key.split('-')[0]).sort();
+        expect(kinds()).toEqual(['control', 'event', 'mount']);
+        (fixture.nativeElement.querySelector('.icon-button[aria-label="Filtros"]') as HTMLButtonElement).click(); fixture.detectChanges();
+        const chip = (label: string) => Array.from(fixture.nativeElement.querySelectorAll('.kind-filter button') as NodeListOf<HTMLButtonElement>)
+            .find(button => button.textContent?.trim() === label)!;
+
+        chip('Montajes').click(); fixture.detectChanges();
+        expect(kinds()).toEqual(['mount']);
+        // Las vacaciones tampoco se ven de fondo.
+        expect(fixture.nativeElement.querySelectorAll('.day.has-vacations').length).toBe(0);
+
+        chip('Controles').click(); fixture.detectChanges();
+        expect(kinds()).toEqual(['control', 'mount']);
+        expect(chip('Controles').getAttribute('aria-pressed')).toBe('true');
+        expect(component.printFilters()).toContain('Montajes, Controles');
+
+        (fixture.nativeElement.querySelector('.filters-panel .link-button') as HTMLButtonElement).click(); fixture.detectChanges();
+        expect(kinds()).toEqual(['control', 'event', 'mount']);
+        expect(fixture.nativeElement.querySelectorAll('.day.has-vacations').length).toBeGreaterThan(0);
+    });
+
+    it('elige cuántos meses se ven juntos y lo recuerda en el navegador', () => {
+        const component = fixture.componentInstance;
+        try {
+            component.setView('quarter');
+            finishLoad('2026-09-01', '2026-11-30');
+            const select = fixture.nativeElement.querySelector('select.month-count') as HTMLSelectElement;
+            expect(Array.from(select.options).map(option => option.textContent?.trim())).toEqual(['2 meses', '3 meses', '4 meses', '6 meses']);
+            component.setMonthCount(6);
+            finishLoad('2026-09-01', '2027-02-28');
+            expect(fixture.nativeElement.querySelectorAll('.month-grid').length).toBe(6);
+            expect(component.title()).toContain('febrero de 2027');
+            expect(localStorage.getItem('calendario.meses')).toBe('6');
+        } finally {
+            localStorage.removeItem('calendario.meses');
+        }
+    });
+
     it('cancels older loads so stale responses cannot overwrite the current range', () => {
         const component = fixture.componentInstance;
         component.setView('year');

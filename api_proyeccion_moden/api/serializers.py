@@ -3,6 +3,7 @@ from decimal import Decimal
 from urllib.parse import urlsplit
 
 from django.contrib.auth.models import User
+from django.utils import timezone
 from rest_framework import serializers
 
 from api.models import (
@@ -236,6 +237,8 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
     edificio_nombre = serializers.ReadOnlyField(source='edificio.nombre')
     planta_etiqueta = serializers.ReadOnlyField()
     orden_planta = serializers.ReadOnlyField()
+    # Se marca con true/false; la fecha la pone el servidor.
+    montaje_realizado = serializers.BooleanField(required=False, write_only=True)
     capacidad_diaria_usuario = serializers.SerializerMethodField()
     grupos_count = serializers.SerializerMethodField()
     modulos_count = serializers.SerializerMethodField()
@@ -273,11 +276,13 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
             "archivado_at", "archivado_por_nombre",
             "edificio", "edificio_nombre", "planta_tipo", "planta_numero",
             "planta_etiqueta", "orden_planta",
+            "montaje_realizado", "montaje_realizado_at",
         ]
         extra_kwargs = {
             'usuario': {'required': False, 'allow_null': True},
             'datos_tecnicos_importados': {'read_only': True},
             'archivado_at': {'read_only': True},
+            'montaje_realizado_at': {'read_only': True},
         }
 
     def to_representation(self, instance):
@@ -327,6 +332,12 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
                 raise serializers.ValidationError('Solo administracion puede fijar los modulos previstos.')
             if {'edificio', 'planta_tipo', 'planta_numero'} & set(attrs):
                 raise serializers.ValidationError('Solo administracion puede fijar el edificio y la planta.')
+            if 'montaje_realizado' in attrs:
+                raise serializers.ValidationError('Solo administracion puede marcar el montaje como hecho.')
+        if 'montaje_realizado' in attrs:
+            # Volver a marcarlo no cambia el dia en que se hizo.
+            hecho = getattr(self.instance, 'montaje_realizado_at', None)
+            attrs['montaje_realizado_at'] = (hecho or timezone.now()) if attrs.pop('montaje_realizado') else None
         # Un edificio es de una sola ferralla.
         if attrs.get('edificio') is not None:
             usuario = attrs['usuario'] if 'usuario' in attrs else getattr(self.instance, 'usuario', None)

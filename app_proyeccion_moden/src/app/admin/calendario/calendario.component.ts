@@ -6,7 +6,7 @@ import { RouterLink } from '@angular/router';
 import { A11yModule } from '@angular/cdk/a11y';
 import { forkJoin, Subscription } from 'rxjs';
 import { ApiService, CalendarEvent, CheckDeadline, OfficeWorker, ProjectCheck, Proyecto, User } from '../../services/api.service';
-import { CalendarItem, CalendarSegment, CalendarView, calendarMonths, calendarRange, calendarWeeks, daysBetween, localDate, monthDays, nextWorkerColor, shiftDate, workerColor, WORKER_COLORS } from './calendar-layout';
+import { CalendarItem, CalendarSegment, CalendarView, calendarMonths, calendarRange, calendarWeeks, daysBetween, localDate, MONTH_COUNTS, monthDays, nextWorkerColor, shiftDate, workerColor, WORKER_COLORS } from './calendar-layout';
 
 /** Festivos: dias sin fabricacion que el plan de las ferrallas no cuenta. */
 const FESTIVO_COLOR = '#be123c';
@@ -18,6 +18,27 @@ function dayOfCheck(check: ProjectCheck, limite: string): string {
     if (!check.completado || !check.completado_at) return limite;
     const hecho = localDate(new Date(check.completado_at));
     return hecho < limite ? hecho : limite;
+}
+/** Dia en que se ve un montaje: el suyo o, si se marco hecho antes, el de marcarlo. */
+function mountDay(project: Proyecto): string {
+    const fecha = project.fecha_montaje!;
+    if (!project.montaje_realizado_at) return fecha;
+    const hecho = localDate(new Date(project.montaje_realizado_at));
+    return hecho < fecha ? hecho : fecha;
+}
+/** Lo que se puede filtrar; los festivos se ven siempre, de fondo. */
+type CalendarKind = 'montajes' | 'controles' | 'eventos' | 'vacaciones';
+const KINDS: {value: CalendarKind; label: string}[] = [
+    {value: 'montajes', label: 'Montajes'}, {value: 'controles', label: 'Controles'},
+    {value: 'eventos', label: 'Eventos'}, {value: 'vacaciones', label: 'Vacaciones'},
+];
+/** Cuantos meses ve cada persona en la vista de varios meses (se recuerda en su navegador). */
+const MONTHS_KEY = 'calendario.meses';
+function savedMonthCount(): number {
+    try {
+        const saved = Number(localStorage.getItem(MONTHS_KEY));
+        return MONTH_COUNTS.includes(saved) ? saved : 3;
+    } catch { return 3; }
 }
 
 @Component({
@@ -35,8 +56,15 @@ export class CalendarioComponent {
     readonly month = signal(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
     readonly view = signal<CalendarView>('month');
     readonly viewOptions: {value: CalendarView; label: string}[] = [
-        {value: 'month', label: 'Mensual'}, {value: 'quarter', label: 'Trimestral'}, {value: 'year', label: 'Anual'},
+        {value: 'month', label: 'Mensual'}, {value: 'quarter', label: 'Varios meses'}, {value: 'year', label: 'Anual'},
     ];
+    readonly monthCounts = MONTH_COUNTS;
+    readonly monthCount = signal(savedMonthCount());
+    readonly kinds = KINDS;
+    /** Tipos elegidos en el filtro; ninguno es verlo todo. */
+    readonly kindFilter = signal<CalendarKind[]>([]);
+    /** Montaje que se esta marcando desde la agenda. */
+    readonly busyMount = signal<number | null>(null);
     readonly selected = signal(localDate(new Date()));
     readonly today = localDate(new Date());
     readonly deadlines = signal<CheckDeadline[]>([]);
@@ -89,25 +117,27 @@ export class CalendarioComponent {
     readonly activeWorkers = computed(() => this.workers().filter(worker => worker.activo));
     readonly annualView = computed(() => this.view() === 'year');
 
-    readonly visibleMonths = computed(() => calendarMonths(this.month(), this.view()));
-    readonly range = computed(() => calendarRange(this.month(), this.view()));
+    readonly visibleMonths = computed(() => calendarMonths(this.month(), this.view(), this.monthCount()));
+    readonly range = computed(() => calendarRange(this.month(), this.view(), this.monthCount()));
     readonly title = computed(() => {
         const months = this.visibleMonths();
         if (this.annualView()) return String(this.month().getFullYear());
         const label = (date: Date) => date.toLocaleDateString('es-ES', {month: 'long', year: 'numeric'});
-        return this.view() === 'quarter' ? `${label(months[0])} - ${label(months[2])}` : label(months[0]);
+        return this.view() === 'quarter' ? `${label(months[0])} - ${label(months.at(-1)!)}` : label(months[0]);
     });
     readonly filteredEvents = computed(() => this.events().filter(e => e.tipo === 'FESTIVO' || (
+        this.shows(e.tipo === 'VACACIONES' ? 'vacaciones' : 'eventos') &&
         (this.projectFilter() === null || e.proyecto === this.projectFilter()) &&
         (this.workerFilter() === null || e.trabajadores.includes(this.workerFilter()!))),
     ));
     /** Panel de filtros plegado: los filtros son la excepcion, no lo habitual. */
     readonly filtersOpen = signal(false);
-    readonly filtersActive = computed(() => this.projectFilter() !== null || this.workerFilter() !== null);
+    readonly filtersActive = computed(() => this.projectFilter() !== null || this.workerFilter() !== null || this.kindFilter().length > 0);
     readonly legendWorkers = computed(() => this.workers().filter(worker =>
         worker.activo || this.filteredEvents().some(event => event.trabajadores.includes(worker.id)),
     ));
     readonly printFilters = computed(() => [
+        ...(this.kindFilter().length ? [this.kinds.filter(kind => this.shows(kind.value)).map(kind => kind.label).join(', ')] : []),
         this.projectFilter() === null ? 'Todos los proyectos' : this.projectName(this.projectFilter()),
         this.workerFilter() === null ? 'Todo el equipo' : this.workerNames([this.workerFilter()!]),
     ].join(' · '));
@@ -118,12 +148,11 @@ export class CalendarioComponent {
             colors: this.eventColors(event), people: this.workerNames(event.trabajadores), mounting: false,
         }));
         if (this.workerFilter() === null) {
-            for (const project of this.projects()) {
-                if (project.fecha_montaje && (this.projectFilter() === null || project.id === this.projectFilter())) {
-                    items.push({key: `mount-${project.id}`, title: `Montaje · ${project.nombre}`,
-                        start: project.fecha_montaje, end: project.fecha_montaje,
-                        colors: ['#b45309'], people: '', mounting: true});
-                }
+            for (const project of this.visibleMounts()) {
+                const done = !!project.montaje_realizado_at;
+                items.push({key: `mount-${project.id}`, title: `${done ? '✓ ' : ''}Montaje · ${project.nombre}`,
+                    start: mountDay(project), end: mountDay(project),
+                    colors: [done ? '#2f9e5b' : '#b45309'], people: '', mounting: true, done});
             }
             for (const deadline of this.filteredDeadlines()) {
                 items.push({key: `control-${deadline.id}`, title: `${deadline.completado ? '✓ ' : ''}Control · ${deadline.proyecto_nombre} · ${deadline.titulo}`,
@@ -166,15 +195,17 @@ export class CalendarioComponent {
                 })})),
         }));
     });
-    readonly filteredDeadlines = computed(() => this.deadlines().filter(d =>
+    readonly filteredDeadlines = computed(() => !this.shows('controles') ? [] : this.deadlines().filter(d =>
         this.projectFilter() === null || d.proyecto === this.projectFilter(),
+    ));
+    /** Montajes que se ven con los filtros puestos. */
+    readonly visibleMounts = computed(() => this.workerFilter() !== null || !this.shows('montajes') ? [] : this.projects().filter(p =>
+        !!p.fecha_montaje && (this.projectFilter() === null || p.id === this.projectFilter()),
     ));
     readonly selectedEvents = computed(() => this.eventsOn(this.selected()));
     readonly selectedDeadlines = computed(() => this.workerFilter() !== null
         ? [] : this.filteredDeadlines().filter(d => deadlineDay(d) === this.selected()));
-    readonly mountingProjects = computed(() => this.projects().filter(p =>
-        p.fecha_montaje === this.selected() && (this.projectFilter() === null || p.id === this.projectFilter()) && this.workerFilter() === null,
-    ));
+    readonly mountingProjects = computed(() => this.visibleMounts().filter(p => mountDay(p) === this.selected()));
     readonly availability = computed(() => this.workers().filter(w => w.activo).map(worker => ({
         ...worker,
         holiday: this.events().some(e => e.tipo === 'VACACIONES' && e.inicio <= this.selected() && e.fin >= this.selected() && e.trabajadores.includes(worker.id)),
@@ -207,6 +238,19 @@ export class CalendarioComponent {
         if (this.loading() || view === this.view()) return;
         this.view.set(view); this.load();
     }
+    setMonthCount(count: number): void {
+        if (this.loading() || count === this.monthCount()) return;
+        this.monthCount.set(count);
+        try { localStorage.setItem(MONTHS_KEY, String(count)); } catch { /* sin almacenamiento: vale para esta visita */ }
+        this.load();
+    }
+    shows(kind: CalendarKind): boolean {
+        const elegidos = this.kindFilter();
+        return !elegidos.length || elegidos.includes(kind);
+    }
+    toggleKind(kind: CalendarKind): void {
+        this.kindFilter.update(list => list.includes(kind) ? list.filter(k => k !== kind) : [...list, kind]);
+    }
     openMonth(month: Date): void {
         if (this.loading()) return;
         this.month.set(month); this.view.set('month');
@@ -220,11 +264,11 @@ export class CalendarioComponent {
     }
     eventsOn(day: string): CalendarEvent[] { return this.filteredEvents().filter(e => e.inicio <= day && e.fin >= day); }
     /**
-     * Se arrastran los eventos, los montajes (con ellos se recalculan las fechas
-     * pendientes de su lista de control) y las fechas limite sin completar.
+     * Se arrastran los eventos, los montajes sin hacer (con ellos se recalculan
+     * las fechas pendientes de su lista de control) y las fechas limite sin completar.
      */
     canDrag(item: CalendarItem): boolean {
-        return item.key.startsWith('event-') || item.mounting || (!!item.control && !item.done);
+        return item.key.startsWith('event-') || ((item.mounting || !!item.control) && !item.done);
     }
     startDrag(event: DragEvent, segment: CalendarSegment): void {
         if (this.busy() || !this.canDrag(segment.item)) { event.preventDefault(); return; }
@@ -357,11 +401,34 @@ export class CalendarioComponent {
                 },
             });
     }
+    /** Marca el montaje como hecho (se tacha) o lo desmarca. */
+    toggleMount(project: Proyecto, event: Event): void {
+        // La casilla sigue al servidor: se pinta cuando responde.
+        (event.target as HTMLInputElement).checked = !!project.montaje_realizado_at;
+        if (this.busyMount() !== null) return;
+        this.busyMount.set(project.id); this.deadlineError.set('');
+        this.api.updateProyecto(project.id, {montaje_realizado: !project.montaje_realizado_at})
+            .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+                next: saved => {
+                    this.projects.update(list => list.map(p => p.id === project.id ? {...p, montaje_realizado_at: saved.montaje_realizado_at ?? null} : p));
+                    // Hecho antes de su fecha: se va al dia de hoy, y la agenda con el.
+                    const moved = this.projects().find(p => p.id === project.id);
+                    const range = this.range();
+                    if (moved && mountDay(moved) !== this.selected() && mountDay(moved) >= range.start && mountDay(moved) <= range.end) {
+                        this.selected.set(mountDay(moved));
+                    }
+                    this.busyMount.set(null);
+                },
+                error: () => { this.deadlineError.set('No se pudo guardar el montaje.'); this.busyMount.set(null); },
+            });
+    }
+    /** El montaje se ve otro dia que el previsto porque se hizo antes. */
+    mountMoved(project: Proyecto): boolean { return mountDay(project) !== project.fecha_montaje; }
     deadlinesOn(day: string): CheckDeadline[] {
         return this.workerFilter() !== null ? [] : this.filteredDeadlines().filter(d => deadlineDay(d) === day);
     }
     mountsOn(day: string): Proyecto[] {
-        return this.projects().filter(p => p.fecha_montaje === day && (this.projectFilter() === null || this.projectFilter()===p.id) && this.workerFilter()===null);
+        return this.visibleMounts().filter(p => mountDay(p) === day);
     }
     eventTitle(event: Pick<CalendarEvent, 'titulo' | 'tipo' | 'trabajadores'> & {ferralla_nombre?: string | null}): string {
         if (event.tipo === 'FESTIVO') return `Festivo · ${event.titulo}${event.ferralla_nombre ? ' · ' + event.ferralla_nombre : ''}`;
@@ -385,7 +452,7 @@ export class CalendarioComponent {
         }
     }
     openTeam(): void { this.editWorker(); this.teamOpen.set(true); }
-    clearFilters(): void { this.projectFilter.set(null); this.workerFilter.set(null); }
+    clearFilters(): void { this.projectFilter.set(null); this.workerFilter.set(null); this.kindFilter.set([]); }
     editWorker(worker?: OfficeWorker): void {
         this.workerId = worker?.id ?? null;
         this.workerName = worker?.nombre ?? '';

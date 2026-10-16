@@ -11,6 +11,9 @@ describe('calendar periods', () => {
         expect(calendarMonths(new Date(2026, 8, 1), 'quarter').map(localDate)).toEqual(['2026-09-01', '2026-10-01', '2026-11-01']);
         expect(calendarMonths(new Date(2026, 10, 1), 'quarter').map(localDate)).toEqual(['2026-11-01', '2026-12-01', '2027-01-01']);
         expect(calendarRange(new Date(2026, 10, 1), 'quarter')).toEqual({start: '2026-11-01', end: '2027-01-31'});
+        // La vista de varios meses puede ver mas de tres.
+        expect(calendarMonths(new Date(2026, 10, 1), 'quarter', 6).map(localDate).at(-1)).toBe('2027-04-01');
+        expect(calendarRange(new Date(2026, 10, 1), 'quarter', 6)).toEqual({start: '2026-11-01', end: '2027-04-30'});
     });
     it('shows all twelve months of the reference year', () => {
         const months = calendarMonths(new Date(2026, 8, 1), 'year');
