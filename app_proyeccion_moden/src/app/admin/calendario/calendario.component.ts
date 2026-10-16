@@ -26,12 +26,13 @@ function mountDay(project: Proyecto): string {
     const hecho = localDate(new Date(project.montaje_realizado_at));
     return hecho < fecha ? hecho : fecha;
 }
-/** Lo que se puede filtrar; los festivos se ven siempre, de fondo. */
-type CalendarKind = 'montajes' | 'controles' | 'eventos' | 'vacaciones';
-const KINDS: {value: CalendarKind; label: string}[] = [
-    {value: 'montajes', label: 'Montajes'}, {value: 'controles', label: 'Controles'},
-    {value: 'eventos', label: 'Eventos'}, {value: 'vacaciones', label: 'Vacaciones'},
-];
+/**
+ * Lo que se puede filtrar: montajes, cada tipo de control con fecha
+ * ('control:<titulo>'), eventos y vacaciones. Los festivos se ven siempre, de fondo.
+ */
+type CalendarKind = string;
+/** Controles que no son de la lista maestra (pasos puestos a mano en un proyecto). */
+const OTROS_CONTROLES = 'control:otros';
 /** Cuantos meses ve cada persona en la vista de varios meses (se recuerda en su navegador). */
 const MONTHS_KEY = 'calendario.meses';
 function savedMonthCount(): number {
@@ -60,7 +61,18 @@ export class CalendarioComponent {
     ];
     readonly monthCounts = MONTH_COUNTS;
     readonly monthCount = signal(savedMonthCount());
-    readonly kinds = KINDS;
+    /** Tipos de control con fecha de la lista maestra, en su orden. */
+    readonly controlTypes = signal<string[]>([]);
+    readonly kinds = computed(() => {
+        const tipos = this.controlTypes();
+        const sueltos = this.deadlines().some(deadline => !tipos.includes(deadline.titulo));
+        return [
+            {value: 'montajes', label: 'Montajes'},
+            ...tipos.map(titulo => ({value: `control:${titulo}`, label: titulo})),
+            ...(sueltos ? [{value: OTROS_CONTROLES, label: tipos.length ? 'Otros controles' : 'Controles'}] : []),
+            {value: 'eventos', label: 'Eventos'}, {value: 'vacaciones', label: 'Vacaciones'},
+        ];
+    });
     /** Tipos elegidos en el filtro; ninguno es verlo todo. */
     readonly kindFilter = signal<CalendarKind[]>([]);
     /** Montaje que se esta marcando desde la agenda. */
@@ -77,7 +89,6 @@ export class CalendarioComponent {
     readonly loading = signal(false);
     readonly error = signal('');
     readonly busy = signal(false);
-    readonly projectFilter = signal<number | null>(null);
     /** Barra que se esta arrastrando: el dia por el que se cogio y su intervalo. */
     private dragging: {key: string; grabbed: string; start: string; end: string} | null = null;
     /** Donde quedaria la barra si se suelta ahora. */
@@ -127,18 +138,16 @@ export class CalendarioComponent {
     });
     readonly filteredEvents = computed(() => this.events().filter(e => e.tipo === 'FESTIVO' || (
         this.shows(e.tipo === 'VACACIONES' ? 'vacaciones' : 'eventos') &&
-        (this.projectFilter() === null || e.proyecto === this.projectFilter()) &&
         (this.workerFilter() === null || e.trabajadores.includes(this.workerFilter()!))),
     ));
     /** Panel de filtros plegado: los filtros son la excepcion, no lo habitual. */
     readonly filtersOpen = signal(false);
-    readonly filtersActive = computed(() => this.projectFilter() !== null || this.workerFilter() !== null || this.kindFilter().length > 0);
+    readonly filtersActive = computed(() => this.workerFilter() !== null || this.kindFilter().length > 0);
     readonly legendWorkers = computed(() => this.workers().filter(worker =>
         worker.activo || this.filteredEvents().some(event => event.trabajadores.includes(worker.id)),
     ));
     readonly printFilters = computed(() => [
-        ...(this.kindFilter().length ? [this.kinds.filter(kind => this.shows(kind.value)).map(kind => kind.label).join(', ')] : []),
-        this.projectFilter() === null ? 'Todos los proyectos' : this.projectName(this.projectFilter()),
+        this.kindFilter().length ? this.kinds().filter(kind => this.shows(kind.value)).map(kind => kind.label).join(', ') : 'Todo',
         this.workerFilter() === null ? 'Todo el equipo' : this.workerNames([this.workerFilter()!]),
     ].join(' · '));
     readonly calendarItems = computed(() => {
@@ -195,13 +204,10 @@ export class CalendarioComponent {
                 })})),
         }));
     });
-    readonly filteredDeadlines = computed(() => !this.shows('controles') ? [] : this.deadlines().filter(d =>
-        this.projectFilter() === null || d.proyecto === this.projectFilter(),
-    ));
+    readonly filteredDeadlines = computed(() => this.deadlines().filter(d => this.shows(this.controlKind(d))));
     /** Montajes que se ven con los filtros puestos. */
-    readonly visibleMounts = computed(() => this.workerFilter() !== null || !this.shows('montajes') ? [] : this.projects().filter(p =>
-        !!p.fecha_montaje && (this.projectFilter() === null || p.id === this.projectFilter()),
-    ));
+    readonly visibleMounts = computed(() => this.workerFilter() !== null || !this.shows('montajes') ? []
+        : this.projects().filter(p => !!p.fecha_montaje));
     readonly selectedEvents = computed(() => this.eventsOn(this.selected()));
     readonly selectedDeadlines = computed(() => this.workerFilter() !== null
         ? [] : this.filteredDeadlines().filter(d => deadlineDay(d) === this.selected()));
@@ -212,7 +218,7 @@ export class CalendarioComponent {
         away: this.events().some(e => e.tipo === 'EVENTO' && e.inicio <= this.selected() && e.fin >= this.selected() && e.trabajadores.includes(worker.id)),
     })));
 
-    constructor() { this.load(); }
+    constructor() { this.load(); this.loadControlTypes(); }
     load(): void {
         this.loadSubscription?.unsubscribe();
         this.loading.set(true); this.error.set('');
@@ -243,6 +249,16 @@ export class CalendarioComponent {
         this.monthCount.set(count);
         try { localStorage.setItem(MONTHS_KEY, String(count)); } catch { /* sin almacenamiento: vale para esta visita */ }
         this.load();
+    }
+    private loadControlTypes(): void {
+        this.api.getCheckDefinitions().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+            next: definiciones => this.controlTypes.set(definiciones.filter(d => d.requiere_fecha).map(d => d.titulo)),
+            // Sin la lista maestra los controles se filtran todos juntos.
+            error: () => this.controlTypes.set([]),
+        });
+    }
+    private controlKind(deadline: CheckDeadline): CalendarKind {
+        return this.controlTypes().includes(deadline.titulo) ? `control:${deadline.titulo}` : OTROS_CONTROLES;
     }
     shows(kind: CalendarKind): boolean {
         const elegidos = this.kindFilter();
@@ -452,7 +468,7 @@ export class CalendarioComponent {
         }
     }
     openTeam(): void { this.editWorker(); this.teamOpen.set(true); }
-    clearFilters(): void { this.projectFilter.set(null); this.workerFilter.set(null); this.kindFilter.set([]); }
+    clearFilters(): void { this.workerFilter.set(null); this.kindFilter.set([]); }
     editWorker(worker?: OfficeWorker): void {
         this.workerId = worker?.id ?? null;
         this.workerName = worker?.nombre ?? '';
