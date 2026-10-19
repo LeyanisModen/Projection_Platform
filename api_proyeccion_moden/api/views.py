@@ -214,6 +214,13 @@ def _capture_config_status(mesa):
 CAPTURE_WINDOW_MARGIN_MINUTES = 30
 
 
+def _mesas_sin_camara():
+    """Mesas cuya camara no responde (variable MESAS_SIN_CAMARA="27,28"):
+    su player no intenta hacer fotos hasta que se quite."""
+    valor = os.environ.get('MESAS_SIN_CAMARA', '')
+    return {int(parte) for parte in valor.replace(' ', '').split(',') if parte.isdigit()}
+
+
 def _capture_window(profile):
     """Ventana de captura del mini-PC: la jornada mas amplia de la semana
     (inicio mas temprano, fin mas tardio) con media hora de margen a cada
@@ -6836,7 +6843,17 @@ class DeviceViewSet(viewsets.ViewSet):
         ).order_by('orden'))
         item.modulo.queue_active_images = images
         item_data = MesaQueueItemSerializer(item, context={'request': request}).data
-        item_data['images'] = ImagenSerializer(images, many=True, context={'request': request}).data
+        images_data = ImagenSerializer(images, many=True, context={'request': request}).data
+        if mesa.id in _mesas_sin_camara():
+            # El player hace la foto (y espera a la camara) cuando el nombre
+            # del fichero lleva 'check' o 'foto'. Con '#/sin-camara' carga la
+            # misma imagen pero ya no lo reconoce: el paso visual queda para
+            # revisar a ojo.
+            for image in images_data:
+                for campo in ('url', 'src'):
+                    if image.get(campo):
+                        image[campo] = f"{image[campo]}#/sin-camara"
+        item_data['images'] = images_data
         return Response(item_data)
 
     @action(detail=False, methods=['post'])
