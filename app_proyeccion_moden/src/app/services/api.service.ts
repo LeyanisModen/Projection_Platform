@@ -423,8 +423,19 @@ export interface HorarioDia {
     end_time: string;
 }
 
+/** Turno de trabajo: su jornada por dia. Si acaba antes de empezar, cruza la medianoche. */
+export interface TurnoConfig {
+    indice?: number;
+    nombre: string;
+    /** Un turno a demanda (la noche) se apaga sin borrarlo. */
+    activo: boolean;
+    horario: HorarioDia[];
+}
+
 export interface FerrallaCaptureConfig {
     user_id: number;
+    /** Turnos de la ferralla; `horario` y los demas campos los resumen todos juntos. */
+    turnos: TurnoConfig[];
     /** Derivados de `horario`: dias activos, inicio mas temprano y fin mas tardio. */
     active_days: CaptureDay[];
     start_time: string;
@@ -439,7 +450,9 @@ export interface FerrallaCaptureConfig {
 }
 
 export interface FerrallaCaptureConfigUpdate {
-    horario: HorarioDia[];
+    turnos?: TurnoConfig[];
+    /** Formato anterior (un unico turno). */
+    horario?: HorarioDia[];
     interval_seconds: number;
     rotations: { mesa_id: number; image_rotation: 0 | 90 | 180 | 270 }[];
 }
@@ -577,6 +590,8 @@ export interface ProductionStatsModulo {
     proyecto_nombre: string;
     grupo: string | null;
     completado_at: string;
+    /** Turno en el que se termino (null fuera de turno). */
+    turno?: string | null;
     inferior: ProductionStatsModuloFase | null;
     superior: ProductionStatsModuloFase | null;
     minutos: number | null;
@@ -618,7 +633,17 @@ export interface ElementosSueltos {
 }
 
 export interface ProductionStatsResponse {
-    range: { from: string; to: string; working_days: number; festivos?: string[] };
+    range: {
+        from: string; to: string; working_days: number; festivos?: string[];
+        /** Dias de produccion del rango con sus turnos (un turno de noche cuenta para el dia en que empieza). */
+        dias?: Array<{ fecha: string; turnos: number; horas: number }>;
+        /** Vista de un dia: sus horas de turno en orden ('19', ..., '23', '00', ...). */
+        horas?: string[] | null;
+    };
+    /** Turnos de la ferralla, para elegir uno. */
+    turnos?: Array<{ indice: number; nombre: string }>;
+    /** Turno elegido (null = todos). */
+    turno?: number | null;
     totals: ProductionStatsBucket & {
         modulos_completados: number;
         horas_productivas: number;
@@ -999,9 +1024,10 @@ export class ApiService {
         );
     }
 
-    getProductionStats(params: { from?: string; to?: string; proyecto?: number; edificio?: number; rango?: 'proyecto' | 'edificio' } = {}): Observable<ProductionStatsResponse> {
+    getProductionStats(params: { from?: string; to?: string; proyecto?: number; edificio?: number; rango?: 'proyecto' | 'edificio'; turno?: number } = {}): Observable<ProductionStatsResponse> {
         const query = new URLSearchParams();
         if (params.from) query.set('from', params.from);
+        if (params.turno != null) query.set('turno', String(params.turno));
         if (params.to) query.set('to', params.to);
         if (params.proyecto != null) query.set('proyecto', String(params.proyecto));
         if (params.edificio != null) query.set('edificio', String(params.edificio));

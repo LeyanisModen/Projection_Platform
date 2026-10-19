@@ -1207,10 +1207,11 @@ class UserProfile(models.Model):
     direccion = models.CharField(max_length=300, blank=True, null=True)
     coordinador = models.CharField(max_length=100, blank=True, null=True)
     password_texto_plano = models.CharField(max_length=128, blank=True, null=True)
+    # Es por turno (el nombre viene de cuando habia un solo turno al dia).
     capacidad_diaria_modulos = models.PositiveIntegerField(
-        default=35,
+        default=25,
         help_text=(
-            'Modulos por dia que se espera que saque la ferralla. El plan de '
+            'Modulos por turno que se espera que saque la ferralla. El plan de '
             'fabricacion solo avisa de los proyectos que piden mas.'
         ),
     )
@@ -1229,6 +1230,11 @@ class UserProfile(models.Model):
     # Los tres campos anteriores se mantienen sincronizados (dias activos,
     # inicio mas temprano y fin mas tardio) para lo que aun los lee.
     capture_horario = models.JSONField(default=dict, blank=True)
+    # Turnos (api/turnos.py): [{"nombre": "Noche", "activo": true,
+    # "horario": {"MON": ["19:00", "05:00"], ...}}]. Vacio => el horario de
+    # arriba como un unico turno. capture_horario y los demas se mantienen
+    # sincronizados (todos los turnos juntos) para lo que aun los lee.
+    turnos = models.JSONField(default=list, blank=True)
     capture_interval_seconds = models.PositiveIntegerField(default=20)
 
     def horario_por_dia(self):

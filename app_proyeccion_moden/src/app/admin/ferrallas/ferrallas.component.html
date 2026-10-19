@@ -214,9 +214,9 @@
                                     <div class="ficha-inline">
                                         <input type="number" class="form-control ficha-number" name="ficha_capacidad"
                                             min="1" step="1" required
-                                            aria-label="Modulos al dia que se espera que saque la ferralla"
+                                            aria-label="Modulos por turno que se espera que saque la ferralla"
                                             [(ngModel)]="f.capacidad_diaria_modulos" [disabled]="savingFicha">
-                                        <span class="ficha-unit">módulos/día</span>
+                                        <span class="ficha-unit">módulos/turno</span>
                                     </div>
                                 </label>
                             </div>
@@ -296,8 +296,8 @@
                         <div class="panel-header">
                             <div>
                                 <span class="section-label">Documentación automática</span>
-                                <h6>Horario y cámaras</h6>
-                                <p class="meta">El horario es de toda la ferralla; la rotación, de cada mesa.</p>
+                                <h6>Turnos y cámaras</h6>
+                                <p class="meta">Los turnos son de toda la ferralla; la rotación, de cada mesa.</p>
                             </div>
                             <button type="button" class="btn-icon"
                                 (click)="loadCaptureConfig(selectedUser.id)"
@@ -313,26 +313,8 @@
 
                         <div class="capture-config-content" *ngIf="captureConfig as config">
                             <div class="capture-schedule">
-                                <div class="capture-days-grid" role="group" aria-label="Jornada por dia">
-                                    <div class="capture-day-row" *ngFor="let day of captureDays"
-                                        [class.is-off]="!isCaptureDayActive(day.value)">
-                                        <button type="button" class="capture-day-toggle"
-                                            [class.active]="isCaptureDayActive(day.value)"
-                                            [disabled]="savingCaptureConfig"
-                                            (click)="toggleCaptureDay(day.value)"
-                                            [attr.aria-pressed]="isCaptureDayActive(day.value)"
-                                            [attr.aria-label]="'Trabajar el ' + day.largo">{{ day.label }}</button>
-                                        <input type="time" class="form-control" [attr.aria-label]="'Inicio ' + day.largo"
-                                            [ngModel]="horarioDe(day.value)?.start_time"
-                                            (ngModelChange)="setHorario(day.value, 'start_time', $event)"
-                                            [disabled]="savingCaptureConfig || !isCaptureDayActive(day.value)">
-                                        <span class="capture-day-sep">a</span>
-                                        <input type="time" class="form-control" [attr.aria-label]="'Fin ' + day.largo"
-                                            [ngModel]="horarioDe(day.value)?.end_time"
-                                            (ngModelChange)="setHorario(day.value, 'end_time', $event)"
-                                            [disabled]="savingCaptureConfig || !isCaptureDayActive(day.value)">
-                                    </div>
-                                </div>
+                                <app-turnos-editor [turnos]="config.turnos" [disabled]="savingCaptureConfig"
+                                    (cambio)="turnosCambiados()"></app-turnos-editor>
                                 <label class="capture-field capture-interval">
                                     <span>Cada</span>
                                     <div class="capture-interval-input">

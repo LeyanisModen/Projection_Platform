@@ -222,21 +222,65 @@ def _mesas_sin_camara():
 
 
 def _capture_window(profile):
-    """Ventana de captura del mini-PC: la jornada mas amplia de la semana
-    (inicio mas temprano, fin mas tardio) con media hora de margen a cada
-    lado, sin cruzar la medianoche. El servicio del mini-PC solo entiende
-    una franja para todos los dias."""
-    from datetime import datetime, timedelta
-    base = datetime(2000, 1, 1)
-    margin = timedelta(minutes=CAPTURE_WINDOW_MARGIN_MINUTES)
-    horario = profile.horario_por_dia()
-    inicios = [tramo[0] for tramo in horario.values()] or [profile.capture_start_time]
-    fines = [tramo[1] for tramo in horario.values()] or [profile.capture_end_time]
-    start = datetime.combine(base.date(), min(inicios)) - margin
-    end = datetime.combine(base.date(), max(fines)) + margin
-    start = max(start, base)
-    end = min(end, base.replace(hour=23, minute=59))
-    return start.strftime('%H:%M'), end.strftime('%H:%M')
+    """Ventana de captura del mini-PC: todos los turnos activos con media hora
+    de margen a cada lado; con un turno de noche, el dia entero (el servicio
+    del mini-PC solo entiende una franja sin cruzar la medianoche)."""
+    from api.turnos import turnos_de, ventana_de_captura
+    return ventana_de_captura(turnos_de(profile), CAPTURE_WINDOW_MARGIN_MINUTES)
+
+
+def _turnos_payload(profile):
+    from api.turnos import turnos_de
+    return [
+        {
+            'indice': turno.indice,
+            'nombre': turno.nombre,
+            'activo': turno.activo,
+            'horario': [
+                {
+                    'day': day,
+                    'start_time': turno.horario[day][0].strftime('%H:%M'),
+                    'end_time': turno.horario[day][1].strftime('%H:%M'),
+                }
+                for day in sorted(turno.horario, key=lambda d: CAPTURE_DAY_ORDER.get(d, 99))
+            ],
+        }
+        for turno in turnos_de(profile, solo_activos=False)
+    ]
+
+
+def _guardar_turnos(profile, turnos):
+    """Persist the shifts (``[{'nombre', 'activo', 'horario': {'MON': (time, time)}}]``)
+    and keep the legacy single-schedule fields in step with all active shifts.
+
+    Returns True when something changed.
+    """
+    nuevos = [
+        {
+            'nombre': turno['nombre'],
+            'activo': turno['activo'],
+            'horario': {
+                day: [tramo[0].strftime('%H:%M'), tramo[1].strftime('%H:%M')]
+                for day, tramo in sorted(turno['horario'].items(), key=lambda item: CAPTURE_DAY_ORDER.get(item[0], 99))
+            },
+        }
+        for turno in turnos
+    ]
+    changed = (profile.turnos or []) != nuevos
+    profile.turnos = nuevos
+    # Lo antiguo (una franja por dia) resume todos los turnos activos.
+    from datetime import time as dtime
+    union = {}
+    for turno in turnos:
+        if not turno['activo']:
+            continue
+        for day, (inicio, fin) in turno['horario'].items():
+            fin_dia = dtime(23, 59) if fin <= inicio else fin
+            previo = union.get(day)
+            union[day] = (min(previo[0], inicio), max(previo[1], fin_dia)) if previo else (inicio, fin_dia)
+    if union:
+        changed = _guardar_horario(profile, union) or changed
+    return changed
 
 
 def _horario_payload(profile):
@@ -291,6 +335,7 @@ def _ferralla_capture_config_payload(user, mesas=None):
         'start_time': profile.capture_start_time.strftime('%H:%M'),
         'end_time': profile.capture_end_time.strftime('%H:%M'),
         'horario': _horario_payload(profile),
+        'turnos': _turnos_payload(profile),
         'capture_window': {'start_time': window_start, 'end_time': window_end},
         'interval_seconds': profile.capture_interval_seconds,
         'check_times': ['06:00', '09:00', '12:00', '15:00'],
@@ -1361,9 +1406,20 @@ class UserViewSet(viewsets.ModelViewSet):
         serializer = FerrallaCaptureConfigSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
-        # Jornada por dia (viernes mas corto, etc.). El formato antiguo, con
-        # una sola franja para todos los dias activos, se sigue aceptando.
-        if data.get('horario'):
+        # Turnos, cada uno con su jornada por dia. Lo de antes (una jornada por
+        # dia, o una sola franja para todos los dias) se sigue aceptando.
+        turnos = None
+        if data.get('turnos'):
+            turnos = [
+                {
+                    'nombre': turno['nombre'],
+                    'activo': turno['activo'],
+                    'horario': {item['day']: (item['start_time'], item['end_time']) for item in turno['horario']},
+                }
+                for turno in data['turnos']
+            ]
+            horario = None
+        elif data.get('horario'):
             horario = {
                 item['day']: (item['start_time'], item['end_time'])
                 for item in data['horario']
@@ -1396,12 +1452,22 @@ class UserViewSet(viewsets.ModelViewSet):
                     )
                 })
 
-            horario_changed = _guardar_horario(profile, horario)
+            if turnos is not None:
+                horario_changed = _guardar_turnos(profile, turnos)
+            else:
+                # Formato antiguo: cambia el horario del primer turno.
+                from api.turnos import turnos_de
+                actuales = turnos_de(profile, solo_activos=False)
+                horario_changed = _guardar_turnos(profile, [
+                    {'nombre': t.nombre, 'activo': t.activo, 'horario': horario if i == 0 else t.horario}
+                    for i, t in enumerate(actuales)
+                ])
             interval_changed = profile.capture_interval_seconds != data['interval_seconds']
             schedule_changed = horario_changed or interval_changed
             if schedule_changed:
                 profile.capture_interval_seconds = data['interval_seconds']
                 profile.save(update_fields=[
+                    'turnos',
                     'capture_horario',
                     'capture_active_days',
                     'capture_start_time',
@@ -5432,61 +5498,6 @@ def _parse_iso_date(value, default):
         return default
 
 
-def _count_working_days(start_date, end_date, festivos=frozenset()):
-    """Count Mon-Fri days inclusive between start_date and end_date, minus holidays."""
-    from datetime import timedelta
-    if end_date < start_date:
-        return 0
-    total = 0
-    current = start_date
-    while current <= end_date:
-        if current.weekday() < 5 and current not in festivos:
-            total += 1
-        current += timedelta(days=1)
-    return total
-
-
-def _working_hours_in_range(start_date, end_date, profile, now=None, festivos=frozenset()):
-    """Return elapsed configured working hours inside an inclusive date range (no holidays)."""
-    from datetime import time, timedelta
-    from django.utils import timezone
-
-    if end_date < start_date:
-        return 0.0
-
-    current_tz = timezone.get_current_timezone()
-    now = now or timezone.localtime(timezone.now(), current_tz)
-    if profile is not None and hasattr(profile, 'horario_por_dia'):
-        horario = profile.horario_por_dia()
-    else:
-        horario = {
-            day: (time(6, 50), time(15, 0))
-            for day in ['MON', 'TUE', 'WED', 'THU', 'FRI']
-        }
-    day_codes = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']
-
-    seconds = 0.0
-    current = start_date
-    while current <= end_date:
-        tramo = None if current in festivos else horario.get(day_codes[current.weekday()])
-        if tramo:
-            start_time, end_time = tramo
-            day_start = timezone.make_aware(
-                timezone.datetime.combine(current, start_time), current_tz
-            )
-            day_end = timezone.make_aware(
-                timezone.datetime.combine(current, end_time), current_tz
-            )
-            if day_end <= day_start:
-                day_end += timedelta(days=1)
-            effective_end = min(day_end, now)
-            if effective_end > day_start:
-                seconds += (effective_end - day_start).total_seconds()
-        current += timedelta(days=1)
-
-    return seconds / 3600.0
-
-
 def _compute_dificultad_scale(user, fallback_detalles=None, proyecto_id=None):
     """
     Computes the scale factor that maps the user's mean raw dificultad
@@ -5568,74 +5579,24 @@ def _compute_dificultad(detalle):
     return float(time_units + peso / Decimal('100'))
 
 
-def _horario_para_perfil(profile):
-    """Working window per weekday for a ferralla (or the historical default)."""
-    from datetime import time
-    if profile is not None and hasattr(profile, 'horario_por_dia'):
-        return profile.horario_por_dia()
-    return {day: (time(6, 50), time(15, 0)) for day in ['MON', 'TUE', 'WED', 'THU', 'FRI']}
-
-
-def _working_seconds_between(start, end, horario, current_tz, festivos=frozenset()):
-    """Seconds of configured working time between two aware datetimes.
-
-    Holidays of the calendar are not working time: a panel left on the
-    table over a long weekend only counts the hours actually worked.
-    """
-    from datetime import timedelta
-    if start is None or end is None or end <= start:
-        return 0.0
-    day_codes = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']
-    total = 0.0
-    current = timezone.localtime(start, current_tz).date()
-    last = timezone.localtime(end, current_tz).date()
-    while current <= last:
-        tramo = None if current in festivos else horario.get(day_codes[current.weekday()])
-        if tramo:
-            start_time, end_time = tramo
-            day_start = timezone.make_aware(
-                timezone.datetime.combine(current, start_time), current_tz
-            )
-            day_end = timezone.make_aware(
-                timezone.datetime.combine(current, end_time), current_tz
-            )
-            if day_end <= day_start:
-                day_end += timedelta(days=1)
-            lo = max(day_start, start)
-            hi = min(day_end, end)
-            if hi > lo:
-                total += (hi - lo).total_seconds()
-        current += timedelta(days=1)
-    return total
-
-
-def _jornada_inicio(local_date, horario, current_tz):
-    day_codes = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']
-    tramo = horario.get(day_codes[local_date.weekday()])
-    if not tramo:
-        return None
-    return timezone.make_aware(
-        timezone.datetime.combine(local_date, tramo[0]), current_tz
-    )
-
-
 # Por debajo de esto no se ha fabricado un panel: se ha marcado hecho en
 # bloque o nada mas aparecer en la mesa. No cuenta como tiempo.
 TIEMPO_PANEL_MINIMO_S = 120
 
 
-def _tiempos_fabricacion(items, horario, current_tz, festivos=frozenset()):
-    """Minutes of working time per finished phase, measured when possible.
+def _tiempos_fabricacion(items, jornada):
+    """Minutes of shift time per finished phase, measured when possible.
 
-    Measured: sum of the intervals between INICIO/PASO and PAUSA/FIN events
-    (time with the phase on screen), clipped to the working schedule and
-    without holidays. A gap between two steps on different days (the panel
-    stayed on the table overnight or over the weekend) does not count.
-    Approximated (phases finished before the log existed, or on screen for
-    less than the minimum): working time between the previous phase
-    finished on the same mesa that day (or the start of the working day)
-    and this one. Anything under ``TIEMPO_PANEL_MINIMO_S`` is left without a
-    time. Returns ``{item_id: (minutes, measured)}``.
+    ``jornada`` is an ``api.turnos.Jornada`` covering the items. Measured:
+    sum of the intervals between INICIO/PASO and PAUSA/FIN events (time with
+    the phase on screen), clipped to the shifts and without holidays. A gap
+    between two steps of different shifts or production days (the panel
+    stayed on the table between shifts, overnight or over the weekend) does
+    not count. Approximated (phases finished before the log existed, or on
+    screen for less than the minimum): shift time since the previous phase
+    finished on the same mesa in the same shift (or the start of the shift).
+    Anything under ``TIEMPO_PANEL_MINIMO_S`` is left without a time.
+    Returns ``{item_id: (minutes, measured)}``.
     """
     items = [it for it in items if it.done_at is not None and it.mesa_id is not None]
     if not items:
@@ -5643,6 +5604,12 @@ def _tiempos_fabricacion(items, horario, current_tz, festivos=frozenset()):
     eventos = {}
     for ev in EventoFabricacion.objects.filter(item_id__in=[it.id for it in items]).order_by('at', 'id'):
         eventos.setdefault(ev.item_id, []).append(ev)
+
+    def mismo_turno(desde, hasta):
+        tramo_desde, tramo_hasta = jornada.tramo_de(desde), jornada.tramo_de(hasta)
+        if tramo_desde is not None and tramo_hasta is not None:
+            return tramo_desde == tramo_hasta
+        return jornada.dia_de(desde) == jornada.dia_de(hasta)
 
     result = {}
     by_mesa = {}
@@ -5655,12 +5622,10 @@ def _tiempos_fabricacion(items, horario, current_tz, festivos=frozenset()):
             evs = eventos.get(it.id, [])
             medido = 0.0
             if any(ev.tipo == EventoFabricacionTipo.INICIO for ev in evs):
-                # Se suma de paso en paso. Si entre dos pasos cambia el dia, el
-                # panel se quedo en la mesa (noche, fin de semana): no cuenta.
+                # Se suma de paso en paso. Si entre dos pasos cambia el turno,
+                # el panel se quedo en la mesa: ese hueco no cuenta.
                 def tramo(desde, hasta):
-                    if timezone.localtime(desde, current_tz).date() != timezone.localtime(hasta, current_tz).date():
-                        return 0.0
-                    return _working_seconds_between(desde, hasta, horario, current_tz, festivos)
+                    return jornada.segundos_entre(desde, hasta) if mismo_turno(desde, hasta) else 0.0
 
                 last_at = None
                 for ev in evs:
@@ -5673,16 +5638,26 @@ def _tiempos_fabricacion(items, horario, current_tz, festivos=frozenset()):
             if medido >= TIEMPO_PANEL_MINIMO_S:
                 result[it.id] = (medido / 60.0, True)
             else:
-                done_local = timezone.localtime(it.done_at, current_tz)
-                if previous_done is not None and timezone.localtime(previous_done, current_tz).date() == done_local.date():
+                if previous_done is not None and mismo_turno(previous_done, it.done_at):
                     start = previous_done
                 else:
-                    start = _jornada_inicio(done_local.date(), horario, current_tz)
-                seconds = _working_seconds_between(start, it.done_at, horario, current_tz, festivos)
+                    tramo_hecho = jornada.tramo_de(it.done_at)
+                    start = tramo_hecho.inicio if tramo_hecho is not None else None
+                seconds = jornada.segundos_entre(start, it.done_at)
                 if seconds >= TIEMPO_PANEL_MINIMO_S:
                     result[it.id] = (seconds / 60.0, False)
             previous_done = it.done_at
     return result
+
+
+def _objetivo_del_turno(esperado, jornada, desde, hasta, turno):
+    """Con un turno elegido, el objetivo es su parte de los turnos del periodo."""
+    if turno is None or not esperado.get('modulos_esperados'):
+        return esperado
+    del_periodo = [tramo for tramo in jornada.tramos if desde <= tramo.fecha <= hasta]
+    suyos = [tramo for tramo in del_periodo if tramo.turno.indice == turno.indice]
+    parte = len(suyos) / len(del_periodo) if del_periodo else 0
+    return {**esperado, 'modulos_esperados': round(esperado['modulos_esperados'] * parte)}
 
 
 def _resumen_tiempos(valores):
@@ -5799,6 +5774,46 @@ class ProductionStatsView(APIView):
             from_date = timezone.localtime(min(inicios), current_tz).date() if inicios else today
             to_date = max(today, from_date)
 
+        # Horario de la ferralla que se mira: sus turnos y sus festivos.
+        profile_user = None
+        if _is_admin(request.user) and edificio_filtrado is not None and edificio_filtrado.usuario_id:
+            profile_user = edificio_filtrado.usuario
+        if _is_admin(request.user) and proyecto_id:
+            proyecto = Proyecto.objects.select_related('usuario__profile').filter(id=proyecto_id).first()
+            if proyecto and proyecto.usuario:
+                profile_user = proyecto.usuario
+        if profile_user is None and request.user.is_authenticated and not _is_admin(request.user):
+            profile_user = request.user
+        if profile_user is not None and hasattr(profile_user, 'profile'):
+            profile = profile_user.profile
+        else:
+            profile = None
+        from api.planning import annotated_projects, demand_summary, festivos_de, period_target_summary
+        from api.turnos import Jornada, turnos_de
+        # Festivos de la ferralla (y los de todas): no son dias de trabajo.
+        festivos = festivos_de(profile_user.id if profile_user is not None else None)
+        turnos = turnos_de(profile)
+        turno_param = request.query_params.get('turno')
+        turno_sel = next((t for t in turnos if str(t.indice) == str(turno_param)), None) if turno_param not in (None, '') else None
+        contexto_dias = 14
+        jornada = Jornada(
+            turnos, from_date - timedelta(days=contexto_dias + 46), to_date + timedelta(days=contexto_dias + 1),
+            festivos, current_tz,
+        )
+
+        def del_turno(momento):
+            if turno_sel is None:
+                return True
+            tramo = jornada.tramo_de(momento)
+            return tramo is not None and tramo.turno.indice == turno_sel.indice
+
+        def en_rango(momento):
+            """Hecho en un dia de produccion del rango (y en el turno elegido)."""
+            return momento is not None and from_date <= jornada.dia_de(momento) <= to_date and del_turno(momento)
+
+        def dia_iso(momento):
+            return jornada.dia_de(momento).isoformat()
+
         # Build a tz-aware range for filtering done_at (local midnights)
         from_dt = timezone.make_aware(
             timezone.datetime.combine(from_date, timezone.datetime.min.time()),
@@ -5818,15 +5833,15 @@ class ProductionStatsView(APIView):
             .select_related('proyecto', 'grupo_bastidor', 'grupo_bastidor__dividido_de')
             .prefetch_related('detalles_fase')
             .filter(completado_at__isnull=False,
-                    completado_at__gte=from_dt,
-                    completado_at__lt=to_dt_exclusive)
+                    completado_at__gte=from_dt - timedelta(days=1),
+                    completado_at__lt=to_dt_exclusive + timedelta(days=1))
         )
         if alcance_ids is not None:
             modulos_qs = modulos_qs.filter(proyecto_id__in=alcance_ids)
         if not _is_admin(request.user):
             modulos_qs = modulos_qs.filter(proyecto__usuario=request.user)
 
-        modulos_list = list(modulos_qs)
+        modulos_list = [m for m in modulos_qs if en_rango(m.completado_at)]
         modulos_completados = len(modulos_list)
 
         # Dificultad normalization: mean -> 100 so every UI surface
@@ -5991,7 +6006,7 @@ class ProductionStatsView(APIView):
         # to a synthetic "Manual" bucket (no mesa id).
         for modulo in modulos_list:
             local_dt = timezone.localtime(modulo.completado_at, current_tz)
-            dia_key = local_dt.date().isoformat()
+            dia_key = dia_iso(modulo.completado_at)
             if dia_key not in por_dia:
                 por_dia[dia_key] = {'fecha': dia_key, 'modulos_completados': 0, **empty_totals()}
             por_dia[dia_key]['modulos_completados'] += 1
@@ -6052,22 +6067,7 @@ class ProductionStatsView(APIView):
                         }
                     add_detalle(por_mesa[manual_key], detalle)
 
-        # Work hours still use the camera schedule. Required output comes
-        # from current project deadlines, not the legacy nominal capacity.
-        profile_user = None
-        if _is_admin(request.user) and edificio_filtrado is not None and edificio_filtrado.usuario_id:
-            profile_user = edificio_filtrado.usuario
-        if _is_admin(request.user) and proyecto_id:
-            proyecto = Proyecto.objects.select_related('usuario__profile').filter(id=proyecto_id).first()
-            if proyecto and proyecto.usuario:
-                profile_user = proyecto.usuario
-        if profile_user is None and request.user.is_authenticated and not _is_admin(request.user):
-            profile_user = request.user
-        if profile_user is not None and hasattr(profile_user, 'profile'):
-            profile = profile_user.profile
-        else:
-            profile = None
-        from api.planning import annotated_projects, demand_summary, festivos_de, period_target_summary
+        # Required output comes from current project deadlines.
         planning_projects = Proyecto.objects.all()
         if alcance_ids is not None:
             planning_projects = planning_projects.filter(pk__in=alcance_ids)
@@ -6083,13 +6083,35 @@ class ProductionStatsView(APIView):
                 Q(usuario_id__in=planning_projects.filter(usuario__isnull=False).values('usuario_id'))
                 | Q(pk__in=planning_projects.filter(usuario__isnull=True).values('pk'))
             )
-        # Festivos de la ferralla (y los de todas): no son dias de trabajo.
-        festivos = festivos_de(profile_user.id if profile_user is not None else None)
         festivos_rango = sorted(dia for dia in festivos if from_date <= dia <= to_date)
-        working_days = _count_working_days(from_date, to_date, festivos)
-        working_hours = _working_hours_in_range(
-            from_date, to_date, profile, timezone.localtime(timezone.now(), current_tz), festivos,
-        )
+        ahora = timezone.now()
+        tramos_rango = [
+            tramo for tramo in jornada.tramos
+            if from_date <= tramo.fecha <= to_date
+            and (turno_sel is None or tramo.turno.indice == turno_sel.indice)
+        ]
+        dias_rango = {}
+        for tramo in tramos_rango:
+            dia = dias_rango.setdefault(tramo.fecha.isoformat(), {'fecha': tramo.fecha.isoformat(), 'turnos': 0, 'horas': 0.0})
+            dia['turnos'] += 1
+            dia['horas'] = round(dia['horas'] + tramo.segundos / 3600.0, 2)
+        working_days = len(dias_rango)
+        # Horas ya trabajadas: un turno en curso cuenta hasta ahora.
+        working_hours = sum(
+            (min(tramo.fin, ahora) - tramo.inicio).total_seconds()
+            for tramo in tramos_rango if tramo.inicio < ahora
+        ) / 3600.0
+        # Vista de un dia: sus horas en orden (un turno de noche pasa de las
+        # 23 a las 00 dentro del mismo dia de produccion).
+        horas_dia = []
+        if single_day:
+            for tramo in tramos_rango:
+                momento = timezone.localtime(tramo.inicio, current_tz).replace(minute=0, second=0, microsecond=0)
+                while momento < tramo.fin:
+                    etiqueta = f'{momento.hour:02d}'
+                    if etiqueta not in horas_dia:
+                        horas_dia.append(etiqueta)
+                    momento = timezone.localtime(momento + timedelta(hours=1), current_tz)
         totals['horas_productivas'] = round(working_hours, 2)
         totals['modulos_por_hora'] = round(
             modulos_completados / working_hours, 2
@@ -6102,7 +6124,6 @@ class ProductionStatsView(APIView):
         # las graficas (periodo anterior y siguiente) y el panel anterior de
         # cada mesa para la aproximacion.
         import statistics
-        contexto_dias = 14
         ventana_desde = from_dt - timedelta(days=contexto_dias)
         ventana_hasta = to_dt_exclusive + timedelta(days=contexto_dias)
         fechas_fases = [it.done_at for it in item_by_modulo_fase.values() if it.done_at is not None]
@@ -6121,9 +6142,7 @@ class ProductionStatsView(APIView):
         elif profile_user is not None:
             tiempo_items_qs = tiempo_items_qs.filter(mesa__usuario=profile_user)
         ventana_items = list(tiempo_items_qs)
-        tiempos_por_item = _tiempos_fabricacion(
-            ventana_items, _horario_para_perfil(profile), current_tz, festivos,
-        )
+        tiempos_por_item = _tiempos_fabricacion(ventana_items, jornada)
         proyecto_filtro = set(alcance_ids) if alcance_ids is not None else None
 
         def _mediana(valores):
@@ -6146,9 +6165,11 @@ class ProductionStatsView(APIView):
                 continue
             if proyecto_filtro is not None and it.modulo.proyecto_id not in proyecto_filtro:
                 continue
+            if not del_turno(it.done_at):
+                continue
             local_done = timezone.localtime(it.done_at, current_tz)
-            tiempos_dia.setdefault(local_done.date().isoformat(), {}).setdefault(it.fase, []).append(valor[0])
-            if not (from_dt <= it.done_at < to_dt_exclusive):
+            tiempos_dia.setdefault(dia_iso(it.done_at), {}).setdefault(it.fase, []).append(valor[0])
+            if not en_rango(it.done_at):
                 continue
             tiempos_fase.setdefault(it.fase, []).append(valor)
             tiempos_mesa.setdefault(it.mesa_id, {'mesa': it.mesa, 'valores': []})['valores'].append(valor)
@@ -6193,14 +6214,16 @@ class ProductionStatsView(APIView):
             contexto_base = contexto_base.filter(proyecto_id__in=alcance_ids)
         if not _is_admin(request.user):
             contexto_base = contexto_base.filter(proyecto__usuario=request.user)
-        contexto_modulos = list(
-            contexto_base.filter(completado_at__gte=contexto_desde, completado_at__lt=from_dt)
-        ) + list(
-            contexto_base.filter(completado_at__gte=to_dt_exclusive, completado_at__lt=ventana_hasta)
-        )
+        contexto_modulos = [
+            modulo for modulo in contexto_base.filter(
+                Q(completado_at__gte=contexto_desde - timedelta(days=1), completado_at__lt=from_dt + timedelta(days=1))
+                | Q(completado_at__gte=to_dt_exclusive - timedelta(days=1), completado_at__lt=ventana_hasta)
+            )
+            if not (from_date <= jornada.dia_de(modulo.completado_at) <= to_date) and del_turno(modulo.completado_at)
+        ]
         contexto_dia = {}
         for modulo in contexto_modulos:
-            fecha = timezone.localtime(modulo.completado_at, current_tz).date().isoformat()
+            fecha = dia_iso(modulo.completado_at)
             bucket = contexto_dia.setdefault(
                 fecha, {'fecha': fecha, 'modulos_completados': 0, **empty_totals()},
             )
@@ -6278,6 +6301,8 @@ class ProductionStatsView(APIView):
                 'proyecto_nombre': modulo.proyecto.nombre if modulo.proyecto else '',
                 'grupo': grupo.etiqueta if grupo is not None else None,
                 'completado_at': timezone.localtime(modulo.completado_at, current_tz).isoformat(),
+                'turno': (jornada.tramo_de(modulo.completado_at).turno.nombre
+                          if jornada.tramo_de(modulo.completado_at) is not None else None),
                 'inferior': inferior,
                 'superior': superior,
                 'minutos': minutos,
@@ -6299,6 +6324,9 @@ class ProductionStatsView(APIView):
                 'from': from_date.isoformat(),
                 'to': to_date.isoformat(),
                 'working_days': working_days,
+                # Dias de produccion con turnos, para repartir el objetivo.
+                'dias': sorted(dias_rango.values(), key=lambda dia: dia['fecha']),
+                'horas': horas_dia if single_day else None,
                 'festivos': [dia.isoformat() for dia in festivos_rango],
             },
             'totals': {
@@ -6313,9 +6341,14 @@ class ProductionStatsView(APIView):
             'por_hora': sorted(por_hora.values(), key=lambda x: x['hora']) if single_day else None,
             'esperado': {
                 'capacidad_diaria_modulos': capacidad_diaria,
-                **period_target_summary(target_projects, from_date, to_date),
+                **_objetivo_del_turno(
+                    period_target_summary(target_projects, from_date, to_date),
+                    jornada, from_date, to_date, turno_sel,
+                ),
             },
             'planificacion': planning,
+            'turnos': [{'indice': turno.indice, 'nombre': turno.nombre} for turno in turnos],
+            'turno': turno_sel.indice if turno_sel is not None else None,
             'tiempos': tiempos,
             'contexto': contexto,
             'modulos': modulos_detalle,
@@ -6723,12 +6756,11 @@ class DeviceViewSet(viewsets.ViewSet):
         profile, _ = UserProfile.objects.get_or_create(user=mesa.usuario)
         mesa.capture_config_requested_at = timezone.now()
         mesa.save(update_fields=['capture_config_requested_at'])
-        active_days = sorted(
-            profile.capture_active_days or [],
-            key=lambda day: CAPTURE_DAY_ORDER.get(day, 99),
-        )
-        # El mini-PC captura desde media hora antes de la jornada hasta media
-        # hora despues; la jornada en si la fija la ferralla.
+        from api.turnos import dias_de_captura, turnos_de
+        # Los dias de los turnos (y el siguiente si uno cruza la medianoche).
+        active_days = dias_de_captura(turnos_de(profile))
+        # El mini-PC captura desde media hora antes de los turnos hasta media
+        # hora despues; los turnos los fija la ferralla.
         window_start, window_end = _capture_window(profile)
         return Response({
             'revision': mesa.capture_config_revision,

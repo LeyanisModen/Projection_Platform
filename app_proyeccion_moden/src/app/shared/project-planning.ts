@@ -11,7 +11,7 @@ export function requiredDaily(projects: Proyecto[]): number {
     return plan(projects)?.ritmo_ferralla ?? 0;
 }
 
-/** Modulos por dia que se espera que saque la ferralla. */
+/** Modulos por turno que se espera que saque la ferralla. */
 export function factoryCapacity(projects: Proyecto[]): number | null {
     return plan(projects)?.capacidad_ferralla ?? null;
 }
@@ -48,7 +48,7 @@ export function planningLabel(project: Proyecto): string {
     switch (plan.estado) {
         case 'PLANIFICADO': {
             const base = !plan.fabricacion_inicio
-                ? `${plan.modulos_por_dia} módulos/día · ${plan.dias_disponibles} días disponibles`
+                ? `${plan.modulos_por_dia} módulos/turno · ${plan.dias_disponibles} turnos disponibles`
                 : plan.modulos_extra
                     ? planningWindow(plan)
                     : `${planningWindow(plan)} · ${planningMargin(plan.margen_dias)}`;

@@ -8,11 +8,14 @@ ferralla y no los festivos del calendario (los de todas y los suyos).
 
 - Ritmo necesario: todos los modulos pendientes entre los dias laborables
   que quedan hasta el ultimo montaje. Es la media que hay que sostener.
-- Capacidad: los modulos por dia que se espera sacar (se configura en cada
-  ferralla). A ese ritmo se calcula cuando se fabrica cada proyecto. Si un
-  proyecto no llega, se avisa de cuantos modulos de mas necesita (horas
+- Capacidad: los modulos por turno que se espera sacar (se configura en
+  cada ferralla). A ese ritmo se calcula cuando se fabrica cada proyecto. Si
+  un proyecto no llega, se avisa de cuantos modulos de mas necesita (horas
   extra, sabados...) y se supone que se cubren: el siguiente empieza a
   tiempo y el retraso no se arrastra.
+
+Todo se cuenta en turnos (api/turnos.py): un dia con turno de manana y de
+noche son dos turnos de fabricacion, y el ritmo y la capacidad son por turno.
 """
 import math
 from datetime import datetime, time, timedelta
@@ -20,38 +23,48 @@ from datetime import datetime, time, timedelta
 from django.db.models import Count, Min, Q
 from django.utils import timezone
 
-from .models import default_capture_active_days
+from .turnos import turnos_de, turnos_por_dia
 
 DAY_CODES = ('MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN')
-# Media que se espera de una ferralla si su ficha no dice otra cosa.
-CAPACIDAD_POR_DEFECTO = 35
+# Modulos por turno que se esperan de una ferralla si su ficha no dice otra cosa.
+CAPACIDAD_POR_DEFECTO = 25
 _EPS = 1e-9
 
 
+def _pesos(days):
+    """{'MON': turnos}: acepta tambien una lista de dias (un turno cada uno)."""
+    if isinstance(days, dict):
+        return {day: n for day, n in days.items() if n}
+    return {day: 1 for day in days}
+
+
 def production_day_count(start, end, days, festivos=frozenset()):
-    """Count days in [start, end); mounting day is reserved for site assembly."""
+    """Turns of work in [start, end); mounting day is reserved for site assembly.
+
+    ``days`` is ``{'MON': 2, ...}`` (turns that start each weekday) or a plain
+    list of days, one turn each.
+    """
+    pesos = _pesos(days)
     span = max(0, (end - start).days)
     weeks, extra = divmod(span, 7)
-    active = set(days)
-    count = weeks * len(active) + sum(
-        DAY_CODES[(start.weekday() + offset) % 7] in active
+    count = weeks * sum(pesos.values()) + sum(
+        pesos.get(DAY_CODES[(start.weekday() + offset) % 7], 0)
         for offset in range(extra)
     )
     if festivos:
         count -= sum(
-            1 for dia in festivos
-            if start <= dia < end and DAY_CODES[dia.weekday()] in active
+            pesos.get(DAY_CODES[dia.weekday()], 0) for dia in festivos
+            if start <= dia < end
         )
     return count
 
 
 def factory_production_days(project):
+    """Turnos que empiezan cada dia de la semana: {'MON': 2, 'SUN': 1}."""
     if project.usuario_id is None:
-        return []
-    profile = getattr(project.usuario, 'profile', None)
-    # Match the factory configuration default without creating a profile on reads.
-    days = profile.capture_active_days if profile is not None else default_capture_active_days()
-    return [day for day in DAY_CODES if day in (days or [])]
+        return {}
+    # Sin perfil, el horario por defecto, sin crear el perfil al leer.
+    return turnos_por_dia(turnos_de(getattr(project.usuario, 'profile', None)))
 
 
 def factory_capacity(project):
@@ -98,24 +111,25 @@ def laborable_oficina_anterior(dia, festivos=None):
 
 
 class _DiasDeFabricacion:
-    """Dias de fabricacion desde una fecha: el indice 0 es el primero."""
+    """Turnos de fabricacion desde una fecha: el indice 0 es el primero y cada
+    uno devuelve el dia en que empieza (un dia con dos turnos sale dos veces)."""
 
     def __init__(self, desde, days, festivos):
-        self._activos = set(days)
+        self._pesos = _pesos(days)
         self._festivos = festivos
         self._siguiente = desde
         self._dias = []
 
     def __getitem__(self, indice):
-        if not self._activos:
+        if not self._pesos:
             return None
         limite = 4000
         while len(self._dias) <= indice and limite:
             dia = self._siguiente
             self._siguiente += timedelta(days=1)
             limite -= 1
-            if DAY_CODES[dia.weekday()] in self._activos and dia not in self._festivos:
-                self._dias.append(dia)
+            if dia not in self._festivos:
+                self._dias.extend([dia] * self._pesos.get(DAY_CODES[dia.weekday()], 0))
         return self._dias[indice] if indice < len(self._dias) else None
 
 
@@ -159,7 +173,7 @@ def _base_demand(project, today, active_days, festivos):
         'modulos_por_dia': daily,
         'estado': state,
         'fecha_calculo': today.isoformat(),
-        'dias_produccion': active_days,
+        'dias_produccion': [day for day in DAY_CODES if day in _pesos(active_days)],
         # Plan de la ferralla (se rellena en plan_ferralla).
         'ritmo_ferralla': None,
         'capacidad_ferralla': None,
@@ -189,6 +203,11 @@ def _serie(proyectos, filas, usuario_id):
         (0, posiciones[p.pk]) if p.pk in posiciones else (1, 0),
         p.fecha_montaje, p.orden_planta, p.pk,
     ))
+
+
+def _dias_entre(dias, desde, hasta):
+    """Dias de fabricacion distintos entre los turnos [desde, hasta) del plan."""
+    return len({dias[i] for i in range(max(0, desde), max(0, hasta))} - {None})
 
 
 def _modulos_entre(inicio, fin, pendientes, desde, hasta):
@@ -235,7 +254,8 @@ def plan_ferralla(usuario_id, today=None, override=None):
 
     dias = _DiasDeFabricacion(today, active_days, festivos)
     hoy_trabaja = dias[0] == today
-    primero_semana = 1 if hoy_trabaja else 0
+    # Turnos de hoy y de los proximos 7 dias.
+    primero_semana = production_day_count(today, today + timedelta(days=1), active_days, festivos)
     dias_semana = production_day_count(
         today + timedelta(days=1), today + timedelta(days=7), active_days, festivos,
     )
@@ -257,13 +277,13 @@ def plan_ferralla(usuario_id, today=None, override=None):
             t = max(inicio, float(limite))
             aprietan += 1
         ultimo_dia_plan = max(math.ceil(t - _EPS) - 1, math.floor(inicio))
-        hoy = _modulos_entre(inicio, t, pend, 0, 1) if hoy_trabaja else 0.0
+        hoy = _modulos_entre(inicio, t, pend, 0, primero_semana) if hoy_trabaja else 0.0
         semana = _modulos_entre(inicio, t, pend, primero_semana, primero_semana + dias_semana)
         fila.update({
             'fabricacion_inicio': dias[math.floor(inicio + _EPS)].isoformat(),
             'fabricacion_fin': dias[ultimo_dia_plan].isoformat(),
             'ultimo_dia': dias[limite - 1].isoformat(),
-            'margen_dias': 0 if extra else max(0, limite - math.ceil(t - _EPS)),
+            'margen_dias': 0 if extra else _dias_entre(dias, math.ceil(t - _EPS), limite),
             'modulos_extra': extra,
             'modulos_hoy': min(pend, round(hoy)),
             'modulos_semana': min(pend - min(pend, round(hoy)), round(semana)),

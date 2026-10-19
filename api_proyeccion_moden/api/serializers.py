@@ -970,10 +970,35 @@ class HorarioDiaSerializer(serializers.Serializer):
         return attrs
 
 
+class TurnoDiaSerializer(serializers.Serializer):
+    """Jornada de un turno un dia; si acaba antes de empezar, cruza la medianoche."""
+    day = serializers.ChoiceField(choices=CAPTURE_DAY_CHOICES)
+    start_time = serializers.TimeField(input_formats=['%H:%M', '%H:%M:%S'], format='%H:%M')
+    end_time = serializers.TimeField(input_formats=['%H:%M', '%H:%M:%S'], format='%H:%M')
+
+    def validate(self, attrs):
+        if attrs['end_time'] == attrs['start_time']:
+            raise serializers.ValidationError('El turno tiene que durar algo: pon horas distintas de inicio y fin.')
+        return attrs
+
+
+class TurnoSerializer(serializers.Serializer):
+    nombre = serializers.CharField(max_length=40)
+    activo = serializers.BooleanField(default=True)
+    horario = TurnoDiaSerializer(many=True)
+
+    def validate(self, attrs):
+        dias = [item['day'] for item in attrs['horario']]
+        if len(dias) != len(set(dias)):
+            raise serializers.ValidationError({'horario': 'Hay dias repetidos en el turno.'})
+        return attrs
+
+
 class FerrallaCaptureConfigSerializer(serializers.Serializer):
-    """Jornada de la ferralla. ``horario`` (por dia) es la forma nueva; el
-    trio ``active_days``/``start_time``/``end_time`` se acepta por
-    compatibilidad y significa la misma franja todos los dias."""
+    """Jornada de la ferralla. ``turnos`` (cada uno con su jornada por dia)
+    es la forma nueva; ``horario`` (una jornada por dia) y el trio
+    ``active_days``/``start_time``/``end_time`` se aceptan por compatibilidad."""
+    turnos = TurnoSerializer(many=True, required=False)
     horario = HorarioDiaSerializer(many=True, required=False)
     active_days = serializers.ListField(
         child=serializers.ChoiceField(choices=CAPTURE_DAY_CHOICES),
@@ -994,6 +1019,13 @@ class FerrallaCaptureConfigSerializer(serializers.Serializer):
     rotations = MesaCaptureRotationSerializer(many=True, required=False)
 
     def validate(self, attrs):
+        if 'turnos' in attrs:
+            if not attrs['turnos']:
+                raise serializers.ValidationError({'turnos': 'La ferralla necesita al menos un turno.'})
+            nombres = [turno['nombre'].strip().lower() for turno in attrs['turnos']]
+            if len(nombres) != len(set(nombres)):
+                raise serializers.ValidationError({'turnos': 'Hay dos turnos con el mismo nombre.'})
+            return attrs
         horario = attrs.get('horario')
         if horario:
             dias = [item['day'] for item in horario]

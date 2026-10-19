@@ -795,11 +795,12 @@ class OfficePlanningTests(APITestCase):
         }, format='json')
         self.assertEqual(event.status_code, 201)
         self.assertIsNone(event.data['ferralla'])
-        # Los nacionales vienen precargados y la capacidad por defecto es la media esperada.
+        # Los nacionales vienen precargados y la capacidad por defecto es lo
+        # que se espera de un turno.
         self.assertTrue(EventoCalendario.objects.filter(
             tipo='FESTIVO', inicio=date(2026, 10, 12), ferralla__isnull=True,
         ).exists())
-        self.assertEqual(UserProfile.objects.create(user=self.other).capacidad_diaria_modulos, 35)
+        self.assertEqual(UserProfile.objects.create(user=self.other).capacidad_diaria_modulos, 25)
 
     def test_unplanned_overdue_and_complete_demand(self):
         module = self.create_module()
