@@ -1,5 +1,7 @@
 import hashlib
+import os
 import secrets
+from unittest.mock import patch
 
 from django.contrib.auth.models import User
 from rest_framework.authtoken.models import Token
@@ -98,3 +100,19 @@ class MesaColasBulkTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['id'], first.id)
         self.assertEqual(response.data['status'], MesaQueueStatus.MOSTRANDO)
+
+    def test_player_of_a_mesa_without_camera_does_not_wait_for_photos(self):
+        raw = secrets.token_urlsafe(32)
+        self.mesa_a.device_token_hash = hashlib.sha256(raw.encode()).hexdigest()
+        self.mesa_a.save(update_fields=['device_token_hash'])
+        self._queue(self.mesa_a, self.modulo_1, 0, status=MesaQueueStatus.MOSTRANDO, imagen=self.imagen_1)
+        self.client.credentials()
+        url = lambda: self.client.get('/api/device/current_item/', HTTP_AUTHORIZATION=f'Bearer {raw}').data['images'][0]['url']
+
+        self.assertEqual(url(), '/media/imagenes/1/1/m1.png')
+        # El player dispara la foto por el nombre del fichero: con el sufijo
+        # carga la misma imagen y no lo reconoce.
+        with patch.dict(os.environ, {'MESAS_SIN_CAMARA': f'99, {self.mesa_a.id}'}):
+            self.assertEqual(url(), '/media/imagenes/1/1/m1.png#/sin-camara')
+        with patch.dict(os.environ, {'MESAS_SIN_CAMARA': '99'}):
+            self.assertEqual(url(), '/media/imagenes/1/1/m1.png')
