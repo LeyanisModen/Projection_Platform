@@ -78,7 +78,7 @@ import { DIAS, cruzaMedianoche, nuevoTurno, ordenarHorario } from './turnos';
     .turno-dia-sep { color: var(--muted, #6b7280); font-size: 12px; }
     .turno-dia-toggle { width: 28px; height: 28px; padding: 0; border: 1px solid var(--line-strong, #d1d5db); border-radius: var(--radius-sm, 6px); background: var(--surface, #fff); color: var(--muted, #6b7280); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
     .turno-dia-toggle:hover:not(:disabled) { color: var(--ink, #111827); background: var(--surface-2, #f3f4f6); }
-    .turno-dia-toggle.active { color: #fff; background: var(--ink, #111827); border-color: var(--ink, #111827); }
+    .turno-dia-toggle.active, .turno-dia-toggle.active:hover:not(:disabled) { color: #fff; background: var(--ink, #111827); border-color: var(--ink, #111827); }
     .turno-copiar { width: 26px; height: 26px; padding: 0; border: 0; border-radius: var(--radius-sm, 6px); background: transparent; color: var(--muted, #6b7280); cursor: pointer; }
     .turno-copiar:hover:not(:disabled) { color: var(--ink, #111827); background: var(--surface-2, #f3f4f6); }
     .turno-siguiente { color: var(--muted, #6b7280); font-size: 11px; font-weight: 600; }
