@@ -122,6 +122,78 @@ class CaptureLuminanceTests(unittest.TestCase):
         )
 
 
+class CameraReopenTests(unittest.TestCase):
+    """A handle that reports open but returns no frames is reopened."""
+
+    class BrokenCamera:
+        def __init__(self):
+            self.released = False
+
+        def isOpened(self):
+            return True
+
+        def read(self):
+            return False, None
+
+        def release(self):
+            self.released = True
+
+    class WorkingCamera(FakeCamera):
+        def isOpened(self):
+            return True
+
+        def set(self, *args):
+            return True
+
+        def release(self):
+            pass
+
+    def setUp(self):
+        self.original_camera = CAPTURE_SERVICE._camera
+        CAPTURE_SERVICE._camera_read_failures = 0
+
+    def tearDown(self):
+        CAPTURE_SERVICE._camera = self.original_camera
+        CAPTURE_SERVICE._camera_read_failures = 0
+
+    def test_broken_handle_is_released_and_the_next_capture_reopens_it(self):
+        broken = self.BrokenCamera()
+        CAPTURE_SERVICE._camera = broken
+        opened = []
+
+        def open_camera(*args):
+            opened.append(args)
+            return self.WorkingCamera([100])
+
+        with patch.object(CAPTURE_SERVICE.cv2, 'VideoCapture', side_effect=open_camera), \
+                patch.object(CAPTURE_SERVICE.time, 'sleep'):
+            for _ in range(CAPTURE_SERVICE.CAMERA_REOPEN_AFTER_FAILURES - 1):
+                self.assertFalse(CAPTURE_SERVICE.capture_frame()[0])
+            self.assertIs(CAPTURE_SERVICE._camera, broken)
+            self.assertFalse(broken.released)
+
+            self.assertFalse(CAPTURE_SERVICE.capture_frame()[0])
+            self.assertTrue(broken.released)
+            self.assertIsNone(CAPTURE_SERVICE._camera)
+
+            ret, frame = CAPTURE_SERVICE.capture_frame()
+        self.assertTrue(ret)
+        self.assertIsNotNone(frame)
+        self.assertEqual(len(opened), 1)
+        self.assertTrue(CAPTURE_SERVICE._stats['camera_available'])
+        self.assertEqual(CAPTURE_SERVICE._camera_read_failures, 0)
+
+    def test_a_good_frame_resets_the_failure_count(self):
+        camera = self.WorkingCamera([100])
+        CAPTURE_SERVICE._camera = camera
+        CAPTURE_SERVICE._camera_read_failures = (
+            CAPTURE_SERVICE.CAMERA_REOPEN_AFTER_FAILURES - 1
+        )
+        self.assertTrue(CAPTURE_SERVICE.capture_frame()[0])
+        self.assertEqual(CAPTURE_SERVICE._camera_read_failures, 0)
+        self.assertIs(CAPTURE_SERVICE._camera, camera)
+
+
 class SharpnessStatusTests(unittest.TestCase):
     def setUp(self):
         self.original_stats = dict(CAPTURE_SERVICE._stats)

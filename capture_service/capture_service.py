@@ -423,6 +423,12 @@ _camera = None
 # holds the lock (handler or doc_loop). A plain Lock() deadlocks the
 # first time capture_frame() is called.
 _camera_lock = threading.RLock()
+# After a reboot (e.g. Windows Update) the camera can open with a handle that
+# reports isOpened() but never returns frames, and get_camera() would keep it
+# forever. After this many failed reads in a row the handle is released so
+# the next capture opens the camera again.
+CAMERA_REOPEN_AFTER_FAILURES = 3
+_camera_read_failures = 0
 _CAPTURE_LUMINANCE_SAMPLE_INTERVAL_SECONDS = 0.15
 _CAPTURE_LUMINANCE_STABLE_SAMPLES = 4
 _CAPTURE_LUMINANCE_ABSOLUTE_TOLERANCE = 2.0
@@ -550,12 +556,32 @@ def capture_frame(stabilize_luminance=False):
         for _ in range(3):
             cam.read()
         ret, frame = cam.read()
+    global _camera_read_failures
     if ret and frame is not None:
         frame = _apply_image_rotation(frame)
         _set_camera_health(True)
+        _camera_read_failures = 0
     else:
         _set_camera_health(False, 'camera read failed')
+        _camera_read_failures += 1
+        if _camera_read_failures >= CAMERA_REOPEN_AFTER_FAILURES:
+            _release_camera()
     return ret, frame
+
+
+def _release_camera():
+    """Drop the current handle so get_camera() opens a fresh one.
+    Caller must hold _camera_lock."""
+    global _camera, _camera_read_failures
+    print(f'[CaptureService] Camera returned no frames {_camera_read_failures} '
+          f'times in a row; reopening it on the next capture.')
+    if _camera is not None:
+        try:
+            _camera.release()
+        except Exception as exc:
+            print(f'[CaptureService] Camera release failed: {exc}')
+    _camera = None
+    _camera_read_failures = 0
 
 
 def _apply_image_rotation(frame):

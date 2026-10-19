@@ -1,6 +1,8 @@
 <#
 .SYNOPSIS
-  Nightly self-updater for deployed MODEN mini-PCs.
+  Daily self-updater for deployed MODEN mini-PCs. It runs at 17:30, inside
+  the factories' free slot (17:00-19:00): applying an update closes Chrome
+  for about a minute, so it must never run while they are working.
 
 .DESCRIPTION
   Compares C:\moden\capture_service\VERSION with capture_service/VERSION on
@@ -20,8 +22,8 @@ param(
     [ValidatePattern('^[A-Za-z0-9._/-]+$')]
     [string]$GitHubBranch = 'deploy',
     [string]$LocalDir = 'C:\moden\capture_service',
-    [int]$AllowedStartHour = 2,
-    [int]$AllowedEndHour = 5,
+    [int]$AllowedStartHour = 17,
+    [int]$AllowedEndHour = 19,
     [switch]$Force,
     [switch]$AllowDowngrade,
     [switch]$NoRestart
@@ -365,6 +367,44 @@ function Register-PlayerWatchdogTask {
         -RunLevel Limited -User 'moden' -Force | Out-Null
 }
 
+function Register-AutoUpdateTask {
+    # Keeps the daily check at 17:30 on every mini-PC, also on those that
+    # were installed with the old 04:15 trigger.
+    $updateScript = Join-Path $LocalDir 'update-capture-service.ps1'
+    $action = New-ScheduledTaskAction `
+        -Execute 'powershell.exe' `
+        -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$updateScript`""
+    $trigger = New-ScheduledTaskTrigger -Daily -At '5:30pm'
+    # Local time, no 'Z': a UTC boundary shifts the run by one hour
+    # when the clocks change, outside the free slot.
+    $trigger.StartBoundary = (Get-Date -Hour 17 -Minute 30 -Second 0).ToString('yyyy-MM-ddTHH:mm:ss')
+    $settings = New-ScheduledTaskSettingsSet `
+        -AllowStartIfOnBatteries `
+        -DontStopIfGoingOnBatteries `
+        -StartWhenAvailable
+    $principal = New-ScheduledTaskPrincipal `
+        -UserId 'moden' `
+        -LogonType Interactive `
+        -RunLevel Highest
+    Register-ScheduledTask -TaskName 'MODEN Auto Update' `
+        -Action $action -Trigger $trigger -Settings $settings `
+        -Principal $principal -Force | Out-Null
+}
+
+function Confirm-AutoUpdateSchedule {
+    # Runs on every check, before anything else: a mini-PC whose task still
+    # fires at 04:15 moves to 17:30 even when there is nothing to install.
+    $task = Get-ScheduledTask -TaskName 'MODEN Auto Update' -ErrorAction SilentlyContinue
+    $startsAt = if ($task -and $task.Triggers) { [string]$task.Triggers[0].StartBoundary } else { '' }
+    if ($startsAt -match 'T17:30:00$') { return }
+    try {
+        Register-AutoUpdateTask
+        Write-UpdateLog 'MODEN Auto Update now runs daily at 17:30.'
+    } catch {
+        Write-UpdateLog "Could not move MODEN Auto Update to 17:30: $($_.Exception.Message)"
+    }
+}
+
 function Stop-PlayerWatchdogs {
     foreach ($name in @('powershell.exe', 'pwsh.exe')) {
         Get-CimInstance Win32_Process -Filter "Name = '$name'" `
@@ -389,6 +429,8 @@ $usingGitHub = [string]::IsNullOrWhiteSpace($UpdateSource)
 $sourceLabel = $UpdateSource
 
 try {
+    Confirm-AutoUpdateSchedule
+
     if ($usingGitHub) {
         $temporaryUpdateRoot = Join-Path $env:TEMP (
             'moden-capture-update-{0}-{1}' -f $PID, (Get-Date -Format 'yyyyMMddHHmmss')

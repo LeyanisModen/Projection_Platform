@@ -176,7 +176,7 @@ Que hace el instalador:
   - Aplica branding-wallpaper.jpg como fondo de escritorio.
   - Aplica branding-user.jpg como imagen de usuario Windows.
   - Crea la tarea programada "MODEN Player".
-  - Crea la tarea programada "MODEN Auto Update" diaria a las 04:15.
+  - Crea la tarea programada "MODEN Auto Update" diaria a las 17:30 (franja libre).
   - Configura auto-login si pasaste -ModenPassword.
 
 Si no quieres auto-login:
