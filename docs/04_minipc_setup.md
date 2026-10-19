@@ -269,7 +269,7 @@ En el mini-PC, con el pendrive conectado:
 - **Auto-arranque**: registra la tarea `MODEN Player`, que lanza
   `start-player.bat` al iniciar sesión.
 
-Tambien registra `MODEN Auto Update`, que revisa cada noche a las 04:15 si
+Tambien registra `MODEN Auto Update`, que revisa cada dia a las 17:30 (franja libre) si
 hay una version nueva en `G:\Mi unidad\MODEN_UPDATE\capture_service`.
 
 Al terminar imprime `Listo.` en verde y guarda un log en
@@ -330,7 +330,7 @@ Lo instaló winget, pero hay que configurarlo a mano:
    Debe salir `True` después de que Drive termine la primera sincronización.
 
 El capture service gestiona Google Drive automáticamente: lo abre para la
-actualización de las 04:15 y durante la sincronización del fin de semana, y lo
+actualización de las 17:30 y durante la sincronización del fin de semana, y lo
 cierra antes de producción para que ningún aviso cubra el kiosko.
 
 ---

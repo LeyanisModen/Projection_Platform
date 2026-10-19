@@ -567,13 +567,16 @@ relanza el instalador (el PATH solo se refresca al crear el proceso).
         -Action $action -Trigger $trigger -Settings $settings `
         -RunLevel Limited -User 'moden' -Force | Out-Null
 
-    Step "Auto-actualizacion nocturna (tarea programada 'MODEN Auto Update')"
+    Step "Auto-actualizacion diaria a las 17:30, en la franja libre (tarea programada 'MODEN Auto Update')"
     $updateScript = Join-Path $dest 'update-capture-service.ps1'
     if (Test-Path $updateScript) {
         $updateAction = New-ScheduledTaskAction `
             -Execute 'powershell.exe' `
             -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$updateScript`""
-        $updateTrigger = New-ScheduledTaskTrigger -Daily -At '4:15am'
+        $updateTrigger = New-ScheduledTaskTrigger -Daily -At '5:30pm'
+        # Local time, no 'Z': a UTC boundary shifts the run by one hour
+        # when the clocks change, outside the free slot.
+        $updateTrigger.StartBoundary = (Get-Date -Hour 17 -Minute 30 -Second 0).ToString('yyyy-MM-ddTHH:mm:ss')
         $updateSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries `
                           -DontStopIfGoingOnBatteries -StartWhenAvailable
         $updatePrincipal = New-ScheduledTaskPrincipal `
@@ -587,7 +590,7 @@ relanza el instalador (el PATH solo se refresca al crear el proceso).
             -Settings $updateSettings `
             -Principal $updatePrincipal `
             -Force | Out-Null
-        Write-Host "  Â· tarea 'MODEN Auto Update' registrada (diaria 04:15)"
+        Write-Host "  Â· tarea 'MODEN Auto Update' registrada (diaria 17:30)"
     } else {
         Write-Warning "No encontre update-capture-service.ps1; no registro auto-update."
     }

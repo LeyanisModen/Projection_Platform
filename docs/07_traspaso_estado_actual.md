@@ -478,7 +478,8 @@ Un mini-PC puede llevar un monitor a la altura del operario además del proyecto
 - Drive abierto viernes 15:15 a lunes 06:35 y cerrado durante producción.
 - Detección diaria de nitidez/lente con umbrales conservadores.
 - Watchdog restaura cámara/kiosk y recupera foco.
-- Actualización automática desde la rama `deploy` a las 04:15.
+- Actualización automática desde la rama `deploy` a las 17:30 (desde la VERSION 2026-10-19.1; antes 04:15). Sanchos trabaja a dos turnos y solo deja libre de 17:00 a 19:00, e instalar una versión cierra Chrome un minuto: la ventana permitida del actualizador es 17-19 y la propia actualización vuelve a registrar `MODEN Auto Update` a las 17:30. Cuando Ferralia vuelva a producir habrá que revisar si esa hora le vale.
+- Cámara con acceso roto (incidente 2026-10-19): tras el reinicio por actualizaciones de Windows, las tres mesas de Sanchos abrieron la OBSBOT con un acceso que figuraba abierto pero no daba imágenes (`camera read failed`) y el servicio no la reabría nunca. Desde 2026-10-19.1, tras 3 lecturas fallidas seguidas suelta la cámara y la siguiente captura la abre de nuevo. Para el mismo caso en una versión anterior basta con matar el proceso python de `capture_service.py`; el vigilante lo relanza en menos de un minuto sin cerrar Chrome. Mientras una mesa no tiene cámara, la variable de Railway `MESAS_SIN_CAMARA` (ids separados por comas) hace que su player no espere a la foto: `device/current_item` añade `#/sin-camara` a las URLs de las imágenes y el player ya no reconoce `check`/`foto` en el nombre.
 
 ### 5.7 Detección de cintas
 

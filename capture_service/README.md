@@ -151,7 +151,8 @@ G:\Mi unidad\capturas_moden\
     error cannot interrupt projection; pending files stay in the local buffer.
   - The weekly photo batch is staged into `G:` during the weekend and retried
     every 30 minutes. Drive remains open until Monday 06:35 for cloud upload.
-  - The automatic updater checks GitHub `deploy` at 04:15. It downloads only
+  - The automatic updater checks GitHub `deploy` at 17:30, inside the
+    factories' free slot (installing closes Chrome for about a minute). It downloads only
     `VERSION` when nothing changed and does not need to start Google Drive.
     A manual update with `-Force` downloads and reapplies the current release.
 

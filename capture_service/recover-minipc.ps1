@@ -239,7 +239,10 @@ function Register-UpdateTask {
     $action = New-ScheduledTaskAction `
         -Execute 'powershell.exe' `
         -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$updateScript`""
-    $trigger = New-ScheduledTaskTrigger -Daily -At '4:15am'
+    $trigger = New-ScheduledTaskTrigger -Daily -At '5:30pm'
+    # Local time, no 'Z': a UTC boundary shifts the run by one hour
+    # when the clocks change, outside the free slot.
+    $trigger.StartBoundary = (Get-Date -Hour 17 -Minute 30 -Second 0).ToString('yyyy-MM-ddTHH:mm:ss')
     $settings = New-ScheduledTaskSettingsSet `
         -AllowStartIfOnBatteries `
         -DontStopIfGoingOnBatteries `

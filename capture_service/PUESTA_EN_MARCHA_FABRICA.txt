@@ -199,8 +199,8 @@ UPDATE MINI PCs DESPLEGADOS -- PRIMERA VEZ
 Este bloque se ejecuta UNA VEZ en mini-PCs ya desplegados para instalar la
 tarea programada "MODEN Auto Update".
 
-Despues de esto, las siguientes versiones se revisan solas cada noche a las
-04:15 desde la rama deploy de GitHub. La carpeta de Drive se usa solo para
+Despues de esto, las siguientes versiones se revisan solas cada dia a las
+17:30 (franja libre de 17 a 19) desde la rama deploy de GitHub. La carpeta de Drive se usa solo para
 instalar esta transicion en los mini-PC ya desplegados; no hay que mantenerla
 para las publicaciones futuras.
 
@@ -282,7 +282,7 @@ si todos los ficheros tienen una copia equivalente en G:.
 Si quedan menos de 5 GB libres, se pausan solo las capturas periodicas. El
 player y las fotos obligatorias de los modulos siguen funcionando.
 
-La actualizacion automatica de las 04:15 sigue funcionando. El comando manual
+La actualizacion automatica de las 17:30 sigue funcionando. El comando manual
 con -Force descarga de nuevo la publicacion actual de GitHub; no hay que
 preparar Drive a mano.
 
