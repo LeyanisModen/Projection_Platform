@@ -72,21 +72,29 @@
                                 </select>
                             }
                             <div class="stats-period-presets">
+                                <button type="button" class="period-chip period-arrow" (click)="moverPeriodo(-1)"
+                                    [disabled]="!puedeMoverPeriodo(-1)" title="Anterior" aria-label="Periodo anterior">
+                                    <i class="fa fa-chevron-left" aria-hidden="true"></i>
+                                </button>
                                 <button type="button" class="period-chip"
                                     [class.active]="statsPreset === 'day'"
-                                    (click)="selectStatsPreset('day')">Hoy</button>
+                                    (click)="selectStatsPreset('day')" title="Hoy">Día</button>
                                 <button type="button" class="period-chip"
                                     [class.active]="statsPreset === 'week'"
-                                    (click)="selectStatsPreset('week')">Esta semana</button>
+                                    (click)="selectStatsPreset('week')" title="Esta semana">Semana</button>
                                 <button type="button" class="period-chip"
                                     [class.active]="statsPreset === 'month'"
-                                    (click)="selectStatsPreset('month')">Este mes</button>
+                                    (click)="selectStatsPreset('month')" title="Este mes">Mes</button>
                                 @if (statsProyecto !== null || statsEdificio !== null) {
                                     <button type="button" class="period-chip"
                                         [class.active]="statsPreset === 'proyecto'"
                                         [title]="statsEdificio !== null ? 'Desde el primer módulo terminado del edificio hasta hoy' : 'Desde el primer módulo terminado del proyecto hasta hoy'"
                                         (click)="selectStatsPreset('proyecto')">Desde el inicio</button>
                                 }
+                                <button type="button" class="period-chip period-arrow" (click)="moverPeriodo(1)"
+                                    [disabled]="!puedeMoverPeriodo(1)" title="Siguiente" aria-label="Periodo siguiente">
+                                    <i class="fa fa-chevron-right" aria-hidden="true"></i>
+                                </button>
                             </div>
                         </div>
                         <div class="stats-period-dates">
