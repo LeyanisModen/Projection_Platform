@@ -454,8 +454,8 @@ describe('Dashboard', () => {
       ]);
     });
 
-    it('follows the night shift past midnight in the one-day view', () => {
-      const horas = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 19, 20, 21, 22, 23, 0, 1, 2, 3, 4].map(h => String(h).padStart(2, '0'));
+    it('shows a calendar day hour by hour, with target only in shift hours', () => {
+      const horas = [0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 19, 20, 21, 22, 23].map(h => String(h).padStart(2, '0'));
       component.statsFrom = '2026-09-28';
       component.statsTo = '2026-09-28';
       component.statsData = respuesta(
@@ -469,10 +469,8 @@ describe('Dashboard', () => {
         },
       );
       const buckets = component.statsBuckets();
-      const keys = buckets.map(b => b.key);
-      expect(keys[0]).toBe('06');
-      expect(keys[keys.length - 1]).toBe('04');
-      expect(keys.indexOf('00')).toBe(keys.indexOf('23') + 1);
+      // De 00h a 23h en orden: la madrugada es de este dia.
+      expect(buckets.map(b => b.key)).toEqual(Array.from({ length: 24 }, (_, h) => String(h).padStart(2, '0')));
       expect(buckets.find(b => b.key === '02')!.modulos_completados).toBe(1);
       // 20 de objetivo en 20 horas de turno; entre turnos no hay objetivo.
       expect(buckets.find(b => b.key === '10')!.meta_modulos).toBe(1);
