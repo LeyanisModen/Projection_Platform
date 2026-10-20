@@ -84,30 +84,36 @@ class TurnosPlanYEstadisticasTests(APITestCase):
         return MesaQueueItem.objects.create(modulo=modulo, mesa=self.mesa, fase='INFERIOR',
                                             status=MesaQueueStatus.HECHO, done_at=at)
 
-    def test_las_estadisticas_van_por_dia_de_produccion_y_se_filtran_por_turno(self):
+    def test_las_estadisticas_van_por_dia_del_calendario_y_se_filtran_por_turno(self):
         self._hecho('M1', aware(2026, 9, 28, 10))        # lunes, manana
-        noche = self._hecho('N1', aware(2026, 9, 29, 0, 20))  # turno de noche del lunes
+        noche = self._hecho('N1', aware(2026, 9, 29, 0, 20))  # madrugada del martes (noche del lunes)
         self._hecho('M2', aware(2026, 9, 29, 10))        # martes, manana
         # Panel de noche que pasa la medianoche: 40 minutos medidos.
         for tipo, at in (('INICIO', aware(2026, 9, 28, 23, 40)), ('FIN', aware(2026, 9, 29, 0, 20))):
             EventoFabricacion.objects.create(item=noche, mesa=self.mesa, modulo=noche.modulo, fase='INFERIOR', tipo=tipo, at=at)
 
+        # El lunes es de 00:00 a 24:00: la madrugada (noche del domingo), la
+        # manana y el principio de su noche.
         stats = self.client.get('/api/stats/production/', {'from': '2026-09-28', 'to': '2026-09-28'}).data
-        self.assertEqual(stats['totals']['modulos_completados'], 2)
+        self.assertEqual(stats['totals']['modulos_completados'], 1)
         self.assertEqual(stats['totals']['horas_productivas'], 20.0)
-        self.assertEqual(stats['range']['dias'], [{'fecha': '2026-09-28', 'turnos': 2, 'horas': 20.0}])
+        self.assertEqual(stats['range']['dias'], [{'fecha': '2026-09-28', 'turnos': 2.0, 'horas': 20.0}])
         horas = stats['range']['horas']
-        self.assertEqual((horas[0], horas[9], horas[10], horas[14], horas[15], horas[-1]), ('06', '15', '19', '23', '00', '04'))
-        fila_noche = next(m for m in stats['modulos'] if m['nombre'] == 'N1')
-        self.assertEqual((fila_noche['inferior']['minutos'], fila_noche['inferior']['medido']), (40.0, True))
+        self.assertEqual((horas[0], horas[4], horas[5], horas[-1]), ('00', '04', '06', '23'))
         self.assertEqual(stats['turnos'], [{'indice': 0, 'nombre': 'Mañana'}, {'indice': 1, 'nombre': 'Noche'}])
-        self.assertEqual({m['nombre']: m['turno'] for m in stats['modulos']}, {'M1': 'Mañana', 'N1': 'Noche'})
+        self.assertEqual({m['nombre']: m['turno'] for m in stats['modulos']}, {'M1': 'Mañana'})
 
-        noche_stats = self.client.get('/api/stats/production/', {'from': '2026-09-28', 'to': '2026-09-28', 'turno': 1}).data
+        # Lo de las 00:20 del martes cuenta el martes; con el filtro de noche,
+        # solo lo hecho en horas de noche.
+        martes = self.client.get('/api/stats/production/', {'from': '2026-09-29', 'to': '2026-09-29'}).data
+        self.assertEqual(martes['totals']['modulos_completados'], 2)
+        noche_stats = self.client.get('/api/stats/production/', {'from': '2026-09-29', 'to': '2026-09-29', 'turno': 1}).data
         self.assertEqual(noche_stats['turno'], 1)
-        self.assertEqual(noche_stats['totals']['modulos_completados'], 1)
+        self.assertEqual([m['nombre'] for m in noche_stats['modulos']], ['N1'])
         self.assertEqual(noche_stats['totals']['horas_productivas'], 10.0)
-        self.assertEqual(noche_stats['range']['dias'], [{'fecha': '2026-09-28', 'turnos': 1, 'horas': 10.0}])
+        self.assertEqual(noche_stats['range']['dias'], [{'fecha': '2026-09-29', 'turnos': 1.0, 'horas': 10.0}])
+        fila_noche = noche_stats['modulos'][0]
+        self.assertEqual((fila_noche['inferior']['minutos'], fila_noche['inferior']['medido']), (40.0, True))
 
     def test_el_objetivo_de_un_turno_es_su_parte_de_los_turnos(self):
         Modulo.objects.bulk_create([Modulo(nombre=f'A{i}', proyecto=self.project) for i in range(100)])

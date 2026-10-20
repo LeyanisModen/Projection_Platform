@@ -2281,38 +2281,29 @@ export class Dashboard implements OnInit, OnDestroy {
       tiempo_superior_min: found?.tiempo_superior_min ?? null,
     });
 
-    // Un dia: una columna por hora de sus turnos, en orden (un turno de noche
-    // sigue de las 23 a las 00), mas las horas con actividad fuera de turno.
+    // Un dia (de 00:00 a 24:00): una columna por hora, de la primera a la
+    // ultima de sus turnos o con actividad, para que la linea sea continua.
     if (dayCount === 1 && data.por_hora) {
       const byHour = new Map(data.por_hora.map(h => [Number(h.hora), h]));
       const horasTurno = (data.range.horas || []).map(Number);
-      const horas = [...new Set([...horasTurno, ...byHour.keys()])];
+      const horas = [...horasTurno, ...byHour.keys()];
       if (!horas.length) return [];
-      // El dia de produccion empieza con su primer turno: lo de antes es del dia siguiente.
-      const primera = horasTurno.length ? horasTurno[0] : Math.min(...horas);
-      const posicion = (h: number) => (h - primera + 24) % 24;
-      horas.sort((a, b) => posicion(a) - posicion(b));
-      const desde = horasTurno.length ? 0 : posicion(Math.min(...horas, primera));
-      const hasta = posicion(horas[horas.length - 1]);
       const metaDia = objetivo.get(this.statsFrom) ?? 0;
       const hourlyCap = metaDia > 0 ? metaDia / (horasTurno.length || 8) : 0;
+      const isToday = this.statsFrom === todayIso;
       const buckets: StatsBucket[] = [];
-      for (let p = desde; p <= hasta; p++) {
-        const h = (primera + p) % 24;
+      for (let h = Math.min(...horas); h <= Math.max(...horas); h++) {
         const hh = String(h).padStart(2, '0');
-        const inicio = new Date(from);
-        inicio.setDate(from.getDate() + Math.floor((primera + p) / 24));
-        inicio.setHours(h, 0, 0, 0);
-        const fin = new Date(inicio.getTime() + 3600000);
         buckets.push({
           key: hh,
           label: `${hh}h`,
           ...base(byHour.get(h)),
+          // Entre turnos no hay objetivo.
           meta_modulos: !horasTurno.length || horasTurno.includes(h) ? hourlyCap : 0,
           working_days: 0,
           granularity: 'hour',
-          futuro: inicio > now,
-          en_curso: inicio <= now && now < fin,
+          futuro: this.statsFrom > todayIso || (isToday && h > now.getHours()),
+          en_curso: isToday && h === now.getHours(),
         });
       }
       return buckets;
