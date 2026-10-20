@@ -5,15 +5,15 @@ import { ActivatedRoute } from '@angular/router';
 import {
   ApiService,
   CaptureConfigStatus,
-  CaptureDay,
   FerrallaCaptureConfig,
-  HorarioDia,
   FerrallaContacto,
   FerrallaDireccion,
   GrupoMesas,
   GrupoMesaResumen,
   User,
 } from '../../services/api.service';
+import { TurnosEditorComponent } from '../../shared/turnos-editor.component';
+import { copiarTurnos, turnosError } from '../../shared/turnos';
 
 interface FichaDraft {
   first_name: string;
@@ -28,22 +28,13 @@ interface FichaDraft {
 @Component({
   selector: 'app-ferrallas',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, TurnosEditorComponent],
   templateUrl: './ferrallas.component.html',
   styleUrls: ['../admin-theme.css', './ferrallas.component.css']
 })
 export class FerrallasComponent implements OnInit, OnDestroy {
   private static readonly MESA_OFFLINE_AFTER_MS = 2 * 60 * 1000;
   private static readonly MESA_REFRESH_MS = 30 * 1000;
-  readonly captureDays: { value: CaptureDay; label: string; largo: string }[] = [
-    { value: 'MON', label: 'L', largo: 'lunes' },
-    { value: 'TUE', label: 'M', largo: 'martes' },
-    { value: 'WED', label: 'X', largo: 'miércoles' },
-    { value: 'THU', label: 'J', largo: 'jueves' },
-    { value: 'FRI', label: 'V', largo: 'viernes' },
-    { value: 'SAT', label: 'S', largo: 'sábado' },
-    { value: 'SUN', label: 'D', largo: 'domingo' },
-  ];
   readonly imageRotations = [0, 90, 180, 270] as const;
 
   users: User[] = [];
@@ -115,7 +106,7 @@ export class FerrallasComponent implements OnInit, OnDestroy {
       username: user.username || '',
       password: '',
       bastidor_longitud_cm: user.bastidor_longitud_cm || 114,
-      capacidad_diaria_modulos: user.capacidad_diaria_modulos || 35,
+      capacidad_diaria_modulos: user.capacidad_diaria_modulos || 25,
       contactos: this.getEditableContactos(user),
       direcciones: this.getEditableDirecciones(user),
     };
@@ -191,7 +182,7 @@ export class FerrallasComponent implements OnInit, OnDestroy {
     }
     const capacidad = Number(ficha.capacidad_diaria_modulos);
     if (!Number.isInteger(capacidad) || capacidad < 1) {
-      this.fichaError = 'Indica cuántos módulos al día se espera que saque la ferralla.';
+      this.fichaError = 'Indica cuántos módulos por turno se espera que saque la ferralla.';
       this.cdr.detectChanges();
       return;
     }
@@ -274,7 +265,7 @@ export class FerrallasComponent implements OnInit, OnDestroy {
       password: '',
       contactos: [] as FerrallaContacto[],
       direcciones: [] as FerrallaDireccion[],
-      capacidad_diaria_modulos: 35,
+      capacidad_diaria_modulos: 25,
       bastidor_longitud_cm: 114
     };
   }
@@ -345,7 +336,8 @@ export class FerrallasComponent implements OnInit, OnDestroy {
     this.api.getFerrallaCaptureConfig(userId).subscribe({
       next: (config) => {
         if (this.selectedUser?.id !== userId) return;
-        this.captureConfig = config;
+        // Los turnos se editan sobre una copia.
+        this.captureConfig = { ...config, turnos: copiarTurnos(config.turnos) };
         this.loadingCaptureConfig = false;
         this.captureConfigError = '';
         this.cdr.detectChanges();
@@ -362,47 +354,25 @@ export class FerrallasComponent implements OnInit, OnDestroy {
     });
   }
 
-  horarioDe(day: CaptureDay): HorarioDia | undefined {
-    return this.captureConfig?.horario?.find(item => item.day === day);
-  }
-
-  isCaptureDayActive(day: CaptureDay): boolean {
-    return !!this.horarioDe(day);
-  }
-
-  setHorario(day: CaptureDay, campo: 'start_time' | 'end_time', valor: string): void {
-    const item = this.horarioDe(day);
-    if (!item) return;
-    item[campo] = valor;
+  turnosCambiados(): void {
     this.captureConfigMessage = '';
-  }
-
-  toggleCaptureDay(day: CaptureDay): void {
-    if (!this.captureConfig || this.savingCaptureConfig) return;
-    const horario = this.captureConfig.horario || [];
-    const existente = this.horarioDe(day);
-    if (existente) {
-      if (horario.length === 1) return;
-      this.captureConfig.horario = horario.filter(item => item.day !== day);
-    } else {
-      // Un dia nuevo hereda la jornada del primero activo.
-      const referencia = horario[0] || { start_time: this.captureConfig.start_time, end_time: this.captureConfig.end_time };
-      const orden = this.captureDays.map(item => item.value);
-      this.captureConfig.horario = [...horario, { day, start_time: referencia.start_time, end_time: referencia.end_time }]
-        .sort((a, b) => orden.indexOf(a.day) - orden.indexOf(b.day));
-    }
-    this.captureConfig.active_days = this.captureConfig.horario.map(item => item.day);
-    this.captureConfigMessage = '';
+    this.captureConfigError = '';
   }
 
   saveCaptureConfig(): void {
     if (!this.selectedUser || !this.captureConfig || this.savingCaptureConfig) return;
+    const error = turnosError(this.captureConfig.turnos);
+    if (error) {
+      this.captureConfigError = error;
+      this.captureConfigMessage = '';
+      return;
+    }
     const userId = this.selectedUser.id;
     this.savingCaptureConfig = true;
     this.captureConfigError = '';
     this.captureConfigMessage = '';
     const payload = {
-      horario: (this.captureConfig.horario || []).map(item => ({ ...item })),
+      turnos: copiarTurnos(this.captureConfig.turnos),
       interval_seconds: Number(this.captureConfig.interval_seconds),
       rotations: this.captureConfig.mesas.map(mesa => ({
         mesa_id: mesa.id,
@@ -416,7 +386,7 @@ export class FerrallasComponent implements OnInit, OnDestroy {
           this.cdr.detectChanges();
           return;
         }
-        this.captureConfig = config;
+        this.captureConfig = { ...config, turnos: copiarTurnos(config.turnos) };
         this.captureConfigMessage = 'Configuracion guardada. Las mesas la aplicaran en su proxima consulta.';
         this.cdr.detectChanges();
       },

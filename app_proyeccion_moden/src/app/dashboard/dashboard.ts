@@ -8,11 +8,13 @@ import {
   ApiService,
   Proyecto, Modulo, Mesa, ModuloQueueItem, MesaQueueItem, Imagen, FotoFabricacion,
   EstrategiaColaSuperior, GrupoMesas, GrupoMesasProyectoEntry, ProductionStatsResponse, ModuloFase,
-  GrupoBastidor, GrupoBastidorModulo, CaptureDay, FerrallaCaptureConfig, HorarioDia, GrupoMesaResumen,
+  GrupoBastidor, GrupoBastidorModulo, FerrallaCaptureConfig, TurnoConfig, GrupoMesaResumen,
   TiempoFabricacion, ProductionStatsBucket, ProductionStatsTiempos, ProductionStatsModulo, ProductionStatsModuloFase,
   ElementosSueltos, ElementosSueltosHoja, ElementosSueltosSeccion, ElementosSueltosCelda,
 } from '../services/api.service';
 import { LineChartSeries, StatsLineChart } from './stats-line-chart';
+import { TurnosEditorComponent } from '../shared/turnos-editor.component';
+import { copiarTurnos, turnosError, turnosLabel } from '../shared/turnos';
 import {
   ListaMaterialesService,
   ListaMaterialesProyecto,
@@ -140,7 +142,7 @@ interface Subfase {
   standalone: true,
   templateUrl: './dashboard.html',
   styleUrls: ['../admin/admin-theme.css', './dashboard.css', './dashboard-responsive.css'],
-  imports: [CommonModule, DragDropModule, FormsModule, ZoomableImageComponent, StatsLineChart]
+  imports: [CommonModule, DragDropModule, FormsModule, ZoomableImageComponent, StatsLineChart, TurnosEditorComponent]
 })
 export class Dashboard implements OnInit, OnDestroy {
   readonly planningLabel = planningLabel;
@@ -183,6 +185,10 @@ export class Dashboard implements OnInit, OnDestroy {
   statsProyecto: number | null = null;
   /** Estadisticas de un edificio entero (todos sus forjados). */
   statsEdificio: number | null = null;
+  /** Turno al que se limitan las estadisticas; null = todos. */
+  statsTurno: number | null = null;
+  /** Turnos de la ferralla segun las ultimas estadisticas (para el selector). */
+  statsTurnos: Array<{ indice: number; nombre: string }> = [];
   statsFrom: string = '';
   statsTo: string = '';
 
@@ -221,19 +227,13 @@ export class Dashboard implements OnInit, OnDestroy {
   /** Dos dashboards sobre el mismo componente: produccion (mesas y proyectos) o estadisticas. */
   vista: 'produccion' | 'estadisticas' = 'produccion';
 
-  // Horario de trabajo de la ferralla (lo cambia ella; Moden lo usa para la captura).
+  // Turnos de trabajo de la ferralla (los cambia ella; Moden los usa para la captura).
   horario: FerrallaCaptureConfig | null = null;
   horarioEditing = false;
-  /** Una fila por dia de la semana; solo cuentan las activas. */
-  horarioDraft: Array<{ day: CaptureDay; activo: boolean; start_time: string; end_time: string }> = [];
+  /** Copia de los turnos que se esta editando. */
+  turnosDraft: TurnoConfig[] = [];
   savingHorario = false;
   horarioError = '';
-  readonly captureDays: Array<{ code: CaptureDay; label: string; largo: string }> = [
-    { code: 'MON', label: 'L', largo: 'Lun' }, { code: 'TUE', label: 'M', largo: 'Mar' },
-    { code: 'WED', label: 'X', largo: 'Mié' }, { code: 'THU', label: 'J', largo: 'Jue' },
-    { code: 'FRI', label: 'V', largo: 'Vie' }, { code: 'SAT', label: 'S', largo: 'Sáb' },
-    { code: 'SUN', label: 'D', largo: 'Dom' },
-  ];
 
   // Project-plan Modal State
   showPlanModal = false;
@@ -1846,46 +1846,14 @@ export class Dashboard implements OnInit, OnDestroy {
     });
   }
 
-  /** "Lun–Jue 06:50–15:00 · Vie 06:50–13:00": tramos de dias seguidos con la misma jornada. */
+  /** "Mañana Lun–Vie 06:00–16:00 · Noche Lun–Jue, Dom 19:00–05:00". */
   horarioLabel(): string {
-    const h = this.horario;
-    if (!h) return '';
-    const orden = this.captureDays.map(d => d.code);
-    const porDia = new Map(h.horario.map(item => [item.day, `${item.start_time}–${item.end_time}`]));
-    const largo = (code: CaptureDay) => this.captureDays.find(d => d.code === code)!.largo;
-    const tramos: Array<{ desde: number; hasta: number; horas: string }> = [];
-    orden.forEach((code, index) => {
-      const horas = porDia.get(code);
-      if (!horas) return;
-      const ultimo = tramos[tramos.length - 1];
-      if (ultimo && ultimo.hasta === index - 1 && ultimo.horas === horas) {
-        ultimo.hasta = index;
-      } else {
-        tramos.push({ desde: index, hasta: index, horas });
-      }
-    });
-    if (tramos.length === 0) return 'Sin días de trabajo';
-    return tramos.map(t => {
-      const dias = t.hasta === t.desde ? largo(orden[t.desde])
-        : t.hasta === t.desde + 1 ? `${largo(orden[t.desde])}, ${largo(orden[t.hasta])}`
-        : `${largo(orden[t.desde])}–${largo(orden[t.hasta])}`;
-      return `${dias} ${t.horas}`;
-    }).join(' · ');
+    return this.horario ? turnosLabel(this.horario.turnos) : '';
   }
 
   editHorario(): void {
     if (!this.horario) return;
-    const porDia = new Map(this.horario.horario.map(item => [item.day, item]));
-    const referencia = this.horario.horario[0] || { start_time: '07:00', end_time: '15:00' };
-    this.horarioDraft = this.captureDays.map(({ code }) => {
-      const dia = porDia.get(code);
-      return {
-        day: code,
-        activo: !!dia,
-        start_time: dia?.start_time ?? referencia.start_time,
-        end_time: dia?.end_time ?? referencia.end_time,
-      };
-    });
+    this.turnosDraft = copiarTurnos(this.horario.turnos);
     this.horarioError = '';
     this.horarioEditing = true;
     this.cdr.detectChanges();
@@ -1897,52 +1865,19 @@ export class Dashboard implements OnInit, OnDestroy {
     this.cdr.detectChanges();
   }
 
-  toggleHorarioDay(code: CaptureDay): void {
-    const fila = this.horarioDraft.find(f => f.day === code);
-    if (fila) fila.activo = !fila.activo;
-    this.cdr.detectChanges();
-  }
-
-  /** Copia la jornada de un dia a los demas dias activos. */
-  copiarHorarioA(code: CaptureDay): void {
-    const origen = this.horarioDraft.find(f => f.day === code);
-    if (!origen) return;
-    this.horarioDraft.forEach(f => {
-      if (f.activo && f.day !== code) {
-        f.start_time = origen.start_time;
-        f.end_time = origen.end_time;
-      }
-    });
-    this.cdr.detectChanges();
-  }
-
-  horarioDraftActivos(): HorarioDia[] {
-    return this.horarioDraft
-      .filter(f => f.activo)
-      .map(f => ({ day: f.day, start_time: f.start_time, end_time: f.end_time }));
-  }
-
-  horarioDraftValido(): boolean {
-    const activos = this.horarioDraftActivos();
-    return activos.length > 0 && activos.every(f => !!f.start_time && !!f.end_time && f.end_time > f.start_time);
-  }
-
   saveHorario(): void {
     const userId = this.horarioUserId;
     if (!this.horario || !userId || this.savingHorario) return;
-    const activos = this.horarioDraftActivos();
-    if (activos.length === 0) return;
-    const malo = activos.find(f => !f.start_time || !f.end_time || f.end_time <= f.start_time);
-    if (malo) {
-      const largo = this.captureDays.find(d => d.code === malo.day)!.largo;
-      this.horarioError = `${largo}: la hora de fin tiene que ser posterior a la de inicio.`;
+    const error = turnosError(this.turnosDraft);
+    if (error) {
+      this.horarioError = error;
       this.cdr.detectChanges();
       return;
     }
     this.savingHorario = true;
     this.horarioError = '';
     this.api.updateFerrallaCaptureConfig(userId, {
-      horario: activos,
+      turnos: copiarTurnos(this.turnosDraft),
       interval_seconds: this.horario.interval_seconds,
       rotations: [],
     }).pipe(takeUntil(this.destroy$)).subscribe({
@@ -2090,6 +2025,7 @@ export class Dashboard implements OnInit, OnDestroy {
       proyecto: this.statsProyecto ?? undefined,
       rango: todoElProyecto ? (this.statsEdificio !== null ? 'edificio' : 'proyecto') : undefined,
       ...(this.statsEdificio !== null ? { edificio: this.statsEdificio } : {}),
+      ...(this.statsTurno !== null ? { turno: this.statsTurno } : {}),
     })
       .pipe(takeUntil(this.destroy$))
       .subscribe({
@@ -2101,6 +2037,7 @@ export class Dashboard implements OnInit, OnDestroy {
             this.statsTo = res.range.to;
           }
           this.statsData = res;
+          this.statsTurnos = res.turnos || [];
           this.loadingStats = false;
           this.cdr.detectChanges();
         },
@@ -2159,6 +2096,12 @@ export class Dashboard implements OnInit, OnDestroy {
       return;
     }
     this.selectStatsProyecto(tipo === 'p' && id ? Number(id) : null);
+  }
+
+  /** Limita las estadisticas a un turno (null = todos). */
+  selectStatsTurno(valor: string): void {
+    this.statsTurno = valor === '' || valor === null || valor === undefined ? null : Number(valor);
+    this.loadStats();
   }
 
   /** Limita las estadisticas a un proyecto (null = todos). Al elegir uno se ve entero. */
@@ -2272,9 +2215,7 @@ export class Dashboard implements OnInit, OnDestroy {
     const byDate = new Map(data.por_dia.map(d => [d.fecha, d]));
     const now = new Date();
     const todayIso = this.toLocalIsoDate(now);
-    const target = this.statsPeriodTarget();
-    const workingDays = data.range.working_days || 0;
-    const dailyCap = target !== null && target > 0 && workingDays > 0 ? target / workingDays : 0;
+    const objetivo = this.objetivoPorDia();
     // Desperdicio sobre el peso total fabricado de la columna.
     const pct = (waste: number, total: number): number | null => total > 0 ? (waste / total) * 100 : null;
     const base = (found: (ProductionStatsBucket & ProductionStatsTiempos & { modulos_completados: number }) | undefined) => ({
@@ -2290,28 +2231,38 @@ export class Dashboard implements OnInit, OnDestroy {
       tiempo_superior_min: found?.tiempo_superior_min ?? null,
     });
 
-    // Un dia: una columna por hora, de la primera a la ultima con actividad
-    // o de la jornada si se conoce, para que la linea sea continua.
+    // Un dia: una columna por hora de sus turnos, en orden (un turno de noche
+    // sigue de las 23 a las 00), mas las horas con actividad fuera de turno.
     if (dayCount === 1 && data.por_hora) {
       const byHour = new Map(data.por_hora.map(h => [Number(h.hora), h]));
-      const jornada = this.jornadaDe(from);
-      const horas = [...byHour.keys()];
-      if (jornada) horas.push(jornada.inicio, jornada.fin - 1);
+      const horasTurno = (data.range.horas || []).map(Number);
+      const horas = [...new Set([...horasTurno, ...byHour.keys()])];
       if (!horas.length) return [];
-      const hourlyCap = dailyCap > 0 ? dailyCap / (jornada?.horas || 8) : 0;
-      const isToday = this.statsFrom === todayIso;
+      // El dia de produccion empieza con su primer turno: lo de antes es del dia siguiente.
+      const primera = horasTurno.length ? horasTurno[0] : Math.min(...horas);
+      const posicion = (h: number) => (h - primera + 24) % 24;
+      horas.sort((a, b) => posicion(a) - posicion(b));
+      const desde = horasTurno.length ? 0 : posicion(Math.min(...horas, primera));
+      const hasta = posicion(horas[horas.length - 1]);
+      const metaDia = objetivo.get(this.statsFrom) ?? 0;
+      const hourlyCap = metaDia > 0 ? metaDia / (horasTurno.length || 8) : 0;
       const buckets: StatsBucket[] = [];
-      for (let h = Math.min(...horas); h <= Math.max(...horas); h++) {
+      for (let p = desde; p <= hasta; p++) {
+        const h = (primera + p) % 24;
         const hh = String(h).padStart(2, '0');
+        const inicio = new Date(from);
+        inicio.setDate(from.getDate() + Math.floor((primera + p) / 24));
+        inicio.setHours(h, 0, 0, 0);
+        const fin = new Date(inicio.getTime() + 3600000);
         buckets.push({
           key: hh,
           label: `${hh}h`,
           ...base(byHour.get(h)),
-          meta_modulos: hourlyCap,
+          meta_modulos: !horasTurno.length || horasTurno.includes(h) ? hourlyCap : 0,
           working_days: 0,
           granularity: 'hour',
-          futuro: this.statsFrom > todayIso || (isToday && h > now.getHours()),
-          en_curso: isToday && h === now.getHours(),
+          futuro: inicio > now,
+          en_curso: inicio <= now && now < fin,
         });
       }
       return buckets;
@@ -2331,7 +2282,7 @@ export class Dashboard implements OnInit, OnDestroy {
           key: iso,
           label: this.dayLabel(iso),
           ...base(found),
-          meta_modulos: this.isWorkingDay(d) ? dailyCap : 0,
+          meta_modulos: objetivo.get(iso) ?? 0,
           working_days: 1,
           granularity: 'day',
           futuro: iso > todayIso,
@@ -2350,7 +2301,7 @@ export class Dashboard implements OnInit, OnDestroy {
       const segStart = weekStart < from ? new Date(from) : weekStart;
       const segEnd = weekEnd > to ? new Date(to) : weekEnd;
 
-      let modulos = 0, fases = 0, pt = 0, pi = 0, pf = 0, desp = 0, dif = 0, workDays = 0;
+      let modulos = 0, fases = 0, pt = 0, pi = 0, pf = 0, desp = 0, dif = 0, workDays = 0, meta = 0;
       let tiSum = 0, tiN = 0, tsSum = 0, tsN = 0;
       const d = new Date(segStart);
       while (d <= segEnd) {
@@ -2376,6 +2327,7 @@ export class Dashboard implements OnInit, OnDestroy {
           }
         }
         if (this.isWorkingDay(d)) workDays++;
+        meta += objetivo.get(this.toLocalIsoDate(d)) ?? 0;
         d.setDate(d.getDate() + 1);
       }
 
@@ -2393,7 +2345,7 @@ export class Dashboard implements OnInit, OnDestroy {
         dificultad_total: dif,
         tiempo_inferior_min: tiN ? tiSum / tiN : null,
         tiempo_superior_min: tsN ? tsSum / tsN : null,
-        meta_modulos: dailyCap * workDays,
+        meta_modulos: meta,
         working_days: workDays,
         granularity: 'week',
         futuro: segStartIso > todayIso,
@@ -2406,18 +2358,6 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   /** Jornada de la ferralla ese dia de la semana, en horas enteras de reloj. */
-  private jornadaDe(date: Date): { inicio: number; fin: number; horas: number } | null {
-    const codes: CaptureDay[] = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
-    const tramo = this.horario?.horario?.find(h => h.day === codes[date.getDay()]);
-    if (!tramo) return null;
-    const [sh, sm] = tramo.start_time.split(':').map(Number);
-    const [eh, em] = tramo.end_time.split(':').map(Number);
-    if ([sh, sm, eh, em].some(value => Number.isNaN(value))) return null;
-    const horas = (eh + em / 60) - (sh + sm / 60);
-    if (horas <= 0) return null;
-    return { inicio: sh, fin: em > 0 ? eh + 1 : eh, horas };
-  }
-
   /** Periodo anterior y siguiente al rango, para prolongar las lineas desvanecidas. */
   private statsVecinos(granularity: StatsBucket['granularity'] | undefined): { prev: StatsVecino | null; next: StatsVecino | null } {
     const ctx = this.statsData?.contexto;
@@ -2463,9 +2403,9 @@ export class Dashboard implements OnInit, OnDestroy {
     };
     if (granularity === 'day') {
       let prev = mover(from, -1);
-      while (!this.isWorkingDay(prev)) prev = mover(prev, -1);
+      for (let i = 0; i < 14 && !this.isWorkingDay(prev); i++) prev = mover(prev, -1);
       let next = mover(to, 1);
-      while (!this.isWorkingDay(next)) next = mover(next, 1);
+      for (let i = 0; i < 14 && !this.isWorkingDay(next); i++) next = mover(next, 1);
       return { prev: sumar(prev, 1), next: sumar(next, 1) };
     }
     return {
@@ -2540,8 +2480,7 @@ export class Dashboard implements OnInit, OnDestroy {
     if (!data) return null;
     const modulos = data.totals.modulos_completados || 0;
     const target = this.statsPeriodTarget();
-    const workingDays = data.range.working_days || 0;
-    const cap = target !== null && target > 0 && workingDays > 0 ? target / workingDays : 0;
+    const objetivo = this.objetivoPorDia();
     const conProduccion = data.por_dia.filter(d => d.modulos_completados > 0);
     const mejor = conProduccion.reduce<typeof conProduccion[number] | null>(
       (best, d) => !best || d.modulos_completados > best.modulos_completados ? d : best, null);
@@ -2549,13 +2488,14 @@ export class Dashboard implements OnInit, OnDestroy {
     let diasCumplidos: StatsResumen['diasCumplidos'] = null;
     const from = this.parseIsoDate(this.statsFrom);
     const to = this.parseIsoDate(this.statsTo);
-    if (cap > 0 && from && to && from < to) {
+    if (objetivo.size > 0 && from && to && from < to) {
       const byDate = new Map(data.por_dia.map(d => [d.fecha, d.modulos_completados || 0]));
       const todayIso = this.toLocalIsoDate(new Date());
       let cumplidos = 0, total = 0;
       for (const d = new Date(from); d <= to; d.setDate(d.getDate() + 1)) {
         const iso = this.toLocalIsoDate(d);
-        if (iso > todayIso || !this.isWorkingDay(d)) continue;
+        const cap = objetivo.get(iso) ?? 0;
+        if (iso > todayIso || cap <= 0) continue;
         const llega = (byDate.get(iso) || 0) >= cap - 1e-9;
         // Hoy aun puede llegar: solo cuenta si ya lo ha hecho.
         if (iso === todayIso && !llega) continue;
@@ -2622,11 +2562,44 @@ export class Dashboard implements OnInit, OnDestroy {
     return new Date(parts[0], parts[1] - 1, parts[2]);
   }
 
+  /**
+   * Dia con turnos: dentro del rango, los dias que trae el servidor; fuera,
+   * los mismos dias de la semana que en el rango (sin datos, de lunes a viernes).
+   */
   private isWorkingDay(d: Date): boolean {
-    const day = d.getDay();
-    if (day < 1 || day > 5) return false;
+    const iso = this.toLocalIsoDate(d);
+    const range = this.statsData?.range;
+    const dias = range?.dias;
+    if (dias && range && iso >= range.from && iso <= range.to) return dias.some(dia => dia.fecha === iso);
     // Los festivos del calendario no tienen objetivo.
-    return !(this.statsData?.range.festivos || []).includes(this.toLocalIsoDate(d));
+    if ((range?.festivos || []).includes(iso)) return false;
+    const semana = dias?.length
+      ? new Set(dias.map(dia => this.parseIsoDate(dia.fecha)!.getDay()))
+      : new Set([1, 2, 3, 4, 5]);
+    return semana.has(d.getDay());
+  }
+
+  /** Objetivo de cada dia: el del periodo repartido por los turnos de cada dia. */
+  private objetivoPorDia(): Map<string, number> {
+    const objetivo = new Map<string, number>();
+    const data = this.statsData;
+    const target = this.statsPeriodTarget();
+    if (!data || target === null || target <= 0) return objetivo;
+    const dias = data.range.dias;
+    if (dias) {
+      const turnos = dias.reduce((total, dia) => total + dia.turnos, 0);
+      if (turnos > 0) dias.forEach(dia => objetivo.set(dia.fecha, (target * dia.turnos) / turnos));
+      return objetivo;
+    }
+    // Servidor anterior a los turnos: los laborables a partes iguales.
+    const from = this.parseIsoDate(data.range.from);
+    const to = this.parseIsoDate(data.range.to);
+    const laborables: string[] = [];
+    for (const d = new Date(from!); from && to && d <= to; d.setDate(d.getDate() + 1)) {
+      if (this.isWorkingDay(d)) laborables.push(this.toLocalIsoDate(d));
+    }
+    laborables.forEach(iso => objetivo.set(iso, target / laborables.length));
+    return objetivo;
   }
 
   private getIsoWeek(d: Date): number {

@@ -396,6 +396,77 @@ describe('Dashboard', () => {
     expect(buckets.every(bucket => bucket.meta_modulos === 1.5)).toBe(true);
   });
 
+  describe('shifts in the statistics', () => {
+    const vacio = () => ({
+      fases_completadas: 0, peso_total_kg: 0, peso_malla_inicial_kg: 0, peso_malla_final_kg: 0, desperdicio_kg: 0,
+      cantidad_cortes: 0, cantidad_refuerzos: 0, cantidad_zunchos: 0, cantidad_separadores: 0, cantidad_punzos: 0,
+      dificultad_total: 0,
+    });
+    const respuesta = (range: ProductionStatsResponse['range'], extra: Partial<ProductionStatsResponse> = {}): ProductionStatsResponse => ({
+      range,
+      totals: { ...vacio(), modulos_completados: 0, horas_productivas: 0, modulos_por_hora: 0, kg_por_hora: 0 },
+      por_mesa: [], por_dia: [], por_hora: null,
+      esperado: { capacidad_diaria_modulos: 0, modulos_esperados: 50 },
+      ...extra,
+    });
+
+    it('shares the period target among the days by their shifts, weekends included', () => {
+      component.statsFrom = '2026-09-27';
+      component.statsTo = '2026-09-29';
+      component.statsData = respuesta({
+        from: '2026-09-27', to: '2026-09-29', working_days: 3,
+        dias: [
+          { fecha: '2026-09-27', turnos: 1, horas: 10 },
+          { fecha: '2026-09-28', turnos: 2, horas: 20 },
+          { fecha: '2026-09-29', turnos: 2, horas: 20 },
+        ],
+      });
+      const buckets = component.statsBuckets();
+      // El domingo solo tiene el turno de noche: la mitad que los demas.
+      expect(buckets.map(b => [b.key, b.meta_modulos])).toEqual([
+        ['2026-09-27', 10], ['2026-09-28', 20], ['2026-09-29', 20],
+      ]);
+    });
+
+    it('follows the night shift past midnight in the one-day view', () => {
+      const horas = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 19, 20, 21, 22, 23, 0, 1, 2, 3, 4].map(h => String(h).padStart(2, '0'));
+      component.statsFrom = '2026-09-28';
+      component.statsTo = '2026-09-28';
+      component.statsData = respuesta(
+        { from: '2026-09-28', to: '2026-09-28', working_days: 1, dias: [{ fecha: '2026-09-28', turnos: 2, horas: 20 }], horas },
+        {
+          por_hora: [
+            { ...vacio(), hora: '02', modulos_completados: 1 },
+            { ...vacio(), hora: '10', modulos_completados: 1 },
+          ],
+          esperado: { capacidad_diaria_modulos: 0, modulos_esperados: 20 },
+        },
+      );
+      const buckets = component.statsBuckets();
+      const keys = buckets.map(b => b.key);
+      expect(keys[0]).toBe('06');
+      expect(keys[keys.length - 1]).toBe('04');
+      expect(keys.indexOf('00')).toBe(keys.indexOf('23') + 1);
+      expect(buckets.find(b => b.key === '02')!.modulos_completados).toBe(1);
+      // 20 de objetivo en 20 horas de turno; entre turnos no hay objetivo.
+      expect(buckets.find(b => b.key === '10')!.meta_modulos).toBe(1);
+      expect(buckets.find(b => b.key === '17')!.meta_modulos).toBe(0);
+    });
+
+    it('asks for one shift when it is chosen and offers the shifts of the ferralla', () => {
+      const turnos = [{ indice: 0, nombre: 'Mañana' }, { indice: 1, nombre: 'Noche' }];
+      const request = vi.spyOn(TestBed.inject(ApiService), 'getProductionStats')
+        .mockReturnValue(of(respuesta({ from: '2026-09-28', to: '2026-09-28', working_days: 1 }, { turnos })));
+      component.statsFrom = '2026-09-28';
+      component.statsTo = '2026-09-28';
+      component.selectStatsTurno('1');
+      expect(request.mock.lastCall![0]!.turno).toBe(1);
+      expect(component.statsTurnos).toEqual(turnos);
+      component.selectStatsTurno('');
+      expect(request.mock.lastCall![0]!.turno).toBeUndefined();
+    });
+  });
+
   it('keeps projects with pending validations out of the add-to-queue list', () => {
     component.proyectos = [
       { id: 1, nombre: 'Libre', modulos_count: 4, modulos_completados: 0, produccion_bloqueada: false } as Proyecto,
@@ -542,62 +613,72 @@ describe('Dashboard', () => {
     });
   });
 
-  describe('working schedule owned by the ferralla', () => {
+  describe('working shifts owned by the ferralla', () => {
     const jornada = (days: string[], start = '06:50', end = '15:00') =>
       days.map(day => ({day: day as any, start_time: start, end_time: end}));
     const config = (extra: Partial<FerrallaCaptureConfig> = {}): FerrallaCaptureConfig => ({
       user_id: 1, active_days: ['MON', 'TUE', 'WED', 'THU', 'FRI'], start_time: '06:50', end_time: '15:00',
       horario: jornada(['MON', 'TUE', 'WED', 'THU', 'FRI']),
+      turnos: [{nombre: 'Mañana', activo: true, horario: jornada(['MON', 'TUE', 'WED', 'THU', 'FRI'])}],
       interval_seconds: 20, check_times: [], capture_window: {start_time: '06:20', end_time: '15:30'}, mesas: [], ...extra,
     });
+    const grupo = () => [{
+      id: 1, nombre: 'Grupo', usuario: 42, proyecto_actual: null, proyectos_cola: [], estrategia_cola_superior: 'PLANIFICADA',
+      activa: true, created_at: '', mesas: [],
+    } as GrupoMesas];
 
-    it('describes the week by runs of days sharing the same hours, without the camera window', () => {
+    it('describes each active shift by runs of days sharing the same hours', () => {
       component.horario = config();
       expect(component.horarioLabel()).toBe('Lun–Vie 06:50–15:00');
-      component.horario = config({horario: [...jornada(['MON', 'TUE', 'WED', 'THU']), ...jornada(['FRI'], '06:50', '13:00')]});
+      component.horario = config({turnos: [{nombre: 'Mañana', activo: true,
+        horario: [...jornada(['MON', 'TUE', 'WED', 'THU']), ...jornada(['FRI'], '06:50', '13:00')]}]});
       expect(component.horarioLabel()).toBe('Lun–Jue 06:50–15:00 · Vie 06:50–13:00');
-      component.horario = config({horario: jornada(['MON', 'WED', 'FRI'])});
-      expect(component.horarioLabel()).toBe('Lun 06:50–15:00 · Mié 06:50–15:00 · Vie 06:50–15:00');
-      component.horario = config({horario: []});
-      expect(component.horarioLabel()).toBe('Sin días de trabajo');
+      component.horario = config({turnos: [{nombre: 'Mañana', activo: true, horario: jornada(['MON', 'WED', 'FRI'])}]});
+      expect(component.horarioLabel()).toBe('Lun, Mié, Vie 06:50–15:00');
+      const noche = {nombre: 'Noche', activo: true, horario: jornada(['MON', 'TUE', 'WED', 'THU', 'SUN'], '19:00', '05:00')};
+      component.horario = config({turnos: [{nombre: 'Mañana', activo: true, horario: jornada(['MON', 'TUE', 'WED', 'THU', 'FRI'], '06:00', '16:00')}, noche]});
+      expect(component.horarioLabel()).toBe('Mañana Lun–Vie 06:00–16:00 · Noche Lun–Jue, Dom 19:00–05:00');
+      // Un turno apagado (a demanda) no sale.
+      component.horario = config({turnos: [...config().turnos, {...noche, activo: false}]});
+      expect(component.horarioLabel()).toBe('Lun–Vie 06:50–15:00');
+      component.horario = config({turnos: []});
+      expect(component.horarioLabel()).toBe('Sin turnos de trabajo');
     });
 
-    it('saves days and hours for the ferralla and refreshes the statistics', () => {
+    it('saves the shifts for the ferralla and refreshes the statistics', () => {
       const api = TestBed.inject(ApiService);
-      component.gruposMesas = [{
-        id: 1, nombre: 'Grupo', usuario: 42, proyecto_actual: null, proyectos_cola: [], estrategia_cola_superior: 'PLANIFICADA',
-        activa: true, created_at: '', mesas: [],
-      } as GrupoMesas];
+      component.gruposMesas = grupo();
       component.horario = config();
-      const update = vi.spyOn(api, 'updateFerrallaCaptureConfig')
-        .mockReturnValue(of(config({horario: [...jornada(['MON', 'TUE', 'WED', 'THU']), ...jornada(['FRI'], '06:50', '13:00')]})));
+      const guardado = config({turnos: [
+        {nombre: 'Mañana', activo: true, horario: [...jornada(['MON', 'TUE', 'WED', 'THU']), ...jornada(['FRI'], '06:50', '13:00')]},
+        {nombre: 'Noche', activo: true, horario: jornada(['SUN'], '19:00', '05:00')},
+      ]});
+      const update = vi.spyOn(api, 'updateFerrallaCaptureConfig').mockReturnValue(of(guardado));
       vi.spyOn(component, 'loadStats').mockImplementation(() => undefined);
       vi.spyOn(component as any, 'silentRefreshProyectosAndStats').mockImplementation(() => undefined);
 
       component.editHorario();
-      expect(component.horarioDraft.map(f => f.activo)).toEqual([true, true, true, true, true, false, false]);
-      // El viernes acaba antes; el sabado se activa y hereda la jornada de referencia.
-      component.horarioDraft[4].end_time = '13:00';
-      component.toggleHorarioDay('SAT');
-      component.horarioDraft[5].start_time = '08:00';
-      component.horarioDraft[5].end_time = '12:00';
+      // Se edita una copia: lo que se ve no cambia hasta guardar.
+      component.turnosDraft[0].horario[4].end_time = '13:00';
+      expect(component.horario!.turnos[0].horario[4].end_time).toBe('15:00');
+      // Un turno de noche acaba al dia siguiente.
+      component.turnosDraft.push({nombre: 'Noche', activo: true, horario: jornada(['SUN'], '19:00', '05:00')});
       component.saveHorario();
 
       expect(update).toHaveBeenCalledWith(42, {
-        horario: [
-          ...jornada(['MON', 'TUE', 'WED', 'THU']),
-          {day: 'FRI', start_time: '06:50', end_time: '13:00'},
-          {day: 'SAT', start_time: '08:00', end_time: '12:00'},
+        turnos: [
+          {nombre: 'Mañana', activo: true, horario: [...jornada(['MON', 'TUE', 'WED', 'THU']), {day: 'FRI', start_time: '06:50', end_time: '13:00'}]},
+          {nombre: 'Noche', activo: true, horario: [{day: 'SUN', start_time: '19:00', end_time: '05:00'}]},
         ],
         interval_seconds: 20,
         rotations: [],
       });
       expect(component.horarioEditing).toBe(false);
-      expect(component.horarioLabel()).toBe('Lun–Jue 06:50–15:00 · Vie 06:50–13:00');
+      expect(component.horarioLabel()).toBe('Mañana Lun–Jue 06:50–15:00 · Vie 06:50–13:00 · Noche Dom 19:00–05:00');
       expect(component.loadStats).toHaveBeenCalled();
     });
 
-    it('edits the schedule in a modal instead of inline', () => {
+    it('edits the shifts in a modal instead of inline', () => {
       component.loadingGruposMesas = false;
       component.loadingMesas = false;
       component.vista = 'estadisticas';
@@ -609,37 +690,24 @@ describe('Dashboard', () => {
       fixture.detectChanges();
       const modal: HTMLElement = fixture.nativeElement.querySelector('.horario-modal');
       expect(modal).not.toBeNull();
-      expect(modal.querySelectorAll('.horario-dia').length).toBe(7);
+      expect(modal.querySelectorAll('app-turnos-editor .turno').length).toBe(1);
+      expect(modal.querySelectorAll('app-turnos-editor .turno-dia').length).toBe(7);
       expect(fixture.nativeElement.querySelector('.stats-header .stats-schedule-form')).toBeNull();
       component.cancelHorario();
       fixture.detectChanges();
       expect(fixture.nativeElement.querySelector('.horario-modal')).toBeNull();
     });
 
-    it('copies one day\'s hours to every other active day', () => {
-      component.horario = config();
-      component.editHorario();
-      component.horarioDraft[0].start_time = '07:30';
-      component.horarioDraft[0].end_time = '14:30';
-      component.copiarHorarioA('MON');
-      expect(component.horarioDraft.filter(f => f.activo).every(f => f.start_time === '07:30' && f.end_time === '14:30')).toBe(true);
-      expect(component.horarioDraft[5].start_time).toBe('06:50');
-    });
-
-    it('refuses an end hour before the start hour without calling the API', () => {
+    it('refuses a shift that starts and ends at the same hour without calling the API', () => {
       const api = TestBed.inject(ApiService);
-      component.gruposMesas = [{
-        id: 1, nombre: 'Grupo', usuario: 42, proyecto_actual: null, proyectos_cola: [], estrategia_cola_superior: 'PLANIFICADA',
-        activa: true, created_at: '', mesas: [],
-      } as GrupoMesas];
+      component.gruposMesas = grupo();
       component.horario = config();
       const update = vi.spyOn(api, 'updateFerrallaCaptureConfig');
       component.editHorario();
-      component.horarioDraft[4].end_time = '06:00';
-      expect(component.horarioDraftValido()).toBe(false);
+      component.turnosDraft[0].horario[4].end_time = '06:50';
       component.saveHorario();
       expect(update).not.toHaveBeenCalled();
-      expect(component.horarioError).toBe('Vie: la hora de fin tiene que ser posterior a la de inicio.');
+      expect(component.horarioError).toBe('Mañana, viernes: pon horas distintas de inicio y fin.');
     });
   });
 

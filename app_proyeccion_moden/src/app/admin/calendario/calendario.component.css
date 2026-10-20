@@ -48,7 +48,6 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* Filtros: solo cuando se piden. */
 .filters-panel { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: -4px 0 14px; padding: 10px 12px; border: 1px solid var(--line); background: var(--surface); }
-.filters-panel select { max-width: 240px; }
 .link-button { height: 30px; padding: 0 8px; border-color: transparent; color: var(--muted); text-decoration: underline; text-underline-offset: 2px; }
 .link-button:hover:not(:disabled) { background: transparent; color: var(--ink); }
 .filters-panel .refresh { margin-left: auto; width: 32px; height: 32px; }

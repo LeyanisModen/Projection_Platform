@@ -31,15 +31,11 @@
 @if (filtersOpen()) {
 <section class="filters-panel" id="calendar-filters" aria-label="Filtros del calendario">
     <div class="kind-filter" role="group" aria-label="Qué se ve">
-        @for (kind of kinds; track kind.value) {
+        @for (kind of kinds(); track kind.value) {
             <button type="button" [class.active]="kindFilter().includes(kind.value)" [attr.aria-pressed]="kindFilter().includes(kind.value)"
                 (click)="toggleKind(kind.value)">{{ kind.label }}</button>
         }
     </div>
-    <select aria-label="Filtrar por proyecto" [ngModel]="projectFilter()" (ngModelChange)="projectFilter.set($event)">
-        <option [ngValue]="null">Todos los proyectos</option>
-        @for (project of projects(); track project.id) { <option [ngValue]="project.id">{{ project.nombre }}</option> }
-    </select>
     <div class="team-legend" aria-label="Filtrar por persona">
         @for (worker of legendWorkers(); track worker.id) {
             <button type="button" [class.active]="workerFilter()===worker.id" [attr.aria-pressed]="workerFilter()===worker.id"

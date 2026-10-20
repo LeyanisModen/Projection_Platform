@@ -2,7 +2,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { CalendarEvent, OfficeWorker, CheckDeadline} from '../../services/api.service';
+import { CalendarEvent, CheckDefinition, OfficeWorker, CheckDeadline} from '../../services/api.service';
 import { CalendarioComponent } from './calendario.component';
 import { CalendarItem } from './calendar-layout';
 
@@ -17,6 +17,11 @@ describe('CalendarioComponent', () => {
         {id: 1, titulo: 'Vacaciones Ana', tipo: 'VACACIONES', inicio: '2026-09-07', fin: '2026-09-16', trabajadores: [1], proyecto: null, notas: ''},
         {id: 2, titulo: 'Trabajo conjunto', tipo: 'EVENTO', inicio: '2026-09-15', fin: '2026-09-17', trabajadores: [1,2], proyecto: null, notas: ''},
     ];
+    const definitions = [
+        {id: 1, titulo: 'Replanteo verificado en obra', orden: 1, requiere_fecha: false},
+        {id: 2, titulo: 'Geometría y armados confirmados', orden: 2, requiere_fecha: true},
+        {id: 3, titulo: 'Aprobación de planos de equivalencia', orden: 3, requiere_fecha: true},
+    ] as CheckDefinition[];
     beforeEach(async () => {
         await TestBed.configureTestingModule({imports: [CalendarioComponent], providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()]}).compileComponents();
         http = TestBed.inject(HttpTestingController);
@@ -26,6 +31,7 @@ describe('CalendarioComponent', () => {
         http.expectOne('/api/proyectos/').flush({results: [], next: null, count: 0});
         http.expectOne('/api/trabajadores/').flush(workers);
         http.expectOne(r => r.url === '/api/proyecto-checklist/vencimientos/').flush([]);
+        http.expectOne('/api/check-definiciones/').flush(definitions);
         fixture.detectChanges();
     });
     afterEach(() => http.verify());
@@ -126,15 +132,14 @@ describe('CalendarioComponent', () => {
         expect(component.draft.id).toBe(1);
     });
 
-    it('keeps project filters on calendar content without changing actual availability', () => {
+    it('keeps type filters on calendar content without changing actual availability', () => {
         const component = fixture.componentInstance;
-        component.events.set([events[0], {...events[1], proyecto: 7}]);
         component.selected.set('2026-09-15');
-        component.projectFilter.set(7); fixture.detectChanges();
+        component.kindFilter.set(['eventos']); fixture.detectChanges();
         expect(fixture.nativeElement.querySelectorAll('.vacation-shading')).toHaveLength(0);
         expect(fixture.nativeElement.querySelectorAll('.event-bar')).toHaveLength(1);
         expect(component.availability()[0].holiday).toBe(true);
-        component.projectFilter.set(null); fixture.detectChanges();
+        component.kindFilter.set([]); fixture.detectChanges();
         expect(fixture.nativeElement.querySelectorAll('.vacation-shading')).toHaveLength(10);
     });
 
@@ -240,8 +245,12 @@ describe('CalendarioComponent', () => {
         expect(agenda).toContain('Completado · Planos entregados');
         expect(fixture.nativeElement.querySelector('.agenda-event.control a').getAttribute('href')).toBe('/admin-dashboard/proyectos/3');
 
-        component.projectFilter.set(99); fixture.detectChanges();
+        // Pasos puestos a mano (fuera de la lista maestra): van juntos en "Otros controles".
+        component.kindFilter.set(['montajes']); fixture.detectChanges();
         expect(fixture.nativeElement.querySelectorAll('.event-bar.control').length).toBe(0);
+        component.kindFilter.set(['control:otros']); fixture.detectChanges();
+        expect(fixture.nativeElement.querySelectorAll('.event-bar.control').length).toBe(2);
+        expect(component.kinds().map(kind => kind.label)).toContain('Otros controles');
     });
 
     it('marca los controles desde la agenda del día, respetando los pasos previos', () => {
@@ -428,35 +437,42 @@ describe('CalendarioComponent', () => {
         expect(fixture.nativeElement.querySelector('.day-agenda').textContent).toContain('Montaje previsto 09/09/2026');
     });
 
-    it('filtra por tipo: solo montajes, o montajes y controles', () => {
+    it('filtra por tipo: montajes y cada control de la lista maestra, sin filtro por proyecto', () => {
         const component = fixture.componentInstance;
         component.load();
         http.expectOne(r => r.url === '/api/eventos/').flush(events);
         http.expectOne('/api/proyectos/').flush({results: [{id: 7, nombre: 'Esnabide', fecha_montaje: '2026-09-15'}], next: null, count: 1});
         http.expectOne('/api/trabajadores/').flush(workers);
         http.expectOne(r => r.url === '/api/proyecto-checklist/vencimientos/').flush([
-            {id: 5, proyecto: 7, proyecto_nombre: 'Esnabide', titulo: 'Planos', fecha_limite: '2026-09-15', completado: false,
+            {id: 5, proyecto: 7, proyecto_nombre: 'Esnabide', titulo: 'Geometría y armados confirmados', fecha_limite: '2026-09-15', completado: false,
+                requisitos_pendientes: [], requiere_documento: false, documentos: 0},
+            {id: 6, proyecto: 7, proyecto_nombre: 'Esnabide', titulo: 'Aprobación de planos de equivalencia', fecha_limite: '2026-09-16', completado: false,
                 requisitos_pendientes: [], requiere_documento: false, documentos: 0},
         ]);
         fixture.detectChanges();
-        const kinds = () => component.calendarItems().map(item => item.key.split('-')[0]).sort();
-        expect(kinds()).toEqual(['control', 'event', 'mount']);
+        const keys = () => component.calendarItems().map(item => item.key).sort();
+        expect(keys()).toEqual(['control-5', 'control-6', 'event-2', 'mount-7']);
         (fixture.nativeElement.querySelector('.icon-button[aria-label="Filtros"]') as HTMLButtonElement).click(); fixture.detectChanges();
-        const chip = (label: string) => Array.from(fixture.nativeElement.querySelectorAll('.kind-filter button') as NodeListOf<HTMLButtonElement>)
-            .find(button => button.textContent?.trim() === label)!;
+        const chips = () => Array.from(fixture.nativeElement.querySelectorAll('.kind-filter button') as NodeListOf<HTMLButtonElement>);
+        const chip = (label: string) => chips().find(button => button.textContent?.trim() === label)!;
+        // Solo los pasos con fecha, en el orden de la lista maestra.
+        expect(chips().map(button => button.textContent?.trim())).toEqual([
+            'Montajes', 'Geometría y armados confirmados', 'Aprobación de planos de equivalencia', 'Eventos', 'Vacaciones',
+        ]);
+        expect(fixture.nativeElement.querySelector('.filters-panel select')).toBeNull();
 
         chip('Montajes').click(); fixture.detectChanges();
-        expect(kinds()).toEqual(['mount']);
+        expect(keys()).toEqual(['mount-7']);
         // Las vacaciones tampoco se ven de fondo.
         expect(fixture.nativeElement.querySelectorAll('.day.has-vacations').length).toBe(0);
 
-        chip('Controles').click(); fixture.detectChanges();
-        expect(kinds()).toEqual(['control', 'mount']);
-        expect(chip('Controles').getAttribute('aria-pressed')).toBe('true');
-        expect(component.printFilters()).toContain('Montajes, Controles');
+        chip('Geometría y armados confirmados').click(); fixture.detectChanges();
+        expect(keys()).toEqual(['control-5', 'mount-7']);
+        expect(chip('Geometría y armados confirmados').getAttribute('aria-pressed')).toBe('true');
+        expect(component.printFilters()).toContain('Montajes, Geometría y armados confirmados');
 
         (fixture.nativeElement.querySelector('.filters-panel .link-button') as HTMLButtonElement).click(); fixture.detectChanges();
-        expect(kinds()).toEqual(['control', 'event', 'mount']);
+        expect(keys()).toEqual(['control-5', 'control-6', 'event-2', 'mount-7']);
         expect(fixture.nativeElement.querySelectorAll('.day.has-vacations').length).toBeGreaterThan(0);
     });
 
@@ -568,7 +584,7 @@ describe('CalendarioComponent', () => {
 
     it('marks assigned events as out of office regardless of calendar filters', () => {
         const component = fixture.componentInstance;
-        component.selected.set('2026-09-15'); component.projectFilter.set(99); component.workerFilter.set(1);
+        component.selected.set('2026-09-15'); component.kindFilter.set(['montajes']); component.workerFilter.set(1);
         fixture.detectChanges();
         expect(component.availability().find(w => w.id===1)?.holiday).toBe(true);
         expect(component.availability().find(w => w.id===2)?.away).toBe(true);
@@ -656,7 +672,7 @@ describe('CalendarioComponent', () => {
 
     it('warns about vacations and events independently of filters, without disabling selection or save', () => {
         const component = fixture.componentInstance;
-        component.selected.set('2026-09-15'); component.projectFilter.set(99); component.workerFilter.set(2);
+        component.selected.set('2026-09-15'); component.kindFilter.set(['montajes']); component.workerFilter.set(2);
         openEditor(); fixture.detectChanges();
         expect(component.conflictsByWorker().get(1)?.map(e => e.id)).toEqual([1,2]);
         expect(component.conflictsByWorker().get(2)?.map(e => e.id)).toEqual([2]);
