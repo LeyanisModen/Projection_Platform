@@ -637,8 +637,10 @@ export interface ProductionStatsResponse {
         from: string; to: string; working_days: number; festivos?: string[];
         /** Dias de produccion del rango con sus turnos (un turno de noche cuenta para el dia en que empieza). */
         dias?: Array<{ fecha: string; turnos: number; horas: number }>;
-        /** Vista de un dia: sus horas de turno en orden ('19', ..., '23', '00', ...). */
+        /** Vista de un dia: sus horas de turno (las que tienen objetivo). */
         horas?: string[] | null;
+        /** Vista de un dia con un turno elegido: ese turno entero, de una hora antes a la hora en que acaba. */
+        eje?: Array<{ hora: string; inicio: string }> | null;
     };
     /** Turnos de la ferralla, para elegir uno. */
     turnos?: Array<{ indice: number; nombre: string }>;

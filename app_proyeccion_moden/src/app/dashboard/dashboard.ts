@@ -2281,6 +2281,29 @@ export class Dashboard implements OnInit, OnDestroy {
       tiempo_superior_min: found?.tiempo_superior_min ?? null,
     });
 
+    // Un dia con un turno elegido: ese turno entero (la noche empieza el dia
+    // anterior), de una hora antes a la hora en que acaba.
+    if (dayCount === 1 && data.por_hora && data.range.eje?.length) {
+      const byHour = new Map(data.por_hora.map(h => [h.hora, h]));
+      const horasTurno = data.range.horas || [];
+      const metaDia = objetivo.get(this.statsFrom) ?? 0;
+      const hourlyCap = metaDia > 0 && horasTurno.length ? metaDia / horasTurno.length : 0;
+      return data.range.eje.map(({ hora, inicio }) => {
+        const desde = new Date(inicio);
+        const hasta = new Date(desde.getTime() + 3600000);
+        return {
+          key: hora,
+          label: `${hora}h`,
+          ...base(byHour.get(hora)),
+          meta_modulos: horasTurno.includes(hora) ? hourlyCap : 0,
+          working_days: 0,
+          granularity: 'hour' as const,
+          futuro: desde > now,
+          en_curso: desde <= now && now < hasta,
+        };
+      });
+    }
+
     // Un dia (de 00:00 a 24:00): una columna por hora, de la primera a la
     // ultima de sus turnos o con actividad, para que la linea sea continua.
     if (dayCount === 1 && data.por_hora) {
