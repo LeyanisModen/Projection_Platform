@@ -2133,6 +2133,56 @@ export class Dashboard implements OnInit, OnDestroy {
     this.loadStats();
   }
 
+  /** Dia, semana o mes anterior o siguiente (con fechas a mano, tantos dias como el rango). */
+  moverPeriodo(delta: -1 | 1): void {
+    const periodo = this.puedeMoverPeriodo(delta) ? this.periodoDesplazado(delta) : null;
+    if (!periodo) return;
+    this.statsFrom = periodo.from;
+    this.statsTo = periodo.to;
+    this.loadStats();
+  }
+
+  /** No hay periodo siguiente al de hoy, ni anterior a "desde el inicio". */
+  puedeMoverPeriodo(delta: -1 | 1): boolean {
+    const periodo = this.periodoDesplazado(delta);
+    return !!periodo && periodo.from <= this.toLocalIsoDate(new Date());
+  }
+
+  private periodoDesplazado(delta: -1 | 1): { from: string; to: string } | null {
+    const from = this.parseIsoDate(this.statsFrom);
+    const to = this.parseIsoDate(this.statsTo);
+    if (!from || !to) return null;
+    const masDias = (d: Date, dias: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + dias);
+    let desde: Date;
+    let hasta: Date;
+    switch (this.statsPreset) {
+      case 'day':
+        desde = masDias(from, delta);
+        hasta = desde;
+        break;
+      case 'week':
+        desde = masDias(this.getMondayOfWeek(from), 7 * delta);
+        hasta = masDias(desde, 6);
+        break;
+      case 'month':
+        desde = new Date(from.getFullYear(), from.getMonth() + delta, 1);
+        hasta = new Date(desde.getFullYear(), desde.getMonth() + 1, 0);
+        break;
+      case 'custom': {
+        const dias = Math.round((to.getTime() - from.getTime()) / 86400000) + 1;
+        desde = masDias(from, dias * delta);
+        hasta = masDias(to, dias * delta);
+        break;
+      }
+      default:
+        return null;
+    }
+    // El periodo en curso llega hasta hoy.
+    const hoy = this.toLocalIsoDate(new Date());
+    const hastaIso = this.toLocalIsoDate(hasta);
+    return { from: this.toLocalIsoDate(desde), to: hastaIso > hoy ? hoy : hastaIso };
+  }
+
   onStatsDateChange(): void {
     this.statsPreset = 'custom';
     if (this.statsFrom && this.statsTo && this.statsFrom > this.statsTo) {

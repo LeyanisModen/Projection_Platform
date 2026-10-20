@@ -396,6 +396,32 @@ describe('Dashboard', () => {
     expect(buckets.every(bucket => bucket.meta_modulos === 1.5)).toBe(true);
   });
 
+  it('moves to the previous or next day, week or month, never past today', () => {
+    vi.spyOn(component, 'loadStats').mockImplementation(() => undefined);
+    const ir = (preset: typeof component.statsPreset, from: string, to: string, delta: -1 | 1) => {
+      component.statsPreset = preset;
+      component.statsFrom = from;
+      component.statsTo = to;
+      component.moverPeriodo(delta);
+      return [component.statsFrom, component.statsTo];
+    };
+    expect(ir('day', '2026-09-28', '2026-09-28', -1)).toEqual(['2026-09-27', '2026-09-27']);
+    expect(ir('week', '2026-09-28', '2026-10-04', -1)).toEqual(['2026-09-21', '2026-09-27']);
+    expect(ir('month', '2026-09-01', '2026-09-30', -1)).toEqual(['2026-08-01', '2026-08-31']);
+    // Con fechas a mano, tantos dias como el rango.
+    expect(ir('custom', '2026-09-10', '2026-09-12', 1)).toEqual(['2026-09-13', '2026-09-15']);
+    // Hoy no tiene siguiente y "desde el inicio" no se mueve.
+    const hoy = new Date();
+    const hoyIso = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
+    component.statsPreset = 'day';
+    component.statsFrom = hoyIso;
+    component.statsTo = hoyIso;
+    expect(component.puedeMoverPeriodo(1)).toBe(false);
+    expect(component.puedeMoverPeriodo(-1)).toBe(true);
+    component.statsPreset = 'proyecto';
+    expect(component.puedeMoverPeriodo(-1)).toBe(false);
+  });
+
   describe('shifts in the statistics', () => {
     const vacio = () => ({
       fases_completadas: 0, peso_total_kg: 0, peso_malla_inicial_kg: 0, peso_malla_final_kg: 0, desperdicio_kg: 0,
