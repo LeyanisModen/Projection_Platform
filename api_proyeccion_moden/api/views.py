@@ -5655,7 +5655,8 @@ def _objetivo_del_turno(esperado, jornada, desde, hasta, turno):
     if turno is None or not esperado.get('modulos_esperados'):
         return esperado
     del_periodo = [tramo for tramo in jornada.tramos if desde <= tramo.fecha <= hasta]
-    suyos = [tramo for tramo in del_periodo if tramo.turno.indice == turno.indice]
+    # Los suyos, por el dia en que acaban (como se ven con el turno elegido).
+    suyos = [tramo for tramo in jornada.tramos if tramo.turno.indice == turno.indice and desde <= tramo.dia_fin <= hasta]
     parte = len(suyos) / len(del_periodo) if del_periodo else 0
     return {**esperado, 'modulos_esperados': round(esperado['modulos_esperados'] * parte)}
 
@@ -5801,15 +5802,22 @@ class ProductionStatsView(APIView):
             festivos, current_tz,
         )
 
+        # Con un turno elegido, lo hecho fuera de turno cuenta en el turno mas
+        # cercano (asi los turnos suman lo mismo que todos juntos).
         def del_turno(momento):
             if turno_sel is None:
                 return True
-            tramo = jornada.tramo_de(momento)
+            tramo = jornada.tramo_cercano(momento)
             return tramo is not None and tramo.turno.indice == turno_sel.indice
 
-        # Cada dia es el del calendario, de 00:00 a 24:00: lo hecho de
-        # madrugada cuenta en ese dia, aunque sea del turno de noche anterior.
+        # Sin turno elegido, cada dia es el del calendario, de 00:00 a 24:00.
+        # Con un turno, cada turno entero cuenta el dia en que acaba: la noche
+        # del lunes al martes es el martes.
         def dia_de(momento):
+            if turno_sel is not None:
+                tramo = jornada.tramo_cercano(momento)
+                if tramo is not None:
+                    return tramo.dia_fin
             return timezone.localtime(momento, current_tz).date()
 
         def en_rango(momento):
@@ -5838,8 +5846,8 @@ class ProductionStatsView(APIView):
             .select_related('proyecto', 'grupo_bastidor', 'grupo_bastidor__dividido_de')
             .prefetch_related('detalles_fase')
             .filter(completado_at__isnull=False,
-                    completado_at__gte=from_dt,
-                    completado_at__lt=to_dt_exclusive)
+                    completado_at__gte=from_dt - timedelta(days=1 if turno_sel else 0),
+                    completado_at__lt=to_dt_exclusive + timedelta(days=1 if turno_sel else 0))
         )
         if alcance_ids is not None:
             modulos_qs = modulos_qs.filter(proyecto_id__in=alcance_ids)
@@ -6095,10 +6103,30 @@ class ProductionStatsView(APIView):
         # dia (la madrugada y la noche de un dia suman uno).
         dias_rango = {}
         horas_dia = set()
+        eje_dia = []
         working_seconds = 0.0
         for tramo in jornada.tramos:
-            if turno_sel is not None and tramo.turno.indice != turno_sel.indice:
+            if turno_sel is None or tramo.turno.indice != turno_sel.indice or not (from_date <= tramo.dia_fin <= to_date):
                 continue
+            # Un turno elegido: entero, en el dia en que acaba.
+            dia = dias_rango.setdefault(tramo.dia_fin.isoformat(), {'fecha': tramo.dia_fin.isoformat(), 'turnos': 0.0, 'horas': 0.0})
+            dia['turnos'] += 1
+            dia['horas'] += tramo.segundos / 3600.0
+            if tramo.inicio < ahora:
+                working_seconds += (min(tramo.fin, ahora) - tramo.inicio).total_seconds()
+            if single_day:
+                # La grafica, de una hora antes a la hora en que acaba.
+                hora = timezone.localtime(tramo.inicio, current_tz).replace(minute=0, second=0, microsecond=0)
+                for etiqueta_hora in range(int((tramo.fin - hora).total_seconds() // 3600)):
+                    horas_dia.add(f'{timezone.localtime(hora + timedelta(hours=etiqueta_hora), current_tz).hour:02d}')
+                momento = hora - timedelta(hours=1)
+                while momento <= tramo.fin:
+                    local = timezone.localtime(momento, current_tz)
+                    eje_dia.append({'hora': f'{local.hour:02d}', 'inicio': local.isoformat()})
+                    momento += timedelta(hours=1)
+        for tramo in jornada.tramos:
+            if turno_sel is not None:
+                break
             cursor = max(tramo.inicio, from_dt)
             final = min(tramo.fin, to_dt_exclusive)
             while cursor < final:
@@ -6125,7 +6153,8 @@ class ProductionStatsView(APIView):
             dia['horas'] = round(dia['horas'], 2)
         working_days = len(dias_rango)
         working_hours = working_seconds / 3600.0
-        horas_dia = sorted(horas_dia)
+        # Sin turno, en orden de reloj; con un turno, en el orden del turno.
+        horas_dia = [item['hora'] for item in eje_dia if item['hora'] in horas_dia] if eje_dia else sorted(horas_dia)
         totals['horas_productivas'] = round(working_hours, 2)
         totals['modulos_por_hora'] = round(
             modulos_completados / working_hours, 2
@@ -6341,6 +6370,8 @@ class ProductionStatsView(APIView):
                 # Dias con horas de turno, para repartir el objetivo.
                 'dias': sorted(dias_rango.values(), key=lambda dia: dia['fecha']),
                 'horas': horas_dia if single_day else None,
+                # Con un turno elegido, la vista de un dia es ese turno entero.
+                'eje': eje_dia if single_day and eje_dia else None,
                 'festivos': [dia.isoformat() for dia in festivos_rango],
             },
             'totals': {

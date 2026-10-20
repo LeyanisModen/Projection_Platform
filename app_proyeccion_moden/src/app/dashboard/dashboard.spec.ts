@@ -477,6 +477,33 @@ describe('Dashboard', () => {
       expect(buckets.find(b => b.key === '17')!.meta_modulos).toBe(0);
     });
 
+    it('shows the whole chosen shift in the one-day view, from the evening before', () => {
+      const horas = ['19', '20', '21', '22', '23', '00', '01', '02', '03', '04'];
+      const eje = ['18', ...horas, '05'].map((hora, i) => ({
+        hora, inicio: new Date(2026, 8, 28, 18 + i, 0, 0).toISOString(),
+      }));
+      component.statsFrom = '2026-09-29';
+      component.statsTo = '2026-09-29';
+      component.statsData = respuesta(
+        { from: '2026-09-29', to: '2026-09-29', working_days: 1, dias: [{ fecha: '2026-09-29', turnos: 1, horas: 10 }], horas, eje },
+        {
+          por_hora: [
+            { ...vacio(), hora: '18', modulos_completados: 1 },
+            { ...vacio(), hora: '02', modulos_completados: 2 },
+          ],
+          esperado: { capacidad_diaria_modulos: 0, modulos_esperados: 10 },
+          turno: 1,
+        },
+      );
+      const buckets = component.statsBuckets();
+      expect(buckets.map(b => b.key)).toEqual(['18', ...horas, '05']);
+      expect(buckets.map(b => b.modulos_completados).filter(n => n > 0)).toEqual([1, 2]);
+      // Objetivo solo en las horas del turno: 10 en 10 horas.
+      expect(buckets.find(b => b.key === '18')!.meta_modulos).toBe(0);
+      expect(buckets.find(b => b.key === '02')!.meta_modulos).toBe(1);
+      expect(buckets.every(b => !b.futuro)).toBe(true);
+    });
+
     it('asks for one shift when it is chosen and offers the shifts of the ferralla', () => {
       const turnos = [{ indice: 0, nombre: 'Mañana' }, { indice: 1, nombre: 'Noche' }];
       const request = vi.spyOn(TestBed.inject(ApiService), 'getProductionStats')

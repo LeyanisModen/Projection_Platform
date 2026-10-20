@@ -45,6 +45,11 @@ class Tramo:
     def segundos(self):
         return (self.fin - self.inicio).total_seconds()
 
+    @property
+    def dia_fin(self):
+        """Dia en que acaba: la noche del lunes al martes acaba el martes."""
+        return timezone.localtime(self.fin - timedelta(microseconds=1)).date()
+
 
 def _hora(valor):
     if isinstance(valor, time):
@@ -174,6 +179,22 @@ class Jornada:
             if tramo.inicio <= momento < tramo.fin:
                 return tramo
         return None
+
+    def tramo_cercano(self, momento):
+        """El tramo de un momento o, fuera de turno, el mas cercano: el que
+        acaba de terminar o el que va a empezar (a igual distancia, el que
+        termino). Asi lo hecho fuera de turno cuenta en algun turno."""
+        if momento is None or not self.tramos:
+            return None
+        pos = bisect_right(self._inicios, momento)
+        mejor, distancia = None, None
+        for tramo in self.tramos[max(0, pos - 3):pos + 1]:
+            if tramo.inicio <= momento < tramo.fin:
+                return tramo
+            hasta = tramo.inicio - momento if momento < tramo.inicio else momento - tramo.fin
+            if distancia is None or hasta < distancia:
+                mejor, distancia = tramo, hasta
+        return mejor
 
     def dia_de(self, momento):
         """Dia de produccion de un momento: el de su turno o, fuera de turno, el del calendario."""
