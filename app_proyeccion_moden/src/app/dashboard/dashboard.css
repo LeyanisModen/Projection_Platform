@@ -40,11 +40,15 @@
 .grupo-cola-chip:not(.sin-cola)::before, .grupo-estrategia-chip::before, .grupo-cola-more::before { content: '·'; margin-right: 6px; color: var(--line-strong); }
 .btn-gestionar { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
 .btn-gestionar:hover { background: var(--surface-2); }
+.grupo-operativo-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
 .mesas-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
 .mesa-card { position: relative; display: flex; flex-direction: column; height: 520px; min-width: 0; overflow: hidden; background: var(--surface); border: 1px solid var(--line); }
 .mesa-card.mesa-inactiva { background: var(--surface-2); }
 .mesa-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
 .mesa-title-container { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.mesa-sup-orden { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--line); }
+.mesa-sup-orden-label { color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: 0.04em; }
+.mesa-sup-orden-switch .estado-opcion { height: 26px; padding: 0 8px; font-size: 11px; }
 .mesa-role-badge { color: var(--ink); font-size: 14px; font-weight: 600; white-space: nowrap; }
 .mesa-tipo-chip { padding: 1px 7px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: 0.04em; }
 .mesa-header-actions { display: flex; align-items: center; gap: 4px; }
@@ -66,6 +70,8 @@
 .queue-item.status-en-cola { border-left-color: var(--line-strong); }
 .queue-item.status-hecho { border-left-color: var(--ok); opacity: 0.6; }
 .queue-item-info { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.queue-item-order { display: inline-flex; flex-direction: column; flex: 0 0 auto; margin: -3px 0 -3px -4px; }
+.queue-item-order .plan-order-btn { width: 20px; height: 14px; font-size: 9px; }
 .queue-item-nombre { flex: 1 1 auto; min-width: 0; color: var(--ink); font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .queue-item-progress { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
 .queue-item-status { color: var(--muted); font-size: 10px; font-weight: 600; letter-spacing: 0.04em; }
@@ -301,19 +307,6 @@ a.plan-modal-download { text-decoration: none; }
 .gestionar-section h4 { margin: 0; color: var(--text); font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
 .gestionar-input { width: 100%; height: var(--control-h); padding: 0 12px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); font: inherit; color: var(--ink); box-sizing: border-box; }
 .gestionar-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-.estrategia-superior-options { display: grid; grid-template-columns: 1fr; gap: 8px; }
-.estrategia-superior-option { position: relative; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); text-align: left; font: inherit; cursor: pointer; }
-.estrategia-superior-option:hover:not(:disabled) { background: var(--surface-2); }
-.estrategia-superior-option.active { border-color: var(--ink); }
-.estrategia-superior-option:disabled { opacity: 0.6; cursor: default; }
-.estrategia-icon { display: grid; place-items: center; width: 30px; height: 30px; flex: 0 0 30px; border-radius: 50%; background: var(--surface-2); color: var(--muted); }
-.estrategia-superior-option.active .estrategia-icon { background: var(--ink); color: #fff; }
-.estrategia-copy { display: grid; gap: 2px; min-width: 0; }
-.estrategia-copy strong { color: var(--ink); font-size: 13px; }
-.estrategia-copy small { color: var(--muted); font-size: 11px; }
-.estrategia-check { margin-left: auto; color: var(--ink); opacity: 0; }
-.estrategia-superior-option.active .estrategia-check { opacity: 1; }
-.estrategia-superior-help { margin: 0; color: var(--muted); font-size: 12px; }
 .gestionar-mesa-list { display: grid; gap: 6px; }
 .gestionar-mesa-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); }
 .gestionar-mesa-row.mesa-inactiva { opacity: 0.6; }

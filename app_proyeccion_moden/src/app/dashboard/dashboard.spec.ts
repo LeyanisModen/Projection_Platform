@@ -528,6 +528,83 @@ describe('Dashboard', () => {
     expect(component.proyectosDisponibles(null).map(p => p.nombre)).toEqual(['Libre']);
   });
 
+  it('lets the ferralla pick the superior order on the SUP card and reorder it by hand when manual', () => {
+    const api = TestBed.inject(ApiService);
+    const grupo = {
+      id: 1, nombre: 'Grupo mesas', usuario: 1, proyecto_actual: 7, proyectos_cola: [], estrategia_cola_superior: 'MANUAL',
+      activa: true, created_at: '', mesas: [],
+    } as unknown as GrupoMesas;
+    component.gruposMesas = [grupo];
+    component.mesas = [
+      { id: 1, nombre: 'Mesa 1', tipo: 'INFERIOR', indice: 1, activa: true, grupo: 1, is_linked: false },
+      { id: 3, nombre: 'Mesa 3', tipo: 'SUPERIOR', indice: 3, activa: true, grupo: 1, is_linked: false },
+    ] as unknown as Mesa[];
+    const sup = (id: number, nombre: string, position: number, status: 'MOSTRANDO' | 'EN_COLA', proyecto = 7) => ({
+      id, mesa: 3, modulo: id, modulo_nombre: nombre, modulo_proyecto_id: proyecto, fase: 'SUPERIOR', position, status,
+      current_image_index: 0, imagenes_total: 16,
+    } as unknown as MesaQueueItem);
+    component.mesaQueueItems.set(3, [sup(31, 'A1', 0, 'MOSTRANDO'), sup(99, 'Z1', 1, 'EN_COLA', 8), sup(32, 'A2', 2, 'EN_COLA')]);
+    fixture.changeDetectorRef.markForCheck();
+    fixture.detectChanges();
+
+    const cards: HTMLElement[] = Array.from(fixture.nativeElement.querySelectorAll('.mesa-card'));
+    expect(cards.length).toBe(2);
+    // La inferior no elige orden; la superior si, y en manual ensena las flechas.
+    expect(cards[0].querySelector('.mesa-sup-orden')).toBeNull();
+    const sup3 = cards[1];
+    expect(Array.from(sup3.querySelectorAll('.mesa-sup-orden .estado-opcion')).map(b => b.textContent?.trim()))
+      .toEqual(['Planificado', 'Adaptativo', 'Manual']);
+    expect(sup3.querySelector('.mesa-sup-orden .estado-opcion.active')?.textContent?.trim()).toBe('Manual');
+    expect(sup3.querySelectorAll('.queue-item-order').length).toBe(3);
+
+    const reorder = vi.spyOn(api, 'reorderMesaQueue').mockReturnValue(of({ status: 'ok' }));
+    vi.spyOn(component, 'loadMesaQueueItems').mockImplementation(() => undefined);
+    vi.spyOn(component, 'loadGruposMesas').mockImplementation(() => undefined);
+    (sup3.querySelector('[aria-label="Fabricar antes A2"]') as HTMLButtonElement).click();
+    // A2 pasa delante del modulo del otro proyecto; las posiciones son de toda la mesa.
+    expect(reorder).toHaveBeenCalledWith([{ id: 31, position: 0 }, { id: 32, position: 1 }, { id: 99, position: 2 }]);
+    expect(component.mesaReorderBusyId).toBeNull();
+
+    // Al volver a automatico las flechas desaparecen.
+    const update = vi.spyOn(api, 'updateGrupoMesas')
+      .mockReturnValue(of({ ...grupo, estrategia_cola_superior: 'ADAPTATIVA' } as GrupoMesas));
+    vi.spyOn(component, 'loadMesas').mockImplementation(() => undefined);
+    (sup3.querySelector('.mesa-sup-orden [title^="Adaptar"]') as HTMLButtonElement).click();
+    expect(update).toHaveBeenCalledWith(1, { estrategia_cola_superior: 'ADAPTATIVA' });
+    fixture.detectChanges();
+    expect(sup3.querySelector('.mesa-sup-orden .estado-opcion.active')?.textContent?.trim()).toBe('Adaptativo');
+    expect(sup3.querySelectorAll('.queue-item-order').length).toBe(0);
+  });
+
+  it('splits the group controls: tables in "Gestionar mesas", projects in "Cola de proyectos"', () => {
+    const grupo = {
+      id: 1, nombre: 'Grupo mesas', usuario: 1, proyecto_actual: null, proyectos_cola: [], estrategia_cola_superior: 'PLANIFICADA',
+      activa: true, created_at: '', mesas: [],
+    } as unknown as GrupoMesas;
+    component.gruposMesas = [grupo];
+    component.mesas = [{ id: 1, nombre: 'Mesa 1', tipo: 'INFERIOR', indice: 1, activa: true, grupo: 1, is_linked: false }] as unknown as Mesa[];
+    fixture.changeDetectorRef.markForCheck();
+    fixture.detectChanges();
+    const botones = Array.from(fixture.nativeElement.querySelectorAll('.grupo-operativo-actions .btn-gestionar')) as HTMLButtonElement[];
+    expect(botones.map(b => b.textContent?.trim())).toEqual(['Cola de proyectos', 'Gestionar mesas']);
+
+    botones[1].click();
+    fixture.detectChanges();
+    let modal: HTMLElement = fixture.nativeElement.querySelector('.gestionar-modal');
+    expect(modal.querySelector('h3')?.textContent).toBe('Gestionar mesas · Grupo mesas');
+    expect(Array.from(modal.querySelectorAll('.gestionar-section h4')).map(h => h.textContent)).toEqual(['Nombre del grupo', 'Mesas']);
+    expect(modal.querySelector('.cola-add-row')).toBeNull();
+    component.closeGestionarModal();
+    fixture.detectChanges();
+
+    botones[0].click();
+    fixture.detectChanges();
+    modal = fixture.nativeElement.querySelector('.gestionar-modal');
+    expect(modal.querySelector('h3')?.textContent).toBe('Cola de proyectos · Grupo mesas');
+    expect(modal.querySelector('.cola-add-row')).not.toBeNull();
+    expect(modal.querySelector('.mesa-estado-switch')).toBeNull();
+  });
+
   describe('loose elements Excel', () => {
     const proyecto = { id: 7, nombre: 'Torre Norte', elementos_sueltos_archivo: '/media/elementos_sueltos/obra.xlsx' } as Proyecto;
     const render = () => {
@@ -804,30 +881,9 @@ describe('Dashboard', () => {
       expect(secciones[2].querySelector('.plan-modulo-order')).toBeNull();
     });
 
-    it('only lets pending modules swap with pending neighbours', () => {
-      const [g1] = component.planModalGrupos;
-      const [a1, a2, a3] = component.planModalModulos;
-      expect(component.canMoveModulo(g1, a3, 1)).toBe(false);
-      expect(component.canMoveModulo(g1, a2, -1)).toBe(false);
-      expect(component.canMoveModulo(g1, a2, 1)).toBe(true);
-      expect(component.canMoveModulo(g1, a1, -1)).toBe(true);
-      expect(component.canMoveModulo(g1, a1, 1)).toBe(false);
-    });
-
-    it('moves a module earlier in fabrication using the card index the backend expects', () => {
-      const api = TestBed.inject(ApiService);
-      const move = vi.spyOn(api, 'moveModuloEntreBastidores').mockReturnValue(of(component.planModalGrupos));
-      vi.spyOn(api, 'getProyectoModulos').mockReturnValue(of(component.planModalModulos));
-      vi.spyOn(component, 'loadMesas').mockImplementation(() => undefined);
-      vi.spyOn(component as any, 'silentRefreshProyectosAndStats').mockImplementation(() => undefined);
-
-      const [g1] = component.planModalGrupos;
-      component.moveModuloEnPlan(g1, component.planModalModulos[0], -1);
-
-      // A1 pasa de fabricarse el ultimo a fabricarse antes que A2: en el card
-      // (arriba abajo) queda entre A2 y A3, posicion 1.
-      expect(move).toHaveBeenCalledWith(1, 10, 1);
-      expect(component.planModalBusy).toBe(false);
+    it('orders bastidores but no longer the modules inside them', () => {
+      expect(fixture.nativeElement.querySelector('.plan-modulo-order')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[aria-label="Fabricar antes Grupo 1"]')).not.toBeNull();
     });
 
     it('reorders root bastidores with the arrows and shows the backend error', () => {
@@ -1014,8 +1070,8 @@ describe('Dashboard', () => {
       expect(secciones[0].querySelector('[aria-label="Dividir Grupo 1 entre mesas"]')).toBeNull();
       expect(secciones[1].classList.contains('is-division')).toBe(true);
       expect(secciones[1].querySelector('[aria-label="Unir Grupo 1B"]')).not.toBeNull();
-      expect(secciones[1].querySelector('.plan-order-btn')).not.toBeNull();
-      expect(secciones[1].querySelector('.plan-grupo-actions .plan-order-btn')).toBeNull();
+      // Una parte no se mueve: ni ella ni sus modulos tienen flechas.
+      expect(secciones[1].querySelector('.plan-order-btn')).toBeNull();
     });
   });
 

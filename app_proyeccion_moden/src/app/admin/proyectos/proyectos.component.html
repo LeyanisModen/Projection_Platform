@@ -54,8 +54,8 @@
                         @if (group.archived && project.usuario_nombre) { <span>{{ project.usuario_nombre }}</span> }
                         @if (project.fecha_montaje) { <span>Montaje {{ project.fecha_montaje | date:'dd/MM/yyyy' }}</span> }
                         <span [class.is-warn]="planningTight(project)">{{ planningLabel(project) }}</span>
-                        <span *ngIf="(project.grupos_count || 0) > 0">{{ project.grupos_count }} grupos</span>
-                        <span *ngIf="!project.grupos_count && (project.modulos_count || 0) > 0" class="is-warn">sin grupos</span>
+                        <span *ngIf="(project.grupos_count || 0) > 0">{{ project.grupos_count }} bastidores</span>
+                        <span *ngIf="!project.grupos_count && (project.modulos_count || 0) > 0" class="is-warn">sin bastidores</span>
                         <span *ngIf="(project.modulos_count || 0) > 0"
                             [class.is-ok]="(project.modulos_completados || 0) === project.modulos_count">
                             {{ project.modulos_completados || 0 }}/{{ project.modulos_count }} módulos

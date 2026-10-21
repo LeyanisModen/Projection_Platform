@@ -294,6 +294,17 @@ export class Dashboard implements OnInit, OnDestroy {
   gestionarAplicandoCambios = false;
   gestionarAddProyectoId: number | null = null;
   gestionarBusy = false;
+  showColaModal = false;
+  /** Grupo cuyo orden de superiores se está cambiando desde el card de su mesa SUP. */
+  estrategiaBusyGrupoId: number | null = null;
+  /** Mesa SUP cuya cola se está reordenando con las flechas del card. */
+  mesaReorderBusyId: number | null = null;
+  /** Opciones de orden de la cola superior, en el card de cada mesa SUP. */
+  readonly estrategiasSuperior: { valor: EstrategiaColaSuperior; etiqueta: string; ayuda: string }[] = [
+    { valor: 'PLANIFICADA', etiqueta: 'Planificado', ayuda: 'Alternancia planificada: intercala las mesas inferiores una a una.' },
+    { valor: 'ADAPTATIVA', etiqueta: 'Adaptativo', ayuda: 'Adaptar al avance real: prioriza los superiores que ya necesita la producción inferior.' },
+    { valor: 'MANUAL', etiqueta: 'Manual', ayuda: 'Orden manual: lo ordenáis vosotros con las flechas; lo nuevo entra al final.' },
+  ];
 
   verPlano(proyecto: Proyecto): void {
     if (proyecto.plano_archivo) {
@@ -367,7 +378,7 @@ export class Dashboard implements OnInit, OnDestroy {
 
   grupoEtiqueta(grupo: GrupoBastidor): string {
     if (grupo.etiqueta) return grupo.etiqueta;
-    const base = grupo.nombre || `Grupo ${grupo.indice}`;
+    const base = grupo.nombre || `Bastidor ${grupo.indice}`;
     if (!grupo.sufijo) return base;
     return grupo.nombre ? `${base} ${grupo.sufijo}` : `${base}${grupo.sufijo}`;
   }
@@ -495,6 +506,51 @@ export class Dashboard implements OnInit, OnDestroy {
     return item.status === 'MOSTRANDO' && (item.current_image_index ?? 0) > 1;
   }
 
+  /** La que está en mesa deja de proyectarse si se mueve o se le pone otra delante: se pregunta antes. */
+  private confirmarMoverSup(item: MesaQueueItem, vecino: MesaQueueItem, dir: -1 | 1, mesaNombre: string): boolean {
+    const enMesa = [item, vecino].find(i => this.supEmpezadaEnMesa(i));
+    if (!enMesa || (enMesa === item ? dir !== 1 : dir !== -1)) return true;
+    return confirm(`${enMesa.modulo_nombre} va por el paso ${(enMesa.current_image_index ?? 0) + 1} en ${mesaNombre}. `
+      + 'Volverá a la cola y retomará en ese paso cuando le toque. ¿Seguro?');
+  }
+
+  /** Cola superior tal y como la enseña el card: lo no hecho, de todos los proyectos. */
+  private colaSuperiorDeMesa(mesa: Mesa): MesaQueueItem[] {
+    return (this.mesaQueueItems.get(mesa.id) || []).filter(i => i.status !== 'HECHO');
+  }
+
+  canMoverSupEnMesa(mesa: Mesa, item: MesaQueueItem, dir: -1 | 1): boolean {
+    const lista = this.colaSuperiorDeMesa(mesa);
+    const index = lista.indexOf(item);
+    const target = index + dir;
+    return index >= 0 && target >= 0 && target < lista.length;
+  }
+
+  /** Flechas del card de la mesa SUP en orden manual: el superior pasa delante o detrás de su vecino. */
+  moverSupEnMesa(mesa: Mesa, item: MesaQueueItem, dir: -1 | 1): void {
+    if (this.mesaReorderBusyId != null || !this.canMoverSupEnMesa(mesa, item, dir)) return;
+    const todos = this.colaSuperiorDeMesa(mesa);
+    const desde = todos.indexOf(item);
+    if (!this.confirmarMoverSup(item, todos[desde + dir], dir, mesa.nombre)) return;
+    todos.splice(desde + dir, 0, todos.splice(desde, 1)[0]);
+    this.mesaReorderBusyId = mesa.id;
+    this.cdr.detectChanges();
+    this.api.reorderMesaQueue(todos.map((i, index) => ({ id: i.id, position: index })))
+      .pipe(takeUntil(this.destroy$)).subscribe({
+        next: () => {
+          this.mesaReorderBusyId = null;
+          this.loadMesaQueueItems(mesa.id);
+          this.loadGruposMesas();
+          this.cdr.detectChanges();
+        },
+        error: error => {
+          this.mesaReorderBusyId = null;
+          alert(error?.error?.detail || 'No se pudo cambiar el orden de la mesa superior.');
+          this.cdr.detectChanges();
+        },
+      });
+  }
+
   /** En orden manual manda la ferralla: todo se mueve, tambien la que esta en mesa. */
   canMoverSupItem(col: PlanColumnaSuperior, item: MesaQueueItem, dir: -1 | 1): boolean {
     const index = col.items.indexOf(item);
@@ -506,11 +562,7 @@ export class Dashboard implements OnInit, OnDestroy {
   moverSupItem(col: PlanColumnaSuperior, item: MesaQueueItem, dir: -1 | 1): void {
     if (this.planModalBusy || !this.canMoverSupItem(col, item, dir)) return;
     const vecino = col.items[col.items.indexOf(item) + dir];
-    // La que esta en mesa deja de proyectarse si se mueve o se le pone otra delante.
-    const enMesa = [item, vecino].find(i => this.supEmpezadaEnMesa(i));
-    if (enMesa && (enMesa === item ? dir === 1 : dir === -1)
-        && !confirm(`${enMesa.modulo_nombre} va por el paso ${(enMesa.current_image_index ?? 0) + 1} en ${col.mesa.nombre}. `
-          + 'Volverá a la cola y retomará en ese paso cuando le toque. ¿Seguro?')) return;
+    if (!this.confirmarMoverSup(item, vecino, dir, col.mesa.nombre)) return;
     // Las posiciones son de toda la mesa (puede haber otros proyectos en cola).
     const todos = [...(this.mesaQueueItems.get(col.mesa.id) || [])].filter(i => i.status !== 'HECHO');
     const desde = todos.findIndex(i => i.id === item.id);
@@ -597,13 +649,6 @@ export class Dashboard implements OnInit, OnDestroy {
     return [...(grupo.modulos || [])].reverse();
   }
 
-  /** En la ferralla solo se reordena lo pendiente: un modulo hecho ya no pasa por la mesa. */
-  private planModuloMovible(grupo: GrupoBastidor, moduloId: number): boolean {
-    const info = (grupo.modulos || []).find(m => m.id === moduloId);
-    if (!info || info.inferior_hecho || info.cerrado) return false;
-    return info.movible ?? true;
-  }
-
   private planRoots(): GrupoBastidor[] {
     return this.planModalGrupos.filter(g => !g.es_division);
   }
@@ -622,14 +667,6 @@ export class Dashboard implements OnInit, OnDestroy {
     const index = vecinas.findIndex(g => g.id === grupo.id);
     const target = index + dir;
     return index >= 0 && target >= 0 && target < vecinas.length;
-  }
-
-  canMoveModulo(grupo: GrupoBastidor, modulo: Modulo, dir: -1 | 1): boolean {
-    const orden = this.fabricacionOrder(grupo);
-    const index = orden.findIndex(m => m.id === modulo.id);
-    const target = index + dir;
-    if (index < 0 || target < 0 || target >= orden.length) return false;
-    return this.planModuloMovible(grupo, modulo.id) && this.planModuloMovible(grupo, orden[target].id);
   }
 
   canDividir(grupo: GrupoBastidor): boolean {
@@ -654,15 +691,6 @@ export class Dashboard implements OnInit, OnDestroy {
     const posVecino = ids.indexOf(vecino.id);
     ids.splice(dir < 0 ? posVecino : posVecino + 1, 0, grupo.id);
     this.runPlanAction(this.api.reorderBastidores(this.planModalProyecto.id, ids));
-  }
-
-  moveModuloEnPlan(grupo: GrupoBastidor, modulo: Modulo, dir: -1 | 1): void {
-    if (!this.canMoveModulo(grupo, modulo, dir)) return;
-    const orden = this.fabricacionOrder(grupo);
-    const target = orden.findIndex(m => m.id === modulo.id) + dir;
-    // El backend cuenta posiciones del card (de arriba abajo).
-    const indexDestino = (orden.length - 1) - target;
-    this.runPlanAction(this.api.moveModuloEntreBastidores(modulo.id, grupo.id, indexDestino));
   }
 
   dividirGrupoEnPlan(grupo: GrupoBastidor): void {
@@ -1323,6 +1351,21 @@ export class Dashboard implements OnInit, OnDestroy {
     this.intentarCerrarGestionarModal();
   }
 
+  /** La cola de proyectos del grupo: en mesa y en espera, en su propio modal. */
+  openColaModal(grupo: GrupoMesas): void {
+    this.gestionandoGrupo = grupo;
+    this.gestionarAddProyectoId = null;
+    this.showColaModal = true;
+    this.cdr.detectChanges();
+  }
+
+  closeColaModal(): void {
+    this.showColaModal = false;
+    this.gestionandoGrupo = null;
+    this.gestionarAddProyectoId = null;
+    this.cdr.detectChanges();
+  }
+
   /** Proyectos que se pueden añadir a la cola de este grupo: los que no
    * están ya en ella, aún tienen módulos pendientes y Moden ha validado.
    * Los que tienen validaciones previas sin completar (geometría,
@@ -1366,35 +1409,31 @@ export class Dashboard implements OnInit, OnDestroy {
     });
   }
 
-  setGestionarEstrategiaColaSuperior(estrategia: EstrategiaColaSuperior): void {
-    if (!this.gestionandoGrupo || this.gestionarBusy) return;
-    const grupo = this.gestionandoGrupo;
+  /** Cambia el orden de la cola superior del grupo desde el card de su mesa SUP. */
+  setEstrategiaColaSuperior(grupo: GrupoMesas, estrategia: EstrategiaColaSuperior): void {
+    if (this.estrategiaBusyGrupoId != null) return;
     const anterior = grupo.estrategia_cola_superior || 'PLANIFICADA';
     if (anterior === estrategia) return;
 
     grupo.estrategia_cola_superior = estrategia;
-    const grupoListado = this.gruposMesas.find(item => item.id === grupo.id);
-    if (grupoListado) grupoListado.estrategia_cola_superior = estrategia;
-    this.gestionarBusy = true;
+    this.estrategiaBusyGrupoId = grupo.id;
     this.cdr.detectChanges();
 
-    this.api.updateGrupoMesas(grupo.id, {
-      estrategia_cola_superior: estrategia,
-    }).subscribe({
-      next: (updated) => {
-        this.applyGestionarGrupoUpdate(updated);
-        this.loadMesas();
-        this.gestionarBusy = false;
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        grupo.estrategia_cola_superior = anterior;
-        if (grupoListado) grupoListado.estrategia_cola_superior = anterior;
-        this.gestionarBusy = false;
-        alert(err?.error?.detail || 'No se pudo cambiar el orden de superiores.');
-        this.cdr.detectChanges();
-      },
-    });
+    this.api.updateGrupoMesas(grupo.id, { estrategia_cola_superior: estrategia })
+      .pipe(takeUntil(this.destroy$)).subscribe({
+        next: (updated) => {
+          this.applyGestionarGrupoUpdate(updated);
+          this.loadMesas();
+          this.estrategiaBusyGrupoId = null;
+          this.cdr.detectChanges();
+        },
+        error: (err) => {
+          grupo.estrategia_cola_superior = anterior;
+          this.estrategiaBusyGrupoId = null;
+          alert(err?.error?.detail || 'No se pudo cambiar el orden de superiores.');
+          this.cdr.detectChanges();
+        },
+      });
   }
 
 
@@ -3334,7 +3373,7 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   /**
-   * Muestra separador "<Proyecto> · Grupo N" antes de un item si cambia
+   * Muestra separador "<Proyecto> · Bastidor N" antes de un item si cambia
    * el plan_group_index O el proyecto respecto al item anterior. Solo se
    * aplica a mesas inferiores; en SUP no tiene sentido agrupar visualmente.
    */
@@ -3357,13 +3396,13 @@ export class Dashboard implements OnInit, OnDestroy {
    * Label del divider "<Proyecto> · <Grupo>". Cuando hay varios
    * proyectos en cola de una mesa los GrupoBastidor reinician su
    * numeracion en cada uno, asi que sin el proyecto delante el
-   * operario no distingue 'Grupo 1' de P5 vs 'Grupo 1' de P3.
+   * operario no distingue 'Bastidor 1' de P5 vs 'Bastidor 1' de P3.
    */
   getItemGrupoLabel(item: MesaQueueItem): string {
     const grupoName = (item.grupo_bastidor_nombre || '').trim();
     const grupoIdx = item.grupo_bastidor_indice;
     const sufijo = (item.grupo_bastidor_sufijo || '').trim();
-    const base = grupoName || (grupoIdx != null ? `Grupo ${grupoIdx}` : 'Grupo');
+    const base = grupoName || (grupoIdx != null ? `Bastidor ${grupoIdx}` : 'Bastidor');
     const grupo = !sufijo ? base : (grupoName ? `${base} ${sufijo}` : `${base}${sufijo}`);
     const proyecto = (item.modulo_proyecto_nombre || '').trim();
     return proyecto ? `${proyecto} · ${grupo}` : grupo;

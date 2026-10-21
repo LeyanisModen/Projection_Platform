@@ -1113,7 +1113,7 @@ def _persist_bastidor_groups(proyecto):
         grupo = GrupoBastidor.objects.create(
             proyecto=proyecto,
             indice=indice,
-            nombre=f'Grupo {indice}',
+            nombre=f'Bastidor {indice}',
         )
         created_groups += 1
         # Asigna grupo + orden_intra 1..N en el orden devuelto por
@@ -1153,7 +1153,7 @@ def _assign_modulo_to_group_on_create(modulo, force_new_group=False):
         proyecto.grupos_bastidor.order_by('-indice').first()
     )
     if ultimo_grupo is None:
-        nuevo = GrupoBastidor.objects.create(proyecto=proyecto, indice=1, nombre='Grupo 1')
+        nuevo = GrupoBastidor.objects.create(proyecto=proyecto, indice=1, nombre='Bastidor 1')
         modulo.grupo_bastidor = nuevo
         modulo.orden_intra = 1
         modulo.save(update_fields=['grupo_bastidor', 'orden_intra'])
@@ -1195,7 +1195,7 @@ def _assign_modulo_to_group_on_create(modulo, force_new_group=False):
         nuevo = GrupoBastidor.objects.create(
             proyecto=proyecto,
             indice=siguiente_indice,
-            nombre=f'Grupo {siguiente_indice}',
+            nombre=f'Bastidor {siguiente_indice}',
         )
         modulo.grupo_bastidor = nuevo
         modulo.orden_intra = 1
@@ -2574,7 +2574,7 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         grouped = _build_bastidor_groups(proyecto, modulos, estrategia=estrategia)
         for indice, modulos_in_group in enumerate(grouped, start=1):
             grupo = GrupoBastidor.objects.create(
-                proyecto=proyecto, indice=indice, nombre=f'Grupo {indice}',
+                proyecto=proyecto, indice=indice, nombre=f'Bastidor {indice}',
             )
             for orden, m in enumerate(modulos_in_group, start=1):
                 proyecto.modulos.filter(id=m.id).update(
@@ -3580,14 +3580,14 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
             grupo_destino = GrupoBastidor.objects.create(
                 proyecto=proyecto,
                 indice=siguiente_indice,
-                nombre=f'Grupo {siguiente_indice}',
+                nombre=f'Bastidor {siguiente_indice}',
             )
             grupo_destino_creado = True
         else:
             try:
                 grupo_destino = proyecto.grupos_bastidor.get(pk=grupo_destino_id)
             except GrupoBastidor.DoesNotExist:
-                return Response({'detail': 'Grupo destino no encontrado en este proyecto.'},
+                return Response({'detail': 'Bastidor destino no encontrado en este proyecto.'},
                                 status=status.HTTP_404_NOT_FOUND)
             grupo_destino_creado = False
 
