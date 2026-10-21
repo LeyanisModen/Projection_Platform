@@ -2769,6 +2769,9 @@ class PlanningFoundationTests(APITestCase):
         )
 
     def test_crear_con_estructura_revierte_proyecto_si_todos_fallan(self):
+        # El alta de proyectos es de administracion.
+        self.user.is_staff = True
+        self.user.save(update_fields=['is_staff'])
         inf_key = "PROY_M-99_INF_01.jpg"
         structure = [{
                 "nombre": "M-99",
@@ -2803,6 +2806,9 @@ class PlanningFoundationTests(APITestCase):
         )
 
     def test_crear_con_estructura_conserva_validos_e_informa_omitidos(self):
+        # El alta de proyectos es de administracion.
+        self.user.is_staff = True
+        self.user.save(update_fields=['is_staff'])
         inf_key = "PROY_M-10_INF_01.jpg"
         sup_key = "PROY_M-10_SUP_01.jpg"
         structure = [{
@@ -2855,6 +2861,9 @@ class PlanningFoundationTests(APITestCase):
         )
 
     def test_crear_con_estructura_limpia_archivos_si_falla_despues_de_guardarlos(self):
+        # El alta de proyectos es de administracion.
+        self.user.is_staff = True
+        self.user.save(update_fields=['is_staff'])
         inf_key = "PROY_M-20_INF_01.jpg"
         sup_key = "PROY_M-20_SUP_01.jpg"
         structure = [{
