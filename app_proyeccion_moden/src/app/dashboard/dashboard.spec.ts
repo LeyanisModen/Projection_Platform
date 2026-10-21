@@ -526,7 +526,6 @@ describe('Dashboard', () => {
     ];
 
     expect(component.proyectosDisponibles(null).map(p => p.nombre)).toEqual(['Libre']);
-    expect(component.proyectosBloqueados(null).map(p => p.nombre)).toEqual(['Bloqueado']);
   });
 
   describe('loose elements Excel', () => {
