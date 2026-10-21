@@ -403,7 +403,7 @@
                                     <tr>
                                         <th rowspan="2">Módulo</th>
                                         <th rowspan="2">Proyecto</th>
-                                        <th rowspan="2">Grupo</th>
+                                        <th rowspan="2">Bastidor</th>
                                         <th rowspan="2">Terminado</th>
                                         <th colspan="3" class="stats-th-group">Inferior</th>
                                         <th colspan="3" class="stats-th-group">Superior</th>
@@ -494,10 +494,16 @@
                                         </span>
                                     }
                                 </div>
-                                <button type="button" class="btn-gestionar" (click)="openGestionarModal(grupo)">
-                                    <i class="fa fa-sliders" aria-hidden="true"></i>
-                                    Gestionar
-                                </button>
+                                <div class="grupo-operativo-actions">
+                                    <button type="button" class="btn-gestionar" (click)="openColaModal(grupo)">
+                                        <i class="fa fa-list-ol" aria-hidden="true"></i>
+                                        Cola de proyectos
+                                    </button>
+                                    <button type="button" class="btn-gestionar" (click)="openGestionarModal(grupo)">
+                                        <i class="fa fa-sliders" aria-hidden="true"></i>
+                                        Gestionar mesas
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
@@ -549,6 +555,24 @@
                                     </div>
                                 </div>
 
+                                @if (mesa.activa && mesa.tipo === 'SUPERIOR') {
+                                    <div class="mesa-sup-orden" role="group" aria-label="Orden de la mesa superior">
+                                        <span class="mesa-sup-orden-label">ORDEN</span>
+                                        <div class="mesa-estado-switch mesa-sup-orden-switch">
+                                            @for (opcion of estrategiasSuperior; track opcion.valor) {
+                                                <button type="button" class="estado-opcion"
+                                                    [class.active]="(grupo.estrategia_cola_superior || 'PLANIFICADA') === opcion.valor"
+                                                    [attr.aria-pressed]="(grupo.estrategia_cola_superior || 'PLANIFICADA') === opcion.valor"
+                                                    [disabled]="estrategiaBusyGrupoId === grupo.id"
+                                                    [title]="opcion.ayuda"
+                                                    (click)="setEstrategiaColaSuperior(grupo, opcion.valor)">
+                                                    {{ opcion.etiqueta }}
+                                                </button>
+                                            }
+                                        </div>
+                                    </div>
+                                }
+
                                 @if (!mesa.activa) {
                                     <div class="mesa-empty-inactiva">
                                         <svg width="48" height="48" viewBox="0 0 24 24" fill="none"
@@ -571,6 +595,20 @@
                                             }
                                             <div class="queue-item" [class]="getItemStatusClass(item.status)">
                                                 <div class="queue-item-info">
+                                                    @if (mesa.tipo === 'SUPERIOR' && grupo.estrategia_cola_superior === 'MANUAL') {
+                                                        <div class="queue-item-order" role="group" [attr.aria-label]="'Orden de ' + item.modulo_nombre">
+                                                            <button type="button" class="plan-order-btn" (click)="moverSupEnMesa(mesa, item, -1)"
+                                                                [disabled]="mesaReorderBusyId === mesa.id || !canMoverSupEnMesa(mesa, item, -1)"
+                                                                title="Fabricar antes" [attr.aria-label]="'Fabricar antes ' + item.modulo_nombre">
+                                                                <i class="fa fa-chevron-up" aria-hidden="true"></i>
+                                                            </button>
+                                                            <button type="button" class="plan-order-btn" (click)="moverSupEnMesa(mesa, item, 1)"
+                                                                [disabled]="mesaReorderBusyId === mesa.id || !canMoverSupEnMesa(mesa, item, 1)"
+                                                                title="Fabricar después" [attr.aria-label]="'Fabricar después ' + item.modulo_nombre">
+                                                                <i class="fa fa-chevron-down" aria-hidden="true"></i>
+                                                            </button>
+                                                        </div>
+                                                    }
                                                     <span class="queue-item-nombre">{{ item.modulo_nombre }}</span>
                                                     @if (getItemImageProgress(item); as progress) {
                                                         <span class="queue-item-progress"
@@ -838,22 +876,7 @@
                                             [class.done]="moduloEstadoClass(m) === 'done'"
                                             [class.partial]="moduloEstadoClass(m) === 'partial'"
                                             [class.pending]="moduloEstadoClass(m) === 'pending'">
-                                            @if (seccion.grupo; as grupo) {
-                                                <div class="plan-modulo-order" role="group" [attr.aria-label]="'Orden de ' + m.nombre">
-                                                    <button type="button" class="plan-order-btn" (click)="moveModuloEnPlan(grupo, m, -1)"
-                                                        [disabled]="planModalBusy || !canMoveModulo(grupo, m, -1)"
-                                                        title="Fabricar antes" [attr.aria-label]="'Fabricar antes ' + m.nombre">
-                                                        <i class="fa fa-chevron-up" aria-hidden="true"></i>
-                                                    </button>
-                                                    <button type="button" class="plan-order-btn" (click)="moveModuloEnPlan(grupo, m, 1)"
-                                                        [disabled]="planModalBusy || !canMoveModulo(grupo, m, 1)"
-                                                        title="Fabricar después" [attr.aria-label]="'Fabricar después ' + m.nombre">
-                                                        <i class="fa fa-chevron-down" aria-hidden="true"></i>
-                                                    </button>
-                                                </div>
-                                            } @else {
-                                                <span class="plan-modulo-dot"></span>
-                                            }
+                                            <span class="plan-modulo-dot"></span>
                                             <span class="plan-modulo-nombre">{{ m.nombre }}</span>
                                             <div class="plan-modulo-phases" role="group" [attr.aria-label]="'Fases de ' + m.nombre">
                                                 @for (phase of modulePhases; track phase) {
@@ -928,7 +951,7 @@
                                                 </button>
                                             </div>
                                             <span class="plan-modulo-nombre">{{ item.modulo_nombre }}</span>
-                                            <span class="plan-sup-grupo">{{ item.grupo_bastidor_nombre || ('Grupo ' + item.grupo_bastidor_indice) }}{{ item.grupo_bastidor_sufijo || '' }}</span>
+                                            <span class="plan-sup-grupo">{{ item.grupo_bastidor_nombre || ('Bastidor ' + item.grupo_bastidor_indice) }}{{ item.grupo_bastidor_sufijo || '' }}</span>
                                             @if (item.status === 'MOSTRANDO') {
                                                 <span class="plan-modulo-estado">En mesa · {{ item.current_image_index + 1 }}/{{ item.imagenes_total }}</span>
                                             } @else {
@@ -1289,7 +1312,7 @@
         <div class="modal-overlay" (click)="closeGestionarModal()">
             <div class="modal-content gestionar-modal" (click)="$event.stopPropagation()">
                 <div class="gestionar-modal-header">
-                    <h3>Gestionar · {{ gestionandoGrupo.nombre }}</h3>
+                    <h3>Gestionar mesas · {{ gestionandoGrupo.nombre }}</h3>
                     <button type="button" class="plan-modal-close" (click)="closeGestionarModal()" title="Cerrar">×</button>
                 </div>
 
@@ -1302,54 +1325,6 @@
                             (blur)="saveGestionarGrupoNombre()"
                             (keydown.enter)="saveGestionarGrupoNombre()"
                             maxlength="200">
-                    </section>
-
-                    <section class="gestionar-section">
-                        <h4>Orden de la mesa superior</h4>
-                        <div class="estrategia-superior-options" role="group" aria-label="Estrategia de orden para superiores">
-                            <button type="button"
-                                class="estrategia-superior-option"
-                                [class.active]="gestionandoGrupo.estrategia_cola_superior === 'PLANIFICADA'"
-                                [attr.aria-pressed]="gestionandoGrupo.estrategia_cola_superior === 'PLANIFICADA'"
-                                [disabled]="gestionarBusy || gestionarAplicandoCambios"
-                                (click)="setGestionarEstrategiaColaSuperior('PLANIFICADA')">
-                                <span class="estrategia-icon planificada"><i class="fa fa-random" aria-hidden="true"></i></span>
-                                <span class="estrategia-copy">
-                                    <strong>Alternancia planificada</strong>
-                                    <small>Intercala las mesas inferiores una a una.</small>
-                                </span>
-                                <i class="fa fa-check estrategia-check" aria-hidden="true"></i>
-                            </button>
-                            <button type="button"
-                                class="estrategia-superior-option"
-                                [class.active]="gestionandoGrupo.estrategia_cola_superior === 'ADAPTATIVA'"
-                                [attr.aria-pressed]="gestionandoGrupo.estrategia_cola_superior === 'ADAPTATIVA'"
-                                [disabled]="gestionarBusy || gestionarAplicandoCambios"
-                                (click)="setGestionarEstrategiaColaSuperior('ADAPTATIVA')">
-                                <span class="estrategia-icon adaptativa"><i class="fa fa-bolt" aria-hidden="true"></i></span>
-                                <span class="estrategia-copy">
-                                    <strong>Adaptar al avance real</strong>
-                                    <small>Prioriza los superiores que ya necesita produccion inferior.</small>
-                                </span>
-                                <i class="fa fa-check estrategia-check" aria-hidden="true"></i>
-                            </button>
-                            <button type="button"
-                                class="estrategia-superior-option"
-                                [class.active]="gestionandoGrupo.estrategia_cola_superior === 'MANUAL'"
-                                [attr.aria-pressed]="gestionandoGrupo.estrategia_cola_superior === 'MANUAL'"
-                                [disabled]="gestionarBusy || gestionarAplicandoCambios"
-                                (click)="setGestionarEstrategiaColaSuperior('MANUAL')">
-                                <span class="estrategia-icon manual"><i class="fa fa-hand-paper-o" aria-hidden="true"></i></span>
-                                <span class="estrategia-copy">
-                                    <strong>Orden manual</strong>
-                                    <small>Lo ordenáis vosotros desde el plan; lo nuevo entra al final.</small>
-                                </span>
-                                <i class="fa fa-check estrategia-check" aria-hidden="true"></i>
-                            </button>
-                        </div>
-                        <p class="estrategia-superior-help">
-                            Recomendado cuando las mesas inferiores no avanzan al mismo ritmo.
-                        </p>
                     </section>
 
                     <section class="gestionar-section">
@@ -1388,9 +1363,29 @@
                             }
                         </div>
                     </section>
+                </div>
 
+                <div class="gestionar-modal-footer">
+                    <button type="button"
+                        class="btn-aceptar-gestionar"
+                        [disabled]="gestionarAplicandoCambios"
+                        (click)="closeGestionarModal()">
+                        {{ gestionarAplicandoCambios ? 'Aplicando…' : 'Aceptar y cerrar' }}
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+    @if (showColaModal && gestionandoGrupo) {
+        <div class="modal-overlay" (click)="closeColaModal()">
+            <div class="modal-content gestionar-modal" (click)="$event.stopPropagation()">
+                <div class="gestionar-modal-header">
+                    <h3>Cola de proyectos · {{ gestionandoGrupo.nombre }}</h3>
+                    <button type="button" class="plan-modal-close" (click)="closeColaModal()" title="Cerrar">×</button>
+                </div>
+
+                <div class="gestionar-modal-body">
                     <section class="gestionar-section">
-                        <h4>Cola de proyectos</h4>
 
                         <div class="cola-add-row">
                             <select [(ngModel)]="gestionarAddProyectoId" class="gestionar-input">
@@ -1435,12 +1430,7 @@
                 </div>
 
                 <div class="gestionar-modal-footer">
-                    <button type="button"
-                        class="btn-aceptar-gestionar"
-                        [disabled]="gestionarAplicandoCambios"
-                        (click)="closeGestionarModal()">
-                        {{ gestionarAplicandoCambios ? 'Aplicando…' : 'Aceptar y cerrar' }}
-                    </button>
+                    <button type="button" class="btn-aceptar-gestionar" (click)="closeColaModal()">Cerrar</button>
                 </div>
             </div>
         </div>

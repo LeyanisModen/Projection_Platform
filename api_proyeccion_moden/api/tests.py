@@ -6188,7 +6188,7 @@ class BastidorSelfServiceTests(APITestCase):
         self.assertEqual(response.status_code, 200)
 
         grupos = [g for g in response.data if g["indice"] == 1]
-        self.assertEqual([g["etiqueta"] for g in grupos], ["Grupo 1", "Grupo 1B"])
+        self.assertEqual([g["etiqueta"] for g in grupos], ["Bastidor 1", "Bastidor 1B"])
         raiz, parte = grupos
         # Con alias en la raiz, la parte lo hereda: 'Fachada B'.
         self.bastidor.nombre = "Fachada"
@@ -6202,7 +6202,7 @@ class BastidorSelfServiceTests(APITestCase):
         self.assertEqual(parte["dividido_de"], self.bastidor.id)
         self.assertEqual(parte["sufijo"], "B")
         # El otro bastidor no cambia de numero.
-        self.assertEqual([g["etiqueta"] for g in response.data if g["indice"] == 2], ["Grupo 2"])
+        self.assertEqual([g["etiqueta"] for g in response.data if g["indice"] == 2], ["Bastidor 2"])
 
         # Lo que se muestra se queda en la raiz; el resto se alterna en
         # orden de fabricacion (A4 raiz, A3 parte, A2 raiz, A1 parte).
@@ -6237,7 +6237,7 @@ class BastidorSelfServiceTests(APITestCase):
         response = self.client.post(f"/api/grupos-bastidor/{parte.id}/unir/")
         self.assertEqual(response.status_code, 200)
         self.assertFalse(GrupoBastidor.objects.filter(id=parte.id).exists())
-        self.assertEqual([g["etiqueta"] for g in response.data], ["Grupo 1", "Grupo 2"])
+        self.assertEqual([g["etiqueta"] for g in response.data], ["Bastidor 1", "Bastidor 2"])
         self.assertEqual(
             list(self.bastidor.modulos.order_by("orden_intra").values_list("nombre", flat=True)),
             ["A1", "A2", "A3", "A4", "A5"],

@@ -556,7 +556,7 @@ export class ProyectoDetailComponent implements OnInit {
 
     grupoEtiqueta(grupo: GrupoBastidor): string {
         if (grupo.etiqueta) return grupo.etiqueta;
-        const base = grupo.nombre || `Grupo ${grupo.indice}`;
+        const base = grupo.nombre || `Bastidor ${grupo.indice}`;
         if (!grupo.sufijo) return base;
         return grupo.nombre ? `${base} ${grupo.sufijo}` : `${base}${grupo.sufijo}`;
     }
@@ -639,7 +639,7 @@ export class ProyectoDetailComponent implements OnInit {
             },
             error: (err) => {
                 console.error('Error renaming grupo', err);
-                alert('No se pudo guardar el nombre del grupo.');
+                alert('No se pudo guardar el nombre del bastidor.');
                 this.cdr.detectChanges();
             }
         });
@@ -790,7 +790,7 @@ export class ProyectoDetailComponent implements OnInit {
                     };
                 });
                 this.projectConfigMessage = this.grupos.length
-                    ? 'Ferralla cambiada. Recalcula para aplicar su longitud a los grupos actuales.'
+                    ? 'Ferralla cambiada. Recalcula para aplicar su longitud a los bastidores actuales.'
                     : 'Ferralla cambiada.';
                 this.changingFerralla = false;
                 this.showFerrallaChangeModal = false;

@@ -206,7 +206,7 @@ export interface GrupoBastidor {
     /** Letra de la parte de fabricacion (B, C...); vacio en el bastidor raiz. */
     sufijo?: string;
     dividido_de?: number | null;
-    /** Nombre visible calculado por el backend: 'Grupo 2', 'Grupo 2B'... */
+    /** Nombre visible calculado por el backend: 'Bastidor 2', 'Bastidor 2B'... */
     etiqueta?: string;
     es_division?: boolean;
     /** Raiz que tiene partes de fabricacion. */
