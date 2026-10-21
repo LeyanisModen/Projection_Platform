@@ -437,6 +437,8 @@ export interface TurnoConfig {
     /** Un turno a demanda (la noche) se apaga sin borrarlo. */
     activo: boolean;
     horario: HorarioDia[];
+    /** Personas fijas en el turno; con ellas estadísticas saca los kilos por hora-hombre. */
+    personas?: number;
 }
 
 export interface FerrallaCaptureConfig {
@@ -658,6 +660,9 @@ export interface ProductionStatsResponse {
         horas_productivas: number;
         modulos_por_hora: number;
         kg_por_hora: number;
+        /** Horas de jornada por las personas de cada turno, y kilos por cada una de ellas (null sin personas). */
+        horas_hombre?: number;
+        kg_por_hora_hombre?: number | null;
     };
     por_mesa: ProductionStatsMesa[];
     por_dia: ProductionStatsDay[];

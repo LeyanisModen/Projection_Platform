@@ -991,6 +991,8 @@ class TurnoSerializer(serializers.Serializer):
     nombre = serializers.CharField(max_length=40)
     activo = serializers.BooleanField(default=True)
     horario = TurnoDiaSerializer(many=True)
+    # Personas fijas del turno, para los kilos por hora-hombre.
+    personas = serializers.IntegerField(min_value=0, required=False, default=0)
 
     def validate(self, attrs):
         dias = [item['day'] for item in attrs['horario']]

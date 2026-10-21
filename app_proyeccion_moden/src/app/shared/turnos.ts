@@ -19,6 +19,7 @@ export function copiarTurnos(turnos: TurnoConfig[] | null | undefined): TurnoCon
     nombre: turno.nombre,
     activo: turno.activo,
     horario: turno.horario.map(dia => ({ ...dia })),
+    ...(turno.personas != null ? { personas: turno.personas } : {}),
   }));
 }
 

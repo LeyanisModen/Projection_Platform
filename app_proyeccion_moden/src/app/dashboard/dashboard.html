@@ -222,6 +222,14 @@
                                 <span class="stats-kpi-label">Horas de jornada</span>
                                 <span class="stats-kpi-value">{{ statsData.totals.horas_productivas | number:'1.0-1' }} <small>h</small></span>
                             </div>
+                            <div class="stats-kpi" title="Horas de jornada multiplicadas por las personas de cada turno">
+                                <span class="stats-kpi-label">Horas-hombre</span>
+                                <span class="stats-kpi-value">{{ (statsData.totals.horas_hombre ?? 0) | number:'1.0-1' }} <small>h</small></span>
+                            </div>
+                            <div class="stats-kpi" title="Kilos fabricados por cada hora de cada persona. Las personas de cada turno se ponen en los turnos de trabajo.">
+                                <span class="stats-kpi-label">Kilos por hora-hombre</span>
+                                <span class="stats-kpi-value">{{ (statsData.totals.kg_por_hora_hombre | number:'1.0-1') ?? '—' }} <small>kg/h·persona</small></span>
+                            </div>
                             @if (statsData.tiempos; as tiempos) {
                             <div class="stats-kpi stats-kpi-tiempo" [title]="'Inferior: ' + tiempoDetalle(tiempos.inferior)">
                                 <span class="stats-kpi-label">Tiempo inferior</span>

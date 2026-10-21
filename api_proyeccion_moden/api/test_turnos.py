@@ -128,6 +128,22 @@ class TurnosPlanYEstadisticasTests(APITestCase):
         manana = self.client.get('/api/stats/production/', {'from': '2026-09-29', 'to': '2026-09-29', 'turno': 0}).data
         self.assertEqual([m['nombre'] for m in manana['modulos']], ['M2'])
 
+    def test_los_kilos_por_hora_hombre_usan_las_personas_fijas_de_cada_turno(self):
+        # Sin personas configuradas no hay cifra.
+        sin = self.client.get('/api/stats/production/', {'from': '2026-09-28', 'to': '2026-09-28'}).data['totals']
+        self.assertEqual((sin['horas_hombre'], sin['kg_por_hora_hombre']), (0.0, None))
+
+        self.profile.turnos = [{**MANANA, 'personas': 4}, {**NOCHE, 'personas': 2}]
+        self.profile.save(update_fields=['turnos'])
+        # Lunes 28: madrugada de la noche del domingo (5 h x 2), manana (10 h x 4)
+        # y el principio de su noche (5 h x 2).
+        lunes = self.client.get('/api/stats/production/', {'from': '2026-09-28', 'to': '2026-09-28'}).data['totals']
+        self.assertEqual((lunes['horas_productivas'], lunes['horas_hombre']), (20.0, 60.0))
+        self.assertEqual(lunes['kg_por_hora_hombre'], 0.0)
+        # Solo la noche del lunes al martes: 10 h x 2 personas.
+        noche = self.client.get('/api/stats/production/', {'from': '2026-09-29', 'to': '2026-09-29', 'turno': 1}).data['totals']
+        self.assertEqual((noche['horas_productivas'], noche['horas_hombre']), (10.0, 20.0))
+
     def test_el_objetivo_de_un_turno_es_su_parte_de_los_turnos(self):
         Modulo.objects.bulk_create([Modulo(nombre=f'A{i}', proyecto=self.project) for i in range(100)])
         todos = self.client.get('/api/stats/production/', {'from': '2026-09-28', 'to': '2026-09-28'}).data
@@ -166,6 +182,16 @@ class TurnosConfiguracionTests(APITestCase):
         # La noche del jueves acaba el viernes; la del domingo empieza el domingo.
         self.assertEqual(schedule['active_days'], ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SUN'])
         self.assertEqual((schedule['start_time'], schedule['end_time']), ('00:00', '23:59'))
+
+    def test_las_personas_de_cada_turno_se_guardan_y_vuelven(self):
+        url = f'/api/users/{self.ferralla.pk}/capture-config/'
+        turnos = [{**self._turno(MANANA), 'personas': 6}, self._turno(NOCHE)]
+        response = self.client.put(url, {'turnos': turnos, 'interval_seconds': 20}, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        datos = self.client.get(url).data
+        self.assertEqual([(t['nombre'], t['personas']) for t in datos['turnos']], [('Mañana', 6), ('Noche', 0)])
+        negativo = [{**self._turno(MANANA), 'personas': -1}]
+        self.assertEqual(self.client.put(url, {'turnos': negativo, 'interval_seconds': 20}, format='json').status_code, 400)
 
     def test_un_turno_tiene_que_durar_algo_y_no_se_repiten_nombres(self):
         url = f'/api/users/{self.ferralla.pk}/capture-config/'

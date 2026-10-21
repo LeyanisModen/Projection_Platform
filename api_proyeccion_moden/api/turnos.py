@@ -27,6 +27,9 @@ class Turno:
     nombre: str
     activo: bool
     horario: dict  # {'MON': (time, time)}; fin <= inicio cruza la medianoche
+    # Personas fijas en el turno (las pone la ferralla): con ellas las
+    # estadisticas sacan los kilos por hora-hombre. 0 = sin configurar.
+    personas: int = 0
 
     def cruza_medianoche(self, day):
         inicio, fin = self.horario[day]
@@ -73,11 +76,16 @@ def leer_turnos(raw):
                 continue
             if inicio != fin:
                 horario[day] = (inicio, fin)
+        try:
+            personas = max(0, int(item.get('personas') or 0))
+        except (TypeError, ValueError):
+            personas = 0
         turnos.append(Turno(
             indice=indice,
             nombre=str(item.get('nombre') or f'Turno {indice + 1}')[:40],
             activo=bool(item.get('activo', True)),
             horario=horario,
+            personas=personas,
         ))
     return turnos
 
@@ -87,6 +95,7 @@ def turnos_a_json(turnos):
         {
             'nombre': turno.nombre,
             'activo': turno.activo,
+            'personas': turno.personas,
             'horario': {
                 day: [turno.horario[day][0].strftime('%H:%M'), turno.horario[day][1].strftime('%H:%M')]
                 for day in DAY_CODES if day in turno.horario
