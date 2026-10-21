@@ -57,6 +57,18 @@ describe('Dashboard', () => {
       component.statsTo = stats.range.to;
     });
 
+    it('shows the kilos per man-hour from the people of each shift, or a dash without people', () => {
+      stats.totals.horas_hombre = 48;
+      stats.totals.kg_por_hora_hombre = 12.34;
+      render();
+      expect(text('.stats-kpi[title^="Horas de jornada multiplicadas"] .stats-kpi-value')).toBe('48 h');
+      expect(text('.stats-kpi[title^="Kilos fabricados por cada hora de cada persona"] .stats-kpi-value')).toBe('12.3 kg/h·persona');
+      stats.totals.horas_hombre = 0;
+      stats.totals.kg_por_hora_hombre = null;
+      render();
+      expect(text('.stats-kpi[title^="Kilos fabricados por cada hora de cada persona"] .stats-kpi-value')).toBe('— kg/h·persona');
+    });
+
     it('shows the time per panel as a KPI per phase and a column per mesa', () => {
       stats.tiempos = {
         inferior: {mediana_min: 34.4, media_min: 40.2, paneles: 12, medidos: 3},
@@ -217,7 +229,7 @@ describe('Dashboard', () => {
 
     it('shows every zero-valued KPI and the period target before production starts', () => {
       render();
-      expect(fixture.nativeElement.querySelectorAll('.stats-kpi').length).toBe(13);
+      expect(fixture.nativeElement.querySelectorAll('.stats-kpi').length).toBe(15);
       expect(text('.stats-kpi-value')).toBe('0 / 9 objetivo');
       expect(text('.stats-kpi')).toBe('Módulos 0 / 9 objetivo');
       expect(text('.stats-empty')).toContain('No hay producción registrada');
@@ -322,7 +334,7 @@ describe('Dashboard', () => {
       render();
       expect(component.statsData).toBe(stats);
       expect(text('.stats-error')).toContain('últimos datos disponibles');
-      expect(fixture.nativeElement.querySelectorAll('.stats-kpi').length).toBe(13);
+      expect(fixture.nativeElement.querySelectorAll('.stats-kpi').length).toBe(15);
     });
 
     it('ignores responses for an older selected period', () => {

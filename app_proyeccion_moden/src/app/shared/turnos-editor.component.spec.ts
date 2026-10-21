@@ -62,6 +62,23 @@ describe('TurnosEditorComponent', () => {
     expect(cambios).toBe(3);
   });
 
+  it('keeps a fixed head count per shift, a whole number or nothing', () => {
+    const editor = fixture.componentInstance;
+    const personas = el().querySelector('[aria-label="Personas en el turno Mañana"]') as HTMLInputElement;
+    expect(personas.value).toBe('');
+    editor.setPersonas(turnos[0], '6');
+    expect(turnos[0].personas).toBe(6);
+    editor.setPersonas(turnos[0], 4.7);
+    expect(turnos[0].personas).toBe(4);
+    editor.setPersonas(turnos[0], -2);
+    expect(turnos[0].personas).toBeUndefined();
+    editor.setPersonas(turnos[0], '');
+    expect(turnos[0].personas).toBeUndefined();
+    expect(cambios).toBe(4);
+    expect(copiarTurnos([{ ...turnos[0], personas: 5 }])[0].personas).toBe(5);
+    expect('personas' in copiarTurnos(turnos)[0]).toBe(false);
+  });
+
   it('adds and removes shifts and marks the days that end after midnight', () => {
     (el().querySelector('.turno-anadir') as HTMLButtonElement).click();
     expect(turnos.map(t => t.nombre)).toEqual(['Mañana', 'Turno 2']);

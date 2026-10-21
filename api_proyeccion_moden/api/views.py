@@ -236,6 +236,7 @@ def _turnos_payload(profile):
             'indice': turno.indice,
             'nombre': turno.nombre,
             'activo': turno.activo,
+            'personas': turno.personas,
             'horario': [
                 {
                     'day': day,
@@ -259,6 +260,7 @@ def _guardar_turnos(profile, turnos):
         {
             'nombre': turno['nombre'],
             'activo': turno['activo'],
+            'personas': int(turno.get('personas') or 0),
             'horario': {
                 day: [tramo[0].strftime('%H:%M'), tramo[1].strftime('%H:%M')]
                 for day, tramo in sorted(turno['horario'].items(), key=lambda item: CAPTURE_DAY_ORDER.get(item[0], 99))
@@ -1414,6 +1416,7 @@ class UserViewSet(viewsets.ModelViewSet):
                 {
                     'nombre': turno['nombre'],
                     'activo': turno['activo'],
+                    'personas': turno.get('personas', 0),
                     'horario': {item['day']: (item['start_time'], item['end_time']) for item in turno['horario']},
                 }
                 for turno in data['turnos']
@@ -6156,6 +6159,8 @@ class ProductionStatsView(APIView):
         horas_dia = set()
         eje_dia = []
         working_seconds = 0.0
+        # Segundos trabajados por las personas de cada turno (fijas).
+        working_person_seconds = 0.0
         for tramo in jornada.tramos:
             if turno_sel is None or tramo.turno.indice != turno_sel.indice or not (from_date <= tramo.dia_fin <= to_date):
                 continue
@@ -6164,7 +6169,9 @@ class ProductionStatsView(APIView):
             dia['turnos'] += 1
             dia['horas'] += tramo.segundos / 3600.0
             if tramo.inicio < ahora:
-                working_seconds += (min(tramo.fin, ahora) - tramo.inicio).total_seconds()
+                trabajado = (min(tramo.fin, ahora) - tramo.inicio).total_seconds()
+                working_seconds += trabajado
+                working_person_seconds += trabajado * tramo.turno.personas
             if single_day:
                 # La grafica, de una hora antes a la hora en que acaba.
                 hora = timezone.localtime(tramo.inicio, current_tz).replace(minute=0, second=0, microsecond=0)
@@ -6192,7 +6199,9 @@ class ProductionStatsView(APIView):
                 dia['horas'] += segundos / 3600.0
                 # Horas ya trabajadas: un turno en curso cuenta hasta ahora.
                 if cursor < ahora:
-                    working_seconds += (min(corte, ahora) - cursor).total_seconds()
+                    trabajado = (min(corte, ahora) - cursor).total_seconds()
+                    working_seconds += trabajado
+                    working_person_seconds += trabajado * tramo.turno.personas
                 if single_day:
                     hora = timezone.localtime(cursor, current_tz).replace(minute=0, second=0, microsecond=0)
                     while hora < corte:
@@ -6213,6 +6222,13 @@ class ProductionStatsView(APIView):
         totals['kg_por_hora'] = round(
             totals['peso_total_kg'] / working_hours, 2
         ) if working_hours > 0 else 0.0
+        # Kilos por hora-hombre: las horas de cada turno por sus personas
+        # (fijas, las pone la ferralla). Sin personas no hay cifra.
+        horas_hombre = working_person_seconds / 3600.0
+        totals['horas_hombre'] = round(horas_hombre, 2)
+        totals['kg_por_hora_hombre'] = round(
+            totals['peso_total_kg'] / horas_hombre, 2
+        ) if horas_hombre > 0 else None
 
         # Tiempo por panel. La ventana es mas ancha que el rango: da contexto a
         # las graficas (periodo anterior y siguiente) y el panel anterior de

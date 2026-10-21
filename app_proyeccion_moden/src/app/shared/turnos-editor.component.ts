@@ -19,6 +19,12 @@ import { DIAS, cruzaMedianoche, nuevoTurno, ordenarHorario } from './turnos';
           <input type="text" class="turno-nombre" maxlength="40" [attr.aria-label]="'Nombre del turno ' + (i + 1)"
             [ngModel]="turno.nombre" (ngModelChange)="turno.nombre = $event; cambio.emit()"
             [ngModelOptions]="{ standalone: true }" [disabled]="disabled">
+          <label class="turno-personas" title="Personas que trabajan en este turno; con ellas estadísticas saca los kilos por hora-hombre">
+            <input type="number" min="0" step="1" [attr.aria-label]="'Personas en el turno ' + turno.nombre"
+              [ngModel]="turno.personas ?? null" (ngModelChange)="setPersonas(turno, $event)"
+              [ngModelOptions]="{ standalone: true }" [disabled]="disabled">
+            personas
+          </label>
           <label class="turno-activo" title="Un turno a demanda se apaga sin borrarlo">
             <input type="checkbox" [ngModel]="turno.activo" (ngModelChange)="turno.activo = $event; cambio.emit()"
               [ngModelOptions]="{ standalone: true }" [disabled]="disabled">
@@ -69,6 +75,8 @@ import { DIAS, cruzaMedianoche, nuevoTurno, ordenarHorario } from './turnos';
     .turno-cabecera { display: flex; align-items: center; gap: 10px; }
     .turno-nombre { width: 160px; height: 30px; padding: 0 8px; border: 1px solid var(--line-strong, #d1d5db); border-radius: var(--radius-sm, 6px); background: var(--surface, #fff); color: var(--ink, #111827); font: inherit; font-size: 13px; font-weight: 600; }
     .turno-activo { display: inline-flex; align-items: center; gap: 6px; margin: 0; color: var(--muted, #6b7280); font-size: 12px; cursor: pointer; }
+    .turno-personas { display: inline-flex; align-items: center; gap: 6px; margin: 0; color: var(--muted, #6b7280); font-size: 12px; }
+    .turno-personas input { width: 56px; height: 30px; padding: 0 6px; border: 1px solid var(--line-strong, #d1d5db); border-radius: var(--radius-sm, 6px); background: var(--surface, #fff); color: var(--ink, #111827); font: inherit; font-size: 13px; }
     .turno-quitar { width: 30px; height: 30px; padding: 0; border: 1px solid transparent; border-radius: var(--radius-sm, 6px); background: transparent; color: var(--muted, #6b7280); cursor: pointer; }
     .turno-quitar:hover:not(:disabled) { color: var(--danger, #b91c1c); background: var(--surface-2, #f3f4f6); }
     .turno-dias { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 4px 14px; }
@@ -99,6 +107,13 @@ export class TurnosEditorComponent {
 
   cruza(tramo: HorarioDia): boolean {
     return cruzaMedianoche(tramo);
+  }
+
+  /** Personas fijas del turno: un entero sin signo; en blanco se deja sin poner. */
+  setPersonas(turno: TurnoConfig, valor: unknown): void {
+    const n = valor === null || valor === undefined || valor === '' ? NaN : Math.floor(Number(valor));
+    turno.personas = Number.isFinite(n) && n >= 0 ? n : undefined;
+    this.cambio.emit();
   }
 
   setHora(turno: TurnoConfig, day: CaptureDay, campo: 'start_time' | 'end_time', valor: string): void {
