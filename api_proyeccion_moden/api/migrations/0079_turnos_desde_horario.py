@@ -27,7 +27,8 @@ def horario_como_turno(apps, schema_editor):
                         ]
             profile.turnos = [{'nombre': 'Mañana', 'activo': True, 'horario': horario}]
             cambios.append('turnos')
-        if profile.capacidad_diaria_modulos == 35:
+        # El campo se quito en la 0085: al reejecutar la funcion (tests) ya no existe.
+        if getattr(profile, 'capacidad_diaria_modulos', None) == 35:
             profile.capacidad_diaria_modulos = 25
             cambios.append('capacidad_diaria_modulos')
         if cambios:

@@ -49,7 +49,7 @@ describe('Dashboard', () => {
           modulos_por_hora: 0, kg_por_hora: 0,
         },
         por_mesa: [], por_dia: [],
-        esperado: {capacidad_diaria_modulos: 9, modulos_esperados: 9, proyectos_sin_objetivo: 0},
+        esperado: {ritmo_necesario: 9, modulos_esperados: 9, proyectos_sin_objetivo: 0},
         planificacion: {modulos_por_dia: 9, modulos_hoy: 9, sin_planificar: 0, urgentes: 0, proyectos: []},
       };
       component.statsData = stats;
@@ -256,7 +256,7 @@ describe('Dashboard', () => {
       component.proyectos = [];
       component.gruposMesas = [];
       component.selectedProyecto = {id: 1, planificacion: {modulos_por_dia: 3}} as Proyecto;
-      stats.esperado.capacidad_diaria_modulos = 12;
+      stats.esperado.ritmo_necesario = 12;
       stats.planificacion!.modulos_por_dia = 12;
       stats.planificacion!.modulos_hoy = 0;
       render();
@@ -396,7 +396,7 @@ describe('Dashboard', () => {
         { ...emptyTotals(), hora: '09', modulos_completados: 1 },
         { ...emptyTotals(), hora: '07', modulos_completados: 1 },
       ],
-      esperado: { capacidad_diaria_modulos: 12, modulos_esperados: 12 },
+      esperado: { ritmo_necesario: 12, modulos_esperados: 12 },
     } satisfies ProductionStatsResponse;
 
     const buckets = component.statsBuckets();
@@ -444,7 +444,7 @@ describe('Dashboard', () => {
       range,
       totals: { ...vacio(), modulos_completados: 0, horas_productivas: 0, modulos_por_hora: 0, kg_por_hora: 0 },
       por_mesa: [], por_dia: [], por_hora: null,
-      esperado: { capacidad_diaria_modulos: 0, modulos_esperados: 50 },
+      esperado: { ritmo_necesario: 0, modulos_esperados: 50 },
       ...extra,
     });
 
@@ -477,7 +477,7 @@ describe('Dashboard', () => {
             { ...vacio(), hora: '02', modulos_completados: 1 },
             { ...vacio(), hora: '10', modulos_completados: 1 },
           ],
-          esperado: { capacidad_diaria_modulos: 0, modulos_esperados: 20 },
+          esperado: { ritmo_necesario: 0, modulos_esperados: 20 },
         },
       );
       const buckets = component.statsBuckets();
@@ -503,7 +503,7 @@ describe('Dashboard', () => {
             { ...vacio(), hora: '18', modulos_completados: 1 },
             { ...vacio(), hora: '02', modulos_completados: 2 },
           ],
-          esperado: { capacidad_diaria_modulos: 0, modulos_esperados: 10 },
+          esperado: { ritmo_necesario: 0, modulos_esperados: 10 },
           turno: 1,
         },
       );

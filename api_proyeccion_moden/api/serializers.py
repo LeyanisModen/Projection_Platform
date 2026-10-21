@@ -56,9 +56,6 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
         allow_blank=True,
         allow_null=True,
     )
-    capacidad_diaria_modulos = serializers.IntegerField(
-        source='profile.capacidad_diaria_modulos', required=False, min_value=1
-    )
     bastidor_longitud_cm = serializers.DecimalField(
         source='profile.bastidor_longitud_cm',
         max_digits=6,
@@ -74,7 +71,7 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
         fields = [
             "id", "url", "username", "email", "password", "groups",
             "first_name", "last_name", "telefono", "direccion", "coordinador",
-            "password_texto_plano", "capacidad_diaria_modulos", "bastidor_longitud_cm",
+            "password_texto_plano", "bastidor_longitud_cm",
             "contactos", "direcciones",
         ]
 
@@ -135,7 +132,6 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
         telefono = profile_data.get('telefono')
         direccion = profile_data.get('direccion')
         coordinador = profile_data.get('coordinador')
-        capacidad = profile_data.get('capacidad_diaria_modulos')
         bastidor_longitud = profile_data.get('bastidor_longitud_cm')
         password_texto_plano = profile_data.get('password_texto_plano')
 
@@ -154,8 +150,6 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
             profile_kwargs['password_texto_plano'] = (
                 password_texto_plano if password_texto_plano is not None else (password or '')
             )
-        if capacidad is not None:
-            profile_kwargs['capacidad_diaria_modulos'] = capacidad
         if bastidor_longitud is not None:
             profile_kwargs['bastidor_longitud_cm'] = bastidor_longitud
         UserProfile.objects.create(user=user, **profile_kwargs)
@@ -177,7 +171,6 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
         telefono = profile_data.get('telefono')
         direccion = profile_data.get('direccion')
         coordinador = profile_data.get('coordinador')
-        capacidad = profile_data.get('capacidad_diaria_modulos')
         bastidor_longitud = profile_data.get('bastidor_longitud_cm')
         password_texto_plano_provided = 'password_texto_plano' in profile_data
         password_texto_plano = profile_data.get('password_texto_plano')
@@ -192,8 +185,6 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
             profile_defaults['direccion'] = direccion
         if coordinador is not None:
             profile_defaults['coordinador'] = coordinador
-        if capacidad is not None:
-            profile_defaults['capacidad_diaria_modulos'] = capacidad
         if bastidor_longitud is not None:
             profile_defaults['bastidor_longitud_cm'] = bastidor_longitud
 
@@ -239,7 +230,6 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
     orden_planta = serializers.ReadOnlyField()
     # Se marca con true/false; la fecha la pone el servidor.
     montaje_realizado = serializers.BooleanField(required=False, write_only=True)
-    capacidad_diaria_usuario = serializers.SerializerMethodField()
     grupos_count = serializers.SerializerMethodField()
     modulos_count = serializers.SerializerMethodField()
     modulos_completados = serializers.SerializerMethodField()
@@ -271,7 +261,6 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
             "plano_archivo", "documentos_archivo", "planilla_archivo",
             "elementos_sueltos_archivo",
             "estrategia_bastidor",
-            "capacidad_diaria_usuario",
             "grupos_count", "modulos_count", "modulos_completados",
             "modulos_completados_hoy", "checks_total", "checks_completados",
             "checks_bloqueantes_pendientes", "produccion_bloqueada",
@@ -382,11 +371,6 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
                 'Los elementos sueltos deben estar en un Excel (.xlsx).'
             )
         return value
-
-    def get_capacidad_diaria_usuario(self, obj):
-        if obj.usuario and hasattr(obj.usuario, 'profile'):
-            return obj.usuario.profile.capacidad_diaria_modulos
-        return 12
 
     def get_grupos_count(self, obj):
         return getattr(obj, '_grupos_count', None) or obj.grupos_bastidor.count()

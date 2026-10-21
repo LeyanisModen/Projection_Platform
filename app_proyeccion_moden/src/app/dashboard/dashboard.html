@@ -743,7 +743,7 @@
                                 </button>
                             </div>
                             @if (proyecto.modulos_count) {
-                            <div class="project-deadline"><span [class.aprieta]="planningTight(proyecto)">{{ planningLabel(proyecto) }}</span></div>
+                            <div class="project-deadline"><span [class.aprieta]="proyecto.planificacion?.estado === 'VENCIDO' || proyecto.planificacion?.estado === 'SIN_DIAS'">{{ planningLabel(proyecto) }}</span></div>
                             }
                             <div class="project-montaje-obra" [class.falta]="!proyecto.fecha_montaje_obra" (click)="$event.stopPropagation()">
                                 <label>

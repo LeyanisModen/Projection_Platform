@@ -6,23 +6,25 @@ function plan(projects: Proyecto[]): PlanificacionProyecto | undefined {
     return projects.find(p => p.planificacion?.ritmo_ferralla != null)?.planificacion;
 }
 
-/** Ritmo necesario de la ferralla: sus pendientes entre los dias hasta el ultimo montaje. */
+/** Ritmo necesario hoy: modulos por dia laborable del tramo en curso. */
 export function requiredDaily(projects: Proyecto[]): number {
     return plan(projects)?.ritmo_ferralla ?? 0;
 }
 
-/** Modulos por turno que se espera que saque la ferralla. */
-export function factoryCapacity(projects: Proyecto[]): number | null {
-    return plan(projects)?.capacidad_ferralla ?? null;
+const ritmo = (valor: number): string => Number.isInteger(valor) ? String(valor) : valor.toLocaleString('es-ES', { maximumFractionDigits: 1 });
+
+/** "29 módulos/día hasta el 19/11 · después 21,3/día": los tramos que exigen los montajes. */
+export function planningPace(projects: Proyecto[]): string {
+    const tramos = plan(projects)?.tramos_ferralla ?? [];
+    if (!tramos.length) return 'Sin montajes por delante';
+    const [primero, ...resto] = tramos;
+    const base = `${ritmo(primero.ritmo)} módulos/día hasta el ${ddmm(primero.hasta)}`;
+    return resto.length ? `${base} · después ${ritmo(resto[0].ritmo)}/día` : base;
 }
 
-/** Proyectos que no salen a la capacidad de la ferralla. */
-export function tightProjects(projects: Proyecto[]): number {
-    return projects.filter(planningTight).length;
-}
-
-export function planningTight(project: Proyecto): boolean {
-    return (project.planificacion?.modulos_extra || 0) > 0;
+/** Forjados en la cola de las lineas por delante de otro que monta antes. */
+export function queueOutOfOrder(projects: Proyecto[]): string[] {
+    return plan(projects)?.cola_fuera_de_orden ?? [];
 }
 
 export function planningIssues(projects: Proyecto[]): number {
@@ -30,13 +32,12 @@ export function planningIssues(projects: Proyecto[]): number {
 }
 
 export function planningMargin(margen: number | null | undefined): string {
-    if (!margen) return 'sin margen';
-    return margen === 1 ? '1 día de margen' : `${margen} días de margen`;
+    if (!margen) return 'sin holgura';
+    return margen === 1 ? '1 día de holgura' : `${margen} días de holgura`;
 }
 
-/** "Fabricación 07/10 → 13/10" o, si no llega, cuanto le falta y para cuando. */
+/** "Fabricación 07/10 → 13/10" al ritmo que exigen los montajes. */
 export function planningWindow(plan: PlanificacionProyecto): string {
-    if (plan.modulos_extra) return `Aprieta: +${plan.modulos_extra} módulos para el ${ddmm(plan.ultimo_dia)}`;
     const inicio = ddmm(plan.fabricacion_inicio);
     const fin = ddmm(plan.fabricacion_fin);
     return fin && fin !== inicio ? `Fabricación ${inicio} → ${fin}` : `Fabricación ${inicio}`;
@@ -48,10 +49,8 @@ export function planningLabel(project: Proyecto): string {
     switch (plan.estado) {
         case 'PLANIFICADO': {
             const base = !plan.fabricacion_inicio
-                ? `${plan.modulos_por_dia} módulos/turno · ${plan.dias_disponibles} turnos disponibles`
-                : plan.modulos_extra
-                    ? planningWindow(plan)
-                    : `${planningWindow(plan)} · ${planningMargin(plan.margen_dias)}`;
+                ? `${plan.modulos_por_dia} módulos/día · ${plan.dias_disponibles} días disponibles`
+                : `${planningWindow(plan)} · ${planningMargin(plan.margen_dias)}`;
             const previstos = plan.modulos_previstos || 0;
             const subidos = plan.modulos_subidos ?? 0;
             return previstos > subidos ? `${base} · ${subidos} de ${previstos} subidos` : base;

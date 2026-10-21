@@ -28,7 +28,7 @@ import { Subject, takeUntil, interval, forkJoin, Observable, of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
 import { ZoomableImageComponent } from '../shared/zoomable-image/zoomable-image.component';
-import { planningIssues, planningLabel, planningTight } from '../shared/project-planning';
+import { planningIssues, planningLabel } from '../shared/project-planning';
 import { agruparPorEdificio, GrupoEdificio } from '../shared/edificios';
 
 // Graficas: naranja de marca para la serie principal, gris para las secundarias
@@ -146,7 +146,6 @@ interface Subfase {
 })
 export class Dashboard implements OnInit, OnDestroy {
   readonly planningLabel = planningLabel;
-  readonly planningTight = planningTight;
   // Sidebar State
   panelState: 'collapsed' | 'expanded' = 'expanded';
   // Data
@@ -2556,8 +2555,12 @@ export class Dashboard implements OnInit, OnDestroy {
     const valores = (pick: (b: StatsBucket) => number | null): Array<number | null> =>
       buckets.map(b => b.futuro ? null : pick(b));
     const hayObjetivo = buckets.some(b => b.meta_modulos > 0);
-    const cap = Math.max(0, ...buckets.map(b => b.granularity === 'week' ? 0 : b.meta_modulos));
-    const capLabel = formatNumber(cap, 'en-US', '1.0-1');
+    // El objetivo va por tramos de montaje: si cambia dentro del rango, se dice el rango.
+    const metas = buckets.filter(b => b.granularity !== 'week' && b.meta_modulos > 0).map(b => b.meta_modulos);
+    const cap = metas.length ? Math.max(...metas) : 0;
+    const minCap = metas.length ? Math.min(...metas) : 0;
+    const capLabel = Math.abs(cap - minCap) < 0.05 ? formatNumber(cap, 'en-US', '1.0-1')
+      : `${formatNumber(metas[0], 'en-US', '1.0-1')} → ${formatNumber(metas[metas.length - 1], 'en-US', '1.0-1')}`;
     const vista: StatsVista = {
       labels: buckets.map(b => b.label),
       pending: buckets.map(b => b.en_curso),
@@ -2704,14 +2707,19 @@ export class Dashboard implements OnInit, OnDestroy {
     return semana.has(d.getDay());
   }
 
-  /** Objetivo de cada dia: el del periodo repartido por los turnos de cada dia. */
+  /** Objetivo de cada dia: el ritmo de su tramo (lo que exigen los montajes), que manda el servidor. */
   private objetivoPorDia(): Map<string, number> {
     const objetivo = new Map<string, number>();
     const data = this.statsData;
     const target = this.statsPeriodTarget();
     if (!data || target === null || target <= 0) return objetivo;
     const dias = data.range.dias;
+    if (dias?.some(dia => typeof dia.objetivo === 'number')) {
+      dias.forEach(dia => { if (dia.objetivo) objetivo.set(dia.fecha, dia.objetivo); });
+      return objetivo;
+    }
     if (dias) {
+      // Servidor anterior a los tramos: el objetivo del periodo repartido por turnos.
       const turnos = dias.reduce((total, dia) => total + dia.turnos, 0);
       if (turnos > 0) dias.forEach(dia => objetivo.set(dia.fecha, (target * dia.turnos) / turnos));
       return objetivo;

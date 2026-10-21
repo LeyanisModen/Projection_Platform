@@ -31,10 +31,9 @@
                 <span class="group-name">{{ group.username }}</span>
                 <span class="meta">{{ group.projects.length }} {{ group.projects.length === 1 ? 'proyecto' : 'proyectos' }}</span>
                 @if (!group.archived) {
-                <span class="meta group-demand" title="Ritmo por turno para llegar a todos los montajes fabricando un proyecto detrás de otro">
-                    <span [class.is-warn]="(factoryCapacity(group.projects) ?? 0) > 0 && requiredDaily(group.projects) > factoryCapacity(group.projects)!">{{ requiredDaily(group.projects) }} módulos/turno</span>
-                    @if (factoryCapacity(group.projects); as capacidad) { <span> · capacidad {{ capacidad }}</span> }
-                    @if (tightProjects(group.projects)) { <span class="is-warn"> · {{ tightProjects(group.projects) }} {{ tightProjects(group.projects) === 1 ? 'aprieta' : 'aprietan' }}</span> }
+                <span class="meta group-demand" title="Lo que exigen los montajes: el que más aprieta marca el ritmo hasta su fecha, después se recalcula con los que quedan">
+                    <span>{{ planningPace(group.projects) }}</span>
+                    @if (queueOutOfOrder(group.projects).length) { <span class="is-warn"> · en cola antes que otro que monta antes: {{ queueOutOfOrder(group.projects).join(', ') }}</span> }
                     @if (planningIssues(group.projects)) { <span class="is-warn"> · {{ planningIssues(group.projects) }} sin planificar</span> }
                 </span>
                 }
@@ -64,7 +63,7 @@
                         @if (project.usuario && !project.aceptado_por_ferralla_at && !group.archived) {
                             <span class="is-warn" title="La ferralla aún no lo ha aceptado desde sus notificaciones">Pendiente de aceptar por la ferralla</span>
                         }
-                        <span [class.is-warn]="planningTight(project)">{{ planningLabel(project) }}</span>
+                        <span [class.is-warn]="project.planificacion?.estado === 'VENCIDO' || project.planificacion?.estado === 'SIN_DIAS'">{{ planningLabel(project) }}</span>
                         <span *ngIf="(project.grupos_count || 0) > 0">{{ project.grupos_count }} bastidores</span>
                         <span *ngIf="!project.grupos_count && (project.modulos_count || 0) > 0" class="is-warn">sin bastidores</span>
                         <span *ngIf="(project.modulos_count || 0) > 0"

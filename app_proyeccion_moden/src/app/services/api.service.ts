@@ -26,7 +26,6 @@ export interface User {
     direccion?: string;
     coordinador?: string;
     password_texto_plano?: string;
-    capacidad_diaria_modulos?: number;
     bastidor_longitud_cm?: number;
     contactos?: FerrallaContacto[];
     direcciones?: FerrallaDireccion[];
@@ -64,17 +63,26 @@ export interface PlanificacionProyecto {
     estado: 'COMPLETADO' | 'SIN_FECHA' | 'SIN_MODULOS' | 'SIN_FERRALLA' | 'VENCIDO' | 'SIN_DIAS' | 'PLANIFICADO' | 'ARCHIVADO';
     fecha_calculo: string;
     dias_produccion: string[];
-    /** Plan de la ferralla: sus proyectos uno detras de otro. */
+    /** Plan de la ferralla: lo que exigen los montajes, por tramos. */
+    /** Ritmo necesario hoy (modulos por dia laborable del tramo en curso). */
     ritmo_ferralla?: number | null;
-    capacidad_ferralla?: number | null;
-    aprietan_ferralla?: number;
+    /** Tramos de la ferralla: hasta que montaje y a que ritmo. */
+    tramos_ferralla?: Array<{ hasta: string; ritmo: number }>;
+    /** Forjado cuyo montaje marca el ritmo de hoy. */
+    manda_nombre?: string | null;
+    /** Forjados en la cola de las lineas por delante de otro que monta antes. */
+    cola_fuera_de_orden?: string[];
+    /** Tramo del proyecto y su ritmo. */
+    tramo?: number | null;
+    ritmo_tramo?: number | null;
+    tramo_hasta?: string | null;
+    cierra_tramo?: boolean;
     fabricacion_inicio?: string | null;
     fabricacion_fin?: string | null;
     /** Ultimo dia de fabricacion: el laborable anterior al montaje. */
     ultimo_dia?: string | null;
+    /** Holgura: dias laborables entre terminarlo y su ultimo dia. */
     margen_dias?: number | null;
-    /** Modulos que no salen a la capacidad de la ferralla (horas extra, sabados...). */
-    modulos_extra?: number;
     modulos_hoy?: number;
     modulos_semana?: number;
 }
@@ -174,7 +182,6 @@ export interface Proyecto {
     /** Excel de elementos sueltos a llevar a obra (barras, vigas, zunchos fuera de modulo). */
     elementos_sueltos_archivo?: string | null;
     estrategia_bastidor: EstrategiaBastidor;
-    capacidad_diaria_usuario?: number;
     grupos_count?: number;
     modulos_count?: number;
     modulos_completados?: number;
@@ -644,8 +651,8 @@ export interface ElementosSueltos {
 export interface ProductionStatsResponse {
     range: {
         from: string; to: string; working_days: number; festivos?: string[];
-        /** Dias de produccion del rango con sus turnos (un turno de noche cuenta para el dia en que empieza). */
-        dias?: Array<{ fecha: string; turnos: number; horas: number }>;
+        /** Dias del rango con sus horas de turno y el objetivo de cada uno. */
+        dias?: Array<{ fecha: string; turnos: number; horas: number; objetivo?: number }>;
         /** Vista de un dia: sus horas de turno (las que tienen objetivo). */
         horas?: string[] | null;
         /** Vista de un dia con un turno elegido: ese turno entero, de una hora antes a la hora en que acaba. */
@@ -688,10 +695,13 @@ export interface ProductionStatsResponse {
         }>;
     } | null;
     esperado: {
-        capacidad_diaria_modulos: number;
+        /** Ritmo necesario hoy: modulos por dia laborable del tramo en curso. */
+        ritmo_necesario?: number;
         modulos_esperados: number | null;
         proyectos_sin_objetivo?: number;
         fecha_referencia?: string;
+        /** Objetivo de cada dia laborable del rango (el ritmo de su tramo). */
+        por_dia?: Record<string, number>;
     };
     planificacion?: {
         modulos_por_dia: number;

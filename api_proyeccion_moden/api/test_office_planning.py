@@ -17,7 +17,7 @@ from .models import (
     ProyectoCheckAdjunto, ProyectoCheckDefinicion, TrabajadorOficina, UserProfile,
 )
 from .office import CHECK_ATTACHMENT_MAX_BYTES
-from .planning import DAY_CODES, demand_summary, production_day_count, project_demand
+from .planning import DAY_CODES, demand_summary, plan_ferralla, production_day_count, project_demand
 
 
 class ProductionDayTests(SimpleTestCase):
@@ -765,7 +765,9 @@ class OfficePlanningTests(APITestCase):
         self.assertEqual(self.client.patch(url, {'fecha_montaje': '2026-10-02'}, format='json').status_code, 400)
 
     @patch('api.planning.timezone.localdate', return_value=date(2026, 9, 4))
-    def test_factory_schedule_change_recalculates_all_projects_and_total(self, _today):
+    def test_factory_shifts_do_not_change_the_plan(self, _today):
+        """El plan va por dias laborables: doblar turno o trabajar el finde es
+        cosa de la ferralla y no cambia lo que exigen los montajes."""
         for project in (self.project, self.project2):
             project.fecha_montaje = date(2026, 9, 8)
             project.save()
@@ -780,17 +782,17 @@ class OfficePlanningTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         for project in (self.project, self.project2):
             plan = self.client.get(f'/api/proyectos/{project.pk}/').data['planificacion']
-            self.assertEqual(plan['dias_produccion'], list(DAY_CODES))
-            self.assertEqual((plan['dias_disponibles'], plan['modulos_por_dia']), (4, 2))
+            self.assertEqual(plan['dias_produccion'], list(DAY_CODES[:5]))
+            self.assertEqual((plan['dias_disponibles'], plan['modulos_por_dia']), (2, 3))
         self.client.force_authenticate(self.factory)
         stats = self.client.get('/api/stats/production/?from=2026-09-04&to=2026-09-04')
         self.assertEqual(stats.status_code, 200)
-        # Los dos proyectos en serie: 12 modulos entre 4 dias, no 2 + 2.
-        self.assertEqual(stats.data['planificacion']['modulos_por_dia'], 3)
-        self.assertEqual(stats.data['planificacion']['modulos_hoy'], 3)
+        # Los dos proyectos juntos: 12 modulos entre los 2 dias hasta el montaje.
+        self.assertEqual(stats.data['planificacion']['modulos_por_dia'], 6)
+        self.assertEqual(stats.data['planificacion']['modulos_hoy'], 6)
 
     @patch('api.planning.timezone.localdate', return_value=date(2026, 9, 4))
-    def test_reassignment_uses_new_factory_schedule_immediately(self, _today):
+    def test_reassignment_recalculates_with_the_new_factory(self, _today):
         UserProfile.objects.create(user=self.other, capture_active_days=['MON'])
         self.project.fecha_montaje = date(2026, 9, 8)
         self.project.save()
@@ -801,18 +803,8 @@ class OfficePlanningTests(APITestCase):
         }, format='json')
         self.assertEqual(response.status_code, 200)
         plan = response.data['planificacion']
-        self.assertEqual(plan['dias_produccion'], ['MON'])
-        self.assertEqual((plan['dias_disponibles'], plan['modulos_por_dia']), (1, 6))
-
-    def test_empty_factory_schedule_does_not_fall_back_to_weekdays(self):
-        self.profile.capture_active_days = []
-        self.profile.save()
-        self.project.fecha_montaje = date(2026, 9, 8)
-        self.create_module()
-        plan = project_demand(self.project, date(2026, 9, 4))
-        self.assertEqual(plan['dias_produccion'], [])
-        self.assertEqual(plan['estado'], 'SIN_DIAS')
-        self.assertIsNone(plan['modulos_por_dia'])
+        self.assertEqual(plan['dias_produccion'], list(DAY_CODES[:5]))
+        self.assertEqual((plan['dias_disponibles'], plan['modulos_por_dia']), (2, 3))
 
     def test_unassigned_project_has_no_assumed_working_days(self):
         self.project.usuario = None
@@ -821,6 +813,7 @@ class OfficePlanningTests(APITestCase):
         plan = project_demand(self.project, date(2026, 9, 4))
         self.assertEqual(plan['dias_produccion'], [])
         self.assertEqual(plan['estado'], 'SIN_FERRALLA')
+        self.assertIsNone(plan['dias_disponibles'])
         self.assertIsNone(plan['modulos_por_dia'])
 
     def test_missing_profile_uses_existing_factory_default_without_writing(self):
@@ -844,7 +837,7 @@ class OfficePlanningTests(APITestCase):
         self.project.modulos_previstos = 0
         self.assertEqual(project_demand(self.project, date(2026, 9, 4))['modulos_pendientes'], 1)
 
-    def test_demand_rounds_up_and_uses_the_factory_pace_not_the_sum_of_projects(self):
+    def test_demand_uses_the_factory_pace_not_the_sum_of_projects(self):
         self.project.fecha_montaje = date(2026, 9, 8)
         self.project.save()
         for _ in range(5):
@@ -855,7 +848,7 @@ class OfficePlanningTests(APITestCase):
         self.create_module(self.project2)
         today = date(2026, 9, 4)
         plan = project_demand(self.project, today)
-        self.assertEqual((plan['modulos_pendientes'], plan['dias_disponibles'], plan['modulos_por_dia']), (5, 2, 3))
+        self.assertEqual((plan['modulos_pendientes'], plan['dias_disponibles'], plan['modulos_por_dia']), (5, 2, 2.5))
         summary = demand_summary([self.project, self.project2], today)
         # Uno detras de otro: 6 modulos entre los 2 dias hasta el ultimo montaje.
         self.assertEqual(summary['modulos_por_dia'], 3)
@@ -863,9 +856,7 @@ class OfficePlanningTests(APITestCase):
         self.assertEqual(demand_summary([self.project], date(2026, 9, 5))['modulos_hoy'], 0)
 
     @patch('api.planning.timezone.localdate', return_value=date(2026, 9, 7))
-    def test_factory_plan_goes_project_after_project_and_warns_only_above_capacity(self, _today):
-        self.profile.capacidad_diaria_modulos = 10
-        self.profile.save()
+    def test_factory_plan_follows_the_mounting_that_presses_most(self, _today):
         # P1: 20 modulos, montaje viernes 18 (9 dias). P2: 30, montaje jueves 10 (3 dias).
         self.project.fecha_montaje = date(2026, 9, 18)
         self.project.save()
@@ -873,35 +864,76 @@ class OfficePlanningTests(APITestCase):
         self.project2.save()
         Modulo.objects.bulk_create([Modulo(nombre=f'A{i}', proyecto=self.project) for i in range(20)])
         Modulo.objects.bulk_create([Modulo(nombre=f'B{i}', proyecto=self.project2) for i in range(30)])
-        # P1 esta en la cola de la linea: va primero aunque monte mas tarde.
+        # P1 esta en la cola de la linea por delante de P2, que monta antes.
         linea = GrupoMesas.objects.create(nombre='Linea', usuario=self.factory)
         GrupoMesasProyecto.objects.create(grupo_mesas=linea, proyecto=self.project, orden=0)
+        GrupoMesasProyecto.objects.create(grupo_mesas=linea, proyecto=self.project2, orden=1)
 
         def plan(project):
             return self.client.get(f'/api/proyectos/{project.pk}/').data['planificacion']
 
         primero, segundo = plan(self.project), plan(self.project2)
-        # Ritmo necesario: 50 modulos entre los 9 dias hasta el ultimo montaje.
-        self.assertEqual((primero['ritmo_ferralla'], primero['capacidad_ferralla'], primero['aprietan_ferralla']), (6, 10, 1))
-        # A 10/dia, P1 se hace lunes y martes y le sobran 7 dias.
+        # P2 aprieta: 30 modulos en 3 dias son 10 al dia, mas que los 50 en 9
+        # (5,6). Hasta el 10/09 el ritmo es 10; despues, los 20 de P1 en 6 dias.
+        self.assertEqual((segundo['ritmo_ferralla'], segundo['ritmo_tramo'], segundo['cierra_tramo'], segundo['tramo']), (10.0, 10.0, True, 0))
+        self.assertEqual(segundo['tramos_ferralla'], [{'hasta': '2026-09-10', 'ritmo': 10.0}, {'hasta': '2026-09-18', 'ritmo': 3.3}])
+        self.assertEqual(segundo['manda_nombre'], 'P2')
         self.assertEqual(
-            (primero['fabricacion_inicio'], primero['fabricacion_fin'], primero['margen_dias'], primero['modulos_extra']),
-            ('2026-09-07', '2026-09-08', 7, 0),
+            (segundo['fabricacion_inicio'], segundo['fabricacion_fin'], segundo['ultimo_dia'], segundo['margen_dias']),
+            ('2026-09-07', '2026-09-09', '2026-09-09', 0),
         )
-        self.assertEqual((primero['modulos_hoy'], primero['modulos_semana']), (10, 10))
-        # P2 empieza el miercoles y tiene que estar el miercoles: le faltan 20 modulos.
+        self.assertEqual((segundo['modulos_hoy'], segundo['modulos_semana']), (10, 20))
+        # P1 va detras, al ritmo de su tramo, y lo cierra sin holgura.
+        self.assertEqual((primero['tramo'], primero['ritmo_tramo'], primero['cierra_tramo']), (1, 3.3, True))
         self.assertEqual(
-            (segundo['fabricacion_inicio'], segundo['ultimo_dia'], segundo['margen_dias'], segundo['modulos_extra']),
-            ('2026-09-09', '2026-09-09', 0, 20),
+            (primero['fabricacion_inicio'], primero['fabricacion_fin'], primero['ultimo_dia'], primero['margen_dias']),
+            ('2026-09-10', '2026-09-17', '2026-09-17', 0),
         )
-        self.assertEqual((segundo['modulos_hoy'], segundo['modulos_semana']), (0, 30))
+        self.assertEqual((primero['modulos_hoy'], primero['modulos_semana']), (0, 10))
+        # Ya no hay capacidad ni avisos de apretar; si hay aviso de cola desordenada.
+        self.assertNotIn('capacidad_ferralla', primero)
+        self.assertNotIn('modulos_extra', primero)
+        self.assertEqual(primero['cola_fuera_de_orden'], ['P1'])
         # La lista comparte el mismo plan.
         listed = {row['id']: row['planificacion'] for row in self.client.get('/api/proyectos/').data['results']}
-        self.assertEqual(listed[self.project2.pk]['modulos_extra'], 20)
-        # Con capacidad suficiente no hay aviso.
-        self.profile.capacidad_diaria_modulos = 30
-        self.profile.save()
-        self.assertEqual((plan(self.project2)['modulos_extra'], plan(self.project2)['aprietan_ferralla']), (0, 0))
+        self.assertEqual(listed[self.project2.pk]['ritmo_tramo'], 10.0)
+        # Con mas tiempo para P2, un solo tramo: 50 modulos en 9 dias.
+        self.project2.fecha_montaje = date(2026, 9, 18)
+        self.project2.save()
+        self.assertEqual((plan(self.project2)['ritmo_ferralla'], plan(self.project2)['tramos_ferralla']), (5.6, [{'hasta': '2026-09-18', 'ritmo': 5.6}]))
+
+    @patch('api.planning.timezone.localdate', return_value=date(2026, 9, 7))
+    def test_queue_warning_looks_at_each_line_on_its_own(self, _today):
+        x = Proyecto.objects.create(nombre='X', usuario=self.factory, fecha_montaje=date(2026, 9, 8))
+        self.project.fecha_montaje = date(2026, 9, 9)
+        self.project.save()
+        self.project2.fecha_montaje = date(2026, 9, 11)
+        self.project2.save()
+        for project in (x, self.project, self.project2):
+            Modulo.objects.create(nombre='M', proyecto=project)
+        linea1 = GrupoMesas.objects.create(nombre='L1', usuario=self.factory)
+        linea2 = GrupoMesas.objects.create(nombre='L2', usuario=self.factory)
+        # Cada linea respeta su orden: ningun aviso aunque P2 sea el primero de la suya.
+        GrupoMesasProyecto.objects.create(grupo_mesas=linea1, proyecto=x, orden=0)
+        GrupoMesasProyecto.objects.create(grupo_mesas=linea1, proyecto=self.project, orden=1)
+        GrupoMesasProyecto.objects.create(grupo_mesas=linea2, proyecto=self.project2, orden=0)
+        self.assertEqual(plan_ferralla(self.factory.pk)['cola_fuera_de_orden'], [])
+        # P2 por delante de X en su linea: aviso.
+        GrupoMesasProyecto.objects.create(grupo_mesas=linea2, proyecto=x, orden=1)
+        self.assertEqual(plan_ferralla(self.factory.pk)['cola_fuera_de_orden'], ['P2'])
+
+    @patch('api.planning.timezone.localdate', return_value=date(2026, 9, 7))
+    def test_today_and_week_never_add_up_to_more_than_the_pending_modules(self, _today):
+        # Tres forjados de 3 montando el miercoles: 4,5 al dia, el segundo a medias.
+        tercero = Proyecto.objects.create(nombre='P3', usuario=self.factory, fecha_montaje=date(2026, 9, 9))
+        for project in (self.project, self.project2, tercero):
+            project.fecha_montaje = date(2026, 9, 9)
+            project.save()
+            Modulo.objects.bulk_create([Modulo(nombre=f'{project.nombre}-{i}', proyecto=project) for i in range(3)])
+        filas = plan_ferralla(self.factory.pk)['proyectos']
+        self.assertEqual((filas[self.project2.pk]['modulos_hoy'], filas[self.project2.pk]['modulos_semana']), (2, 1))
+        for fila in filas.values():
+            self.assertLessEqual(fila['modulos_hoy'] + fila['modulos_semana'], fila['modulos_pendientes'])
 
     @patch('api.planning.timezone.localdate', return_value=date(2026, 9, 7))
     def test_holidays_of_all_factories_and_of_its_own_are_not_working_days(self, _today):
@@ -934,12 +966,10 @@ class OfficePlanningTests(APITestCase):
         }, format='json')
         self.assertEqual(event.status_code, 201)
         self.assertIsNone(event.data['ferralla'])
-        # Los nacionales vienen precargados y la capacidad por defecto es lo
-        # que se espera de un turno.
+        # Los nacionales vienen precargados.
         self.assertTrue(EventoCalendario.objects.filter(
             tipo='FESTIVO', inicio=date(2026, 10, 12), ferralla__isnull=True,
         ).exists())
-        self.assertEqual(UserProfile.objects.create(user=self.other).capacidad_diaria_modulos, 25)
 
     def test_unplanned_overdue_and_complete_demand(self):
         module = self.create_module()
@@ -948,10 +978,9 @@ class OfficePlanningTests(APITestCase):
         self.project.fecha_montaje = today
         self.assertEqual(project_demand(self.project, today)['estado'], 'VENCIDO')
         self.assertIsNone(project_demand(self.project, today)['modulos_por_dia'])
-        self.project.fecha_montaje = date(2026, 9, 6)
-        self.profile.capture_active_days = ['MON']
-        self.profile.save()
-        self.assertEqual(project_demand(self.project, today)['estado'], 'SIN_DIAS')
+        # Montaje el lunes y hoy sabado: ningun dia laborable por delante.
+        self.project.fecha_montaje = date(2026, 9, 7)
+        self.assertEqual(project_demand(self.project, date(2026, 9, 5))['estado'], 'SIN_DIAS')
         module.estado = 'COMPLETADO'
         module.save()
         self.assertEqual(project_demand(self.project, today)['estado'], 'COMPLETADO')

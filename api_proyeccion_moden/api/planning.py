@@ -1,50 +1,34 @@
-"""Plan de fabricacion de cada ferralla: un proyecto detras de otro.
+"""Plan de fabricacion de cada ferralla: lo que exigen los montajes.
 
-La ferralla fabrica en serie: primero lo que esta en la cola de sus lineas
-(en ese orden) y despues el resto por fecha de montaje; al acabar un
-proyecto se pone con el siguiente. Los modulos tienen que estar hechos el
-dia laborable anterior al montaje. Cuentan solo los dias que trabaja la
-ferralla y no los festivos del calendario (los de todas y los suyos).
+El objetivo no sale de lo que la ferralla esta haciendo ni de lo que Moden
+cree que puede hacer, sino de los forjados que vienen. Los modulos tienen
+que estar hechos el dia laborable anterior al montaje y cuentan los dias
+laborables (lunes a viernes) menos los festivos del calendario; si para
+llegar hay que doblar turno, eso lo decide la ferralla.
 
-- Ritmo necesario: todos los modulos pendientes entre los dias laborables
-  que quedan hasta el ultimo montaje. Es la media que hay que sostener.
-- Capacidad: los modulos por turno que se espera sacar (se configura en
-  cada ferralla). A ese ritmo se calcula cuando se fabrica cada proyecto. Si
-  un proyecto no llega, se avisa de cuantos modulos de mas necesita (horas
-  extra, sabados...) y se supone que se cubren: el siguiente empieza a
-  tiempo y el retraso no se arrastra.
-
-Todo se cuenta en turnos (api/turnos.py): un dia con turno de manana y de
-noche son dos turnos de fabricacion, y el ritmo y la capacidad son por turno.
+- Ritmo necesario por tramos: ordenados los forjados por montaje, el que
+  mas aprieta (modulos acumulados hasta el entre los dias laborables hasta
+  el) fija el ritmo hasta esa fecha; con los que quedan se repite desde ahi.
+  Es el ritmo minimo que llega a todos los montajes, y siempre va bajando.
+- Con ese ritmo se calcula cuando se fabrica cada forjado (uno detras de
+  otro, por montaje) y la holgura que le queda hasta su ultimo dia.
+- El objetivo de un periodo es la suma del ritmo de cada dia laborable.
 """
-import math
 from datetime import datetime, time, timedelta
 
-from django.db.models import Count, Min, Q
+from django.db.models import Count, Q
 from django.utils import timezone
 
-from .turnos import turnos_de, turnos_por_dia
-
 DAY_CODES = ('MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN')
-# Modulos por turno que se esperan de una ferralla si su ficha no dice otra cosa.
-CAPACIDAD_POR_DEFECTO = 25
+# Dias de fabricacion: de lunes a viernes. Un turno de noche o un domingo
+# son cosa de la ferralla; no cambian el objetivo.
+DIAS_LABORABLES = DAY_CODES[:5]
 _EPS = 1e-9
 
 
-def _pesos(days):
-    """{'MON': turnos}: acepta tambien una lista de dias (un turno cada uno)."""
-    if isinstance(days, dict):
-        return {day: n for day, n in days.items() if n}
-    return {day: 1 for day in days}
-
-
-def production_day_count(start, end, days, festivos=frozenset()):
-    """Turns of work in [start, end); mounting day is reserved for site assembly.
-
-    ``days`` is ``{'MON': 2, ...}`` (turns that start each weekday) or a plain
-    list of days, one turn each.
-    """
-    pesos = _pesos(days)
+def production_day_count(start, end, days=DIAS_LABORABLES, festivos=frozenset()):
+    """Working days in [start, end); the mounting day is for site assembly."""
+    pesos = {day: n for day, n in days.items() if n} if isinstance(days, dict) else {day: 1 for day in days}
     span = max(0, (end - start).days)
     weeks, extra = divmod(span, 7)
     count = weeks * sum(pesos.values()) + sum(
@@ -60,17 +44,8 @@ def production_day_count(start, end, days, festivos=frozenset()):
 
 
 def factory_production_days(project):
-    """Turnos que empiezan cada dia de la semana: {'MON': 2, 'SUN': 1}."""
-    if project.usuario_id is None:
-        return {}
-    # Sin perfil, el horario por defecto, sin crear el perfil al leer.
-    return turnos_por_dia(turnos_de(getattr(project.usuario, 'profile', None)))
-
-
-def factory_capacity(project):
-    profile = getattr(project.usuario, 'profile', None) if project.usuario_id else None
-    capacidad = getattr(profile, 'capacidad_diaria_modulos', None)
-    return capacidad or CAPACIDAD_POR_DEFECTO
+    """Dias en que se fabrica: de lunes a viernes (sin ferralla, ninguno)."""
+    return [] if project.usuario_id is None else list(DIAS_LABORABLES)
 
 
 def festivos_de(usuario_id):
@@ -110,27 +85,105 @@ def laborable_oficina_anterior(dia, festivos=None):
     return dia
 
 
-class _DiasDeFabricacion:
-    """Turnos de fabricacion desde una fecha: el indice 0 es el primero y cada
-    uno devuelve el dia en que empieza (un dia con dos turnos sale dos veces)."""
+def es_laborable(dia, festivos):
+    return DAY_CODES[dia.weekday()] in DIAS_LABORABLES and dia not in festivos
 
-    def __init__(self, desde, days, festivos):
-        self._pesos = _pesos(days)
-        self._festivos = festivos
-        self._siguiente = desde
-        self._dias = []
 
-    def __getitem__(self, indice):
-        if not self._pesos:
-            return None
-        limite = 4000
-        while len(self._dias) <= indice and limite:
-            dia = self._siguiente
-            self._siguiente += timedelta(days=1)
-            limite -= 1
-            if dia not in self._festivos:
-                self._dias.extend([dia] * self._pesos.get(DAY_CODES[dia.weekday()], 0))
-        return self._dias[indice] if indice < len(self._dias) else None
+def dias_laborables(desde, hasta, festivos):
+    """Dias laborables de [desde, hasta)."""
+    dia = desde
+    while dia < hasta:
+        if es_laborable(dia, festivos):
+            yield dia
+        dia += timedelta(days=1)
+
+
+def tramos_de_ritmo(forjados, desde, festivos):
+    """Ritmo necesario por tramos.
+
+    ``forjados``: [(fecha_montaje, pendientes, clave)], solo con montaje
+    posterior a ``desde`` y algun dia laborable por delante. Devuelve
+    [{desde, hasta, dias, modulos, ritmo, claves}], de mayor a menor ritmo.
+    """
+    pendientes = sorted(forjados, key=lambda f: f[0])
+    tramos = []
+    inicio = desde
+    while pendientes:
+        mejor = None
+        acumulado = 0
+        for indice, (montaje, modulos, _clave) in enumerate(pendientes):
+            acumulado += modulos
+            dias = production_day_count(inicio, montaje, DIAS_LABORABLES, festivos)
+            ritmo = acumulado / dias if dias else float('inf')
+            # Con el mismo ritmo manda el montaje mas lejano: los de antes
+            # llevan holgura.
+            if mejor is None or ritmo >= mejor['ritmo'] - _EPS:
+                mejor = {'indice': indice, 'ritmo': ritmo, 'modulos': acumulado, 'dias': dias, 'hasta': montaje}
+        tramo = pendientes[:mejor['indice'] + 1]
+        tramos.append({
+            'desde': inicio,
+            'hasta': mejor['hasta'],
+            'dias': mejor['dias'],
+            'modulos': mejor['modulos'],
+            'ritmo': mejor['ritmo'],
+            'claves': [clave for _m, _p, clave in tramo],
+        })
+        pendientes = pendientes[mejor['indice'] + 1:]
+        inicio = mejor['hasta']
+    return tramos
+
+
+class _Produccion:
+    """Modulos acumulados que exige el plan, dia laborable a dia laborable."""
+
+    def __init__(self, tramos, festivos):
+        self.dias = []       # dia laborable de cada posicion
+        self.acumulado = []  # modulos exigidos hasta el final de ese dia
+        self.ritmos = []
+        total = 0.0
+        for tramo in tramos:
+            for dia in dias_laborables(tramo['desde'], tramo['hasta'], festivos):
+                total += tramo['ritmo']
+                self.dias.append(dia)
+                self.acumulado.append(total)
+                self.ritmos.append(tramo['ritmo'])
+
+    def posicion(self, dia):
+        for indice, candidato in enumerate(self.dias):
+            if candidato >= dia:
+                return indice
+        return len(self.dias)
+
+    def ritmo_de(self, dia):
+        for candidato, ritmo in zip(self.dias, self.ritmos):
+            if candidato == dia:
+                return ritmo
+        return 0.0
+
+    def dia_en_que_llega(self, modulos):
+        """Primer dia laborable en que el acumulado cubre ``modulos``."""
+        for dia, acumulado in zip(self.dias, self.acumulado):
+            if acumulado >= modulos - _EPS:
+                return dia
+        return self.dias[-1] if self.dias else None
+
+    def dia_en_que_supera(self, modulos):
+        """Primer dia laborable en que se fabrica algo por encima de ``modulos``."""
+        for dia, acumulado in zip(self.dias, self.acumulado):
+            if acumulado > modulos + _EPS:
+                return dia
+        return self.dias[-1] if self.dias else None
+
+    def modulos_entre(self, posiciones, desde_modulo, hasta_modulo):
+        """Parte de [desde_modulo, hasta_modulo) que cae en esas posiciones."""
+        total = 0.0
+        for posicion in posiciones:
+            if posicion < 0 or posicion >= len(self.dias):
+                continue
+            bajo = self.acumulado[posicion - 1] if posicion else 0.0
+            alto = self.acumulado[posicion]
+            total += max(0.0, min(alto, hasta_modulo) - max(bajo, desde_modulo))
+        return total
 
 
 def _counts(project):
@@ -145,18 +198,19 @@ def _counts(project):
     return total, done
 
 
-def _base_demand(project, today, active_days, festivos):
+def _base_demand(project, today, festivos):
     total, done = _counts(project)
-    # Los modulos se suben por tandas: el ritmo diario se calcula sobre el
-    # total previsto del proyecto cuando es mayor que lo ya subido.
+    # Los modulos se suben por tandas: el ritmo se calcula sobre el total
+    # previsto del proyecto cuando es mayor que lo ya subido.
     subidos = total
     previstos = project.modulos_previstos or 0
     total = max(total, previstos)
     remaining = max(0, total - done)
     date = project.fecha_montaje
-    days = production_day_count(today, date, active_days, festivos) if date else None
-    # Ritmo si el proyecto se fabricara solo; el plan de la ferralla manda.
-    daily = math.ceil(remaining / days) if days else (0 if remaining == 0 else None)
+    # Sin ferralla no hay dias de fabricacion.
+    days = production_day_count(today, date, DIAS_LABORABLES, festivos) if date and project.usuario_id is not None else None
+    # Ritmo si el forjado se fabricara solo; el plan de la ferralla manda.
+    daily = round(remaining / days, 1) if days else (0 if remaining == 0 else None)
     state = (
         'COMPLETADO' if remaining == 0 and total > 0 else
         'SIN_FERRALLA' if project.usuario_id is None else
@@ -173,52 +227,56 @@ def _base_demand(project, today, active_days, festivos):
         'modulos_por_dia': daily,
         'estado': state,
         'fecha_calculo': today.isoformat(),
-        'dias_produccion': [day for day in DAY_CODES if day in _pesos(active_days)],
+        'dias_produccion': list(DIAS_LABORABLES) if project.usuario_id is not None else [],
         # Plan de la ferralla (se rellena en plan_ferralla).
         'ritmo_ferralla': None,
-        'capacidad_ferralla': None,
-        'aprietan_ferralla': 0,
+        'tramo': None,
+        'ritmo_tramo': None,
+        'tramo_hasta': None,
+        'cierra_tramo': False,
         'fabricacion_inicio': None,
         'fabricacion_fin': None,
         'ultimo_dia': None,
         'margen_dias': None,
-        'modulos_extra': 0,
         'modulos_hoy': 0,
         'modulos_semana': 0,
+        # Lo mismo para toda la ferralla (la lista de proyectos lo ensena una vez).
+        'tramos_ferralla': [],
+        'manda_nombre': None,
+        'cola_fuera_de_orden': [],
     }
 
 
-def _serie(proyectos, filas, usuario_id):
-    """Orden de fabricacion: la cola de las lineas y luego por montaje."""
+def _serie(proyectos, filas):
+    """Orden de fabricacion: por montaje y, el mismo dia, el forjado de abajo."""
+    pendientes = [p for p in proyectos if filas[p.pk]['estado'] == 'PLANIFICADO']
+    return sorted(pendientes, key=lambda p: (p.fecha_montaje, p.orden_planta, p.pk))
+
+
+def _cola_fuera_de_orden(serie, usuario_id):
+    """Forjados en la cola de una linea por delante de otro de esa misma
+    cola que monta antes (cada linea lleva su propio orden)."""
     from .models import GrupoMesasProyecto
 
-    posiciones = dict(
+    por_pk = {p.pk: p for p in serie}
+    colas = {}
+    for grupo_id, proyecto_id in (
         GrupoMesasProyecto.objects.filter(proyecto__usuario_id=usuario_id)
-        .values('proyecto_id').annotate(pos=Min('orden'))
-        .values_list('proyecto_id', 'pos')
-    )
-    pendientes = [p for p in proyectos if filas[p.pk]['estado'] == 'PLANIFICADO']
-    # Mismo dia de montaje: antes el forjado de abajo.
-    return sorted(pendientes, key=lambda p: (
-        (0, posiciones[p.pk]) if p.pk in posiciones else (1, 0),
-        p.fecha_montaje, p.orden_planta, p.pk,
-    ))
+        .order_by('grupo_mesas_id', 'orden', 'id')
+        .values_list('grupo_mesas_id', 'proyecto_id')
+    ):
+        if proyecto_id in por_pk:
+            colas.setdefault(grupo_id, []).append(por_pk[proyecto_id])
+    fuera = set()
+    for cola in colas.values():
+        for indice, proyecto in enumerate(cola):
+            if any(otro.fecha_montaje < proyecto.fecha_montaje for otro in cola[indice + 1:]):
+                fuera.add(proyecto.nombre)
+    return sorted(fuera)
 
 
-def _dias_entre(dias, desde, hasta):
-    """Dias de fabricacion distintos entre los turnos [desde, hasta) del plan."""
-    return len({dias[i] for i in range(max(0, desde), max(0, hasta))} - {None})
-
-
-def _modulos_entre(inicio, fin, pendientes, desde, hasta):
-    """Modulos del proyecto que caen en los dias [desde, hasta) del plan."""
-    if hasta <= desde:
-        return 0.0
-    if fin <= inicio + _EPS:
-        # Todo en horas extra: cuenta el dia en que le toca empezar.
-        return float(pendientes) if desde <= math.floor(inicio) < hasta else 0.0
-    solape = max(0.0, min(fin, hasta) - max(inicio, desde))
-    return pendientes * solape / (fin - inicio)
+def _redondeo(valor):
+    return round(valor + _EPS, 1)
 
 
 def plan_ferralla(usuario_id, today=None, override=None):
@@ -239,66 +297,70 @@ def plan_ferralla(usuario_id, today=None, override=None):
         if not override.archivado_at:
             proyectos.append(override)
     if not proyectos:
-        return {'ritmo': None, 'capacidad': None, 'aprietan': 0, 'proyectos': {}}
+        return {'ritmo': None, 'tramos': [], 'manda': None, 'objetivo_hoy': 0, 'objetivo_semana': 0,
+                'cola_fuera_de_orden': [], 'trabaja_hoy': False, 'proyectos': {}}
 
-    referencia = proyectos[0]
-    active_days = factory_production_days(referencia)
-    capacidad = factory_capacity(referencia)
     festivos = festivos_de(usuario_id)
-    filas = {p.pk: _base_demand(p, today, active_days, festivos) for p in proyectos}
-    serie = _serie(proyectos, filas, usuario_id)
-
-    pendientes = sum(filas[p.pk]['modulos_pendientes'] for p in serie)
-    horizonte = max((filas[p.pk]['dias_disponibles'] for p in serie), default=0)
-    ritmo = math.ceil(pendientes / horizonte) if horizonte else None
-
-    dias = _DiasDeFabricacion(today, active_days, festivos)
-    hoy_trabaja = dias[0] == today
-    # Turnos de hoy y de los proximos 7 dias.
-    primero_semana = production_day_count(today, today + timedelta(days=1), active_days, festivos)
-    dias_semana = production_day_count(
-        today + timedelta(days=1), today + timedelta(days=7), active_days, festivos,
+    filas = {p.pk: _base_demand(p, today, festivos) for p in proyectos}
+    serie = _serie(proyectos, filas)
+    tramos = tramos_de_ritmo(
+        [(p.fecha_montaje, filas[p.pk]['modulos_pendientes'], p.pk) for p in serie], today, festivos,
     )
-    t = 0.0
-    aprietan = 0
-    for proyecto in serie:
-        fila = filas[proyecto.pk]
-        pend = fila['modulos_pendientes']
-        limite = fila['dias_disponibles']
-        inicio = t
-        fin = t + pend / capacidad
-        if fin <= limite + _EPS:
-            extra = 0
-            t = fin
-        else:
-            # No llega: lo que falta se cubre con horas extra y el siguiente
-            # proyecto empieza a tiempo.
-            extra = min(pend, math.ceil((fin - limite) * capacidad - _EPS))
-            t = max(inicio, float(limite))
-            aprietan += 1
-        ultimo_dia_plan = max(math.ceil(t - _EPS) - 1, math.floor(inicio))
-        hoy = _modulos_entre(inicio, t, pend, 0, primero_semana) if hoy_trabaja else 0.0
-        semana = _modulos_entre(inicio, t, pend, primero_semana, primero_semana + dias_semana)
-        fila.update({
-            'fabricacion_inicio': dias[math.floor(inicio + _EPS)].isoformat(),
-            'fabricacion_fin': dias[ultimo_dia_plan].isoformat(),
-            'ultimo_dia': dias[limite - 1].isoformat(),
-            'margen_dias': 0 if extra else _dias_entre(dias, math.ceil(t - _EPS), limite),
-            'modulos_extra': extra,
-            'modulos_hoy': min(pend, round(hoy)),
-            'modulos_semana': min(pend - min(pend, round(hoy)), round(semana)),
-        })
+    produccion = _Produccion(tramos, festivos)
+    hoy_trabaja = es_laborable(today, festivos)
+    hoy = [pos for pos, dia in enumerate(produccion.dias) if dia == today]
+    semana = [pos for pos, dia in enumerate(produccion.dias) if today < dia <= today + timedelta(days=7)]
+    montajes = {p.pk: p.fecha_montaje for p in serie}
 
+    acumulado = 0.0
+    for indice, tramo in enumerate(tramos):
+        for clave in tramo['claves']:
+            fila = filas[clave]
+            pendientes = fila['modulos_pendientes']
+            inicio_modulo, fin_modulo = acumulado, acumulado + pendientes
+            # Dias laborables hasta el montaje: el ultimo es el plazo real.
+            propios = list(dias_laborables(today, montajes[clave], festivos))
+            fin = produccion.dia_en_que_llega(fin_modulo) or today
+            # Hoy y la semana no pueden sumar mas que lo pendiente (medios modulos).
+            hoy_modulos = min(pendientes, round(produccion.modulos_entre(hoy, inicio_modulo, fin_modulo)))
+            fila.update({
+                'tramo': indice,
+                'ritmo_tramo': _redondeo(tramo['ritmo']),
+                'tramo_hasta': tramo['hasta'].isoformat(),
+                'cierra_tramo': clave == tramo['claves'][-1],
+                'fabricacion_inicio': (produccion.dia_en_que_supera(inicio_modulo) or today).isoformat(),
+                'fabricacion_fin': fin.isoformat(),
+                'ultimo_dia': propios[-1].isoformat() if propios else None,
+                # Holgura: dias laborables entre terminarlo y su plazo.
+                'margen_dias': max(0, len(propios) - 1 - produccion.posicion(fin)) if propios else 0,
+                'modulos_hoy': hoy_modulos,
+                'modulos_semana': min(pendientes - hoy_modulos, round(produccion.modulos_entre(semana, inicio_modulo, fin_modulo))),
+            })
+            acumulado = fin_modulo
+
+    ritmo = _redondeo(tramos[0]['ritmo']) if tramos else None
+    manda = tramos[0]['claves'][-1] if tramos else None
+    manda_nombre = next((p.nombre for p in serie if p.pk == manda), None)
+    cola_fuera_de_orden = _cola_fuera_de_orden(serie, usuario_id)
+    resumen_tramos = [{
+        'desde': t['desde'].isoformat(), 'hasta': t['hasta'].isoformat(), 'dias': t['dias'],
+        'modulos': t['modulos'], 'ritmo': _redondeo(t['ritmo']), 'proyectos': t['claves'],
+    } for t in tramos]
     for fila in filas.values():
         fila.update({
             'ritmo_ferralla': ritmo,
-            'capacidad_ferralla': capacidad,
-            'aprietan_ferralla': aprietan,
+            'tramos_ferralla': [{'hasta': t['hasta'], 'ritmo': t['ritmo']} for t in resumen_tramos],
+            'manda_nombre': manda_nombre,
+            'cola_fuera_de_orden': cola_fuera_de_orden,
         })
     return {
         'ritmo': ritmo,
-        'capacidad': capacidad,
-        'aprietan': aprietan,
+        'tramos': resumen_tramos,
+        'manda': manda,
+        'manda_nombre': manda_nombre,
+        'objetivo_hoy': _redondeo(produccion.ritmo_de(today)) if hoy_trabaja else 0,
+        'objetivo_semana': _redondeo(sum(produccion.ritmos[pos] for pos in semana)),
+        'cola_fuera_de_orden': cola_fuera_de_orden,
         'trabaja_hoy': hoy_trabaja,
         'proyectos': filas,
     }
@@ -307,11 +369,11 @@ def plan_ferralla(usuario_id, today=None, override=None):
 def project_demand(project, today=None, plan=None):
     today = today or timezone.localdate()
     if getattr(project, 'archivado_at', None):
-        demanda = _base_demand(project, today, [], frozenset())
+        demanda = _base_demand(project, today, frozenset())
         demanda['estado'] = 'ARCHIVADO'
         return demanda
     if project.usuario_id is None:
-        return _base_demand(project, today, [], frozenset())
+        return _base_demand(project, today, frozenset())
     if plan is None or project.pk not in plan['proyectos']:
         plan = plan_ferralla(project.usuario_id, today, override=project)
     return plan['proyectos'][project.pk]
@@ -339,27 +401,27 @@ def demand_summary(projects, today=None):
         rows.append({'id': p.id, 'nombre': p.nombre, 'fecha_montaje': p.fecha_montaje,
                      **project_demand(p, today, plan)})
     return {
-        # Ritmo necesario de cada ferralla, no la suma de sus proyectos.
-        'modulos_por_dia': sum(plan['ritmo'] or 0 for plan in planes.values()),
-        'modulos_hoy': sum(plan['ritmo'] or 0 for plan in planes.values() if plan.get('trabaja_hoy')),
+        # Ritmo necesario de cada ferralla (el tramo en curso), no la suma de sus proyectos.
+        'modulos_por_dia': _redondeo(sum(plan['ritmo'] or 0 for plan in planes.values())),
+        'modulos_hoy': _redondeo(sum(plan['objetivo_hoy'] for plan in planes.values())),
         'sin_planificar': sum(r['estado'] in ('SIN_FECHA', 'SIN_MODULOS', 'SIN_FERRALLA') for r in rows),
         'urgentes': sum(r['estado'] in ('VENCIDO', 'SIN_DIAS') for r in rows),
-        'aprietan': sum(r['modulos_extra'] > 0 for r in rows),
+        'cola_fuera_de_orden': sorted(set(n for plan in planes.values() for n in plan['cola_fuera_de_orden'])),
         'proyectos': rows,
     }
 
 
 def period_target_summary(projects, start, end):
-    """Reconstruct the period's target using current deadlines and workdays.
+    """Objetivo de un periodo con los montajes de hoy y los pendientes a su inicio.
 
-    Each factory makes its projects one after another (same order as
-    plan_ferralla) at the average pace needed from the period start to its
-    last mounting date. The target of the selected projects is what that
-    sequence makes inside the period.
+    Desde el primer dia del periodo, los tramos de ritmo necesario de cada
+    ferralla; el objetivo de cada dia laborable es el ritmo de su tramo y el
+    del periodo, la suma. El de los proyectos elegidos es lo que la serie
+    (por montaje) les fabrica dentro del periodo.
 
-    Completions on/after its first local midnight stay in the baseline so
-    producing a module increases progress without decreasing the denominator.
-    This is a recalculated target, not a stored historical planning snapshot.
+    Lo terminado desde la medianoche del inicio sigue contando como
+    pendiente, asi fabricar no baja el objetivo. Es un objetivo recalculado,
+    no una foto guardada del plan.
     """
     from .models import Proyecto
 
@@ -373,21 +435,18 @@ def period_target_summary(projects, start, end):
     factories = set(
         projects.filter(usuario__isnull=False).values_list('usuario_id', flat=True)
     )
-    target = 0
+    target = 0.0
+    por_dia = {}
     for factory_id in factories:
         factory_projects = list(
             Proyecto.objects.filter(usuario_id=factory_id, archivado_at__isnull=True)
-            .select_related('usuario__profile')
             .annotate(
                 _period_total=Count('modulos', distinct=True),
                 _period_done_before=Count('modulos', distinct=True, filter=done_before),
             )
         )
-        if not factory_projects:
-            continue
-        days = factory_production_days(factory_projects[0])
         festivos = festivos_de(factory_id)
-        rows = {}
+        forjados = []
         for project in factory_projects:
             total = max(project._period_total, project.modulos_previstos or 0)
             if total == 0:
@@ -397,35 +456,27 @@ def period_target_summary(projects, start, end):
             if not remaining:
                 continue
             deadline = project.fecha_montaje
-            available = production_day_count(start, deadline, days, festivos) if deadline else 0
-            if not available:
+            if not deadline or not production_day_count(start, deadline, DIAS_LABORABLES, festivos):
                 unknown += project.pk in selected
                 continue
-            rows[project.pk] = {
-                'estado': 'PLANIFICADO', 'remaining': remaining,
-                'available': available, 'deadline': deadline,
-            }
-        if not rows:
+            forjados.append((deadline, remaining, project.pk, project.orden_planta))
+        if not forjados:
             continue
-        sequence = _serie(
-            [p for p in factory_projects if p.pk in rows], rows, factory_id,
-        )
-        pending = sum(rows[p.pk]['remaining'] for p in sequence)
-        horizon = max(rows[p.pk]['available'] for p in sequence)
-        last_deadline = max(rows[p.pk]['deadline'] for p in sequence)
-        pace = math.ceil(pending / horizon)
-        covered = production_day_count(
-            start, min(end + timedelta(days=1), last_deadline), days, festivos,
-        )
-        made = min(pending, pace * covered)
-        cumulative = 0
-        for project in sequence:
-            remaining = rows[project.pk]['remaining']
-            if project.pk in selected:
-                target += min(remaining, max(0, made - cumulative))
-            cumulative += remaining
+        forjados.sort(key=lambda f: (f[0], f[3], f[2]))
+        tramos = tramos_de_ritmo([(f[0], f[1], f[2]) for f in forjados], start, festivos)
+        produccion = _Produccion(tramos, festivos)
+        posiciones = [pos for pos, dia in enumerate(produccion.dias) if start <= dia <= end]
+        for pos in posiciones:
+            dia = produccion.dias[pos].isoformat()
+            por_dia[dia] = por_dia.get(dia, 0.0) + produccion.ritmos[pos]
+        acumulado = 0.0
+        for deadline, remaining, pk, _orden in forjados:
+            if pk in selected:
+                target += produccion.modulos_entre(posiciones, acumulado, acumulado + remaining)
+            acumulado += remaining
     return {
-        'modulos_esperados': target if target or not unknown else None,
+        'modulos_esperados': int(round(target + _EPS)) if target or not unknown else None,
         'proyectos_sin_objetivo': unknown,
         'fecha_referencia': start.isoformat(),
+        'por_dia': {dia: _redondeo(valor) for dia, valor in sorted(por_dia.items())},
     }

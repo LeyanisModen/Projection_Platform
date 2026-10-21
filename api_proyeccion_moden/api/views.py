@@ -5705,14 +5705,29 @@ def _tiempos_fabricacion(items, jornada):
 
 
 def _objetivo_del_turno(esperado, jornada, desde, hasta, turno):
-    """Con un turno elegido, el objetivo es su parte de los turnos del periodo."""
-    if turno is None or not esperado.get('modulos_esperados'):
+    """Con un turno elegido, el objetivo de cada dia laborable se reparte entre
+    los turnos que empiezan ese dia, y el del turno elegido se ve el dia en
+    que acaba (como su produccion). Manana + Noche suman el objetivo del dia."""
+    if turno is None or not esperado.get('por_dia'):
         return esperado
-    del_periodo = [tramo for tramo in jornada.tramos if desde <= tramo.fecha <= hasta]
-    # Los suyos, por el dia en que acaban (como se ven con el turno elegido).
-    suyos = [tramo for tramo in jornada.tramos if tramo.turno.indice == turno.indice and desde <= tramo.dia_fin <= hasta]
-    parte = len(suyos) / len(del_periodo) if del_periodo else 0
-    return {**esperado, 'modulos_esperados': round(esperado['modulos_esperados'] * parte)}
+    por_dia = esperado['por_dia']
+    empiezan = {}
+    for tramo in jornada.tramos:
+        empiezan.setdefault(tramo.fecha.isoformat(), []).append(tramo)
+    propio = {}
+    for tramo in jornada.tramos:
+        if tramo.turno.indice != turno.indice or not (desde <= tramo.dia_fin <= hasta):
+            continue
+        inicio = tramo.fecha.isoformat()
+        parte = por_dia.get(inicio, 0.0) / len(empiezan[inicio])
+        dia = tramo.dia_fin.isoformat()
+        propio[dia] = round(propio.get(dia, 0.0) + parte, 1)
+    total = sum(propio.values())
+    return {
+        **esperado,
+        'modulos_esperados': int(round(total + 1e-9)) if total or not esperado.get('proyectos_sin_objetivo') else None,
+        'por_dia': propio,
+    }
 
 
 def _resumen_tiempos(valores):
@@ -6141,7 +6156,6 @@ class ProductionStatsView(APIView):
         if not _is_admin(request.user):
             planning_projects = planning_projects.filter(usuario=request.user)
         planning = demand_summary(annotated_projects(planning_projects))
-        capacidad_diaria = planning['modulos_por_dia']
         # El objetivo es lo que tiene que sacar la ferralla con todo su trabajo:
         # mirar un proyecto o un edificio no cambia los modulos que necesita al dia.
         target_projects = planning_projects
@@ -6208,9 +6222,19 @@ class ProductionStatsView(APIView):
                         horas_dia.add(f'{hora.hour:02d}')
                         hora = timezone.localtime(hora + timedelta(hours=1), current_tz)
                 cursor = corte
+        # Objetivo de cada dia laborable del rango: el ritmo de su tramo.
+        # Con un turno elegido, la noche que acaba el primer dia empieza la
+        # vispera: el objetivo se calcula desde un dia antes.
+        esperado = _objetivo_del_turno(
+            period_target_summary(target_projects, from_date - timedelta(days=1 if turno_sel else 0), to_date),
+            jornada, from_date, to_date, turno_sel,
+        )
+        for fecha, objetivo in esperado.get('por_dia', {}).items():
+            dias_rango.setdefault(fecha, {'fecha': fecha, 'turnos': 0.0, 'horas': 0.0})['objetivo'] = objetivo
         for dia in dias_rango.values():
             dia['turnos'] = round(dia['turnos'], 2)
             dia['horas'] = round(dia['horas'], 2)
+            dia.setdefault('objetivo', 0.0)
         working_days = len(dias_rango)
         working_hours = working_seconds / 3600.0
         # Sin turno, en orden de reloj; con un turno, en el orden del turno.
@@ -6452,11 +6476,9 @@ class ProductionStatsView(APIView):
             'por_dia': sorted(por_dia.values(), key=lambda x: x['fecha']),
             'por_hora': sorted(por_hora.values(), key=lambda x: x['hora']) if single_day else None,
             'esperado': {
-                'capacidad_diaria_modulos': capacidad_diaria,
-                **_objetivo_del_turno(
-                    period_target_summary(target_projects, from_date, to_date),
-                    jornada, from_date, to_date, turno_sel,
-                ),
+                # Ritmo necesario hoy (el tramo en curso del plan).
+                'ritmo_necesario': planning['modulos_por_dia'],
+                **esperado,
             },
             'planificacion': planning,
             'turnos': [{'indice': turno.indice, 'nombre': turno.nombre} for turno in turnos],

@@ -10,7 +10,7 @@ Una ferralla es el cliente/fabrica que entra al dashboard.
 Datos relevantes:
 
 - Usuario Django asociado.
-- Perfil (`UserProfile`) con telefono, direccion, coordinador y capacidad
+- Perfil (`UserProfile`) con telefono, direccion, coordinador y turnos
   diaria.
 - Grupos de mesas.
 - Proyectos asignados.
@@ -31,7 +31,7 @@ Campos/relaciones importantes:
 - `modulos`: unidades a fabricar.
 - `grupos_bastidor`: agrupacion/orden de modulos.
 - `plano_archivo` y `planilla_archivo`: documentos PDF del proyecto.
-- `capacidad_diaria_usuario`: lectura del perfil de ferralla.
+- `planificacion`: plan de fabricacion calculado en cada lectura (`api/planning.py`: ritmo por tramos de montaje, dias laborables L-V menos festivos).
 - Estrategia de bastidor y longitud objetivo.
 
 ## 3. Modulo
