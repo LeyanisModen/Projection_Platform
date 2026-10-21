@@ -198,16 +198,26 @@
                                     } @else { — }
                                 </span>
                             </div>
-                            <div class="stats-kpi">
+                            <div class="stats-kpi stats-kpi-ritmo-modulos" [title]="ritmoDeTrabajo() ? 'Módulos por hora de trabajo de las mesas; debajo, diluidos en las horas de turno' : 'Módulos por hora de turno'">
                                 <span class="stats-kpi-label">Ritmo de módulos</span>
                                 <span class="stats-kpi-value">
-                                    {{ statsData.totals.modulos_por_hora | number:'1.0-2' }} <small>mód./h</small>
+                                    @if (ritmoDeTrabajo()) {
+                                        {{ statsData.totals.modulos_por_hora_trabajo | number:'1.0-2' }} <small>mód./h de trabajo</small>&ngsp;
+                                        <span class="stats-kpi-sub">{{ statsData.totals.modulos_por_hora | number:'1.0-2' }} por hora de turno</span>
+                                    } @else {
+                                        {{ statsData.totals.modulos_por_hora | number:'1.0-2' }} <small>mód./h</small>
+                                    }
                                 </span>
                             </div>
-                            <div class="stats-kpi">
+                            <div class="stats-kpi stats-kpi-ritmo-peso" [title]="ritmoDeTrabajo() ? 'Kilos por hora de trabajo de las mesas; debajo, diluidos en las horas de turno' : 'Kilos por hora de turno'">
                                 <span class="stats-kpi-label">Ritmo de peso</span>
                                 <span class="stats-kpi-value">
-                                    {{ statsData.totals.kg_por_hora | number:'1.0-1' }} <small>kg/h</small>
+                                    @if (ritmoDeTrabajo()) {
+                                        {{ statsData.totals.kg_por_hora_trabajo | number:'1.0-1' }} <small>kg/h de trabajo</small>&ngsp;
+                                        <span class="stats-kpi-sub">{{ statsData.totals.kg_por_hora | number:'1.0-1' }} por hora de turno</span>
+                                    } @else {
+                                        {{ statsData.totals.kg_por_hora | number:'1.0-1' }} <small>kg/h</small>
+                                    }
                                 </span>
                             </div>
                             <div class="stats-kpi">
@@ -218,9 +228,16 @@
                                 <span class="stats-kpi-label">Dificultad media</span>
                                 <span class="stats-kpi-value">{{ (resumen?.dificultadMedia | number:'1.0-0') ?? '—' }} <small>puntos</small></span>
                             </div>
-                            <div class="stats-kpi" title="Horas de jornada transcurridas en el período">
-                                <span class="stats-kpi-label">Horas de jornada</span>
-                                <span class="stats-kpi-value">{{ statsData.totals.horas_productivas | number:'1.0-1' }} <small>h</small></span>
+                            <div class="stats-kpi stats-kpi-horas" [title]="horasTitulo(statsData.totals)">
+                                <span class="stats-kpi-label">{{ hayActividad() ? 'Horas de trabajo + muertas' : 'Horas de jornada' }}</span>
+                                <span class="stats-kpi-value">
+                                    @if (statsData.totals.horas_trabajo != null) {
+                                        {{ statsData.totals.horas_trabajo | number:'1.0-1' }} <small>h</small>&ngsp;
+                                        <span class="stats-muerto">+ {{ statsData.totals.horas_muertas | number:'1.0-1' }} <small>h muertas</small></span>
+                                    } @else {
+                                        {{ statsData.totals.horas_productivas | number:'1.0-1' }} <small>h</small>
+                                    }
+                                </span>
                             </div>
                             <div class="stats-kpi" title="Horas de jornada multiplicadas por las personas de cada turno">
                                 <span class="stats-kpi-label">Horas-hombre</span>
@@ -235,12 +252,14 @@
                                 <span class="stats-kpi-label">Tiempo inferior</span>
                                 <span class="stats-kpi-value">
                                     {{ tiempoLabel(tiempos.inferior) }} <small>min/panel</small>
+                                    @if (tiempos.inferior.parado_min) {&ngsp;<span class="stats-muerto" title="Mediana de minutos parada en la mesa">+ {{ tiempos.inferior.parado_min | number:'1.0-0' }} <small>parada</small></span> }
                                 </span>
                             </div>
                             <div class="stats-kpi stats-kpi-tiempo" [title]="'Superior: ' + tiempoDetalle(tiempos.superior)">
                                 <span class="stats-kpi-label">Tiempo superior</span>
                                 <span class="stats-kpi-value">
                                     {{ tiempoLabel(tiempos.superior) }} <small>min/panel</small>
+                                    @if (tiempos.superior.parado_min) {&ngsp;<span class="stats-muerto" title="Mediana de minutos parada en la mesa">+ {{ tiempos.superior.parado_min | number:'1.0-0' }} <small>parada</small></span> }
                                 </span>
                             </div>
                             @if (tiempos.modulo; as tiempoModulo) {
@@ -248,11 +267,15 @@
                                 <span class="stats-kpi-label">Tiempo por módulo</span>
                                 <span class="stats-kpi-value">
                                     {{ tiempoLabel(tiempoModulo) }} <small>min</small>
+                                    @if (tiempoModulo.parado_min) {&ngsp;<span class="stats-muerto" title="Mediana de minutos parado en la mesa">+ {{ tiempoModulo.parado_min | number:'1.0-0' }} <small>parado</small></span> }
                                 </span>
                             </div>
                             }
                             }
                         </div>
+                        @if (muertoCausas(); as causas) {
+                            <p class="stats-muerto-causas"><strong>Tiempo muerto:</strong> {{ causas }}</p>
+                        }
 
                         @if (statsPlanningIssues() > 0) {
                             <p class="stats-planning-warning" role="note">
@@ -260,9 +283,12 @@
                                 El objetivo solo incluye los proyectos con planificación calculable.
                             </p>
                         }
-                        @if (statsData.totals.fases_completadas === 0 && statsData.totals.modulos_completados === 0) {
+                        @let sinProduccion = statsData.totals.fases_completadas === 0 && statsData.totals.modulos_completados === 0;
+                        @if (sinProduccion) {
                             <div class="stats-empty">No hay producción registrada en el rango seleccionado. El objetivo sigue visible para planificar el trabajo.</div>
-                        } @else {
+                        }
+                        <!-- Sin produccion pero con turno pasado, el trabajo y el tiempo muerto se ven igual. -->
+                        @if (!sinProduccion || hayActividad()) {
                         @let vista = statsVista();
                         @if (vista) {
                         <h4 class="stats-subtitle">Evolución</h4>
@@ -271,6 +297,10 @@
                                 [labels]="vista.labels" [series]="vista.modulos" [target]="vista.objetivo"
                                 [targetLabel]="vista.objetivoLabel" [pending]="vista.pending" />
                             <div class="stats-charts-grid">
+                                @if (hayActividad()) {
+                                <app-stats-line-chart [title]="vista.horasUnidad === 'min' ? 'Minutos de trabajo y tiempo muerto' : 'Horas de trabajo y tiempo muerto'"
+                                    [unit]="vista.horasUnidad" [decimals]="vista.horasDecimales" [labels]="vista.labels" [series]="vista.horas" />
+                                }
                                 <app-stats-line-chart title="Peso producido (kg)" unit="kg"
                                     [labels]="vista.labels" [series]="vista.peso" />
                                 <app-stats-line-chart title="Tiempo por panel (min)" unit="min"
@@ -299,6 +329,11 @@
                                     <th class="num">Punzos</th>
                                     <th class="num">Dificultad</th>
                                     <th class="num" title="Mediana de minutos de jornada por panel hecho en la mesa">Min./panel</th>
+                                    @if (hayActividad()) {
+                                    <th class="num" title="Horas en que la mesa da señales dentro del turno">Trabajo (h)</th>
+                                    <th class="num" title="Horas de turno sin señales de la mesa">Muerto (h)</th>
+                                    <th class="num" title="Veces que la mesa paró y volvió a arrancar dentro del turno">Paradas</th>
+                                    }
                                 </tr>
                             </thead>
                             <tbody>
@@ -318,12 +353,20 @@
                                         <td class="num stats-tiempo-cell" [title]="tiempoDetalle({mediana_min: mesa.tiempo_mediana_min ?? null, media_min: null, paneles: mesa.tiempo_paneles ?? 0, medidos: mesa.tiempo_medidos ?? 0})">
                                             {{ mesa.tiempo_mediana_min != null ? (mesa.tiempo_mediana_min | number:'1.0-0') : '—' }}
                                         </td>
+                                        @if (hayActividad()) {
+                                        <td class="num stats-mesa-trabajo">{{ horasLabel(mesa.horas_trabajo) }}@if (mesa.estimado && mesa.horas_trabajo != null) {&ngsp;<small title="Sin registro de eventos: estimado con fotos y fases hechas">est.</small>}</td>
+                                        <td class="num stats-muerto stats-mesa-muerto">{{ horasLabel(mesa.horas_muertas) }}</td>
+                                        <td class="num">{{ mesa.paradas ?? '—' }}</td>
+                                        }
                                     </tr>
                                 }
                             </tbody>
                         </table>
                         @if (tiempoNota()) {
                             <p class="stats-tiempo-nota">{{ tiempoNota() }}</p>
+                        }
+                        @if (hayActividad() && criterioNota()) {
+                            <p class="stats-tiempo-nota stats-criterio">{{ criterioNota() }}</p>
                         }
 
                         @if (vista) {
@@ -339,6 +382,11 @@
                                             <th class="num">Diferencia</th>
                                         }
                                         <th class="num">Paneles</th>
+                                        @if (hayActividad()) {
+                                        <th class="num" title="Horas en que las mesas dan señales dentro del turno, más lo trabajado fuera">Trabajo{{ vista.periodoLabel === 'Hora' ? '' : ' (h)' }}</th>
+                                        <th class="num" title="Horas de turno sin trabajo">Muerto{{ vista.periodoLabel === 'Hora' ? '' : ' (h)' }}</th>
+                                        @if (vista.conSenales) { <th title="Primera y última señal del día">Señales</th> }
+                                        }
                                         <th class="num" title="Mallazo más refuerzos, zunchos, separadores y punzonamientos">Peso (kg)</th>
                                         <th class="num" title="Mallazo del módulo: recortado o hecho a mano">Mallazo (kg)</th>
                                         <th class="num">Desperdicio (kg)</th>
@@ -364,6 +412,11 @@
                                                 </td>
                                             }
                                             <td class="num">{{ fila.fases_completadas }}</td>
+                                            @if (hayActividad()) {
+                                            <td class="num stats-fila-trabajo" [title]="horasFilaTitulo(fila)">{{ horasFilaLabel(fila, fila.horas_trabajo) }}@if (fila.estimado && fila.horas_trabajo != null) {&ngsp;<small>est.</small>}</td>
+                                            <td class="num stats-muerto stats-fila-muerto" [title]="horasFilaTitulo(fila)">{{ horasFilaLabel(fila, fila.horas_muertas) }}@if (fila.sin_registro) {&ngsp;<small>sin registro</small>}</td>
+                                            @if (vista.conSenales) { <td class="stats-fila-senales">{{ senalesLabel(fila) }}</td> }
+                                            }
                                             <td class="num">{{ fila.peso_total_kg | number:'1.0-1' }}</td>
                                             <td class="num">{{ fila.peso_malla_final_kg | number:'1.0-1' }}</td>
                                             <td class="num">{{ fila.desperdicio_kg | number:'1.0-1' }}</td>
@@ -422,7 +475,7 @@
                                         <th rowspan="2">Terminado</th>
                                         <th colspan="3" class="stats-th-group">Inferior</th>
                                         <th colspan="3" class="stats-th-group">Superior</th>
-                                        <th rowspan="2" class="num">Min. total</th>
+                                        <th rowspan="2" class="num" title="Minutos de trabajo del módulo y, en amarillo, minutos parado en la mesa">Min. total</th>
                                         <th rowspan="2" class="num" title="Mallazo más refuerzos, zunchos, separadores y punzonamientos">Peso (kg)</th>
                                         <th rowspan="2" class="num" title="Mallazo del módulo: recortado o hecho a mano">Mallazo (kg)</th>
                                         <th rowspan="2" class="num">Desperdicio (kg)</th>
@@ -431,10 +484,10 @@
                                     <tr>
                                         <th class="stats-th-sub">Mesa</th>
                                         <th class="stats-th-sub">Hecho</th>
-                                        <th class="stats-th-sub num">Min.</th>
+                                        <th class="stats-th-sub num" title="Minutos de trabajo y, en amarillo, minutos parada en la mesa">Min.</th>
                                         <th class="stats-th-sub">Mesa</th>
                                         <th class="stats-th-sub">Hecho</th>
-                                        <th class="stats-th-sub num">Min.</th>
+                                        <th class="stats-th-sub num" title="Minutos de trabajo y, en amarillo, minutos parada en la mesa">Min.</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -446,11 +499,11 @@
                                             <td>{{ modulo.completado_at | date:'dd/MM HH:mm' }}</td>
                                             <td>{{ modulo.inferior?.mesa_nombre || '—' }}</td>
                                             <td>{{ (modulo.inferior?.done_at | date:'dd/MM HH:mm') ?? '—' }}</td>
-                                            <td class="num" [title]="minutosTitulo(modulo.inferior)">{{ minutosLabel(modulo.inferior) }}</td>
+                                            <td class="num stats-fase-min" [title]="minutosTitulo(modulo.inferior)">{{ minutosLabel(modulo.inferior) }}@if (modulo.inferior?.parado_min) { <span class="stats-muerto" title="Minutos parada en la mesa"> + {{ modulo.inferior!.parado_min | number:'1.0-0' }}</span> }</td>
                                             <td>{{ modulo.superior?.mesa_nombre || '—' }}</td>
                                             <td>{{ (modulo.superior?.done_at | date:'dd/MM HH:mm') ?? '—' }}</td>
-                                            <td class="num" [title]="minutosTitulo(modulo.superior)">{{ minutosLabel(modulo.superior) }}</td>
-                                            <td class="num">{{ minutosModuloLabel(modulo) }}</td>
+                                            <td class="num stats-fase-min" [title]="minutosTitulo(modulo.superior)">{{ minutosLabel(modulo.superior) }}@if (modulo.superior?.parado_min) { <span class="stats-muerto" title="Minutos parada en la mesa"> + {{ modulo.superior!.parado_min | number:'1.0-0' }}</span> }</td>
+                                            <td class="num stats-modulo-min">{{ minutosModuloLabel(modulo) }}@if (paradoModulo(modulo); as parado) { <span class="stats-muerto" title="Minutos parado en la mesa"> + {{ parado | number:'1.0-0' }}</span> }</td>
                                             <td class="num">{{ modulo.peso_kg | number:'1.0-1' }}</td>
                                             <td class="num">{{ (modulo.malla_kg | number:'1.0-1') ?? '—' }}</td>
                                             <td class="num">{{ modulo.desperdicio_kg | number:'1.0-1' }}</td>
@@ -460,7 +513,7 @@
                                 </tbody>
                             </table>
                         </div>
-                        <p class="stats-tiempo-nota">Los minutos con ~ son aproximados; sin ~, medidos en la mesa.</p>
+                        <p class="stats-tiempo-nota">Los minutos con ~ son aproximados; sin ~, medidos en la mesa. El segundo número, en amarillo, es lo que el panel estuvo parado en la mesa.</p>
                         }
                         }
                     }

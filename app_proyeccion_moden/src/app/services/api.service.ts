@@ -554,6 +554,15 @@ export interface ProductionStatsMesa extends ProductionStatsBucket {
     tiempo_mediana_min?: number | null;
     tiempo_paneles?: number;
     tiempo_medidos?: number;
+    /** Horas en que la mesa da señales dentro del turno del período, y horas de turno sin ellas. */
+    horas_trabajo?: number;
+    horas_muertas?: number;
+    /** Veces que la mesa paró y volvió a arrancar dentro del turno. */
+    paradas?: number;
+    /** true si la mesa no tiene registro de eventos: el trabajo sale de fotos y fases hechas. */
+    estimado?: boolean;
+    /** Minutos de trabajo de la mesa por panel hecho (null sin paneles). */
+    min_trabajo_por_panel?: number | null;
 }
 
 /** Tiempo por panel: medido desde el registro de la mesa o aproximado entre paneles hechos. */
@@ -562,6 +571,8 @@ export interface TiempoFabricacion {
     media_min: number | null;
     paneles: number;
     medidos: number;
+    /** Mediana de lo que los paneles medidos estuvieron parados en la mesa (null sin medidos). */
+    parado_min?: number | null;
 }
 
 /** Mediana de minutos por panel hecho en el dia u hora (null sin paneles). */
@@ -572,7 +583,32 @@ export interface ProductionStatsTiempos {
     tiempo_superior_paneles?: number;
 }
 
-export interface ProductionStatsDay extends ProductionStatsBucket, ProductionStatsTiempos {
+/** Horas muertas de un periodo por causa, deducidas de las señales de las mesas. */
+export interface ProductionStatsCausas {
+    sin_registro: number;
+    empezo_tarde: number;
+    acabo_pronto: number;
+    paradas: number;
+}
+
+/** Trabajo y tiempo muerto de un dia: horas de turno, de trabajo (señales de las mesas) y muertas. */
+export interface ProductionStatsActividadDia {
+    horas_turno?: number;
+    horas_trabajo?: number;
+    horas_muertas?: number;
+    /** Trabajo fuera de las horas de turno, ya sumado en horas_trabajo. */
+    horas_fuera_turno?: number;
+    /** Ninguna señal en todo el turno: el tiempo muerto es "sin registro". */
+    sin_registro?: boolean;
+    /** Sin registro de eventos en algún turno: el trabajo sale de fotos y fases hechas. */
+    estimado?: boolean;
+    /** Primera y última señal dentro del turno (ISO). */
+    abre?: string | null;
+    cierra?: string | null;
+    causas?: ProductionStatsCausas;
+}
+
+export interface ProductionStatsDay extends ProductionStatsBucket, ProductionStatsTiempos, ProductionStatsActividadDia {
     fecha: string;
     modulos_completados: number;
 }
@@ -580,6 +616,10 @@ export interface ProductionStatsDay extends ProductionStatsBucket, ProductionSta
 export interface ProductionStatsHour extends ProductionStatsBucket, ProductionStatsTiempos {
     hora: string;
     modulos_completados: number;
+    /** Minutos de turno, de trabajo y muertos de esa hora (solo las horas con turno o trabajo). */
+    minutos_turno?: number;
+    minutos_trabajo?: number;
+    minutos_muertos?: number;
 }
 
 /** Una fase de un modulo terminado: donde, cuando, cuanto tardo y cuanto pesa. */
@@ -589,6 +629,14 @@ export interface ProductionStatsModuloFase {
     minutos: number | null;
     /** true si el tiempo sale del registro de la mesa; false si es aproximado. */
     medido: boolean;
+    /** Minutos trabajados sin pasar diapositiva (huecos de 20 a 90 min), ya dentro de `minutos`. */
+    sin_pulsar_min?: number | null;
+    /** Lo que la fase estuvo parada en la mesa (solo si se midió): total, en turno y fuera de turno. */
+    parado_min?: number | null;
+    parado_turno_min?: number | null;
+    parado_fuera_min?: number | null;
+    /** Pasó más de 8 h seguidas parada en la mesa (de un día para otro). */
+    pernocto?: boolean | null;
     /** Peso total de la fase. */
     peso_kg: number | null;
     /** Solo la malla recortada. */
@@ -670,11 +718,23 @@ export interface ProductionStatsResponse {
         /** Horas de jornada por las personas de cada turno, y kilos por cada una de ellas (null sin personas). */
         horas_hombre?: number;
         kg_por_hora_hombre?: number | null;
+        /** Horas de trabajo (señales de las mesas) y muertas (turno sin trabajo) del período. */
+        horas_trabajo?: number;
+        horas_muertas?: number;
+        /** Trabajo fuera de las horas de turno, ya sumado en horas_trabajo. */
+        horas_fuera_turno?: number;
+        /** Ritmos sobre las horas de trabajo, no diluidos en las de turno. */
+        modulos_por_hora_trabajo?: number;
+        kg_por_hora_trabajo?: number;
     };
     por_mesa: ProductionStatsMesa[];
     por_dia: ProductionStatsDay[];
     por_hora?: ProductionStatsHour[] | null;
     tiempos?: { inferior: TiempoFabricacion; superior: TiempoFabricacion; modulo?: TiempoFabricacion };
+    /** Horas muertas del período por causa. */
+    muerto_por_causa?: ProductionStatsCausas;
+    /** Criterio con el que el servidor deduce el trabajo de las señales. */
+    criterio?: { version: string; umbral_min: number; umbral_fotos_min: number; sin_pulsar_min?: number };
     /** Dias de antes y de despues del rango: dan continuidad a las graficas. */
     contexto?: { anterior: ProductionStatsDay[]; siguiente: ProductionStatsDay[] };
     /** Modulos terminados en el rango, del mas reciente al mas antiguo. */

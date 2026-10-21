@@ -1433,8 +1433,16 @@ class PlanningFoundationTests(APITestCase):
         response = self.client.get("/api/stats/production/?from=2026-09-28&to=2026-09-28")
         self.assertEqual(response.status_code, 200)
         tiempos = response.data["tiempos"]
-        self.assertEqual(tiempos["inferior"], {"mediana_min": 60.0, "media_min": 70.0, "paneles": 3, "medidos": 1})
-        self.assertEqual(tiempos["superior"], {"mediana_min": None, "media_min": None, "paneles": 0, "medidos": 0})
+        # El medido: pasos de 10 min y un hueco de 40 "sin pulsar" que cuenta; los
+        # aproximados, con tope de 60 min.
+        self.assertEqual(
+            tiempos["inferior"],
+            {"mediana_min": 60.0, "media_min": 60.0, "paneles": 3, "medidos": 1, "parado_min": 210.0},
+        )
+        self.assertEqual(
+            tiempos["superior"],
+            {"mediana_min": None, "media_min": None, "paneles": 0, "medidos": 0, "parado_min": None},
+        )
         fila = next(m for m in response.data["por_mesa"] if m["mesa_id"] == mesa.id)
         self.assertEqual(fila["tiempo_mediana_min"], 60.0)
         self.assertEqual(fila["tiempo_paneles"], 3)
@@ -1496,7 +1504,11 @@ class PlanningFoundationTests(APITestCase):
         self.assertEqual(response.data["range"]["from"], "2026-08-04")
         self.assertEqual(response.data["range"]["to"], timezone.localdate().isoformat())
         self.assertEqual(response.data["totals"]["modulos_completados"], 2)
-        self.assertEqual([d["fecha"] for d in response.data["por_dia"]], ["2026-08-04", "2026-09-28"])
+        # Cada dia de turno lleva su trabajo y su tiempo muerto; con modulos, solo esos dos.
+        self.assertEqual(
+            [d["fecha"] for d in response.data["por_dia"] if d["modulos_completados"]],
+            ["2026-08-04", "2026-09-28"],
+        )
         self.assertEqual(
             response.data["proyecto"],
             {"tipo": "proyecto", "id": self.project.id, "nombre": "Proyecto Plan", "modulos_total": 3, "modulos_completados": 2, "fecha_montaje": None},
@@ -1567,8 +1579,9 @@ class PlanningFoundationTests(APITestCase):
         self.assertEqual(fila["inferior"]["malla_kg"], 40.0)
         self.assertEqual(fila["superior"]["peso_kg"], 68.0)
         self.assertEqual(fila["superior"]["mesa_nombre"], "Mesa 3")
-        self.assertEqual(fila["superior"]["minutos"], 120.0)
-        self.assertEqual(fila["minutos"], 180.0)
+        # Sin eventos se aproxima desde el inicio del turno, con tope (45 min la superior).
+        self.assertEqual(fila["superior"]["minutos"], 45.0)
+        self.assertEqual(fila["minutos"], 105.0)
         self.assertEqual(fila["peso_kg"], 118.0)
         self.assertEqual(fila["malla_kg"], 100.0)
         self.assertEqual(response.data["totals"]["peso_total_kg"], 118.0)
@@ -1576,11 +1589,11 @@ class PlanningFoundationTests(APITestCase):
         # 118 kg en las 8 horas de jornada del lunes.
         self.assertEqual(response.data["totals"]["kg_por_hora"], 14.75)
         self.assertEqual(fila["desperdicio_kg"], 2.0)
-        self.assertEqual(response.data["tiempos"]["modulo"]["mediana_min"], 180.0)
+        self.assertEqual(response.data["tiempos"]["modulo"]["mediana_min"], 105.0)
 
         dia = response.data["por_dia"][0]
         self.assertEqual(dia["tiempo_inferior_min"], 60.0)
-        self.assertEqual(dia["tiempo_superior_min"], 120.0)
+        self.assertEqual(dia["tiempo_superior_min"], 45.0)
         horas = {h["hora"]: h for h in response.data["por_hora"]}
         self.assertEqual(horas["07"]["tiempo_inferior_min"], 60.0)
         self.assertEqual(horas["07"]["modulos_completados"], 0)
@@ -1635,8 +1648,10 @@ class PlanningFoundationTests(APITestCase):
         self.assertEqual(response.data["totals"]["horas_productivas"], 4.0)
         self.assertEqual(response.data["totals"]["modulos_por_hora"], 0.25)
         self.assertEqual(response.data["totals"]["kg_por_hora"], 25.0)
-        self.assertEqual(response.data["por_hora"][0]["hora"], "07")
-        self.assertEqual(response.data["por_hora"][0]["modulos_completados"], 1)
+        # La grafica arranca con el turno (06:00) aunque el primer modulo sea de las 07.
+        horas = {h["hora"]: h for h in response.data["por_hora"]}
+        self.assertEqual(response.data["por_hora"][0]["hora"], "06")
+        self.assertEqual(horas["07"]["modulos_completados"], 1)
 
     def _technical_db_file(self, filename, rows):
         temp_path = None

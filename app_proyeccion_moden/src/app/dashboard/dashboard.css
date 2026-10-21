@@ -140,6 +140,14 @@
 .stats-diferencia::before { content: ''; box-sizing: border-box; width: 8px; height: 8px; border: 2px solid var(--muted); border-radius: 50%; }
 .stats-diferencia.is-ok::before { border-color: var(--ok); background: var(--ok); }
 .stats-diferencia.is-bajo::before { border-color: var(--accent); }
+/* Tiempo muerto: siempre en amarillo, al lado del trabajo. */
+.stats-muerto { color: var(--warn); }
+.stats-kpi-value .stats-muerto { display: block; font-size: 15px; }
+.stats-kpi-value .stats-muerto small { color: var(--warn); }
+.stats-kpi-sub { display: block; color: var(--muted); font-size: 11px; font-weight: 500; }
+.stats-muerto-causas { margin: 0; color: var(--text); font-size: 12px; }
+.stats-muerto-causas strong { color: var(--warn); font-weight: 600; }
+.stats-fila-trabajo small, .stats-fila-muerto small, .stats-mesa-trabajo small { margin-left: 4px; color: var(--muted); font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; }
 
 /* ---- Proyectos ------------------------------------------------------------ */
 .btn-materiales-general { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }

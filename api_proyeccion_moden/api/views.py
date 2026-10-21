@@ -5639,18 +5639,21 @@ TIEMPO_PANEL_MINIMO_S = 120
 
 
 def _tiempos_fabricacion(items, jornada):
-    """Minutes of shift time per finished phase, measured when possible.
+    """Trabajo por fase hecha, en minutos, y lo que estuvo parada en la mesa.
 
-    ``jornada`` is an ``api.turnos.Jornada`` covering the items. Measured:
-    sum of the intervals between INICIO/PASO and PAUSA/FIN events (time with
-    the phase on screen), clipped to the shifts and without holidays. A gap
-    between two steps of different shifts or production days (the panel
-    stayed on the table between shifts, overnight or over the weekend) does
-    not count. Approximated (phases finished before the log existed, or on
-    screen for less than the minimum): shift time since the previous phase
-    finished on the same mesa in the same shift (or the start of the shift).
-    Anything under ``TIEMPO_PANEL_MINIMO_S`` is left without a time.
-    Returns ``{item_id: (minutes, measured)}``.
+    ``jornada`` es una ``api.turnos.Jornada`` que cubre los items. Medido
+    (fases con registro, ver ``_fase_medida``): suma de los huecos entre
+    senales. Un hueco de hasta ``UMBRAL_EVENTOS`` es trabajo; hasta
+    ``TOLERANCIA_SIN_PULSAR`` es "sin pulsar" (trabajo sin pasar diapositiva:
+    cuenta); mas, o tras una PAUSA, es parado. Parado = reloj (primera senal ->
+    hecho) - trabajo, partido en dentro y fuera de turno; ``pernocto`` si algun
+    hueco pasa de 8 h. Aproximado (fases sin registro util): tiempo de turno
+    desde la fase anterior de la misma mesa en el mismo turno (o el inicio del
+    turno), con tope; ahi no se sabe lo parado.
+    Menos de ``TIEMPO_PANEL_MINIMO_S`` no cuenta.
+    Devuelve ``{item_id: (minutos, medido, detalle)}`` con detalle =
+    {sin_pulsar_min, parado_min, parado_turno_min, parado_fuera_min, pernocto}
+    (None si aproximado).
     """
     items = [it for it in items if it.done_at is not None and it.mesa_id is not None]
     if not items:
@@ -5665,6 +5668,7 @@ def _tiempos_fabricacion(items, jornada):
             return tramo_desde == tramo_hasta
         return jornada.dia_de(desde) == jornada.dia_de(hasta)
 
+    tope = {'INFERIOR': 60 * 60, 'SUPERIOR': 45 * 60}
     result = {}
     by_mesa = {}
     for it in sorted(items, key=lambda i: (i.done_at, i.id)):
@@ -5674,34 +5678,63 @@ def _tiempos_fabricacion(items, jornada):
         previous_done = None
         for it in mesa_items:
             evs = eventos.get(it.id, [])
-            medido = 0.0
-            if any(ev.tipo == EventoFabricacionTipo.INICIO for ev in evs):
-                # Se suma de paso en paso. Si entre dos pasos cambia el turno,
-                # el panel se quedo en la mesa: ese hueco no cuenta.
-                def tramo(desde, hasta):
-                    return jornada.segundos_entre(desde, hasta) if mismo_turno(desde, hasta) else 0.0
-
-                last_at = None
-                for ev in evs:
-                    if last_at is not None:
-                        medido += tramo(last_at, ev.at)
-                    abre = ev.tipo in (EventoFabricacionTipo.INICIO, EventoFabricacionTipo.PASO)
-                    last_at = ev.at if abre else None
-                if last_at is not None:
-                    medido += tramo(last_at, it.done_at)
-            if medido >= TIEMPO_PANEL_MINIMO_S:
-                result[it.id] = (medido / 60.0, True)
-            else:
+            medido = _fase_medida(evs, it.done_at, jornada) if evs else None
+            if medido is not None:
+                result[it.id] = medido
+            elif not any(ev.tipo == EventoFabricacionTipo.PASO for ev in evs):
+                # Sin registro util (como mucho el INICIO automatico): se aproxima.
                 if previous_done is not None and mismo_turno(previous_done, it.done_at):
                     start = previous_done
                 else:
                     tramo_hecho = jornada.tramo_de(it.done_at)
                     start = tramo_hecho.inicio if tramo_hecho is not None else None
-                seconds = jornada.segundos_entre(start, it.done_at)
+                seconds = min(jornada.segundos_entre(start, it.done_at), tope.get(it.fase, tope['INFERIOR']))
                 if seconds >= TIEMPO_PANEL_MINIMO_S:
-                    result[it.id] = (seconds / 60.0, False)
+                    result[it.id] = (seconds / 60.0, False, None)
             previous_done = it.done_at
     return result
+
+
+def _fase_medida(evs, done_at, jornada):
+    """Tiempo medido de una fase con registro: ``(minutos, True, detalle)``, o
+    None si no llega al minimo. Senales: pasos, pausas, el fin y el hecho; el
+    INICIO solo si el operario siguio dentro de la tolerancia (si no, es el
+    player, que avanzo solo al cerrar la fase anterior). Tras una PAUSA la fase
+    no esta en pantalla: ese hueco es parado por corto que sea."""
+    from api.actividad import TOLERANCIA_SIN_PULSAR, UMBRAL_EVENTOS
+
+    senales = [(ev.at, ev.tipo) for ev in evs if ev.tipo != EventoFabricacionTipo.INICIO] + [(done_at, 'HECHO')]
+    for indice, ev in enumerate(evs):
+        if ev.tipo != EventoFabricacionTipo.INICIO:
+            continue
+        siguiente = evs[indice + 1].at if indice + 1 < len(evs) else done_at
+        if siguiente - ev.at <= TOLERANCIA_SIN_PULSAR:
+            senales.append((ev.at, ev.tipo))
+    senales = sorted(set(senales))
+    trabajo = sin_pulsar = 0.0
+    parado_turno = parado_fuera = 0.0
+    pernocto = False
+    for (antes, tipo_antes), (despues, _tipo) in zip(senales, senales[1:]):
+        hueco = (despues - antes).total_seconds()
+        if tipo_antes != EventoFabricacionTipo.PAUSA and despues - antes <= TOLERANCIA_SIN_PULSAR:
+            trabajo += hueco
+            if despues - antes > UMBRAL_EVENTOS:
+                sin_pulsar += hueco
+            continue
+        en_turno = jornada.segundos_entre(antes, despues)
+        parado_turno += en_turno
+        parado_fuera += hueco - en_turno
+        if hueco > 8 * 3600:
+            pernocto = True
+    if trabajo < TIEMPO_PANEL_MINIMO_S:
+        return None
+    return (trabajo / 60.0, True, {
+        'sin_pulsar_min': round(sin_pulsar / 60.0, 1),
+        'parado_min': round((parado_turno + parado_fuera) / 60.0, 1),
+        'parado_turno_min': round(parado_turno / 60.0, 1),
+        'parado_fuera_min': round(parado_fuera / 60.0, 1),
+        'pernocto': pernocto,
+    })
 
 
 def _objetivo_del_turno(esperado, jornada, desde, hasta, turno):
@@ -5731,14 +5764,18 @@ def _objetivo_del_turno(esperado, jornada, desde, hasta, turno):
 
 
 def _resumen_tiempos(valores):
-    """``{mediana_min, media_min, paneles, medidos}`` for a list of (minutes, measured)."""
+    """``{mediana_min, media_min, paneles, medidos, parado_min}`` for a list of
+    (minutes, measured[, detail]); ``parado_min`` is the median of what the
+    measured ones stood still on the table (None when none was measured)."""
     import statistics
-    minutos = [round(m, 1) for m, _ in valores]
+    minutos = [round(v[0], 1) for v in valores]
+    parados = [v[2]['parado_min'] for v in valores if len(v) > 2 and v[2] and v[2].get('parado_min') is not None]
     return {
         'mediana_min': round(statistics.median(minutos), 1) if minutos else None,
         'media_min': round(sum(minutos) / len(minutos), 1) if minutos else None,
         'paneles': len(minutos),
-        'medidos': sum(1 for _, measured in valores if measured),
+        'medidos': sum(1 for v in valores if v[1]),
+        'parado_min': round(statistics.median(parados), 1) if parados else None,
     }
 
 
@@ -6170,19 +6207,49 @@ class ProductionStatsView(APIView):
         # sus horas entre los dos dias. 'turnos' es la parte de turno de cada
         # dia (la madrugada y la noche de un dia suman uno).
         dias_rango = {}
+        ventanas_dia = {}
         horas_dia = set()
         eje_dia = []
         working_seconds = 0.0
         # Segundos trabajados por las personas de cada turno (fijas).
         working_person_seconds = 0.0
+        # Con un turno elegido, lo trabajado fuera de turno se atribuye al tramo
+        # mas cercano (como los modulos): cada hueco entre turnos se reparte a
+        # medias entre el que acaba de terminar y el que va a empezar (en tiempo
+        # real, no de reloj: el cambio de hora no mueve la mitad).
+        atribucion_dia = {}
+        atribucion_tramo = {}
+        if turno_sel is not None:
+            from datetime import timezone as _dt_tz
+            from api.actividad import union as _union
+
+            def _mitad(a, b):
+                a, b = a.astimezone(_dt_tz.utc), b.astimezone(_dt_tz.utc)
+                return a + (b - a) / 2
+
+            bloques = _union([(t.inicio, t.fin) for t in jornada.tramos])
+            for indice_bloque, (bloque_inicio, bloque_fin) in enumerate(bloques):
+                antes = bloques[indice_bloque - 1][1] if indice_bloque > 0 else None
+                despues = bloques[indice_bloque + 1][0] if indice_bloque + 1 < len(bloques) else None
+                del_bloque = [t for t in jornada.tramos if t.inicio >= bloque_inicio and t.fin <= bloque_fin]
+                primero = min(del_bloque, key=lambda t: t.inicio)
+                ultimo = max(del_bloque, key=lambda t: t.fin)
+                for t in del_bloque:
+                    atribucion_tramo[id(t)] = (
+                        _mitad(antes, bloque_inicio) if t is primero and antes is not None else t.inicio,
+                        _mitad(bloque_fin, despues) if t is ultimo and despues is not None else t.fin,
+                    )
         for tramo in jornada.tramos:
             if turno_sel is None or tramo.turno.indice != turno_sel.indice or not (from_date <= tramo.dia_fin <= to_date):
                 continue
+            atribucion_dia.setdefault(tramo.dia_fin.isoformat(), []).append(atribucion_tramo[id(tramo)])
             # Un turno elegido: entero, en el dia en que acaba.
             dia = dias_rango.setdefault(tramo.dia_fin.isoformat(), {'fecha': tramo.dia_fin.isoformat(), 'turnos': 0.0, 'horas': 0.0})
             dia['turnos'] += 1
             dia['horas'] += tramo.segundos / 3600.0
             if tramo.inicio < ahora:
+                # Solo lo que ya ha pasado: lo que queda de turno no es tiempo muerto.
+                ventanas_dia.setdefault(tramo.dia_fin.isoformat(), []).append((tramo.inicio, min(tramo.fin, ahora)))
                 trabajado = (min(tramo.fin, ahora) - tramo.inicio).total_seconds()
                 working_seconds += trabajado
                 working_person_seconds += trabajado * tramo.turno.personas
@@ -6211,8 +6278,10 @@ class ProductionStatsView(APIView):
                 dia = dias_rango.setdefault(fecha.isoformat(), {'fecha': fecha.isoformat(), 'turnos': 0.0, 'horas': 0.0})
                 dia['turnos'] += segundos / tramo.segundos
                 dia['horas'] += segundos / 3600.0
-                # Horas ya trabajadas: un turno en curso cuenta hasta ahora.
+                # Horas ya trabajadas: un turno en curso cuenta hasta ahora, y
+                # solo esa parte puede tener tiempo muerto.
                 if cursor < ahora:
+                    ventanas_dia.setdefault(fecha.isoformat(), []).append((cursor, min(corte, ahora)))
                     trabajado = (min(corte, ahora) - cursor).total_seconds()
                     working_seconds += trabajado
                     working_person_seconds += trabajado * tramo.turno.personas
@@ -6253,6 +6322,97 @@ class ProductionStatsView(APIView):
         totals['kg_por_hora_hombre'] = round(
             totals['peso_total_kg'] / horas_hombre, 2
         ) if horas_hombre > 0 else None
+
+        # Trabajo + tiempo muerto, deducidos de las senales de las mesas. Solo
+        # con una ferralla delante: el admin mirando todas no tiene turno que medir.
+        from api.actividad import Actividad, CRITERIO, horas as _h, solape as _solape
+        actividad = None
+        muerto_por_causa = None
+        actividad_dia = {}
+        mesas_actividad = (
+            list(Mesa.objects.filter(usuario=profile_user).order_by('indice', 'id')) if profile_user is not None else []
+        )
+        if profile_user is not None:
+            actividad = Actividad(
+                mesas_actividad, from_dt - timedelta(days=2), to_dt_exclusive + timedelta(days=2), current_tz,
+            )
+            causas = {'sin_registro': 0.0, 'empezo_tarde': 0.0, 'acabo_pronto': 0.0, 'paradas': 0.0}
+            trabajo_total = muerto_total = fuera_total = 0.0
+            # Todos los dias del rango: un sabado trabajado sin turno tambien
+            # cuenta (como trabajo fuera de turno). Con un turno elegido, sus dias.
+            if turno_sel is None:
+                fechas = [(from_date + timedelta(days=i)).isoformat() for i in range((to_date - from_date).days + 1)]
+            else:
+                fechas = list(dias_rango)
+            for fecha in fechas:
+                ventanas = ventanas_dia.get(fecha, [])
+                desglose = actividad.desglose(ventanas)
+                if turno_sel is None:
+                    dia_inicio = timezone.make_aware(timezone.datetime.combine(
+                        timezone.datetime.fromisoformat(fecha).date(), timezone.datetime.min.time()), current_tz)
+                    dia_entero = [(dia_inicio, dia_inicio + timedelta(days=1))]
+                    fuera = actividad.trabajo_fuera(ventanas, *dia_entero[0])
+                else:
+                    # Lo trabajado fuera de turno que toca a este tramo (hasta ahora).
+                    dia_entero = [(a, min(b, ahora)) for a, b in atribucion_dia.get(fecha, []) if a < ahora]
+                    fuera = sum(actividad.trabajo_fuera(ventanas, a, b) for a, b in dia_entero)
+                if fecha not in dias_rango and fuera == 0:
+                    # Ni turno ni trabajo: el dia no sale.
+                    continue
+                for causa in causas:
+                    causas[causa] += desglose[causa]
+                trabajo_total += desglose['trabajo'] + fuera
+                muerto_total += desglose['muerto']
+                fuera_total += fuera
+                actividad_dia[fecha] = {
+                    'horas_turno': _h(desglose['turno']),
+                    'horas_trabajo': _h(desglose['trabajo'] + fuera),
+                    'horas_muertas': _h(desglose['muerto']),
+                    'horas_fuera_turno': _h(fuera),
+                    'sin_registro': bool(ventanas) and desglose['trabajo'] == 0 and desglose['sin_registro'] > 0,
+                    # Estimado si parte del trabajo del dia viene de una mesa sin eventos.
+                    'estimado': actividad.estimado_en(dia_entero),
+                    'abre': timezone.localtime(desglose['abre'], current_tz).isoformat() if desglose['abre'] else None,
+                    'cierra': timezone.localtime(desglose['cierra'], current_tz).isoformat() if desglose['cierra'] else None,
+                    'causas': {causa: _h(desglose[causa]) for causa in causas},
+                }
+            totals['horas_trabajo'] = _h(trabajo_total)
+            totals['horas_muertas'] = _h(muerto_total)
+            totals['horas_fuera_turno'] = _h(fuera_total)
+            totals['modulos_por_hora_trabajo'] = (
+                round(modulos_completados / (trabajo_total / 3600.0), 2) if trabajo_total > 0 else 0.0
+            )
+            totals['kg_por_hora_trabajo'] = (
+                round(totals['peso_total_kg'] / (trabajo_total / 3600.0), 2) if trabajo_total > 0 else 0.0
+            )
+            muerto_por_causa = {causa: _h(valor) for causa, valor in causas.items()}
+        # Por hora, en la vista de un dia: minutos de trabajo y muertos.
+        actividad_hora = {}
+        if single_day and actividad is not None:
+            if eje_dia:
+                horas_eje = [(item['hora'], timezone.datetime.fromisoformat(item['inicio'])) for item in eje_dia]
+            else:
+                base = from_dt
+                horas_eje = [(f'{h:02d}', base + timedelta(hours=h)) for h in range(24)]
+            ventanas_todas = [v for lista in ventanas_dia.values() for v in lista]
+            for etiqueta, inicio_hora in horas_eje:
+                fin_hora = inicio_hora + timedelta(hours=1)
+                turno_h = _solape(ventanas_todas, inicio_hora, fin_hora)
+                trabajo_h = _solape(actividad.fabrica, inicio_hora, fin_hora)
+                # Muerto = turno de esa hora menos lo trabajado dentro del turno.
+                trabajo_en_turno_h = sum(
+                    _solape(actividad.fabrica, max(a, inicio_hora), min(b, fin_hora))
+                    for a, b in ventanas_todas if b > inicio_hora and a < fin_hora
+                )
+                # Las horas sin turno ni trabajo no salen en la grafica.
+                if not turno_h and not trabajo_h:
+                    continue
+                actividad_hora[etiqueta] = {
+                    'minutos_turno': round(turno_h / 60.0, 1),
+                    'minutos_trabajo': round(trabajo_h / 60.0, 1),
+                    'minutos_muertos': round(max(0.0, turno_h - trabajo_en_turno_h) / 60.0, 1),
+                    'estimado': actividad.estimado_en([(inicio_hora, fin_hora)]),
+                }
 
         # Tiempo por panel. La ventana es mas ancha que el rango: da contexto a
         # las graficas (periodo anterior y siguiente) y el panel anterior de
@@ -6319,26 +6479,47 @@ class ProductionStatsView(APIView):
                     'indice': data['mesa'].indice,
                     **empty_totals(),
                 }
+        for mesa in mesas_actividad:
+            # Las mesas apagadas no salen con el turno entero muerto.
+            if mesa.activa and mesa.id not in por_mesa and ventanas_dia:
+                por_mesa[mesa.id] = {
+                    'mesa_id': mesa.id, 'mesa_nombre': mesa.nombre, 'tipo': mesa.tipo, 'indice': mesa.indice,
+                    **empty_totals(),
+                }
+        ventanas_periodo = [v for lista in ventanas_dia.values() for v in lista]
         for mesa_id, bucket in por_mesa.items():
             resumen = _resumen_tiempos(tiempos_mesa.get(mesa_id, {}).get('valores', []))
             bucket['tiempo_mediana_min'] = resumen['mediana_min']
             bucket['tiempo_paneles'] = resumen['paneles']
             bucket['tiempo_medidos'] = resumen['medidos']
+            if isinstance(mesa_id, int) and actividad is not None:
+                desglose_mesa = actividad.mesa_desglose(mesa_id, ventanas_periodo)
+                bucket['horas_trabajo'] = _h(desglose_mesa['trabajo'])
+                bucket['horas_muertas'] = _h(desglose_mesa['muerto'])
+                bucket['paradas'] = desglose_mesa['paradas']
+                bucket['estimado'] = desglose_mesa['estimado']
+                # Por panel hecho en la mesa en el periodo, no por modulo terminado.
+                bucket['min_trabajo_por_panel'] = (
+                    round(desglose_mesa['trabajo'] / 60.0 / resumen['paneles'], 1)
+                    if resumen['paneles'] and desglose_mesa['trabajo'] else None
+                )
 
         # Tiempo por dia (y por hora en la vista de un dia), tambien en los dias
         # con paneles hechos pero sin modulos terminados.
         from_iso, to_iso = from_date.isoformat(), to_date.isoformat()
-        for fecha in tiempos_dia:
+        for fecha in list(tiempos_dia) + list(actividad_dia):
             if from_iso <= fecha <= to_iso and fecha not in por_dia:
                 por_dia[fecha] = {'fecha': fecha, 'modulos_completados': 0, **empty_totals()}
         for fecha, bucket in por_dia.items():
             _tiempos_bucket(bucket, tiempos_dia.get(fecha))
+            bucket.update(actividad_dia.get(fecha, {}))
         if single_day:
-            for hora in tiempos_hora:
+            for hora in list(tiempos_hora) + list(actividad_hora):
                 if hora not in por_hora:
                     por_hora[hora] = {'hora': hora, 'modulos_completados': 0, **empty_totals()}
             for hora, bucket in por_hora.items():
                 _tiempos_bucket(bucket, tiempos_hora.get(hora))
+                bucket.update(actividad_hora.get(hora, {}))
 
         # Contexto: los dias de antes y de despues del rango, para que las
         # graficas prolonguen la linea hacia el periodo vecino.
@@ -6399,6 +6580,11 @@ class ProductionStatsView(APIView):
                 ),
                 'minutos': round(valor[0], 1) if valor else None,
                 'medido': bool(valor and valor[1]),
+                # Lo que la fase estuvo parada en la mesa (solo si se midio).
+                **(valor[2] if valor and valor[2] else {
+                    'sin_pulsar_min': None, 'parado_min': None, 'parado_turno_min': None,
+                    'parado_fuera_min': None, 'pernocto': None,
+                }),
                 # peso_kg es el total de la fase; malla_kg, solo la malla recortada.
                 'peso_kg': _decimal(detalle.peso_total_kg) if detalle else None,
                 'malla_kg': (
@@ -6426,7 +6612,11 @@ class ProductionStatsView(APIView):
                 and inferior['minutos'] is not None and superior['minutos'] is not None
             ):
                 minutos = round(inferior['minutos'] + superior['minutos'], 1)
-                tiempos_modulo.append((minutos, inferior['medido'] and superior['medido']))
+                parado = (
+                    {'parado_min': round(inferior['parado_min'] + superior['parado_min'], 1)}
+                    if inferior['parado_min'] is not None and superior['parado_min'] is not None else None
+                )
+                tiempos_modulo.append((minutos, inferior['medido'] and superior['medido'], parado))
             grupo = modulo.grupo_bastidor
             modulos_detalle.append({
                 'id': modulo.id,
@@ -6481,6 +6671,8 @@ class ProductionStatsView(APIView):
                 **esperado,
             },
             'planificacion': planning,
+            'muerto_por_causa': muerto_por_causa,
+            'criterio': CRITERIO,
             'turnos': [{'indice': turno.indice, 'nombre': turno.nombre} for turno in turnos],
             'turno': turno_sel.indice if turno_sel is not None else None,
             'tiempos': tiempos,

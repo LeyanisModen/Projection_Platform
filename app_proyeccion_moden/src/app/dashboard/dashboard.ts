@@ -10,6 +10,7 @@ import {
   EstrategiaColaSuperior, GrupoMesas, GrupoMesasProyectoEntry, ProductionStatsResponse, ModuloFase,
   GrupoBastidor, GrupoBastidorModulo, FerrallaCaptureConfig, TurnoConfig, GrupoMesaResumen,
   TiempoFabricacion, ProductionStatsBucket, ProductionStatsTiempos, ProductionStatsModulo, ProductionStatsModuloFase,
+  ProductionStatsActividadDia, ProductionStatsCausas,
   ElementosSueltos, ElementosSueltosHoja, ElementosSueltosSeccion, ElementosSueltosCelda,
 } from '../services/api.service';
 import { LineChartSeries, StatsLineChart } from './stats-line-chart';
@@ -36,6 +37,16 @@ import { agruparPorEdificio, GrupoEdificio } from '../shared/edificios';
 const CHART_NARANJA = '#f0640f';
 const CHART_AZUL = '#2a78d6';
 const CHART_GRIS = '#52606d';
+// El tiempo muerto va en amarillo, en las graficas y en las tablas.
+const CHART_AMARILLO = '#d9a400';
+
+/** Un dia o una hora tal y como los da el servidor (la hora trae minutos, no horas). */
+type StatsFuente = ProductionStatsBucket & ProductionStatsTiempos & ProductionStatsActividadDia & {
+  modulos_completados: number;
+  minutos_turno?: number;
+  minutos_trabajo?: number;
+  minutos_muertos?: number;
+};
 
 /** Una columna de las graficas y una fila de la tabla por periodo. */
 export interface StatsBucket {
@@ -52,6 +63,20 @@ export interface StatsBucket {
   dificultad_total: number;
   tiempo_inferior_min: number | null;
   tiempo_superior_min: number | null;
+  /** Horas de turno, de trabajo y muertas (null si el servidor no las da). */
+  horas_turno: number | null;
+  horas_trabajo: number | null;
+  horas_muertas: number | null;
+  /** Trabajo fuera de las horas de turno, ya dentro de horas_trabajo. */
+  horas_fuera_turno: number | null;
+  /** Ninguna señal en el turno: todo el tiempo muerto es "sin registro". */
+  sin_registro: boolean;
+  /** Sin registro de eventos: el trabajo sale de fotos y fases hechas. */
+  estimado: boolean;
+  /** Primera y última señal del día (ISO); solo por día. */
+  abre: string | null;
+  cierra: string | null;
+  causas: ProductionStatsCausas | null;
   meta_modulos: number;
   working_days: number;
   granularity: 'hour' | 'day' | 'week';
@@ -79,6 +104,13 @@ export interface StatsVista {
   modulos: LineChartSeries[];
   peso: LineChartSeries[];
   tiempo: LineChartSeries[];
+  /** Trabajo y tiempo muerto, en horas. */
+  horas: LineChartSeries[];
+  /** Por hora del dia, las horas van en minutos. */
+  horasUnidad: 'h' | 'min';
+  horasDecimales: number;
+  /** Solo las filas por dia traen la primera y la ultima señal. */
+  conSenales: boolean;
   desperdicio: LineChartSeries[];
   dificultad: LineChartSeries[];
   filas: StatsBucket[];
@@ -2328,7 +2360,10 @@ export class Dashboard implements OnInit, OnDestroy {
     const objetivo = this.objetivoPorDia();
     // Desperdicio sobre el peso total fabricado de la columna.
     const pct = (waste: number, total: number): number | null => total > 0 ? (waste / total) * 100 : null;
-    const base = (found: (ProductionStatsBucket & ProductionStatsTiempos & { modulos_completados: number }) | undefined) => ({
+    // Trabajo y tiempo muerto: por dia vienen en horas; por hora, en minutos.
+    const aHoras = (h: number | undefined, min: number | undefined): number | null =>
+      typeof h === 'number' ? h : typeof min === 'number' ? min / 60 : null;
+    const base = (found: StatsFuente | undefined) => ({
       modulos_completados: found?.modulos_completados || 0,
       fases_completadas: found?.fases_completadas || 0,
       peso_total_kg: this.pesoTotal(found),
@@ -2339,6 +2374,15 @@ export class Dashboard implements OnInit, OnDestroy {
       dificultad_total: found?.dificultad_total || 0,
       tiempo_inferior_min: found?.tiempo_inferior_min ?? null,
       tiempo_superior_min: found?.tiempo_superior_min ?? null,
+      horas_turno: aHoras(found?.horas_turno, found?.minutos_turno),
+      horas_trabajo: aHoras(found?.horas_trabajo, found?.minutos_trabajo),
+      horas_muertas: aHoras(found?.horas_muertas, found?.minutos_muertos),
+      horas_fuera_turno: found?.horas_fuera_turno ?? null,
+      sin_registro: !!found?.sin_registro,
+      estimado: !!found?.estimado,
+      abre: found?.abre ?? null,
+      cierra: found?.cierra ?? null,
+      causas: found?.causas ?? null,
     });
 
     // Un dia con un turno elegido: ese turno entero (la noche empieza el dia
@@ -2427,11 +2471,32 @@ export class Dashboard implements OnInit, OnDestroy {
 
       let modulos = 0, fases = 0, pt = 0, pi = 0, pf = 0, desp = 0, dif = 0, workDays = 0, meta = 0;
       let tiSum = 0, tiN = 0, tsSum = 0, tsN = 0;
+      let hTurno: number | null = null, hTrabajo: number | null = null, hMuertas: number | null = null;
+      let hFuera: number | null = null, estimado = false;
+      let diasTurno = 0, diasSinRegistro = 0;
+      let causas: ProductionStatsCausas | null = null;
       const d = new Date(segStart);
       while (d <= segEnd) {
         const found = byDate.get(this.toLocalIsoDate(d));
         if (found) {
           modulos += found.modulos_completados || 0;
+          if (typeof found.horas_trabajo === 'number') {
+            hTurno = (hTurno ?? 0) + (found.horas_turno ?? 0);
+            hTrabajo = (hTrabajo ?? 0) + found.horas_trabajo;
+            hMuertas = (hMuertas ?? 0) + (found.horas_muertas ?? 0);
+            hFuera = (hFuera ?? 0) + (found.horas_fuera_turno ?? 0);
+            estimado = estimado || !!found.estimado;
+            if (found.horas_turno) {
+              diasTurno++;
+              if (found.sin_registro) diasSinRegistro++;
+            }
+            if (found.causas) {
+              causas = causas ?? { sin_registro: 0, empezo_tarde: 0, acabo_pronto: 0, paradas: 0 };
+              for (const clave of Object.keys(causas) as Array<keyof ProductionStatsCausas>) {
+                causas[clave] += found.causas[clave] || 0;
+              }
+            }
+          }
           fases += found.fases_completadas || 0;
           pt += this.pesoTotal(found);
           pi += found.peso_malla_inicial_kg || 0;
@@ -2469,6 +2534,16 @@ export class Dashboard implements OnInit, OnDestroy {
         dificultad_total: dif,
         tiempo_inferior_min: tiN ? tiSum / tiN : null,
         tiempo_superior_min: tsN ? tsSum / tsN : null,
+        horas_turno: hTurno,
+        horas_trabajo: hTrabajo,
+        horas_muertas: hMuertas,
+        horas_fuera_turno: hFuera,
+        // Una semana entera sin señal es "sin registro"; la mitad, ya no.
+        sin_registro: diasTurno > 0 && diasSinRegistro === diasTurno,
+        estimado,
+        abre: null,
+        cierra: null,
+        causas,
         meta_modulos: meta,
         working_days: workDays,
         granularity: 'week',
@@ -2555,6 +2630,8 @@ export class Dashboard implements OnInit, OnDestroy {
     const valores = (pick: (b: StatsBucket) => number | null): Array<number | null> =>
       buckets.map(b => b.futuro ? null : pick(b));
     const hayObjetivo = buckets.some(b => b.meta_modulos > 0);
+    // Trabajo y muerto: por hora del dia, en minutos (una hora partida en decimas no se lee).
+    const enUnidad = (h: number | null): number | null => h === null ? null : granularity === 'hour' ? Math.round(h * 60) : h;
     // El objetivo va por tramos de montaje: si cambia dentro del rango, se dice el rango.
     const metas = buckets.filter(b => b.granularity !== 'week' && b.meta_modulos > 0).map(b => b.meta_modulos);
     const cap = metas.length ? Math.max(...metas) : 0;
@@ -2586,6 +2663,13 @@ export class Dashboard implements OnInit, OnDestroy {
           prev: prev?.tiempo_superior ?? null, next: next?.tiempo_superior ?? null,
         },
       ],
+      // El contexto vecino no trae actividad: estas lineas no se prolongan.
+      horas: [
+        { name: 'Trabajo', color: CHART_GRIS, values: valores(b => enUnidad(b.horas_trabajo)) },
+        { name: 'Tiempo muerto', color: CHART_AMARILLO, values: valores(b => enUnidad(b.horas_muertas)) },
+      ],
+      horasUnidad: granularity === 'hour' ? 'min' : 'h',
+      horasDecimales: granularity === 'hour' ? 0 : 1,
       desperdicio: [{
         name: 'Desperdicio', color: CHART_GRIS, values: valores(b => b.desperdicio_pct),
         prev: prev?.desperdicio_pct ?? null, next: next?.desperdicio_pct ?? null,
@@ -2594,6 +2678,7 @@ export class Dashboard implements OnInit, OnDestroy {
         name: 'Dificultad', color: CHART_GRIS, values: valores(b => b.dificultad_total),
         prev: prev?.dificultad ?? null, next: next?.dificultad ?? null,
       }],
+      conSenales: granularity === 'day',
       filas: buckets.filter(b => !b.futuro),
       detalleTitulo: granularity === 'hour' ? 'Detalle por hora' : granularity === 'week' ? 'Detalle por semana' : 'Detalle por día',
       periodoLabel: granularity === 'hour' ? 'Hora' : granularity === 'week' ? 'Semana' : 'Día',
@@ -2672,15 +2757,120 @@ export class Dashboard implements OnInit, OnDestroy {
     return `${fase.medido ? '' : '~'}${Math.round(fase.minutos)}`;
   }
 
+  /** Medido: el trabajo, lo que fue sin pasar diapositiva, lo parado (y fuera de turno) y si pernocto. */
   minutosTitulo(fase: ProductionStatsModuloFase | null): string {
     if (!fase || fase.minutos === null) return 'Sin tiempo registrado';
-    return fase.medido ? 'Medido en la mesa' : 'Aproximado entre paneles hechos';
+    if (!fase.medido) return 'Aproximado entre paneles hechos';
+    const partes = [`${Math.round(fase.minutos)} min de trabajo medidos en la mesa`];
+    if (fase.sin_pulsar_min) partes[0] += ` (${Math.round(fase.sin_pulsar_min)} sin pasar diapositiva)`;
+    if (fase.parado_min) {
+      let parado = `${Math.round(fase.parado_min)} min parada`;
+      if (fase.parado_fuera_min) parado += ` (${Math.round(fase.parado_fuera_min)} fuera de turno)`;
+      partes.push(parado);
+    }
+    if (fase.pernocto) partes.push('pernoctó en la mesa');
+    return partes.join(' · ');
   }
 
   minutosModuloLabel(modulo: ProductionStatsModulo): string {
     if (modulo.minutos === null) return '—';
     const medido = !!modulo.inferior?.medido && !!modulo.superior?.medido;
     return `${medido ? '' : '~'}${Math.round(modulo.minutos)}`;
+  }
+
+  /** Lo que el modulo estuvo parado en la mesa: la suma de sus dos fases, si las dos se midieron
+   *  (como la mediana del indicador); null si alguna es aproximada. */
+  paradoModulo(modulo: ProductionStatsModulo): number | null {
+    const inferior = modulo.inferior?.parado_min;
+    const superior = modulo.superior?.parado_min;
+    return typeof inferior === 'number' && typeof superior === 'number' ? inferior + superior : null;
+  }
+
+  /** El servidor ya deduce trabajo y tiempo muerto (uno antiguo solo da horas de jornada). */
+  hayActividad(): boolean {
+    return this.statsData?.totals.horas_trabajo != null;
+  }
+
+  /** Hay trabajo medido: los ritmos van por hora de trabajo. */
+  ritmoDeTrabajo(): boolean {
+    const totals = this.statsData?.totals;
+    return !!totals && totals.modulos_por_hora_trabajo != null && !!totals.horas_trabajo;
+  }
+
+  /** Horas con un decimal, o guion. */
+  horasLabel(horas: number | null | undefined): string {
+    return typeof horas === 'number' ? formatNumber(horas, 'en-US', '1.0-1') : '—';
+  }
+
+  /** Horas de una fila: por hora del dia, en minutos, que una hora partida en decimas no se lee. */
+  horasFilaLabel(fila: StatsBucket, horas: number | null): string {
+    if (horas === null) return '—';
+    if (fila.granularity === 'hour') return `${Math.round(horas * 60)} min`;
+    return this.horasLabel(horas);
+  }
+
+  /** Titulo del indicador de horas: el turno del periodo y, si lo hay, el trabajo fuera de turno. */
+  horasTitulo(totals: ProductionStatsResponse['totals']): string {
+    const base = `Horas de turno del período: ${this.horasLabel(totals.horas_productivas)} h. `
+      + 'Trabajo: mientras las mesas dan señales (diapositivas, fotos, fases hechas). Muertas: turno sin trabajo.';
+    return totals.horas_fuera_turno
+      ? `${base} Incluye ${this.horasLabel(totals.horas_fuera_turno)} h trabajadas fuera de turno.`
+      : base;
+  }
+
+  /** "30 h sin registro · 20 h empezó tarde · …", sin las causas a cero. */
+  private causasLabel(causas: ProductionStatsCausas): string {
+    const nombres: Array<[keyof ProductionStatsCausas, string]> = [
+      ['sin_registro', 'sin registro'], ['empezo_tarde', 'empezó tarde'], ['acabo_pronto', 'acabó pronto'], ['paradas', 'paradas'],
+    ];
+    return nombres
+      .filter(([clave]) => causas[clave] > 0)
+      .map(([clave, nombre]) => `${this.horasLabel(causas[clave])} h ${nombre}`)
+      .join(' · ');
+  }
+
+  /** Tiempo muerto del periodo por causa (null si no hay). */
+  muertoCausas(): string | null {
+    const causas = this.statsData?.muerto_por_causa;
+    return causas ? this.causasLabel(causas) || null : null;
+  }
+
+  /** Titulo de una fila por dia: su turno, sus horas y sus causas de tiempo muerto. */
+  horasFilaTitulo(fila: StatsBucket): string {
+    if (fila.horas_trabajo === null) return '';
+    const unidad = fila.granularity === 'hour' ? '' : ' h';
+    const fuera = fila.horas_fuera_turno ?? 0;
+    // Dentro del turno, trabajo + muertas suman el turno; lo de fuera va aparte.
+    const partes = [
+      `Turno de ${this.horasFilaLabel(fila, fila.horas_turno)}${unidad}: ${this.horasFilaLabel(fila, fila.horas_trabajo - fuera)}${unidad} de trabajo`
+      + ` + ${this.horasFilaLabel(fila, fila.horas_muertas)}${unidad} muertas`,
+    ];
+    if (fuera > 0) partes.push(`${this.horasFilaLabel(fila, fuera)}${unidad} trabajadas fuera de turno`);
+    if (fila.sin_registro) partes.push('sin ninguna señal en el turno');
+    else if (fila.causas) {
+      const causas = this.causasLabel(fila.causas);
+      if (causas) partes.push(causas);
+    }
+    if (fila.estimado) partes.push('estimado: sin registro de eventos, solo fotos y fases hechas');
+    return partes.join(' · ');
+  }
+
+  /** "06:12 – 15:48": primera y ultima señal del dia, en la hora de la fabrica
+   *  (el servidor ya las manda en su zona: no se pasan por la del navegador). */
+  senalesLabel(fila: StatsBucket): string {
+    if (!fila.abre || !fila.cierra) return '—';
+    return `${fila.abre.slice(11, 16)} – ${fila.cierra.slice(11, 16)}`;
+  }
+
+  /** Nota al pie con el criterio del servidor para deducir el trabajo de las señales. */
+  criterioNota(): string {
+    const c = this.statsData?.criterio;
+    if (!c) return '';
+    const sinPulsar = c.sin_pulsar_min
+      ? ` Dentro de una fase, un hueco de hasta ${c.sin_pulsar_min} min cuenta como trabajo sin pasar diapositiva.` : '';
+    return `Criterio ${c.version}: una mesa trabaja mientras sus señales (diapositivas, fotos, fases hechas) van a menos de `
+      + `${c.umbral_min} min; solo con fotos, ${c.umbral_fotos_min} min y queda como estimado. El resto del turno es tiempo muerto.`
+      + sinPulsar;
   }
 
   private parseIsoDate(iso: string): Date | null {
