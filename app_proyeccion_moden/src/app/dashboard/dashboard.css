@@ -162,6 +162,12 @@
 .project-icon-disabled, .project-icon:disabled { opacity: 0.35; cursor: default; }
 .project-deadline { display: flex; flex-wrap: wrap; gap: 4px 10px; flex-basis: 100%; color: var(--muted); font-size: 12px; }
 .project-deadline .aprieta { color: #c2410c; font-weight: 600; }
+.project-montaje-obra { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; flex-basis: 100%; color: var(--muted); font-size: 12px; }
+.project-montaje-obra label { display: inline-flex; align-items: center; gap: 6px; cursor: default; }
+.project-montaje-obra input { height: 26px; padding: 0 6px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); font: inherit; font-size: 12px; }
+.project-montaje-obra input:disabled { opacity: 0.6; }
+.project-montaje-obra.falta input { border-color: var(--danger); }
+.project-montaje-aviso { display: inline-flex; align-items: center; gap: 4px; color: var(--danger); font-weight: 600; }
 .project-progress-donut { flex: 0 0 64px; width: 64px; height: 64px; }
 .project-progress-donut svg { width: 64px; height: 64px; }
 .donut-pct { fill: var(--ink); font-size: 16px; font-weight: 600; }

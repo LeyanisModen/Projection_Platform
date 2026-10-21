@@ -213,6 +213,13 @@ class Proyecto(models.Model):
     )
     # La oficina marca en el calendario que el montaje ya se hizo.
     montaje_realizado_at = models.DateTimeField(null=True, blank=True)
+    # Fecha de montaje en obra que maneja la ferralla desde su dashboard.
+    # Es suya, aparte de fecha_montaje (la de Moden, orientativa y para
+    # ordenar ingenieria): ordena su cola y sin ella un proyecto no entra
+    # en mesa. Si la ferralla la cambia, el admin ve una nota.
+    fecha_montaje_obra = models.DateField(null=True, blank=True)
+    fecha_montaje_obra_anterior = models.DateField(null=True, blank=True)
+    fecha_montaje_obra_cambiada_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
         return self.nombre

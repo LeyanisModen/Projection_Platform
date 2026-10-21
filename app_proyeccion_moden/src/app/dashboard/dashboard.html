@@ -728,8 +728,23 @@
                                 </button>
                             </div>
                             @if (proyecto.modulos_count) {
-                            <div class="project-deadline"><span [class.aprieta]="planningTight(proyecto)">{{ planningLabel(proyecto) }}</span>@if (proyecto.fecha_montaje) { <time>Montaje: {{ proyecto.fecha_montaje | date:'dd/MM/yyyy' }}</time> }</div>
+                            <div class="project-deadline"><span [class.aprieta]="planningTight(proyecto)">{{ planningLabel(proyecto) }}</span></div>
                             }
+                            <div class="project-montaje-obra" [class.falta]="!proyecto.fecha_montaje_obra" (click)="$event.stopPropagation()">
+                                <label>
+                                    <span>Montaje en obra</span>
+                                    <input type="date" [value]="proyecto.fecha_montaje_obra || ''"
+                                        [disabled]="fechaObraGuardandoId === proyecto.id"
+                                        (change)="guardarFechaMontajeObra(proyecto, $event)"
+                                        aria-label="Fecha de montaje en obra">
+                                </label>
+                                @if (!proyecto.fecha_montaje_obra) {
+                                    <span class="project-montaje-aviso" role="status">
+                                        <i class="fa fa-exclamation-circle" aria-hidden="true"></i>
+                                        Sin fecha: no puede entrar en mesa
+                                    </span>
+                                }
+                            </div>
                         </div>
                         @if (proyecto.modulos_count) {
                             <div class="project-progress-donut" [attr.title]="'Completados: ' + (proyecto.modulos_completados || 0) + '/' + proyecto.modulos_count + ' · Objetivo pendiente hoy: ' + getProyectoHoy(proyecto) + ' · Próximos 7 días: ' + (getProyectoHoy(proyecto) + getProyectoSemana(proyecto))">

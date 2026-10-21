@@ -140,6 +140,11 @@ export interface Proyecto {
     url: string;
     nombre: string;
     fecha_montaje?: string | null;
+    /** Fecha de montaje en obra de la ferralla: suya, aparte de la de Moden. Sin ella el proyecto no entra en mesa. */
+    fecha_montaje_obra?: string | null;
+    /** Si la ferralla la cambia, el admin ve cual era y cuando. */
+    fecha_montaje_obra_anterior?: string | null;
+    fecha_montaje_obra_cambiada_at?: string | null;
     /** La oficina lo marca en el calendario cuando el montaje ya se hizo. */
     montaje_realizado_at?: string | null;
     planificacion?: PlanificacionProyecto;

@@ -299,6 +299,8 @@ export class Dashboard implements OnInit, OnDestroy {
   estrategiaBusyGrupoId: number | null = null;
   /** Mesa SUP cuya cola se está reordenando con las flechas del card. */
   mesaReorderBusyId: number | null = null;
+  /** Proyecto cuya fecha de montaje en obra se está guardando desde su card. */
+  fechaObraGuardandoId: number | null = null;
   /** Opciones de orden de la cola superior, en el card de cada mesa SUP. */
   readonly estrategiasSuperior: { valor: EstrategiaColaSuperior; etiqueta: string; ayuda: string }[] = [
     { valor: 'PLANIFICADA', etiqueta: 'Planificado', ayuda: 'Alternancia planificada: intercala las mesas inferiores una a una.' },
@@ -1366,8 +1368,34 @@ export class Dashboard implements OnInit, OnDestroy {
     this.cdr.detectChanges();
   }
 
+  /** La fecha de montaje en obra es de la ferralla: se edita en el card y sin ella el proyecto no entra en mesa. */
+  guardarFechaMontajeObra(proyecto: Proyecto, event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const valor = input.value || null;
+    if (valor === (proyecto.fecha_montaje_obra || null)) return;
+    this.fechaObraGuardandoId = proyecto.id;
+    this.cdr.detectChanges();
+    this.api.updateProyecto(proyecto.id, { fecha_montaje_obra: valor })
+      .pipe(takeUntil(this.destroy$)).subscribe({
+        next: (actualizado) => {
+          proyecto.fecha_montaje_obra = actualizado.fecha_montaje_obra ?? valor;
+          proyecto.fecha_montaje_obra_anterior = actualizado.fecha_montaje_obra_anterior ?? null;
+          proyecto.fecha_montaje_obra_cambiada_at = actualizado.fecha_montaje_obra_cambiada_at ?? null;
+          this.fechaObraGuardandoId = null;
+          this.cdr.detectChanges();
+        },
+        error: (err) => {
+          input.value = proyecto.fecha_montaje_obra || '';
+          this.fechaObraGuardandoId = null;
+          alert(err?.error?.detail || err?.error?.fecha_montaje_obra?.[0] || 'No se pudo guardar la fecha de montaje en obra.');
+          this.cdr.detectChanges();
+        },
+      });
+  }
+
   /** Proyectos que se pueden añadir a la cola de este grupo: los que no
-   * están ya en ella, aún tienen módulos pendientes y Moden ha validado.
+   * están ya en ella, aún tienen módulos pendientes, Moden ha validado y
+   * la ferralla les ha puesto fecha de montaje en obra (sin ella no entran).
    * Los que tienen validaciones previas sin completar (geometría,
    * equivalencias...) no se ofrecen ni se mencionan: la ferralla no los
    * ve hasta que Moden los libera. Los proyectos sin pendientes los
@@ -1375,7 +1403,7 @@ export class Dashboard implements OnInit, OnDestroy {
   proyectosDisponibles(grupo: GrupoMesas | null): Proyecto[] {
     const enCola = new Set(grupo?.proyectos_cola.map(e => e.proyecto) ?? []);
     return this.proyectos.filter(p => {
-      if (enCola.has(p.id) || p.produccion_bloqueada) return false;
+      if (enCola.has(p.id) || p.produccion_bloqueada || !p.fecha_montaje_obra) return false;
       const total = p.modulos_count ?? 0;
       const done = p.modulos_completados ?? 0;
       // Sin total: lo mostramos (todavia no se han creado modulos).
