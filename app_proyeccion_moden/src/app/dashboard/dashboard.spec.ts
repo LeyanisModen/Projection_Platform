@@ -529,6 +529,36 @@ describe('Dashboard', () => {
     expect(component.proyectosDisponibles(null).map(p => p.nombre)).toEqual(['Libre']);
   });
 
+  it('keeps new projects behind the notifications bell until the ferralla accepts them', () => {
+    const api = TestBed.inject(ApiService);
+    const aceptado = { id: 1, nombre: 'Aceptado', aceptado_por_ferralla_at: '2026-10-21T08:00:00Z' } as Proyecto;
+    const nuevo = { id: 2, nombre: 'Nuevo', modulos_count: 12, aceptado_por_ferralla_at: null } as Proyecto;
+    const lista = vi.spyOn(api, 'getProyectos').mockReturnValue(of([aceptado, nuevo]));
+    vi.spyOn(component, 'selectProyecto').mockImplementation(() => undefined);
+    component.loadProyectos();
+    fixture.changeDetectorRef.markForCheck();
+    fixture.detectChanges();
+    expect(component.proyectos.map(p => p.nombre)).toEqual(['Aceptado']);
+    expect(component.proyectosPendientes.map(p => p.nombre)).toEqual(['Nuevo']);
+    const campana: HTMLButtonElement = fixture.nativeElement.querySelector('.btn-notificaciones');
+    expect(campana.querySelector('.notificaciones-badge')?.textContent?.trim()).toBe('1');
+
+    campana.click();
+    fixture.detectChanges();
+    const modal: HTMLElement = fixture.nativeElement.querySelector('.notificaciones-modal');
+    expect(modal.textContent).toContain('Nuevo');
+    const aceptadoNuevo = { ...nuevo, aceptado_por_ferralla_at: '2026-10-21T09:00:00Z' } as Proyecto;
+    const aceptar = vi.spyOn(api, 'aceptarProyecto').mockReturnValue(of(aceptadoNuevo));
+    lista.mockReturnValue(of([aceptado, aceptadoNuevo]));
+    (modal.querySelector('.notificacion-row .btn-add-cola') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(aceptar).toHaveBeenCalledWith(2);
+    expect(component.proyectosPendientes).toEqual([]);
+    expect(component.proyectos.map(p => p.nombre)).toEqual(['Aceptado', 'Nuevo']);
+    expect(fixture.nativeElement.querySelector('.notificaciones-modal')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.notificaciones-badge')).toBeNull();
+  });
+
   it('lets the ferralla set its own site date on the card and warns while it is missing', () => {
     const api = TestBed.inject(ApiService);
     component.proyectos = [

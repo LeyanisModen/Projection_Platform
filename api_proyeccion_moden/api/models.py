@@ -220,6 +220,11 @@ class Proyecto(models.Model):
     fecha_montaje_obra = models.DateField(null=True, blank=True)
     fecha_montaje_obra_anterior = models.DateField(null=True, blank=True)
     fecha_montaje_obra_cambiada_at = models.DateTimeField(null=True, blank=True)
+    # Un proyecto nuevo no sale en el dashboard de la ferralla ni se puede
+    # poner en mesa hasta que ella lo acepta desde notificaciones. Lo que
+    # crea la propia ferralla nace aceptado; si Moden lo pasa a otra
+    # ferralla, vuelve a estar pendiente.
+    aceptado_por_ferralla_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
         return self.nombre

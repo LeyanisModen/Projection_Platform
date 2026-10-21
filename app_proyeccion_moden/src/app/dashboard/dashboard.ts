@@ -199,7 +199,6 @@ export class Dashboard implements OnInit, OnDestroy {
   // Drag State
   draggedSubfase: Subfase | null = null;
   transferInProgress = false;
-  planningGroupId: number | null = null;
 
   // Confirm Modal State
   showConfirmModal = false;
@@ -301,6 +300,10 @@ export class Dashboard implements OnInit, OnDestroy {
   mesaReorderBusyId: number | null = null;
   /** Proyecto cuya fecha de montaje en obra se está guardando desde su card. */
   fechaObraGuardandoId: number | null = null;
+  /** Proyectos que Moden ha asignado y la ferralla aún no ha aceptado. */
+  proyectosPendientes: Proyecto[] = [];
+  showNotificacionesModal = false;
+  aceptandoProyectoId: number | null = null;
   /** Opciones de orden de la cola superior, en el card de cada mesa SUP. */
   readonly estrategiasSuperior: { valor: EstrategiaColaSuperior; etiqueta: string; ayuda: string }[] = [
     { valor: 'PLANIFICADA', etiqueta: 'Planificado', ayuda: 'Alternancia planificada: intercala las mesas inferiores una a una.' },
@@ -1368,6 +1371,40 @@ export class Dashboard implements OnInit, OnDestroy {
     this.cdr.detectChanges();
   }
 
+  // ---- Proyectos nuevos: esperan en notificaciones hasta que se aceptan ----
+
+  openNotificaciones(): void {
+    this.showNotificacionesModal = true;
+    this.cdr.detectChanges();
+  }
+
+  closeNotificaciones(): void {
+    this.showNotificacionesModal = false;
+    this.cdr.detectChanges();
+  }
+
+  /** Aceptar un proyecto nuevo: pasa a la lista y ya se puede poner en mesa. */
+  aceptarProyecto(proyecto: Proyecto): void {
+    if (this.aceptandoProyectoId != null) return;
+    this.aceptandoProyectoId = proyecto.id;
+    this.cdr.detectChanges();
+    this.api.aceptarProyecto(proyecto.id)
+      .pipe(takeUntil(this.destroy$)).subscribe({
+        next: () => {
+          this.aceptandoProyectoId = null;
+          this.proyectosPendientes = this.proyectosPendientes.filter(p => p.id !== proyecto.id);
+          if (this.proyectosPendientes.length === 0) this.showNotificacionesModal = false;
+          this.loadProyectos();
+          this.cdr.detectChanges();
+        },
+        error: (err) => {
+          this.aceptandoProyectoId = null;
+          alert(err?.error?.detail || 'No se pudo aceptar el proyecto.');
+          this.cdr.detectChanges();
+        },
+      });
+  }
+
   /** La fecha de montaje en obra es de la ferralla: se edita en el card y sin ella el proyecto no entra en mesa. */
   guardarFechaMontajeObra(proyecto: Proyecto, event: Event): void {
     const input = event.target as HTMLInputElement;
@@ -1771,7 +1808,10 @@ export class Dashboard implements OnInit, OnDestroy {
       .subscribe({
         next: (all) => {
           // Los archivados ya no se fabrican: fuera del dashboard de la ferralla.
-          const data = all.filter(p => !p.archivado_at);
+          const vivos = all.filter(p => !p.archivado_at);
+          // Los nuevos esperan en notificaciones hasta que la ferralla los acepta.
+          this.proyectosPendientes = vivos.filter(p => !p.aceptado_por_ferralla_at);
+          const data = vivos.filter(p => !!p.aceptado_por_ferralla_at);
           this.proyectos = data;
           // Refresh the selected project reference so the donut picks
           // up updated modulos_completados / modulos_completados_hoy.
@@ -1805,7 +1845,10 @@ export class Dashboard implements OnInit, OnDestroy {
       .subscribe({
         next: (all) => {
           // Los archivados ya no se fabrican: fuera del dashboard de la ferralla.
-          const data = all.filter(p => !p.archivado_at);
+          const vivos = all.filter(p => !p.archivado_at);
+          // Los nuevos esperan en notificaciones hasta que la ferralla los acepta.
+          this.proyectosPendientes = vivos.filter(p => !p.aceptado_por_ferralla_at);
+          const data = vivos.filter(p => !!p.aceptado_por_ferralla_at);
           this.proyectos = data;
           if (this.selectedProyecto) {
             const updated = data.find(p => p.id === this.selectedProyecto?.id);
@@ -2004,46 +2047,6 @@ export class Dashboard implements OnInit, OnDestroy {
         },
         error: (err) => this.logQueueError(mesaId, 'loading', err)
       });
-  }
-
-  planificarGrupo(grupo: GrupoMesas): void {
-    const proyectoId = this.selectedProyectoPorGrupo[grupo.id];
-    if (!proyectoId) {
-      alert('Selecciona un proyecto para planificar este grupo.');
-      return;
-    }
-
-    this.planningGroupId = grupo.id;
-    this.api.planificarGrupoMesas(grupo.id, proyectoId)
-      .pipe(takeUntil(this.destroy$))
-      .subscribe({
-        next: (response) => {
-          this.selectedProyectoPorGrupo[grupo.id] = response.grupo.proyecto_actual;
-          this.planningGroupId = null;
-          this.loadGruposMesas();
-          this.loadMesas();
-          this.cdr.detectChanges();
-        },
-        error: (err) => {
-          this.planningGroupId = null;
-          console.error('Error planificando grupo', err);
-          const detail = err?.error?.detail;
-          const conflicts = err?.error?.conflicts;
-          if (Array.isArray(conflicts) && conflicts.length) {
-            alert(`${detail || 'No se pudo planificar el grupo.'}\n\n${conflicts.join('\n')}`);
-            return;
-          }
-          alert(detail || 'No se pudo planificar el grupo.');
-        }
-      });
-  }
-
-  onProyectoGrupoSeleccionado(grupo: GrupoMesas, proyectoId: number | null): void {
-    this.selectedProyectoPorGrupo[grupo.id] = proyectoId;
-    if (!proyectoId) {
-      return;
-    }
-    this.planificarGrupo(grupo);
   }
 
   // =========================================================================
