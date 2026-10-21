@@ -1323,25 +1323,16 @@ export class Dashboard implements OnInit, OnDestroy {
     this.intentarCerrarGestionarModal();
   }
 
-  /** Projects that aren't already queued on this grupo and still have
-   * pending modulos -- used for the 'add' dropdown. Proyectos sin
-   * pendientes son expulsados por _plan_cola en el backend al replan,
-   * asi que no tiene sentido ofrecerlos. */
+  /** Proyectos que se pueden añadir a la cola de este grupo: los que no
+   * están ya en ella, aún tienen módulos pendientes y Moden ha validado.
+   * Los que tienen validaciones previas sin completar (geometría,
+   * equivalencias...) no se ofrecen ni se mencionan: la ferralla no los
+   * ve hasta que Moden los libera. Los proyectos sin pendientes los
+   * expulsa _plan_cola en el backend al replanificar. */
   proyectosDisponibles(grupo: GrupoMesas | null): Proyecto[] {
-    return this.proyectosConPendientes(grupo).filter(p => !p.produccion_bloqueada);
-  }
-
-  /** Proyectos con validaciones previas sin completar (geometria, equivalencias...):
-   * Moden aun no los ha liberado para fabricar, asi que no se ofrecen. */
-  proyectosBloqueados(grupo: GrupoMesas | null): Proyecto[] {
-    return this.proyectosConPendientes(grupo).filter(p => !!p.produccion_bloqueada);
-  }
-
-  private proyectosConPendientes(grupo: GrupoMesas | null): Proyecto[] {
-    const all = grupo
-      ? this.proyectos.filter(p => !new Set(grupo.proyectos_cola.map(e => e.proyecto)).has(p.id))
-      : this.proyectos;
-    return all.filter(p => {
+    const enCola = new Set(grupo?.proyectos_cola.map(e => e.proyecto) ?? []);
+    return this.proyectos.filter(p => {
+      if (enCola.has(p.id) || p.produccion_bloqueada) return false;
       const total = p.modulos_count ?? 0;
       const done = p.modulos_completados ?? 0;
       // Sin total: lo mostramos (todavia no se han creado modulos).
