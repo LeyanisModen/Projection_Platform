@@ -1546,11 +1546,11 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         return Proyecto.objects.none()
 
     def perform_create(self, serializer):
-        """Assign current user as project owner if not provided."""
-        if not _is_admin(self.request.user):
-            serializer.save(usuario=self.request.user)
-        elif 'usuario' not in serializer.validated_data:
-            serializer.save(usuario=self.request.user)
+        """Assign current user as project owner if not provided. Lo que uno
+        crea para si mismo nace aceptado; lo que Moden asigna a una ferralla
+        espera a que ella lo acepte."""
+        if not _is_admin(self.request.user) or 'usuario' not in serializer.validated_data:
+            serializer.save(usuario=self.request.user, aceptado_por_ferralla_at=timezone.now())
         else:
             serializer.save()
         # Every new project starts with a copy of the master checklist
@@ -1627,6 +1627,10 @@ class ProyectoViewSet(viewsets.ModelViewSet):
                 'fecha_montaje_obra_anterior': instance.fecha_montaje_obra,
                 'fecha_montaje_obra_cambiada_at': timezone.now(),
             }
+        if ('usuario' in serializer.validated_data
+                and getattr(serializer.validated_data['usuario'], 'id', None) != instance.usuario_id):
+            # Pasa a otra ferralla: la nueva lo tiene que aceptar.
+            nota_obra['aceptado_por_ferralla_at'] = None
         serializer.save(**nota_obra)
         # Edificio: si cambia de ferralla sale del de la anterior; si aun no
         # tiene, se deduce del nombre.
@@ -1810,6 +1814,18 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         respuesta['X-Accel-Buffering'] = 'no'
         respuesta['Cache-Control'] = 'no-store'
         return respuesta
+
+    @action(detail=True, methods=['post'], url_path='aceptar')
+    def aceptar(self, request, pk=None):
+        """La ferralla acepta un proyecto nuevo: hasta entonces no sale en su
+        dashboard ni se puede poner en mesa. Aceptar dos veces no cambia nada."""
+        proyecto = self.get_object()
+        if not _is_admin(request.user) and proyecto.usuario_id != request.user.id:
+            raise PermissionDenied('Solo la ferralla del proyecto puede aceptarlo.')
+        if proyecto.aceptado_por_ferralla_at is None:
+            proyecto.aceptado_por_ferralla_at = timezone.now()
+            proyecto.save(update_fields=['aceptado_por_ferralla_at'])
+        return Response(self.get_serializer(proyecto).data)
 
     @action(detail=True, methods=['post'], url_path='archivar')
     def archivar(self, request, pk=None):
@@ -4641,6 +4657,10 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
                            + ', '.join(bloqueantes) + '.'},
                 status=400,
             )
+
+        # Un proyecto nuevo primero se acepta desde notificaciones.
+        if proyecto.aceptado_por_ferralla_at is None:
+            return Response({'detail': 'Acepta el proyecto antes de ponerlo en mesa.'}, status=400)
 
         # La fecha de montaje en obra es de la ferralla: sin ella el
         # proyecto no entra en mesa (su card lo avisa en rojo).

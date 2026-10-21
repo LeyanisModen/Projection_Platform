@@ -61,6 +61,9 @@
                                 Obra {{ project.fecha_montaje_obra | date:'dd/MM/yyyy' }}@if (project.fecha_montaje_obra_cambiada_at) { · cambiada por la ferralla el {{ project.fecha_montaje_obra_cambiada_at | date:'dd/MM' }} }
                             </span>
                         }
+                        @if (project.usuario && !project.aceptado_por_ferralla_at && !group.archived) {
+                            <span class="is-warn" title="La ferralla aún no lo ha aceptado desde sus notificaciones">Pendiente de aceptar por la ferralla</span>
+                        }
                         <span [class.is-warn]="planningTight(project)">{{ planningLabel(project) }}</span>
                         <span *ngIf="(project.grupos_count || 0) > 0">{{ project.grupos_count }} bastidores</span>
                         <span *ngIf="!project.grupos_count && (project.modulos_count || 0) > 0" class="is-warn">sin bastidores</span>

@@ -50,9 +50,10 @@ class OfficePlanningTests(APITestCase):
         self.factory = User.objects.create_user('factory')
         self.other = User.objects.create_user('other-factory')
         self.profile = UserProfile.objects.create(user=self.factory)
-        self.project = Proyecto.objects.create(nombre='P1', usuario=self.factory)
-        self.project2 = Proyecto.objects.create(nombre='P2', usuario=self.factory)
-        self.foreign_project = Proyecto.objects.create(nombre='Other', usuario=self.other)
+        aceptado = timezone.now()
+        self.project = Proyecto.objects.create(nombre='P1', usuario=self.factory, aceptado_por_ferralla_at=aceptado)
+        self.project2 = Proyecto.objects.create(nombre='P2', usuario=self.factory, aceptado_por_ferralla_at=aceptado)
+        self.foreign_project = Proyecto.objects.create(nombre='Other', usuario=self.other, aceptado_por_ferralla_at=aceptado)
         self.client.force_authenticate(self.admin)
 
     def create_module(self, project=None, **kwargs):
@@ -343,7 +344,9 @@ class OfficePlanningTests(APITestCase):
         url = f'/api/grupos-mesas/{grupo.pk}/cola/add/'
         proyectos = {}
         for nombre, fecha in (('A', date(2026, 11, 10)), ('B', date(2026, 11, 20)), ('C', date(2026, 11, 15)), ('D', date(2026, 11, 1))):
-            proyectos[nombre] = Proyecto.objects.create(nombre=nombre, usuario=self.factory, fecha_montaje_obra=fecha)
+            proyectos[nombre] = Proyecto.objects.create(
+                nombre=nombre, usuario=self.factory, fecha_montaje_obra=fecha, aceptado_por_ferralla_at=timezone.now(),
+            )
             self.create_module(proyectos[nombre])
         self.create_module()
         self.client.force_authenticate(self.factory)
@@ -352,6 +355,12 @@ class OfficePlanningTests(APITestCase):
         response = self.client.post(url, {'proyecto': self.project.pk})
         self.assertEqual(response.status_code, 400)
         self.assertIn('montaje en obra', response.data['detail'])
+        # Sin aceptarlo desde notificaciones, tampoco.
+        nuevo = Proyecto.objects.create(nombre='Nuevo', usuario=self.factory, fecha_montaje_obra=date(2026, 11, 5))
+        self.create_module(nuevo)
+        response = self.client.post(url, {'proyecto': nuevo.pk})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('Acepta', response.data['detail'])
 
         def cola():
             return [e.proyecto.nombre for e in grupo.proyectos_cola.select_related('proyecto').order_by('orden')]
@@ -366,6 +375,49 @@ class OfficePlanningTests(APITestCase):
         self.assertEqual(self.client.post(url, {'proyecto': proyectos['D'].pk}).status_code, 200)
         self.assertEqual(cola(), ['A', 'D', 'C', 'B'])
         self.assertEqual([e.orden for e in grupo.proyectos_cola.order_by('orden')], [0, 1, 2, 3])
+
+    def test_new_projects_wait_until_the_factory_accepts_them(self):
+        # Moden lo da de alta para la ferralla: queda pendiente de aceptar.
+        response = self.client.post('/api/proyectos/', {'nombre': 'Nuevo', 'usuario': f'http://testserver/api/users/{self.factory.pk}/'}, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertIsNone(response.data['aceptado_por_ferralla_at'])
+        nuevo_id = response.data['id']
+
+        # La ferralla lo recibe en su lista (el dashboard lo aparta en notificaciones) y lo acepta.
+        self.client.force_authenticate(self.factory)
+        listado = {p['id']: p for p in self.client.get('/api/proyectos/').data['results']}
+        self.assertIsNone(listado[nuevo_id]['aceptado_por_ferralla_at'])
+        self.client.force_authenticate(self.other)
+        self.assertEqual(self.client.post(f'/api/proyectos/{nuevo_id}/aceptar/').status_code, 404)
+        self.client.force_authenticate(self.factory)
+        response = self.client.post(f'/api/proyectos/{nuevo_id}/aceptar/')
+        self.assertEqual(response.status_code, 200, response.data)
+        aceptado = response.data['aceptado_por_ferralla_at']
+        self.assertIsNotNone(aceptado)
+        # Aceptar dos veces no cambia la fecha.
+        self.assertEqual(self.client.post(f'/api/proyectos/{nuevo_id}/aceptar/').data['aceptado_por_ferralla_at'], aceptado)
+
+        # Si Moden lo pasa a otra ferralla, la nueva lo tiene que aceptar.
+        self.client.force_authenticate(self.admin)
+        response = self.client.patch(f'/api/proyectos/{nuevo_id}/', {'usuario': f'http://testserver/api/users/{self.other.pk}/'}, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertIsNone(response.data['aceptado_por_ferralla_at'])
+
+        # Lo que crea la propia ferralla ya es suyo.
+        self.client.force_authenticate(self.factory)
+        response = self.client.post('/api/proyectos/', {'nombre': 'Propio'}, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertIsNotNone(response.data['aceptado_por_ferralla_at'])
+
+    def test_migration_marks_every_assigned_project_as_accepted(self):
+        migration = import_module('api.migrations.0084_proyectos_existentes_aceptados')
+        pendiente = Proyecto.objects.create(nombre='Pendiente', usuario=self.factory)
+        sin_ferralla = Proyecto.objects.create(nombre='Sin ferralla')
+        migration.aceptar_los_existentes(apps, None)
+        pendiente.refresh_from_db()
+        sin_ferralla.refresh_from_db()
+        self.assertIsNotNone(pendiente.aceptado_por_ferralla_at)
+        self.assertIsNone(sin_ferralla.aceptado_por_ferralla_at)
 
     def test_manual_step_can_declare_date_and_document_and_set_deadline(self):
         response = self.client.post(

@@ -18,6 +18,12 @@
 .btn-icon { display: inline-grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; color: var(--muted); cursor: pointer; transition: background-color 120ms ease, color 120ms ease; }
 .btn-icon:hover { color: var(--ink); background: var(--surface-2); }
 .btn-icon.logout { border: 0; }
+.btn-notificaciones { position: relative; font-size: 16px; }
+.btn-notificaciones.has-pendientes { color: var(--accent-dark); }
+.notificaciones-badge { position: absolute; top: 1px; right: 1px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 10px; font-weight: 700; line-height: 16px; text-align: center; box-sizing: border-box; }
+.notificaciones-ayuda { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
+.notificacion-row { cursor: default; }
+.notificacion-meta { color: var(--muted); font-size: 12px; white-space: nowrap; }
 
 /* ---- Lienzo -------------------------------------------------------------- */
 .dashboard-main { display: flex; flex: 1; min-height: 0; overflow: hidden; position: relative; }

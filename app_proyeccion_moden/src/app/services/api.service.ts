@@ -145,6 +145,8 @@ export interface Proyecto {
     /** Si la ferralla la cambia, el admin ve cual era y cuando. */
     fecha_montaje_obra_anterior?: string | null;
     fecha_montaje_obra_cambiada_at?: string | null;
+    /** Un proyecto nuevo espera en notificaciones hasta que la ferralla lo acepta. */
+    aceptado_por_ferralla_at?: string | null;
     /** La oficina lo marca en el calendario cuando el montaje ya se hizo. */
     montaje_realizado_at?: string | null;
     planificacion?: PlanificacionProyecto;
@@ -883,6 +885,11 @@ export class ApiService {
         return this.http.patch<Proyecto>(`${this.baseUrl}/proyectos/${id}/`, data, { headers: this.getHeaders() });
     }
 
+    /** La ferralla acepta un proyecto nuevo: hasta entonces no sale en su dashboard ni entra en mesa. */
+    aceptarProyecto(id: number): Observable<Proyecto> {
+        return this.http.post<Proyecto>(`${this.baseUrl}/proyectos/${id}/aceptar/`, {}, { headers: this.getHeaders() });
+    }
+
     getEdificios(usuarioId?: number): Observable<Edificio[]> {
         const params: Record<string, string> = usuarioId != null ? { usuario: String(usuarioId) } : {};
         return this.http.get<Edificio[]>(`${this.baseUrl}/edificios/`, { headers: this.getHeaders(), params });
@@ -1209,14 +1216,6 @@ export class ApiService {
         return this.http.post<PlanificarGrupoResponse>(
             `${this.baseUrl}/grupos-mesas/${grupoId}/actualizar-mesas/`,
             { cambios },
-            { headers: this.getHeaders() }
-        );
-    }
-
-    planificarGrupoMesas(grupoId: number, proyectoId: number): Observable<PlanificarGrupoResponse> {
-        return this.http.post<PlanificarGrupoResponse>(
-            `${this.baseUrl}/grupos-mesas/${grupoId}/planificar/`,
-            { proyecto_id: proyectoId },
             { headers: this.getHeaders() }
         );
     }

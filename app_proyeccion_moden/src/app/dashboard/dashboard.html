@@ -8,6 +8,13 @@
                 [attr.aria-current]="vista === 'estadisticas' ? 'page' : null" (click)="irA('estadisticas')">Estadísticas</button>
         </nav>
         <div class="header-right">
+            <button type="button" class="btn-icon btn-notificaciones" (click)="openNotificaciones()"
+                [class.has-pendientes]="proyectosPendientes.length > 0"
+                [title]="proyectosPendientes.length ? proyectosPendientes.length + ' proyecto(s) nuevo(s) por aceptar' : 'Sin proyectos nuevos'"
+                aria-label="Notificaciones">
+                <i class="fa fa-bell" aria-hidden="true"></i>
+                @if (proyectosPendientes.length) { <span class="notificaciones-badge">{{ proyectosPendientes.length }}</span> }
+            </button>
             <span class="user-display">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="user-icon"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                 {{ username }}
@@ -1446,6 +1453,41 @@
 
                 <div class="gestionar-modal-footer">
                     <button type="button" class="btn-aceptar-gestionar" (click)="closeColaModal()">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    }
+    @if (showNotificacionesModal) {
+        <div class="modal-overlay" (click)="closeNotificaciones()">
+            <div class="modal-content gestionar-modal notificaciones-modal" (click)="$event.stopPropagation()">
+                <div class="gestionar-modal-header">
+                    <h3>Proyectos nuevos</h3>
+                    <button type="button" class="plan-modal-close" (click)="closeNotificaciones()" title="Cerrar">×</button>
+                </div>
+
+                <div class="gestionar-modal-body">
+                    @if (proyectosPendientes.length === 0) {
+                        <p class="gestionar-empty">No hay proyectos nuevos por aceptar.</p>
+                    } @else {
+                        <p class="notificaciones-ayuda">Moden os ha asignado estos proyectos. Hasta que los aceptéis no aparecen en el dashboard ni se pueden poner en mesa.</p>
+                        <ul class="cola-list">
+                            @for (p of proyectosPendientes; track p.id) {
+                                <li class="cola-row notificacion-row">
+                                    <span class="cola-nombre">{{ p.nombre }}</span>
+                                    @if (p.modulos_count) { <span class="notificacion-meta">{{ p.modulos_count }} módulos</span> }
+                                    <button type="button" class="btn-add-cola"
+                                        [disabled]="aceptandoProyectoId === p.id"
+                                        (click)="aceptarProyecto(p)">
+                                        {{ aceptandoProyectoId === p.id ? 'Aceptando…' : 'Aceptar' }}
+                                    </button>
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
+
+                <div class="gestionar-modal-footer">
+                    <button type="button" class="btn-aceptar-gestionar" (click)="closeNotificaciones()">Cerrar</button>
                 </div>
             </div>
         </div>
