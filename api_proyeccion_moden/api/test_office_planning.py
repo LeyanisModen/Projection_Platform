@@ -403,11 +403,11 @@ class OfficePlanningTests(APITestCase):
         self.assertEqual(response.status_code, 200, response.data)
         self.assertIsNone(response.data['aceptado_por_ferralla_at'])
 
-        # Lo que crea la propia ferralla ya es suyo.
+        # Las ferrallas solo reciben proyectos: ni crean ni borran.
         self.client.force_authenticate(self.factory)
-        response = self.client.post('/api/proyectos/', {'nombre': 'Propio'}, format='json')
-        self.assertEqual(response.status_code, 201, response.data)
-        self.assertIsNotNone(response.data['aceptado_por_ferralla_at'])
+        self.assertEqual(self.client.post('/api/proyectos/', {'nombre': 'Propio'}, format='json').status_code, 403)
+        self.assertEqual(self.client.delete(f'/api/proyectos/{self.project.pk}/').status_code, 403)
+        self.assertTrue(Proyecto.objects.filter(pk=self.project.pk).exists())
 
     def test_migration_marks_every_assigned_project_as_accepted(self):
         migration = import_module('api.migrations.0084_proyectos_existentes_aceptados')

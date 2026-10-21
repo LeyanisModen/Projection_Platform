@@ -1546,10 +1546,12 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         return Proyecto.objects.none()
 
     def perform_create(self, serializer):
-        """Assign current user as project owner if not provided. Lo que uno
-        crea para si mismo nace aceptado; lo que Moden asigna a una ferralla
-        espera a que ella lo acepte."""
-        if not _is_admin(self.request.user) or 'usuario' not in serializer.validated_data:
+        """Solo administracion da de alta proyectos: las ferrallas los
+        reciben. Lo que se asigna a una ferralla espera a que ella lo acepte;
+        sin ferralla, el proyecto es de la propia oficina."""
+        if not _is_admin(self.request.user):
+            raise PermissionDenied('Solo administración puede crear proyectos.')
+        if 'usuario' not in serializer.validated_data:
             serializer.save(usuario=self.request.user, aceptado_por_ferralla_at=timezone.now())
         else:
             serializer.save()
@@ -1647,6 +1649,8 @@ class ProyectoViewSet(viewsets.ModelViewSet):
             )
 
     def perform_destroy(self, instance):
+        if not _is_admin(self.request.user):
+            raise PermissionDenied('Solo administración puede borrar proyectos.')
         media_snapshot = collect_project_media(instance)
         with transaction.atomic():
             instance.delete()
