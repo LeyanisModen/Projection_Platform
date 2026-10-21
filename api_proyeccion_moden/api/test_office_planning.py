@@ -449,6 +449,33 @@ class OfficePlanningTests(APITestCase):
             paso.refresh_from_db()
             self.assertEqual(paso.fecha_limite, esperado, paso.titulo)
 
+    def test_migration_seeds_the_site_date_only_for_projects_already_in_production(self):
+        migration = import_module('api.migrations.0082_fecha_obra_para_los_que_ya_fabrican')
+        en_cola = Proyecto.objects.create(nombre='En cola', usuario=self.factory, fecha_montaje=date(2026, 11, 20))
+        GrupoMesasProyecto.objects.create(grupo_mesas=GrupoMesas.objects.create(nombre='G', usuario=self.factory), proyecto=en_cola, orden=0)
+        terminado = Proyecto.objects.create(nombre='Terminado', usuario=self.factory, fecha_montaje=date(2026, 10, 1))
+        self.create_module(terminado, estado='COMPLETADO')
+        empezado = Proyecto.objects.create(nombre='Empezado', usuario=self.factory, fecha_montaje=date(2026, 12, 1))
+        self.create_module(empezado, estado='EN_PROGRESO', inferior_hecho=True)
+        futuro = Proyecto.objects.create(nombre='Futuro', usuario=self.factory, fecha_montaje=date(2027, 1, 15))
+        self.create_module(futuro)
+        propia = Proyecto.objects.create(
+            nombre='Con la suya', usuario=self.factory, fecha_montaje=date(2026, 11, 20), fecha_montaje_obra=date(2026, 11, 27),
+        )
+        self.create_module(propia, estado='EN_PROGRESO', inferior_hecho=True)
+
+        migration.sembrar_fecha_obra(apps, None)
+
+        fechas = {p.nombre: p.fecha_montaje_obra for p in Proyecto.objects.filter(usuario=self.factory)}
+        # En marcha o terminados: arrancan con la fecha de Moden.
+        self.assertEqual(fechas['En cola'], date(2026, 11, 20))
+        self.assertEqual(fechas['Terminado'], date(2026, 10, 1))
+        self.assertEqual(fechas['Empezado'], date(2026, 12, 1))
+        # Sin empezar: la pone la ferralla. Y la que ya era suya no se pisa.
+        self.assertIsNone(fechas['Futuro'])
+        self.assertEqual(fechas['Con la suya'], date(2026, 11, 27))
+        self.assertIsNone(fechas['P1'])
+
     def test_steps_completed_before_their_date_show_on_the_day_they_were_done(self):
         from .models import ProyectoCheck
         url = f'/api/proyecto-checklist/{self.project.pk}/checks/'
