@@ -520,12 +520,35 @@ describe('Dashboard', () => {
 
   it('keeps projects with pending validations out of the add-to-queue list', () => {
     component.proyectos = [
-      { id: 1, nombre: 'Libre', modulos_count: 4, modulos_completados: 0, produccion_bloqueada: false } as Proyecto,
-      { id: 2, nombre: 'Bloqueado', modulos_count: 4, modulos_completados: 0, produccion_bloqueada: true } as Proyecto,
-      { id: 3, nombre: 'Terminado', modulos_count: 4, modulos_completados: 4, produccion_bloqueada: true } as Proyecto,
+      { id: 1, nombre: 'Libre', modulos_count: 4, modulos_completados: 0, produccion_bloqueada: false, fecha_montaje_obra: '2026-11-20' } as Proyecto,
+      { id: 2, nombre: 'Bloqueado', modulos_count: 4, modulos_completados: 0, produccion_bloqueada: true, fecha_montaje_obra: '2026-11-20' } as Proyecto,
+      { id: 3, nombre: 'Terminado', modulos_count: 4, modulos_completados: 4, produccion_bloqueada: true, fecha_montaje_obra: '2026-11-20' } as Proyecto,
+      { id: 4, nombre: 'Sin fecha de obra', modulos_count: 4, modulos_completados: 0, produccion_bloqueada: false, fecha_montaje_obra: null } as Proyecto,
     ];
 
     expect(component.proyectosDisponibles(null).map(p => p.nombre)).toEqual(['Libre']);
+  });
+
+  it('lets the ferralla set its own site date on the card and warns while it is missing', () => {
+    const api = TestBed.inject(ApiService);
+    component.proyectos = [
+      { id: 7, nombre: 'Torre Norte', modulos_count: 4, modulos_completados: 0, fecha_montaje: '2026-11-12', fecha_montaje_obra: null } as Proyecto,
+    ];
+    fixture.changeDetectorRef.markForCheck();
+    fixture.detectChanges();
+    const card: HTMLElement = fixture.nativeElement.querySelector('.project-inline-card');
+    // La fecha de Moden no es de la ferralla: el card lleva la suya.
+    expect(card.textContent).not.toContain('12/11/2026');
+    expect(card.querySelector('.project-montaje-aviso')?.textContent).toContain('no puede entrar en mesa');
+
+    const update = vi.spyOn(api, 'updateProyecto').mockReturnValue(of({ id: 7, fecha_montaje_obra: '2026-11-20' } as Proyecto));
+    const input = card.querySelector('.project-montaje-obra input') as HTMLInputElement;
+    input.value = '2026-11-20';
+    input.dispatchEvent(new Event('change'));
+    expect(update).toHaveBeenCalledWith(7, { fecha_montaje_obra: '2026-11-20' });
+    fixture.detectChanges();
+    expect(component.proyectos[0].fecha_montaje_obra).toBe('2026-11-20');
+    expect(card.querySelector('.project-montaje-aviso')).toBeNull();
   });
 
   it('lets the ferralla pick the superior order on the SUP card and reorder it by hand when manual', () => {

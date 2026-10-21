@@ -53,6 +53,14 @@
                     <div class="meta project-info">
                         @if (group.archived && project.usuario_nombre) { <span>{{ project.usuario_nombre }}</span> }
                         @if (project.fecha_montaje) { <span>Montaje {{ project.fecha_montaje | date:'dd/MM/yyyy' }}</span> }
+                        @if (project.fecha_montaje_obra) {
+                            <span [class.is-warn]="!!project.fecha_montaje_obra_cambiada_at"
+                                [title]="project.fecha_montaje_obra_cambiada_at
+                                    ? 'La ferralla cambió su fecha de montaje en obra el ' + (project.fecha_montaje_obra_cambiada_at | date:'dd/MM/yyyy') + (project.fecha_montaje_obra_anterior ? ' (antes ' + (project.fecha_montaje_obra_anterior | date:'dd/MM/yyyy') + ')' : '')
+                                    : 'Fecha de montaje en obra que maneja la ferralla'">
+                                Obra {{ project.fecha_montaje_obra | date:'dd/MM/yyyy' }}@if (project.fecha_montaje_obra_cambiada_at) { · cambiada por la ferralla el {{ project.fecha_montaje_obra_cambiada_at | date:'dd/MM' }} }
+                            </span>
+                        }
                         <span [class.is-warn]="planningTight(project)">{{ planningLabel(project) }}</span>
                         <span *ngIf="(project.grupos_count || 0) > 0">{{ project.grupos_count }} bastidores</span>
                         <span *ngIf="!project.grupos_count && (project.modulos_count || 0) > 0" class="is-warn">sin bastidores</span>

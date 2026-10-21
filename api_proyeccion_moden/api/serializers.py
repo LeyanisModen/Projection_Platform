@@ -264,6 +264,7 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
         fields = [
             "id", "url", "nombre", "usuario", "usuario_nombre",
             "fecha_montaje", "planificacion", "modulos_previstos",
+            "fecha_montaje_obra", "fecha_montaje_obra_anterior", "fecha_montaje_obra_cambiada_at",
             "bastidor_longitud_cm", "peso_maximo_grua_kg", "datos_tecnicos_importados",
             "datos_tecnicos_archivo", "datos_tecnicos_actualizados_at",
             "plano_archivo", "documentos_archivo", "planilla_archivo",
@@ -283,6 +284,8 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
             'datos_tecnicos_importados': {'read_only': True},
             'archivado_at': {'read_only': True},
             'montaje_realizado_at': {'read_only': True},
+            'fecha_montaje_obra_anterior': {'read_only': True},
+            'fecha_montaje_obra_cambiada_at': {'read_only': True},
         }
 
     def to_representation(self, instance):

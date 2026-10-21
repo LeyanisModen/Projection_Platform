@@ -284,6 +284,7 @@ class OfficePlanningTests(APITestCase):
         self._definir('Geometria', bloquea_produccion=True)
         self._definir('Fotos', bloquea_produccion=False)
         self.create_module()
+        Proyecto.objects.filter(pk=self.project.pk).update(fecha_montaje_obra=date(2026, 11, 20))
 
         listed = {p['id']: p for p in self.client.get('/api/proyectos/').data['results']}
         self.assertTrue(listed[self.project.pk]['produccion_bloqueada'])
@@ -306,6 +307,65 @@ class OfficePlanningTests(APITestCase):
         listed = {p['id']: p for p in self.client.get('/api/proyectos/').data['results']}
         self.assertFalse(listed[self.project.pk]['produccion_bloqueada'])
         self.assertTrue(listed[self.project2.pk]['produccion_bloqueada'], 'cada proyecto completa lo suyo')
+
+    def test_factory_owns_its_site_date_and_the_office_sees_when_it_changes(self):
+        url = f'/api/proyectos/{self.project.pk}/'
+        self.client.force_authenticate(self.factory)
+        # La fecha de Moden sigue siendo de Moden; la de obra es de la ferralla.
+        self.assertEqual(self.client.patch(url, {'fecha_montaje': '2026-11-20'}, format='json').status_code, 400)
+        response = self.client.patch(url, {'fecha_montaje_obra': '2026-11-20'}, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['fecha_montaje_obra'], '2026-11-20')
+        self.assertIsNone(response.data['fecha_montaje_obra_anterior'])
+        self.assertIsNone(response.data['fecha_montaje_obra_cambiada_at'])
+        self.assertIsNone(response.data['fecha_montaje'])
+
+        # Cambiarla deja la nota para el admin: cual era y cuando.
+        response = self.client.patch(url, {'fecha_montaje_obra': '2026-11-27'}, format='json')
+        self.assertEqual(response.data['fecha_montaje_obra'], '2026-11-27')
+        self.assertEqual(response.data['fecha_montaje_obra_anterior'], '2026-11-20')
+        self.assertIsNotNone(response.data['fecha_montaje_obra_cambiada_at'])
+        self.assertEqual(
+            self.client.patch(f'/api/proyectos/{self.foreign_project.pk}/', {'fecha_montaje_obra': '2026-11-27'}, format='json').status_code,
+            404,
+        )
+
+        # El admin puede tocarla, pero eso no es una nota de la ferralla.
+        self.client.force_authenticate(self.admin)
+        response = self.client.patch(url, {'fecha_montaje_obra': '2026-12-01'}, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['fecha_montaje_obra_anterior'], '2026-11-20')
+        listed = {p['id']: p for p in self.client.get('/api/proyectos/').data['results']}
+        self.assertEqual(listed[self.project.pk]['fecha_montaje_obra'], '2026-12-01')
+
+    def test_queue_needs_the_site_date_and_places_new_projects_by_it(self):
+        grupo = GrupoMesas.objects.create(nombre='G', usuario=self.factory)
+        url = f'/api/grupos-mesas/{grupo.pk}/cola/add/'
+        proyectos = {}
+        for nombre, fecha in (('A', date(2026, 11, 10)), ('B', date(2026, 11, 20)), ('C', date(2026, 11, 15)), ('D', date(2026, 11, 1))):
+            proyectos[nombre] = Proyecto.objects.create(nombre=nombre, usuario=self.factory, fecha_montaje_obra=fecha)
+            self.create_module(proyectos[nombre])
+        self.create_module()
+        self.client.force_authenticate(self.factory)
+
+        # Sin fecha de montaje en obra no entra en mesa.
+        response = self.client.post(url, {'proyecto': self.project.pk})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('montaje en obra', response.data['detail'])
+
+        def cola():
+            return [e.proyecto.nombre for e in grupo.proyectos_cola.select_related('proyecto').order_by('orden')]
+
+        for nombre in ('A', 'B'):
+            self.assertEqual(self.client.post(url, {'proyecto': proyectos[nombre].pk}).status_code, 200)
+        self.assertEqual(cola(), ['A', 'B'])
+        # C monta antes que B: entra delante de B.
+        self.assertEqual(self.client.post(url, {'proyecto': proyectos['C'].pk}).status_code, 200)
+        self.assertEqual(cola(), ['A', 'C', 'B'])
+        # D monta antes que todos, pero A ya se esta fabricando: no lo adelanta.
+        self.assertEqual(self.client.post(url, {'proyecto': proyectos['D'].pk}).status_code, 200)
+        self.assertEqual(cola(), ['A', 'D', 'C', 'B'])
+        self.assertEqual([e.orden for e in grupo.proyectos_cola.order_by('orden')], [0, 1, 2, 3])
 
     def test_manual_step_can_declare_date_and_document_and_set_deadline(self):
         response = self.client.post(

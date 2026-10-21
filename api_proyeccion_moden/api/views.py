@@ -1616,7 +1616,18 @@ class ProyectoViewSet(viewsets.ModelViewSet):
             if current_file and current_file.name:
                 replaced_files.append(current_file.name)
 
-        serializer.save()
+        # La fecha de montaje en obra es de la ferralla. Si la cambia (ya
+        # tenia una), el admin ve la nota: cual era y cuando la cambio.
+        nota_obra = {}
+        if ('fecha_montaje_obra' in serializer.validated_data
+                and not _is_admin(self.request.user)
+                and instance.fecha_montaje_obra is not None
+                and serializer.validated_data['fecha_montaje_obra'] != instance.fecha_montaje_obra):
+            nota_obra = {
+                'fecha_montaje_obra_anterior': instance.fecha_montaje_obra,
+                'fecha_montaje_obra_cambiada_at': timezone.now(),
+            }
+        serializer.save(**nota_obra)
         # Edificio: si cambia de ferralla sale del de la anterior; si aun no
         # tiene, se deduce del nombre.
         from api.edificios import ajustar_a_ferralla
@@ -4594,7 +4605,7 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'], url_path='cola/add')
     def cola_add(self, request, pk=None):
-        """Encola un proyecto al final (o en una posicion concreta)."""
+        """Encola un proyecto en el sitio que le toca por fecha de montaje en obra."""
         grupo = self.get_object()
         self._check_grupo_access(grupo)
 
@@ -4631,16 +4642,32 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
                 status=400,
             )
 
+        # La fecha de montaje en obra es de la ferralla: sin ella el
+        # proyecto no entra en mesa (su card lo avisa en rojo).
+        if proyecto.fecha_montaje_obra is None:
+            return Response(
+                {'detail': 'Ponle fecha de montaje en obra antes de ponerlo en mesa.'},
+                status=400,
+            )
+
         with transaction.atomic():
             if grupo.proyectos_cola.filter(proyecto=proyecto).exists():
                 return Response({'detail': 'El proyecto ya esta en la cola.'}, status=400)
-            last = grupo.proyectos_cola.order_by('-orden').first()
-            next_orden = (last.orden + 1) if last else 0
-            GrupoMesasProyecto.objects.create(
-                grupo_mesas=grupo,
-                proyecto=proyecto,
-                orden=next_orden,
-            )
+            # Entra por fecha de montaje en obra: delante del primero que
+            # monte mas tarde, sin adelantar al que ya se fabrica (el
+            # primero). Luego la ferralla lo arrastra donde quiera.
+            cola = list(grupo.proyectos_cola.select_related('proyecto').order_by('orden', 'id'))
+            posicion = len(cola)
+            for indice, entrada in enumerate(cola):
+                fecha = entrada.proyecto.fecha_montaje_obra
+                if indice > 0 and fecha is not None and fecha > proyecto.fecha_montaje_obra:
+                    posicion = indice
+                    break
+            cola.insert(posicion, GrupoMesasProyecto(grupo_mesas=grupo, proyecto=proyecto))
+            for orden, entrada in enumerate(cola):
+                if entrada.pk is None or entrada.orden != orden:
+                    entrada.orden = orden
+                    entrada.save()
             self._sync_proyecto_actual(grupo)
 
         # Auto-plan so the newly added project shows up in the mesa
