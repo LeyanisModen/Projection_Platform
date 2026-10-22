@@ -24,8 +24,13 @@ describe('StatsLineChart', () => {
       tooltips: ['60 % · 6 h de trabajo + 4 h muertas', null, null, null] }]);
     fixture.detectChanges();
 
-    expect(el().querySelector('path.lc-split-below')?.getAttribute('fill')).toBe('#2a78d6');
-    expect(el().querySelector('path.lc-split-above')?.getAttribute('fill')).toBe('#c08400');
+    // Rellenos degradados como el area de las demas graficas, cada uno con su color.
+    const relleno = (clase: string) => {
+      const id = el().querySelector(`path.${clase}`)?.getAttribute('fill')?.match(/url\(#(.+)\)/)?.[1];
+      return Array.from(el().querySelectorAll(`[id="${id}"] stop`)).map(st => st.getAttribute('stop-color'));
+    };
+    expect(relleno('lc-split-below')).toEqual(['#2a78d6', '#2a78d6']);
+    expect(relleno('lc-split-above')).toEqual(['#c08400', '#c08400']);
     // El eje llega al 100 aunque ningun punto lo toque, sin degradado ni etiqueta del maximo.
     expect(Array.from(el().querySelectorAll('.lc-tick')).map(t => t.textContent).at(-1)).toBe('100');
     expect(el().querySelector('.lc-pico')).toBeNull();

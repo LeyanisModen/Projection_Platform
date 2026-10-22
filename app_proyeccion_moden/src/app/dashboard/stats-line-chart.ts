@@ -117,6 +117,17 @@ let nextChartId = 0;
                 </linearGradient>
               }
             }
+            @if (splitAreas(); as partes) {
+              <!-- Como el area de las demas: cada color fuerte junto a la linea y desvaneciendose. -->
+              <linearGradient [attr.id]="uid + '-split-below'" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" [attr.stop-color]="partes.belowColor" stop-opacity="0.24" />
+                <stop offset="1" [attr.stop-color]="partes.belowColor" stop-opacity="0.02" />
+              </linearGradient>
+              <linearGradient [attr.id]="uid + '-split-above'" x1="0" y1="1" x2="0" y2="0">
+                <stop offset="0" [attr.stop-color]="partes.aboveColor" stop-opacity="0.34" />
+                <stop offset="1" [attr.stop-color]="partes.aboveColor" stop-opacity="0.04" />
+              </linearGradient>
+            }
           </defs>
 
           @for (tick of ticks(); track tick.value) {
@@ -129,8 +140,8 @@ let nextChartId = 0;
           }
 
           @if (splitAreas(); as partes) {
-            <path class="lc-split-above" [attr.d]="partes.above" [attr.fill]="partes.aboveColor" fill-opacity="0.35" />
-            <path class="lc-split-below" [attr.d]="partes.below" [attr.fill]="partes.belowColor" fill-opacity="0.22" />
+            <path class="lc-split-above" [attr.d]="partes.above" [attr.fill]="'url(#' + uid + '-split-above)'" />
+            <path class="lc-split-below" [attr.d]="partes.below" [attr.fill]="'url(#' + uid + '-split-below)'" />
           }
           @for (line of lines(); track line.name) {
             @if (line.area) { <path [attr.d]="line.area" [attr.fill]="'url(#' + line.areaId + ')'" /> }
@@ -252,7 +263,7 @@ export class StatsLineChart implements AfterViewInit, OnDestroy {
   readonly active = signal<number | null>(null);
 
   private readonly body = viewChild<ElementRef<HTMLElement>>('body');
-  private readonly uid = `lc${++nextChartId}`;
+  readonly uid = `lc${++nextChartId}`;
   private observer: ResizeObserver | null = null;
   private readonly margin = { top: 18, right: 18, bottom: 28, left: 46 };
 
