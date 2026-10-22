@@ -52,9 +52,10 @@
 .mesa-card.mesa-inactiva { background: var(--surface-2); }
 .mesa-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
 .mesa-title-container { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.mesa-sup-orden { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--line); }
-.mesa-sup-orden-label { color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: 0.04em; }
-.mesa-sup-orden-switch .estado-opcion { height: 26px; padding: 0 8px; font-size: 11px; }
+.mesa-orden-iconos { display: inline-flex; align-items: center; gap: 2px; margin-right: 4px; padding-right: 6px; border-right: 1px solid var(--line); }
+.btn-icon.mesa-orden-btn { width: 28px; height: 28px; font-size: 13px; }
+.btn-icon.mesa-orden-btn.active, .btn-icon.mesa-orden-btn.active:hover { color: #fff; background: var(--ink); }
+.btn-icon.mesa-orden-btn:disabled { opacity: 0.5; cursor: default; }
 .mesa-role-badge { color: var(--ink); font-size: 14px; font-weight: 600; white-space: nowrap; }
 .mesa-tipo-chip { padding: 1px 7px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: 0.04em; }
 .mesa-header-actions { display: flex; align-items: center; gap: 4px; }

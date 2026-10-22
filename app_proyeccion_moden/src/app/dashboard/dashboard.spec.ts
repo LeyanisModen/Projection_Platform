@@ -797,12 +797,14 @@ describe('Dashboard', () => {
 
     const cards: HTMLElement[] = Array.from(fixture.nativeElement.querySelectorAll('.mesa-card'));
     expect(cards.length).toBe(2);
-    // La inferior no elige orden; la superior si, y en manual ensena las flechas.
-    expect(cards[0].querySelector('.mesa-sup-orden')).toBeNull();
+    // La inferior no elige orden; la superior si, con tres iconos en su cabecera
+    // (sin fila aparte), y en manual ensena las flechas.
+    expect(cards[0].querySelector('.mesa-orden-iconos')).toBeNull();
     const sup3 = cards[1];
-    expect(Array.from(sup3.querySelectorAll('.mesa-sup-orden .estado-opcion')).map(b => b.textContent?.trim()))
-      .toEqual(['Planificado', 'Adaptativo', 'Manual']);
-    expect(sup3.querySelector('.mesa-sup-orden .estado-opcion.active')?.textContent?.trim()).toBe('Manual');
+    const iconos = Array.from(sup3.querySelectorAll('.mesa-header .mesa-orden-btn')) as HTMLButtonElement[];
+    expect(iconos.map(b => b.getAttribute('aria-label'))).toEqual(['Orden planificado', 'Orden adaptativo', 'Orden manual']);
+    expect(iconos.every(b => !!b.title)).toBe(true);
+    expect(sup3.querySelector('.mesa-orden-btn.active')?.getAttribute('aria-label')).toBe('Orden manual');
     expect(sup3.querySelectorAll('.queue-item-order').length).toBe(3);
 
     const reorder = vi.spyOn(api, 'reorderMesaQueue').mockReturnValue(of({ status: 'ok' }));
@@ -817,10 +819,10 @@ describe('Dashboard', () => {
     const update = vi.spyOn(api, 'updateGrupoMesas')
       .mockReturnValue(of({ ...grupo, estrategia_cola_superior: 'ADAPTATIVA' } as GrupoMesas));
     vi.spyOn(component, 'loadMesas').mockImplementation(() => undefined);
-    (sup3.querySelector('.mesa-sup-orden [title^="Adaptar"]') as HTMLButtonElement).click();
+    (sup3.querySelector('[aria-label="Orden adaptativo"]') as HTMLButtonElement).click();
     expect(update).toHaveBeenCalledWith(1, { estrategia_cola_superior: 'ADAPTATIVA' });
     fixture.detectChanges();
-    expect(sup3.querySelector('.mesa-sup-orden .estado-opcion.active')?.textContent?.trim()).toBe('Adaptativo');
+    expect(sup3.querySelector('.mesa-orden-btn.active')?.getAttribute('aria-label')).toBe('Orden adaptativo');
     expect(sup3.querySelectorAll('.queue-item-order').length).toBe(0);
   });
 

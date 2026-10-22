@@ -336,10 +336,10 @@ export class Dashboard implements OnInit, OnDestroy {
   showNotificacionesModal = false;
   aceptandoProyectoId: number | null = null;
   /** Opciones de orden de la cola superior, en el card de cada mesa SUP. */
-  readonly estrategiasSuperior: { valor: EstrategiaColaSuperior; etiqueta: string; ayuda: string }[] = [
-    { valor: 'PLANIFICADA', etiqueta: 'Planificado', ayuda: 'Alternancia planificada: intercala las mesas inferiores una a una.' },
-    { valor: 'ADAPTATIVA', etiqueta: 'Adaptativo', ayuda: 'Adaptar al avance real: prioriza los superiores que ya necesita la producción inferior.' },
-    { valor: 'MANUAL', etiqueta: 'Manual', ayuda: 'Orden manual: lo ordenáis vosotros con las flechas; lo nuevo entra al final.' },
+  readonly estrategiasSuperior: { valor: EstrategiaColaSuperior; etiqueta: string; icono: string; ayuda: string }[] = [
+    { valor: 'PLANIFICADA', etiqueta: 'Planificado', icono: 'fa-random', ayuda: 'Planificado: intercala las mesas inferiores una a una.' },
+    { valor: 'ADAPTATIVA', etiqueta: 'Adaptativo', icono: 'fa-bolt', ayuda: 'Adaptativo: prioriza los superiores que ya necesita la producción inferior.' },
+    { valor: 'MANUAL', etiqueta: 'Manual', icono: 'fa-hand-paper-o', ayuda: 'Manual: lo ordenáis vosotros con las flechas; lo nuevo entra al final.' },
   ];
 
   verPlano(proyecto: Proyecto): void {
