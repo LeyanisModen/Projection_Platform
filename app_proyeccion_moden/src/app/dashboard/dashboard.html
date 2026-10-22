@@ -230,7 +230,7 @@
                             </div>
                             @if (vista) {
                             <div class="stats-charts">
-                                <app-stats-line-chart title="Peso producido y desperdicio (kg)" unit="kg" [primaryArea]="true" [logScale]="true"
+                                <app-stats-line-chart title="Peso producido y desperdicio (kg)" unit="kg" [primaryArea]="true" [sqrtScale]="true"
                                     [labels]="vista.labels" [series]="vista.peso" />
                             </div>
                             }

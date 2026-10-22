@@ -13,6 +13,7 @@ deducida de las propias senales: sin registro (ningun dato en el turno),
 empezo tarde, acabo pronto, paradas. Lo trabajado fuera de turno se suma
 como trabajo, nunca se tira. Todo el tiempo muerto es de la ferralla.
 """
+from bisect import bisect_right
 from datetime import timedelta
 
 from django.utils import timezone
@@ -132,6 +133,27 @@ def huecos(intervalos, desde, hasta):
     return resultado
 
 
+class _Tramos:
+    """Intervalos ordenados y sin solapes, con busqueda rapida de los que tocan una
+    ventana: un rango de meses tiene miles de sesiones y cientos de ventanas."""
+
+    def __init__(self, intervalos=()):
+        self.lista = list(intervalos)
+        self.fines = [b for _a, b in self.lista]
+
+    def tocan(self, desde, hasta):
+        """Los intervalos con algo dentro de [desde, hasta) (o que acaban justo despues de desde)."""
+        indice = bisect_right(self.fines, desde)
+        resultado = []
+        while indice < len(self.lista) and self.lista[indice][0] < hasta:
+            resultado.append(self.lista[indice])
+            indice += 1
+        return resultado
+
+    def solape(self, desde, hasta):
+        return solape(self.tocan(desde, hasta), desde, hasta)
+
+
 class Actividad:
     """Sesiones de trabajo de las mesas de una ferralla en una ventana."""
 
@@ -139,6 +161,7 @@ class Actividad:
         self.tz = tz or timezone.get_current_timezone()
         self.mesas = list(mesas)
         self.desde, self.hasta = desde, hasta
+        self._dias = {}
         self.senales = senales_por_mesa([m.id for m in self.mesas], desde, hasta)
         self.sesiones_mesa = {}
         # Las sesiones que salen de fotos o fases hechas en dias sin eventos de esa mesa.
@@ -152,9 +175,18 @@ class Actividad:
             self.sesiones_mesa[mesa.id] = [(a, b) for a, b, _e in propias]
             self.estimadas_mesa[mesa.id] = [(a, b) for a, b, e in propias if e]
         self.fabrica = union([s for lista in self.sesiones_mesa.values() for s in lista])
+        self._fabrica = _Tramos(self.fabrica)
+        self._mesa = {mesa_id: _Tramos(lista) for mesa_id, lista in self.sesiones_mesa.items()}
+        self._estimadas = {mesa_id: _Tramos(lista) for mesa_id, lista in self.estimadas_mesa.items()}
 
     def _dia(self, momento):
-        return timezone.localtime(momento, self.tz).date()
+        # El cambio de hora va por horas enteras: el dia local de la hora en punto
+        # (en UTC) es el del momento. Se calcula una vez por hora, no por senal.
+        hora = momento.replace(minute=0, second=0, microsecond=0)
+        dia = self._dias.get(hora)
+        if dia is None:
+            dia = self._dias[hora] = timezone.localtime(hora, self.tz).date()
+        return dia
 
     def _con_piso(self, propias, lista, dias_con_senal):
         """Un dia sin camara ni registro, cada fase hecha cuenta al menos su piso
@@ -176,8 +208,8 @@ class Actividad:
     def estimado_en(self, ventanas):
         """True si parte del trabajo en esas ventanas es estimado (fotos o hechos sin eventos)."""
         return any(
-            solape(estimadas, a, b) > 0
-            for estimadas in self.estimadas_mesa.values() for a, b in ventanas
+            estimadas.solape(a, b) > 0
+            for estimadas in self._estimadas.values() for a, b in ventanas
         )
 
     def desglose(self, ventanas):
@@ -193,13 +225,14 @@ class Actividad:
         for inicio, fin in ventanas:
             duracion = (fin - inicio).total_seconds()
             total['turno'] += duracion
-            trabajado = solape(self.fabrica, inicio, fin)
+            tocan = self._fabrica.tocan(inicio, fin)
+            trabajado = solape(tocan, inicio, fin)
             total['trabajo'] += trabajado
             muerto = duracion - trabajado
             total['muerto'] += muerto
             # Sesiones (aunque sean una senal suelta, o el piso de una fase hecha
             # al acabar la ventana) que tocan la ventana; sin ninguna, sin registro.
-            dentro = [(max(a, inicio), min(b, fin)) for a, b in self.fabrica if b > inicio and a < fin]
+            dentro = [(max(a, inicio), min(b, fin)) for a, b in tocan]
             if not dentro:
                 total['sin_registro'] += muerto
                 continue
@@ -215,21 +248,23 @@ class Actividad:
 
     def trabajo_fuera(self, ventanas, desde, hasta):
         """Segundos trabajados en [desde, hasta) fuera de las ventanas de turno."""
-        return sum(solape(self.fabrica, a, b) for a, b in huecos(ventanas, desde, hasta))
+        return sum(self._fabrica.solape(a, b) for a, b in huecos(ventanas, desde, hasta))
 
     def mesa_desglose(self, mesa_id, ventanas):
         """Trabajo, muerto y paradas de una mesa en unas ventanas de turno."""
-        propias = self.sesiones_mesa.get(mesa_id, [])
+        propias = self._mesa.get(mesa_id) or _Tramos()
+        estimadas = self._estimadas.get(mesa_id) or _Tramos()
         turno = sum((b - a).total_seconds() for a, b in ventanas)
-        trabajo = sum(solape(propias, a, b) for a, b in ventanas)
+        trabajo = 0.0
         paradas = 0
         for inicio, fin in ventanas:
-            dentro = [(max(a, inicio), min(b, fin)) for a, b in propias if b > inicio and a < fin]
+            dentro = propias.tocan(inicio, fin)
+            trabajo += solape(dentro, inicio, fin)
             if len(dentro) > 1:
                 paradas += len(dentro) - 1
         return {
             'turno': turno, 'trabajo': trabajo, 'muerto': max(0.0, turno - trabajo), 'paradas': paradas,
-            'estimado': any(solape(self.estimadas_mesa.get(mesa_id, []), a, b) > 0 for a, b in ventanas),
+            'estimado': any(estimadas.solape(a, b) > 0 for a, b in ventanas),
         }
 
 

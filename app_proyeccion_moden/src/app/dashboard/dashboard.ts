@@ -26,7 +26,7 @@ import {
   GrupoMaterial,
 } from '../services/lista-materiales.service';
 import { Subject, takeUntil, interval, forkJoin, Observable, of } from 'rxjs';
-import { catchError } from 'rxjs/operators';
+import { catchError, finalize } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
 import { ZoomableImageComponent } from '../shared/zoomable-image/zoomable-image.component';
 import { planningIssues, planningLabel } from '../shared/project-planning';
@@ -201,6 +201,8 @@ export class Dashboard implements OnInit, OnDestroy {
     data: ProductionStatsResponse; from: string; to: string; horario: FerrallaCaptureConfig | null; hora: number; vista: StatsVista;
   } | null = null;
   private statsRequestId = 0;
+  /** Peticiones de estadisticas aun sin respuesta: el refresco no manda otra encima. */
+  private statsEnVuelo = 0;
   statsPreset: 'day' | 'week' | 'month' | 'proyecto' | 'custom' = 'day';
   /** Proyecto al que se limitan las estadisticas; null = todos. */
   statsProyecto: number | null = null;
@@ -1810,9 +1812,12 @@ export class Dashboard implements OnInit, OnDestroy {
           this.cdr.detectChanges();
         }
       });
-    // Stats aggregate everything the ferralla owns — always refresh,
-    // silently so the polling doesn't toggle the loading placeholder.
-    this.loadStats(true);
+    // Las estadisticas se refrescan en silencio solo si se estan viendo y el
+    // periodo llega a hoy (lo pasado no cambia): cada peticion de un rango
+    // largo cuesta segundos al servidor.
+    if (this.vista === 'estadisticas' && (!this.statsTo || this.statsTo >= this.toLocalIsoDate(new Date()))) {
+      this.loadStats(true);
+    }
   }
 
   loadMesas(): void {
@@ -2021,7 +2026,9 @@ export class Dashboard implements OnInit, OnDestroy {
    * flash 'Cargando…' every 20s when data already exists.
    */
   loadStats(silent: boolean = false): void {
-    if (silent && this.loadingStats) return;
+    // Un refresco nunca se apila sobre una peticion que no ha vuelto: si el
+    // servidor tarda mas que el intervalo, se amontonaban hasta colgarlo.
+    if (silent && (this.loadingStats || this.statsEnVuelo > 0)) return;
     const requestId = ++this.statsRequestId;
     if (!this.statsFrom || !this.statsTo) {
       // Defaults: today → today
@@ -2032,6 +2039,7 @@ export class Dashboard implements OnInit, OnDestroy {
     if (!silent || !this.statsData) this.loadingStats = true;
     if (!silent) this.statsData = null;
     this.statsError = '';
+    this.statsEnVuelo++;
     const todoElProyecto = this.statsPreset === 'proyecto' && (this.statsProyecto !== null || this.statsEdificio !== null);
     this.api.getProductionStats({
       from: this.statsFrom,
@@ -2041,7 +2049,7 @@ export class Dashboard implements OnInit, OnDestroy {
       ...(this.statsEdificio !== null ? { edificio: this.statsEdificio } : {}),
       ...(this.statsTurno !== null ? { turno: this.statsTurno } : {}),
     })
-      .pipe(takeUntil(this.destroy$))
+      .pipe(takeUntil(this.destroy$), finalize(() => this.statsEnVuelo--))
       .subscribe({
         next: (res) => {
           if (requestId !== this.statsRequestId) return;

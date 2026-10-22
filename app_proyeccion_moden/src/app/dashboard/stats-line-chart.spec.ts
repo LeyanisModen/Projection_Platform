@@ -1,6 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
-import { StatsLineChart, logScale, niceScale } from './stats-line-chart';
+import { StatsLineChart, niceScale, sqrtScale } from './stats-line-chart';
 
 describe('StatsLineChart', () => {
   let fixture: ComponentFixture<StatsLineChart>;
@@ -52,25 +52,25 @@ describe('StatsLineChart', () => {
     expect(Array.from(el().querySelectorAll('.lc-legend li')).map(li => li.textContent?.trim())).toEqual(['Peso producido', 'Desperdicio']);
   });
 
-  it('can use a logarithmic axis so the small values (the waste next to the weight) are seen', () => {
-    expect(logScale(4059)).toEqual({ max: 10000, ticks: [0, 10, 100, 1000, 10000] });
-    expect(logScale(420)).toEqual({ max: 1000, ticks: [0, 10, 100, 1000] });
-    expect(logScale(12)).toEqual({ max: 100, ticks: [0, 1, 10, 100] });
-    expect(logScale(0)).toEqual({ max: 10, ticks: [0, 1, 10] });
+  it('can use a square-root axis so the small values (the waste next to the weight) are seen, smoothly', () => {
+    expect(sqrtScale(421)).toEqual({ max: 500, ticks: [0, 10, 50, 100, 200, 500] });
+    expect(sqrtScale(4059)).toEqual({ max: 5000, ticks: [0, 100, 500, 1000, 2000, 5000] });
+    expect(sqrtScale(0).ticks[0]).toBe(0);
     fixture.componentRef.setInput('unit', 'kg');
-    fixture.componentRef.setInput('logScale', true);
+    fixture.componentRef.setInput('sqrtScale', true);
     fixture.componentRef.setInput('series', [
       { name: 'Peso producido', color: '#f0640f', values: [2000, 4059, 0, 3000] },
       { name: 'Desperdicio', color: '#52606d', values: [80, 160, 0, 120] },
     ]);
     fixture.detectChanges();
-    expect(Array.from(el().querySelectorAll('.lc-tick')).map(t => t.textContent)).toEqual(['0', '10', '100', '1,000', '10,000']);
-    // 160 kg de desperdicio queda por encima de la mitad del alto, no pegado al cero.
+    expect(Array.from(el().querySelectorAll('.lc-tick')).map(t => t.textContent)).toEqual(['0', '100', '500', '1,000', '2,000', '5,000']);
+    // 160 kg de desperdicio sobre 5,000 queda a casi un 18 % del alto (lineal: un 3 %).
     const ys = (serie: number) => Array.from(el().querySelectorAll('svg[role="img"] circle'))
       .slice(serie * 4, serie * 4 + 4).map(c => Number(c.getAttribute('cy')));
-    const [cero, , , tope] = Array.from(el().querySelectorAll('.lc-grid')).map(l => Number(l.getAttribute('y1')));
+    const lineas = Array.from(el().querySelectorAll('.lc-grid')).map(l => Number(l.getAttribute('y1')));
+    const [cero, tope] = [lineas[0], lineas[lineas.length - 1]];
     const desperdicio = ys(1);
-    expect((cero - desperdicio[1]) / (cero - tope)).toBeGreaterThan(0.5);
+    expect((cero - desperdicio[1]) / (cero - tope)).toBeCloseTo(Math.sqrt(160 / 5000), 2);
   });
 
   it('rounds the axis to clean steps', () => {

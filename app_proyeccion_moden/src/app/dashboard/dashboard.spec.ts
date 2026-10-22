@@ -553,6 +553,35 @@ describe('Dashboard', () => {
       expect(text('.stats-kpi-value')).toBe('0 / 9 objetivo');
     });
 
+    it('never stacks a background refresh on a stats request still running, nor refreshes what is not on screen', () => {
+      const pendiente = new Subject<ProductionStatsResponse>();
+      const peticion = vi.spyOn(TestBed.inject(ApiService), 'getProductionStats').mockReturnValue(pendiente);
+      vi.spyOn(TestBed.inject(ApiService), 'getProyectos').mockReturnValue(of([]));
+      const hoy = new Date();
+      const hoyIso = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
+      component.statsFrom = hoyIso;
+      component.statsTo = hoyIso;
+      component.silentRefreshProyectosAndStats();
+      expect(peticion).toHaveBeenCalledTimes(1);
+      // La primera no ha vuelto: los refrescos siguientes no mandan otra.
+      component.silentRefreshProyectosAndStats();
+      component.silentRefreshProyectosAndStats();
+      expect(peticion).toHaveBeenCalledTimes(1);
+      pendiente.next(stats);
+      pendiente.complete();
+      peticion.mockReturnValue(of(stats));
+      component.silentRefreshProyectosAndStats();
+      expect(peticion).toHaveBeenCalledTimes(2);
+      // Un periodo ya pasado no cambia, y en Produccion no se ven.
+      component.statsFrom = '2026-09-01';
+      component.statsTo = '2026-09-14';
+      component.silentRefreshProyectosAndStats();
+      component.statsTo = hoyIso;
+      component.vista = 'produccion';
+      component.silentRefreshProyectosAndStats();
+      expect(peticion).toHaveBeenCalledTimes(2);
+    });
+
     it('labels retained statistics as stale after a failed silent refresh', () => {
       vi.spyOn(TestBed.inject(ApiService), 'getProductionStats')
         .mockReturnValue(throwError(() => new Error('unavailable')));

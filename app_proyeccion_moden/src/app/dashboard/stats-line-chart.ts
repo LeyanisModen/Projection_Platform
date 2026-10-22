@@ -50,14 +50,20 @@ interface ChartLine {
 
 interface LegendItem { kind: 'line' | 'cumple' | 'bajo' | 'target' | 'area'; label: string; color: string; }
 
-/** Eje logaritmico que admite el cero: 0 / 10 / 100 / 1,000 (log10 de 1 + valor). */
-export function logScale(max: number): { max: number; ticks: number[] } {
-  const decadas = Math.max(1, Math.ceil(Math.log10(Math.max(max, 1)) - 1e-9));
-  const top = Math.pow(10, decadas);
-  // Con muchas decadas el 1 se pega al 0: se empieza en 10.
-  const desde = decadas >= 3 ? 1 : 0;
+/** Eje de raiz cuadrada: abre los valores pequenos sin exagerarlos como un logaritmo
+ *  (0 / 10 / 50 / 100 / 200 / 500). Las marcas, redondas y sin amontonarse. */
+export function sqrtScale(max: number): { max: number; ticks: number[] } {
+  const top = niceScale(max, 0).max;
+  const posicion = (v: number) => Math.sqrt(v / top);
+  const candidatos: number[] = [];
+  for (let potencia = 1; potencia < top; potencia *= 10) {
+    for (const m of [1, 2, 5]) if (m * potencia < top) candidatos.push(m * potencia);
+  }
   const ticks = [0];
-  for (let d = desde; d <= decadas; d++) ticks.push(Math.pow(10, d));
+  for (const v of candidatos) {
+    if (posicion(v) - posicion(ticks[ticks.length - 1]) >= 0.12 && 1 - posicion(v) >= 0.12) ticks.push(v);
+  }
+  ticks.push(top);
   return { max: top, ticks };
 }
 
@@ -253,8 +259,8 @@ export class StatsLineChart implements AfterViewInit, OnDestroy {
   readonly primaryArea = input(false);
   /** Techo fijo del eje (p. ej. 100 para un porcentaje). */
   readonly maxValue = input<number | null>(null);
-  /** Eje logaritmico: que los valores pequenos (el desperdicio junto al peso) se vean. */
-  readonly logScale = input(false);
+  /** Eje de raiz cuadrada: que los valores pequenos (el desperdicio junto al peso) se vean. */
+  readonly sqrtScale = input(false);
   /** La primera serie parte el alto: debajo un color, encima otro. */
   readonly split = input<SplitArea | null>(null);
   /** Columnas aun en curso: por debajo del objetivo no cuentan como incumplidas. */
@@ -293,7 +299,7 @@ export class StatsLineChart implements AfterViewInit, OnDestroy {
       for (const v of [...s.values, s.prev, s.next]) if (typeof v === 'number' && v > max) max = v;
     }
     for (const t of this.target() ?? []) if (typeof t === 'number' && t > max) max = t;
-    return this.logScale() ? logScale(max) : niceScale(max, this.decimals());
+    return this.sqrtScale() ? sqrtScale(max) : niceScale(max, this.decimals());
   });
 
   readonly ticks = computed(() => this.scale().ticks.map(value => ({ value, y: this.yAt(value), label: this.format(value) })));
@@ -450,8 +456,8 @@ export class StatsLineChart implements AfterViewInit, OnDestroy {
 
   private yAt(value: number): number {
     const plot = this.plot();
-    const fraccion = this.logScale()
-      ? Math.log10(1 + Math.max(value, 0)) / Math.log10(1 + this.scale().max)
+    const fraccion = this.sqrtScale()
+      ? Math.sqrt(Math.max(value, 0) / this.scale().max)
       : value / this.scale().max;
     return plot.y + plot.h * (1 - fraccion);
   }
