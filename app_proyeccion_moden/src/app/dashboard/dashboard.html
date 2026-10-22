@@ -201,8 +201,8 @@
                                 <app-stats-line-chart title="Módulos fabricados" unit="módulos" [height]="260"
                                     [labels]="vista.labels" [series]="vista.modulos" [target]="vista.objetivo"
                                     [targetLabel]="vista.objetivoLabel" [pending]="vista.pending" />
-                                <app-stats-line-chart title="Dificultad ejecutada (puntos)" unit="puntos"
-                                    [labels]="vista.labels" [series]="vista.dificultad" />
+                                <app-stats-line-chart class="stats-chart-relacion" title="Módulos y dificultad por módulo (100 = media del período)" unit="%"
+                                    [baseline]="100" baselineLabel="media" [labels]="vista.labels" [series]="vista.relacionModulos" />
                             </div>
                             }
                         </section>
@@ -218,7 +218,7 @@
                                     <span class="stats-kpi-label">Peso producido</span>
                                     <span class="stats-kpi-value">{{ pesoTotal(statsData.totals) | number:'1.0-1' }} <small>kg</small></span>
                                 </div>
-                                <div class="stats-kpi stats-kpi-desperdicio" title="Kilos de mallazo desechados y su porcentaje sobre el peso producido">
+                                <div class="stats-kpi stats-kpi-desperdicio stats-kpi-ancho" title="Kilos de mallazo desechados y su porcentaje sobre el peso producido">
                                     <span class="stats-kpi-label">Desperdicio</span>
                                     <span class="stats-kpi-value">
                                         {{ statsData.totals.desperdicio_kg | number:'1.0-1' }} <small>kg</small>
@@ -237,8 +237,8 @@
                             <div class="stats-charts stats-charts-grid">
                                 <app-stats-line-chart title="Peso producido (kg)" unit="kg"
                                     [labels]="vista.labels" [series]="vista.peso" />
-                                <app-stats-line-chart title="Desperdicio (% del peso producido)" unit="%" [decimals]="1"
-                                    [labels]="vista.labels" [series]="vista.desperdicio" />
+                                <app-stats-line-chart class="stats-chart-relacion" title="Peso producido y desperdicio (100 = media del período)" unit="%"
+                                    [baseline]="100" baselineLabel="media" [labels]="vista.labels" [series]="vista.relacionPeso" />
                             </div>
                             }
                         </section>
@@ -286,8 +286,8 @@
                                     <span class="stats-kpi-label">Ritmo de módulos</span>
                                     <span class="stats-kpi-value">
                                         @if (ritmoDeTrabajo()) {
-                                            {{ statsData.totals.modulos_por_hora_trabajo | number:'1.0-2' }} <small>mód./h de trabajo</small>&ngsp;
-                                            <span class="stats-kpi-sub">{{ statsData.totals.modulos_por_hora | number:'1.0-2' }} por hora de turno</span>
+                                            {{ statsData.totals.modulos_por_hora_trabajo | number:'1.0-2' }} <small>mód./h</small>&ngsp;
+                                            <span class="stats-kpi-sub">de trabajo · {{ statsData.totals.modulos_por_hora | number:'1.0-2' }} por hora de turno</span>
                                         } @else {
                                             {{ statsData.totals.modulos_por_hora | number:'1.0-2' }} <small>mód./h</small>
                                         }
@@ -297,22 +297,20 @@
                                     <span class="stats-kpi-label">Ritmo de peso</span>
                                     <span class="stats-kpi-value">
                                         @if (ritmoDeTrabajo()) {
-                                            {{ statsData.totals.kg_por_hora_trabajo | number:'1.0-1' }} <small>kg/h de trabajo</small>&ngsp;
-                                            <span class="stats-kpi-sub">{{ statsData.totals.kg_por_hora | number:'1.0-1' }} por hora de turno</span>
+                                            {{ statsData.totals.kg_por_hora_trabajo | number:'1.0-1' }} <small>kg/h</small>&ngsp;
+                                            <span class="stats-kpi-sub">de trabajo · {{ statsData.totals.kg_por_hora | number:'1.0-1' }} por hora de turno</span>
                                         } @else {
                                             {{ statsData.totals.kg_por_hora | number:'1.0-1' }} <small>kg/h</small>
                                         }
                                     </span>
                                 </div>
                             </div>
-                            @if (muertoCausas(); as causas) {
-                                <p class="stats-muerto-causas"><strong>Tiempo muerto:</strong> {{ causas }}</p>
-                            }
                             @if (vista) {
                             <div class="stats-charts stats-charts-grid">
                                 @if (hayActividad()) {
-                                <app-stats-line-chart [title]="vista.horasUnidad === 'min' ? 'Minutos de trabajo y tiempo muerto' : 'Horas de trabajo y tiempo muerto'"
-                                    [unit]="vista.horasUnidad" [decimals]="vista.horasDecimales" [labels]="vista.labels" [series]="vista.horas" />
+                                <app-stats-stack-chart [title]="vista.horasUnidad === 'min' ? 'Minutos de turno: trabajo y tiempo muerto' : 'Horas de turno: trabajo y tiempo muerto'"
+                                    [unit]="vista.horasUnidad" [decimals]="vista.horasDecimales" [labels]="vista.labels" [series]="vista.horas"
+                                    shareLabel="trabajado" />
                                 }
                                 <app-stats-line-chart title="Tiempo por panel (min)" unit="min"
                                     [labels]="vista.labels" [series]="vista.tiempo" />

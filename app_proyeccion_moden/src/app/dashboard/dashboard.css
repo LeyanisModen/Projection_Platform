@@ -115,6 +115,9 @@
 .stats-bloque { display: grid; gap: 10px; min-width: 0; }
 .stats-bloque + .stats-bloque { padding-top: 14px; border-top: 1px solid var(--line); }
 .stats-kpi-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+/* Casilla con dos cifras en una linea (kilos y %): ocupa dos columnas. */
+.stats-kpi-ancho { grid-column: span 2; }
+.stats-kpi-ancho .stats-kpi-value { white-space: nowrap; }
 .stats-kpi { display: grid; gap: 4px; padding: 12px 14px; border: 1px solid var(--line); background: var(--surface); }
 .stats-kpi-label { color: var(--muted); font-size: 12px; }
 .stats-kpi-value { color: var(--ink); font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1; }
@@ -147,8 +150,6 @@
 .stats-kpi-value .stats-muerto { display: block; font-size: 15px; }
 .stats-kpi-value .stats-muerto small { color: var(--warn); }
 .stats-kpi-sub { display: block; color: var(--muted); font-size: 11px; font-weight: 500; }
-.stats-muerto-causas { margin: 0; color: var(--text); font-size: 12px; }
-.stats-muerto-causas strong { color: var(--warn); font-weight: 600; }
 .stats-fila-trabajo small, .stats-fila-muerto small, .stats-mesa-trabajo small { margin-left: 4px; color: var(--muted); font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; }
 
 /* ---- Proyectos ------------------------------------------------------------ */

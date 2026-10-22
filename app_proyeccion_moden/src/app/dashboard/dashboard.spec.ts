@@ -111,10 +111,13 @@ describe('Dashboard', () => {
       expect(text('.stats-kpi-horas .stats-muerto')).toBe('+ 84 h muertas');
       expect(fixture.nativeElement.querySelector('.stats-kpi-horas').getAttribute('title'))
         .toContain('Incluye 2.5 h trabajadas fuera de turno');
-      expect(text('.stats-kpi-ritmo-modulos .stats-kpi-value')).toBe('2.3 mód./h de trabajo 0.83 por hora de turno');
-      expect(text('.stats-kpi-ritmo-peso .stats-kpi-value')).toBe('275 kg/h de trabajo 100 por hora de turno');
-      expect(text('.stats-muerto-causas')).toBe('Tiempo muerto: 30 h sin registro · 20.5 h antes de empezar · 33.5 h paradas');
-      expect(fixture.nativeElement.querySelectorAll('app-stats-line-chart').length).toBe(6);
+      expect(text('.stats-kpi-ritmo-modulos .stats-kpi-value')).toBe('2.3 mód./h de trabajo · 0.83 por hora de turno');
+      expect(text('.stats-kpi-ritmo-peso .stats-kpi-value')).toBe('275 kg/h de trabajo · 100 por hora de turno');
+      // En que se fue el tiempo muerto no se detalla.
+      expect(fixture.nativeElement.querySelector('.stats-muerto-causas')).toBeNull();
+      // Las horas son barras (trabajo + muerto = turno); el resto, lineas.
+      expect(fixture.nativeElement.querySelectorAll('app-stats-line-chart').length).toBe(5);
+      expect(fixture.nativeElement.querySelectorAll('app-stats-stack-chart').length).toBe(1);
       expect(text('.stats-criterio')).toContain('van a menos de 20 min');
       expect(text('.stats-criterio')).toContain('hueco de hasta 90 min');
       // Sin trabajo detectado no hay ritmo "por hora de trabajo" que enseñar.
@@ -136,6 +139,7 @@ describe('Dashboard', () => {
       expect(fixture.nativeElement.querySelector('.stats-mesa-muerto')).toBeNull();
       expect(fixture.nativeElement.querySelector('.stats-criterio')).toBeNull();
       expect(fixture.nativeElement.querySelectorAll('app-stats-line-chart').length).toBe(5);
+      expect(fixture.nativeElement.querySelector('app-stats-stack-chart')).toBeNull();
     });
 
     it('keeps the work and dead time tables when the shift has run but nothing was finished yet', () => {
@@ -200,14 +204,13 @@ describe('Dashboard', () => {
       vista = component.statsVista()!;
       expect(vista.filas[0].sin_registro).toBe(true);
       expect(vista.filas[1].sin_registro).toBe(false);
-      expect(vista.filas[1].causas).toEqual({sin_registro: 10, empezo_tarde: 1, acabo_pronto: 0, paradas: 3});
       expect(vista.filas[2].horas_trabajo).toBeNull();
       render();
       filas = Array.from(fixture.nativeElement.querySelectorAll('.stats-table-periodos tbody tr')) as HTMLElement[];
       expect(celda(filas[0], '.stats-fila-muerto')).toBe('20 sin registro');
       expect(celda(filas[1], '.stats-fila-trabajo')).toBe('6');
       expect(filas[1].querySelector('.stats-fila-muerto')?.getAttribute('title'))
-        .toBe('Turno de 20 h: 6 h de trabajo + 14 h muertas · 10 h sin registro · 1 h antes de empezar · 3 h paradas');
+        .toBe('Turno de 20 h: 6 h de trabajo + 14 h muertas');
       expect(celda(filas[2], '.stats-fila-muerto')).toBe('—');
     });
 
@@ -247,7 +250,7 @@ describe('Dashboard', () => {
       expect(celda(filas[0], '.stats-fila-senales')).toBe('06:12 – 15:48');
       expect(filas[0].querySelector('.stats-fila-muerto')?.getAttribute('title')).toBe(
         'Turno de 10 h: 5.2 h de trabajo + 3.8 h muertas · 1 h trabajadas fuera de turno'
-        + ' · 0.2 h antes de empezar · 0.2 h después de acabar · 3.4 h paradas · estimado: sin registro de eventos, solo fotos y fases hechas',
+        + ' · estimado: sin registro de eventos, solo fotos y fases hechas',
       );
       expect(celda(filas[1], '.stats-fila-trabajo')).toBe('0');
       expect(celda(filas[1], '.stats-fila-muerto')).toBe('10 sin registro');
@@ -329,9 +332,17 @@ describe('Dashboard', () => {
       expect(vista.modulos[0].next).toBe(2);
       expect(vista.tiempo.map(serie => serie.values[0])).toEqual([40, 20]);
       expect(vista.tiempo[0].values[1]).toBeNull();
-      // Desperdicio sobre el peso total: 10 kg de 130 kg fabricados.
-      expect(vista.desperdicio[0].values[0]).toBeCloseTo(7.69, 2);
-      expect(vista.desperdicio[0].prev).toBeCloseTo(7.69, 2);
+      // Modulos y dificultad por modulo sobre su media (100): el martes hizo pocos pero mas dificiles.
+      const redondo = (valores: Array<number | null>) => valores.map(v => v === null ? null : Math.round(v));
+      expect(vista.relacionModulos.map(s => s.name)).toEqual(['Módulos', 'Dificultad por módulo']);
+      expect(redondo(vista.relacionModulos[0].values)).toEqual([129, 43, 0, 129, 0]);
+      expect(redondo(vista.relacionModulos[1].values)).toEqual([78, 233, null, 78, null]);
+      expect(Math.round(vista.relacionModulos[0].prev!)).toBe(171);
+      expect(vista.relacionModulos[1].tooltips![1]).toBe('50 puntos por módulo · 233 % de la media');
+      // Peso y desperdicio sobre su media: 10 kg de 130 kg cada dia, igual que la media del periodo.
+      expect(redondo(vista.relacionPeso[0].values)).toEqual([100, 100, 0, 100, 0]);
+      expect(redondo(vista.relacionPeso[1].values)).toEqual([100, 100, null, 100, null]);
+      expect(vista.relacionPeso[1].tooltips![0]).toBe('7.7 % del peso · 100 % de la media');
       expect(component.desperdicioPct({desperdicio_kg: 184.9, peso_total_kg: 10458, peso_malla_final_kg: 7089})).toBeCloseTo(1.77, 2);
       expect(component.desperdicioPct({desperdicio_kg: 5, peso_total_kg: 0})).toBeNull();
       // El peso de las graficas y tablas es el total del modulo, no solo el mallazo.
