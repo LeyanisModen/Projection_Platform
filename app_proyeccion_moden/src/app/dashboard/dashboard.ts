@@ -120,11 +120,14 @@ export interface StatsVista {
 
 export interface StatsResumen {
   cumplimiento: number | null;
-  diasCumplidos: { cumplidos: number; total: number } | null;
-  mediaDiaria: number | null;
-  mejorDia: { modulos: number; label: string } | null;
+  /** Vista de un dia: media y mejor van por hora, no por dia. */
+  porHora: boolean;
+  media: number | null;
+  mejor: { modulos: number; label: string } | null;
   kgPorModulo: number | null;
   dificultadMedia: number | null;
+  /** Lo que se gasta: peso producido mas desperdicio. */
+  pesoTotal: number;
 }
 
 /** Un bastidor del plan tal y como lo ve la ferralla: en orden de fabricacion. */
@@ -2687,44 +2690,30 @@ export class Dashboard implements OnInit, OnDestroy {
     return vista;
   }
 
-  /** Indicadores derivados del rango: cumplimiento, dias en objetivo, medias. */
+  /** Indicadores derivados del rango: cumplimiento, media, mejor dia (u hora), pesos. */
   statsResumen(): StatsResumen | null {
     const data = this.statsData;
     if (!data) return null;
     const modulos = data.totals.modulos_completados || 0;
     const target = this.statsPeriodTarget();
-    const objetivo = this.objetivoPorDia();
-    const conProduccion = data.por_dia.filter(d => d.modulos_completados > 0);
+    // Un dia: por hora (media de las horas con produccion y la mejor hora).
+    const porHora = this.statsFrom === this.statsTo && !!data.por_hora;
+    const periodos = porHora
+      ? (data.por_hora || []).map(h => ({ modulos: h.modulos_completados, label: `${h.hora}h` }))
+      : data.por_dia.map(d => ({ modulos: d.modulos_completados, label: this.dayLabel(d.fecha) }));
+    const conProduccion = periodos.filter(p => p.modulos > 0);
     const mejor = conProduccion.reduce<typeof conProduccion[number] | null>(
-      (best, d) => !best || d.modulos_completados > best.modulos_completados ? d : best, null);
-
-    let diasCumplidos: StatsResumen['diasCumplidos'] = null;
-    const from = this.parseIsoDate(this.statsFrom);
-    const to = this.parseIsoDate(this.statsTo);
-    if (objetivo.size > 0 && from && to && from < to) {
-      const byDate = new Map(data.por_dia.map(d => [d.fecha, d.modulos_completados || 0]));
-      const todayIso = this.toLocalIsoDate(new Date());
-      let cumplidos = 0, total = 0;
-      for (const d = new Date(from); d <= to; d.setDate(d.getDate() + 1)) {
-        const iso = this.toLocalIsoDate(d);
-        const cap = objetivo.get(iso) ?? 0;
-        if (iso > todayIso || cap <= 0) continue;
-        const llega = (byDate.get(iso) || 0) >= cap - 1e-9;
-        // Hoy aun puede llegar: solo cuenta si ya lo ha hecho.
-        if (iso === todayIso && !llega) continue;
-        total++;
-        if (llega) cumplidos++;
-      }
-      if (total > 0) diasCumplidos = { cumplidos, total };
-    }
+      (best, p) => !best || p.modulos > best.modulos ? p : best, null);
+    const producido = this.pesoTotal(data.totals);
 
     return {
       cumplimiento: target !== null && target > 0 ? Math.round((modulos / target) * 100) : null,
-      diasCumplidos,
-      mediaDiaria: conProduccion.length ? modulos / conProduccion.length : null,
-      mejorDia: mejor ? { modulos: mejor.modulos_completados, label: this.dayLabel(mejor.fecha) } : null,
-      kgPorModulo: modulos > 0 ? this.pesoTotal(data.totals) / modulos : null,
+      porHora,
+      media: conProduccion.length ? modulos / conProduccion.length : null,
+      mejor,
+      kgPorModulo: modulos > 0 ? producido / modulos : null,
       dificultadMedia: modulos > 0 ? (data.totals.dificultad_total || 0) / modulos : null,
+      pesoTotal: producido + (data.totals.desperdicio_kg || 0),
     };
   }
 
@@ -2820,8 +2809,11 @@ export class Dashboard implements OnInit, OnDestroy {
 
   /** "30 h sin registro · 20 h empezó tarde · …", sin las causas a cero. */
   private causasLabel(causas: ProductionStatsCausas): string {
+    // Antes de empezar: del inicio del turno a la primera señal; despues de
+    // acabar: de la ultima señal al final del turno.
     const nombres: Array<[keyof ProductionStatsCausas, string]> = [
-      ['sin_registro', 'sin registro'], ['empezo_tarde', 'empezó tarde'], ['acabo_pronto', 'acabó pronto'], ['paradas', 'paradas'],
+      ['sin_registro', 'sin registro'], ['empezo_tarde', 'antes de empezar'], ['acabo_pronto', 'después de acabar'],
+      ['paradas', 'paradas'],
     ];
     return nombres
       .filter(([clave]) => causas[clave] > 0)
