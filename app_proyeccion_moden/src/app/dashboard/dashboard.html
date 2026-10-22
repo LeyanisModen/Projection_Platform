@@ -1370,33 +1370,20 @@
                 </div>
 
                 <div class="gestionar-modal-body">
-                    <section class="gestionar-section">
-
-                        <div class="cola-add-row">
-                            <select [(ngModel)]="gestionarAddProyectoId" class="gestionar-input">
-                                <option [ngValue]="null">Selecciona un proyecto para añadir…</option>
-                                @for (p of proyectosDisponibles(gestionandoGrupo); track p.id) {
-                                    <option [ngValue]="p.id">{{ p.nombre }}</option>
-                                }
-                            </select>
-                            <button type="button" class="btn-add-cola"
-                                [disabled]="!gestionarAddProyectoId || gestionarBusy"
-                                (click)="addProyectoToCola()">
-                                Añadir
-                            </button>
-                        </div>
-
+                    <!-- Todos los proyectos de la ferralla: en mesa (en orden) y en espera (por fecha de montaje). -->
+                    <section class="gestionar-section cola-seccion cola-en-mesa" aria-labelledby="cola-en-mesa-titulo">
+                        <h4 id="cola-en-mesa-titulo">En mesa</h4>
                         @if (gestionandoGrupo.proyectos_cola.length === 0) {
-                            <p class="gestionar-empty">No hay proyectos en cola. Añade uno arriba.</p>
+                            <p class="gestionar-empty">Nada en mesa. Sube un proyecto de la lista de espera.</p>
                         } @else {
                             <ul class="cola-list" cdkDropList (cdkDropListDropped)="onColaDrop($event)">
                                 @for (entry of gestionandoGrupo.proyectos_cola; track entry.id; let i = $index) {
-                                    <li class="cola-row" cdkDrag title="Arrastra para reordenar">
-                                        <span class="cola-handle" aria-hidden="true">
-                                            <i class="fa fa-grip-vertical"></i>
-                                        </span>
+                                    <li class="cola-row" cdkDrag [cdkDragDisabled]="gestionarBusy" title="Arrastra para cambiar el orden">
                                         <span class="cola-position">{{ i + 1 }}</span>
                                         <span class="cola-nombre">{{ entry.proyecto_nombre }}</span>
+                                        @if (montajeColaLabel(entry.proyecto); as montaje) {
+                                            <span class="cola-montaje">{{ montaje }}</span>
+                                        }
                                         @if (i === 0) {
                                             <span class="cola-badge-head">En fabricación</span>
                                         }
@@ -1404,8 +1391,36 @@
                                             (click)="removeProyectoFromCola(entry.proyecto)"
                                             (mousedown)="$event.stopPropagation()"
                                             [disabled]="gestionarBusy"
-                                            title="Quitar de la cola">
+                                            title="Pasar a espera"
+                                            [attr.aria-label]="'Pasar ' + entry.proyecto_nombre + ' a espera'">
                                             <i class="fa fa-times" aria-hidden="true"></i>
+                                        </button>
+                                    </li>
+                                }
+                            </ul>
+                        }
+                    </section>
+
+                    <section class="gestionar-section cola-seccion cola-en-espera" aria-labelledby="cola-en-espera-titulo">
+                        <h4 id="cola-en-espera-titulo">En espera</h4>
+                        @let enEspera = proyectosEnEspera(gestionandoGrupo);
+                        @if (enEspera.length === 0) {
+                            <p class="gestionar-empty">No hay proyectos esperando.</p>
+                        } @else {
+                            <ul class="cola-list">
+                                @for (p of enEspera; track p.id) {
+                                    @let motivo = motivoNoSubeAMesa(p);
+                                    <li class="cola-row cola-row-espera" [class.is-bloqueado]="!!motivo">
+                                        <span class="cola-nombre">{{ p.nombre }}</span>
+                                        @if (montajeColaLabel(p.id); as montaje) {
+                                            <span class="cola-montaje">{{ montaje }}</span>
+                                        }
+                                        <button type="button" class="cola-subir"
+                                            (click)="subirAMesa(p)"
+                                            [disabled]="gestionarBusy || !!motivo"
+                                            [title]="motivo || 'Subir a mesa'"
+                                            [attr.aria-label]="'Subir ' + p.nombre + ' a mesa'">
+                                            <i class="fa fa-arrow-up" aria-hidden="true"></i>
                                         </button>
                                     </li>
                                 }

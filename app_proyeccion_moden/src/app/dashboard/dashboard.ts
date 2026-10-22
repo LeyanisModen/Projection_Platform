@@ -282,7 +282,6 @@ export class Dashboard implements OnInit, OnDestroy {
   // 'INACTIVA' -- la mesa solo es una cosa a la vez.
   gestionarMesasEstados: Record<number, 'INFERIOR' | 'SUPERIOR' | 'INACTIVA'> = {};
   gestionarAplicandoCambios = false;
-  gestionarAddProyectoId: number | null = null;
   gestionarBusy = false;
   showColaModal = false;
   /** Grupo cuyo orden de superiores se está cambiando desde el card de su mesa SUP. */
@@ -1174,7 +1173,6 @@ export class Dashboard implements OnInit, OnDestroy {
     for (const mesa of this.getMesasForGrupo(grupo.id)) {
       this.gestionarMesasEstados[mesa.id] = this.mesaEstadoActual(mesa);
     }
-    this.gestionarAddProyectoId = null;
     this.showGestionarModal = true;
     this.cdr.detectChanges();
   }
@@ -1251,7 +1249,6 @@ export class Dashboard implements OnInit, OnDestroy {
     this.gestionarGrupoNombre = '';
     this.gestionarMesasEstados = {};
     this.gestionarAplicandoCambios = false;
-    this.gestionarAddProyectoId = null;
     this.cdr.detectChanges();
   }
 
@@ -1263,7 +1260,6 @@ export class Dashboard implements OnInit, OnDestroy {
   /** La cola de proyectos del grupo: en mesa y en espera, en su propio modal. */
   openColaModal(grupo: GrupoMesas): void {
     this.gestionandoGrupo = grupo;
-    this.gestionarAddProyectoId = null;
     this.showColaModal = true;
     this.cdr.detectChanges();
   }
@@ -1271,7 +1267,6 @@ export class Dashboard implements OnInit, OnDestroy {
   closeColaModal(): void {
     this.showColaModal = false;
     this.gestionandoGrupo = null;
-    this.gestionarAddProyectoId = null;
     this.cdr.detectChanges();
   }
 
@@ -1341,16 +1336,36 @@ export class Dashboard implements OnInit, OnDestroy {
    * equivalencias...) no se ofrecen ni se mencionan: la ferralla no los
    * ve hasta que Moden los libera. Los proyectos sin pendientes los
    * expulsa _plan_cola en el backend al replanificar. */
-  proyectosDisponibles(grupo: GrupoMesas | null): Proyecto[] {
+  /** Proyectos de la ferralla que no estan en mesa y aun tienen trabajo, por
+   *  fecha de montaje en obra (los que no la tienen, al final). */
+  proyectosEnEspera(grupo: GrupoMesas | null): Proyecto[] {
     const enCola = new Set(grupo?.proyectos_cola.map(e => e.proyecto) ?? []);
-    return this.proyectos.filter(p => {
-      if (enCola.has(p.id) || p.produccion_bloqueada || !p.fecha_montaje_obra) return false;
-      const total = p.modulos_count ?? 0;
-      const done = p.modulos_completados ?? 0;
-      // Sin total: lo mostramos (todavia no se han creado modulos).
-      // Con total: solo si quedan pendientes.
-      return total === 0 || done < total;
-    });
+    return this.proyectos
+      .filter(p => {
+        if (enCola.has(p.id) || p.archivado_at) return false;
+        const total = p.modulos_count ?? 0;
+        const done = p.modulos_completados ?? 0;
+        // Sin total: lo mostramos (todavia no se han creado modulos).
+        // Con total: solo si quedan pendientes.
+        return total === 0 || done < total;
+      })
+      .sort((a, b) => (a.fecha_montaje_obra || '9999').localeCompare(b.fecha_montaje_obra || '9999')
+        || a.nombre.localeCompare(b.nombre));
+  }
+
+  /** Por que un proyecto en espera no puede subir a mesa ('' si puede). */
+  motivoNoSubeAMesa(p: Proyecto): string {
+    if (p.produccion_bloqueada) return 'Faltan validaciones de Moden antes de fabricarlo';
+    if (!p.fecha_montaje_obra) return 'Ponle fecha de montaje en obra para subirlo a mesa';
+    return '';
+  }
+
+  /** "monta 12/11" con la fecha de montaje en obra del proyecto. */
+  montajeColaLabel(proyectoId: number): string {
+    const fecha = this.proyectos.find(p => p.id === proyectoId)?.fecha_montaje_obra;
+    if (!fecha) return '';
+    const [, mes, dia] = fecha.split('-');
+    return `monta ${dia}/${mes}`;
   }
 
   /** Persist grupo rename (only if it actually changed). */
@@ -1406,14 +1421,15 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
 
-  addProyectoToCola(): void {
-    if (!this.gestionandoGrupo || !this.gestionarAddProyectoId) return;
+  /** Flecha de la lista de espera: el servidor lo coloca en mesa por su fecha de montaje en obra. */
+  subirAMesa(proyecto: Proyecto): void {
+    if (!this.gestionandoGrupo || this.gestionarBusy || this.motivoNoSubeAMesa(proyecto)) return;
     const grupo = this.gestionandoGrupo;
     this.gestionarBusy = true;
-    this.api.colaGrupoMesasAdd(grupo.id, this.gestionarAddProyectoId).subscribe({
+    this.api.colaGrupoMesasAdd(grupo.id, proyecto.id).subscribe({
       next: (updated) => {
         this.applyGestionarGrupoUpdate(updated);
-        this.gestionarAddProyectoId = null;
+        this.loadMesas();
         this.gestionarBusy = false;
         this.cdr.detectChanges();
       },
