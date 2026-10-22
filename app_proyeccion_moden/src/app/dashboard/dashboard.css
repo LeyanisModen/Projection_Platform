@@ -114,10 +114,10 @@
 /* Tres bloques (modulos, kilos, productividad) con las casillas en la misma reticula. */
 .stats-bloque { display: grid; gap: 10px; min-width: 0; }
 .stats-bloque + .stats-bloque { padding-top: 14px; border-top: 1px solid var(--line); }
-.stats-kpi-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
-/* Casilla con dos cifras en una linea (kilos y %): ocupa dos columnas. */
-.stats-kpi-ancho { grid-column: span 2; }
-.stats-kpi-ancho .stats-kpi-value { white-space: nowrap; }
+/* Cada casilla en dos lineas, nombre y dato, del ancho que pida su dato. */
+.stats-kpi-row { display: flex; flex-wrap: wrap; gap: 10px; }
+.stats-kpi-row .stats-kpi { flex: 1 1 auto; min-width: 140px; }
+.stats-kpi-row .stats-kpi-label, .stats-kpi-row .stats-kpi-value { white-space: nowrap; }
 .stats-kpi { display: grid; gap: 4px; padding: 12px 14px; border: 1px solid var(--line); background: var(--surface); }
 .stats-kpi-label { color: var(--muted); font-size: 12px; }
 .stats-kpi-value { color: var(--ink); font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1; }
@@ -147,7 +147,7 @@
 .stats-diferencia.is-bajo::before { border-color: var(--accent); }
 /* Tiempo muerto: siempre en amarillo, al lado del trabajo. */
 .stats-muerto { color: var(--warn); }
-.stats-kpi-value .stats-muerto { display: block; font-size: 15px; }
+.stats-kpi-value .stats-muerto { display: inline; font-size: inherit; }
 .stats-kpi-value .stats-muerto small { color: var(--warn); }
 .stats-kpi-sub { display: block; color: var(--muted); font-size: 11px; font-weight: 500; }
 .stats-fila-trabajo small, .stats-fila-muerto small, .stats-mesa-trabajo small { margin-left: 4px; color: var(--muted); font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; }

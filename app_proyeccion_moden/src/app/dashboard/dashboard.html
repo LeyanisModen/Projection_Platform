@@ -164,9 +164,6 @@
                                         <span class="stats-module-target"
                                               title="Objetivo del período: lo que exigen los montajes que vienen, por días laborables.">/ {{ statsPeriodTarget() ?? '?' }} objetivo</span>
                                     </span>
-                                    @if (resumen?.cumplimiento != null) {
-                                        <span class="stats-kpi-sub stats-kpi-cumplimiento">{{ resumen!.cumplimiento }} % del objetivo</span>
-                                    }
                                 </div>
                                 }
                                 <div class="stats-kpi stats-kpi-media" [title]="resumen?.porHora ? 'Módulos por hora, contando solo las horas con producción' : 'Módulos por día, contando solo los días con producción'">
@@ -201,7 +198,7 @@
                                 <app-stats-line-chart title="Módulos fabricados" unit="módulos" [height]="260"
                                     [labels]="vista.labels" [series]="vista.modulos" [target]="vista.objetivo"
                                     [targetLabel]="vista.objetivoLabel" [pending]="vista.pending" />
-                                <app-stats-line-chart class="stats-chart-relacion" title="Módulos y dificultad por módulo (100 = media del período)" unit="%"
+                                <app-stats-line-chart class="stats-chart-relacion" title="Módulos y dificultad por módulo" unit="%"
                                     [baseline]="100" baselineLabel="media" [labels]="vista.labels" [series]="vista.relacionModulos" />
                             </div>
                             }
@@ -218,7 +215,7 @@
                                     <span class="stats-kpi-label">Peso producido</span>
                                     <span class="stats-kpi-value">{{ pesoTotal(statsData.totals) | number:'1.0-1' }} <small>kg</small></span>
                                 </div>
-                                <div class="stats-kpi stats-kpi-desperdicio stats-kpi-ancho" title="Kilos de mallazo desechados y su porcentaje sobre el peso producido">
+                                <div class="stats-kpi stats-kpi-desperdicio" title="Kilos de mallazo desechados y su porcentaje sobre el peso producido">
                                     <span class="stats-kpi-label">Desperdicio</span>
                                     <span class="stats-kpi-value">
                                         {{ statsData.totals.desperdicio_kg | number:'1.0-1' }} <small>kg</small>
@@ -234,11 +231,9 @@
                                 </div>
                             </div>
                             @if (vista) {
-                            <div class="stats-charts stats-charts-grid">
-                                <app-stats-line-chart title="Peso producido (kg)" unit="kg"
+                            <div class="stats-charts">
+                                <app-stats-line-chart title="Peso producido y desperdicio (kg)" unit="kg" [primaryArea]="true"
                                     [labels]="vista.labels" [series]="vista.peso" />
-                                <app-stats-line-chart class="stats-chart-relacion" title="Peso producido y desperdicio (100 = media del período)" unit="%"
-                                    [baseline]="100" baselineLabel="media" [labels]="vista.labels" [series]="vista.relacionPeso" />
                             </div>
                             }
                         </section>
@@ -282,23 +277,21 @@
                                     </span>
                                 </div>
                                 }
-                                <div class="stats-kpi stats-kpi-ritmo-modulos" [title]="ritmoDeTrabajo() ? 'Módulos por hora de trabajo de las mesas; debajo, diluidos en las horas de turno' : 'Módulos por hora de turno'">
+                                <div class="stats-kpi stats-kpi-ritmo-modulos" [title]="ritmoDeTrabajo() ? 'Módulos por hora de trabajo de las mesas' : 'Módulos por hora de turno'">
                                     <span class="stats-kpi-label">Ritmo de módulos</span>
                                     <span class="stats-kpi-value">
                                         @if (ritmoDeTrabajo()) {
-                                            {{ statsData.totals.modulos_por_hora_trabajo | number:'1.0-2' }} <small>mód./h</small>&ngsp;
-                                            <span class="stats-kpi-sub">de trabajo · {{ statsData.totals.modulos_por_hora | number:'1.0-2' }} por hora de turno</span>
+                                            {{ statsData.totals.modulos_por_hora_trabajo | number:'1.0-2' }} <small>mód./h</small>
                                         } @else {
                                             {{ statsData.totals.modulos_por_hora | number:'1.0-2' }} <small>mód./h</small>
                                         }
                                     </span>
                                 </div>
-                                <div class="stats-kpi stats-kpi-ritmo-peso" [title]="ritmoDeTrabajo() ? 'Kilos por hora de trabajo de las mesas; debajo, diluidos en las horas de turno' : 'Kilos por hora de turno'">
+                                <div class="stats-kpi stats-kpi-ritmo-peso" [title]="ritmoDeTrabajo() ? 'Kilos por hora de trabajo de las mesas' : 'Kilos por hora de turno'">
                                     <span class="stats-kpi-label">Ritmo de peso</span>
                                     <span class="stats-kpi-value">
                                         @if (ritmoDeTrabajo()) {
-                                            {{ statsData.totals.kg_por_hora_trabajo | number:'1.0-1' }} <small>kg/h</small>&ngsp;
-                                            <span class="stats-kpi-sub">de trabajo · {{ statsData.totals.kg_por_hora | number:'1.0-1' }} por hora de turno</span>
+                                            {{ statsData.totals.kg_por_hora_trabajo | number:'1.0-1' }} <small>kg/h</small>
                                         } @else {
                                             {{ statsData.totals.kg_por_hora | number:'1.0-1' }} <small>kg/h</small>
                                         }
@@ -308,9 +301,8 @@
                             @if (vista) {
                             <div class="stats-charts stats-charts-grid">
                                 @if (hayActividad()) {
-                                <app-stats-stack-chart [title]="vista.horasUnidad === 'min' ? 'Minutos de turno: trabajo y tiempo muerto' : 'Horas de turno: trabajo y tiempo muerto'"
-                                    [unit]="vista.horasUnidad" [decimals]="vista.horasDecimales" [labels]="vista.labels" [series]="vista.horas"
-                                    shareLabel="trabajado" />
+                                <app-stats-line-chart class="stats-chart-turno" title="Turno trabajado (%)" unit="%" [maxValue]="100"
+                                    [split]="splitHoras" [labels]="vista.labels" [series]="vista.horas" />
                                 }
                                 <app-stats-line-chart title="Tiempo por panel (min)" unit="min"
                                     [labels]="vista.labels" [series]="vista.tiempo" />

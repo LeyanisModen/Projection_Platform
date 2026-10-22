@@ -16,6 +16,37 @@ describe('StatsLineChart', () => {
     fixture.componentRef.setInput('labels', ['Lun 14', 'Mar 15', 'Mié 16', 'Jue 17']);
   });
 
+  it('splits the height under and over a single line, up to a fixed ceiling', () => {
+    fixture.componentRef.setInput('unit', '%');
+    fixture.componentRef.setInput('maxValue', 100);
+    fixture.componentRef.setInput('split', { below: '#2a78d6', above: '#c08400', belowLabel: 'Trabajo', aboveLabel: 'Tiempo muerto' });
+    fixture.componentRef.setInput('series', [{ name: 'Trabajado', color: '#2a78d6', values: [60, 75, 0, 40],
+      tooltips: ['60 % · 6 h de trabajo + 4 h muertas', null, null, null] }]);
+    fixture.detectChanges();
+
+    expect(el().querySelector('path.lc-split-below')?.getAttribute('fill')).toBe('#2a78d6');
+    expect(el().querySelector('path.lc-split-above')?.getAttribute('fill')).toBe('#c08400');
+    // El eje llega al 100 aunque ningun punto lo toque, sin degradado ni etiqueta del maximo.
+    expect(Array.from(el().querySelectorAll('.lc-tick')).map(t => t.textContent).at(-1)).toBe('100');
+    expect(el().querySelector('.lc-pico')).toBeNull();
+    expect(Array.from(el().querySelectorAll('.lc-legend li')).map(li => li.textContent?.trim())).toEqual(['Trabajo', 'Tiempo muerto']);
+    chart.active.set(0);
+    fixture.detectChanges();
+    expect(el().querySelector('.lc-tooltip-row strong')?.textContent).toBe('60 % · 6 h de trabajo + 4 h muertas');
+  });
+
+  it('keeps the area and the peak of the main series when asked, with a second series on the same scale', () => {
+    fixture.componentRef.setInput('unit', 'kg');
+    fixture.componentRef.setInput('primaryArea', true);
+    fixture.componentRef.setInput('series', [
+      { name: 'Peso producido', color: '#52606d', values: [120, 380, 110, 421] },
+      { name: 'Desperdicio', color: '#f0640f', values: [5, 9, 4, 12] },
+    ]);
+    fixture.detectChanges();
+    expect(Array.from(el().querySelectorAll('.lc-pico')).map(t => t.textContent)).toEqual(['421']);
+    expect(Array.from(el().querySelectorAll('.lc-legend li')).map(li => li.textContent?.trim())).toEqual(['Peso producido', 'Desperdicio']);
+  });
+
   it('rounds the axis to clean steps', () => {
     expect(niceScale(0, 0)).toEqual({ max: 1, ticks: [0, 1] });
     expect(niceScale(7, 0)).toEqual({ max: 8, ticks: [0, 2, 4, 6, 8] });

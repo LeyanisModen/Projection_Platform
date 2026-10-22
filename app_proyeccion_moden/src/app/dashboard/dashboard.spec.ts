@@ -111,13 +111,14 @@ describe('Dashboard', () => {
       expect(text('.stats-kpi-horas .stats-muerto')).toBe('+ 84 h muertas');
       expect(fixture.nativeElement.querySelector('.stats-kpi-horas').getAttribute('title'))
         .toContain('Incluye 2.5 h trabajadas fuera de turno');
-      expect(text('.stats-kpi-ritmo-modulos .stats-kpi-value')).toBe('2.3 mód./h de trabajo · 0.83 por hora de turno');
-      expect(text('.stats-kpi-ritmo-peso .stats-kpi-value')).toBe('275 kg/h de trabajo · 100 por hora de turno');
+      // Solo el dato por hora de trabajo; el de turno se ve eligiendo el turno.
+      expect(text('.stats-kpi-ritmo-modulos .stats-kpi-value')).toBe('2.3 mód./h');
+      expect(text('.stats-kpi-ritmo-peso .stats-kpi-value')).toBe('275 kg/h');
       // En que se fue el tiempo muerto no se detalla.
       expect(fixture.nativeElement.querySelector('.stats-muerto-causas')).toBeNull();
-      // Las horas son barras (trabajo + muerto = turno); el resto, lineas.
+      // Modulos (2), peso y desperdicio (1), turno trabajado y tiempo por panel (2).
       expect(fixture.nativeElement.querySelectorAll('app-stats-line-chart').length).toBe(5);
-      expect(fixture.nativeElement.querySelectorAll('app-stats-stack-chart').length).toBe(1);
+      expect(fixture.nativeElement.querySelector('app-stats-line-chart.stats-chart-turno')).not.toBeNull();
       expect(text('.stats-criterio')).toContain('van a menos de 20 min');
       expect(text('.stats-criterio')).toContain('hueco de hasta 90 min');
       // Sin trabajo detectado no hay ritmo "por hora de trabajo" que enseñar.
@@ -138,8 +139,8 @@ describe('Dashboard', () => {
       expect(fixture.nativeElement.querySelector('.stats-fila-trabajo')).toBeNull();
       expect(fixture.nativeElement.querySelector('.stats-mesa-muerto')).toBeNull();
       expect(fixture.nativeElement.querySelector('.stats-criterio')).toBeNull();
-      expect(fixture.nativeElement.querySelectorAll('app-stats-line-chart').length).toBe(5);
-      expect(fixture.nativeElement.querySelector('app-stats-stack-chart')).toBeNull();
+      expect(fixture.nativeElement.querySelectorAll('app-stats-line-chart').length).toBe(4);
+      expect(fixture.nativeElement.querySelector('app-stats-line-chart.stats-chart-turno')).toBeNull();
     });
 
     it('keeps the work and dead time tables when the shift has run but nothing was finished yet', () => {
@@ -174,9 +175,10 @@ describe('Dashboard', () => {
       component.statsFrom = '2026-09-14';
       component.statsTo = '2026-09-14';
       let vista = component.statsVista()!;
-      expect([vista.horasUnidad, vista.horasDecimales, vista.conSenales]).toEqual(['min', 0, false]);
-      expect(vista.horas[0].values).toEqual([2, 45]);
-      expect(vista.horas[1].values).toEqual([58, 15]);
+      expect([vista.horasUnidad, vista.conSenales]).toEqual(['min', false]);
+      // Del turno de cada hora, la parte trabajada.
+      expect(vista.horas[0].values.map(v => Math.round(v!))).toEqual([3, 75]);
+      expect(vista.horas[0].tooltips![1]).toBe('75 % · 45 min de trabajo + 15 min muertas');
       render();
       let filas = Array.from(fixture.nativeElement.querySelectorAll('.stats-table-periodos tbody tr')) as HTMLElement[];
       const celda = (fila: HTMLElement, selector: string) => fila.querySelector(selector)?.textContent?.replace(/\s+/g, ' ').trim();
@@ -238,9 +240,9 @@ describe('Dashboard', () => {
       component.statsTo = '2026-09-15';
 
       const vista = component.statsVista()!;
-      expect(vista.horas.map(s => s.name)).toEqual(['Trabajo', 'Tiempo muerto']);
-      expect(vista.horas[0].values).toEqual([6.2, 0]);
-      expect(vista.horas[1].values).toEqual([3.8, 10]);
+      expect(vista.horas.map(s => s.name)).toEqual(['Trabajado']);
+      expect(vista.horas[0].values.map(v => Math.round(v!))).toEqual([62, 0]);
+      expect(vista.horas[0].tooltips![0]).toBe('62 % · 6.2 h de trabajo + 3.8 h muertas');
 
       render();
       const filas = Array.from(fixture.nativeElement.querySelectorAll('.stats-table-periodos tbody tr')) as HTMLElement[];
@@ -339,17 +341,17 @@ describe('Dashboard', () => {
       expect(redondo(vista.relacionModulos[1].values)).toEqual([78, 233, null, 78, null]);
       expect(Math.round(vista.relacionModulos[0].prev!)).toBe(171);
       expect(vista.relacionModulos[1].tooltips![1]).toBe('50 puntos por módulo · 233 % de la media');
-      // Peso y desperdicio sobre su media: 10 kg de 130 kg cada dia, igual que la media del periodo.
-      expect(redondo(vista.relacionPeso[0].values)).toEqual([100, 100, 0, 100, 0]);
-      expect(redondo(vista.relacionPeso[1].values)).toEqual([100, 100, null, 100, null]);
-      expect(vista.relacionPeso[1].tooltips![0]).toBe('7.7 % del peso · 100 % de la media');
+      // Peso y desperdicio en la misma grafica, los dos en kilos.
+      expect(vista.peso.map(s => s.name)).toEqual(['Peso producido', 'Desperdicio']);
+      expect(vista.peso[1].values).toEqual([10, 10, 0, 10, 0]);
+      expect(Math.round(vista.peso[1].prev!)).toBe(10);
       expect(component.desperdicioPct({desperdicio_kg: 184.9, peso_total_kg: 10458, peso_malla_final_kg: 7089})).toBeCloseTo(1.77, 2);
       expect(component.desperdicioPct({desperdicio_kg: 5, peso_total_kg: 0})).toBeNull();
       // El peso de las graficas y tablas es el total del modulo, no solo el mallazo.
       expect(vista.peso[0].values).toEqual([130, 130, 0, 130, 0]);
       expect(vista.peso[0].prev).toBe(130);
       expect(component.statsResumen()).toEqual({
-        cumplimiento: 70, porHora: false, media: 7 / 3,
+        porHora: false, media: 7 / 3,
         mejor: {modulos: 3, label: 'Lun 14'}, kgPorModulo: 0, dificultadMedia: 0, pesoTotal: 0,
       });
 
@@ -455,7 +457,6 @@ describe('Dashboard', () => {
       expect(fixture.nativeElement.querySelectorAll('.stats-bloque-kilos .stats-kpi').length).toBe(4);
       expect(fixture.nativeElement.querySelectorAll('.stats-bloque-productividad .stats-kpi').length).toBe(3);
       expect(text('.stats-kpi-value')).toBe('0 / 9 objetivo');
-      expect(text('.stats-kpi-cumplimiento')).toBe('0 % del objetivo');
       expect(text('.stats-empty')).toContain('No hay producción registrada');
       expect(fixture.nativeElement.querySelector('.stats-table')).toBeNull();
       expect(fixture.nativeElement.querySelector('.stats-charts')).toBeNull();
@@ -470,10 +471,9 @@ describe('Dashboard', () => {
       render();
       expect(text('.stats-kpi-value')).toBe('53 / 64 objetivo');
       expect(text('.stats-kpi-modulos .stats-kpi-value')).toBe('53 / 64 objetivo');
-      expect(text('.stats-kpi-cumplimiento')).toBe('83 % del objetivo');
       expect(fixture.nativeElement.querySelector('.stats-table')).not.toBeNull();
       expect(fixture.nativeElement.querySelector('.stats-charts')).not.toBeNull();
-      expect(fixture.nativeElement.querySelectorAll('app-stats-line-chart').length).toBe(5);
+      expect(fixture.nativeElement.querySelectorAll('app-stats-line-chart').length).toBe(4);  // sin actividad del servidor no hay grafica del turno
       expect(fixture.nativeElement.querySelector('.stats-empty')).toBeNull();
     });
 
