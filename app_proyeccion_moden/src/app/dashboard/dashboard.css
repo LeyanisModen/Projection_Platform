@@ -235,12 +235,6 @@ a.plan-modal-download { text-decoration: none; }
 .plan-mesa-header strong { color: var(--ink); font-size: 14px; font-weight: 600; }
 .plan-mesa-done { margin-left: auto; color: var(--muted); font-size: 12px; }
 /* Mesa superior: la cola tal cual se proyecta; en manual la ordena la ferralla. */
-.plan-mesa-sup .plan-mesa-header { flex-wrap: wrap; }
-.plan-sup-modo { margin-left: auto; color: var(--muted); font-size: 12px; }
-.plan-sup-modo.is-manual { color: var(--accent-dark); font-weight: 600; }
-.plan-sup-empty { margin: 0; color: var(--muted); font-size: 13px; }
-.plan-sup-row { grid-template-columns: auto minmax(0, 1fr) auto auto; }
-.plan-sup-grupo { color: var(--muted); font-size: 11px; white-space: nowrap; }
 .plan-grupo { display: grid; gap: 6px; padding: 8px 10px; border: 1px solid var(--line); border-left: 3px solid var(--line-strong); background: var(--surface); }
 .plan-grupo.is-division { border-left-style: dashed; }
 .plan-grupo.is-terminado { border-left-color: var(--ok); }

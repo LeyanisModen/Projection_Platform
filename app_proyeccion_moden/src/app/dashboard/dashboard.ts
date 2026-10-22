@@ -8,7 +8,7 @@ import {
   ApiService,
   Proyecto, Modulo, Mesa, ModuloQueueItem, MesaQueueItem, Imagen, FotoFabricacion,
   EstrategiaColaSuperior, GrupoMesas, GrupoMesasProyectoEntry, ProductionStatsResponse, ModuloFase,
-  GrupoBastidor, GrupoBastidorModulo, FerrallaCaptureConfig, TurnoConfig, GrupoMesaResumen,
+  GrupoBastidor, GrupoBastidorModulo, FerrallaCaptureConfig, TurnoConfig,
   TiempoFabricacion, ProductionStatsBucket, ProductionStatsTiempos, ProductionStatsModulo, ProductionStatsModuloFase,
   ProductionStatsActividadDia, ProductionStatsCausas,
   ElementosSueltos, ElementosSueltosHoja, ElementosSueltosSeccion, ElementosSueltosCelda,
@@ -139,15 +139,6 @@ export interface PlanSeccion {
   hechos: number;
   /** Todos sus modulos fabricados: ya no va a pasar por la mesa. */
   terminado: boolean;
-}
-
-/** Una mesa superior del plan: su cola para este proyecto, en el orden en que se proyecta. */
-export interface PlanColumnaSuperior {
-  key: string;
-  mesa: GrupoMesaResumen;
-  grupo: GrupoMesas;
-  items: MesaQueueItem[];
-  manual: boolean;
 }
 
 /** Una mesa inferior del plan con los bastidores que tiene por delante. */
@@ -519,27 +510,6 @@ export class Dashboard implements OnInit, OnDestroy {
     return columnas;
   }
 
-  /** Mesas superiores activas con la cola de este proyecto. Como hasta ahora la
-   *  ordena el automatismo; si la ferralla mueve algo, el grupo pasa a manual. */
-  planModalSuperiores(): PlanColumnaSuperior[] {
-    const proyectoId = this.planModalProyecto?.id;
-    if (!proyectoId) return [];
-    const columnas: PlanColumnaSuperior[] = [];
-    for (const grupo of this.gruposMesas) {
-      const mesas = (grupo.mesas || [])
-        .filter(m => m.tipo === 'SUPERIOR' && m.activa)
-        .sort((a, b) => a.indice - b.indice);
-      for (const mesa of mesas) {
-        const items = (this.mesaQueueItems.get(mesa.id) || [])
-          .filter(item => item.fase === 'SUPERIOR' && item.status !== 'HECHO' && item.modulo_proyecto_id === proyectoId);
-        columnas.push({
-          key: `s${mesa.id}`, mesa, grupo, items, manual: grupo.estrategia_cola_superior === 'MANUAL',
-        });
-      }
-    }
-    return columnas;
-  }
-
   /** Superior en mesa pasado el paso 2: se puede mover, pero se pregunta antes. */
   private supEmpezadaEnMesa(item: MesaQueueItem): boolean {
     return item.status === 'MOSTRANDO' && (item.current_image_index ?? 0) > 1;
@@ -588,72 +558,6 @@ export class Dashboard implements OnInit, OnDestroy {
           this.cdr.detectChanges();
         },
       });
-  }
-
-  /** En orden manual manda la ferralla: todo se mueve, tambien la que esta en mesa. */
-  canMoverSupItem(col: PlanColumnaSuperior, item: MesaQueueItem, dir: -1 | 1): boolean {
-    const index = col.items.indexOf(item);
-    const target = index + dir;
-    return index >= 0 && target >= 0 && target < col.items.length;
-  }
-
-  /** Mueve la fase superior de este proyecto delante o detras de su vecina en la mesa. */
-  moverSupItem(col: PlanColumnaSuperior, item: MesaQueueItem, dir: -1 | 1): void {
-    if (this.planModalBusy || !this.canMoverSupItem(col, item, dir)) return;
-    const vecino = col.items[col.items.indexOf(item) + dir];
-    if (!this.confirmarMoverSup(item, vecino, dir, col.mesa.nombre)) return;
-    // Las posiciones son de toda la mesa (puede haber otros proyectos en cola).
-    const todos = [...(this.mesaQueueItems.get(col.mesa.id) || [])].filter(i => i.status !== 'HECHO');
-    const desde = todos.findIndex(i => i.id === item.id);
-    const hasta = todos.findIndex(i => i.id === vecino.id);
-    if (desde < 0 || hasta < 0) return;
-    todos.splice(hasta, 0, todos.splice(desde, 1)[0]);
-    this.planModalBusy = true;
-    this.planModalError = '';
-    this.cdr.detectChanges();
-    this.api.reorderMesaQueue(todos.map((i, index) => ({ id: i.id, position: index })))
-      .pipe(takeUntil(this.destroy$)).subscribe({
-        next: () => {
-          this.planModalBusy = false;
-          this.loadMesaQueueItems(col.mesa.id);
-          this.loadGruposMesas();
-          this.cdr.detectChanges();
-        },
-        error: error => {
-          this.planModalError = error?.error?.detail || 'No se pudo cambiar el orden de la mesa superior.';
-          this.planModalBusy = false;
-          this.cdr.detectChanges();
-        },
-      });
-  }
-
-  /** Devuelve la mesa superior al orden automatico que tenia antes. */
-  volverSupAutomatico(col: PlanColumnaSuperior): void {
-    if (this.planModalBusy || !col.manual) return;
-    const previa = col.grupo.estrategia_cola_superior_previa;
-    const estrategia = previa === 'ADAPTATIVA' || previa === 'PLANIFICADA' ? previa : 'PLANIFICADA';
-    this.planModalBusy = true;
-    this.planModalError = '';
-    this.cdr.detectChanges();
-    this.api.updateGrupoMesas(col.grupo.id, { estrategia_cola_superior: estrategia })
-      .pipe(takeUntil(this.destroy$)).subscribe({
-        next: () => {
-          this.planModalBusy = false;
-          this.loadMesaQueueItems(col.mesa.id);
-          this.loadGruposMesas();
-          this.cdr.detectChanges();
-        },
-        error: error => {
-          this.planModalError = error?.error?.detail || 'No se pudo volver al orden automatico.';
-          this.planModalBusy = false;
-          this.cdr.detectChanges();
-        },
-      });
-  }
-
-  supModoLabel(col: PlanColumnaSuperior): string {
-    if (col.manual) return 'Orden manual';
-    return col.grupo.estrategia_cola_superior === 'ADAPTATIVA' ? 'Automático · adaptativo' : 'Automático · planificado';
   }
 
   togglePlanModalDone(): void {
