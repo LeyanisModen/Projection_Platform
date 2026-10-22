@@ -333,8 +333,6 @@ a.plan-modal-download { text-decoration: none; }
 .estado-opcion.active { color: #fff; background: var(--ink); }
 .estado-opcion.estado-off.active { background: var(--muted); }
 .estado-opcion:disabled { opacity: 0.5; cursor: default; }
-.cola-add-row { display: flex; gap: 8px; }
-.cola-add-row .gestionar-input { flex: 1 1 auto; }
 .btn-add-cola, .btn-aceptar-gestionar { height: var(--control-h); padding: 0 14px; border: 1px solid var(--accent); border-radius: var(--radius-sm); background: var(--accent); color: #fff; font: inherit; font-weight: 500; cursor: pointer; }
 .btn-add-cola:hover:not(:disabled), .btn-aceptar-gestionar:hover:not(:disabled) { background: var(--accent-dark); border-color: var(--accent-dark); }
 .btn-add-cola:disabled, .btn-aceptar-gestionar:disabled { opacity: 0.5; cursor: default; }
@@ -350,6 +348,14 @@ a.plan-modal-download { text-decoration: none; }
 .cola-badge-head { padding: 1px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-dark); font-size: 11px; font-weight: 600; }
 .cola-remove { display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; color: var(--muted); cursor: pointer; }
 .cola-remove:hover:not(:disabled) { color: var(--danger); background: #fbeae7; }
+/* En espera, debajo de lo que esta en mesa. */
+.cola-en-espera { padding-top: 14px; border-top: 1px solid var(--line); }
+.cola-row-espera { cursor: default; }
+.cola-row-espera.is-bloqueado .cola-nombre { color: var(--muted); font-weight: 500; }
+.cola-montaje { color: var(--muted); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.cola-subir { display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); cursor: pointer; }
+.cola-subir:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-dark); }
+.cola-subir:disabled { opacity: 0.4; cursor: default; }
 .gestionar-modal-footer { display: flex; justify-content: flex-end; padding-top: 12px; border-top: 1px solid var(--line); }
 
 /* Reinicio de fase */

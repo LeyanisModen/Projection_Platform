@@ -745,15 +745,57 @@ describe('Dashboard', () => {
     });
   });
 
-  it('keeps projects with pending validations out of the add-to-queue list', () => {
+  it('lists the waiting projects by montaje date and says why the blocked ones cannot go up', () => {
     component.proyectos = [
       { id: 1, nombre: 'Libre', modulos_count: 4, modulos_completados: 0, produccion_bloqueada: false, fecha_montaje_obra: '2026-11-20' } as Proyecto,
-      { id: 2, nombre: 'Bloqueado', modulos_count: 4, modulos_completados: 0, produccion_bloqueada: true, fecha_montaje_obra: '2026-11-20' } as Proyecto,
+      { id: 2, nombre: 'Bloqueado', modulos_count: 4, modulos_completados: 0, produccion_bloqueada: true, fecha_montaje_obra: '2026-11-10' } as Proyecto,
       { id: 3, nombre: 'Terminado', modulos_count: 4, modulos_completados: 4, produccion_bloqueada: true, fecha_montaje_obra: '2026-11-20' } as Proyecto,
       { id: 4, nombre: 'Sin fecha de obra', modulos_count: 4, modulos_completados: 0, produccion_bloqueada: false, fecha_montaje_obra: null } as Proyecto,
     ];
 
-    expect(component.proyectosDisponibles(null).map(p => p.nombre)).toEqual(['Libre']);
+    // Los terminados no esperan; los que no tienen fecha, al final.
+    expect(component.proyectosEnEspera(null).map(p => p.nombre)).toEqual(['Bloqueado', 'Libre', 'Sin fecha de obra']);
+    expect(component.proyectosEnEspera(null).map(p => component.motivoNoSubeAMesa(p))).toEqual([
+      'Faltan validaciones de Moden antes de fabricarlo', '', 'Ponle fecha de montaje en obra para subirlo a mesa',
+    ]);
+    expect(component.montajeColaLabel(1)).toBe('monta 20/11');
+    expect(component.montajeColaLabel(4)).toBe('');
+  });
+
+  it('shows the queue as "en mesa" and "en espera": the cross sends it down, the arrow sends it up', () => {
+    const api = TestBed.inject(ApiService);
+    const grupo = {
+      id: 1, nombre: 'Grupo mesas 1', usuario: 1, proyecto_actual: 1, estrategia_cola_superior: 'PLANIFICADA',
+      activa: true, created_at: '', mesas: [],
+      proyectos_cola: [
+        { id: 11, proyecto: 1, proyecto_nombre: 'P03', orden: 0 },
+        { id: 12, proyecto: 2, proyecto_nombre: 'P04', orden: 1 },
+      ],
+    } as unknown as GrupoMesas;
+    component.proyectos = [
+      { id: 1, nombre: 'P03', modulos_count: 4, modulos_completados: 1, fecha_montaje_obra: '2026-11-05' } as Proyecto,
+      { id: 2, nombre: 'P04', modulos_count: 4, modulos_completados: 0, fecha_montaje_obra: '2026-11-12' } as Proyecto,
+      { id: 3, nombre: 'P06', modulos_count: 4, modulos_completados: 0, fecha_montaje_obra: '2026-12-01' } as Proyecto,
+      { id: 4, nombre: 'P05', modulos_count: 4, modulos_completados: 0, fecha_montaje_obra: '2026-11-20' } as Proyecto,
+    ];
+    component.gruposMesas = [grupo];
+    component.openColaModal(grupo);
+    fixture.detectChanges();
+    const modal: HTMLElement = fixture.nativeElement.querySelector('.gestionar-modal');
+    const nombres = (selector: string) => Array.from(modal.querySelectorAll(`${selector} .cola-nombre`)).map(e => e.textContent?.trim());
+    expect(Array.from(modal.querySelectorAll('.cola-seccion h4')).map(h => h.textContent)).toEqual(['En mesa', 'En espera']);
+    expect(nombres('.cola-en-mesa')).toEqual(['P03', 'P04']);
+    expect(modal.querySelector('.cola-en-mesa .cola-badge-head')?.textContent?.trim()).toBe('En fabricación');
+    expect(nombres('.cola-en-espera')).toEqual(['P05', 'P06']);
+    expect(modal.querySelector('.cola-en-espera .cola-montaje')?.textContent).toBe('monta 20/11');
+
+    const subir = vi.spyOn(api, 'colaGrupoMesasAdd').mockReturnValue(of(grupo));
+    const bajar = vi.spyOn(api, 'colaGrupoMesasRemove').mockReturnValue(of(grupo));
+    vi.spyOn(component, 'loadMesas').mockImplementation(() => undefined);
+    (modal.querySelector('[aria-label="Subir P06 a mesa"]') as HTMLButtonElement).click();
+    expect(subir).toHaveBeenCalledWith(1, 3);
+    (modal.querySelector('[aria-label="Pasar P04 a espera"]') as HTMLButtonElement).click();
+    expect(bajar).toHaveBeenCalledWith(1, 2);
   });
 
   it('keeps new projects behind the notifications bell until the ferralla accepts them', () => {
@@ -875,7 +917,7 @@ describe('Dashboard', () => {
     let modal: HTMLElement = fixture.nativeElement.querySelector('.gestionar-modal');
     expect(modal.querySelector('h3')?.textContent).toBe('Gestionar mesas · Grupo mesas');
     expect(Array.from(modal.querySelectorAll('.gestionar-section h4')).map(h => h.textContent)).toEqual(['Nombre del grupo', 'Mesas']);
-    expect(modal.querySelector('.cola-add-row')).toBeNull();
+    expect(modal.querySelector('.cola-en-espera')).toBeNull();
     component.closeGestionarModal();
     fixture.detectChanges();
 
@@ -883,7 +925,7 @@ describe('Dashboard', () => {
     fixture.detectChanges();
     modal = fixture.nativeElement.querySelector('.gestionar-modal');
     expect(modal.querySelector('h3')?.textContent).toBe('Cola de proyectos · Grupo mesas');
-    expect(modal.querySelector('.cola-add-row')).not.toBeNull();
+    expect(modal.querySelector('.cola-en-espera')).not.toBeNull();
     expect(modal.querySelector('.mesa-estado-switch')).toBeNull();
   });
 
