@@ -37,9 +37,9 @@ import { agruparPorEdificio, GrupoEdificio } from '../shared/edificios';
 const CHART_NARANJA = '#f0640f';
 const CHART_AZUL = '#2a78d6';
 const CHART_GRIS = '#52606d';
-// El tiempo muerto va en amarillo: en la grafica del turno es el relleno de
-// encima de la linea (un area, no una linea; lo leen la leyenda y la lectura).
-const CHART_AMARILLO = '#e3b505';
+// El tiempo muerto va en mostaza, el mismo color que sus cifras (--warn del tema):
+// en la grafica del turno es el relleno de encima de la linea.
+const CHART_AMARILLO = '#b7791f';
 
 /** Un dia o una hora tal y como los da el servidor (la hora trae minutos, no horas). */
 type StatsFuente = ProductionStatsBucket & ProductionStatsTiempos & ProductionStatsActividadDia & {
