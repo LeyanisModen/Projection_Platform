@@ -1219,14 +1219,6 @@ class UserProfile(models.Model):
     direccion = models.CharField(max_length=300, blank=True, null=True)
     coordinador = models.CharField(max_length=100, blank=True, null=True)
     password_texto_plano = models.CharField(max_length=128, blank=True, null=True)
-    # Es por turno (el nombre viene de cuando habia un solo turno al dia).
-    capacidad_diaria_modulos = models.PositiveIntegerField(
-        default=25,
-        help_text=(
-            'Modulos por turno que se espera que saque la ferralla. El plan de '
-            'fabricacion solo avisa de los proyectos que piden mas.'
-        ),
-    )
     bastidor_longitud_cm = models.DecimalField(
         max_digits=6,
         decimal_places=2,

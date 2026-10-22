@@ -11,6 +11,17 @@ export interface LineChartSeries {
   values: Array<number | null>;
   prev?: number | null;
   next?: number | null;
+  /** Lectura de cada punto en vez del valor (p. ej. el dato real de una serie indexada). */
+  tooltips?: Array<string | null>;
+}
+
+/** Una sola serie que parte el alto en dos: por debajo de la linea una cosa, por encima otra
+ *  (p. ej. el % del turno trabajado: debajo trabajo, encima tiempo muerto). */
+export interface SplitArea {
+  below: string;
+  above: string;
+  belowLabel: string;
+  aboveLabel: string;
 }
 
 type PointState = 'normal' | 'cumple' | 'bajo' | 'curso';
@@ -37,7 +48,24 @@ interface ChartLine {
   pico: { x: number; y: number; text: string } | null;
 }
 
-interface LegendItem { kind: 'line' | 'cumple' | 'bajo' | 'target'; label: string; color: string; }
+interface LegendItem { kind: 'line' | 'cumple' | 'bajo' | 'target' | 'area'; label: string; color: string; }
+
+/** Eje de raiz cuadrada: abre los valores pequenos sin exagerarlos como un logaritmo
+ *  (0 / 10 / 50 / 100 / 200 / 500). Las marcas, redondas y sin amontonarse. */
+export function sqrtScale(max: number): { max: number; ticks: number[] } {
+  const top = niceScale(max, 0).max;
+  const posicion = (v: number) => Math.sqrt(v / top);
+  const candidatos: number[] = [];
+  for (let potencia = 1; potencia < top; potencia *= 10) {
+    for (const m of [1, 2, 5]) if (m * potencia < top) candidatos.push(m * potencia);
+  }
+  const ticks = [0];
+  for (const v of candidatos) {
+    if (posicion(v) - posicion(ticks[ticks.length - 1]) >= 0.12 && 1 - posicion(v) >= 0.12) ticks.push(v);
+  }
+  ticks.push(top);
+  return { max: top, ticks };
+}
 
 /** Eje con pasos redondos: 0 / 5 / 10, nunca 0 / 3.7 / 7.4. */
 export function niceScale(max: number, decimals: number): { max: number; ticks: number[] } {
@@ -76,6 +104,7 @@ let nextChartId = 0;
                   @case ('target') { <line x1="1" y1="5" x2="19" y2="5" class="lc-target" /> }
                   @case ('cumple') { <circle cx="10" cy="5" r="4" class="lc-dot-cumple" /> }
                   @case ('bajo') { <circle cx="10" cy="5" r="3.5" class="lc-dot-hueco" [attr.stroke]="item.color" /> }
+                  @case ('area') { <rect x="2" y="1" width="16" height="8" rx="2" [attr.fill]="item.color" fill-opacity="0.45" /> }
                 }
               </svg>
               {{ item.label }}
@@ -105,6 +134,17 @@ let nextChartId = 0;
                 </linearGradient>
               }
             }
+            @if (splitAreas(); as partes) {
+              <!-- Como el area de las demas: cada color fuerte junto a la linea y desvaneciendose. -->
+              <linearGradient [attr.id]="uid + '-split-below'" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" [attr.stop-color]="partes.belowColor" stop-opacity="0.24" />
+                <stop offset="1" [attr.stop-color]="partes.belowColor" stop-opacity="0.02" />
+              </linearGradient>
+              <linearGradient [attr.id]="uid + '-split-above'" x1="0" y1="1" x2="0" y2="0">
+                <stop offset="0" [attr.stop-color]="partes.aboveColor" stop-opacity="0.34" />
+                <stop offset="1" [attr.stop-color]="partes.aboveColor" stop-opacity="0.04" />
+              </linearGradient>
+            }
           </defs>
 
           @for (tick of ticks(); track tick.value) {
@@ -116,6 +156,10 @@ let nextChartId = 0;
             <text class="lc-xlabel" [attr.x]="label.x" [attr.y]="height() - 8" text-anchor="middle">{{ label.text }}</text>
           }
 
+          @if (splitAreas(); as partes) {
+            <path class="lc-split-above" [attr.d]="partes.above" [attr.fill]="'url(#' + uid + '-split-above)'" />
+            <path class="lc-split-below" [attr.d]="partes.below" [attr.fill]="'url(#' + uid + '-split-below)'" />
+          }
           @for (line of lines(); track line.name) {
             @if (line.area) { <path [attr.d]="line.area" [attr.fill]="'url(#' + line.areaId + ')'" /> }
           }
@@ -211,6 +255,14 @@ export class StatsLineChart implements AfterViewInit, OnDestroy {
   /** Objetivo por columna; con objetivo, los puntos de la primera serie dicen si se llega. */
   readonly target = input<Array<number | null> | null>(null);
   readonly targetLabel = input('Objetivo');
+  /** Area y etiqueta del maximo para la primera serie aunque haya mas de una. */
+  readonly primaryArea = input(false);
+  /** Techo fijo del eje (p. ej. 100 para un porcentaje). */
+  readonly maxValue = input<number | null>(null);
+  /** Eje de raiz cuadrada: que los valores pequenos (el desperdicio junto al peso) se vean. */
+  readonly sqrtScale = input(false);
+  /** La primera serie parte el alto: debajo un color, encima otro. */
+  readonly split = input<SplitArea | null>(null);
   /** Columnas aun en curso: por debajo del objetivo no cuentan como incumplidas. */
   readonly pending = input<boolean[]>([]);
   readonly unit = input('');
@@ -221,7 +273,7 @@ export class StatsLineChart implements AfterViewInit, OnDestroy {
   readonly active = signal<number | null>(null);
 
   private readonly body = viewChild<ElementRef<HTMLElement>>('body');
-  private readonly uid = `lc${++nextChartId}`;
+  readonly uid = `lc${++nextChartId}`;
   private observer: ResizeObserver | null = null;
   private readonly margin = { top: 18, right: 18, bottom: 28, left: 46 };
 
@@ -240,12 +292,14 @@ export class StatsLineChart implements AfterViewInit, OnDestroy {
     && this.series().some(s => s.values.some(v => v !== null && v !== undefined)));
 
   private readonly scale = computed(() => {
+    const tope = this.maxValue();
+    if (tope !== null) return niceScale(tope, this.decimals());
     let max = 0;
     for (const s of this.series()) {
       for (const v of [...s.values, s.prev, s.next]) if (typeof v === 'number' && v > max) max = v;
     }
     for (const t of this.target() ?? []) if (typeof t === 'number' && t > max) max = t;
-    return niceScale(max, this.decimals());
+    return this.sqrtScale() ? sqrtScale(max) : niceScale(max, this.decimals());
   });
 
   readonly ticks = computed(() => this.scale().ticks.map(value => ({ value, y: this.yAt(value), label: this.format(value) })));
@@ -263,7 +317,8 @@ export class StatsLineChart implements AfterViewInit, OnDestroy {
     const base = plot.y + plot.h;
     const target = this.target();
     const pending = this.pending();
-    const single = this.series().length === 1;
+    // Area degradada y etiqueta del maximo: solo la serie principal, y no si el alto va partido.
+    const principal = (this.series().length === 1 || this.primaryArea()) && !this.split();
     return this.series().map((s, si) => {
       const points: ChartPoint[] = [];
       for (let i = 0; i < n; i++) {
@@ -279,7 +334,7 @@ export class StatsLineChart implements AfterViewInit, OnDestroy {
       const path = points.map((p, k) => `${k ? 'L' : 'M'}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
       const first = points[0];
       const last = points[points.length - 1];
-      const area = single && points.length > 1
+      const area = principal && si === 0 && points.length > 1
         ? `${path} L${last.x.toFixed(1)} ${base} L${first.x.toFixed(1)} ${base} Z` : null;
       const fades: ChartFade[] = [];
       if (first && first.index === 0 && typeof s.prev === 'number') {
@@ -289,10 +344,29 @@ export class StatsLineChart implements AfterViewInit, OnDestroy {
         fades.push({ id: `${this.uid}-out-${si}`, x1: last.x, y1: last.y, x2: plot.x + plot.w, y2: this.yAt((s.next + last.value) / 2), entra: false });
       }
       const maximo = points.reduce<ChartPoint | null>((best, p) => !best || p.value > best.value ? p : best, null);
-      const pico = single && maximo && maximo.value > 0
+      const pico = principal && si === 0 && maximo && maximo.value > 0
         ? { x: maximo.x, y: maximo.y - 11, text: this.format(maximo.value) } : null;
       return { name: s.name, color: s.color, path, area, areaId: `${this.uid}-area-${si}`, points, fades, pico };
     });
+  });
+
+  /** Con el alto partido: lo de debajo de la primera linea y lo de encima, hasta el techo. */
+  readonly splitAreas = computed(() => {
+    const partido = this.split();
+    const points = this.lines()[0]?.points ?? [];
+    if (!partido || points.length < 2) return null;
+    const plot = this.plot();
+    const path = points.map((p, k) => `${k ? 'L' : 'M'}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
+    const first = points[0];
+    const last = points[points.length - 1];
+    const base = plot.y + plot.h;
+    const techo = this.yAt(this.scale().max);
+    return {
+      below: `${path} L${last.x.toFixed(1)} ${base} L${first.x.toFixed(1)} ${base} Z`,
+      above: `${path} L${last.x.toFixed(1)} ${techo} L${first.x.toFixed(1)} ${techo} Z`,
+      belowColor: partido.below,
+      aboveColor: partido.above,
+    };
   });
 
   readonly targetPath = computed(() => {
@@ -318,7 +392,11 @@ export class StatsLineChart implements AfterViewInit, OnDestroy {
   readonly legend = computed<LegendItem[]>(() => {
     const series = this.series();
     const items: LegendItem[] = [];
-    if (series.length > 1) {
+    const partido = this.split();
+    if (partido) {
+      items.push({ kind: 'area', label: partido.belowLabel, color: partido.below });
+      items.push({ kind: 'area', label: partido.aboveLabel, color: partido.above });
+    } else if (series.length > 1) {
       for (const s of series) items.push({ kind: 'line', label: s.name, color: s.color });
     }
     if (this.targetPath() && series.length) {
@@ -339,7 +417,8 @@ export class StatsLineChart implements AfterViewInit, OnDestroy {
       return {
         name: s.name,
         color: s.color,
-        value: typeof value === 'number' ? `${this.format(value)}${unit ? ' ' + unit : ''}` : 'sin datos',
+        value: s.tooltips?.[index]
+          ?? (typeof value === 'number' ? `${this.format(value)}${unit ? ' ' + unit : ''}` : 'sin datos'),
       };
     });
     const objetivoValor = this.target()?.[index];
@@ -377,7 +456,10 @@ export class StatsLineChart implements AfterViewInit, OnDestroy {
 
   private yAt(value: number): number {
     const plot = this.plot();
-    return plot.y + plot.h * (1 - value / this.scale().max);
+    const fraccion = this.sqrtScale()
+      ? Math.sqrt(Math.max(value, 0) / this.scale().max)
+      : value / this.scale().max;
+    return plot.y + plot.h * (1 - fraccion);
   }
 
   private format(value: number): string {

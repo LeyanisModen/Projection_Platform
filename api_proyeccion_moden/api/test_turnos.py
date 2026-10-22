@@ -56,27 +56,23 @@ class TurnosTests(TestCase):
 class TurnosPlanYEstadisticasTests(APITestCase):
     def setUp(self):
         self.user = User.objects.create_user('ferralla-turnos')
-        self.profile = UserProfile.objects.create(user=self.user, turnos=[MANANA, NOCHE], capacidad_diaria_modulos=25)
+        self.profile = UserProfile.objects.create(user=self.user, turnos=[MANANA, NOCHE])
         self.client.force_authenticate(self.user)
         self.project = Proyecto.objects.create(nombre='Obra', usuario=self.user, fecha_montaje=date(2026, 10, 9))
         self.mesa = Mesa.objects.create(nombre='Mesa 1', usuario=self.user, tipo='INFERIOR', indice=1)
 
-    def test_el_plan_cuenta_turnos_y_la_capacidad_es_por_turno(self):
+    def test_el_plan_va_por_dias_laborables_aunque_haya_dos_turnos(self):
         Modulo.objects.bulk_create([Modulo(nombre=f'A{i}', proyecto=self.project) for i in range(100)])
         plan = plan_ferralla(self.user.pk, today=date(2026, 9, 28))
         fila = plan['proyectos'][self.project.pk]
-        # Del lunes 28 al jueves 8: 9 turnos de manana y 9 de noche.
-        self.assertEqual(fila['dias_disponibles'], 18)
-        self.assertEqual((plan['ritmo'], plan['capacidad']), (6, 25))
-        # A 25 por turno y dos turnos al dia, 100 modulos son lunes y martes.
-        self.assertEqual((fila['fabricacion_inicio'], fila['fabricacion_fin']), ('2026-09-28', '2026-09-29'))
-        self.assertEqual(fila['modulos_hoy'], 50)
-        self.assertIn('SUN', fila['dias_produccion'])
-        # Apagado el turno de noche, el mismo trabajo lleva cuatro dias.
+        # Del lunes 28 al jueves 8: 9 dias laborables, con o sin turno de noche.
+        self.assertEqual((fila['dias_disponibles'], plan['ritmo'], plan['objetivo_hoy']), (9, 11.1, 11.1))
+        self.assertEqual((fila['fabricacion_inicio'], fila['fabricacion_fin'], fila['margen_dias']), ('2026-09-28', '2026-10-08', 0))
+        self.assertEqual((fila['modulos_hoy'], fila['modulos_semana']), (11, 56))
+        self.assertNotIn('SUN', fila['dias_produccion'])
         self.profile.turnos = [MANANA, {**NOCHE, 'activo': False}]
         self.profile.save()
-        fila = plan_ferralla(self.user.pk, today=date(2026, 9, 28))['proyectos'][self.project.pk]
-        self.assertEqual((fila['dias_disponibles'], fila['fabricacion_fin'], fila['modulos_hoy']), (9, '2026-10-01', 25))
+        self.assertEqual(plan_ferralla(self.user.pk, today=date(2026, 9, 28))['ritmo'], 11.1)
 
     def _hecho(self, nombre, at):
         modulo = Modulo.objects.create(nombre=nombre, proyecto=self.project, estado='COMPLETADO',
@@ -97,7 +93,8 @@ class TurnosPlanYEstadisticasTests(APITestCase):
         stats = self.client.get('/api/stats/production/', {'from': '2026-09-28', 'to': '2026-09-28'}).data
         self.assertEqual(stats['totals']['modulos_completados'], 1)
         self.assertEqual(stats['totals']['horas_productivas'], 20.0)
-        self.assertEqual(stats['range']['dias'], [{'fecha': '2026-09-28', 'turnos': 2.0, 'horas': 20.0}])
+        self.assertEqual([{k: v for k, v in d.items() if k != 'objetivo'} for d in stats['range']['dias']],
+                         [{'fecha': '2026-09-28', 'turnos': 2.0, 'horas': 20.0}])
         horas = stats['range']['horas']
         self.assertEqual((horas[0], horas[4], horas[5], horas[-1]), ('00', '04', '06', '23'))
         self.assertEqual(stats['turnos'], [{'indice': 0, 'nombre': 'Mañana'}, {'indice': 1, 'nombre': 'Noche'}])
@@ -116,7 +113,8 @@ class TurnosPlanYEstadisticasTests(APITestCase):
         self.assertEqual(noche_stats['turno'], 1)
         self.assertEqual(sorted(m['nombre'] for m in noche_stats['modulos']), ['N0', 'N1', 'N2'])
         self.assertEqual(noche_stats['totals']['horas_productivas'], 10.0)
-        self.assertEqual(noche_stats['range']['dias'], [{'fecha': '2026-09-29', 'turnos': 1.0, 'horas': 10.0}])
+        self.assertEqual([{k: v for k, v in d.items() if k != 'objetivo'} for d in noche_stats['range']['dias']],
+                         [{'fecha': '2026-09-29', 'turnos': 1.0, 'horas': 10.0}])
         # La grafica: de una hora antes (18h del lunes) a la hora en que acaba (05h).
         eje = noche_stats['range']['eje']
         self.assertEqual([h['hora'] for h in eje], ['18', '19', '20', '21', '22', '23', '00', '01', '02', '03', '04', '05'])
@@ -148,8 +146,18 @@ class TurnosPlanYEstadisticasTests(APITestCase):
         Modulo.objects.bulk_create([Modulo(nombre=f'A{i}', proyecto=self.project) for i in range(100)])
         todos = self.client.get('/api/stats/production/', {'from': '2026-09-28', 'to': '2026-09-28'}).data
         manana = self.client.get('/api/stats/production/', {'from': '2026-09-28', 'to': '2026-09-28', 'turno': 0}).data
-        self.assertEqual(todos['esperado']['modulos_esperados'], 12)  # 6 por turno, dos turnos
+        # 100 modulos en los 9 dias laborables hasta el 09/10: 11,1 al dia, y la
+        # manana es la mitad de los dos turnos que empiezan el lunes.
+        self.assertEqual(todos['esperado']['modulos_esperados'], 11)
         self.assertEqual(manana['esperado']['modulos_esperados'], 6)
+        self.assertEqual(manana['esperado']['por_dia'], {'2026-09-28': 5.5})
+        # La noche que acaba el martes es la del lunes: su objetivo es la otra
+        # mitad del lunes y se ve el martes. El viernes no tiene noche propia.
+        noche = self.client.get('/api/stats/production/', {'from': '2026-09-29', 'to': '2026-10-03', 'turno': 1}).data
+        self.assertEqual(noche['esperado']['por_dia'], {'2026-09-29': 5.5, '2026-09-30': 5.5, '2026-10-01': 5.5, '2026-10-02': 5.5})
+        self.assertEqual(noche['esperado']['modulos_esperados'], 22)
+        dias = {d['fecha']: d['objetivo'] for d in noche['range']['dias']}
+        self.assertEqual(dias['2026-09-29'], 5.5)
 
 
 class TurnosConfiguracionTests(APITestCase):
@@ -200,17 +208,15 @@ class TurnosConfiguracionTests(APITestCase):
         repetido = [self._turno(MANANA), self._turno(MANANA)]
         self.assertEqual(self.client.put(url, {'turnos': repetido, 'interval_seconds': 20}, format='json').status_code, 400)
 
-    def test_la_migracion_pasa_el_horario_a_un_turno_y_la_capacidad_a_25(self):
+    def test_la_migracion_pasa_el_horario_a_un_turno(self):
         migracion = import_module('api.migrations.0079_turnos_desde_horario')
         con_viernes = UserProfile.objects.create(
-            user=self.ferralla, capacidad_diaria_modulos=35,
-            capture_horario={'MON': ['06:30', '16:30'], 'FRI': ['06:30', '14:30']},
+            user=self.ferralla, capture_horario={'MON': ['06:30', '16:30'], 'FRI': ['06:30', '14:30']},
         )
-        propia = UserProfile.objects.create(user=self.admin, capacidad_diaria_modulos=30, turnos=[NOCHE])
+        propia = UserProfile.objects.create(user=self.admin, turnos=[NOCHE])
         migracion.horario_como_turno(apps, None)
         con_viernes.refresh_from_db()
         propia.refresh_from_db()
         self.assertEqual(con_viernes.turnos, [{'nombre': 'Mañana', 'activo': True,
                                                'horario': {'MON': ['06:30', '16:30'], 'FRI': ['06:30', '14:30']}}])
-        self.assertEqual(con_viernes.capacidad_diaria_modulos, 25)
-        self.assertEqual((propia.turnos, propia.capacidad_diaria_modulos), ([NOCHE], 30))
+        self.assertEqual(propia.turnos, [NOCHE])

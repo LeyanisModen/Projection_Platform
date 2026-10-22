@@ -3,7 +3,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Dashboard } from './dashboard';
 import {
   ApiService, FerrallaCaptureConfig, GrupoBastidor, GrupoBastidorModulo, GrupoMesas, Mesa, MesaQueueItem, Modulo, Proyecto,
-  ProductionStatsBucket, ProductionStatsDay, ProductionStatsResponse, ElementosSueltos,
+  ProductionStatsBucket, ProductionStatsDay, ProductionStatsModuloFase, ProductionStatsResponse, ElementosSueltos,
 } from '../services/api.service';
 import { of, Subject, throwError } from 'rxjs';
 import { vi } from 'vitest';
@@ -49,7 +49,7 @@ describe('Dashboard', () => {
           modulos_por_hora: 0, kg_por_hora: 0,
         },
         por_mesa: [], por_dia: [],
-        esperado: {capacidad_diaria_modulos: 9, modulos_esperados: 9, proyectos_sin_objetivo: 0},
+        esperado: {ritmo_necesario: 9, modulos_esperados: 9, proyectos_sin_objetivo: 0},
         planificacion: {modulos_por_dia: 9, modulos_hoy: 9, sin_planificar: 0, urgentes: 0, proyectos: []},
       };
       component.statsData = stats;
@@ -61,7 +61,8 @@ describe('Dashboard', () => {
       stats.totals.horas_hombre = 48;
       stats.totals.kg_por_hora_hombre = 12.34;
       render();
-      expect(text('.stats-kpi[title^="Horas de jornada multiplicadas"] .stats-kpi-value')).toBe('48 h');
+      // Las horas-hombre ya no son una casilla: van en la explicacion de los kilos por hora-hombre.
+      expect(fixture.nativeElement.querySelector('.stats-kpi-kg-hombre').getAttribute('title')).toContain('48 horas-hombre en el período');
       expect(text('.stats-kpi[title^="Kilos fabricados por cada hora de cada persona"] .stats-kpi-value')).toBe('12.3 kg/h·persona');
       stats.totals.horas_hombre = 0;
       stats.totals.kg_por_hora_hombre = null;
@@ -91,6 +92,216 @@ describe('Dashboard', () => {
       expect(text('.stats-tiempo-nota')).toContain('Los paneles fabricados desde ahora se miden');
       expect(component.tiempoDetalle({mediana_min: 20, media_min: 20, paneles: 5, medidos: 5})).toBe('mediana de 5 paneles medidos');
       expect(component.tiempoDetalle({mediana_min: 20, media_min: 20, paneles: 1, medidos: 0})).toBe('mediana de 1 panel, aproximado');
+    });
+
+    it('shows the hours as work plus dead time, in yellow, and the rates over the worked hours', () => {
+      stats.totals.modulos_completados = 1;
+      stats.totals.horas_productivas = 132;
+      stats.totals.horas_trabajo = 48;
+      stats.totals.horas_muertas = 84;
+      stats.totals.horas_fuera_turno = 2.5;
+      stats.totals.modulos_por_hora = 0.83;
+      stats.totals.modulos_por_hora_trabajo = 2.3;
+      stats.totals.kg_por_hora = 100;
+      stats.totals.kg_por_hora_trabajo = 275;
+      stats.muerto_por_causa = {sin_registro: 30, empezo_tarde: 20.5, acabo_pronto: 0, paradas: 33.5};
+      stats.criterio = {version: 'v1', umbral_min: 20, umbral_fotos_min: 45, sin_pulsar_min: 90};
+      render();
+      expect(text('.stats-kpi-horas .stats-kpi-value')).toBe('48 h + 84 h muertas');
+      expect(text('.stats-kpi-horas .stats-muerto')).toBe('+ 84 h muertas');
+      expect(fixture.nativeElement.querySelector('.stats-kpi-horas').getAttribute('title'))
+        .toContain('Incluye 2.5 h trabajadas fuera de turno');
+      // Solo el dato por hora de trabajo; el de turno se ve eligiendo el turno.
+      expect(text('.stats-kpi-ritmo-modulos .stats-kpi-value')).toBe('2.3 mód./h');
+      expect(text('.stats-kpi-ritmo-peso .stats-kpi-value')).toBe('275 kg/h');
+      // En que se fue el tiempo muerto no se detalla.
+      expect(fixture.nativeElement.querySelector('.stats-muerto-causas')).toBeNull();
+      // Modulos con dificultad (1), peso y desperdicio (1), turno trabajado y tiempo por panel (2).
+      expect(fixture.nativeElement.querySelectorAll('app-stats-line-chart').length).toBe(4);
+      expect(fixture.nativeElement.querySelector('app-stats-line-chart.stats-chart-turno')).not.toBeNull();
+      expect(text('.stats-criterio')).toContain('van a menos de 20 min');
+      expect(text('.stats-criterio')).toContain('hueco de hasta 90 min');
+      // Sin trabajo detectado no hay ritmo "por hora de trabajo" que enseñar.
+      stats.totals.horas_trabajo = 0;
+      stats.totals.modulos_por_hora_trabajo = 0;
+      render();
+      expect(text('.stats-kpi-ritmo-modulos .stats-kpi-value')).toBe('0.83 mód./h');
+      // Un servidor sin actividad: las horas de jornada y los ritmos de siempre, sin columnas ni gráfica vacías.
+      delete stats.totals.horas_trabajo;
+      delete stats.totals.modulos_por_hora_trabajo;
+      delete stats.totals.kg_por_hora_trabajo;
+      delete stats.muerto_por_causa;
+      render();
+      expect(text('.stats-kpi-horas')).toBe('Horas de jornada 132 h');
+      expect(text('.stats-kpi-ritmo-modulos .stats-kpi-value')).toBe('0.83 mód./h');
+      expect(text('.stats-kpi-ritmo-peso .stats-kpi-value')).toBe('100 kg/h');
+      expect(fixture.nativeElement.querySelector('.stats-muerto-causas')).toBeNull();
+      expect(fixture.nativeElement.querySelector('.stats-fila-trabajo')).toBeNull();
+      expect(fixture.nativeElement.querySelector('.stats-mesa-muerto')).toBeNull();
+      expect(fixture.nativeElement.querySelector('.stats-criterio')).toBeNull();
+      expect(fixture.nativeElement.querySelectorAll('app-stats-line-chart').length).toBe(3);
+      expect(fixture.nativeElement.querySelector('app-stats-line-chart.stats-chart-turno')).toBeNull();
+    });
+
+    it('keeps the work and dead time tables when the shift has run but nothing was finished yet', () => {
+      stats.totals.horas_productivas = 2;
+      stats.totals.horas_trabajo = 1.8;
+      stats.totals.horas_muertas = 0.2;
+      stats.criterio = {version: 'v1', umbral_min: 20, umbral_fotos_min: 45};
+      render();
+      expect(fixture.nativeElement.querySelector('.stats-empty')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('.stats-table-periodos')).not.toBeNull();
+      expect(text('.stats-criterio')).toContain('Criterio v1');
+      // Sin actividad del servidor, ni tablas ni nota del criterio.
+      delete stats.totals.horas_trabajo;
+      render();
+      expect(fixture.nativeElement.querySelector('.stats-table-periodos')).toBeNull();
+      expect(fixture.nativeElement.querySelector('.stats-criterio')).toBeNull();
+    });
+
+    it('shows the hours of a single day per hour in minutes and a week without any signal as sin registro', () => {
+      const vacio = () => ({
+        fases_completadas: 0, peso_total_kg: 0, peso_malla_inicial_kg: 0, peso_malla_final_kg: 0, desperdicio_kg: 0,
+        cantidad_cortes: 0, cantidad_refuerzos: 0, cantidad_zunchos: 0, cantidad_separadores: 0, cantidad_punzos: 0,
+        dificultad_total: 0,
+      });
+      stats.totals.modulos_completados = 1;
+      stats.totals.horas_trabajo = 0.5;
+      stats.range = {from: '2026-09-14', to: '2026-09-14', working_days: 1, horas: ['07', '08']};
+      stats.por_hora = [
+        {...vacio(), hora: '07', modulos_completados: 1, minutos_turno: 60, minutos_trabajo: 2, minutos_muertos: 58},
+        {...vacio(), hora: '08', modulos_completados: 0, minutos_turno: 60, minutos_trabajo: 45, minutos_muertos: 15},
+      ];
+      component.statsFrom = '2026-09-14';
+      component.statsTo = '2026-09-14';
+      let vista = component.statsVista()!;
+      expect([vista.horasUnidad, vista.conSenales]).toEqual(['min', false]);
+      // Del turno de cada hora, la parte trabajada.
+      expect(vista.horas[0].values.map(v => Math.round(v!))).toEqual([3, 75]);
+      expect(vista.horas[0].tooltips![1]).toBe('75 % · 45 min de trabajo + 15 min muertas');
+      render();
+      let filas = Array.from(fixture.nativeElement.querySelectorAll('.stats-table-periodos tbody tr')) as HTMLElement[];
+      const celda = (fila: HTMLElement, selector: string) => fila.querySelector(selector)?.textContent?.replace(/\s+/g, ' ').trim();
+      expect(celda(filas[0], '.stats-fila-trabajo')).toBe('2 min');
+      expect(celda(filas[0], '.stats-fila-muerto')).toBe('58 min');
+      expect(filas[0].querySelector('.stats-fila-muerto')?.getAttribute('title')).toBe('Turno de 60 min: 2 min de trabajo + 58 min muertas');
+      expect(filas[0].querySelector('.stats-fila-senales')).toBeNull();
+
+      // Dos meses: por semana. La primera, toda sin señal; la segunda, solo un dia.
+      const dia = (fecha: string, extra: Partial<ProductionStatsDay>): ProductionStatsDay => ({
+        ...vacio(), fecha, modulos_completados: 0, horas_turno: 10, horas_trabajo: 0, horas_muertas: 10, sin_registro: true,
+        causas: {sin_registro: 10, empezo_tarde: 0, acabo_pronto: 0, paradas: 0}, ...extra,
+      });
+      stats.range = {from: '2026-08-03', to: '2026-10-02', working_days: 45};
+      stats.por_hora = undefined;
+      stats.por_dia = [
+        dia('2026-08-03', {}), dia('2026-08-04', {}),
+        dia('2026-08-10', {}), dia('2026-08-11', {
+          modulos_completados: 1, horas_trabajo: 6, horas_muertas: 4, sin_registro: false,
+          causas: {sin_registro: 0, empezo_tarde: 1, acabo_pronto: 0, paradas: 3},
+        }),
+      ];
+      component.statsFrom = '2026-08-03';
+      component.statsTo = '2026-10-02';
+      vista = component.statsVista()!;
+      expect(vista.filas[0].sin_registro).toBe(true);
+      expect(vista.filas[1].sin_registro).toBe(false);
+      expect(vista.filas[2].horas_trabajo).toBeNull();
+      render();
+      filas = Array.from(fixture.nativeElement.querySelectorAll('.stats-table-periodos tbody tr')) as HTMLElement[];
+      expect(celda(filas[0], '.stats-fila-muerto')).toBe('20 sin registro');
+      expect(celda(filas[1], '.stats-fila-trabajo')).toBe('6');
+      expect(filas[1].querySelector('.stats-fila-muerto')?.getAttribute('title'))
+        .toBe('Turno de 20 h: 6 h de trabajo + 14 h muertas');
+      expect(celda(filas[2], '.stats-fila-muerto')).toBe('—');
+    });
+
+    it('puts the work and dead hours of each day in the chart and the table, flagging the days without any record', () => {
+      const dia = (fecha: string, extra: Partial<ProductionStatsDay>): ProductionStatsDay => ({
+        fecha, modulos_completados: 0, fases_completadas: 0, peso_total_kg: 0, peso_malla_inicial_kg: 0, peso_malla_final_kg: 0,
+        desperdicio_kg: 0, cantidad_cortes: 0, cantidad_refuerzos: 0, cantidad_zunchos: 0, cantidad_separadores: 0,
+        cantidad_punzos: 0, dificultad_total: 0, ...extra,
+      });
+      stats.range = {from: '2026-09-14', to: '2026-09-15', working_days: 2};
+      stats.totals.modulos_completados = 2;
+      stats.totals.horas_trabajo = 6.2;
+      stats.por_dia = [
+        dia('2026-09-14', {
+          modulos_completados: 2, horas_turno: 10, horas_trabajo: 6.2, horas_muertas: 3.8, horas_fuera_turno: 1, estimado: true,
+          abre: '2026-09-14T06:12:00+02:00', cierra: '2026-09-14T15:48:00+02:00',
+          causas: {sin_registro: 0, empezo_tarde: 0.2, acabo_pronto: 0.2, paradas: 3.4},
+        }),
+        dia('2026-09-15', {
+          horas_turno: 10, horas_trabajo: 0, horas_muertas: 10, sin_registro: true,
+          causas: {sin_registro: 10, empezo_tarde: 0, acabo_pronto: 0, paradas: 0},
+        }),
+      ];
+      component.statsFrom = '2026-09-14';
+      component.statsTo = '2026-09-15';
+
+      const vista = component.statsVista()!;
+      expect(vista.horas.map(s => s.name)).toEqual(['Trabajado']);
+      expect(vista.horas[0].values.map(v => Math.round(v!))).toEqual([62, 0]);
+      expect(vista.horas[0].tooltips![0]).toBe('62 % · 6.2 h de trabajo + 3.8 h muertas');
+
+      render();
+      const filas = Array.from(fixture.nativeElement.querySelectorAll('.stats-table-periodos tbody tr')) as HTMLElement[];
+      const celda = (fila: HTMLElement, selector: string) => fila.querySelector(selector)?.textContent?.replace(/\s+/g, ' ').trim();
+      expect(celda(filas[0], '.stats-fila-trabajo')).toBe('6.2 est.');
+      expect(celda(filas[0], '.stats-fila-muerto')).toBe('3.8');
+      expect(celda(filas[0], '.stats-fila-senales')).toBe('06:12 – 15:48');
+      expect(filas[0].querySelector('.stats-fila-muerto')?.getAttribute('title')).toBe(
+        'Turno de 10 h: 5.2 h de trabajo + 3.8 h muertas · 1 h trabajadas fuera de turno'
+        + ' · estimado: sin registro de eventos, solo fotos y fases hechas',
+      );
+      expect(celda(filas[1], '.stats-fila-trabajo')).toBe('0');
+      expect(celda(filas[1], '.stats-fila-muerto')).toBe('10 sin registro');
+      expect(celda(filas[1], '.stats-fila-senales')).toBe('—');
+    });
+
+    it('shows a measured phase as its work minutes plus what it stood still on the table', () => {
+      const fase = (extra: Partial<ProductionStatsModuloFase>): ProductionStatsModuloFase => ({
+        mesa_nombre: 'Mesa 1', done_at: '2026-09-14T15:55:00+02:00', minutos: 55, medido: true, peso_kg: 100, malla_kg: 80,
+        desperdicio_kg: 5, cortes: 2, refuerzos: 1, dificultad: 100, ...extra,
+      });
+      stats.totals.modulos_completados = 1;
+      stats.modulos = [{
+        id: 1, nombre: 'M-01', proyecto_id: 1, proyecto_nombre: 'Obra', grupo: null, completado_at: '2026-09-15T08:00:00+02:00',
+        inferior: fase({sin_pulsar_min: 30, parado_min: 905, parado_turno_min: 65, parado_fuera_min: 840, pernocto: true}),
+        superior: fase({minutos: 40, parado_min: 0, parado_turno_min: 0, parado_fuera_min: 0, pernocto: false}),
+        minutos: 95, peso_kg: 200, desperdicio_kg: 10, dificultad: 200,
+      }];
+      render();
+      const fila = fixture.nativeElement.querySelector('.stats-table-modulos tbody tr') as HTMLElement;
+      const celdas = Array.from(fila.querySelectorAll('.stats-fase-min')) as HTMLElement[];
+      expect(celdas.map(c => c.textContent?.replace(/\s+/g, ' ').trim())).toEqual(['55 + 905', '40']);
+      expect(celdas[0].getAttribute('title')).toBe(
+        '55 min de trabajo medidos en la mesa (30 sin pasar diapositiva) · 905 min parada (840 fuera de turno) · pernoctó en la mesa',
+      );
+      expect(celdas[1].getAttribute('title')).toBe('40 min de trabajo medidos en la mesa');
+      expect(text('.stats-modulo-min')).toBe('95 + 905');
+    });
+
+    it('gives the mean and the best hour instead of the day when a single day is shown', () => {
+      const vacio = () => ({
+        fases_completadas: 0, peso_total_kg: 0, peso_malla_inicial_kg: 0, peso_malla_final_kg: 0, desperdicio_kg: 0,
+        cantidad_cortes: 0, cantidad_refuerzos: 0, cantidad_zunchos: 0, cantidad_separadores: 0, cantidad_punzos: 0,
+        dificultad_total: 0,
+      });
+      stats.range = {from: '2026-09-14', to: '2026-09-14', working_days: 1};
+      stats.totals.modulos_completados = 5;
+      stats.por_hora = [
+        {...vacio(), hora: '07', modulos_completados: 1},
+        {...vacio(), hora: '08', modulos_completados: 0},
+        {...vacio(), hora: '09', modulos_completados: 4},
+      ];
+      component.statsFrom = '2026-09-14';
+      component.statsTo = '2026-09-14';
+      const resumen = component.statsResumen()!;
+      expect([resumen.porHora, resumen.media, resumen.mejor]).toEqual([true, 2.5, {modulos: 4, label: '09h'}]);
+      render();
+      expect([text('.stats-kpi-media .stats-kpi-label'), text('.stats-kpi-media .stats-kpi-value')]).toEqual(['Media por hora', '2.5 mód./hora']);
+      expect([text('.stats-kpi-mejor .stats-kpi-label'), text('.stats-kpi-mejor .stats-kpi-value')]).toEqual(['Mejor hora', '4 mód. · 09h']);
     });
 
     it('builds the line charts with the daily target, the day in progress and the neighbouring periods', () => {
@@ -123,17 +334,26 @@ describe('Dashboard', () => {
       expect(vista.modulos[0].next).toBe(2);
       expect(vista.tiempo.map(serie => serie.values[0])).toEqual([40, 20]);
       expect(vista.tiempo[0].values[1]).toBeNull();
-      // Desperdicio sobre el peso total: 10 kg de 130 kg fabricados.
-      expect(vista.desperdicio[0].values[0]).toBeCloseTo(7.69, 2);
-      expect(vista.desperdicio[0].prev).toBeCloseTo(7.69, 2);
+      // La dificultad por modulo, en la misma grafica y a la escala de los modulos: su media
+      // cae en la media de modulos (7/3). El martes hizo pocos pero mas dificiles.
+      const decima = (valores: Array<number | null>) => valores.map(v => v === null ? null : Math.round(v * 10) / 10);
+      expect(vista.modulos.map(s => s.name)).toEqual(['Módulos', 'Dificultad por módulo']);
+      expect(decima(vista.modulos[1].values)).toEqual([1.8, 5.4, null, 1.8, null]);
+      expect(Math.round(vista.modulos[1].prev! * 10) / 10).toBe(1.4);
+      // La lectura dice los puntos reales, sin porcentajes.
+      expect(vista.modulos[1].tooltips![1]).toBe('50 puntos');
+      // Peso y desperdicio en la misma grafica, los dos en kilos.
+      expect(vista.peso.map(s => s.name)).toEqual(['Peso producido', 'Desperdicio']);
+      expect(vista.peso[1].values).toEqual([10, 10, 0, 10, 0]);
+      expect(Math.round(vista.peso[1].prev!)).toBe(10);
       expect(component.desperdicioPct({desperdicio_kg: 184.9, peso_total_kg: 10458, peso_malla_final_kg: 7089})).toBeCloseTo(1.77, 2);
       expect(component.desperdicioPct({desperdicio_kg: 5, peso_total_kg: 0})).toBeNull();
       // El peso de las graficas y tablas es el total del modulo, no solo el mallazo.
       expect(vista.peso[0].values).toEqual([130, 130, 0, 130, 0]);
       expect(vista.peso[0].prev).toBe(130);
       expect(component.statsResumen()).toEqual({
-        cumplimiento: 70, diasCumplidos: {cumplidos: 2, total: 5}, mediaDiaria: 7 / 3,
-        mejorDia: {modulos: 3, label: 'Lun 14'}, kgPorModulo: 0, dificultadMedia: 0,
+        porHora: false, media: 7 / 3,
+        mejor: {modulos: 3, label: 'Lun 14'}, kgPorModulo: 0, dificultadMedia: 0, pesoTotal: 0,
       });
 
       render();
@@ -141,7 +361,7 @@ describe('Dashboard', () => {
       expect(filas.length).toBe(5);
       expect(Array.from(filas[0].querySelectorAll('td')).slice(0, 4).map(td => td.textContent?.trim()))
         .toEqual(['Lun 14', '3', '2', '+1']);
-      // Paneles, peso total y mallazo, en ese orden.
+      // Paneles, peso total y mallazo, en ese orden (sin actividad del servidor no hay mas columnas).
       expect(Array.from(filas[0].querySelectorAll('td')).slice(4, 7).map(td => td.textContent?.trim()))
         .toEqual(['6', '130', '90']);
       expect(filas[1].querySelector('.stats-diferencia')?.classList.contains('is-bajo')).toBe(true);
@@ -164,8 +384,10 @@ describe('Dashboard', () => {
       stats.totals.peso_malla_final_kg = 100;
       stats.totals.desperdicio_kg = 7;
       render();
-      // El indicador de peso es solo el total; el mallazo queda en las tablas.
-      expect(text('.stats-kpi[title^="Peso total"] .stats-kpi-value')).toBe('140 kg');
+      // Peso producido (lo fabricado) y peso total (lo que se gasta: producido + desperdicio);
+      // el mallazo queda en las tablas.
+      expect(text('.stats-kpi-peso .stats-kpi-value')).toBe('140 kg');
+      expect(text('.stats-kpi-peso-total .stats-kpi-value')).toBe('147 kg');
       // Desperdicio: kilos y, al lado, su porcentaje sobre el peso total (7 de 140).
       const desperdicio = fixture.nativeElement.querySelector('.stats-kpi[title^="Kilos de mallazo desechados"] .stats-kpi-value') as HTMLElement;
       expect(desperdicio.querySelector('.stats-kpi-sep')).not.toBeNull();
@@ -229,9 +451,13 @@ describe('Dashboard', () => {
 
     it('shows every zero-valued KPI and the period target before production starts', () => {
       render();
-      expect(fixture.nativeElement.querySelectorAll('.stats-kpi').length).toBe(15);
+      // Modulos (5), kilos (4) y productividad (horas y los dos ritmos).
+      expect(Array.from(fixture.nativeElement.querySelectorAll('.stats-bloque .stats-subtitle')).map(h => (h as HTMLElement).textContent?.trim()))
+        .toEqual(['Módulos', 'Kilos', 'Productividad']);
+      expect(fixture.nativeElement.querySelectorAll('.stats-bloque-modulos .stats-kpi').length).toBe(5);
+      expect(fixture.nativeElement.querySelectorAll('.stats-bloque-kilos .stats-kpi').length).toBe(4);
+      expect(fixture.nativeElement.querySelectorAll('.stats-bloque-productividad .stats-kpi').length).toBe(3);
       expect(text('.stats-kpi-value')).toBe('0 / 9 objetivo');
-      expect(text('.stats-kpi')).toBe('Módulos 0 / 9 objetivo');
       expect(text('.stats-empty')).toContain('No hay producción registrada');
       expect(fixture.nativeElement.querySelector('.stats-table')).toBeNull();
       expect(fixture.nativeElement.querySelector('.stats-charts')).toBeNull();
@@ -245,10 +471,10 @@ describe('Dashboard', () => {
       stats.esperado.modulos_esperados = 64;
       render();
       expect(text('.stats-kpi-value')).toBe('53 / 64 objetivo');
-      expect(text('.stats-kpi')).toBe('Módulos 53 / 64 objetivo');
+      expect(text('.stats-kpi-modulos .stats-kpi-value')).toBe('53 / 64 objetivo');
       expect(fixture.nativeElement.querySelector('.stats-table')).not.toBeNull();
       expect(fixture.nativeElement.querySelector('.stats-charts')).not.toBeNull();
-      expect(fixture.nativeElement.querySelectorAll('app-stats-line-chart').length).toBe(5);
+      expect(fixture.nativeElement.querySelectorAll('app-stats-line-chart').length).toBe(3);  // sin actividad del servidor no hay grafica del turno
       expect(fixture.nativeElement.querySelector('.stats-empty')).toBeNull();
     });
 
@@ -256,7 +482,7 @@ describe('Dashboard', () => {
       component.proyectos = [];
       component.gruposMesas = [];
       component.selectedProyecto = {id: 1, planificacion: {modulos_por_dia: 3}} as Proyecto;
-      stats.esperado.capacidad_diaria_modulos = 12;
+      stats.esperado.ritmo_necesario = 12;
       stats.planificacion!.modulos_por_dia = 12;
       stats.planificacion!.modulos_hoy = 0;
       render();
@@ -327,6 +553,35 @@ describe('Dashboard', () => {
       expect(text('.stats-kpi-value')).toBe('0 / 9 objetivo');
     });
 
+    it('never stacks a background refresh on a stats request still running, nor refreshes what is not on screen', () => {
+      const pendiente = new Subject<ProductionStatsResponse>();
+      const peticion = vi.spyOn(TestBed.inject(ApiService), 'getProductionStats').mockReturnValue(pendiente);
+      vi.spyOn(TestBed.inject(ApiService), 'getProyectos').mockReturnValue(of([]));
+      const hoy = new Date();
+      const hoyIso = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
+      component.statsFrom = hoyIso;
+      component.statsTo = hoyIso;
+      component.silentRefreshProyectosAndStats();
+      expect(peticion).toHaveBeenCalledTimes(1);
+      // La primera no ha vuelto: los refrescos siguientes no mandan otra.
+      component.silentRefreshProyectosAndStats();
+      component.silentRefreshProyectosAndStats();
+      expect(peticion).toHaveBeenCalledTimes(1);
+      pendiente.next(stats);
+      pendiente.complete();
+      peticion.mockReturnValue(of(stats));
+      component.silentRefreshProyectosAndStats();
+      expect(peticion).toHaveBeenCalledTimes(2);
+      // Un periodo ya pasado no cambia, y en Produccion no se ven.
+      component.statsFrom = '2026-09-01';
+      component.statsTo = '2026-09-14';
+      component.silentRefreshProyectosAndStats();
+      component.statsTo = hoyIso;
+      component.vista = 'produccion';
+      component.silentRefreshProyectosAndStats();
+      expect(peticion).toHaveBeenCalledTimes(2);
+    });
+
     it('labels retained statistics as stale after a failed silent refresh', () => {
       vi.spyOn(TestBed.inject(ApiService), 'getProductionStats')
         .mockReturnValue(throwError(() => new Error('unavailable')));
@@ -334,7 +589,8 @@ describe('Dashboard', () => {
       render();
       expect(component.statsData).toBe(stats);
       expect(text('.stats-error')).toContain('últimos datos disponibles');
-      expect(fixture.nativeElement.querySelectorAll('.stats-kpi').length).toBe(15);
+      // Módulos (5), kilos (4) y productividad (horas y los dos ritmos).
+      expect(fixture.nativeElement.querySelectorAll('.stats-kpi').length).toBe(12);
     });
 
     it('ignores responses for an older selected period', () => {
@@ -396,7 +652,7 @@ describe('Dashboard', () => {
         { ...emptyTotals(), hora: '09', modulos_completados: 1 },
         { ...emptyTotals(), hora: '07', modulos_completados: 1 },
       ],
-      esperado: { capacidad_diaria_modulos: 12, modulos_esperados: 12 },
+      esperado: { ritmo_necesario: 12, modulos_esperados: 12 },
     } satisfies ProductionStatsResponse;
 
     const buckets = component.statsBuckets();
@@ -444,7 +700,7 @@ describe('Dashboard', () => {
       range,
       totals: { ...vacio(), modulos_completados: 0, horas_productivas: 0, modulos_por_hora: 0, kg_por_hora: 0 },
       por_mesa: [], por_dia: [], por_hora: null,
-      esperado: { capacidad_diaria_modulos: 0, modulos_esperados: 50 },
+      esperado: { ritmo_necesario: 0, modulos_esperados: 50 },
       ...extra,
     });
 
@@ -477,7 +733,7 @@ describe('Dashboard', () => {
             { ...vacio(), hora: '02', modulos_completados: 1 },
             { ...vacio(), hora: '10', modulos_completados: 1 },
           ],
-          esperado: { capacidad_diaria_modulos: 0, modulos_esperados: 20 },
+          esperado: { ritmo_necesario: 0, modulos_esperados: 20 },
         },
       );
       const buckets = component.statsBuckets();
@@ -503,7 +759,7 @@ describe('Dashboard', () => {
             { ...vacio(), hora: '18', modulos_completados: 1 },
             { ...vacio(), hora: '02', modulos_completados: 2 },
           ],
-          esperado: { capacidad_diaria_modulos: 0, modulos_esperados: 10 },
+          esperado: { ritmo_necesario: 0, modulos_esperados: 10 },
           turno: 1,
         },
       );
@@ -1118,6 +1374,27 @@ describe('Dashboard', () => {
       fixture.detectChanges();
       expect(Array.from(columna.querySelectorAll('.plan-grupo-title strong')).map(e => e.textContent)).toEqual(['Grupo 2', 'Grupo 1']);
       expect(columna.querySelector('.plan-grupo')?.classList.contains('is-terminado')).toBe(true);
+    });
+
+    it('opens a finished project with its finished bastidores already shown', () => {
+      const api = TestBed.inject(ApiService);
+      const terminado = {id: 1, nombre: 'A1', grupo_bastidor: 10, inferior_hecho: true, superior_hecho: true, estado: 'COMPLETADO'} as Modulo;
+      const pendiente = {id: 4, nombre: 'B1', grupo_bastidor: 11, inferior_hecho: false, superior_hecho: false} as Modulo;
+      const modulos = vi.spyOn(api, 'getProyectoModulos').mockReturnValue(of([terminado]));
+      vi.spyOn(api, 'getGruposBastidor').mockReturnValue(of([]));
+      // Por el recuento del proyecto, nada mas abrir.
+      component.openPlanModal({id: 7, nombre: 'Obra', modulos_count: 1, modulos_completados: 1} as Proyecto);
+      expect(component.planModalShowDone).toBe(true);
+      component.closePlanModal();
+      expect(component.planModalShowDone).toBe(false);
+      // Por sus modulos, si el recuento no lo decia.
+      component.openPlanModal({id: 7, nombre: 'Obra'} as Proyecto);
+      expect(component.planModalShowDone).toBe(true);
+      component.closePlanModal();
+      // Uno a medias: plegados como siempre.
+      modulos.mockReturnValue(of([terminado, pendiente]));
+      component.openPlanModal({id: 7, nombre: 'Obra', modulos_count: 2, modulos_completados: 1} as Proyecto);
+      expect(component.planModalShowDone).toBe(false);
     });
 
     it('keeps bastidores on hold at the bottom of their mesa with a release button', () => {

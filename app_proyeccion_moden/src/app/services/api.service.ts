@@ -26,7 +26,6 @@ export interface User {
     direccion?: string;
     coordinador?: string;
     password_texto_plano?: string;
-    capacidad_diaria_modulos?: number;
     bastidor_longitud_cm?: number;
     contactos?: FerrallaContacto[];
     direcciones?: FerrallaDireccion[];
@@ -64,17 +63,26 @@ export interface PlanificacionProyecto {
     estado: 'COMPLETADO' | 'SIN_FECHA' | 'SIN_MODULOS' | 'SIN_FERRALLA' | 'VENCIDO' | 'SIN_DIAS' | 'PLANIFICADO' | 'ARCHIVADO';
     fecha_calculo: string;
     dias_produccion: string[];
-    /** Plan de la ferralla: sus proyectos uno detras de otro. */
+    /** Plan de la ferralla: lo que exigen los montajes, por tramos. */
+    /** Ritmo necesario hoy (modulos por dia laborable del tramo en curso). */
     ritmo_ferralla?: number | null;
-    capacidad_ferralla?: number | null;
-    aprietan_ferralla?: number;
+    /** Tramos de la ferralla: hasta que montaje y a que ritmo. */
+    tramos_ferralla?: Array<{ hasta: string; ritmo: number }>;
+    /** Forjado cuyo montaje marca el ritmo de hoy. */
+    manda_nombre?: string | null;
+    /** Forjados en la cola de las lineas por delante de otro que monta antes. */
+    cola_fuera_de_orden?: string[];
+    /** Tramo del proyecto y su ritmo. */
+    tramo?: number | null;
+    ritmo_tramo?: number | null;
+    tramo_hasta?: string | null;
+    cierra_tramo?: boolean;
     fabricacion_inicio?: string | null;
     fabricacion_fin?: string | null;
     /** Ultimo dia de fabricacion: el laborable anterior al montaje. */
     ultimo_dia?: string | null;
+    /** Holgura: dias laborables entre terminarlo y su ultimo dia. */
     margen_dias?: number | null;
-    /** Modulos que no salen a la capacidad de la ferralla (horas extra, sabados...). */
-    modulos_extra?: number;
     modulos_hoy?: number;
     modulos_semana?: number;
 }
@@ -174,7 +182,6 @@ export interface Proyecto {
     /** Excel de elementos sueltos a llevar a obra (barras, vigas, zunchos fuera de modulo). */
     elementos_sueltos_archivo?: string | null;
     estrategia_bastidor: EstrategiaBastidor;
-    capacidad_diaria_usuario?: number;
     grupos_count?: number;
     modulos_count?: number;
     modulos_completados?: number;
@@ -547,6 +554,15 @@ export interface ProductionStatsMesa extends ProductionStatsBucket {
     tiempo_mediana_min?: number | null;
     tiempo_paneles?: number;
     tiempo_medidos?: number;
+    /** Horas en que la mesa da señales dentro del turno del período, y horas de turno sin ellas. */
+    horas_trabajo?: number;
+    horas_muertas?: number;
+    /** Veces que la mesa paró y volvió a arrancar dentro del turno. */
+    paradas?: number;
+    /** true si la mesa no tiene registro de eventos: el trabajo sale de fotos y fases hechas. */
+    estimado?: boolean;
+    /** Minutos de trabajo de la mesa por panel hecho (null sin paneles). */
+    min_trabajo_por_panel?: number | null;
 }
 
 /** Tiempo por panel: medido desde el registro de la mesa o aproximado entre paneles hechos. */
@@ -555,6 +571,8 @@ export interface TiempoFabricacion {
     media_min: number | null;
     paneles: number;
     medidos: number;
+    /** Mediana de lo que los paneles medidos estuvieron parados en la mesa (null sin medidos). */
+    parado_min?: number | null;
 }
 
 /** Mediana de minutos por panel hecho en el dia u hora (null sin paneles). */
@@ -565,7 +583,32 @@ export interface ProductionStatsTiempos {
     tiempo_superior_paneles?: number;
 }
 
-export interface ProductionStatsDay extends ProductionStatsBucket, ProductionStatsTiempos {
+/** Horas muertas de un periodo por causa, deducidas de las señales de las mesas. */
+export interface ProductionStatsCausas {
+    sin_registro: number;
+    empezo_tarde: number;
+    acabo_pronto: number;
+    paradas: number;
+}
+
+/** Trabajo y tiempo muerto de un dia: horas de turno, de trabajo (señales de las mesas) y muertas. */
+export interface ProductionStatsActividadDia {
+    horas_turno?: number;
+    horas_trabajo?: number;
+    horas_muertas?: number;
+    /** Trabajo fuera de las horas de turno, ya sumado en horas_trabajo. */
+    horas_fuera_turno?: number;
+    /** Ninguna señal en todo el turno: el tiempo muerto es "sin registro". */
+    sin_registro?: boolean;
+    /** Sin registro de eventos en algún turno: el trabajo sale de fotos y fases hechas. */
+    estimado?: boolean;
+    /** Primera y última señal dentro del turno (ISO). */
+    abre?: string | null;
+    cierra?: string | null;
+    causas?: ProductionStatsCausas;
+}
+
+export interface ProductionStatsDay extends ProductionStatsBucket, ProductionStatsTiempos, ProductionStatsActividadDia {
     fecha: string;
     modulos_completados: number;
 }
@@ -573,6 +616,10 @@ export interface ProductionStatsDay extends ProductionStatsBucket, ProductionSta
 export interface ProductionStatsHour extends ProductionStatsBucket, ProductionStatsTiempos {
     hora: string;
     modulos_completados: number;
+    /** Minutos de turno, de trabajo y muertos de esa hora (solo las horas con turno o trabajo). */
+    minutos_turno?: number;
+    minutos_trabajo?: number;
+    minutos_muertos?: number;
 }
 
 /** Una fase de un modulo terminado: donde, cuando, cuanto tardo y cuanto pesa. */
@@ -582,6 +629,14 @@ export interface ProductionStatsModuloFase {
     minutos: number | null;
     /** true si el tiempo sale del registro de la mesa; false si es aproximado. */
     medido: boolean;
+    /** Minutos trabajados sin pasar diapositiva (huecos de 20 a 90 min), ya dentro de `minutos`. */
+    sin_pulsar_min?: number | null;
+    /** Lo que la fase estuvo parada en la mesa (solo si se midió): total, en turno y fuera de turno. */
+    parado_min?: number | null;
+    parado_turno_min?: number | null;
+    parado_fuera_min?: number | null;
+    /** Pasó más de 8 h seguidas parada en la mesa (de un día para otro). */
+    pernocto?: boolean | null;
     /** Peso total de la fase. */
     peso_kg: number | null;
     /** Solo la malla recortada. */
@@ -644,8 +699,8 @@ export interface ElementosSueltos {
 export interface ProductionStatsResponse {
     range: {
         from: string; to: string; working_days: number; festivos?: string[];
-        /** Dias de produccion del rango con sus turnos (un turno de noche cuenta para el dia en que empieza). */
-        dias?: Array<{ fecha: string; turnos: number; horas: number }>;
+        /** Dias del rango con sus horas de turno y el objetivo de cada uno. */
+        dias?: Array<{ fecha: string; turnos: number; horas: number; objetivo?: number }>;
         /** Vista de un dia: sus horas de turno (las que tienen objetivo). */
         horas?: string[] | null;
         /** Vista de un dia con un turno elegido: ese turno entero, de una hora antes a la hora en que acaba. */
@@ -663,11 +718,23 @@ export interface ProductionStatsResponse {
         /** Horas de jornada por las personas de cada turno, y kilos por cada una de ellas (null sin personas). */
         horas_hombre?: number;
         kg_por_hora_hombre?: number | null;
+        /** Horas de trabajo (señales de las mesas) y muertas (turno sin trabajo) del período. */
+        horas_trabajo?: number;
+        horas_muertas?: number;
+        /** Trabajo fuera de las horas de turno, ya sumado en horas_trabajo. */
+        horas_fuera_turno?: number;
+        /** Ritmos sobre las horas de trabajo, no diluidos en las de turno. */
+        modulos_por_hora_trabajo?: number;
+        kg_por_hora_trabajo?: number;
     };
     por_mesa: ProductionStatsMesa[];
     por_dia: ProductionStatsDay[];
     por_hora?: ProductionStatsHour[] | null;
     tiempos?: { inferior: TiempoFabricacion; superior: TiempoFabricacion; modulo?: TiempoFabricacion };
+    /** Horas muertas del período por causa. */
+    muerto_por_causa?: ProductionStatsCausas;
+    /** Criterio con el que el servidor deduce el trabajo de las señales. */
+    criterio?: { version: string; umbral_min: number; umbral_fotos_min: number; sin_pulsar_min?: number };
     /** Dias de antes y de despues del rango: dan continuidad a las graficas. */
     contexto?: { anterior: ProductionStatsDay[]; siguiente: ProductionStatsDay[] };
     /** Modulos terminados en el rango, del mas reciente al mas antiguo. */
@@ -688,10 +755,13 @@ export interface ProductionStatsResponse {
         }>;
     } | null;
     esperado: {
-        capacidad_diaria_modulos: number;
+        /** Ritmo necesario hoy: modulos por dia laborable del tramo en curso. */
+        ritmo_necesario?: number;
         modulos_esperados: number | null;
         proyectos_sin_objetivo?: number;
         fecha_referencia?: string;
+        /** Objetivo de cada dia laborable del rango (el ritmo de su tramo). */
+        por_dia?: Record<string, number>;
     };
     planificacion?: {
         modulos_por_dia: number;

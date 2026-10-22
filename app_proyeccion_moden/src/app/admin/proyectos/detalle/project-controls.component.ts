@@ -22,19 +22,19 @@ import { planningMargin, planningWindow } from '../../../shared/project-planning
                 <button type="button" class="primary" [disabled]="saving() || !dirty()" (click)="saveDeadline()">Guardar</button>
             </div>
             @if (project().planificacion; as plan) {
-                <div class="demand" [class.urgent]="plan.estado === 'VENCIDO' || plan.estado === 'SIN_DIAS' || !!plan.modulos_extra">
+                <div class="demand" [class.urgent]="plan.estado === 'VENCIDO' || plan.estado === 'SIN_DIAS'">
                     @if (plan.estado === 'PLANIFICADO' && plan.fabricacion_inicio) {
                         <strong>{{ planningWindow(plan) }}</strong>
-                        <span>{{ plan.modulos_pendientes }} pendientes@if (!plan.modulos_extra) { · {{ planningMargin(plan.margen_dias) }} } · la ferralla necesita {{ plan.ritmo_ferralla }} módulos/turno y saca {{ plan.capacidad_ferralla }}@if ((plan.modulos_previstos || 0) > (plan.modulos_subidos ?? 0)) { · {{ plan.modulos_subidos }} de {{ plan.modulos_previstos }} subidos }</span>
+                        <span>{{ plan.modulos_pendientes }} pendientes · {{ planningMargin(plan.margen_dias) }} · @if (plan.cierra_tramo) { este montaje marca el ritmo: {{ plan.ritmo_tramo }} módulos/día } @else { a {{ plan.ritmo_tramo }} módulos/día hasta el {{ plan.tramo_hasta | date:'dd/MM' }} }@if ((plan.modulos_previstos || 0) > (plan.modulos_subidos ?? 0)) { · {{ plan.modulos_subidos }} de {{ plan.modulos_previstos }} subidos }</span>
                     } @else if (plan.estado === 'PLANIFICADO') {
-                        <strong>{{ plan.modulos_por_dia }} módulos / turno</strong>
-                        <span>{{ plan.modulos_pendientes }} pendientes · {{ plan.dias_disponibles }} turnos disponibles@if ((plan.modulos_previstos || 0) > (plan.modulos_subidos ?? 0)) { · {{ plan.modulos_subidos }} de {{ plan.modulos_previstos }} subidos }</span>
+                        <strong>{{ plan.modulos_por_dia }} módulos / día</strong>
+                        <span>{{ plan.modulos_pendientes }} pendientes · {{ plan.dias_disponibles }} días disponibles@if ((plan.modulos_previstos || 0) > (plan.modulos_subidos ?? 0)) { · {{ plan.modulos_subidos }} de {{ plan.modulos_previstos }} subidos }</span>
                     } @else if (plan.estado === 'COMPLETADO') { <strong>Fabricación completada</strong>
                     } @else if (plan.estado === 'ARCHIVADO') { <strong>Proyecto archivado</strong>
                     } @else if (plan.estado === 'VENCIDO') {
                         <strong>Plazo agotado: {{ plan.modulos_pendientes }} pendientes</strong>
                     } @else if (plan.estado === 'SIN_DIAS') {
-                        <strong>Sin turnos de trabajo antes del montaje: {{ plan.modulos_pendientes }} pendientes</strong>
+                        <strong>Sin días laborables antes del montaje: {{ plan.modulos_pendientes }} pendientes</strong>
                     } @else if (plan.estado === 'SIN_FERRALLA') { <span>Asigna una ferralla para calcular el objetivo.</span>
                     } @else if (plan.estado === 'SIN_MODULOS') { <span>Importa módulos para calcular el objetivo.</span>
                     } @else { <span>Falta la fecha de montaje.</span> }

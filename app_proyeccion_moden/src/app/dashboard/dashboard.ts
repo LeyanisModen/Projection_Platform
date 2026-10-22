@@ -10,9 +10,10 @@ import {
   EstrategiaColaSuperior, GrupoMesas, GrupoMesasProyectoEntry, ProductionStatsResponse, ModuloFase,
   GrupoBastidor, GrupoBastidorModulo, FerrallaCaptureConfig, TurnoConfig,
   TiempoFabricacion, ProductionStatsBucket, ProductionStatsTiempos, ProductionStatsModulo, ProductionStatsModuloFase,
+  ProductionStatsActividadDia,
   ElementosSueltos, ElementosSueltosHoja, ElementosSueltosSeccion, ElementosSueltosCelda,
 } from '../services/api.service';
-import { LineChartSeries, StatsLineChart } from './stats-line-chart';
+import { LineChartSeries, SplitArea, StatsLineChart } from './stats-line-chart';
 import { TurnosEditorComponent } from '../shared/turnos-editor.component';
 import { copiarTurnos, turnosError, turnosLabel } from '../shared/turnos';
 import {
@@ -25,10 +26,10 @@ import {
   GrupoMaterial,
 } from '../services/lista-materiales.service';
 import { Subject, takeUntil, interval, forkJoin, Observable, of } from 'rxjs';
-import { catchError } from 'rxjs/operators';
+import { catchError, finalize } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
 import { ZoomableImageComponent } from '../shared/zoomable-image/zoomable-image.component';
-import { planningIssues, planningLabel, planningTight } from '../shared/project-planning';
+import { planningIssues, planningLabel } from '../shared/project-planning';
 import { agruparPorEdificio, GrupoEdificio } from '../shared/edificios';
 
 // Graficas: naranja de marca para la serie principal, gris para las secundarias
@@ -36,6 +37,17 @@ import { agruparPorEdificio, GrupoEdificio } from '../shared/edificios';
 const CHART_NARANJA = '#f0640f';
 const CHART_AZUL = '#2a78d6';
 const CHART_GRIS = '#52606d';
+// El tiempo muerto va en mostaza, el mismo color que sus cifras (--warn del tema):
+// en la grafica del turno es el relleno de encima de la linea.
+const CHART_AMARILLO = '#b7791f';
+
+/** Un dia o una hora tal y como los da el servidor (la hora trae minutos, no horas). */
+type StatsFuente = ProductionStatsBucket & ProductionStatsTiempos & ProductionStatsActividadDia & {
+  modulos_completados: number;
+  minutos_turno?: number;
+  minutos_trabajo?: number;
+  minutos_muertos?: number;
+};
 
 /** Una columna de las graficas y una fila de la tabla por periodo. */
 export interface StatsBucket {
@@ -52,6 +64,19 @@ export interface StatsBucket {
   dificultad_total: number;
   tiempo_inferior_min: number | null;
   tiempo_superior_min: number | null;
+  /** Horas de turno, de trabajo y muertas (null si el servidor no las da). */
+  horas_turno: number | null;
+  horas_trabajo: number | null;
+  horas_muertas: number | null;
+  /** Trabajo fuera de las horas de turno, ya dentro de horas_trabajo. */
+  horas_fuera_turno: number | null;
+  /** Ninguna señal en el turno: todo el tiempo muerto es "sin registro". */
+  sin_registro: boolean;
+  /** Sin registro de eventos: el trabajo sale de fotos y fases hechas. */
+  estimado: boolean;
+  /** Primera y última señal del día (ISO); solo por día. */
+  abre: string | null;
+  cierra: string | null;
   meta_modulos: number;
   working_days: number;
   granularity: 'hour' | 'day' | 'week';
@@ -79,20 +104,26 @@ export interface StatsVista {
   modulos: LineChartSeries[];
   peso: LineChartSeries[];
   tiempo: LineChartSeries[];
-  desperdicio: LineChartSeries[];
-  dificultad: LineChartSeries[];
+  /** % del turno trabajado: debajo de la linea el trabajo, encima el tiempo muerto. */
+  horas: LineChartSeries[];
+  /** Por hora del dia, las horas van en minutos. */
+  horasUnidad: 'h' | 'min';
+  /** Solo las filas por dia traen la primera y la ultima señal. */
+  conSenales: boolean;
   filas: StatsBucket[];
   detalleTitulo: string;
   periodoLabel: string;
 }
 
 export interface StatsResumen {
-  cumplimiento: number | null;
-  diasCumplidos: { cumplidos: number; total: number } | null;
-  mediaDiaria: number | null;
-  mejorDia: { modulos: number; label: string } | null;
+  /** Vista de un dia: media y mejor van por hora, no por dia. */
+  porHora: boolean;
+  media: number | null;
+  mejor: { modulos: number; label: string } | null;
   kgPorModulo: number | null;
   dificultadMedia: number | null;
+  /** Lo que se gasta: peso producido mas desperdicio. */
+  pesoTotal: number;
 }
 
 /** Un bastidor del plan tal y como lo ve la ferralla: en orden de fabricacion. */
@@ -137,7 +168,6 @@ interface Subfase {
 })
 export class Dashboard implements OnInit, OnDestroy {
   readonly planningLabel = planningLabel;
-  readonly planningTight = planningTight;
   // Sidebar State
   panelState: 'collapsed' | 'expanded' = 'expanded';
   // Data
@@ -171,6 +201,8 @@ export class Dashboard implements OnInit, OnDestroy {
     data: ProductionStatsResponse; from: string; to: string; horario: FerrallaCaptureConfig | null; hora: number; vista: StatsVista;
   } | null = null;
   private statsRequestId = 0;
+  /** Peticiones de estadisticas aun sin respuesta: el refresco no manda otra encima. */
+  private statsEnVuelo = 0;
   statsPreset: 'day' | 'week' | 'month' | 'proyecto' | 'custom' = 'day';
   /** Proyecto al que se limitan las estadisticas; null = todos. */
   statsProyecto: number | null = null;
@@ -336,6 +368,8 @@ export class Dashboard implements OnInit, OnDestroy {
     this.planModalModulos = [];
     this.planModalGrupos = [];
     this.planModalError = '';
+    // Un proyecto terminado solo tiene bastidores terminados: se abren a la vista.
+    this.planModalShowDone = !!proyecto.modulos_count && (proyecto.modulos_completados ?? 0) >= proyecto.modulos_count;
     this.loadingPlanModal = true;
     this.cdr.detectChanges();
 
@@ -346,6 +380,7 @@ export class Dashboard implements OnInit, OnDestroy {
       next: ({ modulos, grupos }) => {
         this.planModalModulos = modulos;
         this.planModalGrupos = grupos;
+        if (modulos.length && modulos.every(m => this.moduloEstadoClass(m) === 'done')) this.planModalShowDone = true;
         this.loadingPlanModal = false;
         this.cdr.detectChanges();
       },
@@ -1777,9 +1812,12 @@ export class Dashboard implements OnInit, OnDestroy {
           this.cdr.detectChanges();
         }
       });
-    // Stats aggregate everything the ferralla owns — always refresh,
-    // silently so the polling doesn't toggle the loading placeholder.
-    this.loadStats(true);
+    // Las estadisticas se refrescan en silencio solo si se estan viendo y el
+    // periodo llega a hoy (lo pasado no cambia): cada peticion de un rango
+    // largo cuesta segundos al servidor.
+    if (this.vista === 'estadisticas' && (!this.statsTo || this.statsTo >= this.toLocalIsoDate(new Date()))) {
+      this.loadStats(true);
+    }
   }
 
   loadMesas(): void {
@@ -1988,7 +2026,9 @@ export class Dashboard implements OnInit, OnDestroy {
    * flash 'Cargando…' every 20s when data already exists.
    */
   loadStats(silent: boolean = false): void {
-    if (silent && this.loadingStats) return;
+    // Un refresco nunca se apila sobre una peticion que no ha vuelto: si el
+    // servidor tarda mas que el intervalo, se amontonaban hasta colgarlo.
+    if (silent && (this.loadingStats || this.statsEnVuelo > 0)) return;
     const requestId = ++this.statsRequestId;
     if (!this.statsFrom || !this.statsTo) {
       // Defaults: today → today
@@ -1999,6 +2039,7 @@ export class Dashboard implements OnInit, OnDestroy {
     if (!silent || !this.statsData) this.loadingStats = true;
     if (!silent) this.statsData = null;
     this.statsError = '';
+    this.statsEnVuelo++;
     const todoElProyecto = this.statsPreset === 'proyecto' && (this.statsProyecto !== null || this.statsEdificio !== null);
     this.api.getProductionStats({
       from: this.statsFrom,
@@ -2008,7 +2049,7 @@ export class Dashboard implements OnInit, OnDestroy {
       ...(this.statsEdificio !== null ? { edificio: this.statsEdificio } : {}),
       ...(this.statsTurno !== null ? { turno: this.statsTurno } : {}),
     })
-      .pipe(takeUntil(this.destroy$))
+      .pipe(takeUntil(this.destroy$), finalize(() => this.statsEnVuelo--))
       .subscribe({
         next: (res) => {
           if (requestId !== this.statsRequestId) return;
@@ -2249,7 +2290,10 @@ export class Dashboard implements OnInit, OnDestroy {
     const objetivo = this.objetivoPorDia();
     // Desperdicio sobre el peso total fabricado de la columna.
     const pct = (waste: number, total: number): number | null => total > 0 ? (waste / total) * 100 : null;
-    const base = (found: (ProductionStatsBucket & ProductionStatsTiempos & { modulos_completados: number }) | undefined) => ({
+    // Trabajo y tiempo muerto: por dia vienen en horas; por hora, en minutos.
+    const aHoras = (h: number | undefined, min: number | undefined): number | null =>
+      typeof h === 'number' ? h : typeof min === 'number' ? min / 60 : null;
+    const base = (found: StatsFuente | undefined) => ({
       modulos_completados: found?.modulos_completados || 0,
       fases_completadas: found?.fases_completadas || 0,
       peso_total_kg: this.pesoTotal(found),
@@ -2260,6 +2304,14 @@ export class Dashboard implements OnInit, OnDestroy {
       dificultad_total: found?.dificultad_total || 0,
       tiempo_inferior_min: found?.tiempo_inferior_min ?? null,
       tiempo_superior_min: found?.tiempo_superior_min ?? null,
+      horas_turno: aHoras(found?.horas_turno, found?.minutos_turno),
+      horas_trabajo: aHoras(found?.horas_trabajo, found?.minutos_trabajo),
+      horas_muertas: aHoras(found?.horas_muertas, found?.minutos_muertos),
+      horas_fuera_turno: found?.horas_fuera_turno ?? null,
+      sin_registro: !!found?.sin_registro,
+      estimado: !!found?.estimado,
+      abre: found?.abre ?? null,
+      cierra: found?.cierra ?? null,
     });
 
     // Un dia con un turno elegido: ese turno entero (la noche empieza el dia
@@ -2348,11 +2400,25 @@ export class Dashboard implements OnInit, OnDestroy {
 
       let modulos = 0, fases = 0, pt = 0, pi = 0, pf = 0, desp = 0, dif = 0, workDays = 0, meta = 0;
       let tiSum = 0, tiN = 0, tsSum = 0, tsN = 0;
+      let hTurno: number | null = null, hTrabajo: number | null = null, hMuertas: number | null = null;
+      let hFuera: number | null = null, estimado = false;
+      let diasTurno = 0, diasSinRegistro = 0;
       const d = new Date(segStart);
       while (d <= segEnd) {
         const found = byDate.get(this.toLocalIsoDate(d));
         if (found) {
           modulos += found.modulos_completados || 0;
+          if (typeof found.horas_trabajo === 'number') {
+            hTurno = (hTurno ?? 0) + (found.horas_turno ?? 0);
+            hTrabajo = (hTrabajo ?? 0) + found.horas_trabajo;
+            hMuertas = (hMuertas ?? 0) + (found.horas_muertas ?? 0);
+            hFuera = (hFuera ?? 0) + (found.horas_fuera_turno ?? 0);
+            estimado = estimado || !!found.estimado;
+            if (found.horas_turno) {
+              diasTurno++;
+              if (found.sin_registro) diasSinRegistro++;
+            }
+          }
           fases += found.fases_completadas || 0;
           pt += this.pesoTotal(found);
           pi += found.peso_malla_inicial_kg || 0;
@@ -2390,6 +2456,15 @@ export class Dashboard implements OnInit, OnDestroy {
         dificultad_total: dif,
         tiempo_inferior_min: tiN ? tiSum / tiN : null,
         tiempo_superior_min: tsN ? tsSum / tsN : null,
+        horas_turno: hTurno,
+        horas_trabajo: hTrabajo,
+        horas_muertas: hMuertas,
+        horas_fuera_turno: hFuera,
+        // Una semana entera sin señal es "sin registro"; la mitad, ya no.
+        sin_registro: diasTurno > 0 && diasSinRegistro === diasTurno,
+        estimado,
+        abre: null,
+        cierra: null,
         meta_modulos: meta,
         working_days: workDays,
         granularity: 'week',
@@ -2476,8 +2551,33 @@ export class Dashboard implements OnInit, OnDestroy {
     const valores = (pick: (b: StatsBucket) => number | null): Array<number | null> =>
       buckets.map(b => b.futuro ? null : pick(b));
     const hayObjetivo = buckets.some(b => b.meta_modulos > 0);
-    const cap = Math.max(0, ...buckets.map(b => b.granularity === 'week' ? 0 : b.meta_modulos));
-    const capLabel = formatNumber(cap, 'en-US', '1.0-1');
+    // El objetivo va por tramos de montaje: si cambia dentro del rango, se dice el rango.
+    const metas = buckets.filter(b => b.granularity !== 'week' && b.meta_modulos > 0).map(b => b.meta_modulos);
+    const cap = metas.length ? Math.max(...metas) : 0;
+    const minCap = metas.length ? Math.min(...metas) : 0;
+    const capLabel = Math.abs(cap - minCap) < 0.05 ? formatNumber(cap, 'en-US', '1.0-1')
+      : `${formatNumber(metas[0], 'en-US', '1.0-1')} → ${formatNumber(metas[metas.length - 1], 'en-US', '1.0-1')}`;
+    // La dificultad por modulo va en la grafica de modulos, en su escala: su media del
+    // periodo cae a la altura de la media de modulos (encima, mas dificil de lo normal).
+    // Un solo eje, el de los modulos; la lectura dice los puntos reales.
+    const pasados = buckets.filter(b => !b.futuro);
+    const conModulos = pasados.filter(b => b.modulos_completados > 0);
+    const totalModulos = conModulos.reduce((total, b) => total + b.modulos_completados, 0);
+    const mediaModulos = conModulos.length ? totalModulos / conModulos.length : 0;
+    const mediaDificultad = totalModulos > 0
+      ? conModulos.reduce((total, b) => total + b.dificultad_total, 0) / totalModulos : 0;
+    // Del turno, la parte trabajada (lo de fuera de turno cuenta dentro del entero).
+    const horasTexto = (h: number): string => granularity === 'hour'
+      ? `${Math.round(h * 60)} min` : `${formatNumber(h, 'en-US', '1.0-1')} h`;
+    const trabajado = (b: StatsBucket): number | null => {
+      const total = (b.horas_trabajo ?? 0) + (b.horas_muertas ?? 0);
+      return b.horas_trabajo === null || total <= 0 ? null : ((b.horas_trabajo ?? 0) / total) * 100;
+    };
+    const desperdicioVecino = (v: StatsVecino | null): number | null =>
+      v && v.desperdicio_pct !== null ? (v.peso * v.desperdicio_pct) / 100 : null;
+    const porModulo = (modulos: number, dificultad: number): number | null => modulos > 0 ? dificultad / modulos : null;
+    const enEscalaDeModulos = (dificultad: number | null): number | null =>
+      dificultad === null || mediaDificultad <= 0 ? null : (dificultad / mediaDificultad) * mediaModulos;
     const vista: StatsVista = {
       labels: buckets.map(b => b.label),
       pending: buckets.map(b => b.en_curso),
@@ -2485,14 +2585,34 @@ export class Dashboard implements OnInit, OnDestroy {
       objetivoLabel: granularity === 'hour' ? `Objetivo ${capLabel} por hora`
         : granularity === 'week' ? 'Objetivo de la semana'
         : `Objetivo ${capLabel} al día`,
-      modulos: [{
-        name: 'Módulos', color: CHART_NARANJA, values: valores(b => b.modulos_completados),
-        prev: prev?.modulos ?? null, next: next?.modulos ?? null,
-      }],
-      peso: [{
-        name: 'Peso', color: CHART_GRIS, values: valores(b => b.peso_total_kg),
-        prev: prev?.peso ?? null, next: next?.peso ?? null,
-      }],
+      modulos: [
+        {
+          name: 'Módulos', color: CHART_NARANJA, values: valores(b => b.modulos_completados),
+          prev: prev?.modulos ?? null, next: next?.modulos ?? null,
+        },
+        {
+          name: 'Dificultad por módulo', color: CHART_AZUL,
+          values: valores(b => enEscalaDeModulos(porModulo(b.modulos_completados, b.dificultad_total))),
+          prev: prev ? enEscalaDeModulos(porModulo(prev.modulos, prev.dificultad)) : null,
+          next: next ? enEscalaDeModulos(porModulo(next.modulos, next.dificultad)) : null,
+          tooltips: buckets.map(b => {
+            const dificultad = b.futuro ? null : porModulo(b.modulos_completados, b.dificultad_total);
+            return dificultad === null ? null : `${formatNumber(dificultad, 'en-US', '1.0-0')} puntos`;
+          }),
+        },
+      ],
+      // Peso y desperdicio, los dos en kilos: la misma escala.
+      peso: [
+        {
+          name: 'Peso producido', color: CHART_NARANJA, values: valores(b => b.peso_total_kg),
+          prev: prev?.peso ?? null, next: next?.peso ?? null,
+        },
+        {
+          // Lo que se tira, en gris oscuro.
+          name: 'Desperdicio', color: CHART_GRIS, values: valores(b => b.desperdicio_kg),
+          prev: desperdicioVecino(prev), next: desperdicioVecino(next),
+        },
+      ],
       tiempo: [
         {
           name: 'Inferior', color: CHART_AZUL, values: valores(b => b.tiempo_inferior_min),
@@ -2503,14 +2623,16 @@ export class Dashboard implements OnInit, OnDestroy {
           prev: prev?.tiempo_superior ?? null, next: next?.tiempo_superior ?? null,
         },
       ],
-      desperdicio: [{
-        name: 'Desperdicio', color: CHART_GRIS, values: valores(b => b.desperdicio_pct),
-        prev: prev?.desperdicio_pct ?? null, next: next?.desperdicio_pct ?? null,
+      horas: [{
+        name: 'Trabajado', color: CHART_AZUL, values: valores(trabajado),
+        tooltips: buckets.map(b => {
+          const pct = b.futuro ? null : trabajado(b);
+          return pct === null ? null
+            : `${formatNumber(pct, 'en-US', '1.0-0')} % · ${horasTexto(b.horas_trabajo ?? 0)} de trabajo + ${horasTexto(b.horas_muertas ?? 0)} muertas`;
+        }),
       }],
-      dificultad: [{
-        name: 'Dificultad', color: CHART_GRIS, values: valores(b => b.dificultad_total),
-        prev: prev?.dificultad ?? null, next: next?.dificultad ?? null,
-      }],
+      horasUnidad: granularity === 'hour' ? 'min' : 'h',
+      conSenales: granularity === 'day',
       filas: buckets.filter(b => !b.futuro),
       detalleTitulo: granularity === 'hour' ? 'Detalle por hora' : granularity === 'week' ? 'Detalle por semana' : 'Detalle por día',
       periodoLabel: granularity === 'hour' ? 'Hora' : granularity === 'week' ? 'Semana' : 'Día',
@@ -2519,44 +2641,28 @@ export class Dashboard implements OnInit, OnDestroy {
     return vista;
   }
 
-  /** Indicadores derivados del rango: cumplimiento, dias en objetivo, medias. */
+  /** Indicadores derivados del rango: media, mejor dia (u hora), pesos. */
   statsResumen(): StatsResumen | null {
     const data = this.statsData;
     if (!data) return null;
     const modulos = data.totals.modulos_completados || 0;
-    const target = this.statsPeriodTarget();
-    const objetivo = this.objetivoPorDia();
-    const conProduccion = data.por_dia.filter(d => d.modulos_completados > 0);
+    // Un dia: por hora (media de las horas con produccion y la mejor hora).
+    const porHora = this.statsFrom === this.statsTo && !!data.por_hora;
+    const periodos = porHora
+      ? (data.por_hora || []).map(h => ({ modulos: h.modulos_completados, label: `${h.hora}h` }))
+      : data.por_dia.map(d => ({ modulos: d.modulos_completados, label: this.dayLabel(d.fecha) }));
+    const conProduccion = periodos.filter(p => p.modulos > 0);
     const mejor = conProduccion.reduce<typeof conProduccion[number] | null>(
-      (best, d) => !best || d.modulos_completados > best.modulos_completados ? d : best, null);
-
-    let diasCumplidos: StatsResumen['diasCumplidos'] = null;
-    const from = this.parseIsoDate(this.statsFrom);
-    const to = this.parseIsoDate(this.statsTo);
-    if (objetivo.size > 0 && from && to && from < to) {
-      const byDate = new Map(data.por_dia.map(d => [d.fecha, d.modulos_completados || 0]));
-      const todayIso = this.toLocalIsoDate(new Date());
-      let cumplidos = 0, total = 0;
-      for (const d = new Date(from); d <= to; d.setDate(d.getDate() + 1)) {
-        const iso = this.toLocalIsoDate(d);
-        const cap = objetivo.get(iso) ?? 0;
-        if (iso > todayIso || cap <= 0) continue;
-        const llega = (byDate.get(iso) || 0) >= cap - 1e-9;
-        // Hoy aun puede llegar: solo cuenta si ya lo ha hecho.
-        if (iso === todayIso && !llega) continue;
-        total++;
-        if (llega) cumplidos++;
-      }
-      if (total > 0) diasCumplidos = { cumplidos, total };
-    }
+      (best, p) => !best || p.modulos > best.modulos ? p : best, null);
+    const producido = this.pesoTotal(data.totals);
 
     return {
-      cumplimiento: target !== null && target > 0 ? Math.round((modulos / target) * 100) : null,
-      diasCumplidos,
-      mediaDiaria: conProduccion.length ? modulos / conProduccion.length : null,
-      mejorDia: mejor ? { modulos: mejor.modulos_completados, label: this.dayLabel(mejor.fecha) } : null,
-      kgPorModulo: modulos > 0 ? this.pesoTotal(data.totals) / modulos : null,
+      porHora,
+      media: conProduccion.length ? modulos / conProduccion.length : null,
+      mejor,
+      kgPorModulo: modulos > 0 ? producido / modulos : null,
       dificultadMedia: modulos > 0 ? (data.totals.dificultad_total || 0) / modulos : null,
+      pesoTotal: producido + (data.totals.desperdicio_kg || 0),
     };
   }
 
@@ -2589,15 +2695,103 @@ export class Dashboard implements OnInit, OnDestroy {
     return `${fase.medido ? '' : '~'}${Math.round(fase.minutos)}`;
   }
 
+  /** Medido: el trabajo, lo que fue sin pasar diapositiva, lo parado (y fuera de turno) y si pernocto. */
   minutosTitulo(fase: ProductionStatsModuloFase | null): string {
     if (!fase || fase.minutos === null) return 'Sin tiempo registrado';
-    return fase.medido ? 'Medido en la mesa' : 'Aproximado entre paneles hechos';
+    if (!fase.medido) return 'Aproximado entre paneles hechos';
+    const partes = [`${Math.round(fase.minutos)} min de trabajo medidos en la mesa`];
+    if (fase.sin_pulsar_min) partes[0] += ` (${Math.round(fase.sin_pulsar_min)} sin pasar diapositiva)`;
+    if (fase.parado_min) {
+      let parado = `${Math.round(fase.parado_min)} min parada`;
+      if (fase.parado_fuera_min) parado += ` (${Math.round(fase.parado_fuera_min)} fuera de turno)`;
+      partes.push(parado);
+    }
+    if (fase.pernocto) partes.push('pernoctó en la mesa');
+    return partes.join(' · ');
   }
 
   minutosModuloLabel(modulo: ProductionStatsModulo): string {
     if (modulo.minutos === null) return '—';
     const medido = !!modulo.inferior?.medido && !!modulo.superior?.medido;
     return `${medido ? '' : '~'}${Math.round(modulo.minutos)}`;
+  }
+
+  /** Lo que el modulo estuvo parado en la mesa: la suma de sus dos fases, si las dos se midieron
+   *  (como la mediana del indicador); null si alguna es aproximada. */
+  paradoModulo(modulo: ProductionStatsModulo): number | null {
+    const inferior = modulo.inferior?.parado_min;
+    const superior = modulo.superior?.parado_min;
+    return typeof inferior === 'number' && typeof superior === 'number' ? inferior + superior : null;
+  }
+
+  /** Grafica del turno: debajo de la linea lo trabajado, encima el tiempo muerto. */
+  readonly splitHoras: SplitArea = { below: CHART_AZUL, above: CHART_AMARILLO, belowLabel: 'Trabajo', aboveLabel: 'Tiempo muerto' };
+
+  /** El servidor ya deduce trabajo y tiempo muerto (uno antiguo solo da horas de jornada). */
+  hayActividad(): boolean {
+    return this.statsData?.totals.horas_trabajo != null;
+  }
+
+  /** Hay trabajo medido: los ritmos van por hora de trabajo. */
+  ritmoDeTrabajo(): boolean {
+    const totals = this.statsData?.totals;
+    return !!totals && totals.modulos_por_hora_trabajo != null && !!totals.horas_trabajo;
+  }
+
+  /** Horas con un decimal, o guion. */
+  horasLabel(horas: number | null | undefined): string {
+    return typeof horas === 'number' ? formatNumber(horas, 'en-US', '1.0-1') : '—';
+  }
+
+  /** Horas de una fila: por hora del dia, en minutos, que una hora partida en decimas no se lee. */
+  horasFilaLabel(fila: StatsBucket, horas: number | null): string {
+    if (horas === null) return '—';
+    if (fila.granularity === 'hour') return `${Math.round(horas * 60)} min`;
+    return this.horasLabel(horas);
+  }
+
+  /** Titulo del indicador de horas: el turno del periodo y, si lo hay, el trabajo fuera de turno. */
+  horasTitulo(totals: ProductionStatsResponse['totals']): string {
+    const base = `Horas de turno del período: ${this.horasLabel(totals.horas_productivas)} h. `
+      + 'Trabajo: mientras las mesas dan señales (diapositivas, fotos, fases hechas). Muertas: turno sin trabajo.';
+    return totals.horas_fuera_turno
+      ? `${base} Incluye ${this.horasLabel(totals.horas_fuera_turno)} h trabajadas fuera de turno.`
+      : base;
+  }
+
+  /** Titulo de una fila: su turno y sus horas de trabajo y muertas (en que se fue
+   *  el tiempo muerto no se detalla: es cosa de la ferralla). */
+  horasFilaTitulo(fila: StatsBucket): string {
+    if (fila.horas_trabajo === null) return '';
+    const unidad = fila.granularity === 'hour' ? '' : ' h';
+    const fuera = fila.horas_fuera_turno ?? 0;
+    // Dentro del turno, trabajo + muertas suman el turno; lo de fuera va aparte.
+    const partes = [
+      `Turno de ${this.horasFilaLabel(fila, fila.horas_turno)}${unidad}: ${this.horasFilaLabel(fila, fila.horas_trabajo - fuera)}${unidad} de trabajo`
+      + ` + ${this.horasFilaLabel(fila, fila.horas_muertas)}${unidad} muertas`,
+    ];
+    if (fuera > 0) partes.push(`${this.horasFilaLabel(fila, fuera)}${unidad} trabajadas fuera de turno`);
+    if (fila.sin_registro) partes.push('sin ninguna señal en el turno');
+    if (fila.estimado) partes.push('estimado: sin registro de eventos, solo fotos y fases hechas');
+    return partes.join(' · ');
+  }
+
+  /** "06:12 – 15:48": primera y ultima señal del dia, en la hora de la fabrica
+   *  (el servidor ya las manda en su zona: no se pasan por la del navegador). */
+  senalesLabel(fila: StatsBucket): string {
+    if (!fila.abre || !fila.cierra) return '—';
+    return `${fila.abre.slice(11, 16)} – ${fila.cierra.slice(11, 16)}`;
+  }
+
+  /** Nota al pie con el criterio del servidor para deducir el trabajo de las señales. */
+  criterioNota(): string {
+    const c = this.statsData?.criterio;
+    if (!c) return '';
+    const sinPulsar = c.sin_pulsar_min
+      ? ` Dentro de una fase, un hueco de hasta ${c.sin_pulsar_min} min cuenta como trabajo sin pasar diapositiva.` : '';
+    return `Criterio ${c.version}: una mesa trabaja mientras sus señales (diapositivas, fotos, fases hechas) van a menos de `
+      + `${c.umbral_min} min; solo con fotos, ${c.umbral_fotos_min} min y queda como estimado. El resto del turno es tiempo muerto.`
+      + sinPulsar;
   }
 
   private parseIsoDate(iso: string): Date | null {
@@ -2624,14 +2818,19 @@ export class Dashboard implements OnInit, OnDestroy {
     return semana.has(d.getDay());
   }
 
-  /** Objetivo de cada dia: el del periodo repartido por los turnos de cada dia. */
+  /** Objetivo de cada dia: el ritmo de su tramo (lo que exigen los montajes), que manda el servidor. */
   private objetivoPorDia(): Map<string, number> {
     const objetivo = new Map<string, number>();
     const data = this.statsData;
     const target = this.statsPeriodTarget();
     if (!data || target === null || target <= 0) return objetivo;
     const dias = data.range.dias;
+    if (dias?.some(dia => typeof dia.objetivo === 'number')) {
+      dias.forEach(dia => { if (dia.objetivo) objetivo.set(dia.fecha, dia.objetivo); });
+      return objetivo;
+    }
     if (dias) {
+      // Servidor anterior a los tramos: el objetivo del periodo repartido por turnos.
       const turnos = dias.reduce((total, dia) => total + dia.turnos, 0);
       if (turnos > 0) dias.forEach(dia => objetivo.set(dia.fecha, (target * dia.turnos) / turnos));
       return objetivo;

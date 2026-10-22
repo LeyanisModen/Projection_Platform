@@ -65,11 +65,30 @@ class ProductionTargetTests(APITestCase):
         self.complete(75, '2026-09-11T15:00:00')
         self.assertEqual(self.stats(end='2026-09-30')['esperado']['modulos_esperados'], 5)
 
-    def test_factory_weekends_are_used_instead_of_a_fixed_monday_friday_schedule(self):
-        self.profile.capture_active_days = ['SAT', 'SUN']
+    def test_a_night_or_weekend_shift_does_not_add_working_days(self):
+        # Doblar turno es cosa de la ferralla: el objetivo va por dias laborables.
+        self.profile.turnos = [
+            {'nombre': 'Noche', 'activo': True, 'horario': {day: ['19:00', '06:00'] for day in ('SAT', 'SUN')}},
+        ]
         self.profile.save()
-        self.assertEqual(self.stats('2026-09-19', '2026-09-20')['esperado']['modulos_esperados'], 40)
-        self.assertEqual(self.stats()['esperado']['modulos_esperados'], 0)
+        self.assertEqual(self.stats('2026-09-19', '2026-09-20')['esperado']['modulos_esperados'], 0)
+        self.assertEqual(self.stats()['esperado']['modulos_esperados'], 8)
+
+    def test_the_tightest_mounting_sets_the_pace_until_its_date(self):
+        """Como lo describe el usuario: con la media simple se llega al primer
+        forjado pero no a los siguientes, asi que lo que falta se adelanta."""
+        urgent = Proyecto.objects.create(nombre='Urgente', usuario=self.factory, fecha_montaje=date(2026, 9, 16))
+        Modulo.objects.bulk_create([Modulo(nombre=f'U{i}', proyecto=urgent) for i in range(30)])
+        # 30 modulos en 2 dias (15/dia) aprietan mas que 110 en 10 (11/dia):
+        # 15 al dia hasta el 16/09 y los 80 restantes a 10 al dia hasta el 28/09.
+        esperado = self.stats(end='2026-09-16')['esperado']
+        self.assertEqual(esperado['modulos_esperados'], 40)
+        self.assertEqual(esperado['por_dia'], {'2026-09-14': 15.0, '2026-09-15': 15.0, '2026-09-16': 10.0})
+        self.assertEqual(self.stats()['esperado']['modulos_esperados'], 15)
+        self.assertEqual(self.stats(end='2026-09-30')['esperado']['modulos_esperados'], 110)
+        # El objetivo de cada dia viaja con el rango de las estadisticas.
+        dias = {d['fecha']: d['objetivo'] for d in self.stats(end='2026-09-16')['range']['dias']}
+        self.assertEqual(dias, {'2026-09-14': 15.0, '2026-09-15': 15.0, '2026-09-16': 10.0})
 
     def test_factory_makes_projects_in_sequence_and_respects_project_and_factory_scope(self):
         second = Proyecto.objects.create(
@@ -132,7 +151,8 @@ class ProductionTargetTests(APITestCase):
             self.assertEqual(stats['totals']['modulos_completados'], 20)
             self.assertEqual(stats['esperado']['modulos_esperados'], 8)
 
-    def test_no_configured_working_days_has_no_target(self):
-        self.profile.capture_active_days = []
-        self.profile.save()
-        self.assertIsNone(self.stats()['esperado']['modulos_esperados'])
+    def test_the_target_does_not_come_from_any_capacity(self):
+        esperado = self.stats()['esperado']
+        self.assertNotIn('capacidad_diaria_modulos', esperado)
+        # El ritmo necesario de hoy (el plan en vivo); el montaje ya paso.
+        self.assertEqual(esperado['ritmo_necesario'], 0)

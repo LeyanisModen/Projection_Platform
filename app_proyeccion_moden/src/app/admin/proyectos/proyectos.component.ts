@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ApiService, User, Proyecto } from '../../services/api.service';
 import { forkJoin } from 'rxjs';
 import { Router } from '@angular/router';
-import { factoryCapacity, planningIssues, planningLabel, planningTight, requiredDaily, tightProjects } from '../../shared/project-planning';
+import { planningIssues, planningLabel, planningPace, queueOutOfOrder } from '../../shared/project-planning';
 import { ordenarPorEdificio } from '../../shared/edificios';
 
 interface ProjectGroup {
@@ -31,10 +31,8 @@ interface ProjectGroup {
   styleUrls: ['../admin-theme.css', './proyectos.component.css']
 })
 export class ProyectosComponent implements OnInit {
-  readonly requiredDaily = requiredDaily;
-  readonly factoryCapacity = factoryCapacity;
-  readonly tightProjects = tightProjects;
-  readonly planningTight = planningTight;
+  readonly planningPace = planningPace;
+  readonly queueOutOfOrder = queueOutOfOrder;
   readonly planningIssues = planningIssues;
   readonly planningLabel = planningLabel;
   users: User[] = [];
