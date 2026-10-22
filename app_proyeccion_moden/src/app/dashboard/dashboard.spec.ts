@@ -116,8 +116,8 @@ describe('Dashboard', () => {
       expect(text('.stats-kpi-ritmo-peso .stats-kpi-value')).toBe('275 kg/h');
       // En que se fue el tiempo muerto no se detalla.
       expect(fixture.nativeElement.querySelector('.stats-muerto-causas')).toBeNull();
-      // Modulos (2), peso y desperdicio (1), turno trabajado y tiempo por panel (2).
-      expect(fixture.nativeElement.querySelectorAll('app-stats-line-chart').length).toBe(5);
+      // Modulos con dificultad (1), peso y desperdicio (1), turno trabajado y tiempo por panel (2).
+      expect(fixture.nativeElement.querySelectorAll('app-stats-line-chart').length).toBe(4);
       expect(fixture.nativeElement.querySelector('app-stats-line-chart.stats-chart-turno')).not.toBeNull();
       expect(text('.stats-criterio')).toContain('van a menos de 20 min');
       expect(text('.stats-criterio')).toContain('hueco de hasta 90 min');
@@ -139,7 +139,7 @@ describe('Dashboard', () => {
       expect(fixture.nativeElement.querySelector('.stats-fila-trabajo')).toBeNull();
       expect(fixture.nativeElement.querySelector('.stats-mesa-muerto')).toBeNull();
       expect(fixture.nativeElement.querySelector('.stats-criterio')).toBeNull();
-      expect(fixture.nativeElement.querySelectorAll('app-stats-line-chart').length).toBe(4);
+      expect(fixture.nativeElement.querySelectorAll('app-stats-line-chart').length).toBe(3);
       expect(fixture.nativeElement.querySelector('app-stats-line-chart.stats-chart-turno')).toBeNull();
     });
 
@@ -334,13 +334,14 @@ describe('Dashboard', () => {
       expect(vista.modulos[0].next).toBe(2);
       expect(vista.tiempo.map(serie => serie.values[0])).toEqual([40, 20]);
       expect(vista.tiempo[0].values[1]).toBeNull();
-      // Modulos y dificultad por modulo sobre su media (100): el martes hizo pocos pero mas dificiles.
-      const redondo = (valores: Array<number | null>) => valores.map(v => v === null ? null : Math.round(v));
-      expect(vista.relacionModulos.map(s => s.name)).toEqual(['Módulos', 'Dificultad por módulo']);
-      expect(redondo(vista.relacionModulos[0].values)).toEqual([129, 43, 0, 129, 0]);
-      expect(redondo(vista.relacionModulos[1].values)).toEqual([78, 233, null, 78, null]);
-      expect(Math.round(vista.relacionModulos[0].prev!)).toBe(171);
-      expect(vista.relacionModulos[1].tooltips![1]).toBe('50 puntos por módulo · 233 % de la media');
+      // La dificultad por modulo, en la misma grafica y a la escala de los modulos: su media
+      // cae en la media de modulos (7/3). El martes hizo pocos pero mas dificiles.
+      const decima = (valores: Array<number | null>) => valores.map(v => v === null ? null : Math.round(v * 10) / 10);
+      expect(vista.modulos.map(s => s.name)).toEqual(['Módulos', 'Dificultad por módulo']);
+      expect(decima(vista.modulos[1].values)).toEqual([1.8, 5.4, null, 1.8, null]);
+      expect(Math.round(vista.modulos[1].prev! * 10) / 10).toBe(1.4);
+      // La lectura dice los puntos reales, sin porcentajes.
+      expect(vista.modulos[1].tooltips![1]).toBe('50 puntos');
       // Peso y desperdicio en la misma grafica, los dos en kilos.
       expect(vista.peso.map(s => s.name)).toEqual(['Peso producido', 'Desperdicio']);
       expect(vista.peso[1].values).toEqual([10, 10, 0, 10, 0]);
@@ -473,7 +474,7 @@ describe('Dashboard', () => {
       expect(text('.stats-kpi-modulos .stats-kpi-value')).toBe('53 / 64 objetivo');
       expect(fixture.nativeElement.querySelector('.stats-table')).not.toBeNull();
       expect(fixture.nativeElement.querySelector('.stats-charts')).not.toBeNull();
-      expect(fixture.nativeElement.querySelectorAll('app-stats-line-chart').length).toBe(4);  // sin actividad del servidor no hay grafica del turno
+      expect(fixture.nativeElement.querySelectorAll('app-stats-line-chart').length).toBe(3);  // sin actividad del servidor no hay grafica del turno
       expect(fixture.nativeElement.querySelector('.stats-empty')).toBeNull();
     });
 

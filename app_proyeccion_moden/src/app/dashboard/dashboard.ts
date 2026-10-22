@@ -106,8 +106,6 @@ export interface StatsVista {
   tiempo: LineChartSeries[];
   /** % del turno trabajado: debajo de la linea el trabajo, encima el tiempo muerto. */
   horas: LineChartSeries[];
-  /** Modulos y dificultad por modulo, cada uno sobre su media del periodo (100 = la media). */
-  relacionModulos: LineChartSeries[];
   /** Por hora del dia, las horas van en minutos. */
   horasUnidad: 'h' | 'min';
   /** Solo las filas por dia traen la primera y la ultima señal. */
@@ -2548,8 +2546,9 @@ export class Dashboard implements OnInit, OnDestroy {
     const minCap = metas.length ? Math.min(...metas) : 0;
     const capLabel = Math.abs(cap - minCap) < 0.05 ? formatNumber(cap, 'en-US', '1.0-1')
       : `${formatNumber(metas[0], 'en-US', '1.0-1')} → ${formatNumber(metas[metas.length - 1], 'en-US', '1.0-1')}`;
-    // Relaciones en un mismo eje (nunca dos escalas): cada serie sobre su media
-    // del periodo, 100 = la media. La lectura dice el dato real.
+    // La dificultad por modulo va en la grafica de modulos, en su escala: su media del
+    // periodo cae a la altura de la media de modulos (encima, mas dificil de lo normal).
+    // Un solo eje, el de los modulos; la lectura dice los puntos reales.
     const pasados = buckets.filter(b => !b.futuro);
     const conModulos = pasados.filter(b => b.modulos_completados > 0);
     const totalModulos = conModulos.reduce((total, b) => total + b.modulos_completados, 0);
@@ -2565,16 +2564,9 @@ export class Dashboard implements OnInit, OnDestroy {
     };
     const desperdicioVecino = (v: StatsVecino | null): number | null =>
       v && v.desperdicio_pct !== null ? (v.peso * v.desperdicio_pct) / 100 : null;
-    const indice = (valor: number | null | undefined, media: number): number | null =>
-      valor === null || valor === undefined || media <= 0 ? null : (valor / media) * 100;
     const porModulo = (modulos: number, dificultad: number): number | null => modulos > 0 ? dificultad / modulos : null;
-    const lectura = (pick: (b: StatsBucket) => number | null, texto: (v: number) => string, media: number) =>
-      buckets.map(b => {
-        const valor = b.futuro ? null : pick(b);
-        if (valor === null) return null;
-        const sobreMedia = indice(valor, media);
-        return sobreMedia === null ? texto(valor) : `${texto(valor)} · ${formatNumber(sobreMedia, 'en-US', '1.0-0')} % de la media`;
-      });
+    const enEscalaDeModulos = (dificultad: number | null): number | null =>
+      dificultad === null || mediaDificultad <= 0 ? null : (dificultad / mediaDificultad) * mediaModulos;
     const vista: StatsVista = {
       labels: buckets.map(b => b.label),
       pending: buckets.map(b => b.en_curso),
@@ -2582,10 +2574,22 @@ export class Dashboard implements OnInit, OnDestroy {
       objetivoLabel: granularity === 'hour' ? `Objetivo ${capLabel} por hora`
         : granularity === 'week' ? 'Objetivo de la semana'
         : `Objetivo ${capLabel} al día`,
-      modulos: [{
-        name: 'Módulos', color: CHART_NARANJA, values: valores(b => b.modulos_completados),
-        prev: prev?.modulos ?? null, next: next?.modulos ?? null,
-      }],
+      modulos: [
+        {
+          name: 'Módulos', color: CHART_NARANJA, values: valores(b => b.modulos_completados),
+          prev: prev?.modulos ?? null, next: next?.modulos ?? null,
+        },
+        {
+          name: 'Dificultad por módulo', color: CHART_AZUL,
+          values: valores(b => enEscalaDeModulos(porModulo(b.modulos_completados, b.dificultad_total))),
+          prev: prev ? enEscalaDeModulos(porModulo(prev.modulos, prev.dificultad)) : null,
+          next: next ? enEscalaDeModulos(porModulo(next.modulos, next.dificultad)) : null,
+          tooltips: buckets.map(b => {
+            const dificultad = b.futuro ? null : porModulo(b.modulos_completados, b.dificultad_total);
+            return dificultad === null ? null : `${formatNumber(dificultad, 'en-US', '1.0-0')} puntos`;
+          }),
+        },
+      ],
       // Peso y desperdicio, los dos en kilos: la misma escala.
       peso: [
         {
@@ -2615,21 +2619,6 @@ export class Dashboard implements OnInit, OnDestroy {
             : `${formatNumber(pct, 'en-US', '1.0-0')} % · ${horasTexto(b.horas_trabajo ?? 0)} de trabajo + ${horasTexto(b.horas_muertas ?? 0)} muertas`;
         }),
       }],
-      relacionModulos: [
-        {
-          name: 'Módulos', color: CHART_NARANJA, values: valores(b => indice(b.modulos_completados, mediaModulos)),
-          prev: prev ? indice(prev.modulos, mediaModulos) : null, next: next ? indice(next.modulos, mediaModulos) : null,
-          tooltips: lectura(b => b.modulos_completados, v => `${formatNumber(v, 'en-US', '1.0-1')} módulos`, mediaModulos),
-        },
-        {
-          name: 'Dificultad por módulo', color: CHART_AZUL,
-          values: valores(b => indice(porModulo(b.modulos_completados, b.dificultad_total), mediaDificultad)),
-          prev: prev ? indice(porModulo(prev.modulos, prev.dificultad), mediaDificultad) : null,
-          next: next ? indice(porModulo(next.modulos, next.dificultad), mediaDificultad) : null,
-          tooltips: lectura(b => porModulo(b.modulos_completados, b.dificultad_total),
-            v => `${formatNumber(v, 'en-US', '1.0-0')} puntos por módulo`, mediaDificultad),
-        },
-      ],
       horasUnidad: granularity === 'hour' ? 'min' : 'h',
       conSenales: granularity === 'day',
       filas: buckets.filter(b => !b.futuro),

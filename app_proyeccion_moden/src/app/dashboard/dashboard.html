@@ -195,11 +195,9 @@
                             }
                             @if (vista) {
                             <div class="stats-charts">
-                                <app-stats-line-chart title="Módulos fabricados" unit="módulos" [height]="260"
+                                <app-stats-line-chart title="Módulos fabricados y dificultad" unit="módulos" [height]="260" [primaryArea]="true"
                                     [labels]="vista.labels" [series]="vista.modulos" [target]="vista.objetivo"
                                     [targetLabel]="vista.objetivoLabel" [pending]="vista.pending" />
-                                <app-stats-line-chart class="stats-chart-relacion" title="Módulos y dificultad por módulo" unit="%"
-                                    [baseline]="100" baselineLabel="media" [labels]="vista.labels" [series]="vista.relacionModulos" />
                             </div>
                             }
                         </section>

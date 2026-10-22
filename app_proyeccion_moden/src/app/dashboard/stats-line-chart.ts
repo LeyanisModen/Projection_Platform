@@ -146,10 +146,6 @@ let nextChartId = 0;
           @for (line of lines(); track line.name) {
             @if (line.area) { <path [attr.d]="line.area" [attr.fill]="'url(#' + line.areaId + ')'" /> }
           }
-          @if (baselineLine(); as referencia) {
-            <line class="lc-baseline" [attr.x1]="referencia.x1" [attr.x2]="referencia.x2" [attr.y1]="referencia.y" [attr.y2]="referencia.y" />
-            <text class="lc-baseline-label" [attr.x]="referencia.x1 + 4" [attr.y]="referencia.y - 5">{{ baselineLabel() }}</text>
-          }
           @if (targetPath(); as objetivo) {
             <path class="lc-target" [attr.d]="objetivo.d" />
             <text class="lc-target-label" [attr.x]="objetivo.labelX" [attr.y]="objetivo.labelY" [attr.text-anchor]="objetivo.anchor">{{ targetLabel() }}</text>
@@ -214,8 +210,6 @@ let nextChartId = 0;
     .lc-tick, .lc-xlabel { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
     .lc-target { fill: none; stroke: var(--text); stroke-width: 1.5; stroke-dasharray: 5 4; opacity: 0.8; }
     .lc-target-label { fill: var(--text); font-size: 11px; font-weight: 600; }
-    .lc-baseline { stroke: var(--line-strong); stroke-width: 1; stroke-dasharray: 2 3; }
-    .lc-baseline-label { fill: var(--muted); font-size: 11px; }
     .lc-pico { fill: var(--ink); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
     .lc-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
     .lc-cross { stroke: var(--line-strong); stroke-width: 1; }
@@ -250,9 +244,6 @@ export class StatsLineChart implements AfterViewInit, OnDestroy {
   readonly maxValue = input<number | null>(null);
   /** La primera serie parte el alto: debajo un color, encima otro. */
   readonly split = input<SplitArea | null>(null);
-  /** Linea de referencia sin juicio sobre los puntos (p. ej. 100 = la media). */
-  readonly baseline = input<number | null>(null);
-  readonly baselineLabel = input('');
   /** Columnas aun en curso: por debajo del objetivo no cuentan como incumplidas. */
   readonly pending = input<boolean[]>([]);
   readonly unit = input('');
@@ -289,8 +280,6 @@ export class StatsLineChart implements AfterViewInit, OnDestroy {
       for (const v of [...s.values, s.prev, s.next]) if (typeof v === 'number' && v > max) max = v;
     }
     for (const t of this.target() ?? []) if (typeof t === 'number' && t > max) max = t;
-    const referencia = this.baseline();
-    if (referencia !== null && referencia > max) max = referencia;
     return niceScale(max, this.decimals());
   });
 
@@ -359,13 +348,6 @@ export class StatsLineChart implements AfterViewInit, OnDestroy {
       belowColor: partido.below,
       aboveColor: partido.above,
     };
-  });
-
-  readonly baselineLine = computed(() => {
-    const referencia = this.baseline();
-    if (referencia === null || !this.hasData()) return null;
-    const plot = this.plot();
-    return { y: this.yAt(referencia), x1: plot.x, x2: plot.x + plot.w };
   });
 
   readonly targetPath = computed(() => {
