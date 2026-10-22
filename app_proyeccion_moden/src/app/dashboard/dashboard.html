@@ -534,6 +534,21 @@
                                         <span class="mesa-tipo-chip">{{ getMesaTipoLabel(mesa) }}</span>
                                     </div>
                                     <div class="mesa-header-actions">
+                                        @if (mesa.activa && mesa.tipo === 'SUPERIOR') {
+                                            <div class="mesa-orden-iconos" role="group" aria-label="Orden de la mesa superior">
+                                                @for (opcion of estrategiasSuperior; track opcion.valor) {
+                                                    <button type="button" class="btn-icon mesa-orden-btn"
+                                                        [class.active]="(grupo.estrategia_cola_superior || 'PLANIFICADA') === opcion.valor"
+                                                        [attr.aria-pressed]="(grupo.estrategia_cola_superior || 'PLANIFICADA') === opcion.valor"
+                                                        [disabled]="estrategiaBusyGrupoId === grupo.id"
+                                                        [title]="opcion.ayuda"
+                                                        [attr.aria-label]="'Orden ' + opcion.etiqueta.toLowerCase()"
+                                                        (click)="setEstrategiaColaSuperior(grupo, opcion.valor)">
+                                                        <i [class]="'fa ' + opcion.icono" aria-hidden="true"></i>
+                                                    </button>
+                                                }
+                                            </div>
+                                        }
                                         @if (mesa.locked) { <span class="mesa-badge locked">LOCK</span> }
                                         @if (mesa.blackout) { <span class="mesa-badge blackout">OFF</span> }
                                         @if (isMesaCameraUnavailable(mesa)) {
@@ -569,24 +584,6 @@
                                         </div>
                                     </div>
                                 </div>
-
-                                @if (mesa.activa && mesa.tipo === 'SUPERIOR') {
-                                    <div class="mesa-sup-orden" role="group" aria-label="Orden de la mesa superior">
-                                        <span class="mesa-sup-orden-label">ORDEN</span>
-                                        <div class="mesa-estado-switch mesa-sup-orden-switch">
-                                            @for (opcion of estrategiasSuperior; track opcion.valor) {
-                                                <button type="button" class="estado-opcion"
-                                                    [class.active]="(grupo.estrategia_cola_superior || 'PLANIFICADA') === opcion.valor"
-                                                    [attr.aria-pressed]="(grupo.estrategia_cola_superior || 'PLANIFICADA') === opcion.valor"
-                                                    [disabled]="estrategiaBusyGrupoId === grupo.id"
-                                                    [title]="opcion.ayuda"
-                                                    (click)="setEstrategiaColaSuperior(grupo, opcion.valor)">
-                                                    {{ opcion.etiqueta }}
-                                                </button>
-                                            }
-                                        </div>
-                                    </div>
-                                }
 
                                 @if (!mesa.activa) {
                                     <div class="mesa-empty-inactiva">
