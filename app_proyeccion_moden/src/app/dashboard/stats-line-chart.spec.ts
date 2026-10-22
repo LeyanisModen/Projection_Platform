@@ -1,6 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
-import { StatsLineChart, niceScale } from './stats-line-chart';
+import { StatsLineChart, logScale, niceScale } from './stats-line-chart';
 
 describe('StatsLineChart', () => {
   let fixture: ComponentFixture<StatsLineChart>;
@@ -50,6 +50,27 @@ describe('StatsLineChart', () => {
     fixture.detectChanges();
     expect(Array.from(el().querySelectorAll('.lc-pico')).map(t => t.textContent)).toEqual(['421']);
     expect(Array.from(el().querySelectorAll('.lc-legend li')).map(li => li.textContent?.trim())).toEqual(['Peso producido', 'Desperdicio']);
+  });
+
+  it('can use a logarithmic axis so the small values (the waste next to the weight) are seen', () => {
+    expect(logScale(4059)).toEqual({ max: 10000, ticks: [0, 10, 100, 1000, 10000] });
+    expect(logScale(420)).toEqual({ max: 1000, ticks: [0, 10, 100, 1000] });
+    expect(logScale(12)).toEqual({ max: 100, ticks: [0, 1, 10, 100] });
+    expect(logScale(0)).toEqual({ max: 10, ticks: [0, 1, 10] });
+    fixture.componentRef.setInput('unit', 'kg');
+    fixture.componentRef.setInput('logScale', true);
+    fixture.componentRef.setInput('series', [
+      { name: 'Peso producido', color: '#f0640f', values: [2000, 4059, 0, 3000] },
+      { name: 'Desperdicio', color: '#52606d', values: [80, 160, 0, 120] },
+    ]);
+    fixture.detectChanges();
+    expect(Array.from(el().querySelectorAll('.lc-tick')).map(t => t.textContent)).toEqual(['0', '10', '100', '1,000', '10,000']);
+    // 160 kg de desperdicio queda por encima de la mitad del alto, no pegado al cero.
+    const ys = (serie: number) => Array.from(el().querySelectorAll('svg[role="img"] circle'))
+      .slice(serie * 4, serie * 4 + 4).map(c => Number(c.getAttribute('cy')));
+    const [cero, , , tope] = Array.from(el().querySelectorAll('.lc-grid')).map(l => Number(l.getAttribute('y1')));
+    const desperdicio = ys(1);
+    expect((cero - desperdicio[1]) / (cero - tope)).toBeGreaterThan(0.5);
   });
 
   it('rounds the axis to clean steps', () => {

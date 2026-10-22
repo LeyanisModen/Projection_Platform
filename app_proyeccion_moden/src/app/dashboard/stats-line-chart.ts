@@ -50,6 +50,17 @@ interface ChartLine {
 
 interface LegendItem { kind: 'line' | 'cumple' | 'bajo' | 'target' | 'area'; label: string; color: string; }
 
+/** Eje logaritmico que admite el cero: 0 / 10 / 100 / 1,000 (log10 de 1 + valor). */
+export function logScale(max: number): { max: number; ticks: number[] } {
+  const decadas = Math.max(1, Math.ceil(Math.log10(Math.max(max, 1)) - 1e-9));
+  const top = Math.pow(10, decadas);
+  // Con muchas decadas el 1 se pega al 0: se empieza en 10.
+  const desde = decadas >= 3 ? 1 : 0;
+  const ticks = [0];
+  for (let d = desde; d <= decadas; d++) ticks.push(Math.pow(10, d));
+  return { max: top, ticks };
+}
+
 /** Eje con pasos redondos: 0 / 5 / 10, nunca 0 / 3.7 / 7.4. */
 export function niceScale(max: number, decimals: number): { max: number; ticks: number[] } {
   if (!(max > 0)) return { max: 1, ticks: [0, 1] };
@@ -242,6 +253,8 @@ export class StatsLineChart implements AfterViewInit, OnDestroy {
   readonly primaryArea = input(false);
   /** Techo fijo del eje (p. ej. 100 para un porcentaje). */
   readonly maxValue = input<number | null>(null);
+  /** Eje logaritmico: que los valores pequenos (el desperdicio junto al peso) se vean. */
+  readonly logScale = input(false);
   /** La primera serie parte el alto: debajo un color, encima otro. */
   readonly split = input<SplitArea | null>(null);
   /** Columnas aun en curso: por debajo del objetivo no cuentan como incumplidas. */
@@ -280,7 +293,7 @@ export class StatsLineChart implements AfterViewInit, OnDestroy {
       for (const v of [...s.values, s.prev, s.next]) if (typeof v === 'number' && v > max) max = v;
     }
     for (const t of this.target() ?? []) if (typeof t === 'number' && t > max) max = t;
-    return niceScale(max, this.decimals());
+    return this.logScale() ? logScale(max) : niceScale(max, this.decimals());
   });
 
   readonly ticks = computed(() => this.scale().ticks.map(value => ({ value, y: this.yAt(value), label: this.format(value) })));
@@ -437,7 +450,10 @@ export class StatsLineChart implements AfterViewInit, OnDestroy {
 
   private yAt(value: number): number {
     const plot = this.plot();
-    return plot.y + plot.h * (1 - value / this.scale().max);
+    const fraccion = this.logScale()
+      ? Math.log10(1 + Math.max(value, 0)) / Math.log10(1 + this.scale().max)
+      : value / this.scale().max;
+    return plot.y + plot.h * (1 - fraccion);
   }
 
   private format(value: number): string {

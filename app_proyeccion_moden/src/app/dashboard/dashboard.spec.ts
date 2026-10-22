@@ -1347,6 +1347,27 @@ describe('Dashboard', () => {
       expect(columna.querySelector('.plan-grupo')?.classList.contains('is-terminado')).toBe(true);
     });
 
+    it('opens a finished project with its finished bastidores already shown', () => {
+      const api = TestBed.inject(ApiService);
+      const terminado = {id: 1, nombre: 'A1', grupo_bastidor: 10, inferior_hecho: true, superior_hecho: true, estado: 'COMPLETADO'} as Modulo;
+      const pendiente = {id: 4, nombre: 'B1', grupo_bastidor: 11, inferior_hecho: false, superior_hecho: false} as Modulo;
+      const modulos = vi.spyOn(api, 'getProyectoModulos').mockReturnValue(of([terminado]));
+      vi.spyOn(api, 'getGruposBastidor').mockReturnValue(of([]));
+      // Por el recuento del proyecto, nada mas abrir.
+      component.openPlanModal({id: 7, nombre: 'Obra', modulos_count: 1, modulos_completados: 1} as Proyecto);
+      expect(component.planModalShowDone).toBe(true);
+      component.closePlanModal();
+      expect(component.planModalShowDone).toBe(false);
+      // Por sus modulos, si el recuento no lo decia.
+      component.openPlanModal({id: 7, nombre: 'Obra'} as Proyecto);
+      expect(component.planModalShowDone).toBe(true);
+      component.closePlanModal();
+      // Uno a medias: plegados como siempre.
+      modulos.mockReturnValue(of([terminado, pendiente]));
+      component.openPlanModal({id: 7, nombre: 'Obra', modulos_count: 2, modulos_completados: 1} as Proyecto);
+      expect(component.planModalShowDone).toBe(false);
+    });
+
     it('keeps bastidores on hold at the bottom of their mesa with a release button', () => {
       component.planModalModulos = [
         {id: 1, nombre: 'A1', grupo_bastidor: 10, inferior_hecho: false, superior_hecho: false} as Modulo,

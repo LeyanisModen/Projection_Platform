@@ -366,6 +366,8 @@ export class Dashboard implements OnInit, OnDestroy {
     this.planModalModulos = [];
     this.planModalGrupos = [];
     this.planModalError = '';
+    // Un proyecto terminado solo tiene bastidores terminados: se abren a la vista.
+    this.planModalShowDone = !!proyecto.modulos_count && (proyecto.modulos_completados ?? 0) >= proyecto.modulos_count;
     this.loadingPlanModal = true;
     this.cdr.detectChanges();
 
@@ -376,6 +378,7 @@ export class Dashboard implements OnInit, OnDestroy {
       next: ({ modulos, grupos }) => {
         this.planModalModulos = modulos;
         this.planModalGrupos = grupos;
+        if (modulos.length && modulos.every(m => this.moduloEstadoClass(m) === 'done')) this.planModalShowDone = true;
         this.loadingPlanModal = false;
         this.cdr.detectChanges();
       },
@@ -2593,11 +2596,12 @@ export class Dashboard implements OnInit, OnDestroy {
       // Peso y desperdicio, los dos en kilos: la misma escala.
       peso: [
         {
-          name: 'Peso producido', color: CHART_GRIS, values: valores(b => b.peso_total_kg),
+          name: 'Peso producido', color: CHART_NARANJA, values: valores(b => b.peso_total_kg),
           prev: prev?.peso ?? null, next: next?.peso ?? null,
         },
         {
-          name: 'Desperdicio', color: CHART_NARANJA, values: valores(b => b.desperdicio_kg),
+          // Lo que se tira, en gris oscuro.
+          name: 'Desperdicio', color: CHART_GRIS, values: valores(b => b.desperdicio_kg),
           prev: desperdicioVecino(prev), next: desperdicioVecino(next),
         },
       ],
