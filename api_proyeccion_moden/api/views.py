@@ -1539,7 +1539,7 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         user = self.request.user
         if user.is_staff or user.is_superuser:
             return self._annotate_counts(
-                Proyecto.objects.select_related('usuario', 'usuario__profile')
+                Proyecto.objects.select_related('usuario', 'usuario__profile').prefetch_related('checks')
             ).order_by("nombre")
         if user.is_authenticated:
             return self._annotate_counts(

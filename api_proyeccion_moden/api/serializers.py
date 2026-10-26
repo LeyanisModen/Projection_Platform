@@ -239,6 +239,8 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
     checks_total = serializers.SerializerMethodField()
     checks_completados = serializers.SerializerMethodField()
     checks_bloqueantes_pendientes = serializers.SerializerMethodField()
+    # Los pasos uno a uno, para el listado de la oficina (a la ferralla no le llegan).
+    checks_resumen = serializers.SerializerMethodField()
     produccion_bloqueada = serializers.SerializerMethodField()
     datos_tecnicos_archivo = serializers.SerializerMethodField()
     bastidor_longitud_cm = serializers.SerializerMethodField()
@@ -263,7 +265,7 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
             "estrategia_bastidor",
             "grupos_count", "modulos_count", "modulos_completados",
             "modulos_completados_hoy", "checks_total", "checks_completados",
-            "checks_bloqueantes_pendientes", "produccion_bloqueada",
+            "checks_bloqueantes_pendientes", "checks_resumen", "produccion_bloqueada",
             "archivado_at", "archivado_por_nombre",
             "edificio", "edificio_nombre", "planta_tipo", "planta_numero",
             "planta_etiqueta", "orden_planta",
@@ -391,6 +393,25 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
     def get_checks_completados(self, obj):
         cached = getattr(obj, '_checks_completados', None)
         return cached if cached is not None else obj.checks.filter(completado=True).count()
+
+    def get_checks_resumen(self, obj):
+        """Los pasos de la lista de control en su orden, para verlos de un vistazo en el listado."""
+        request = self.context.get('request')
+        usuario = getattr(request, 'user', None)
+        if not (usuario and (usuario.is_staff or usuario.is_superuser)):
+            return None
+        return [
+            {
+                'id': check.id,
+                'definicion': check.definicion_id,
+                'titulo': check.titulo,
+                'orden': check.orden,
+                'completado': check.completado,
+                'fecha_limite': check.fecha_limite.isoformat() if check.fecha_limite else None,
+                'completado_at': check.completado_at.isoformat() if check.completado_at else None,
+            }
+            for check in obj.checks.all()
+        ]
 
     def get_checks_bloqueantes_pendientes(self, obj):
         cached = getattr(obj, '_checks_bloqueantes_pendientes', None)

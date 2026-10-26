@@ -76,6 +76,22 @@
                         </span>
                     </div>
                 </div>
+                <!-- La lista de control de un vistazo: una casilla por paso, alineadas con la lista maestra. -->
+                @if (casillas.get(project.id); as cajas) {
+                <div class="project-checks" role="list"
+                    [attr.aria-label]="'Lista de control: ' + (project.checks_completados || 0) + ' de ' + (project.checks_total || 0) + ' hechos'">
+                    @for (caja of cajas; track $index) {
+                        @if (caja) {
+                            <span class="check-box" role="listitem" [class.is-done]="caja.completado" [class.is-late]="caja.vencido"
+                                [title]="caja.texto" [attr.aria-label]="caja.texto">
+                                @if (caja.completado) { <i class="fa fa-check" aria-hidden="true"></i> }
+                            </span>
+                        } @else {
+                            <span class="check-box is-none" aria-hidden="true"></span>
+                        }
+                    }
+                </div>
+                }
                 <div class="project-actions">
                     <button type="button" class="btn-icon danger"
                         (click)="$event.stopPropagation(); confirmDelete(project)"

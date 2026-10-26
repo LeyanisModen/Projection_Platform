@@ -42,6 +42,36 @@ describe('ProyectosComponent — alta de proyecto', () => {
     expect(component.groupedProjects.map(g => [g.username, g.projects.length])).toEqual([['Sin ferralla', 1], ['Europa', 1]]);
   });
 
+  it('enseña la lista de control de cada proyecto en su fila, alineada con la lista maestra', () => {
+    const paso = (id: number, definicion: number | null, titulo: string, orden: number, extra: Record<string, unknown> = {}) =>
+      ({ id, definicion, titulo, orden, completado: false, fecha_limite: null, completado_at: null, ...extra });
+    component.users = [{ id: 9, url: '/api/users/9/', username: 'europapl5', first_name: 'Europa' } as any];
+    component.projects = [
+      { id: 1, nombre: 'P1', usuario: '/api/users/9/', checks_total: 3, checks_completados: 1, checks_resumen: [
+        paso(11, 100, 'Planos', 1, { completado: true, completado_at: '2026-10-12T09:00:00+02:00' }),
+        paso(12, 200, 'Geometría', 2, { fecha_limite: '2020-01-10' }),
+        paso(13, null, 'Revisar vigas', 5),
+      ] } as any,
+      // Sin la copia de Planos: su casilla queda vacia para no descolocar las columnas.
+      { id: 2, nombre: 'P2', usuario: '/api/users/9/', checks_total: 1, checks_completados: 0, checks_resumen: [
+        paso(21, 200, 'Geometría', 2, { fecha_limite: '2099-01-10' }),
+      ] } as any,
+    ];
+    component.groupProjects();
+    fixture.componentRef.changeDetectorRef.markForCheck();
+    fixture.detectChanges();
+    const filas = Array.from(fixture.nativeElement.querySelectorAll('.project-row')) as HTMLElement[];
+    const cajas = (fila: HTMLElement) => Array.from(fila.querySelectorAll('.check-box')) as HTMLElement[];
+    expect(cajas(filas[0]).map(c => c.getAttribute('title'))).toEqual([
+      'Planos · hecho el 12/10/2026', 'Geometría · vencido el 10/01/2020', 'Revisar vigas · pendiente',
+    ]);
+    expect(cajas(filas[0]).map(c => [c.classList.contains('is-done'), c.classList.contains('is-late')]))
+      .toEqual([[true, false], [false, true], [false, false]]);
+    expect(cajas(filas[1]).map(c => c.classList.contains('is-none'))).toEqual([true, false]);
+    expect(cajas(filas[1])[1].getAttribute('title')).toBe('Geometría · antes del 10/01/2099');
+    expect(filas[0].querySelector('.project-checks')?.getAttribute('aria-label')).toBe('Lista de control: 1 de 3 hechos');
+  });
+
   it('pide solo nombre y ferralla', () => {
     component.toggleForm();
     fixture.detectChanges();

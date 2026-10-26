@@ -106,6 +106,22 @@ class OfficePlanningTests(APITestCase):
         self.assertEqual([(r['titulo'], r['origen'], r['definicion'], r['completado']) for r in kept], [('Entrega final', 'MANUAL', None, True)])
         self.assertEqual(self._rows(self.project2), [])
 
+    def test_office_list_carries_each_project_step_in_order_and_the_factory_does_not(self):
+        primero = self._definir('Planos')
+        self._definir('Geometria')
+        check_id = next(r['id'] for r in self._rows(self.project) if r['definicion'] == primero['id'])
+        self.client.patch(f'/api/proyecto-checklist/{self.project.pk}/checks/{check_id}/', {'completado': True}, format='json')
+
+        listado = {p['id']: p for p in self.client.get('/api/proyectos/').data['results']}
+        pasos = listado[self.project.pk]['checks_resumen']
+        self.assertEqual([(p['titulo'], p['completado']) for p in pasos], [('Planos', True), ('Geometria', False)])
+        self.assertEqual(pasos[0]['definicion'], primero['id'])
+        self.assertIsNotNone(pasos[0]['completado_at'])
+        # A la ferralla no le llegan.
+        self.client.force_authenticate(self.factory)
+        propios = {p['id']: p for p in self.client.get('/api/proyectos/').data['results']}
+        self.assertIsNone(propios[self.project.pk]['checks_resumen'])
+
     def test_master_titles_are_unique_and_project_steps_follow_master_order(self):
         self._definir('Planos')
         self.client.post(f'/api/proyecto-checklist/{self.project.pk}/checks/', {'titulo': 'Paso manual'}, format='json')
