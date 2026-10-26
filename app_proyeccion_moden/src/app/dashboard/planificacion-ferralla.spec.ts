@@ -34,6 +34,11 @@ function respuesta(): PlanificacionResponse {
         entrega_orientativa: true, modulos_total: 4, modulos_completados: 0, estado: 'PLANIFICADO',
         kilos: { modulos: 600, fabricado: 0, desperdicio: 0, sueltos: null, otros: [], total: 600 },
       },
+      {
+        id: 3, nombre: 'RIPA_BH_P07', planta_etiqueta: null, edificio_nombre: null, fecha_entrega: null,
+        entrega_orientativa: false, modulos_total: 64, modulos_completados: 0, estado: 'SIN_FECHA',
+        kilos: { modulos: null, fabricado: 0, desperdicio: 0, sueltos: null, otros: [], total: null },
+      },
     ],
   };
 }
@@ -62,7 +67,9 @@ describe('PlanificacionFerralla', () => {
   it('shortens the delivery names to what tells them apart and reads dates in Spanish', () => {
     expect(Array.from(etiquetasCortas(['RIPA_BH_P05', 'RIPA_BH_P06']).values())).toEqual(['P05', 'P06']);
     expect(Array.from(etiquetasCortas(['OBRA_B1_P01', 'OBRA_B2_P01']).values())).toEqual(['B1_P01', 'B2_P01']);
-    expect(Array.from(etiquetasCortas(['ESN27_P1', 'RIPA_BH_P05']).values())).toEqual(['ESN27_P1', 'RIPA_BH_P05']);
+    expect(Array.from(etiquetasCortas(['ESN27_P1', 'RIPA_BH_P05', 'RIPA_BI_P05', 'RIPA_BH_P05']).values()))
+      .toEqual(['P1', 'BH_P05', 'BI_P05']);
+    expect(etiquetasCortas(['OBRA_P1', 'OTRA_P1']).get('OBRA_P1')).toBe('OBRA_P1');
     expect(Array.from(etiquetasCortas(['ESN27_P1']).values())).toEqual(['P1']);
     expect(fechaLarga('2026-11-12')).toBe('jue 12 nov');
   });
@@ -98,6 +105,11 @@ describe('PlanificacionFerralla', () => {
     expect(texto(segunda.querySelector('.pl-entrega'))).toContain('orientativa');
     expect(segunda.querySelector('.pl-entrega strong')?.classList.contains('pl-orientativa')).toBe(true);
     expect(filas(segunda)[2]).toEqual(['Elementos sueltos', 'pendiente']);
+    // Sin modulos subidos: sus kilos, pendientes, y sin total.
+    const tercera = tarjetas()[2];
+    expect(texto(tercera.querySelector('.pl-entrega'))).toContain('Sin fecha de entrega');
+    expect(filas(tercera)).toEqual([['Módulos', 'pendiente'], ['Elementos sueltos', 'pendiente']]);
+    expect(texto(tercera.querySelector('.pl-total strong'))).toBe('—');
   });
 
   it('adds a line of other kilos and the total follows', () => {
@@ -152,6 +164,6 @@ describe('PlanificacionFerralla', () => {
     (el().querySelector('.pl-estado .pl-boton') as HTMLButtonElement).click();
     fixture.detectChanges();
     expect(api.getPlanificacion).toHaveBeenLastCalledWith(2);
-    expect(tarjetas().length).toBe(2);
+    expect(tarjetas().length).toBe(3);
   });
 });

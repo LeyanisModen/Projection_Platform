@@ -190,9 +190,12 @@ export interface Proyecto {
     datos_tecnicos_archivo?: string | null;
     datos_tecnicos_actualizados_at?: string | null;
     plano_archivo?: string | null;
-    documentos_archivo?: string | null;
-    /** Excel de elementos sueltos a llevar a obra (barras, vigas, zunchos fuera de modulo). */
+    /** Excel de despiece; su pestaña ELEMENTOS SUELTOS llena el modal de elementos sueltos. */
+    despiece_archivo?: string | null;
+    /** Excel de elementos sueltos que se subia aparte antes del despiece; ya no se sube. */
     elementos_sueltos_archivo?: string | null;
+    /** Hay de donde sacar los elementos sueltos: despiece en Excel o el Excel aparte de antes. */
+    elementos_sueltos_disponible?: boolean;
     /** Kilos de los elementos sueltos, de la base tecnica; null mientras no los trae. */
     peso_elementos_sueltos_kg?: string | null;
     estrategia_bastidor: EstrategiaBastidor;
@@ -731,14 +734,15 @@ export interface PlanificacionTarjeta {
     modulos_completados: number;
     estado: string;
     kilos: {
-        modulos: number;
+        /** null: aun sin modulos subidos. */
+        modulos: number | null;
         fabricado: number;
         desperdicio: number;
         /** null: la base tecnica aun no trae los elementos sueltos. */
         sueltos: number | null;
         otros: KilosOtrosLinea[];
-        /** Lo que va a obra: modulos, sueltos y otros (el desperdicio no). */
-        total: number;
+        /** Lo que va a obra: modulos, sueltos y otros (el desperdicio no); null sin los modulos. */
+        total: number | null;
     };
 }
 
@@ -1064,7 +1068,7 @@ export class ApiService {
             imagenes: number;
             detalles_fase: number;
             plano_cargado?: boolean;
-            documentos_cargados?: boolean;
+            despiece_cargado?: boolean;
             base_tecnica_actualizada?: boolean;
             modulos_omitidos?: number;
             module_errors?: Array<{

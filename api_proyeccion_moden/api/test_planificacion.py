@@ -139,9 +139,11 @@ class PlanificacionTests(APITestCase):
         self.assertEqual(kilos['total'], 697.4)
         self.assertEqual(tarjetas[self.p1.id]['fecha_entrega'], '2026-11-12')
         self.assertFalse(tarjetas[self.p1.id]['entrega_orientativa'])
-        # Sin tabla de sueltos en la base tecnica: pendiente, no cero.
+        # Sin tabla de sueltos en la base tecnica: pendiente, no cero. Y sin detalles de
+        # sus modulos, sus kilos tampoco se saben: sin total.
         self.assertIsNone(tarjetas[self.p2.id]['kilos']['sueltos'])
-        self.assertEqual(tarjetas[self.p2.id]['kilos']['total'], 0)
+        self.assertIsNone(tarjetas[self.p2.id]['kilos']['modulos'])
+        self.assertIsNone(tarjetas[self.p2.id]['kilos']['total'])
         self.assertTrue(tarjetas[self.p2.id]['entrega_orientativa'])
 
     def test_cards_are_what_is_due_in_the_window_or_still_pending(self):

@@ -87,7 +87,8 @@ def peso_sueltos_de_base_tecnica(fichero):
 def kilos_de_modulos(proyectos):
     """{proyecto_id: (todo, fabricado, desperdicio)} en kg, de los detalles de fase.
 
-    Fabricado y desperdicio, de los modulos terminados, como Estadisticas.
+    Fabricado y desperdicio, de los modulos terminados, como Estadisticas. Un
+    proyecto sin modulos subidos no sale: sus kilos aun no se saben.
     """
     hecho = Q(modulo__completado_at__isnull=False)
     agregados = {'desperdicio': Sum('desperdicio_kg', filter=hecho)}
@@ -116,7 +117,7 @@ def otros_de(proyecto):
 
 
 def _tarjeta(proyecto, modulos_kg, fila_plan):
-    todo, fabricado, desperdicio = modulos_kg
+    todo, fabricado, desperdicio = modulos_kg or (None, 0.0, 0.0)
     otros = otros_de(proyecto)
     sueltos = None if proyecto.peso_elementos_sueltos_kg is None else _kg(proyecto.peso_elementos_sueltos_kg)
     entrega = fecha_de_montaje(proyecto)
@@ -131,14 +132,16 @@ def _tarjeta(proyecto, modulos_kg, fila_plan):
         'modulos_completados': proyecto._modulos_completados,
         'estado': fila_plan['estado'],
         'kilos': {
-            'modulos': round(todo, 2),
+            # None: aun sin modulos subidos.
+            'modulos': None if todo is None else round(todo, 2),
             'fabricado': round(fabricado, 2),
             'desperdicio': round(desperdicio, 2),
             # None: la base tecnica aun no trae los elementos sueltos.
             'sueltos': sueltos,
             'otros': otros,
             # Lo que va a obra: los modulos, los sueltos y lo suyo (el desperdicio no).
-            'total': round(todo + (sueltos or 0) + sum(linea['kg'] for linea in otros), 2),
+            # Sin los modulos no hay total que dar.
+            'total': None if todo is None else round(todo + (sueltos or 0) + sum(linea['kg'] for linea in otros), 2),
         },
     }
 
@@ -196,7 +199,7 @@ def planificacion_de(usuario_id, desde=None):
         'tramos': [{'desde': t['desde'], 'hasta': t['hasta'], 'ritmo': t['ritmo']} for t in plan['tramos']],
         'entregas': entregas,
         'proyectos': [
-            _tarjeta(proyecto, kilos.get(proyecto.pk, (0.0, 0.0, 0.0)), plan['proyectos'][proyecto.pk])
+            _tarjeta(proyecto, kilos.get(proyecto.pk), plan['proyectos'][proyecto.pk])
             for proyecto in proyectos
         ],
     }

@@ -65,18 +65,28 @@
 
                     <div class="pl-total">
                         <span>Total a obra</span>
-                        <strong>{{ proyecto.kilos.total | number:'1.0-0' }} <small>kg</small></strong>
+                        @if (proyecto.kilos.total !== null) {
+                            <strong>{{ proyecto.kilos.total | number:'1.0-0' }} <small>kg</small></strong>
+                        } @else {
+                            <strong class="pl-sin-dato" title="Faltan los kilos de los módulos">—</strong>
+                        }
                     </div>
 
                     <dl class="pl-kilos">
                         <div class="pl-fila">
                             <dt>Módulos</dt>
-                            <dd>{{ proyecto.kilos.modulos | number:'1.0-0' }} kg</dd>
+                            @if (proyecto.kilos.modulos !== null) {
+                                <dd>{{ proyecto.kilos.modulos | number:'1.0-0' }} kg</dd>
+                            } @else {
+                                <dd class="pl-tenue" title="Los módulos aún no están subidos">pendiente</dd>
+                            }
                         </div>
-                        <div class="pl-fila pl-detalle">
-                            <dt>Fabricado · desperdicio</dt>
-                            <dd>{{ proyecto.kilos.fabricado | number:'1.0-0' }} kg · {{ proyecto.kilos.desperdicio | number:'1.0-0' }} kg</dd>
-                        </div>
+                        @if (proyecto.kilos.modulos !== null) {
+                            <div class="pl-fila pl-detalle">
+                                <dt>Fabricado · desperdicio</dt>
+                                <dd>{{ proyecto.kilos.fabricado | number:'1.0-0' }} kg · {{ proyecto.kilos.desperdicio | number:'1.0-0' }} kg</dd>
+                            </div>
+                        }
                         <div class="pl-fila">
                             <dt>Elementos sueltos</dt>
                             @if (proyecto.kilos.sueltos !== null) {

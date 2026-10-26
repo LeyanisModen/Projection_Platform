@@ -30,15 +30,18 @@ export function fechaLarga(iso: string): string {
   return `${DIAS[d.getDay()]} ${d.getDate()} ${MESES[d.getMonth()]}`;
 }
 
-/** Nombres de las entregas sin lo que comparten todas (la obra): "RIPA_BH_P05" -> "P05". */
+/** Lo mas corto que distingue cada entrega: el final de su nombre que no acaba igual en
+ *  ninguna otra ("RIPA_BH_P05" -> "P05"; con "RIPA_BI_P05" tambien, "BH_P05"). */
 export function etiquetasCortas(nombres: string[]): Map<string, string> {
-  const partes = nombres.map(nombre => nombre.split('_'));
-  let comunes = 0;
-  if (partes.length) {
-    const minimo = Math.min(...partes.map(p => p.length)) - 1;
-    while (comunes < minimo && partes.every(p => p[comunes] === partes[0][comunes])) comunes++;
-  }
-  return new Map(nombres.map((nombre, i) => [nombre, partes[i].slice(comunes).join('_') || nombre]));
+  const distintos = Array.from(new Set(nombres)).map(nombre => ({ nombre, partes: nombre.split('_') }));
+  const final = (partes: string[], n: number) => partes.slice(-n).join('_');
+  return new Map(distintos.map(({ nombre, partes }) => {
+    for (let n = 1; n < partes.length; n++) {
+      const corto = final(partes, n);
+      if (distintos.every(otro => otro.nombre === nombre || final(otro.partes, n) !== corto)) return [nombre, corto];
+    }
+    return [nombre, nombre];
+  }));
 }
 
 /**
@@ -106,7 +109,7 @@ export class PlanificacionFerralla implements OnInit {
     return {
       entregas: entregas.length,
       modulos: entregas.reduce((total, e) => total + e.modulos_pendientes, 0),
-      kilos: this.proyectos().filter(p => enVista.has(p.id)).reduce((total, p) => total + p.kilos.total, 0),
+      kilos: this.proyectos().filter(p => enVista.has(p.id)).reduce((total, p) => total + (p.kilos.total ?? 0), 0),
     };
   });
 
@@ -182,7 +185,8 @@ export class PlanificacionFerralla implements OnInit {
         kilos: {
           ...p.kilos,
           otros,
-          total: Math.round((p.kilos.modulos + (p.kilos.sueltos ?? 0) + otros.reduce((t, o) => t + o.kg, 0)) * 100) / 100,
+          total: p.kilos.modulos === null ? null
+            : Math.round((p.kilos.modulos + (p.kilos.sueltos ?? 0) + otros.reduce((t, o) => t + o.kg, 0)) * 100) / 100,
         },
       }),
     });
