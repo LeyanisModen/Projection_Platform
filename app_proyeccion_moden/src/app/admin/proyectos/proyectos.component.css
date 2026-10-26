@@ -77,6 +77,13 @@
 }
 
 .row-chevron { color: var(--line-strong); font-size: 12px; }
+
+/* Lista de control en la fila: una casilla por paso. */
+.project-checks { display: flex; gap: 4px; flex: 0 0 auto; }
+.check-box { display: inline-grid; place-items: center; width: 18px; height: 18px; border: 1.5px solid var(--line-strong); border-radius: 4px; background: var(--surface); color: var(--ink); font-size: 10px; }
+.check-box.is-done { border-color: var(--text); }
+.check-box.is-late { border-color: var(--warn); }
+.check-box.is-none { visibility: hidden; }
 .project-row:hover .row-chevron { color: var(--muted); }
 
 @media (max-width: 760px) {
@@ -84,6 +91,7 @@
     .group-title { flex-wrap: wrap; }
     .group-demand { flex-basis: 100%; margin-left: 0; }
     .project-row { padding-left: 16px; }
+    .project-checks { display: none; }
 }
 
 /* Edificio: separador ligero dentro de la ferralla. */

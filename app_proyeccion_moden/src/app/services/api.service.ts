@@ -112,6 +112,18 @@ export interface ProjectCheck {
     adjuntos: ProjectCheckAttachment[];
 }
 /** Paso de la lista maestra (pantalla «Lista de control»); siembra los proyectos nuevos. */
+/** Un paso de la lista de control de un proyecto, tal como lo ve el listado de la oficina. */
+export interface ProyectoCheckResumen {
+    id: number;
+    /** Paso de la lista maestra del que es copia (null en los propios del proyecto). */
+    definicion: number | null;
+    titulo: string;
+    orden: number;
+    completado: boolean;
+    fecha_limite: string | null;
+    completado_at: string | null;
+}
+
 export interface CheckDefinition {
     id: number; titulo: string; orden: number;
     requiere_fecha: boolean; requiere_documento: boolean;
@@ -189,6 +201,8 @@ export interface Proyecto {
     checks_total?: number;
     checks_completados?: number;
     checks_bloqueantes_pendientes?: number;
+    /** Los pasos de la lista de control en su orden (solo para la oficina). */
+    checks_resumen?: ProyectoCheckResumen[] | null;
     /** Validaciones bloqueantes sin completar: el cliente no puede fabricarlo aún. */
     produccion_bloqueada?: boolean;
 }

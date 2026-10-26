@@ -198,6 +198,12 @@ def _counts(project):
     return total, done
 
 
+def fecha_de_montaje(proyecto):
+    """La que manda en el plan y el objetivo: la de montaje en obra que pone la
+    ferralla y, mientras no la pone, la orientativa de ingenieria."""
+    return getattr(proyecto, 'fecha_montaje_obra', None) or proyecto.fecha_montaje
+
+
 def _base_demand(project, today, festivos):
     total, done = _counts(project)
     # Los modulos se suben por tandas: el ritmo se calcula sobre el total
@@ -206,7 +212,7 @@ def _base_demand(project, today, festivos):
     previstos = project.modulos_previstos or 0
     total = max(total, previstos)
     remaining = max(0, total - done)
-    date = project.fecha_montaje
+    date = fecha_de_montaje(project)
     # Sin ferralla no hay dias de fabricacion.
     days = production_day_count(today, date, DIAS_LABORABLES, festivos) if date and project.usuario_id is not None else None
     # Ritmo si el forjado se fabricara solo; el plan de la ferralla manda.
@@ -227,6 +233,9 @@ def _base_demand(project, today, festivos):
         'modulos_por_dia': daily,
         'estado': state,
         'fecha_calculo': today.isoformat(),
+        # La fecha con la que se planifica y si es solo la orientativa de ingenieria.
+        'fecha_plan': date.isoformat() if date else None,
+        'fecha_plan_orientativa': date is not None and not getattr(project, 'fecha_montaje_obra', None),
         'dias_produccion': list(DIAS_LABORABLES) if project.usuario_id is not None else [],
         # Plan de la ferralla (se rellena en plan_ferralla).
         'ritmo_ferralla': None,
@@ -250,7 +259,7 @@ def _base_demand(project, today, festivos):
 def _serie(proyectos, filas):
     """Orden de fabricacion: por montaje y, el mismo dia, el forjado de abajo."""
     pendientes = [p for p in proyectos if filas[p.pk]['estado'] == 'PLANIFICADO']
-    return sorted(pendientes, key=lambda p: (p.fecha_montaje, p.orden_planta, p.pk))
+    return sorted(pendientes, key=lambda p: (fecha_de_montaje(p), p.orden_planta, p.pk))
 
 
 def _cola_fuera_de_orden(serie, usuario_id):
@@ -270,7 +279,7 @@ def _cola_fuera_de_orden(serie, usuario_id):
     fuera = set()
     for cola in colas.values():
         for indice, proyecto in enumerate(cola):
-            if any(otro.fecha_montaje < proyecto.fecha_montaje for otro in cola[indice + 1:]):
+            if any(fecha_de_montaje(otro) < fecha_de_montaje(proyecto) for otro in cola[indice + 1:]):
                 fuera.add(proyecto.nombre)
     return sorted(fuera)
 
@@ -304,13 +313,13 @@ def plan_ferralla(usuario_id, today=None, override=None):
     filas = {p.pk: _base_demand(p, today, festivos) for p in proyectos}
     serie = _serie(proyectos, filas)
     tramos = tramos_de_ritmo(
-        [(p.fecha_montaje, filas[p.pk]['modulos_pendientes'], p.pk) for p in serie], today, festivos,
+        [(fecha_de_montaje(p), filas[p.pk]['modulos_pendientes'], p.pk) for p in serie], today, festivos,
     )
     produccion = _Produccion(tramos, festivos)
     hoy_trabaja = es_laborable(today, festivos)
     hoy = [pos for pos, dia in enumerate(produccion.dias) if dia == today]
     semana = [pos for pos, dia in enumerate(produccion.dias) if today < dia <= today + timedelta(days=7)]
-    montajes = {p.pk: p.fecha_montaje for p in serie}
+    montajes = {p.pk: fecha_de_montaje(p) for p in serie}
 
     acumulado = 0.0
     for indice, tramo in enumerate(tramos):
@@ -455,7 +464,7 @@ def period_target_summary(projects, start, end):
             remaining = max(0, total - project._period_done_before)
             if not remaining:
                 continue
-            deadline = project.fecha_montaje
+            deadline = fecha_de_montaje(project)
             if not deadline or not production_day_count(start, deadline, DIAS_LABORABLES, festivos):
                 unknown += project.pk in selected
                 continue

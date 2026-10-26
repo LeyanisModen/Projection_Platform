@@ -106,6 +106,22 @@ class OfficePlanningTests(APITestCase):
         self.assertEqual([(r['titulo'], r['origen'], r['definicion'], r['completado']) for r in kept], [('Entrega final', 'MANUAL', None, True)])
         self.assertEqual(self._rows(self.project2), [])
 
+    def test_office_list_carries_each_project_step_in_order_and_the_factory_does_not(self):
+        primero = self._definir('Planos')
+        self._definir('Geometria')
+        check_id = next(r['id'] for r in self._rows(self.project) if r['definicion'] == primero['id'])
+        self.client.patch(f'/api/proyecto-checklist/{self.project.pk}/checks/{check_id}/', {'completado': True}, format='json')
+
+        listado = {p['id']: p for p in self.client.get('/api/proyectos/').data['results']}
+        pasos = listado[self.project.pk]['checks_resumen']
+        self.assertEqual([(p['titulo'], p['completado']) for p in pasos], [('Planos', True), ('Geometria', False)])
+        self.assertEqual(pasos[0]['definicion'], primero['id'])
+        self.assertIsNotNone(pasos[0]['completado_at'])
+        # A la ferralla no le llegan.
+        self.client.force_authenticate(self.factory)
+        propios = {p['id']: p for p in self.client.get('/api/proyectos/').data['results']}
+        self.assertIsNone(propios[self.project.pk]['checks_resumen'])
+
     def test_master_titles_are_unique_and_project_steps_follow_master_order(self):
         self._definir('Planos')
         self.client.post(f'/api/proyecto-checklist/{self.project.pk}/checks/', {'titulo': 'Paso manual'}, format='json')
@@ -854,6 +870,27 @@ class OfficePlanningTests(APITestCase):
         self.assertEqual(summary['modulos_por_dia'], 3)
         self.assertEqual(summary['modulos_hoy'], 3)
         self.assertEqual(demand_summary([self.project], date(2026, 9, 5))['modulos_hoy'], 0)
+
+    @patch('api.planning.timezone.localdate', return_value=date(2026, 9, 7))
+    def test_the_plan_uses_the_factory_site_date_and_the_engineering_one_until_then(self, _today):
+        # Ingenieria: P1 el 18/09 y P2 el 10/09. La ferralla pone P2 en obra el 18/09:
+        # ya no aprieta y los 50 modulos van a los 9 dias laborables hasta el 18.
+        self.project.fecha_montaje = date(2026, 9, 18)
+        self.project.save()
+        self.project2.fecha_montaje = date(2026, 9, 10)
+        self.project2.fecha_montaje_obra = date(2026, 9, 18)
+        self.project2.save()
+        Modulo.objects.bulk_create([Modulo(nombre=f'A{i}', proyecto=self.project) for i in range(20)])
+        Modulo.objects.bulk_create([Modulo(nombre=f'B{i}', proyecto=self.project2) for i in range(30)])
+
+        def plan(project):
+            return self.client.get(f'/api/proyectos/{project.pk}/').data['planificacion']
+
+        primero, segundo = plan(self.project), plan(self.project2)
+        self.assertEqual(segundo['tramos_ferralla'], [{'hasta': '2026-09-18', 'ritmo': 5.6}])
+        # La de la ferralla manda; la del otro es la orientativa de ingenieria.
+        self.assertEqual((segundo['fecha_plan'], segundo['fecha_plan_orientativa']), ('2026-09-18', False))
+        self.assertEqual((primero['fecha_plan'], primero['fecha_plan_orientativa']), ('2026-09-18', True))
 
     @patch('api.planning.timezone.localdate', return_value=date(2026, 9, 7))
     def test_factory_plan_follows_the_mounting_that_presses_most(self, _today):

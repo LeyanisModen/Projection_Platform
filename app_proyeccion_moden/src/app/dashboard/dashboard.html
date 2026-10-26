@@ -793,14 +793,33 @@
                             <div class="project-deadline"><span [class.aprieta]="proyecto.planificacion?.estado === 'VENCIDO' || proyecto.planificacion?.estado === 'SIN_DIAS'">{{ planningLabel(proyecto) }}</span></div>
                             }
                             <div class="project-montaje-obra" [class.falta]="!proyecto.fecha_montaje_obra" (click)="$event.stopPropagation()">
-                                <label>
-                                    <span>Montaje en obra</span>
-                                    <input type="date" [value]="proyecto.fecha_montaje_obra || ''"
-                                        [disabled]="fechaObraGuardandoId === proyecto.id"
-                                        (change)="guardarFechaMontajeObra(proyecto, $event)"
-                                        aria-label="Fecha de montaje en obra">
-                                </label>
-                                @if (!proyecto.fecha_montaje_obra) {
+                                <!-- La fecha y su boton de confirmar, siempre juntos en la misma linea. -->
+                                <span class="project-montaje-campo">
+                                    <label>
+                                        <span>Montaje en obra</span>
+                                        <!-- Sin la suya, la orientativa de contratacion ya marcada (en gris) para confirmarla o cambiarla. -->
+                                        <input type="date" [value]="proyecto.fecha_montaje_obra || proyecto.fecha_montaje || ''"
+                                            [class.orientativa]="!proyecto.fecha_montaje_obra && !!proyecto.fecha_montaje"
+                                            [title]="!proyecto.fecha_montaje_obra && proyecto.fecha_montaje ? 'Fecha orientativa de contratación' : ''"
+                                            [disabled]="fechaObraGuardandoId === proyecto.id"
+                                            (change)="guardarFechaMontajeObra(proyecto, $event)"
+                                            aria-label="Fecha de montaje en obra">
+                                    </label>
+                                    @if (!proyecto.fecha_montaje_obra && proyecto.fecha_montaje) {
+                                        <button type="button" class="project-montaje-confirmar"
+                                            [disabled]="fechaObraGuardandoId === proyecto.id"
+                                            (click)="confirmarFechaOrientativa(proyecto)"
+                                            [attr.aria-label]="'Confirmar el montaje en obra el ' + (proyecto.fecha_montaje | date:'dd/MM/yyyy')">
+                                            <i class="fa fa-check" aria-hidden="true"></i> Confirmar
+                                        </button>
+                                    }
+                                </span>
+                                @if (!proyecto.fecha_montaje_obra && proyecto.fecha_montaje) {
+                                    <span class="project-montaje-aviso" role="status">
+                                        <i class="fa fa-exclamation-circle" aria-hidden="true"></i>
+                                        Fecha orientativa de contratación: confírmala o cámbiala para que el proyecto quede aceptado y entre en el cálculo de objetivos.
+                                    </span>
+                                } @else if (!proyecto.fecha_montaje_obra) {
                                     <span class="project-montaje-aviso" role="status">
                                         <i class="fa fa-exclamation-circle" aria-hidden="true"></i>
                                         Sin fecha: no puede entrar en mesa
@@ -808,7 +827,8 @@
                                 }
                             </div>
                         </div>
-                        @if (proyecto.modulos_count) {
+                        <!-- Sin fecha de montaje en obra confirmada no cuenta: sin donut. -->
+                        @if (proyecto.modulos_count && proyecto.fecha_montaje_obra) {
                             <div class="project-progress-donut" [attr.title]="'Completados: ' + (proyecto.modulos_completados || 0) + '/' + proyecto.modulos_count + ' · Objetivo pendiente hoy: ' + getProyectoHoy(proyecto) + ' · Próximos 7 días: ' + (getProyectoHoy(proyecto) + getProyectoSemana(proyecto))">
                                 <svg viewBox="0 0 80 80">
                                     <!-- track base (resto pendiente) -->
@@ -853,6 +873,9 @@
                                 {{ planModalProyecto.modulos_completados || 0 }} / {{ planModalProyecto.modulos_count }} fabricados@if ((planModalProyecto.modulos_previstos || 0) > (planModalProyecto.modulos_count || 0)) { · {{ planModalProyecto.modulos_previstos }} previstos }
                             </span>
                         }
+                        @if (downloadingPlanFotosZip) {
+                            <span class="plan-modal-aviso" role="status">Preparando las fotos de fabricación: puede tardar unos segundos.</span>
+                        }
                     </div>
                     <div class="plan-modal-header-actions">
                         <button type="button" class="plan-modal-download" [class.is-active]="planModalShowDone"
@@ -865,9 +888,14 @@
                             class="plan-modal-download"
                             [disabled]="downloadingPlanFotosZip || planModalFotosTotal() === 0"
                             (click)="downloadPlanFotosZip('proyecto')"
-                            title="Descargar todas las fotos del proyecto">
-                            <i class="fa fa-download" aria-hidden="true"></i>
-                            Fotos proyecto
+                            title="Descargar todas las fotos de fabricación del proyecto (puede tardar unos segundos)">
+                            @if (downloadingPlanFotosZip) {
+                                <i class="fa fa-spinner fa-spin" aria-hidden="true"></i>
+                                Preparando…
+                            } @else {
+                                <i class="fa fa-download" aria-hidden="true"></i>
+                                Fotos de fabricación
+                            }
                         </button>
                         <button type="button" class="plan-modal-close" (click)="closePlanModal()" title="Cerrar">×</button>
                     </div>
@@ -1056,9 +1084,14 @@
                             class="plan-modal-download"
                             [disabled]="downloadingPlanFotosZip || planFotos.length === 0"
                             (click)="downloadPlanFotosZip('modulo')"
-                            title="Descargar ZIP del módulo">
-                            <i class="fa fa-download" aria-hidden="true"></i>
-                            ZIP
+                            title="Descargar ZIP del módulo (puede tardar unos segundos)">
+                            @if (downloadingPlanFotosZip) {
+                                <i class="fa fa-spinner fa-spin" aria-hidden="true"></i>
+                                Preparando…
+                            } @else {
+                                <i class="fa fa-download" aria-hidden="true"></i>
+                                ZIP
+                            }
                         </button>
                         <button type="button" class="plan-modal-close" (click)="closePlanFotosModal()" title="Cerrar">×</button>
                     </div>

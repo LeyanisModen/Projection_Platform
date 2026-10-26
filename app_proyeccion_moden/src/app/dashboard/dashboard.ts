@@ -841,7 +841,9 @@ export class Dashboard implements OnInit, OnDestroy {
       targetName = this.planModalProyecto.nombre || 'proyecto';
     }
 
+    // Preparar el ZIP tarda: el boton y el modal lo dicen enseguida.
     this.downloadingPlanFotosZip = true;
+    this.cdr.detectChanges();
     this.api.downloadFotosZip(params)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
@@ -1343,7 +1345,21 @@ export class Dashboard implements OnInit, OnDestroy {
   guardarFechaMontajeObra(proyecto: Proyecto, event: Event): void {
     const input = event.target as HTMLInputElement;
     const valor = input.value || null;
-    if (valor === (proyecto.fecha_montaje_obra || null)) return;
+    if (valor === (proyecto.fecha_montaje_obra || null)) {
+      // Nada que guardar: vuelve a enseñar la suya o la orientativa.
+      input.value = proyecto.fecha_montaje_obra || proyecto.fecha_montaje || '';
+      return;
+    }
+    this.guardarFechaObra(proyecto, valor, input);
+  }
+
+  /** La orientativa de ingenieria es la buena: se confirma con un clic. */
+  confirmarFechaOrientativa(proyecto: Proyecto): void {
+    if (!proyecto.fecha_montaje || proyecto.fecha_montaje_obra) return;
+    this.guardarFechaObra(proyecto, proyecto.fecha_montaje);
+  }
+
+  private guardarFechaObra(proyecto: Proyecto, valor: string | null, input?: HTMLInputElement): void {
     this.fechaObraGuardandoId = proyecto.id;
     this.cdr.detectChanges();
     this.api.updateProyecto(proyecto.id, { fecha_montaje_obra: valor })
@@ -1356,7 +1372,7 @@ export class Dashboard implements OnInit, OnDestroy {
           this.cdr.detectChanges();
         },
         error: (err) => {
-          input.value = proyecto.fecha_montaje_obra || '';
+          if (input) input.value = proyecto.fecha_montaje_obra || proyecto.fecha_montaje || '';
           this.fechaObraGuardandoId = null;
           alert(err?.error?.detail || err?.error?.fecha_montaje_obra?.[0] || 'No se pudo guardar la fecha de montaje en obra.');
           this.cdr.detectChanges();
@@ -1384,23 +1400,25 @@ export class Dashboard implements OnInit, OnDestroy {
         // Con total: solo si quedan pendientes.
         return total === 0 || done < total;
       })
-      .sort((a, b) => (a.fecha_montaje_obra || '9999').localeCompare(b.fecha_montaje_obra || '9999')
+      .sort((a, b) => (a.fecha_montaje_obra || a.fecha_montaje || '9999').localeCompare(b.fecha_montaje_obra || b.fecha_montaje || '9999')
         || a.nombre.localeCompare(b.nombre));
   }
 
   /** Por que un proyecto en espera no puede subir a mesa ('' si puede). */
   motivoNoSubeAMesa(p: Proyecto): string {
     if (p.produccion_bloqueada) return 'Faltan validaciones de Moden antes de fabricarlo';
+    if (!p.fecha_montaje_obra && p.fecha_montaje) return 'Confirma su fecha de montaje en obra (la orientativa o la vuestra) para subirlo a mesa';
     if (!p.fecha_montaje_obra) return 'Ponle fecha de montaje en obra para subirlo a mesa';
     return '';
   }
 
   /** "monta 12/11" con la fecha de montaje en obra del proyecto. */
   montajeColaLabel(proyectoId: number): string {
-    const fecha = this.proyectos.find(p => p.id === proyectoId)?.fecha_montaje_obra;
+    const proyecto = this.proyectos.find(p => p.id === proyectoId);
+    const fecha = proyecto?.fecha_montaje_obra || proyecto?.fecha_montaje;
     if (!fecha) return '';
     const [, mes, dia] = fecha.split('-');
-    return `monta ${dia}/${mes}`;
+    return `${proyecto?.fecha_montaje_obra ? 'monta' : 'orientativa'} ${dia}/${mes}`;
   }
 
   /** Persist grupo rename (only if it actually changed). */

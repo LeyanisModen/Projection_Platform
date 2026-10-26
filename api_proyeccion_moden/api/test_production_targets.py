@@ -90,6 +90,16 @@ class ProductionTargetTests(APITestCase):
         dias = {d['fecha']: d['objetivo'] for d in self.stats(end='2026-09-16')['range']['dias']}
         self.assertEqual(dias, {'2026-09-14': 15.0, '2026-09-15': 15.0, '2026-09-16': 10.0})
 
+    def test_the_factory_site_date_drives_the_target_over_the_engineering_one(self):
+        # Ingenieria lo pone el 16/09, pero la ferralla lo monta en obra el 28/09:
+        # ya no aprieta y los 110 modulos van a los 10 dias hasta el 28 (11 al dia).
+        Proyecto.objects.create(
+            nombre='Urgente', usuario=self.factory, fecha_montaje=date(2026, 9, 16), fecha_montaje_obra=date(2026, 9, 28),
+        )
+        urgent = Proyecto.objects.get(nombre='Urgente')
+        Modulo.objects.bulk_create([Modulo(nombre=f'U{i}', proyecto=urgent) for i in range(30)])
+        self.assertEqual(self.stats(end='2026-09-16')['esperado']['modulos_esperados'], 33)
+
     def test_factory_makes_projects_in_sequence_and_respects_project_and_factory_scope(self):
         second = Proyecto.objects.create(
             nombre='Second', usuario=self.factory, fecha_montaje=date(2026, 9, 16),

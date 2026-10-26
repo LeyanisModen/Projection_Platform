@@ -1,11 +1,19 @@
 import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { CommonModule, formatDate } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ApiService, User, Proyecto } from '../../services/api.service';
+import { ApiService, User, Proyecto, ProyectoCheckResumen } from '../../services/api.service';
 import { forkJoin } from 'rxjs';
 import { Router } from '@angular/router';
 import { planningIssues, planningLabel, planningPace, queueOutOfOrder } from '../../shared/project-planning';
 import { ordenarPorEdificio } from '../../shared/edificios';
+
+/** Una casilla de la lista de control en la fila del proyecto. */
+interface CasillaCheck {
+  completado: boolean;
+  /** Pendiente con su fecha ya pasada. */
+  vencido: boolean;
+  texto: string;
+}
 
 interface ProjectGroup {
   username: string;
@@ -38,6 +46,9 @@ export class ProyectosComponent implements OnInit {
   users: User[] = [];
   projects: Proyecto[] = [];
   groupedProjects: ProjectGroup[] = [];
+  /** Casillas de la lista de control de cada proyecto, alineadas con la lista maestra
+   *  (null donde el proyecto no tiene ese paso). */
+  casillas = new Map<number, Array<CasillaCheck | null>>();
   loading = false;
   error = '';
   showForm = false;
@@ -113,6 +124,42 @@ export class ProyectosComponent implements OnInit {
     if (archived.length > 0) {
       this.groupedProjects.push({ username: 'Archivados', userUrl: '__archived__', projects: archived, archived: true });
     }
+    this.calcularCasillas();
+  }
+
+  /** Una columna por paso de la lista maestra, en su orden, igual en todas las filas;
+   *  los pasos propios de cada proyecto, al final. */
+  private calcularCasillas(): void {
+    const orden = new Map<number, number>();
+    for (const project of this.projects) {
+      for (const check of project.checks_resumen || []) {
+        if (check.definicion !== null && !orden.has(check.definicion)) orden.set(check.definicion, check.orden);
+      }
+    }
+    const columnas = [...orden.entries()].sort((a, b) => a[1] - b[1] || a[0] - b[0]).map(([definicion]) => definicion);
+    const hoy = formatDate(new Date(), 'yyyy-MM-dd', 'en-US');
+    this.casillas = new Map();
+    for (const project of this.projects) {
+      const checks = project.checks_resumen || [];
+      if (!checks.length) continue;
+      const porDefinicion = new Map(checks.filter(c => c.definicion !== null).map(c => [c.definicion, c]));
+      const propios = checks.filter(c => c.definicion === null || !orden.has(c.definicion));
+      this.casillas.set(project.id, [
+        ...columnas.map(definicion => porDefinicion.get(definicion) ?? null),
+        ...propios,
+      ].map(check => check ? this.casilla(check, hoy) : null));
+    }
+  }
+
+  private casilla(check: ProyectoCheckResumen, hoy: string): CasillaCheck {
+    const fecha = (iso: string) => iso.slice(0, 10).split('-').reverse().join('/');
+    const vencido = !check.completado && !!check.fecha_limite && check.fecha_limite < hoy;
+    const texto = check.completado
+      ? `${check.titulo} · hecho${check.completado_at ? ' el ' + formatDate(check.completado_at, 'dd/MM/yyyy', 'en-US') : ''}`
+      : check.fecha_limite
+        ? `${check.titulo} · ${vencido ? 'vencido el' : 'antes del'} ${fecha(check.fecha_limite)}`
+        : `${check.titulo} · pendiente`;
+    return { completado: check.completado, vencido, texto };
   }
 
   /** Cabecera antes del primer forjado de cada edificio (si la ferralla tiene edificios). */
