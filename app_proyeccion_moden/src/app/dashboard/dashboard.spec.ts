@@ -903,7 +903,7 @@ describe('Dashboard', () => {
     expect(card.querySelector('.project-progress-donut')).toBeNull();
     expect(input.classList.contains('orientativa')).toBe(true);
     expect(card.querySelector('.project-montaje-aviso')?.textContent?.replace(/\s+/g, ' ').trim())
-      .toBe('Fecha orientativa de contratación: confírmala o cámbiala para que el proyecto quede aceptado y entre en el cálculo de objetivos.');
+      .toBe('Fecha orientativa hablada al confirmar el proyecto: confírmala o cámbiala para que quede aceptado y entre en el cálculo de objetivos.');
     // El boton va pegado a la fecha.
     expect(card.querySelector('.project-montaje-campo .project-montaje-confirmar')).not.toBeNull();
     expect(component.motivoNoSubeAMesa(component.proyectos[0])).toContain('Confirma su fecha de montaje en obra');

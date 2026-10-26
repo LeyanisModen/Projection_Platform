@@ -797,10 +797,10 @@
                                 <span class="project-montaje-campo">
                                     <label>
                                         <span>Montaje en obra</span>
-                                        <!-- Sin la suya, la orientativa de contratacion ya marcada (en gris) para confirmarla o cambiarla. -->
+                                        <!-- Sin la suya, la orientativa que se hablo al confirmar el proyecto ya marcada (en gris) para confirmarla o cambiarla. -->
                                         <input type="date" [value]="proyecto.fecha_montaje_obra || proyecto.fecha_montaje || ''"
                                             [class.orientativa]="!proyecto.fecha_montaje_obra && !!proyecto.fecha_montaje"
-                                            [title]="!proyecto.fecha_montaje_obra && proyecto.fecha_montaje ? 'Fecha orientativa de contratación' : ''"
+                                            [title]="!proyecto.fecha_montaje_obra && proyecto.fecha_montaje ? 'Fecha orientativa hablada al confirmar el proyecto' : ''"
                                             [disabled]="fechaObraGuardandoId === proyecto.id"
                                             (change)="guardarFechaMontajeObra(proyecto, $event)"
                                             aria-label="Fecha de montaje en obra">
@@ -817,7 +817,7 @@
                                 @if (!proyecto.fecha_montaje_obra && proyecto.fecha_montaje) {
                                     <span class="project-montaje-aviso" role="status">
                                         <i class="fa fa-exclamation-circle" aria-hidden="true"></i>
-                                        Fecha orientativa de contratación: confírmala o cámbiala para que el proyecto quede aceptado y entre en el cálculo de objetivos.
+                                        Fecha orientativa hablada al confirmar el proyecto: confírmala o cámbiala para que quede aceptado y entre en el cálculo de objetivos.
                                     </span>
                                 } @else if (!proyecto.fecha_montaje_obra) {
                                     <span class="project-montaje-aviso" role="status">
