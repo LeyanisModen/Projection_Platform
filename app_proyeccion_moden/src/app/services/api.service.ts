@@ -190,12 +190,9 @@ export interface Proyecto {
     datos_tecnicos_archivo?: string | null;
     datos_tecnicos_actualizados_at?: string | null;
     plano_archivo?: string | null;
-    /** Excel de despiece; su pestaña ELEMENTOS SUELTOS llena el modal de elementos sueltos. */
-    despiece_archivo?: string | null;
-    /** Excel de elementos sueltos que se subia aparte antes del despiece; ya no se sube. */
+    documentos_archivo?: string | null;
+    /** Excel de elementos sueltos a llevar a obra (barras, vigas, zunchos fuera de modulo). */
     elementos_sueltos_archivo?: string | null;
-    /** Hay de donde sacar los elementos sueltos: despiece en Excel o el Excel aparte de antes. */
-    elementos_sueltos_disponible?: boolean;
     /** Kilos de los elementos sueltos, de la base tecnica; null mientras no los trae. */
     peso_elementos_sueltos_kg?: string | null;
     estrategia_bastidor: EstrategiaBastidor;
@@ -1068,7 +1065,7 @@ export class ApiService {
             imagenes: number;
             detalles_fase: number;
             plano_cargado?: boolean;
-            despiece_cargado?: boolean;
+            documentos_cargados?: boolean;
             base_tecnica_actualizada?: boolean;
             modulos_omitidos?: number;
             module_errors?: Array<{
