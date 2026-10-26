@@ -190,6 +190,8 @@
 .project-montaje-confirmar:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-dark); }
 .project-montaje-confirmar:disabled { opacity: 0.5; cursor: default; }
 .project-montaje-campo { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+/* Sin el margen de las etiquetas generales: la fecha y el boton a la misma altura. */
+.project-montaje-campo label { margin: 0; }
 .project-montaje-aviso { display: inline-flex; align-items: flex-start; gap: 4px; color: var(--danger); font-weight: 600; }
 .project-montaje-aviso .fa { margin-top: 2px; }
 .project-progress-donut { flex: 0 0 64px; width: 64px; height: 64px; }

@@ -898,8 +898,9 @@ describe('Dashboard', () => {
     fixture.detectChanges();
     const card: HTMLElement = fixture.nativeElement.querySelector('.project-inline-card');
     const input = card.querySelector('.project-montaje-obra input') as HTMLInputElement;
-    // La orientativa sale ya marcada, en gris, y sin confirmar no entra en mesa.
+    // La orientativa sale ya marcada, en gris, y sin confirmar no entra en mesa ni lleva donut.
     expect(input.value).toBe('2026-11-12');
+    expect(card.querySelector('.project-progress-donut')).toBeNull();
     expect(input.classList.contains('orientativa')).toBe(true);
     expect(card.querySelector('.project-montaje-aviso')?.textContent?.replace(/\s+/g, ' ').trim())
       .toBe('Fecha orientativa de contratación: confírmala o cámbiala para que el proyecto quede aceptado y entre en el cálculo de objetivos.');
@@ -915,6 +916,7 @@ describe('Dashboard', () => {
     expect(input.classList.contains('orientativa')).toBe(false);
     expect(card.querySelector('.project-montaje-confirmar')).toBeNull();
     expect(card.querySelector('.project-montaje-aviso')).toBeNull();
+    expect(card.querySelector('.project-progress-donut')).not.toBeNull();
     expect(component.montajeColaLabel(7)).toBe('monta 12/11');
 
     // Con la suya puesta, aunque sea otra, ya no se ensena la orientativa.

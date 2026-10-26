@@ -827,7 +827,8 @@
                                 }
                             </div>
                         </div>
-                        @if (proyecto.modulos_count) {
+                        <!-- Sin fecha de montaje en obra confirmada no cuenta: sin donut. -->
+                        @if (proyecto.modulos_count && proyecto.fecha_montaje_obra) {
                             <div class="project-progress-donut" [attr.title]="'Completados: ' + (proyecto.modulos_completados || 0) + '/' + proyecto.modulos_count + ' · Objetivo pendiente hoy: ' + getProyectoHoy(proyecto) + ' · Próximos 7 días: ' + (getProyectoHoy(proyecto) + getProyectoSemana(proyecto))">
                                 <svg viewBox="0 0 80 80">
                                     <!-- track base (resto pendiente) -->
