@@ -841,7 +841,9 @@ export class Dashboard implements OnInit, OnDestroy {
       targetName = this.planModalProyecto.nombre || 'proyecto';
     }
 
+    // Preparar el ZIP tarda: el boton y el modal lo dicen enseguida.
     this.downloadingPlanFotosZip = true;
+    this.cdr.detectChanges();
     this.api.downloadFotosZip(params)
       .pipe(takeUntil(this.destroy$))
       .subscribe({

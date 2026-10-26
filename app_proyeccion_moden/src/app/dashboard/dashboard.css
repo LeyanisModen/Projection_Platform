@@ -189,8 +189,9 @@
 .project-montaje-confirmar { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 9px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
 .project-montaje-confirmar:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-dark); }
 .project-montaje-confirmar:disabled { opacity: 0.5; cursor: default; }
-.project-montaje-orientativa { color: var(--muted); font-size: 11px; }
-.project-montaje-aviso { display: inline-flex; align-items: center; gap: 4px; color: var(--danger); font-weight: 600; }
+.project-montaje-campo { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+.project-montaje-aviso { display: inline-flex; align-items: flex-start; gap: 4px; color: var(--danger); font-weight: 600; }
+.project-montaje-aviso .fa { margin-top: 2px; }
 .project-progress-donut { flex: 0 0 64px; width: 64px; height: 64px; }
 .project-progress-donut svg { width: 64px; height: 64px; }
 .donut-pct { fill: var(--ink); font-size: 16px; font-weight: 600; }
@@ -230,6 +231,7 @@ a.plan-modal-download { text-decoration: none; }
 .plan-modal-header-actions { display: flex; align-items: center; gap: 6px; }
 .plan-modal-download { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); font: inherit; font-size: 12px; font-weight: 500; cursor: pointer; }
 .plan-modal-download:hover:not(:disabled) { background: var(--surface-2); }
+.plan-modal-aviso { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; }
 .plan-modal-download:disabled { opacity: 0.5; cursor: default; }
 .plan-modal-close { display: inline-grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; color: var(--muted); font-size: 22px; line-height: 1; cursor: pointer; }
 .plan-modal-close:hover { color: var(--ink); background: var(--surface-2); }

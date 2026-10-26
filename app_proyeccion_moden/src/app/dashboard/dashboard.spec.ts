@@ -901,7 +901,10 @@ describe('Dashboard', () => {
     // La orientativa sale ya marcada, en gris, y sin confirmar no entra en mesa.
     expect(input.value).toBe('2026-11-12');
     expect(input.classList.contains('orientativa')).toBe(true);
-    expect(card.querySelector('.project-montaje-aviso')?.textContent).toContain('confírmala o cámbiala');
+    expect(card.querySelector('.project-montaje-aviso')?.textContent?.replace(/\s+/g, ' ').trim())
+      .toBe('Fecha orientativa de contratación: confírmala o cámbiala para que el proyecto quede aceptado y entre en el cálculo de objetivos.');
+    // El boton va pegado a la fecha.
+    expect(card.querySelector('.project-montaje-campo .project-montaje-confirmar')).not.toBeNull();
     expect(component.motivoNoSubeAMesa(component.proyectos[0])).toContain('Confirma su fecha de montaje en obra');
     expect(component.montajeColaLabel(7)).toBe('orientativa 12/11');
 
@@ -914,11 +917,12 @@ describe('Dashboard', () => {
     expect(card.querySelector('.project-montaje-aviso')).toBeNull();
     expect(component.montajeColaLabel(7)).toBe('monta 12/11');
 
-    // Si la suya es otra, la orientativa queda al lado, en gris.
+    // Con la suya puesta, aunque sea otra, ya no se ensena la orientativa.
     component.proyectos[0].fecha_montaje_obra = '2026-11-20';
     fixture.changeDetectorRef.markForCheck();
     fixture.detectChanges();
-    expect(card.querySelector('.project-montaje-orientativa')?.textContent?.trim()).toBe('orientativa 12/11');
+    expect(card.textContent).not.toContain('orientativa');
+    expect(card.querySelector('.project-montaje-aviso')).toBeNull();
   });
 
   it('lets the ferralla pick the superior order on the SUP card and reorder it by hand when manual', () => {
@@ -1404,6 +1408,30 @@ describe('Dashboard', () => {
       fixture.detectChanges();
       expect(Array.from(columna.querySelectorAll('.plan-grupo-title strong')).map(e => e.textContent)).toEqual(['Grupo 2', 'Grupo 1']);
       expect(columna.querySelector('.plan-grupo')?.classList.contains('is-terminado')).toBe(true);
+    });
+
+    it('says the project photos are being prepared while the ZIP is built', () => {
+      const api = TestBed.inject(ApiService);
+      const zip = new Subject<Blob>();
+      const descarga = vi.spyOn(api, 'downloadFotosZip').mockReturnValue(zip);
+      vi.spyOn(component, 'planModalFotosTotal').mockReturnValue(12);
+      component.showPlanModal = true;
+      component.planModalProyecto = {id: 7, nombre: 'Obra', modulos_count: 4, modulos_completados: 1} as Proyecto;
+      fixture.changeDetectorRef.markForCheck();
+      fixture.detectChanges();
+      const boton = () => Array.from(fixture.nativeElement.querySelectorAll('.plan-modal-header .plan-modal-download'))
+        .find(b => (b as HTMLElement).textContent?.includes('Fotos de fabricación') || (b as HTMLElement).textContent?.includes('Preparando')) as HTMLButtonElement;
+      expect(boton().textContent?.trim()).toBe('Fotos de fabricación');
+      boton().click();
+      fixture.detectChanges();
+      expect(descarga).toHaveBeenCalledWith({proyecto: 7});
+      expect(boton().textContent?.trim()).toBe('Preparando…');
+      expect(boton().disabled).toBe(true);
+      expect(fixture.nativeElement.querySelector('.plan-modal-aviso')?.textContent).toBe('Preparando las fotos de fabricación: puede tardar unos segundos.');
+      vi.spyOn(component as any, 'triggerZipDownload').mockImplementation(() => undefined);
+      zip.next(new Blob());
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.plan-modal-aviso')).toBeNull();
     });
 
     it('opens a finished project with its finished bastidores already shown', () => {
