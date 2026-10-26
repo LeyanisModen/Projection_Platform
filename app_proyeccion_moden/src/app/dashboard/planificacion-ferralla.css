@@ -1,0 +1,56 @@
+/* Planificacion de la ferralla: misma retícula gris que Estadisticas; el naranja, solo en la grafica. */
+:host { display: grid; gap: 16px; min-width: 0; }
+.pl-estado { margin: 0; color: var(--muted); font-size: 13px; }
+.pl-error { margin: 0; color: var(--danger); font-size: 12px; }
+.pl-estado.pl-error { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.pl-ventana { margin: -6px 0 0; color: var(--muted); font-size: 13px; }
+.pl-ferralla { display: inline-flex; align-items: center; gap: 8px; margin: 0; color: var(--muted); font-size: 12px; }
+.pl-ferralla select { height: 34px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); font: inherit; font-size: 13px; }
+
+/* Casillas en dos lineas, nombre y dato, como las de Estadisticas. */
+.pl-kpis { display: flex; flex-wrap: wrap; gap: 10px; }
+.pl-kpi { display: grid; flex: 1 1 auto; gap: 4px; min-width: 140px; padding: 12px 14px; border: 1px solid var(--line); background: var(--surface); }
+.pl-kpi-label { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.pl-kpi-value { color: var(--ink); font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1; white-space: nowrap; }
+.pl-kpi-value small { color: var(--muted); font-size: 12px; font-weight: 500; }
+
+.pl-titulo { margin: 8px 0 0; color: var(--text); font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+.pl-tarjetas { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 12px; }
+.pl-tarjeta { display: grid; align-content: start; gap: 10px; min-width: 0; padding: 14px 16px; border: 1px solid var(--line); border-left: 3px solid var(--line-strong); background: var(--surface); }
+.pl-tarjeta.pl-vencido { border-left-color: var(--danger); }
+.pl-tarjeta-cabecera { display: grid; gap: 2px; }
+.pl-tarjeta-cabecera h4 { margin: 0; color: var(--ink); font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+.pl-tenue { color: var(--muted); font-size: 12px; font-weight: 400; }
+.pl-entrega { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; margin: 0; color: var(--muted); font-size: 12px; }
+.pl-entrega strong { color: var(--ink); font-weight: 600; }
+.pl-entrega .pl-orientativa { color: var(--muted); font-style: italic; }
+.pl-aviso { color: var(--danger); font-weight: 600; }
+.pl-modulos { margin-left: auto; font-variant-numeric: tabular-nums; }
+
+.pl-total { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+.pl-total strong { color: var(--ink); font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.pl-total small { color: var(--muted); font-size: 12px; font-weight: 500; }
+
+.pl-kilos { display: grid; gap: 4px; margin: 0; }
+.pl-fila { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 22px; font-size: 13px; }
+.pl-fila dt { min-width: 0; color: var(--text); font-weight: 400; overflow-wrap: anywhere; }
+.pl-fila dd { display: inline-flex; align-items: center; gap: 4px; margin: 0; color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pl-fila dd.pl-tenue { font-weight: 400; font-style: italic; }
+/* Lo fabricado y su desperdicio, debajo de los modulos y sin sumar en el total. */
+.pl-fila.pl-detalle { min-height: 0; margin: -2px 0 2px 12px; font-size: 12px; }
+.pl-fila.pl-detalle dt, .pl-fila.pl-detalle dd { color: var(--muted); font-weight: 400; }
+.pl-quitar { display: inline-grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--muted); font-size: 12px; cursor: pointer; }
+.pl-quitar:hover:not(:disabled) { color: var(--danger); background: var(--surface-2); }
+.pl-quitar:disabled { opacity: 0.4; cursor: default; }
+
+.pl-otros-form { display: flex; gap: 6px; min-width: 0; }
+.pl-otros-form input { flex: 1 1 auto; min-width: 0; height: 30px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); font: inherit; font-size: 12px; }
+.pl-otros-form input.pl-otros-kg { flex: 0 0 72px; text-align: right; }
+.pl-boton { height: 30px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.pl-boton:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-dark); }
+.pl-boton:disabled { opacity: 0.5; cursor: default; }
+
+@media (max-width: 520px) {
+  .pl-tarjetas { grid-template-columns: 1fr; }
+  .pl-kpi { min-width: 120px; }
+}

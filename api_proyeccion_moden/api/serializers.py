@@ -261,7 +261,7 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
             "bastidor_longitud_cm", "peso_maximo_grua_kg", "datos_tecnicos_importados",
             "datos_tecnicos_archivo", "datos_tecnicos_actualizados_at",
             "plano_archivo", "documentos_archivo", "planilla_archivo",
-            "elementos_sueltos_archivo",
+            "elementos_sueltos_archivo", "peso_elementos_sueltos_kg",
             "estrategia_bastidor",
             "grupos_count", "modulos_count", "modulos_completados",
             "modulos_completados_hoy", "checks_total", "checks_completados",
@@ -279,6 +279,8 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
             'fecha_montaje_obra_anterior': {'read_only': True},
             'fecha_montaje_obra_cambiada_at': {'read_only': True},
             'aceptado_por_ferralla_at': {'read_only': True},
+            # Sale de la base tecnica al importarla.
+            'peso_elementos_sueltos_kg': {'read_only': True},
         }
 
     def to_representation(self, instance):

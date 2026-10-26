@@ -14,6 +14,7 @@ import {
   ElementosSueltos, ElementosSueltosHoja, ElementosSueltosSeccion, ElementosSueltosCelda,
 } from '../services/api.service';
 import { LineChartSeries, SplitArea, StatsLineChart } from './stats-line-chart';
+import { PlanificacionFerralla } from './planificacion-ferralla';
 import { TurnosEditorComponent } from '../shared/turnos-editor.component';
 import { copiarTurnos, turnosError, turnosLabel } from '../shared/turnos';
 import {
@@ -40,6 +41,9 @@ const CHART_GRIS = '#52606d';
 // El tiempo muerto va en mostaza, el mismo color que sus cifras (--warn del tema):
 // en la grafica del turno es el relleno de encima de la linea.
 const CHART_AMARILLO = '#b7791f';
+
+/** Pestanas del dashboard, cada una con su ruta (/dashboard, /dashboard/estadisticas...). */
+type DashboardVista = 'produccion' | 'estadisticas' | 'planificacion';
 
 /** Un dia o una hora tal y como los da el servidor (la hora trae minutos, no horas). */
 type StatsFuente = ProductionStatsBucket & ProductionStatsTiempos & ProductionStatsActividadDia & {
@@ -164,7 +168,7 @@ interface Subfase {
   standalone: true,
   templateUrl: './dashboard.html',
   styleUrls: ['../admin/admin-theme.css', './dashboard.css', './dashboard-responsive.css'],
-  imports: [CommonModule, DragDropModule, FormsModule, ZoomableImageComponent, StatsLineChart, TurnosEditorComponent]
+  imports: [CommonModule, DragDropModule, FormsModule, ZoomableImageComponent, StatsLineChart, TurnosEditorComponent, PlanificacionFerralla]
 })
 export class Dashboard implements OnInit, OnDestroy {
   readonly planningLabel = planningLabel;
@@ -247,7 +251,7 @@ export class Dashboard implements OnInit, OnDestroy {
   blueprintUrl: string | null = null;
 
   /** Dos dashboards sobre el mismo componente: produccion (mesas y proyectos) o estadisticas. */
-  vista: 'produccion' | 'estadisticas' = 'produccion';
+  vista: DashboardVista = 'produccion';
 
   // Turnos de trabajo de la ferralla (los cambia ella; Moden los usa para la captura).
   horario: FerrallaCaptureConfig | null = null;
@@ -1576,9 +1580,9 @@ export class Dashboard implements OnInit, OnDestroy {
 
   username: string = '';
 
-  irA(vista: 'produccion' | 'estadisticas'): void {
+  irA(vista: DashboardVista): void {
     if (vista === this.vista) return;
-    this.router.navigate([vista === 'estadisticas' ? '/dashboard/estadisticas' : '/dashboard']);
+    this.router.navigate([vista === 'produccion' ? '/dashboard' : `/dashboard/${vista}`]);
   }
 
   scrollToSection(sectionId: string): void {
@@ -1619,7 +1623,8 @@ export class Dashboard implements OnInit, OnDestroy {
     }
 
     this.username = this.api.getUsername() || 'Usuario';
-    this.vista = this.router.url.includes('/dashboard/estadisticas') ? 'estadisticas' : 'produccion';
+    this.vista = this.router.url.includes('/dashboard/estadisticas') ? 'estadisticas'
+      : this.router.url.includes('/dashboard/planificacion') ? 'planificacion' : 'produccion';
 
     // Prevent back navigation
     history.pushState(null, '', location.href);

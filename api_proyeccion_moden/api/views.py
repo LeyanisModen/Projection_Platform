@@ -46,6 +46,7 @@ from api.project_media import (
     delete_project_media,
 )
 from api.module_features import annotate_modules_with_sd
+from api.planificacion import peso_sueltos_de_base_tecnica
 from api.queue_sync import (
     EARLY_IMAGE_INDEX_LIMIT,
     _ensure_project_in_group_queue,
@@ -825,6 +826,8 @@ def _replace_project_technical_source(proyecto, uploaded_file):
         else None
     )
     storage = proyecto.fichero_datos_tecnicos.storage
+    # Antes de guardarla: al guardar, una subida grande se mueve de sitio.
+    proyecto.peso_elementos_sueltos_kg = peso_sueltos_de_base_tecnica(uploaded_file)
     uploaded_file.seek(0)
     proyecto.fichero_datos_tecnicos.save(
         os.path.basename(uploaded_file.name),
@@ -835,6 +838,7 @@ def _replace_project_technical_source(proyecto, uploaded_file):
     proyecto.save(update_fields=[
         'fichero_datos_tecnicos',
         'datos_tecnicos_actualizados_at',
+        'peso_elementos_sueltos_kg',
     ])
     new_name = proyecto.fichero_datos_tecnicos.name
     if old_name and old_name != new_name:

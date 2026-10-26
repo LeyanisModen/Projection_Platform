@@ -6,6 +6,8 @@
                 [attr.aria-current]="vista === 'produccion' ? 'page' : null" (click)="irA('produccion')">Producción</button>
             <button type="button" class="nav-link" [class.active]="vista === 'estadisticas'"
                 [attr.aria-current]="vista === 'estadisticas' ? 'page' : null" (click)="irA('estadisticas')">Estadísticas</button>
+            <button type="button" class="nav-link" [class.active]="vista === 'planificacion'"
+                [attr.aria-current]="vista === 'planificacion' ? 'page' : null" (click)="irA('planificacion')">Planificación</button>
         </nav>
         <div class="header-right">
             <button type="button" class="btn-icon btn-notificaciones" (click)="openNotificaciones()"
@@ -517,6 +519,14 @@
                 </div>
             </section>
 
+            }
+            @if (vista === 'planificacion') {
+            <section class="planificacion-section" id="planificacion-section">
+                <div class="section-header legacy-header">
+                    <h2>Planificación</h2>
+                </div>
+                <app-planificacion-ferralla />
+            </section>
             }
             @if (vista === 'produccion') {
             <section class="planner-section" id="grupos-section">

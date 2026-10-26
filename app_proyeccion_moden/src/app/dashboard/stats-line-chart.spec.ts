@@ -160,4 +160,50 @@ describe('StatsLineChart', () => {
     expect(el().querySelector('svg[role="img"]')).toBeNull();
     expect(el().querySelector('.lc-empty')?.textContent).toBe('Sin datos en el periodo.');
   });
+
+  it('marks the deliveries with a dashed line, their label above and the detail in the reading', () => {
+    fixture.componentRef.setInput('series', [{ name: 'Módulos al día', color: '#f0640f', values: [1, 1, 0.7, 0.7] }]);
+    fixture.componentRef.setInput('decimals', 1);
+    fixture.componentRef.setInput('markLabel', 'Entrega a obra');
+    fixture.componentRef.setInput('markTenueLabel', 'Fecha orientativa');
+    fixture.componentRef.setInput('marks', [
+      { index: 2, label: 'RIPAGAINA_P01', detalle: ['Entrega OBRA_P01'] },
+      // Entre dos columnas (un sabado): cuenta para la de despues.
+      { index: 2.5, label: 'RIPAGAINA_P02', detalle: ['Entrega OBRA_P02 (orientativa)'], tenue: true },
+    ]);
+    fixture.detectChanges();
+
+    const lineas = el().querySelectorAll('line.lc-mark');
+    // Dos en la grafica y dos en la leyenda.
+    expect(el().querySelectorAll('svg[role="img"] line.lc-mark').length).toBe(2);
+    expect(lineas[0].classList.contains('lc-mark-tenue')).toBe(false);
+    const etiquetas = Array.from(el().querySelectorAll('.lc-mark-label'));
+    expect(etiquetas.map(t => t.textContent)).toEqual(['RIPAGAINA_P01', 'RIPAGAINA_P02']);
+    expect(etiquetas[1].classList.contains('lc-mark-tenue')).toBe(true);
+    // Tan juntas que la segunda baja una fila; la grafica empieza debajo de las dos.
+    const y = etiquetas.map(t => Number(t.getAttribute('y')));
+    expect(y[1]).toBeGreaterThan(y[0]);
+    expect(Number(el().querySelector('.lc-grid')?.getAttribute('y1'))).toBeGreaterThan(y[1]);
+    // Sin la etiqueta del maximo: arriba van las de las entregas.
+    expect(el().querySelector('.lc-pico')).toBeNull();
+    expect(Array.from(el().querySelectorAll('.lc-legend li')).map(li => li.textContent?.trim()))
+      .toEqual(['Entrega a obra', 'Fecha orientativa']);
+
+    chart.active.set(2);
+    fixture.detectChanges();
+    expect(Array.from(el().querySelectorAll('.lc-tooltip-marca')).map(m => m.textContent)).toEqual(['Entrega OBRA_P01']);
+    chart.active.set(3);
+    fixture.detectChanges();
+    expect(Array.from(el().querySelectorAll('.lc-tooltip-marca')).map(m => m.textContent)).toEqual(['Entrega OBRA_P02 (orientativa)']);
+
+    // Sin sitio para las etiquetas (mas de tres filas), solo las lineas.
+    fixture.componentRef.setInput('marks', ['A', 'B', 'C', 'D'].map(letra => (
+      { index: 1, label: `RIPAGAINA_${letra}`, detalle: [`Entrega ${letra}`] })));
+    fixture.detectChanges();
+    expect(el().querySelectorAll('svg[role="img"] line.lc-mark').length).toBe(4);
+    expect(el().querySelector('.lc-mark-label')).toBeNull();
+    chart.active.set(1);
+    fixture.detectChanges();
+    expect(el().querySelectorAll('.lc-tooltip-marca').length).toBe(4);
+  });
 });
