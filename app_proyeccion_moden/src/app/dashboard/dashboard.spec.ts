@@ -872,13 +872,11 @@ describe('Dashboard', () => {
   it('lets the ferralla set its own site date on the card and warns while it is missing', () => {
     const api = TestBed.inject(ApiService);
     component.proyectos = [
-      { id: 7, nombre: 'Torre Norte', modulos_count: 4, modulos_completados: 0, fecha_montaje: '2026-11-12', fecha_montaje_obra: null } as Proyecto,
+      { id: 7, nombre: 'Torre Norte', modulos_count: 4, modulos_completados: 0, fecha_montaje: null, fecha_montaje_obra: null } as unknown as Proyecto,
     ];
     fixture.changeDetectorRef.markForCheck();
     fixture.detectChanges();
     const card: HTMLElement = fixture.nativeElement.querySelector('.project-inline-card');
-    // La fecha de Moden no es de la ferralla: el card lleva la suya.
-    expect(card.textContent).not.toContain('12/11/2026');
     expect(card.querySelector('.project-montaje-aviso')?.textContent).toContain('no puede entrar en mesa');
 
     const update = vi.spyOn(api, 'updateProyecto').mockReturnValue(of({ id: 7, fecha_montaje_obra: '2026-11-20' } as Proyecto));
@@ -889,6 +887,38 @@ describe('Dashboard', () => {
     fixture.detectChanges();
     expect(component.proyectos[0].fecha_montaje_obra).toBe('2026-11-20');
     expect(card.querySelector('.project-montaje-aviso')).toBeNull();
+  });
+
+  it('marks the engineering date in grey until the ferralla confirms it with one click or picks its own', () => {
+    const api = TestBed.inject(ApiService);
+    component.proyectos = [
+      { id: 7, nombre: 'Torre Norte', modulos_count: 4, modulos_completados: 0, fecha_montaje: '2026-11-12', fecha_montaje_obra: null } as Proyecto,
+    ];
+    fixture.changeDetectorRef.markForCheck();
+    fixture.detectChanges();
+    const card: HTMLElement = fixture.nativeElement.querySelector('.project-inline-card');
+    const input = card.querySelector('.project-montaje-obra input') as HTMLInputElement;
+    // La orientativa sale ya marcada, en gris, y sin confirmar no entra en mesa.
+    expect(input.value).toBe('2026-11-12');
+    expect(input.classList.contains('orientativa')).toBe(true);
+    expect(card.querySelector('.project-montaje-aviso')?.textContent).toContain('confírmala o cámbiala');
+    expect(component.motivoNoSubeAMesa(component.proyectos[0])).toContain('Confirma su fecha de montaje en obra');
+    expect(component.montajeColaLabel(7)).toBe('orientativa 12/11');
+
+    const update = vi.spyOn(api, 'updateProyecto').mockReturnValue(of({ id: 7, fecha_montaje_obra: '2026-11-12' } as Proyecto));
+    (card.querySelector('.project-montaje-confirmar') as HTMLButtonElement).click();
+    expect(update).toHaveBeenCalledWith(7, { fecha_montaje_obra: '2026-11-12' });
+    fixture.detectChanges();
+    expect(input.classList.contains('orientativa')).toBe(false);
+    expect(card.querySelector('.project-montaje-confirmar')).toBeNull();
+    expect(card.querySelector('.project-montaje-aviso')).toBeNull();
+    expect(component.montajeColaLabel(7)).toBe('monta 12/11');
+
+    // Si la suya es otra, la orientativa queda al lado, en gris.
+    component.proyectos[0].fecha_montaje_obra = '2026-11-20';
+    fixture.changeDetectorRef.markForCheck();
+    fixture.detectChanges();
+    expect(card.querySelector('.project-montaje-orientativa')?.textContent?.trim()).toBe('orientativa 12/11');
   });
 
   it('lets the ferralla pick the superior order on the SUP card and reorder it by hand when manual', () => {

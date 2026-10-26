@@ -184,6 +184,12 @@
 .project-montaje-obra input { height: 26px; padding: 0 6px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); font: inherit; font-size: 12px; }
 .project-montaje-obra input:disabled { opacity: 0.6; }
 .project-montaje-obra.falta input { border-color: var(--danger); }
+/* La orientativa de ingenieria: marcada en gris hasta que la ferralla la confirma o la cambia. */
+.project-montaje-obra input.orientativa { color: var(--muted); font-style: italic; }
+.project-montaje-confirmar { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 9px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.project-montaje-confirmar:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-dark); }
+.project-montaje-confirmar:disabled { opacity: 0.5; cursor: default; }
+.project-montaje-orientativa { color: var(--muted); font-size: 11px; }
 .project-montaje-aviso { display: inline-flex; align-items: center; gap: 4px; color: var(--danger); font-weight: 600; }
 .project-progress-donut { flex: 0 0 64px; width: 64px; height: 64px; }
 .project-progress-donut svg { width: 64px; height: 64px; }

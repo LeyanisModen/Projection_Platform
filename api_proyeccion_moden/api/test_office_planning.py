@@ -856,6 +856,27 @@ class OfficePlanningTests(APITestCase):
         self.assertEqual(demand_summary([self.project], date(2026, 9, 5))['modulos_hoy'], 0)
 
     @patch('api.planning.timezone.localdate', return_value=date(2026, 9, 7))
+    def test_the_plan_uses_the_factory_site_date_and_the_engineering_one_until_then(self, _today):
+        # Ingenieria: P1 el 18/09 y P2 el 10/09. La ferralla pone P2 en obra el 18/09:
+        # ya no aprieta y los 50 modulos van a los 9 dias laborables hasta el 18.
+        self.project.fecha_montaje = date(2026, 9, 18)
+        self.project.save()
+        self.project2.fecha_montaje = date(2026, 9, 10)
+        self.project2.fecha_montaje_obra = date(2026, 9, 18)
+        self.project2.save()
+        Modulo.objects.bulk_create([Modulo(nombre=f'A{i}', proyecto=self.project) for i in range(20)])
+        Modulo.objects.bulk_create([Modulo(nombre=f'B{i}', proyecto=self.project2) for i in range(30)])
+
+        def plan(project):
+            return self.client.get(f'/api/proyectos/{project.pk}/').data['planificacion']
+
+        primero, segundo = plan(self.project), plan(self.project2)
+        self.assertEqual(segundo['tramos_ferralla'], [{'hasta': '2026-09-18', 'ritmo': 5.6}])
+        # La de la ferralla manda; la del otro es la orientativa de ingenieria.
+        self.assertEqual((segundo['fecha_plan'], segundo['fecha_plan_orientativa']), ('2026-09-18', False))
+        self.assertEqual((primero['fecha_plan'], primero['fecha_plan_orientativa']), ('2026-09-18', True))
+
+    @patch('api.planning.timezone.localdate', return_value=date(2026, 9, 7))
     def test_factory_plan_follows_the_mounting_that_presses_most(self, _today):
         # P1: 20 modulos, montaje viernes 18 (9 dias). P2: 30, montaje jueves 10 (3 dias).
         self.project.fecha_montaje = date(2026, 9, 18)
