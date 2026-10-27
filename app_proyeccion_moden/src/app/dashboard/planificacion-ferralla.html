@@ -61,6 +61,7 @@
                         {{ columna.proyectos.length }} {{ columna.proyectos.length === 1 ? 'forjado' : 'forjados' }}@if (columna.sinKilos) { · {{ columna.sinKilos }} sin kilos de módulos }
                     </span>
                 </header>
+                <div class="pl-columna-forjados">
             @for (proyecto of columna.proyectos; track proyecto.id) {
                 <article class="pl-tarjeta" [class.pl-vencido]="proyecto.estado === 'VENCIDO'">
                     <header class="pl-tarjeta-cabecera">
@@ -137,6 +138,7 @@
                     }
                 </article>
             }
+                </div>
             </section>
             }
         </div>
