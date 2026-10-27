@@ -111,29 +111,33 @@ describe('Project detail rack order switch', () => {
         component.closeSecuenciaModal();
     });
 
-    it('lists the loose elements Excel among the project files and uploads it', () => {
+    it('lists the despiece Excel among the project files and uploads it', () => {
         const component = fixture.componentInstance;
-        const fila = () => (fixture.nativeElement.querySelector('.archivo-elementos') as HTMLElement).textContent!.replace(/\s+/g, '').trim();
-        expect(fila()).toBe('Elementossueltos:sincargar');
+        const fila = () => (fixture.nativeElement.querySelector('.archivo-despiece') as HTMLElement).textContent!.replace(/\s+/g, '').trim();
+        expect(fila()).toBe('Despiece:sincargar');
         // El plano ya no se sube desde el admin: se generara desde la base de datos.
         expect(fixture.nativeElement.querySelector('.archivo-proyecto-list')?.textContent).not.toContain('Plano');
+        // Los elementos sueltos vienen en el despiece: no se suben aparte.
+        expect(fixture.nativeElement.querySelector('.archivo-proyecto-list')?.textContent).not.toContain('Elementos sueltos');
 
         component.proyectoId = 7;
-        // Un PDF no vale: se avisa y no se sube nada.
+        // Ni un PDF ni el ZIP de documentacion de antes: se avisa y no se sube nada.
         const alerta = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
         const input = (name: string) => ({ target: { files: [new File(['x'], name)] } } as unknown as Event);
-        component.onProjectFileSelected(input('plano.pdf'), 'elementos');
-        expect(alerta).toHaveBeenCalledWith('Los elementos sueltos deben estar en un Excel (.xlsx).');
+        for (const nombre of ['plano.pdf', 'documentos.zip']) {
+            component.onProjectFileSelected(input(nombre), 'despiece');
+            expect(alerta).toHaveBeenCalledWith('El despiece debe ser un Excel (.xlsx).');
+        }
         http.expectNone('/api/proyectos/7/');
 
-        component.onProjectFileSelected(input('obra.xlsx'), 'elementos');
+        component.onProjectFileSelected(input('ESN27_P1_componentes_resumen.xlsx'), 'despiece');
         const request = http.expectOne('/api/proyectos/7/');
         expect(request.request.method).toBe('PATCH');
-        expect((request.request.body as FormData).get('elementos_sueltos_archivo')).toBeInstanceOf(File);
-        request.flush({...component.proyecto, elementos_sueltos_archivo: '/media/elementos_sueltos/obra.xlsx'});
+        expect((request.request.body as FormData).get('despiece_archivo')).toBeInstanceOf(File);
+        request.flush({...component.proyecto, despiece_archivo: '/media/despieces/ESN27_P1_componentes_resumen.xlsx'});
         fixture.detectChanges();
-        expect(fila()).toBe('Elementossueltos:cargado');
-        expect(component.getProjectFileUrl('elementos')).toContain('/media/elementos_sueltos/obra.xlsx');
+        expect(fila()).toBe('Despiece:cargado');
+        expect(component.getProjectFileUrl('despiece')).toContain('/media/despieces/ESN27_P1_componentes_resumen.xlsx');
         // El proyecto actualizado hace que la lista de control se recargue.
         http.match('/api/proyecto-checklist/7/').forEach(pendiente => pendiente.flush([]));
         alerta.mockRestore();

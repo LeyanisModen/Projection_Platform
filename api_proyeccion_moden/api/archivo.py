@@ -33,7 +33,7 @@ SALT = 'archivo-proyecto'
 TOKEN_MAX_AGE = 30 * 60
 CHUNK = 1024 * 1024
 FASE_CARPETA = {'INFERIOR': 'INF', 'SUPERIOR': 'SUP'}
-CAMPOS_FICHERO = ('plano_archivo', 'documentos_archivo', 'elementos_sueltos_archivo', 'fichero_datos_tecnicos')
+CAMPOS_FICHERO = ('plano_archivo', 'despiece_archivo', 'elementos_sueltos_archivo', 'fichero_datos_tecnicos')
 
 
 # ---------------------------------------------------------------------------
@@ -327,7 +327,7 @@ fotos/MÓDULO/FASE
     la comprobación de colores.
 
 documentos/
-    Plano, documentación, elementos sueltos y base técnica (.db) originales.
+    Plano, despiece, elementos sueltos y base técnica (.db) originales.
 
 lista_control/
     Documentos adjuntos a cada paso de la lista de control.

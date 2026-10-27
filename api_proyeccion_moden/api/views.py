@@ -45,6 +45,7 @@ from api.project_media import (
     delete_unreferenced_storage_files,
     delete_project_media,
 )
+from api.elementos_sueltos import EXTENSIONES as EXCEL_EXTENSIONS
 from api.module_features import annotate_modules_with_sd
 from api.planificacion import peso_sueltos_de_base_tecnica
 from api.queue_sync import (
@@ -1618,7 +1619,7 @@ class ProyectoViewSet(viewsets.ModelViewSet):
                     })
 
         replaced_files = []
-        for field_name in ('plano_archivo', 'documentos_archivo', 'elementos_sueltos_archivo'):
+        for field_name in ('plano_archivo', 'despiece_archivo'):
             if field_name not in serializer.validated_data:
                 continue
             current_file = getattr(serializer.instance, field_name)
@@ -1860,18 +1861,18 @@ class ProyectoViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'], url_path='elementos-sueltos')
     def elementos_sueltos(self, request, pk=None):
-        """Excel de elementos sueltos leido como tablas, una por hoja visible."""
+        """Pestaña ELEMENTOS SUELTOS del despiece leida como tablas."""
         from urllib.parse import urlsplit
-        from api.elementos_sueltos import leer_elementos_sueltos
+        from api.elementos_sueltos import fuente, leer_elementos_sueltos
 
         proyecto = self.get_object()
-        archivo = proyecto.elementos_sueltos_archivo
-        if not archivo:
+        archivo, hoja = fuente(proyecto)
+        if archivo is None:
             return Response(
-                {'detail': 'Este proyecto no tiene Excel de elementos sueltos.'},
+                {'detail': 'Este proyecto no tiene despiece en Excel.'},
                 status=status.HTTP_404_NOT_FOUND,
             )
-        data = leer_elementos_sueltos(archivo)
+        data = leer_elementos_sueltos(archivo, hoja)
         data['url'] = urlsplit(archivo.url).path
         return Response(data)
 
@@ -1892,9 +1893,7 @@ class ProyectoViewSet(viewsets.ModelViewSet):
             'imagenes': 0,
             'detalles_fase': 0,
             'plano_cargado': False,
-            'documentos_cargados': False,
-            # Compatibility for frontends opened before this deployment.
-            'planilla_cargada': False,
+            'despiece_cargado': False,
             'base_tecnica_actualizada': False,
             'errors': [],
             'modulos_omitidos': 0,
@@ -2075,7 +2074,7 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         Expects multipart form with:
         - 'modulos': JSON string with the module structure
         - image files referenced by filename in the modules JSON
-        - optional 'plano_file' PDF and 'documentos_file' ZIP
+        - optional 'plano_file' PDF and 'despiece_file' Excel
         """
         import os
         import json
@@ -2118,11 +2117,6 @@ class ProyectoViewSet(viewsets.ModelViewSet):
                 modulos_data.extend(legacy_group.get('modulos') or [])
                 legacy_project_data.setdefault(
                     'plano_filename', legacy_group.get('plano_filename')
-                )
-                legacy_project_data.setdefault(
-                    'documentos_filename',
-                    legacy_group.get('planilla_filename')
-                    or legacy_group.get('corte_filename'),
                 )
         else:
             modulos_data = parsed_structure
@@ -2232,56 +2226,44 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         project_data = {
             'modulos': modulos_data,
             'plano_filename': legacy_project_data.get('plano_filename'),
-            'documentos_filename': legacy_project_data.get('documentos_filename'),
         }
 
         for project_data in [project_data]:
             try:
                 replaced_project_files = []
-                for field_name, legacy_name, model_field, stats_field, label, extension in (
+                for field_name, legacy_name, model_field, stats_field, label, extensions, kind in (
                     (
                         'plano_file',
                         project_data.get('plano_filename'),
                         proyecto.plano_archivo,
                         'plano_cargado',
                         'plano',
-                        '.pdf',
+                        ('.pdf',),
+                        'PDF',
                     ),
                     (
-                        'documentos_file',
-                        project_data.get('documentos_filename'),
-                        proyecto.documentos_archivo,
-                        'documentos_cargados',
-                        'documentos',
-                        '.zip',
+                        'despiece_file',
+                        None,
+                        proyecto.despiece_archivo,
+                        'despiece_cargado',
+                        'despiece',
+                        EXCEL_EXTENSIONS,
+                        'Excel',
                     ),
                 ):
                     uploaded_file = files.get(field_name)
-                    legacy_planilla = False
-                    if field_name == 'documentos_file' and not uploaded_file:
-                        uploaded_file = files.get('planilla_file')
-                        legacy_planilla = uploaded_file is not None
                     if not uploaded_file and legacy_name:
                         uploaded_file = files.get(legacy_name)
-                        legacy_planilla = field_name == 'documentos_file'
                     if not uploaded_file:
                         continue
                     uploaded_extension = os.path.splitext(uploaded_file.name)[1].lower()
-                    valid_extensions = {extension}
-                    if legacy_planilla:
-                        valid_extensions.add('.pdf')
-                    if uploaded_extension not in valid_extensions:
-                        stats['errors'].append(
-                            f'El archivo de {label} debe ser un '
-                            f'{"PDF" if extension == ".pdf" else "ZIP"}.'
-                        )
+                    if uploaded_extension not in extensions:
+                        stats['errors'].append(f'El archivo de {label} debe ser un {kind}.')
                         continue
                     if model_field and model_field.name:
                         replaced_project_files.append(model_field.name)
                     model_field.save(uploaded_file.name, uploaded_file)
                     stats[stats_field] = True
-                    if field_name == 'documentos_file':
-                        stats['planilla_cargada'] = True
 
                 if replaced_project_files:
                     transaction.on_commit(

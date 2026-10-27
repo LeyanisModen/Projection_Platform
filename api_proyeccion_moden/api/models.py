@@ -177,19 +177,24 @@ class Proyecto(models.Model):
         null=True,
         help_text='Plano PDF del proyecto.',
     )
-    documentos_archivo = models.FileField(
-        upload_to='documentos/',
+    # Antes era la documentacion en un ZIP (carpeta documentos/); los
+    # proyectos de entonces pueden conservarlo aqui.
+    despiece_archivo = models.FileField(
+        upload_to='despieces/',
         blank=True,
         null=True,
-        help_text='Archivo ZIP con la documentacion del proyecto.',
+        help_text=(
+            'Excel de despiece del proyecto. Su pestaña ELEMENTOS SUELTOS es '
+            'la que ve la ferralla en el dashboard.'
+        ),
     )
     elementos_sueltos_archivo = models.FileField(
         upload_to='elementos_sueltos/',
         blank=True,
         null=True,
         help_text=(
-            'Excel con los elementos sueltos a llevar a obra (barras, vigas, '
-            'zunchos) que no van dentro de un modulo.'
+            'Excel aparte de elementos sueltos, de antes del despiece. Ya no '
+            'se sube; solo se lee si el proyecto no tiene despiece en Excel.'
         ),
     )
     estrategia_bastidor = models.CharField(

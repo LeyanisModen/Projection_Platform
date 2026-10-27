@@ -231,10 +231,12 @@ describe('module import folder helpers', () => {
         );
     });
 
-    it('recognizes the project plan PDF and documents ZIP by their names', async () => {
+    it('recognizes the project plan PDF and the despiece Excel by their names', async () => {
         const root = fakeDirectory('Proyecto', {
             'Plano general A3.pdf': fakeFile('Plano general A3.pdf'),
-            'Documentación_obra_final.ZIP': fakeFile('Documentación_obra_final.ZIP'),
+            'ESN27_P1_componentes_resumen (05-10-2026).XLSX': fakeFile('ESN27_P1_componentes_resumen (05-10-2026).XLSX'),
+            // El ZIP de documentacion de antes ya no se reconoce.
+            'Documentación_obra_final.zip': fakeFile('Documentación_obra_final.zip'),
             'planilla_antigua.pdf': fakeFile('planilla_antigua.pdf'),
             'plano_antiguo.jpg': fakeFile('plano_antiguo.jpg'),
             'MOD-A01': fakeDirectory('MOD-A01', {
@@ -246,7 +248,7 @@ describe('module import folder helpers', () => {
         const result = await scanModuleImportFolder(root);
 
         expect(result.planoFile?.entryName).toBe('Plano general A3.pdf');
-        expect(result.documentosFile?.entryName).toBe('Documentación_obra_final.ZIP');
+        expect(result.despieceFile?.entryName).toBe('ESN27_P1_componentes_resumen (05-10-2026).XLSX');
         expect(result.rootIssues).toEqual([]);
     });
 });

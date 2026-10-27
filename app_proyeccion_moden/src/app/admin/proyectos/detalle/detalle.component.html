@@ -237,15 +237,10 @@
                     </button>
                 </div>
                 <ul class="archivo-proyecto-list mt-2">
-                    <li>
-                        <strong>Documentos:</strong>
-                        <span *ngIf="proyecto.documentos_archivo" class="is-ok"><i class="fa fa-check" aria-hidden="true"></i> cargados</span>
-                        <span *ngIf="!proyecto.documentos_archivo" class="meta">sin cargar</span>
-                    </li>
-                    <li class="archivo-elementos">
-                        <strong>Elementos sueltos:</strong>
-                        <span *ngIf="proyecto.elementos_sueltos_archivo" class="is-ok"><i class="fa fa-check" aria-hidden="true"></i> cargado</span>
-                        <span *ngIf="!proyecto.elementos_sueltos_archivo" class="meta">sin cargar</span>
+                    <li class="archivo-despiece">
+                        <strong>Despiece:</strong>
+                        <span *ngIf="proyecto.despiece_archivo" class="is-ok"><i class="fa fa-check" aria-hidden="true"></i> cargado</span>
+                        <span *ngIf="!proyecto.despiece_archivo" class="meta">sin cargar</span>
                     </li>
                 </ul>
             </div>
@@ -899,7 +894,7 @@
 
                 <h4>Archivos del Proyecto</h4>
 
-                <small class="text-muted">Documentación comprimida y Excel de elementos sueltos.</small>
+                <small class="text-muted">Excel de despiece; su pestaña ELEMENTOS SUELTOS es la que ve la ferralla.</small>
 
             </div>
 
@@ -907,73 +902,27 @@
 
         </div>
 
-
-
-        <div class="project-file-row">
-
+        <div class="project-file-row project-file-row-despiece">
             <div class="project-file-info">
-
-                <strong>Documentos (.zip)</strong>
-
+                <strong>Despiece (.xlsx)</strong>
                 <span class="text-muted">
-
-                    {{ getProjectFileUrl('documentos') ? 'Archivo cargado' : 'No hay archivo' }}
-
-                </span>
-
-            </div>
-
-            <div class="project-file-actions">
-
-                <button class="btn btn-sm btn-outline-dark"
-
-                    (click)="openProjectFile('documentos')"
-
-                    [disabled]="!projectFileExists.documentos || checkingProjectFiles || uploadingProjectFile">
-
-                    Descargar actual
-
-                </button>
-
-                <button class="btn btn-sm btn-outline-secondary"
-
-                    (click)="triggerProjectFileUpload(modalCorteInput)"
-
-                    [disabled]="uploadingProjectFile">
-
-                    {{ getProjectFileUrl('documentos') ? 'Cambiar' : 'Subir' }}
-
-                </button>
-
-                <input #modalCorteInput type="file" accept=".zip,application/zip,application/x-zip-compressed"
-
-                    (change)="onProjectFileSelected($event, 'documentos')" hidden>
-
-            </div>
-
-        </div>
-
-        <div class="project-file-row project-file-row-elementos">
-            <div class="project-file-info">
-                <strong>Elementos sueltos (.xlsx)</strong>
-                <span class="text-muted">
-                    {{ getProjectFileUrl('elementos') ? 'Archivo cargado' : 'No hay archivo' }}
+                    {{ getProjectFileUrl('despiece') ? 'Archivo cargado' : 'No hay archivo' }}
                 </span>
             </div>
             <div class="project-file-actions">
                 <button class="btn btn-sm btn-outline-dark"
-                    (click)="openProjectFile('elementos')"
-                    [disabled]="!projectFileExists.elementos || checkingProjectFiles || uploadingProjectFile">
+                    (click)="openProjectFile('despiece')"
+                    [disabled]="!projectFileExists.despiece || checkingProjectFiles || uploadingProjectFile">
                     Descargar actual
                 </button>
                 <button class="btn btn-sm btn-outline-secondary"
-                    (click)="triggerProjectFileUpload(modalElementosInput)"
+                    (click)="triggerProjectFileUpload(modalDespieceInput)"
                     [disabled]="uploadingProjectFile">
-                    {{ getProjectFileUrl('elementos') ? 'Cambiar' : 'Subir' }}
+                    {{ getProjectFileUrl('despiece') ? 'Cambiar' : 'Subir' }}
                 </button>
-                <input #modalElementosInput type="file"
+                <input #modalDespieceInput type="file"
                     accept=".xlsx,.xlsm,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
-                    (change)="onProjectFileSelected($event, 'elementos')" hidden>
+                    (change)="onProjectFileSelected($event, 'despiece')" hidden>
             </div>
         </div>
 

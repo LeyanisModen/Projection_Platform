@@ -1006,15 +1006,17 @@ describe('Dashboard', () => {
     expect(modal.querySelector('.mesa-estado-switch')).toBeNull();
   });
 
-  describe('loose elements Excel', () => {
-    const proyecto = { id: 7, nombre: 'Torre Norte', elementos_sueltos_archivo: '/media/elementos_sueltos/obra.xlsx' } as Proyecto;
+  describe('loose elements from the despiece Excel', () => {
+    const proyecto = {
+      id: 7, nombre: 'Torre Norte', despiece_archivo: '/media/despieces/obra.xlsx', elementos_sueltos_disponible: true,
+    } as Proyecto;
     const render = () => {
       fixture.changeDetectorRef.markForCheck();
       fixture.detectChanges();
     };
     const datos: ElementosSueltos = {
-      nombre_archivo: 'ESN27_P1_elementos_sueltos.xlsx',
-      url: '/media/elementos_sueltos/ESN27_P1_elementos_sueltos.xlsx',
+      nombre_archivo: 'ESN27_P1_componentes_resumen.xlsx',
+      url: '/media/despieces/ESN27_P1_componentes_resumen.xlsx',
       previsualizable: true,
       motivo: null,
       hojas: [
@@ -1040,16 +1042,16 @@ describe('Dashboard', () => {
       ],
     };
 
-    it('sits between the plan and the documents in each project card', () => {
+    it('sits between the plan and the despiece in each project card', () => {
       component.vista = 'produccion';
       component.proyectos = [{ ...proyecto, modulos_count: 0 } as Proyecto];
       render();
       const etiquetas = Array.from(fixture.nativeElement.querySelectorAll('.project-actions button'))
         .map(boton => (boton as HTMLElement).getAttribute('aria-label'));
-      expect(etiquetas.slice(-3)).toEqual(['Abrir plano PDF', 'Ver elementos sueltos', 'Descargar documentos ZIP']);
+      expect(etiquetas.slice(-3)).toEqual(['Abrir plano PDF', 'Ver elementos sueltos', 'Descargar despiece']);
     });
 
-    it('shows each block of the Excel with its title, header, rows and total, and offers the original', () => {
+    it('shows each block of the Excel with its title, header, rows and total, and offers the despiece', () => {
       const api = TestBed.inject(ApiService);
       const request = vi.spyOn(api, 'getElementosSueltos').mockReturnValue(of(datos));
       component.openElementosModal(proyecto);
@@ -1076,8 +1078,8 @@ describe('Dashboard', () => {
       expect(secciones[1].querySelector('tfoot td')?.textContent?.trim()).toBe('TOTAL: 1 ud');
 
       const descarga = modal.querySelector('.elementos-descargar') as HTMLAnchorElement;
-      expect(descarga.getAttribute('href')).toContain('/media/elementos_sueltos/ESN27_P1_elementos_sueltos.xlsx');
-      expect(descarga.getAttribute('download')).toBe('ESN27_P1_elementos_sueltos.xlsx');
+      expect(descarga.getAttribute('href')).toContain('/media/despieces/ESN27_P1_componentes_resumen.xlsx');
+      expect(descarga.getAttribute('download')).toBe('ESN27_P1_componentes_resumen.xlsx');
 
       (modal.querySelectorAll('.elementos-hojas button')[1] as HTMLButtonElement).click();
       render();
@@ -1094,7 +1096,7 @@ describe('Dashboard', () => {
     it('explains when the Excel cannot be shown and still lets it be downloaded', () => {
       const api = TestBed.inject(ApiService);
       vi.spyOn(api, 'getElementosSueltos').mockReturnValue(of({
-        ...datos, nombre_archivo: 'antiguo.xls', url: '/media/elementos_sueltos/antiguo.xls', previsualizable: false,
+        ...datos, nombre_archivo: 'antiguo.xls', url: '/media/despieces/antiguo.xls', previsualizable: false,
         motivo: 'Este Excel está en formato antiguo (.xls) y no se puede ver aquí. Descárgalo para abrirlo.', hojas: [],
       }));
       component.openElementosModal(proyecto);
@@ -1108,7 +1110,8 @@ describe('Dashboard', () => {
     it('keeps the download when the server cannot read the Excel, and needs a file to open', () => {
       const api = TestBed.inject(ApiService);
       const request = vi.spyOn(api, 'getElementosSueltos').mockReturnValue(throwError(() => new Error('500')));
-      component.openElementosModal({ ...proyecto, elementos_sueltos_archivo: null });
+      // Sin despiece en Excel (o con el ZIP de documentacion de antes) no hay nada que abrir.
+      component.openElementosModal({ ...proyecto, despiece_archivo: '/media/documentos/obra.zip', elementos_sueltos_disponible: false });
       expect(request).not.toHaveBeenCalled();
       expect(component.elementosModalProyecto).toBeNull();
 
@@ -1116,7 +1119,7 @@ describe('Dashboard', () => {
       render();
       const modal: HTMLElement = fixture.nativeElement.querySelector('.elementos-modal');
       expect(modal.querySelector('.elementos-aviso')?.textContent).toContain('No se ha podido cargar el Excel');
-      expect(modal.querySelector('.elementos-descargar')?.getAttribute('href')).toContain('/media/elementos_sueltos/obra.xlsx');
+      expect(modal.querySelector('.elementos-descargar')?.getAttribute('href')).toContain('/media/despieces/obra.xlsx');
     });
   });
 

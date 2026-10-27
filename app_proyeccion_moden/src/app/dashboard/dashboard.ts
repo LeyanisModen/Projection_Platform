@@ -1091,7 +1091,7 @@ export class Dashboard implements OnInit, OnDestroy {
 
   openElementosModal(proyecto: Proyecto, event?: Event): void {
     event?.stopPropagation();
-    if (!proyecto.elementos_sueltos_archivo) return;
+    if (!proyecto.elementos_sueltos_disponible) return;
     const request = ++this.elementosModalRequest;
     this.elementosModalProyecto = proyecto;
     this.elementosModalData = null;
@@ -1127,9 +1127,10 @@ export class Dashboard implements OnInit, OnDestroy {
     return this.elementosModalData?.hojas[this.elementosModalHoja] ?? null;
   }
 
-  /** Enlace de descarga del Excel original (mismo origen: viaja la cookie de /media/). */
+  /** Enlace de descarga del despiece (mismo origen: viaja la cookie de /media/). */
   elementosDescargaUrl(): string {
-    const url = this.elementosModalData?.url || this.elementosModalProyecto?.elementos_sueltos_archivo || '';
+    const proyecto = this.elementosModalProyecto;
+    const url = this.elementosModalData?.url || proyecto?.despiece_archivo || proyecto?.elementos_sueltos_archivo || '';
     return url ? this.resolveUrl(url) : '';
   }
 
@@ -1147,9 +1148,9 @@ export class Dashboard implements OnInit, OnDestroy {
     return momento === 'antes' ? 'Antes de los módulos' : momento === 'despues' ? 'Después de los módulos' : '';
   }
 
-  openProjectDocument(proyecto: Proyecto, type: 'plano' | 'documentos', event?: Event): void {
+  openProjectDocument(proyecto: Proyecto, type: 'plano' | 'despiece', event?: Event): void {
     event?.stopPropagation();
-    const url = type === 'plano' ? proyecto.plano_archivo : proyecto.documentos_archivo;
+    const url = type === 'plano' ? proyecto.plano_archivo : proyecto.despiece_archivo;
     if (!url) return;
     window.open(this.resolveUrl(url), '_blank', 'noopener');
   }

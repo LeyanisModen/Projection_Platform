@@ -244,12 +244,8 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
     produccion_bloqueada = serializers.SerializerMethodField()
     datos_tecnicos_archivo = serializers.SerializerMethodField()
     bastidor_longitud_cm = serializers.SerializerMethodField()
-    # Rolling-deploy compatibility for an older frontend still in service.
-    planilla_archivo = serializers.FileField(
-        source='documentos_archivo',
-        required=False,
-        allow_null=True,
-    )
+    # Enciende el boton de elementos sueltos del dashboard (api/elementos_sueltos.py).
+    elementos_sueltos_disponible = serializers.SerializerMethodField()
 
     class Meta:
         model = Proyecto
@@ -260,8 +256,8 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
             "aceptado_por_ferralla_at",
             "bastidor_longitud_cm", "peso_maximo_grua_kg", "datos_tecnicos_importados",
             "datos_tecnicos_archivo", "datos_tecnicos_actualizados_at",
-            "plano_archivo", "documentos_archivo", "planilla_archivo",
-            "elementos_sueltos_archivo", "peso_elementos_sueltos_kg",
+            "plano_archivo", "despiece_archivo",
+            "elementos_sueltos_archivo", "elementos_sueltos_disponible", "peso_elementos_sueltos_kg",
             "estrategia_bastidor",
             "grupos_count", "modulos_count", "modulos_completados",
             "modulos_completados_hoy", "checks_total", "checks_completados",
@@ -281,6 +277,8 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
             'aceptado_por_ferralla_at': {'read_only': True},
             # Sale de la base tecnica al importarla.
             'peso_elementos_sueltos_kg': {'read_only': True},
+            # Ya no se sube: los elementos sueltos vienen en el despiece.
+            'elementos_sueltos_archivo': {'read_only': True},
         }
 
     def to_representation(self, instance):
@@ -289,7 +287,7 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
         # browser must fetch media through the frontend's nginx (same origin)
         # so the /media/ auth cookie travels with the request, so keep the
         # path only. Also removes the http/https mixed-content edge case.
-        for field in ('plano_archivo', 'documentos_archivo', 'planilla_archivo', 'elementos_sueltos_archivo'):
+        for field in ('plano_archivo', 'despiece_archivo', 'elementos_sueltos_archivo'):
             value = data.get(field)
             if isinstance(value, str) and '://' in value:
                 data[field] = urlsplit(value).path
@@ -302,6 +300,10 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
 
     def get_bastidor_longitud_cm(self, obj):
         return obj.bastidor_longitud_efectiva_cm
+
+    def get_elementos_sueltos_disponible(self, obj):
+        from api.elementos_sueltos import fuente
+        return fuente(obj)[0] is not None
 
     def get_archivado_por_nombre(self, obj):
         usuario = obj.archivado_por
@@ -354,26 +356,10 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
     def validate_plano_archivo(self, value):
         return self._validate_pdf(value, 'plano')
 
-    @staticmethod
-    def _validate_documents_zip(value):
-        if value and os.path.splitext(value.name)[1].lower() != '.zip':
-            raise serializers.ValidationError(
-                'Los documentos deben estar en un archivo ZIP.'
-            )
-        return value
-
-    def validate_documentos_archivo(self, value):
-        return self._validate_documents_zip(value)
-
-    def validate_planilla_archivo(self, value):
-        return self._validate_documents_zip(value)
-
-    def validate_elementos_sueltos_archivo(self, value):
-        from api.elementos_sueltos import EXTENSIONES
-        if value and os.path.splitext(value.name)[1].lower() not in EXTENSIONES:
-            raise serializers.ValidationError(
-                'Los elementos sueltos deben estar en un Excel (.xlsx).'
-            )
+    def validate_despiece_archivo(self, value):
+        from api.elementos_sueltos import es_excel
+        if value and not es_excel(value):
+            raise serializers.ValidationError('El despiece debe ser un Excel (.xlsx).')
         return value
 
     def get_grupos_count(self, obj):

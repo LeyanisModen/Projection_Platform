@@ -28,13 +28,15 @@ import {
 import { getModuloPhaseAction } from './phase-action.utils';
 
 /** Ficheros del proyecto que la oficina sube desde "Archivos". El plano ya no se
- *  sube: se generara a partir de la base de datos del proyecto. */
-type ProjectFileType = 'documentos' | 'elementos';
+ *  sube: se generara a partir de la base de datos del proyecto. Los elementos
+ *  sueltos tampoco: vienen en la pestaña ELEMENTOS SUELTOS del despiece. */
+type ProjectFileType = 'despiece';
 
 const PROJECT_FILE_FIELDS = {
-    documentos: 'documentos_archivo',
-    elementos: 'elementos_sueltos_archivo',
+    despiece: 'despiece_archivo',
 } as const satisfies Record<ProjectFileType, keyof Proyecto>;
+
+const EXCEL_EXTENSIONS = ['.xlsx', '.xlsm', '.xls'];
 
 @Component({
     selector: 'app-proyecto-detalle',
@@ -96,7 +98,7 @@ export class ProyectoDetailComponent implements OnInit {
     archiveError = '';
     archiveFileName = '';
     checkingProjectFiles = false;
-    projectFileExists = { documentos: false, elementos: false };
+    projectFileExists = { despiece: false };
     dropdownOpen = false;
     showFerrallaChangeModal = false;
     pendingFerrallaUrl: string | null = null;
@@ -1108,7 +1110,7 @@ export class ProyectoDetailComponent implements OnInit {
                         '',
                         `• Módulos creados: ${stats.modulos || 0}`,
                         `• Imágenes cargadas: ${stats.imagenes || 0}`,
-                        `• Documentos ZIP: ${stats.documentos_cargados ? 'sí' : 'no'}`,
+                        `• Despiece: ${stats.despiece_cargado ? 'sí' : 'no'}`,
                     ];
                     if (technicalDbFile) {
                         lines.push(stats.base_tecnica_actualizada
@@ -1355,7 +1357,7 @@ export class ProyectoDetailComponent implements OnInit {
 
     closeProjectFilesModal(): void {
         this.showProjectFilesModal = false;
-        this.projectFileExists = { documentos: false, elementos: false };
+        this.projectFileExists = { despiece: false };
         this.checkingProjectFiles = false;
     }
 
@@ -1366,13 +1368,8 @@ export class ProyectoDetailComponent implements OnInit {
         if (!this.proyectoId) return;
 
         const fileName = file.name.toLowerCase();
-        const validFile = fileType === 'elementos'
-            ? ['.xlsx', '.xlsm', '.xls'].some(extension => fileName.endsWith(extension))
-            : fileName.endsWith('.zip');
-        if (!validFile) {
-            alert(fileType === 'elementos'
-                ? 'Los elementos sueltos deben estar en un Excel (.xlsx).'
-                : 'Los documentos deben estar en un archivo ZIP.');
+        if (!EXCEL_EXTENSIONS.some(extension => fileName.endsWith(extension))) {
+            alert('El despiece debe ser un Excel (.xlsx).');
             return;
         }
 
@@ -1413,10 +1410,7 @@ export class ProyectoDetailComponent implements OnInit {
 
     private async refreshProjectFileAvailability(): Promise<void> {
         this.checkingProjectFiles = true;
-        const documentosUrl = this.getProjectFileUrl('documentos');
-        const elementosUrl = this.getProjectFileUrl('elementos');
-        this.projectFileExists.documentos = await this.checkFileReachable(documentosUrl);
-        this.projectFileExists.elementos = await this.checkFileReachable(elementosUrl);
+        this.projectFileExists.despiece = await this.checkFileReachable(this.getProjectFileUrl('despiece'));
         this.checkingProjectFiles = false;
         this.cdr.detectChanges();
     }

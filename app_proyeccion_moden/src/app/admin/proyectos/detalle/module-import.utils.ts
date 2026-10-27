@@ -44,7 +44,7 @@ export interface ModuleImportScanResult {
     candidates: ModuleImportCandidate[];
     technicalDbFile: File | null;
     planoFile: ProjectImportFile | null;
-    documentosFile: ProjectImportFile | null;
+    despieceFile: ProjectImportFile | null;
     rootIssues: string[];
 }
 
@@ -67,7 +67,7 @@ export const MODULE_IMPORT_MAX_UPLOAD_BYTES = 450 * 1024 * 1024;
 const VALID_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg']);
 const TECHNICAL_EXTENSIONS = new Set(['.db', '.sqlite', '.sqlite3']);
 const PROJECT_PLAN_EXTENSION = '.pdf';
-const PROJECT_DOCUMENTS_EXTENSION = '.zip';
+const DESPIECE_EXTENSIONS = new Set(['.xlsx', '.xlsm', '.xls']);
 
 export function parseModuleImportFolder(folderName: string): ParsedModuleFolder {
     const parts = folderName.split('_');
@@ -167,7 +167,7 @@ export async function scanModuleImportFolder(
     const rootIssues: string[] = [];
     let technicalDbFile: File | null = null;
     let planoFile: ProjectImportFile | null = null;
-    let documentosFile: ProjectImportFile | null = null;
+    let despieceFile: ProjectImportFile | null = null;
 
     for (const [entryName, entryHandle] of rootEntries) {
         if (entryHandle.kind !== 'file') continue;
@@ -177,9 +177,10 @@ export async function scanModuleImportFolder(
             .replace(/[\u0300-\u036f]/g, '')
             .toLowerCase();
         const isPlano = extension === PROJECT_PLAN_EXTENSION && normalizedName.includes('plano');
-        const isDocumentos = extension === PROJECT_DOCUMENTS_EXTENSION
-            && (normalizedName.includes('document') || normalizedName.includes('planilla'));
-        const recognizedProjectFile = TECHNICAL_EXTENSIONS.has(extension) || isPlano || isDocumentos;
+        // ESN27_P1_componentes_resumen (05-10-2026).xlsx
+        const isDespiece = DESPIECE_EXTENSIONS.has(extension)
+            && (normalizedName.includes('despiece') || normalizedName.includes('componentes'));
+        const recognizedProjectFile = TECHNICAL_EXTENSIONS.has(extension) || isPlano || isDespiece;
         if (!recognizedProjectFile) continue;
         const projectFile = await readProjectFile(entryName, entryHandle, rootIssues);
         if (!projectFile) continue;
@@ -200,13 +201,13 @@ export async function scanModuleImportFolder(
             } else {
                 planoFile = projectFile;
             }
-        } else if (isDocumentos) {
-            if (documentosFile) {
+        } else if (isDespiece) {
+            if (despieceFile) {
                 rootIssues.push(
-                    `Hay mas de un ZIP de documentos. Se usara ${documentosFile.entryName} y se omitira ${entryName}.`
+                    `Hay mas de un despiece. Se usara ${despieceFile.entryName} y se omitira ${entryName}.`
                 );
             } else {
-                documentosFile = projectFile;
+                despieceFile = projectFile;
             }
         }
     }
@@ -368,7 +369,7 @@ export async function scanModuleImportFolder(
         candidates,
         technicalDbFile,
         planoFile,
-        documentosFile,
+        despieceFile,
         rootIssues,
     };
 }
