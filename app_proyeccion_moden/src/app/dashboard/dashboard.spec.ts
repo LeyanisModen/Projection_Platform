@@ -27,6 +27,36 @@ describe('Dashboard', () => {
     expect(component).toBeTruthy();
   });
 
+  describe('one project after another on the mesas', () => {
+    const item = (id: number, proyecto: number, nombre: string, status = 'EN_COLA') =>
+      ({ id, modulo_proyecto_id: proyecto, modulo_proyecto_nombre: nombre, status, plan_group_index: 1 } as unknown as MesaQueueItem);
+    const mesa = (id: number, tipo: 'INFERIOR' | 'SUPERIOR') => ({ id, nombre: `Mesa ${id}`, tipo, grupo: 1, activa: true } as Mesa);
+
+    it('marks the change of project on the superior mesa, with the project name', () => {
+      const sup = mesa(3, 'SUPERIOR');
+      component.mesaQueueItems.set(3, [item(1, 10, 'Obra A', 'MOSTRANDO'), item(2, 10, 'Obra A'), item(3, 20, 'Obra B')]);
+      const cola = component.getMesaQueueItems(3);
+      expect(cola.map((it, i) => component.shouldShowGroupDivider(it, i, sup))).toEqual([true, false, true]);
+      expect(component.getItemGrupoLabel(cola[2], sup)).toBe('Obra B');
+      // Con un solo proyecto no hace falta la marca.
+      component.mesaQueueItems.set(3, [item(1, 10, 'Obra A'), item(2, 10, 'Obra A')]);
+      expect(component.getMesaQueueItems(3).map((it, i) => component.shouldShowGroupDivider(it, i, sup))).toEqual([false, false]);
+    });
+
+    it('says what an idle inferior mesa is waiting for', () => {
+      const inf1 = mesa(1, 'INFERIOR');
+      const inf2 = mesa(2, 'INFERIOR');
+      component.mesas = [inf1, inf2];
+      component.mesaQueueItems.set(1, [item(1, 10, 'Obra A', 'MOSTRANDO'), item(2, 20, 'Obra B')]);
+      component.mesaQueueItems.set(2, [item(3, 20, 'Obra B')]);
+      expect(component.esperaProyectoAnterior(inf2)).toBe('Obra A');
+      expect(component.esperaProyectoAnterior(inf1)).toBeNull();
+      // Cuando la otra acaba A, ya no espera.
+      component.mesaQueueItems.set(1, [item(2, 20, 'Obra B', 'MOSTRANDO')]);
+      expect(component.esperaProyectoAnterior(inf2)).toBeNull();
+    });
+  });
+
   it('does not ask for the queues again while the previous answer is still out', () => {
     const api = TestBed.inject(ApiService);
     const respuesta = new Subject<Record<string, MesaQueueItem[]>>();

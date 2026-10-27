@@ -670,10 +670,13 @@
                                     </div>
                                 } @else {
                                     <div class="mesa-queue">
+                                        @if (esperaProyectoAnterior(mesa); as anterior) {
+                                            <p class="mesa-espera" role="status">Esperando a que las otras mesas acaben {{ anterior }}</p>
+                                        }
                                         @for (item of getMesaQueueItems(mesa.id); track trackByItem($index, item)) {
                                             @if (shouldShowGroupDivider(item, $index, mesa)) {
                                                 <div class="queue-group-divider">
-                                                    — {{ getItemGrupoLabel(item) }} —
+                                                    — {{ getItemGrupoLabel(item, mesa) }} —
                                                 </div>
                                             }
                                             <div class="queue-item" [class]="getItemStatusClass(item.status)">

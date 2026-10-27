@@ -315,6 +315,9 @@ class GrupoBastidor(models.Model):
             'modulos que le lleguen entran en cola hasta que se suelte.'
         ),
     )
+    # Unido a mano: el planificador ya no lo divide solo para que las mesas
+    # inferiores acaben el proyecto a la vez.
+    sin_division_automatica = models.BooleanField(default=False)
     nombre = models.CharField(
         max_length=120,
         blank=True,

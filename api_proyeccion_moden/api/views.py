@@ -64,6 +64,8 @@ from api.queue_sync import (
     stash_showing_progress,
     reconcile_superior_queue_if_adaptive,
     register_superior_demand_for_mesa,
+    proyecto_en_espera,
+    siguiente_activable,
     sync_module_phases,
     sync_new_module,
 )
@@ -3416,41 +3418,55 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         partes = min(partes, len(pendientes))
+        base, resto = divmod(len(pendientes), partes)
+        movidos = self._repartir_en_partes(
+            grupo, pendientes, [base + (1 if j < resto else 0) for j in range(partes)],
+        )
 
+        # Los modulos que pasan a una parte no la atan a la mesa de la raiz:
+        # cada parte busca una mesa distinta.
+        self._replan_grupos_operativos(proyecto, request.user, moved_modulo_ids=movidos)
+        return Response(self._grupos_respuesta(proyecto))
+
+    @classmethod
+    def _repartir_en_partes(cls, grupo, pendientes, cuotas):
+        """Reparte los pendientes del bastidor en partes (la raiz y 2B, 2C...)
+        de ``cuotas[j]`` modulos cada una y devuelve los ids que cambian de parte.
+
+        La cola inferior fabrica el bastidor de abajo arriba: se alterna en
+        ese orden para que cada parte empiece por lo que tocaba antes.
+        """
         # Guardar el orden original de todo el bastidor para poder unirlo despues.
-        for m in modulos:
+        for m in Modulo.objects.filter(grupo_bastidor=grupo):
             m.orden_intra_previo = m.orden_intra or 0
             m.save(update_fields=['orden_intra_previo'])
 
         divisiones = [
             GrupoBastidor.objects.create(
-                proyecto=proyecto,
+                proyecto=grupo.proyecto,
                 indice=grupo.indice,
                 sufijo=chr(ord('B') + j),
                 dividido_de=grupo,
                 asignado_a=grupo.asignado_a,
                 en_espera=grupo.en_espera,
             )
-            for j in range(partes - 1)
+            for j in range(len(cuotas) - 1)
         ]
-
-        # La cola inferior fabrica el bastidor de abajo arriba: alternar en
-        # ese orden para que cada parte empiece por lo que tocaba antes.
+        quedan = list(cuotas)
         movidos = []
-        for rank, m in enumerate(reversed(pendientes)):
-            parte = rank % partes
-            if parte == 0:
-                continue
-            m.grupo_bastidor = divisiones[parte - 1]
-            m.save(update_fields=['grupo_bastidor'])
-            movidos.append(m.id)
+        parte = 0
+        for m in reversed(pendientes):
+            while quedan[parte] == 0:
+                parte = (parte + 1) % len(quedan)
+            quedan[parte] -= 1
+            if parte:
+                m.grupo_bastidor = divisiones[parte - 1]
+                m.save(update_fields=['grupo_bastidor'])
+                movidos.append(m.id)
+            parte = (parte + 1) % len(quedan)
         for g in (grupo, *divisiones):
-            self._reindex_modulos_intra(g)
-
-        # Los modulos que pasan a una parte no la atan a la mesa de la raiz:
-        # cada parte busca una mesa distinta.
-        self._replan_grupos_operativos(proyecto, request.user, moved_modulo_ids=movidos)
-        return Response(self._grupos_respuesta(proyecto))
+            cls._reindex_modulos_intra(g)
+        return movidos
 
     @action(detail=True, methods=['post'], url_path='espera')
     @transaction.atomic
@@ -3565,6 +3581,10 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
             m.save(update_fields=['orden_intra', 'orden_intra_previo'])
         for division in divisiones:
             division.delete()
+        # Unido a mano: el planificador ya no lo vuelve a dividir solo.
+        if not raiz.sin_division_automatica:
+            raiz.sin_division_automatica = True
+            raiz.save(update_fields=['sin_division_automatica'])
 
         self._replan_grupos_operativos(proyecto, request.user, moved_modulo_ids=devueltos)
         return Response(self._grupos_respuesta(proyecto))
@@ -4142,10 +4162,10 @@ def _promote_next_if_idle(mesa):
         locked = Mesa.objects.select_for_update().get(pk=mesa.pk)
         if locked.queue_items.filter(status=MesaQueueStatus.MOSTRANDO).exists():
             return None
-        next_item = (
+        next_item = siguiente_activable(locked, (
             locked.queue_items.select_for_update()
-            .filter(status=MesaQueueStatus.EN_COLA).order_by('position').first()
-        )
+            .filter(status=MesaQueueStatus.EN_COLA).order_by('position', 'id')
+        ))
         if next_item is None:
             return None
         activate_queue_item(locked, next_item)
@@ -5157,6 +5177,7 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
 
             group_summaries.append({
                 'group_index': effective_index,
+                'grupo_bastidor_id': grupo_bastidor.id if grupo_bastidor else None,
                 'target_inferior_idx': target_idx,
                 'modules': [module.nombre for module in reversed_group],
             })
@@ -5235,8 +5256,60 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
             pins[gid] = mesa_idx[mesa_id]
         return pins
 
+    @staticmethod
+    def _dividir_el_ultimo_si_no_acaban_a_la_vez(proyecto, plan_data, initial_loads_inf, pins):
+        """Las mesas inferiores acaban el proyecto a la vez: si con el reparto
+        alguna acabaria antes (mas de un modulo de diferencia), el ultimo
+        bastidor, si aun no se ha empezado, se reparte entre ellas (como el
+        boton Dividir, pero con lo que le falta a cada mesa). Devuelve True
+        si lo divide."""
+        num = len(initial_loads_inf)
+        if num < 2:
+            return False
+        cargas = [initial_loads_inf[i] + len(seq) for i, seq in enumerate(plan_data['inferior_sequences'])]
+        if max(cargas) - min(cargas) <= 1:
+            return False
+        ultimo = next((s for s in reversed(plan_data['group_summaries']) if s.get('grupo_bastidor_id')), None)
+        if ultimo is None:
+            return False
+        bastidor = GrupoBastidor.objects.filter(pk=ultimo['grupo_bastidor_id']).first()
+        if (
+            bastidor is None
+            or bastidor.dividido_de_id is not None
+            or bastidor.divisiones.exists()
+            or bastidor.sin_division_automatica
+            or bastidor.mesa_preferida_id is not None
+            or bastidor.id in (pins or {})
+        ):
+            return False
+        mostrando = set(MesaQueueItem.objects.filter(
+            modulo__grupo_bastidor=bastidor, fase='INFERIOR', status=MesaQueueStatus.MOSTRANDO,
+        ).values_list('modulo_id', flat=True))
+        pendientes = [
+            m for m in sorted(
+                Modulo.objects.filter(grupo_bastidor=bastidor),
+                key=lambda m: (m.orden_intra or 0, _natural_sort_key(m.nombre)),
+            )
+            if not m.inferior_hecho and not m.cerrado and m.id not in mostrando
+        ]
+        # Solo un bastidor sin empezar y entero en este plan.
+        if len(pendientes) < 2 or len(pendientes) != len(ultimo['modules']):
+            return False
+        sin_ultimo = list(cargas)
+        sin_ultimo[ultimo['target_inferior_idx']] -= len(pendientes)
+        cuotas = [0] * num
+        for _ in pendientes:
+            mesa = min(range(num), key=lambda i: (sin_ultimo[i] + cuotas[i], i))
+            cuotas[mesa] += 1
+        # La raiz (que se planifica primero y va a la mesa mas libre) se lleva la mayor parte.
+        partes = sorted((cuota for cuota in cuotas if cuota), reverse=True)
+        if len(partes) < 2:
+            return False
+        GrupoBastidorViewSet._repartir_en_partes(bastidor, pendientes, partes)
+        return True
+
     def _build_group_plan(self, grupo, proyecto, user, append_mode=False, mesa_pins=None,
-                          recycle=None):
+                          recycle=None, auto_dividir=False):
         grupo.ensure_default_mesas()
         grupo.refresh_from_db()
         recycle_ids = {item.id for item in recycle.values()} if recycle else set()
@@ -5298,24 +5371,30 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
             reservation_phase_keys.add((mid, 'INFERIOR'))
             reservation_phase_keys.add((mid, 'SUPERIOR'))
 
-        # Seed inferior balancing with the items each mesa already holds
-        # (preserved/in-flight), keyed by mesa_id. Keeps loads leveled
-        # across successive planificar passes.
+        # Seed inferior balancing with what each mesa already holds of THIS
+        # project (preserved/in-flight). Each project is balanced on its own:
+        # its steel is cut apart, so it never fills the gaps another left.
         initial_loads_inf = [
-            len(preserved_by_mesa.get(mesa.id, []))
+            sum(1 for item in preserved_by_mesa.get(mesa.id, []) if item.modulo.proyecto_id == proyecto.id)
             for mesa in mesas_inf
         ]
 
-        plan_data = self._build_plan_sequences(
-            proyecto,
+        pins = self._bastidor_pins(proyecto, mesas_inf, mesa_pins)
+        argumentos_plan = dict(
             num_inferiores=len(mesas_inf),
             excluded_phase_keys=(
                 preserved_phase_keys | external_phase_keys | reservation_phase_keys
             ),
             group_index_offset=preserved_until or 0,
             initial_loads_inf=initial_loads_inf,
-            mesa_pins=self._bastidor_pins(proyecto, mesas_inf, mesa_pins),
+            mesa_pins=pins,
         )
+        plan_data = self._build_plan_sequences(proyecto, **argumentos_plan)
+        if auto_dividir and self._dividir_el_ultimo_si_no_acaban_a_la_vez(proyecto, plan_data, initial_loads_inf, pins):
+            plan_data = self._build_plan_sequences(proyecto, **argumentos_plan)
+        # Mientras las inferiores no acaben el proyecto anterior, este entra en
+        # cola sin mostrarse en ninguna mesa.
+        espera = proyecto_en_espera(grupo, proyecto.id)
 
         # Spread the superior cola across M mesas (round-robin so loads
         # stay within +/- 1).
@@ -5356,7 +5435,7 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
                     mesa, sequence, 'INFERIOR', user,
                     plan_data['module_group_map'],
                     start_position=len(preserved_for_mesa),
-                    has_active_items=bool(preserved_for_mesa),
+                    has_active_items=bool(preserved_for_mesa) or espera,
                     recycle=recycle,
                 )
                 items = preserved_for_mesa + created
@@ -5501,7 +5580,7 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
             plan_summaries.append(
                 self._build_group_plan(
                     grupo, entry.proyecto, user, append_mode=append_mode,
-                    mesa_pins=pins, recycle=recycle,
+                    mesa_pins=pins, recycle=recycle, auto_dividir=True,
                 )
             )
         self._discard_recyclable_leftovers(recycle)
@@ -7287,10 +7366,10 @@ class DeviceViewSet(viewsets.ViewSet):
 
             current_item.marcar_hecho(user=None)
 
-            next_item = (
+            next_item = siguiente_activable(mesa, (
                 mesa.queue_items.select_for_update()
-                .filter(status=MesaQueueStatus.EN_COLA).order_by('position').first()
-            )
+                .filter(status=MesaQueueStatus.EN_COLA).order_by('position', 'id')
+            ))
             activate_queue_item(mesa, next_item)
             reconcile_superior_queue_if_adaptive(mesa.grupo)
 
@@ -7751,10 +7830,10 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
         
         # If we deleted the active item, promote the next one
         if was_mostrando:
-            next_item = MesaQueueItem.objects.filter(
+            next_item = siguiente_activable(mesa, MesaQueueItem.objects.filter(
                 mesa=mesa,
                 status=MesaQueueStatus.EN_COLA
-            ).order_by('position').first()
+            ).order_by('position', 'id'))
             activate_queue_item(mesa, next_item)
 
     @action(detail=True, methods=['post'])
@@ -7769,10 +7848,10 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
 
         # Auto-advance only if the item was currently showing.
         if previous_status == MesaQueueStatus.MOSTRANDO:
-            next_item = MesaQueueItem.objects.filter(
+            next_item = siguiente_activable(mesa, MesaQueueItem.objects.filter(
                 mesa=mesa,
                 status=MesaQueueStatus.EN_COLA
-            ).order_by('position').first()
+            ).order_by('position', 'id'))
             activate_queue_item(mesa, next_item)
 
         reconcile_superior_queue_if_adaptive(mesa.grupo)
@@ -7794,7 +7873,8 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
             displaced.status = MesaQueueStatus.EN_COLA
             displaced.save(update_fields=['status'])
             stash_showing_progress(displaced, mesa.current_image_index)
-        activate_queue_item(mesa, item)
+        # Elegido a mano: aunque su proyecto espere al anterior.
+        activate_queue_item(mesa, item, forzar=True)
         serializer = self.get_serializer(item)
         return Response(serializer.data)
 

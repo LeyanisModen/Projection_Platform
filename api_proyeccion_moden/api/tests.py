@@ -5689,8 +5689,135 @@ class PlanningFoundationTests(APITestCase):
             .values_list("modulo__nombre", flat=True)
         )
 
-        self.assertEqual(inf_1_queue, ["A05", "A04", "A03", "A02"])
-        self.assertEqual(inf_2_queue, ["A01"])
+        # El orden de los bastidores se respeta y, como con el grande la mesa 1
+        # acabaria tres modulos despues, ese ultimo bastidor se reparte (2 + 1)
+        # para que las dos acaben casi a la vez.
+        self.assertEqual(inf_1_queue, ["A05", "A04", "A02"])
+        self.assertEqual(inf_2_queue, ["A01", "A03"])
+        self.assertEqual(
+            list(GrupoBastidor.objects.filter(dividido_de=grupo_3).values_list("sufijo", flat=True)), ["B"],
+        )
+
+    def _proyecto_con_bastidores(self, nombre, tamanos, prefijo):
+        """Un proyecto con bastidores persistidos de ``tamanos`` modulos cada uno."""
+        from api.models import GrupoBastidor
+
+        proyecto = Proyecto.objects.create(nombre=nombre, usuario=self.user, bastidor_longitud_cm=200)
+        bastidores = []
+        for indice, tamano in enumerate(tamanos, start=1):
+            bastidor = GrupoBastidor.objects.create(proyecto=proyecto, indice=indice)
+            bastidores.append(bastidor)
+            for orden in range(1, tamano + 1):
+                modulo = Modulo.objects.create(
+                    nombre=f"{prefijo}{indice}-{orden}", proyecto=proyecto, ancho_cm="10.00",
+                    grupo_bastidor=bastidor, orden_intra=orden,
+                )
+                DetalleModuloFase.objects.create(modulo=modulo, fase="INFERIOR", espesor_cm="10.00")
+        return proyecto, bastidores
+
+    @staticmethod
+    def _cola(mesa):
+        return list(
+            MesaQueueItem.objects.filter(mesa=mesa, status__in=["EN_COLA", "MOSTRANDO"])
+            .order_by("position", "id").select_related("modulo")
+        )
+
+    def test_cada_proyecto_va_solo_y_el_siguiente_espera_a_que_las_inferiores_acaben_el_anterior(self):
+        from api.models import GrupoBastidor
+        from api.views import _promote_next_if_idle
+
+        self.modulo.cerrado = True
+        self.modulo.save(update_fields=["cerrado"])
+        proyecto_a, bastidores_a = self._proyecto_con_bastidores("Obra A", [2, 2, 2], "A")
+        proyecto_b, _ = self._proyecto_con_bastidores("Obra B", [1, 1], "B")
+        grupo = self._crear_grupo("Grupo Sin Mezcla")
+        for proyecto in (proyecto_a, proyecto_b):
+            respuesta = self.client.post(
+                f"/api/grupos-mesas/{grupo.id}/planificar/", {"proyecto_id": proyecto.id}, format="json",
+            )
+            self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        inf_1 = grupo.mesas.get(tipo="INFERIOR", indice=1)
+        inf_2 = grupo.mesas.get(tipo="INFERIOR", indice=2)
+        sup = grupo.mesas.get(tipo="SUPERIOR", indice=3)
+        proyectos = lambda cola: [item.modulo.proyecto.nombre for item in cola]  # noqa: E731
+
+        # A en las dos mesas por igual (su ultimo bastidor, dividido) y B despues, repartido por su cuenta.
+        self.assertTrue(GrupoBastidor.objects.filter(dividido_de=bastidores_a[2]).exists())
+        self.assertEqual(proyectos(self._cola(inf_1)), ["Obra A"] * 3 + ["Obra B"])
+        self.assertEqual(proyectos(self._cola(inf_2)), ["Obra A"] * 3 + ["Obra B"])
+        # La mesa de superiores no alterna: todo A antes que B.
+        self.assertEqual(proyectos(self._cola(sup)), ["Obra A"] * 6 + ["Obra B"] * 2)
+
+        # La mesa 2 acaba su parte de A: B no empieza mientras la mesa 1 siga con A.
+        for item in self._cola(inf_2)[:3]:
+            item.marcar_hecho(user=None)
+        self.assertIsNone(_promote_next_if_idle(inf_2))
+        self.client.get("/api/mesas/colas/")
+        self.assertFalse(MesaQueueItem.objects.filter(mesa=inf_2, status="MOSTRANDO").exists())
+        # La mesa 1 acaba A: ya pueden empezar B las dos.
+        for item in self._cola(inf_1)[:3]:
+            item.marcar_hecho(user=None)
+        self.client.get("/api/mesas/colas/")
+        for mesa in (inf_1, inf_2):
+            mostrando = MesaQueueItem.objects.get(mesa=mesa, status="MOSTRANDO")
+            self.assertEqual(mostrando.modulo.proyecto_id, proyecto_b.id)
+
+    def test_el_supervisor_puede_empezar_a_mano_el_proyecto_que_espera(self):
+        self.modulo.cerrado = True
+        self.modulo.save(update_fields=["cerrado"])
+        proyecto_a, _ = self._proyecto_con_bastidores("Obra A", [2, 2], "A")
+        proyecto_b, _ = self._proyecto_con_bastidores("Obra B", [1, 1], "B")
+        grupo = self._crear_grupo("Grupo Mostrar")
+        for proyecto in (proyecto_a, proyecto_b):
+            self.client.post(f"/api/grupos-mesas/{grupo.id}/planificar/", {"proyecto_id": proyecto.id}, format="json")
+        inf_1 = grupo.mesas.get(tipo="INFERIOR", indice=1)
+        de_b = next(item for item in self._cola(inf_1) if item.modulo.proyecto_id == proyecto_b.id)
+
+        respuesta = self.client.post(f"/api/mesa-queue-items/{de_b.id}/mostrar/")
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        de_b.refresh_from_db()
+        self.assertEqual(de_b.status, "MOSTRANDO")
+
+    def test_un_bastidor_unido_a_mano_no_se_vuelve_a_dividir_solo(self):
+        from api.models import GrupoBastidor
+
+        self.modulo.cerrado = True
+        self.modulo.save(update_fields=["cerrado"])
+        proyecto_a, bastidores_a = self._proyecto_con_bastidores("Obra A", [2, 2, 2], "A")
+        grupo = self._crear_grupo("Grupo Unir")
+        planificar = lambda: self.client.post(  # noqa: E731
+            f"/api/grupos-mesas/{grupo.id}/planificar/", {"proyecto_id": proyecto_a.id}, format="json",
+        )
+        planificar()
+        ultimo = bastidores_a[2]
+        self.assertTrue(GrupoBastidor.objects.filter(dividido_de=ultimo).exists())
+
+        respuesta = self.client.post(f"/api/grupos-bastidor/{ultimo.id}/unir/")
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        planificar()
+        ultimo.refresh_from_db()
+        self.assertTrue(ultimo.sin_division_automatica)
+        self.assertFalse(GrupoBastidor.objects.filter(dividido_de=ultimo).exists())
+
+    def test_lo_que_llega_tarde_de_un_proyecto_va_antes_que_el_siguiente(self):
+        from api.queue_sync import sync_new_module
+
+        self.modulo.cerrado = True
+        self.modulo.save(update_fields=["cerrado"])
+        proyecto_a, _ = self._proyecto_con_bastidores("Obra A", [2, 2], "A")
+        proyecto_b, _ = self._proyecto_con_bastidores("Obra B", [1, 1], "B")
+        grupo = self._crear_grupo("Grupo Tarde")
+        for proyecto in (proyecto_a, proyecto_b):
+            self.client.post(f"/api/grupos-mesas/{grupo.id}/planificar/", {"proyecto_id": proyecto.id}, format="json")
+
+        tarde = Modulo.objects.create(nombre="A9-1", proyecto=proyecto_a, ancho_cm="10.00")
+        sync_new_module(tarde)
+        item = MesaQueueItem.objects.get(modulo=tarde, fase="INFERIOR")
+        cola = [i.modulo.proyecto_id for i in self._cola(item.mesa)]
+        posicion = [i.id for i in self._cola(item.mesa)].index(item.id)
+        # Detras de lo de A y antes de lo de B.
+        self.assertTrue(all(p == proyecto_a.id for p in cola[:posicion]))
+        self.assertTrue(all(p == proyecto_b.id for p in cola[posicion + 1:]))
 
     def test_reordenar_bastidores_actualiza_colas_sin_reiniciar_el_actual(self):
         self.modulo.cerrado = True
