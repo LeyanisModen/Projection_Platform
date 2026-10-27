@@ -23,6 +23,63 @@ ACTIVE_QUEUE_STATUSES = [MesaQueueStatus.EN_COLA, MesaQueueStatus.MOSTRANDO]
 EARLY_IMAGE_INDEX_LIMIT = 1
 
 
+def orden_de_proyectos(group):
+    """{proyecto_id: posicion} en la cola de proyectos de una linea."""
+    if group is None:
+        return {}
+    ids = group.proyectos_cola.order_by("orden", "id").values_list("proyecto_id", flat=True)
+    return {proyecto_id: posicion for posicion, proyecto_id in enumerate(ids)}
+
+
+def proyecto_en_espera(group, proyecto_id, orden=None):
+    """El acero de cada proyecto se corta aparte: un proyecto no empieza en
+    las mesas inferiores de una linea mientras en ellas quede inferior de uno
+    anterior en su cola de proyectos (aunque la mesa ya haya acabado el suyo)."""
+    if group is None:
+        return False
+    orden = orden_de_proyectos(group) if orden is None else orden
+    posicion = orden.get(proyecto_id)
+    if posicion is None:
+        return False
+    anteriores = [otro for otro, suya in orden.items() if suya < posicion]
+    return bool(anteriores) and MesaQueueItem.objects.filter(
+        mesa__grupo=group,
+        mesa__tipo=MesaTipo.INFERIOR,
+        mesa__activa=True,
+        fase=Fase.INFERIOR,
+        status__in=ACTIVE_QUEUE_STATUSES,
+        modulo__proyecto_id__in=anteriores,
+    ).exists()
+
+
+def _espera_en_mesa(mesa, item, orden=None):
+    return (
+        item is not None
+        and item.fase == Fase.INFERIOR
+        and mesa.tipo == MesaTipo.INFERIOR
+        and mesa.grupo_id is not None
+        and proyecto_en_espera(mesa.grupo, item.modulo.proyecto_id, orden)
+    )
+
+
+def siguiente_activable(mesa, items):
+    """El primero de ``items`` (en su orden) que la mesa puede empezar ya:
+    los de un proyecto que espera al anterior se saltan."""
+    orden = None
+    en_espera = {}
+    for item in items:
+        if item.fase != Fase.INFERIOR or mesa.tipo != MesaTipo.INFERIOR or mesa.grupo_id is None:
+            return item
+        proyecto_id = item.modulo.proyecto_id
+        if proyecto_id not in en_espera:
+            if orden is None:
+                orden = orden_de_proyectos(mesa.grupo)
+            en_espera[proyecto_id] = proyecto_en_espera(mesa.grupo, proyecto_id, orden)
+        if not en_espera[proyecto_id]:
+            return item
+    return None
+
+
 def module_operational_state(modulo, showing_items=None):
     """Return the module state visible to operators.
 
@@ -249,12 +306,21 @@ def stash_showing_progress(item, current_image_index):
     close_showing_interval(item, EventoFabricacionTipo.PAUSA)
 
 
-def activate_queue_item(mesa, item):
+def activate_queue_item(mesa, item, forzar=False):
     """Make ``item`` the one showing on ``mesa`` (or clear the mesa).
 
     The mesa image index continues where the phase was left the last time
     it was on a mesa, if it was ever displaced mid-work.
+
+    An inferior of a project that waits for the previous one (see
+    ``proyecto_en_espera``) is not shown: the mesa stays free. Only a
+    supervisor's explicit choice (``forzar``) skips that rule.
     """
+    if not forzar and _espera_en_mesa(mesa, item):
+        if item.status == MesaQueueStatus.MOSTRANDO:
+            item.status = MesaQueueStatus.EN_COLA
+            item.save(update_fields=["status"])
+        item = None
     if item is None:
         mesa.imagen_actual = None
         mesa.current_image_index = 0
@@ -523,12 +589,17 @@ def _resolve_target(modulo, fase, group, hint):
     if peer and peer.mesa.activa and peer.mesa.tipo == expected_type:
         return peer.mesa, peer.plan_group_index
 
+    # La mesa con menos trabajo de este proyecto: cada proyecto se reparte
+    # por su cuenta (no se mezcla con lo que las mesas tienen de otros).
     mesa = (
         group.mesas.filter(tipo=expected_type, activa=True)
         .annotate(
             active_work=Count(
                 "queue_items",
-                filter=Q(queue_items__status__in=ACTIVE_QUEUE_STATUSES),
+                filter=Q(
+                    queue_items__status__in=ACTIVE_QUEUE_STATUSES,
+                    queue_items__modulo__proyecto_id=modulo.proyecto_id,
+                ),
             )
         )
         .order_by("active_work", "indice", "id")
@@ -586,7 +657,14 @@ def _insert_phase(modulo, fase, mesa, plan_group_index, assigned_by, prioritize,
             if item.modulo.proyecto_id == modulo.proyecto_id
             and item.modulo.grupo_bastidor_id == modulo.grupo_bastidor_id
         ]
-        insert_at = len(active_items)
+        # Sin su bastidor en la mesa, detras de lo ultimo de su proyecto: lo
+        # que llega tarde no se pone detras del proyecto siguiente.
+        del_proyecto = [
+            index
+            for index, item in enumerate(active_items)
+            if item.modulo.proyecto_id == modulo.proyecto_id
+        ]
+        insert_at = max(del_proyecto) + 1 if del_proyecto else len(active_items)
         if peer_indexes:
             insert_at = max(peer_indexes) + 1
             if fase == Fase.INFERIOR:
@@ -1192,6 +1270,9 @@ def reconcile_superior_queue_for_group(group):
         superior_mesas = {
             item.mesa_id: item.mesa for item in superior_items
         }
+        # Las superiores no alternan proyectos: todo lo de uno (en el orden de
+        # la cola de proyectos de la linea) antes que lo del siguiente.
+        orden_proyecto = orden_de_proyectos(group)
         for mesa_id, mesa in superior_mesas.items():
             mesa_items = [item for item in superior_items if item.mesa_id == mesa_id]
             current = next(
@@ -1202,7 +1283,11 @@ def reconcile_superior_queue_for_group(group):
                 None,
             )
             pending = [item for item in mesa_items if item is not current]
-            pending.sort(key=lambda item: (rank.get(item.id, len(rank)), item.id))
+            pending.sort(key=lambda item: (
+                orden_proyecto.get(item.modulo.proyecto_id, len(orden_proyecto)),
+                rank.get(item.id, len(rank)),
+                item.id,
+            ))
             ordered = ([current] if current else []) + pending
             _persist_active_order(mesa, ordered, current)
 

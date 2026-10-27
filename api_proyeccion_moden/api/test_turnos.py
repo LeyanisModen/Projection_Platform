@@ -2,6 +2,7 @@ import hashlib
 import secrets
 from datetime import date, datetime, time
 from importlib import import_module
+from unittest.mock import patch
 
 from django.apps import apps
 from django.contrib.auth.models import User
@@ -9,9 +10,11 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
-from .models import EventoFabricacion, Mesa, MesaQueueItem, MesaQueueStatus, Modulo, Proyecto, UserProfile
+from .models import (
+    EventoFabricacion, HistorialTurnos, Mesa, MesaQueueItem, MesaQueueStatus, Modulo, Proyecto, UserProfile,
+)
 from .planning import plan_ferralla
-from .turnos import Jornada, leer_turnos, tramos, turnos_de
+from .turnos import PRINCIPIO, Jornada, Vigencias, leer_turnos, tramos, turnos_de
 
 MANANA = {'nombre': 'Mañana', 'activo': True,
           'horario': {day: ['06:00', '16:00'] for day in ('MON', 'TUE', 'WED', 'THU', 'FRI')}}
@@ -51,6 +54,21 @@ class TurnosTests(TestCase):
         profile.turnos = [MANANA, {**NOCHE, 'activo': False}]
         self.assertEqual([t.nombre for t in turnos_de(profile)], ['Mañana'])
         self.assertEqual([t.nombre for t in turnos_de(profile, solo_activos=False)], ['Mañana', 'Noche'])
+
+
+    def test_cada_dia_cuenta_con_los_turnos_que_tenia(self):
+        antes = [turno for turno in leer_turnos([MANANA, {**NOCHE, 'activo': False}]) if turno.activo]
+        vigencias = Vigencias([(date(2026, 10, 18), leer_turnos([MANANA, NOCHE])), (PRINCIPIO, antes)])
+        cada_dia = tramos(vigencias, date(2026, 10, 15), date(2026, 10, 19))
+        self.assertEqual([(t.fecha.isoformat(), t.turno.nombre) for t in cada_dia], [
+            ('2026-10-15', 'Mañana'),
+            ('2026-10-16', 'Mañana'),
+            # El domingo 18, la primera noche; el lunes, los dos.
+            ('2026-10-18', 'Noche'),
+            ('2026-10-19', 'Mañana'), ('2026-10-19', 'Noche'),
+        ])
+        # Antes de la primera version, la primera.
+        self.assertEqual([t.turno.nombre for t in tramos(vigencias, date(1999, 1, 4), date(1999, 1, 4))], ['Mañana'])
 
 
 class TurnosPlanYEstadisticasTests(APITestCase):
@@ -142,6 +160,22 @@ class TurnosPlanYEstadisticasTests(APITestCase):
         noche = self.client.get('/api/stats/production/', {'from': '2026-09-29', 'to': '2026-09-29', 'turno': 1}).data['totals']
         self.assertEqual((noche['horas_productivas'], noche['horas_hombre']), (10.0, 20.0))
 
+    def test_las_estadisticas_de_cada_dia_usan_los_turnos_que_habia_ese_dia(self):
+        self.profile.turnos = [{**MANANA, 'personas': 4}, {**NOCHE, 'personas': 2}]
+        self.profile.save(update_fields=['turnos'])
+        # Hasta el lunes 28 solo habia manana, con 3 personas.
+        HistorialTurnos.objects.create(ferralla=self.user, desde=PRINCIPIO,
+                                       turnos=[{**MANANA, 'personas': 3}, {**NOCHE, 'activo': False}])
+        HistorialTurnos.objects.create(ferralla=self.user, desde=date(2026, 9, 28), turnos=self.profile.turnos)
+        dia = lambda fecha: self.client.get('/api/stats/production/', {'from': fecha, 'to': fecha}).data['totals']
+
+        viernes = dia('2026-09-25')
+        self.assertEqual((viernes['horas_productivas'], viernes['horas_hombre']), (10.0, 30.0))
+        # El lunes 28 ya con los de ahora, pero la noche del domingo aun no existia:
+        # manana (10 h x 4) y el principio de su noche (5 h x 2).
+        lunes = dia('2026-09-28')
+        self.assertEqual((lunes['horas_productivas'], lunes['horas_hombre']), (15.0, 50.0))
+
     def test_el_objetivo_de_un_turno_es_su_parte_de_los_turnos(self):
         Modulo.objects.bulk_create([Modulo(nombre=f'A{i}', proyecto=self.project) for i in range(100)])
         todos = self.client.get('/api/stats/production/', {'from': '2026-09-28', 'to': '2026-09-28'}).data
@@ -207,6 +241,45 @@ class TurnosConfiguracionTests(APITestCase):
         self.assertEqual(self.client.put(url, {'turnos': [vacio], 'interval_seconds': 20}, format='json').status_code, 400)
         repetido = [self._turno(MANANA), self._turno(MANANA)]
         self.assertEqual(self.client.put(url, {'turnos': repetido, 'interval_seconds': 20}, format='json').status_code, 400)
+
+    def test_cambiar_los_turnos_vale_desde_hoy_y_lo_de_antes_se_queda(self):
+        url = f'/api/users/{self.ferralla.pk}/capture-config/'
+        UserProfile.objects.create(user=self.ferralla, turnos=[{**MANANA, 'personas': 3}])
+        guardar = lambda personas: self.client.put(
+            url, {'turnos': [{**self._turno(MANANA), 'personas': personas}], 'interval_seconds': 20}, format='json',
+        )
+        historial = lambda: [(v.desde, v.turnos[0]['personas']) for v in HistorialTurnos.objects.filter(ferralla=self.ferralla)]
+
+        with patch('django.utils.timezone.localdate', return_value=date(2026, 10, 27)):
+            self.assertEqual(guardar(5).status_code, 200)
+            # Lo que habia, desde siempre; lo nuevo, desde hoy.
+            self.assertEqual(historial(), [(PRINCIPIO, 3), (date(2026, 10, 27), 5)])
+            # Otro cambio el mismo dia corrige el de hoy; sin cambios, nada.
+            guardar(6)
+            guardar(6)
+            self.assertEqual(historial(), [(PRINCIPIO, 3), (date(2026, 10, 27), 6)])
+        with patch('django.utils.timezone.localdate', return_value=date(2026, 11, 2)):
+            guardar(4)
+        self.assertEqual(historial(), [(PRINCIPIO, 3), (date(2026, 10, 27), 6), (date(2026, 11, 2), 4)])
+
+    def test_la_migracion_deja_el_turno_de_noche_desde_el_18_de_octubre(self):
+        migracion = import_module('api.migrations.0089_historial_turnos_inicial')
+        UserProfile.objects.create(user=self.ferralla, turnos=[{**MANANA, 'personas': 4}, {**NOCHE, 'personas': 4}])
+        UserProfile.objects.create(user=self.admin, turnos=[MANANA])
+        migracion.turnos_iniciales(apps, None)
+        migracion.turnos_iniciales(apps, None)
+
+        versiones = lambda user: [
+            (v.desde, [(t['nombre'], t['activo'], t['personas']) for t in v.turnos])
+            for v in HistorialTurnos.objects.filter(ferralla=user)
+        ]
+        self.assertEqual(versiones(self.ferralla), [
+            (PRINCIPIO, [('Mañana', True, 4), ('Noche', False, 4)]),
+            (date(2026, 10, 18), [('Mañana', True, 4), ('Noche', True, 4)]),
+        ])
+        self.assertEqual(versiones(self.admin), [(PRINCIPIO, [('Mañana', True, 0)])])
+        # El horario, el de hoy.
+        self.assertEqual(HistorialTurnos.objects.filter(ferralla=self.ferralla).first().turnos[0]['horario'], MANANA['horario'])
 
     def test_la_migracion_pasa_el_horario_a_un_turno(self):
         migracion = import_module('api.migrations.0079_turnos_desde_horario')

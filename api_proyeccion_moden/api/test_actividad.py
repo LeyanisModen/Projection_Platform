@@ -7,7 +7,9 @@ from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from .actividad import huecos, sesiones, solape, union
-from .models import EventoFabricacion, FotoFabricacion, Mesa, MesaQueueItem, MesaQueueStatus, Modulo, Proyecto, UserProfile
+from .models import (
+    DetalleModuloFase, EventoFabricacion, FotoFabricacion, Mesa, MesaQueueItem, MesaQueueStatus, Modulo, Proyecto, UserProfile,
+)
 
 
 def aware(*args):
@@ -109,6 +111,31 @@ class ActividadEnEstadisticasTests(APITestCase):
         self.assertNotIn('05', por_hora)
         # Modulos por hora de trabajo, no de turno: 2 modulos completos (A1 y A2 no, falta su superior)...
         self.assertEqual(totales['modulos_por_hora_trabajo'], round(totales['modulos_completados'] / 7.0, 2))
+
+    def test_los_kilos_por_hora_hombre_salen_con_las_horas_trabajadas_y_con_todas(self):
+        self.user.profile.turnos = [{**MANANA, 'personas': 3}]
+        self.user.profile.save(update_fields=['turnos'])
+        self._fase(self.mesa1, 'K1', 'INFERIOR', aware(2026, 9, 28, 13), pasos=self._cada(aware(2026, 9, 28, 7), aware(2026, 9, 28, 13)))
+        self._fase(self.mesa1, 'K1', 'SUPERIOR', aware(2026, 9, 28, 15), pasos=self._cada(aware(2026, 9, 28, 14), aware(2026, 9, 28, 15)))
+        Modulo.objects.filter(nombre='K1').update(estado='COMPLETADO', completado_at=aware(2026, 9, 28, 15))
+        DetalleModuloFase.objects.create(modulo=Modulo.objects.get(nombre='K1'), fase='INFERIOR', peso_malla_final_kg=630)
+        totales = self._stats()['totals']
+        # 7 h trabajadas de un turno de 10, con 3 personas.
+        self.assertEqual((totales['horas_hombre_trabajo'], totales['horas_hombre']), (21.0, 30.0))
+        self.assertEqual((totales['kg_por_hora_hombre_trabajo'], totales['kg_por_hora_hombre']), (30.0, 21.0))
+
+    def test_lo_trabajado_fuera_de_turno_cuenta_con_las_personas_del_turno_mas_cercano(self):
+        self.user.profile.turnos = [{**MANANA, 'personas': 3}]
+        self.user.profile.save(update_fields=['turnos'])
+        # Viernes 2/10 de 07:00 a 09:00 (en turno) y sabado 3/10, sin turno, de 08:00 a 10:00.
+        self._fase(self.mesa1, 'F1', 'INFERIOR', aware(2026, 10, 2, 9), pasos=self._cada(aware(2026, 10, 2, 7), aware(2026, 10, 2, 9)))
+        self._fase(self.mesa1, 'F2', 'INFERIOR', aware(2026, 10, 3, 10), pasos=self._cada(aware(2026, 10, 3, 8), aware(2026, 10, 3, 10)))
+        totales = self.client.get('/api/stats/production/', {'from': '2026-10-02', 'to': '2026-10-04'}).data['totals']
+        self.assertEqual((totales['horas_trabajo'], totales['horas_hombre_trabajo']), (4.0, 12.0))
+        # Con todas las horas: el turno del viernes (10 h x 3) y lo del sabado (2 h x 3).
+        self.assertEqual(totales['horas_hombre'], 36.0)
+        # Sin kilos fabricados no hay cifra que dar, pero tampoco se rompe.
+        self.assertEqual(totales['kg_por_hora_hombre_trabajo'], 0.0)
 
     def test_un_dia_sin_ninguna_senal_es_sin_registro_y_el_trabajo_fuera_de_turno_se_suma(self):
         # Martes 29: nadie toca nada. Lunes 28: trabajan de 05:00 a 07:00 (una hora antes del turno).

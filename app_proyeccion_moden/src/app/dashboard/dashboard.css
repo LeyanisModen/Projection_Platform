@@ -72,6 +72,8 @@
 .mesa-empty-text { color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: 0.08em; }
 .mesa-queue { flex: 1; display: flex; flex-direction: column; gap: 4px; min-height: 0; padding: 8px 10px 12px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
 .queue-group-divider { margin: 6px 0 2px; color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-align: center; text-transform: uppercase; }
+/* Mesa inferior parada hasta que las demas acaben el proyecto anterior. */
+.mesa-espera { margin: 0 0 6px; padding: 6px 8px; border: 1px dashed var(--line-strong); color: var(--text); font-size: 12px; text-align: center; }
 .queue-item { position: relative; padding: 7px 10px; border: 1px solid var(--line); border-left: 3px solid var(--line-strong); background: var(--surface); }
 .queue-item.status-mostrando { border-left-color: var(--accent); background: var(--accent-soft); }
 .queue-item.status-en-cola { border-left-color: var(--line-strong); }
@@ -125,6 +127,8 @@
 .stats-module-target { color: var(--muted); font-size: 14px; font-weight: 500; }
 .stats-kpi-expected { display: block; }
 .stats-kpi-sep { display: inline-block; width: 1px; height: 0.85em; margin: 0 10px 0 8px; background: var(--line-strong); vertical-align: -0.05em; }
+/* Kilos por hora-hombre con todas las horas (tiempo muerto incluido): el mismo mostaza que las horas muertas. */
+.stats-kpi-todas { color: var(--warn); }
 .stats-planning-warning { margin: 0; color: var(--warn); font-size: 12px; }
 .stats-subtitle { margin: 8px 0 0; color: var(--text); font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
 .stats-table { width: 100%; border-collapse: collapse; font-size: 13px; }

@@ -2756,6 +2756,25 @@ export class Dashboard implements OnInit, OnDestroy {
 
   /** Grafica del turno: debajo de la linea lo trabajado, encima el tiempo muerto. */
   readonly splitHoras: SplitArea = { below: CHART_AZUL, above: CHART_AMARILLO, belowLabel: 'Trabajo', aboveLabel: 'Tiempo muerto' };
+  readonly jornadaInfo = 'Horas trabajadas sobre las horas de turno. Las paradas para comer o descansar no se descuentan: salen como tiempo muerto.';
+
+  /** "Jornada productiva · 82 % aprovechado": lo trabajado sobre el turno de todo el periodo. */
+  jornadaProductivaTitulo(totals: ProductionStatsResponse['totals']): string {
+    const trabajo = totals.horas_trabajo ?? 0;
+    const turno = trabajo + (totals.horas_muertas ?? 0);
+    if (totals.horas_trabajo == null || turno <= 0) return 'Jornada productiva (%)';
+    return `Jornada productiva · ${formatNumber((trabajo / turno) * 100, 'en-US', '1.0-0')} % aprovechado`;
+  }
+
+  /** Explicacion de las dos cifras de kilos por hora-hombre. */
+  kgHoraHombreTitulo(totals: ProductionStatsResponse['totals']): string {
+    const trabajadas = totals.horas_hombre_trabajo != null
+      ? `En negro, con las horas trabajadas de verdad (${this.horasLabel(totals.horas_hombre_trabajo)} horas-hombre); en mostaza, `
+      : 'Con ';
+    return 'Kilos fabricados por cada hora de cada persona. ' + trabajadas
+      + `con todas las horas, también el tiempo muerto (${this.horasLabel(totals.horas_hombre ?? 0)} horas-hombre en el período). `
+      + 'Las personas de cada turno se ponen en los turnos de trabajo.';
+  }
 
   /** El servidor ya deduce trabajo y tiempo muerto (uno antiguo solo da horas de jornada). */
   hayActividad(): boolean {
@@ -3555,11 +3574,16 @@ export class Dashboard implements OnInit, OnDestroy {
 
   /**
    * Muestra separador "<Proyecto> · Bastidor N" antes de un item si cambia
-   * el plan_group_index O el proyecto respecto al item anterior. Solo se
-   * aplica a mesas inferiores; en SUP no tiene sentido agrupar visualmente.
+   * el plan_group_index O el proyecto respecto al item anterior. En las
+   * superiores los bastidores se alternan: solo se marca el cambio de
+   * proyecto (si en la mesa hay mas de uno).
    */
   shouldShowGroupDivider(item: MesaQueueItem, index: number, mesa: Mesa): boolean {
-    if (mesa.tipo === 'SUPERIOR') return false;
+    if (mesa.tipo === 'SUPERIOR') {
+      const items = this.getMesaQueueItems(mesa.id);
+      if (index === 0) return items.some(otro => otro.modulo_proyecto_id !== item.modulo_proyecto_id);
+      return items[index - 1]?.modulo_proyecto_id !== item.modulo_proyecto_id;
+    }
     const current = item.plan_group_index;
     if (current == null) return false;
     if (index === 0) return true;
@@ -3579,7 +3603,8 @@ export class Dashboard implements OnInit, OnDestroy {
    * numeracion en cada uno, asi que sin el proyecto delante el
    * operario no distingue 'Bastidor 1' de P5 vs 'Bastidor 1' de P3.
    */
-  getItemGrupoLabel(item: MesaQueueItem): string {
+  getItemGrupoLabel(item: MesaQueueItem, mesa?: Mesa): string {
+    if (mesa?.tipo === 'SUPERIOR') return (item.modulo_proyecto_nombre || '').trim() || 'Sin proyecto';
     const grupoName = (item.grupo_bastidor_nombre || '').trim();
     const grupoIdx = item.grupo_bastidor_indice;
     const sufijo = (item.grupo_bastidor_sufijo || '').trim();
@@ -3587,6 +3612,24 @@ export class Dashboard implements OnInit, OnDestroy {
     const grupo = !sufijo ? base : (grupoName ? `${base} ${sufijo}` : `${base}${sufijo}`);
     const proyecto = (item.modulo_proyecto_nombre || '').trim();
     return proyecto ? `${proyecto} · ${grupo}` : grupo;
+  }
+
+  /**
+   * Mesa inferior parada porque lo siguiente es de otro proyecto y las demas
+   * inferiores de la linea aun no han acabado el suyo (el acero de cada
+   * proyecto se corta aparte): el nombre del proyecto al que espera.
+   */
+  esperaProyectoAnterior(mesa: Mesa): string | null {
+    if (mesa.tipo !== 'INFERIOR' || !mesa.activa) return null;
+    const cola = this.getMesaQueueItems(mesa.id);
+    if (!cola.length || cola.some(item => item.status === 'MOSTRANDO')) return null;
+    const siguiente = cola[0].modulo_proyecto_id;
+    for (const otra of this.mesas) {
+      if (otra.id === mesa.id || otra.grupo !== mesa.grupo || otra.tipo !== 'INFERIOR' || !otra.activa) continue;
+      const anterior = this.getMesaQueueItems(otra.id).find(item => item.modulo_proyecto_id !== siguiente);
+      if (anterior) return anterior.modulo_proyecto_nombre || 'el proyecto anterior';
+    }
+    return null;
   }
 
   getProyectoNombre(projectId: number | null): string {

@@ -246,6 +246,10 @@ class Actividad:
             total['paradas'] += max(0.0, muerto - tarde - pronto)
         return {**total, 'abre': abre, 'cierra': cierra}
 
+    def trabajo_en(self, inicio, fin):
+        """Segundos trabajados en la fabrica dentro de [inicio, fin), como en desglose()."""
+        return solape(self._fabrica.tocan(inicio, fin), inicio, fin)
+
     def trabajo_fuera(self, ventanas, desde, hasta):
         """Segundos trabajados en [desde, hasta) fuera de las ventanas de turno."""
         return sum(self._fabrica.solape(a, b) for a, b in huecos(ventanas, desde, hasta))
