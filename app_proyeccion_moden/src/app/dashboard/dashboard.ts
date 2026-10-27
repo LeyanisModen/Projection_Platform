@@ -2769,7 +2769,7 @@ export class Dashboard implements OnInit, OnDestroy {
   /** Explicacion de las dos cifras de kilos por hora-hombre. */
   kgHoraHombreTitulo(totals: ProductionStatsResponse['totals']): string {
     const trabajadas = totals.horas_hombre_trabajo != null
-      ? `En negro, con las horas trabajadas de verdad (${this.horasLabel(totals.horas_hombre_trabajo)} horas-hombre); en naranja, `
+      ? `En negro, con las horas trabajadas de verdad (${this.horasLabel(totals.horas_hombre_trabajo)} horas-hombre); en mostaza, `
       : 'Con ';
     return 'Kilos fabricados por cada hora de cada persona. ' + trabajadas
       + `con todas las horas, también el tiempo muerto (${this.horasLabel(totals.horas_hombre ?? 0)} horas-hombre en el período). `
