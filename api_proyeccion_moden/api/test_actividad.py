@@ -132,6 +132,8 @@ class ActividadEnEstadisticasTests(APITestCase):
         self._fase(self.mesa1, 'F2', 'INFERIOR', aware(2026, 10, 3, 10), pasos=self._cada(aware(2026, 10, 3, 8), aware(2026, 10, 3, 10)))
         totales = self.client.get('/api/stats/production/', {'from': '2026-10-02', 'to': '2026-10-04'}).data['totals']
         self.assertEqual((totales['horas_trabajo'], totales['horas_hombre_trabajo']), (4.0, 12.0))
+        # Con todas las horas: el turno del viernes (10 h x 3) y lo del sabado (2 h x 3).
+        self.assertEqual(totales['horas_hombre'], 36.0)
         # Sin kilos fabricados no hay cifra que dar, pero tampoco se rompe.
         self.assertEqual(totales['kg_por_hora_hombre_trabajo'], 0.0)
 

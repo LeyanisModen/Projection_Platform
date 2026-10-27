@@ -96,7 +96,7 @@ describe('Dashboard', () => {
       expect(casilla.querySelector('.stats-kpi-real')?.textContent?.trim()).toBe('19.7');
       expect(casilla.querySelector('.stats-kpi-todas')?.textContent?.trim()).toBe('12.3');
       expect(casilla.getAttribute('title')).toContain('En negro, con las horas trabajadas de verdad (30 horas-hombre)');
-      expect(casilla.getAttribute('title')).toContain('en naranja, con todas las horas de turno, también el tiempo muerto (48 horas-hombre');
+      expect(casilla.getAttribute('title')).toContain('en naranja, con todas las horas, también el tiempo muerto (48 horas-hombre');
     });
 
     it('shows the time per panel as a KPI per phase and a column per mesa', () => {

@@ -2772,7 +2772,7 @@ export class Dashboard implements OnInit, OnDestroy {
       ? `En negro, con las horas trabajadas de verdad (${this.horasLabel(totals.horas_hombre_trabajo)} horas-hombre); en naranja, `
       : 'Con ';
     return 'Kilos fabricados por cada hora de cada persona. ' + trabajadas
-      + `con todas las horas de turno, también el tiempo muerto (${this.horasLabel(totals.horas_hombre ?? 0)} horas-hombre en el período). `
+      + `con todas las horas, también el tiempo muerto (${this.horasLabel(totals.horas_hombre ?? 0)} horas-hombre en el período). `
       + 'Las personas de cada turno se ponen en los turnos de trabajo.';
   }
 
