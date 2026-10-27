@@ -6,6 +6,8 @@
                 [attr.aria-current]="vista === 'produccion' ? 'page' : null" (click)="irA('produccion')">Producción</button>
             <button type="button" class="nav-link" [class.active]="vista === 'estadisticas'"
                 [attr.aria-current]="vista === 'estadisticas' ? 'page' : null" (click)="irA('estadisticas')">Estadísticas</button>
+            <button type="button" class="nav-link" [class.active]="vista === 'planificacion'"
+                [attr.aria-current]="vista === 'planificacion' ? 'page' : null" (click)="irA('planificacion')">Planificación</button>
         </nav>
         <div class="header-right">
             <button type="button" class="btn-icon btn-notificaciones" (click)="openNotificaciones()"
@@ -518,6 +520,14 @@
             </section>
 
             }
+            @if (vista === 'planificacion') {
+            <section class="planificacion-section" id="planificacion-section">
+                <div class="section-header legacy-header">
+                    <h2>Planificación</h2>
+                </div>
+                <app-planificacion-ferralla />
+            </section>
+            }
             @if (vista === 'produccion') {
             <section class="planner-section" id="grupos-section">
                 <div class="section-header planner-header">
@@ -762,10 +772,10 @@
                                     </svg>
                                 </button>
                                 <button class="project-icon project-icon-elementos" type="button"
-                                    [class.project-icon-disabled]="!proyecto.elementos_sueltos_archivo"
-                                    [title]="proyecto.elementos_sueltos_archivo ? 'Ver elementos sueltos' : 'Elementos sueltos no disponibles'"
+                                    [class.project-icon-disabled]="!proyecto.elementos_sueltos_disponible"
+                                    [title]="proyecto.elementos_sueltos_disponible ? 'Ver elementos sueltos' : 'Elementos sueltos no disponibles'"
                                     aria-label="Ver elementos sueltos"
-                                    [disabled]="!proyecto.elementos_sueltos_archivo"
+                                    [disabled]="!proyecto.elementos_sueltos_disponible"
                                     (click)="openElementosModal(proyecto, $event)">
                                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                         <rect x="3" y="3" width="18" height="18" rx="2"></rect>
@@ -775,11 +785,11 @@
                                     </svg>
                                 </button>
                                 <button class="project-icon" type="button"
-                                    [class.project-icon-disabled]="!proyecto.documentos_archivo"
-                                    [title]="proyecto.documentos_archivo ? 'Descargar documentos ZIP' : 'Documentos no disponibles'"
-                                    aria-label="Descargar documentos ZIP"
-                                    [disabled]="!proyecto.documentos_archivo"
-                                    (click)="openProjectDocument(proyecto, 'documentos', $event)">
+                                    [class.project-icon-disabled]="!proyecto.despiece_archivo"
+                                    [title]="proyecto.despiece_archivo ? 'Descargar despiece' : 'Despiece no disponible'"
+                                    aria-label="Descargar despiece"
+                                    [disabled]="!proyecto.despiece_archivo"
+                                    (click)="openProjectDocument(proyecto, 'despiece', $event)">
                                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                                         <path d="M14 2v6h6"></path>
@@ -797,10 +807,10 @@
                                 <span class="project-montaje-campo">
                                     <label>
                                         <span>Montaje en obra</span>
-                                        <!-- Sin la suya, la orientativa de contratacion ya marcada (en gris) para confirmarla o cambiarla. -->
+                                        <!-- Sin la suya, la orientativa que se hablo al confirmar el proyecto ya marcada (en gris) para confirmarla o cambiarla. -->
                                         <input type="date" [value]="proyecto.fecha_montaje_obra || proyecto.fecha_montaje || ''"
                                             [class.orientativa]="!proyecto.fecha_montaje_obra && !!proyecto.fecha_montaje"
-                                            [title]="!proyecto.fecha_montaje_obra && proyecto.fecha_montaje ? 'Fecha orientativa de contratación' : ''"
+                                            [title]="!proyecto.fecha_montaje_obra && proyecto.fecha_montaje ? 'Fecha orientativa hablada al confirmar el proyecto' : ''"
                                             [disabled]="fechaObraGuardandoId === proyecto.id"
                                             (change)="guardarFechaMontajeObra(proyecto, $event)"
                                             aria-label="Fecha de montaje en obra">
@@ -817,7 +827,7 @@
                                 @if (!proyecto.fecha_montaje_obra && proyecto.fecha_montaje) {
                                     <span class="project-montaje-aviso" role="status">
                                         <i class="fa fa-exclamation-circle" aria-hidden="true"></i>
-                                        Fecha orientativa de contratación: confírmala o cámbiala para que el proyecto quede aceptado y entre en el cálculo de objetivos.
+                                        Fecha orientativa hablada al confirmar el proyecto: confírmala o cámbiala para que quede aceptado y entre en el cálculo de objetivos.
                                     </span>
                                 } @else if (!proyecto.fecha_montaje_obra) {
                                     <span class="project-montaje-aviso" role="status">

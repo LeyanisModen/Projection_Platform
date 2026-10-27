@@ -190,9 +190,14 @@ export interface Proyecto {
     datos_tecnicos_archivo?: string | null;
     datos_tecnicos_actualizados_at?: string | null;
     plano_archivo?: string | null;
-    documentos_archivo?: string | null;
-    /** Excel de elementos sueltos a llevar a obra (barras, vigas, zunchos fuera de modulo). */
+    /** Excel de despiece; su pestaña ELEMENTOS SUELTOS llena el modal de elementos sueltos. */
+    despiece_archivo?: string | null;
+    /** Excel de elementos sueltos que se subia aparte antes del despiece; ya no se sube. */
     elementos_sueltos_archivo?: string | null;
+    /** Hay de donde sacar los elementos sueltos: despiece en Excel o el Excel aparte de antes. */
+    elementos_sueltos_disponible?: boolean;
+    /** Kilos de los elementos sueltos, de la base tecnica; null mientras no los trae. */
+    peso_elementos_sueltos_kg?: string | null;
     estrategia_bastidor: EstrategiaBastidor;
     grupos_count?: number;
     modulos_count?: number;
@@ -710,6 +715,60 @@ export interface ElementosSueltos {
     hojas: ElementosSueltosHoja[];
 }
 
+/** Kilos que la ferralla suma a un proyecto por su cuenta. */
+export interface KilosOtrosLinea {
+    id: number;
+    concepto: string;
+    kg: number;
+}
+
+export interface PlanificacionTarjeta {
+    id: number;
+    nombre: string;
+    planta_etiqueta: string | null;
+    /** Id del edificio: la pagina pone una columna por edificio. */
+    edificio: number | null;
+    edificio_nombre: string | null;
+    fecha_entrega: string | null;
+    /** Sin la fecha de la ferralla: la orientativa hablada al confirmar el proyecto. */
+    entrega_orientativa: boolean;
+    modulos_total: number;
+    modulos_completados: number;
+    estado: string;
+    kilos: {
+        /** null: aun sin modulos subidos. */
+        modulos: number | null;
+        fabricado: number;
+        desperdicio: number;
+        /** null: la base tecnica aun no trae los elementos sueltos. */
+        sueltos: number | null;
+        otros: KilosOtrosLinea[];
+        /** Lo que va a obra: modulos, sueltos y otros (el desperdicio no); null sin los modulos. */
+        total: number | null;
+    };
+}
+
+export interface PlanificacionEntrega {
+    proyecto: number;
+    nombre: string;
+    fecha: string;
+    orientativa: boolean;
+    modulos_pendientes: number;
+}
+
+export interface PlanificacionResponse {
+    ferrallas: Array<{ id: number; nombre: string }> | null;
+    ferralla: { id: number; nombre: string } | null;
+    desde?: string;
+    hasta?: string;
+    /** Dias laborables de la ventana con los modulos al dia que exigen las entregas. */
+    dias?: Array<{ fecha: string; modulos: number }>;
+    festivos?: string[];
+    tramos?: Array<{ desde: string; hasta: string; ritmo: number }>;
+    entregas?: PlanificacionEntrega[];
+    proyectos?: PlanificacionTarjeta[];
+}
+
 export interface ProductionStatsResponse {
     range: {
         from: string; to: string; working_days: number; festivos?: string[];
@@ -1011,7 +1070,7 @@ export class ApiService {
             imagenes: number;
             detalles_fase: number;
             plano_cargado?: boolean;
-            documentos_cargados?: boolean;
+            despiece_cargado?: boolean;
             base_tecnica_actualizada?: boolean;
             modulos_omitidos?: number;
             module_errors?: Array<{
@@ -1139,6 +1198,24 @@ export class ApiService {
         const qs = query.toString();
         const url = `${this.baseUrl}/stats/production/${qs ? '?' + qs : ''}`;
         return this.http.get<ProductionStatsResponse>(url, { headers: this.getHeaders() });
+    }
+
+    /** Planificacion a tres meses: la de la propia ferralla (la oficina elige con `usuario`). */
+    getPlanificacion(usuario?: number): Observable<PlanificacionResponse> {
+        const qs = usuario != null ? `?usuario=${usuario}` : '';
+        return this.http.get<PlanificacionResponse>(`${this.baseUrl}/planificacion/${qs}`, { headers: this.getHeaders() });
+    }
+
+    addKilosOtros(proyectoId: number, linea: { concepto: string; kg: string }): Observable<KilosOtrosLinea[]> {
+        return this.http.post<KilosOtrosLinea[]>(
+            `${this.baseUrl}/proyectos/${proyectoId}/kilos-otros/`, linea, { headers: this.getHeaders() },
+        );
+    }
+
+    deleteKilosOtros(proyectoId: number, lineaId: number): Observable<KilosOtrosLinea[]> {
+        return this.http.delete<KilosOtrosLinea[]>(
+            `${this.baseUrl}/proyectos/${proyectoId}/kilos-otros/${lineaId}/`, { headers: this.getHeaders() },
+        );
     }
 
     reiniciarModulo(id: number): Observable<Modulo> {

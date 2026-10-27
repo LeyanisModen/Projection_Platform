@@ -30,7 +30,8 @@ Campos/relaciones importantes:
 - `usuario`: ferralla propietaria.
 - `modulos`: unidades a fabricar.
 - `grupos_bastidor`: agrupacion/orden de modulos.
-- `plano_archivo` y `planilla_archivo`: documentos PDF del proyecto.
+- `plano_archivo`: plano PDF del proyecto.
+- `despiece_archivo`: Excel de despiece; su pestaña ELEMENTOS SUELTOS es la que ve la ferralla.
 - `planificacion`: plan de fabricacion calculado en cada lectura (`api/planning.py`: ritmo por tramos de montaje, dias laborables L-V menos festivos).
 - Estrategia de bastidor y longitud objetivo.
 

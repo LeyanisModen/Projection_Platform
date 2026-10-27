@@ -41,6 +41,13 @@ export const routes: Routes = [{
   canActivate: [AuthGuard],
 },
 {
+  // Y la planificacion a tres meses: entregas y kilos de cada proyecto.
+  path: 'dashboard/planificacion',
+  loadComponent: () => import('./dashboard/dashboard').then(m => m.Dashboard),
+  title: 'Planificación',
+  canActivate: [AuthGuard],
+},
+{
   path: 'admin-dashboard',
   loadChildren: () => import('./admin/admin.routes').then(m => m.ADMIN_ROUTES),
   title: 'Admin Dashboard',

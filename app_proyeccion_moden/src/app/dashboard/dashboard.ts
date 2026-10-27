@@ -14,6 +14,7 @@ import {
   ElementosSueltos, ElementosSueltosHoja, ElementosSueltosSeccion, ElementosSueltosCelda,
 } from '../services/api.service';
 import { LineChartSeries, SplitArea, StatsLineChart } from './stats-line-chart';
+import { PlanificacionFerralla } from './planificacion-ferralla';
 import { TurnosEditorComponent } from '../shared/turnos-editor.component';
 import { copiarTurnos, turnosError, turnosLabel } from '../shared/turnos';
 import {
@@ -40,6 +41,9 @@ const CHART_GRIS = '#52606d';
 // El tiempo muerto va en mostaza, el mismo color que sus cifras (--warn del tema):
 // en la grafica del turno es el relleno de encima de la linea.
 const CHART_AMARILLO = '#b7791f';
+
+/** Pestanas del dashboard, cada una con su ruta (/dashboard, /dashboard/estadisticas...). */
+type DashboardVista = 'produccion' | 'estadisticas' | 'planificacion';
 
 /** Un dia o una hora tal y como los da el servidor (la hora trae minutos, no horas). */
 type StatsFuente = ProductionStatsBucket & ProductionStatsTiempos & ProductionStatsActividadDia & {
@@ -164,7 +168,7 @@ interface Subfase {
   standalone: true,
   templateUrl: './dashboard.html',
   styleUrls: ['../admin/admin-theme.css', './dashboard.css', './dashboard-responsive.css'],
-  imports: [CommonModule, DragDropModule, FormsModule, ZoomableImageComponent, StatsLineChart, TurnosEditorComponent]
+  imports: [CommonModule, DragDropModule, FormsModule, ZoomableImageComponent, StatsLineChart, TurnosEditorComponent, PlanificacionFerralla]
 })
 export class Dashboard implements OnInit, OnDestroy {
   readonly planningLabel = planningLabel;
@@ -203,6 +207,9 @@ export class Dashboard implements OnInit, OnDestroy {
   private statsRequestId = 0;
   /** Peticiones de estadisticas aun sin respuesta: el refresco no manda otra encima. */
   private statsEnVuelo = 0;
+  /** Sondeo de 5 s aun sin respuesta: si el servidor va lento, no se amontona. */
+  private colasEnVuelo = false;
+  private modulosEnVuelo = false;
   statsPreset: 'day' | 'week' | 'month' | 'proyecto' | 'custom' = 'day';
   /** Proyecto al que se limitan las estadisticas; null = todos. */
   statsProyecto: number | null = null;
@@ -247,7 +254,7 @@ export class Dashboard implements OnInit, OnDestroy {
   blueprintUrl: string | null = null;
 
   /** Dos dashboards sobre el mismo componente: produccion (mesas y proyectos) o estadisticas. */
-  vista: 'produccion' | 'estadisticas' = 'produccion';
+  vista: DashboardVista = 'produccion';
 
   // Turnos de trabajo de la ferralla (los cambia ella; Moden los usa para la captura).
   horario: FerrallaCaptureConfig | null = null;
@@ -1087,7 +1094,7 @@ export class Dashboard implements OnInit, OnDestroy {
 
   openElementosModal(proyecto: Proyecto, event?: Event): void {
     event?.stopPropagation();
-    if (!proyecto.elementos_sueltos_archivo) return;
+    if (!proyecto.elementos_sueltos_disponible) return;
     const request = ++this.elementosModalRequest;
     this.elementosModalProyecto = proyecto;
     this.elementosModalData = null;
@@ -1123,9 +1130,10 @@ export class Dashboard implements OnInit, OnDestroy {
     return this.elementosModalData?.hojas[this.elementosModalHoja] ?? null;
   }
 
-  /** Enlace de descarga del Excel original (mismo origen: viaja la cookie de /media/). */
+  /** Enlace de descarga del despiece (mismo origen: viaja la cookie de /media/). */
   elementosDescargaUrl(): string {
-    const url = this.elementosModalData?.url || this.elementosModalProyecto?.elementos_sueltos_archivo || '';
+    const proyecto = this.elementosModalProyecto;
+    const url = this.elementosModalData?.url || proyecto?.despiece_archivo || proyecto?.elementos_sueltos_archivo || '';
     return url ? this.resolveUrl(url) : '';
   }
 
@@ -1143,9 +1151,9 @@ export class Dashboard implements OnInit, OnDestroy {
     return momento === 'antes' ? 'Antes de los módulos' : momento === 'despues' ? 'Después de los módulos' : '';
   }
 
-  openProjectDocument(proyecto: Proyecto, type: 'plano' | 'documentos', event?: Event): void {
+  openProjectDocument(proyecto: Proyecto, type: 'plano' | 'despiece', event?: Event): void {
     event?.stopPropagation();
-    const url = type === 'plano' ? proyecto.plano_archivo : proyecto.documentos_archivo;
+    const url = type === 'plano' ? proyecto.plano_archivo : proyecto.despiece_archivo;
     if (!url) return;
     window.open(this.resolveUrl(url), '_blank', 'noopener');
   }
@@ -1576,9 +1584,9 @@ export class Dashboard implements OnInit, OnDestroy {
 
   username: string = '';
 
-  irA(vista: 'produccion' | 'estadisticas'): void {
+  irA(vista: DashboardVista): void {
     if (vista === this.vista) return;
-    this.router.navigate([vista === 'estadisticas' ? '/dashboard/estadisticas' : '/dashboard']);
+    this.router.navigate([vista === 'produccion' ? '/dashboard' : `/dashboard/${vista}`]);
   }
 
   scrollToSection(sectionId: string): void {
@@ -1619,7 +1627,8 @@ export class Dashboard implements OnInit, OnDestroy {
     }
 
     this.username = this.api.getUsername() || 'Usuario';
-    this.vista = this.router.url.includes('/dashboard/estadisticas') ? 'estadisticas' : 'produccion';
+    this.vista = this.router.url.includes('/dashboard/estadisticas') ? 'estadisticas'
+      : this.router.url.includes('/dashboard/planificacion') ? 'planificacion' : 'produccion';
 
     // Prevent back navigation
     history.pushState(null, '', location.href);
@@ -1637,6 +1646,8 @@ export class Dashboard implements OnInit, OnDestroy {
     interval(5000)
       .pipe(takeUntil(this.destroy$))
       .subscribe(() => {
+        // Las colas solo se ven en Produccion (y el player avanza solo).
+        if (this.vista !== 'produccion') return;
         this.pollMesasQueue();
         this.refreshActiveProjectModules();
       });
@@ -1659,14 +1670,15 @@ export class Dashboard implements OnInit, OnDestroy {
   // Polling function to refresh queues and check for auto-advance
   pollMesasQueue(): void {
     // Skip polling during cross-mesa transfers to avoid DOM conflicts
-    if (this.mesas.length === 0 || this.transferInProgress) return;
+    if (this.mesas.length === 0 || this.transferInProgress || this.colasEnVuelo) return;
 
     // One request for every mesa instead of one per mesa. The backend also
     // promotes the first EN_COLA item of any idle mesa before answering, so
     // the auto-advance below only fires if that somehow did not happen.
     const mesaIds = this.mesas.map(mesa => mesa.id);
+    this.colasEnVuelo = true;
     this.api.getMesasQueues(mesaIds)
-      .pipe(takeUntil(this.destroy$))
+      .pipe(takeUntil(this.destroy$), finalize(() => this.colasEnVuelo = false))
       .subscribe({
         next: (queues) => {
           this.mesas.forEach(mesa => {
@@ -2938,10 +2950,11 @@ export class Dashboard implements OnInit, OnDestroy {
 
   // Silent refresh for module status updates (polled)
   refreshActiveProjectModules(): void {
-    if (!this.selectedProyecto || this.loadingModulos) return;
+    if (!this.selectedProyecto || this.loadingModulos || this.modulosEnVuelo) return;
 
+    this.modulosEnVuelo = true;
     this.api.getModulos(this.selectedProyecto.id)
-      .pipe(takeUntil(this.destroy$))
+      .pipe(takeUntil(this.destroy$), finalize(() => this.modulosEnVuelo = false))
       .subscribe({
         next: (data) => {
           // Update list with standard sort

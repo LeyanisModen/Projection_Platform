@@ -1,0 +1,146 @@
+@if (cargando() && !datos()) {
+    <p class="pl-estado">Cargando la planificación…</p>
+} @else if (error()) {
+    <p class="pl-estado pl-error" role="alert">
+        No se pudo cargar la planificación.
+        <button type="button" class="pl-boton" (click)="cargar(datos()?.ferralla?.id)">Reintentar</button>
+    </p>
+} @else if (datos(); as d) {
+    @if (d.ferrallas) {
+        <!-- La oficina elige de que ferralla. -->
+        <label class="pl-ferralla">
+            <span>Ferralla</span>
+            <select [ngModel]="d.ferralla?.id ?? ''" (ngModelChange)="elegirFerralla($event)" aria-label="Ferralla de la planificación">
+                <option value="" disabled>Elige una ferralla</option>
+                @for (ferralla of d.ferrallas; track ferralla.id) {
+                    <option [value]="ferralla.id">{{ ferralla.nombre }}</option>
+                }
+            </select>
+        </label>
+    }
+    @if (d.desde && d.hasta) {
+        <p class="pl-ventana">Próximos tres meses: del {{ fechaLarga(d.desde) }} al {{ fechaLarga(d.hasta) }}</p>
+
+        <div class="pl-kpis">
+            <div class="pl-kpi">
+                <span class="pl-kpi-label">Entregas a obra</span>
+                <span class="pl-kpi-value">{{ resumen().entregas }}</span>
+            </div>
+            <div class="pl-kpi" title="Los módulos que faltan de lo que se entrega en estos tres meses">
+                <span class="pl-kpi-label">Módulos por fabricar</span>
+                <span class="pl-kpi-value">{{ resumen().modulos }}</span>
+            </div>
+            <div class="pl-kpi" title="Módulos, elementos sueltos y otros de lo que se entrega en estos tres meses">
+                <span class="pl-kpi-label">Kilos a obra</span>
+                <span class="pl-kpi-value">{{ resumen().kilos | number:'1.0-0' }} <small>kg</small></span>
+            </div>
+        </div>
+
+        <app-stats-line-chart title="Módulos al día para llegar a las entregas" unit="mód./día" [decimals]="1" [height]="280"
+            [labels]="labels()" [fullLabels]="labelsLargas()" [series]="series()"
+            [marks]="marcas()" markLabel="Entrega a obra" markTenueLabel="Fecha orientativa" />
+
+        <h3 class="pl-titulo">Kilos por edificio</h3>
+        @if (!proyectos().length) {
+            <p class="pl-estado">No hay proyectos con entrega en los próximos tres meses.</p>
+        }
+        <div class="pl-columnas">
+            @for (columna of columnas(); track columna.clave) {
+            <section class="pl-columna" [attr.aria-label]="columna.nombre">
+                <header class="pl-columna-cabecera">
+                    <h4>{{ columna.nombre }}</h4>
+                    <div class="pl-total">
+                        <span>Total a obra</span>
+                        @if (columna.sinKilos !== columna.proyectos.length) {
+                            <strong>{{ columna.kilos | number:'1.0-0' }} <small>kg</small></strong>
+                        } @else {
+                            <strong class="pl-sin-dato" title="Faltan los kilos de los módulos">—</strong>
+                        }
+                    </div>
+                    <span class="pl-tenue">
+                        {{ columna.proyectos.length }} {{ columna.proyectos.length === 1 ? 'forjado' : 'forjados' }}@if (columna.sinKilos) { · {{ columna.sinKilos }} sin kilos de módulos }
+                    </span>
+                </header>
+                <div class="pl-columna-forjados">
+            @for (proyecto of columna.proyectos; track proyecto.id) {
+                <article class="pl-tarjeta" [class.pl-vencido]="proyecto.estado === 'VENCIDO'">
+                    <header class="pl-tarjeta-cabecera">
+                        <h5>{{ proyecto.nombre }}</h5>
+                        @if (proyecto.planta_etiqueta) { <span class="pl-tenue">{{ proyecto.planta_etiqueta }}</span> }
+                    </header>
+                    <p class="pl-entrega">
+                        @if (proyecto.fecha_entrega) {
+                            Entrega a obra
+                            <strong [class.pl-orientativa]="proyecto.entrega_orientativa">{{ fechaLarga(proyecto.fecha_entrega) }}</strong>
+                            @if (proyecto.entrega_orientativa) { <span class="pl-tenue">orientativa</span> }
+                            @if (proyecto.estado === 'VENCIDO') { <span class="pl-aviso">ya pasó</span> }
+                        } @else {
+                            <span class="pl-aviso">Sin fecha de entrega</span>
+                        }
+                        <span class="pl-modulos">{{ proyecto.modulos_completados }} / {{ proyecto.modulos_total }} módulos</span>
+                    </p>
+
+                    <div class="pl-total">
+                        <span>Total a obra</span>
+                        @if (proyecto.kilos.total !== null) {
+                            <strong>{{ proyecto.kilos.total | number:'1.0-0' }} <small>kg</small></strong>
+                        } @else {
+                            <strong class="pl-sin-dato" title="Faltan los kilos de los módulos">—</strong>
+                        }
+                    </div>
+
+                    <dl class="pl-kilos">
+                        <div class="pl-fila">
+                            <dt>Módulos</dt>
+                            @if (proyecto.kilos.modulos !== null) {
+                                <dd>{{ proyecto.kilos.modulos | number:'1.0-0' }} kg</dd>
+                            } @else {
+                                <dd class="pl-tenue" title="Los módulos aún no están subidos">pendiente</dd>
+                            }
+                        </div>
+                        @if (proyecto.kilos.modulos !== null) {
+                            <div class="pl-fila pl-detalle">
+                                <dt>Fabricado · desperdicio</dt>
+                                <dd>{{ proyecto.kilos.fabricado | number:'1.0-0' }} kg · {{ proyecto.kilos.desperdicio | number:'1.0-0' }} kg</dd>
+                            </div>
+                        }
+                        <div class="pl-fila">
+                            <dt>Elementos sueltos</dt>
+                            @if (proyecto.kilos.sueltos !== null) {
+                                <dd>{{ proyecto.kilos.sueltos | number:'1.0-0' }} kg</dd>
+                            } @else {
+                                <dd class="pl-tenue" title="Llegarán con la base técnica del proyecto">pendiente</dd>
+                            }
+                        </div>
+                        @for (linea of proyecto.kilos.otros; track linea.id) {
+                            <div class="pl-fila pl-otro">
+                                <dt>{{ linea.concepto }}</dt>
+                                <dd>
+                                    {{ linea.kg | number:'1.0-2' }} kg
+                                    <button type="button" class="pl-quitar" [disabled]="guardandoId() === proyecto.id"
+                                        (click)="removeOtros(proyecto, linea)" [attr.aria-label]="'Quitar ' + linea.concepto">
+                                        <i class="fa fa-times" aria-hidden="true"></i>
+                                    </button>
+                                </dd>
+                            </div>
+                        }
+                    </dl>
+
+                    <form class="pl-otros-form" (ngSubmit)="addOtros(proyecto)">
+                        <input type="text" name="concepto" maxlength="120" placeholder="Otros: concepto"
+                            [(ngModel)]="nuevoConcepto[proyecto.id]" [attr.aria-label]="'Concepto de otros kilos de ' + proyecto.nombre">
+                        <input type="text" name="kg" inputmode="decimal" placeholder="kg" class="pl-otros-kg"
+                            [(ngModel)]="nuevoKg[proyecto.id]" [attr.aria-label]="'Kilos de ' + proyecto.nombre">
+                        <button type="submit" class="pl-boton" [disabled]="guardandoId() === proyecto.id">Añadir</button>
+                    </form>
+                    @if (erroresOtros()[proyecto.id]) {
+                        <p class="pl-error" role="alert">{{ erroresOtros()[proyecto.id] }}</p>
+                    }
+                </article>
+            }
+                </div>
+            </section>
+            }
+        </div>
+    }
+}

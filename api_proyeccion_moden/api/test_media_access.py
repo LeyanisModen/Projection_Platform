@@ -111,6 +111,14 @@ class MediaAccessTests(APITestCase):
         self.assertEqual(self._get(url, HTTP_AUTHORIZATION=f'Token {self.token_a.key}').status_code, 200)
         self.assertEqual(self._get(url, HTTP_AUTHORIZATION=f'Token {self.token_b.key}').status_code, 403)
 
+    def test_despiece_follows_project_owner_also_from_the_old_documents_folder(self):
+        for nombre in ('despieces/obra_a.xlsx', 'documentos/obra_a.zip'):
+            self.project_a.despiece_archivo.name = nombre
+            self.project_a.save(update_fields=['despiece_archivo'])
+            url = self._write(nombre)
+            self.assertEqual(self._get(url, HTTP_AUTHORIZATION=f'Token {self.token_a.key}').status_code, 200, nombre)
+            self.assertEqual(self._get(url, HTTP_AUTHORIZATION=f'Token {self.token_b.key}').status_code, 403, nombre)
+
     def test_legacy_folder_is_admin_only(self):
         response = self._get(self.legacy, HTTP_AUTHORIZATION=f'Token {self.token_a.key}')
         self.assertEqual(response.status_code, 403)
@@ -197,4 +205,4 @@ class MediaAccessTests(APITestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['plano_archivo'], '/media/planos/plano_a.pdf')
-        self.assertIsNone(response.data['documentos_archivo'])
+        self.assertIsNone(response.data['despiece_archivo'])

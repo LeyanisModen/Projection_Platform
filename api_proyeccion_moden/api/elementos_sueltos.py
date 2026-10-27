@@ -1,11 +1,14 @@
-"""Excel de elementos sueltos de un proyecto (barras, vigas, zunchos...).
+"""Elementos sueltos de un proyecto (barras, vigas, zunchos...).
 
 Son piezas que van a obra fuera de los modulos, antes o despues que ellos.
-La oficina sube el Excel tal cual; el dashboard de la ferralla lo ve como
-tablas y puede descargar el original. Aqui solo se lee.
+Vienen en la pestaña ELEMENTOS SUELTOS del Excel de despiece que la oficina
+sube en el admin; el dashboard de la ferralla la ve como tablas y puede
+descargar el despiece. Aqui solo se lee. Un proyecto de antes del despiece
+puede tener aun su Excel de elementos sueltos aparte: de ese se leen todas
+las hojas visibles.
 
-El formato real (ESN27_P1_elementos_sueltos.xlsx) es una hoja con varios
-bloques apilados, cada uno asi::
+La pestaña (ESN27_P1_componentes_resumen.xlsx) apila varios bloques, cada
+uno asi::
 
     ARMADURA SUPLEMENTARIA PILARES INFERIOR (PRE-MODULOS)   <- titulo, una celda
     CANTIDAD | DIAMETRO(mm) | LONGITUD(m)                   <- cabecera del bloque
@@ -28,10 +31,13 @@ EXTENSIONES = ('.xlsx', '.xlsm', '.xls')
 PREVISUALIZABLES = ('.xlsx', '.xlsm')
 # Tope de filas por hoja que viajan al navegador; el resto, en el Excel.
 MAX_FILAS = 2000
+# Pestaña del despiece con los elementos sueltos.
+HOJA_DESPIECE = 'ELEMENTOS SUELTOS'
 
 _TOTAL = re.compile(r'^\s*total\b', re.IGNORECASE)
-_ANTES = re.compile(r'\bPRE[\s-]*MODULO|\bANTES\b')
-_DESPUES = re.compile(r'\bPOST[\s-]*MODULO|\bDESPUES\b')
+# PRE-MODULOS en ESN27, PRE-MONTAJE en Ripagaña108: los dos, antes de los modulos.
+_ANTES = re.compile(r'\bPRE[\s-]*(MODULO|MONTAJE)|\bANTES\b')
+_DESPUES = re.compile(r'\bPOST[\s-]*(MODULO|MONTAJE)|\bDESPUES\b')
 
 
 def _valor(celda):
@@ -66,11 +72,16 @@ def _es_total(fila):
     return any(isinstance(valor, str) and _TOTAL.match(valor) for valor in fila)
 
 
+def _plano(texto):
+    """Sin tildes, en mayusculas y sin espacios de sobra, para comparar."""
+    return ' '.join(unicodedata.normalize('NFKD', texto).encode('ascii', 'ignore').decode().upper().split())
+
+
 def _momento(titulo):
     """'antes' o 'despues' de los modulos si el titulo lo dice (PRE-MODULOS...)."""
     if not titulo:
         return None
-    plano = unicodedata.normalize('NFKD', titulo).encode('ascii', 'ignore').decode().upper()
+    plano = _plano(titulo)
     if _ANTES.search(plano):
         return 'antes'
     if _DESPUES.search(plano):
@@ -161,11 +172,31 @@ def _leer_hoja(hoja):
     }
 
 
-def leer_elementos_sueltos(field_file):
-    """Hojas visibles del Excel, cada una con sus secciones.
+def es_excel(field_file):
+    return bool(field_file) and os.path.splitext(field_file.name)[1].lower() in EXTENSIONES
 
-    Nunca lanza: si el fichero no se puede leer, ``previsualizable`` es False
-    y ``motivo`` lo explica, para que el dashboard ofrezca la descarga.
+
+def fuente(proyecto):
+    """(fichero, hoja) de donde salen los elementos sueltos del proyecto.
+
+    Manda el despiece si es un Excel, y de el solo su pestaña ELEMENTOS
+    SUELTOS. Sin despiece Excel, el Excel aparte de antes, entero (hoja None).
+    (None, None) si no hay ninguno.
+    """
+    if es_excel(proyecto.despiece_archivo):
+        return proyecto.despiece_archivo, HOJA_DESPIECE
+    if proyecto.elementos_sueltos_archivo:
+        return proyecto.elementos_sueltos_archivo, None
+    return None, None
+
+
+def leer_elementos_sueltos(field_file, hoja=None):
+    """Hojas del Excel, cada una con sus secciones.
+
+    Con ``hoja`` solo esa pestaña (sin mirar tildes ni mayusculas); sin ella,
+    todas las visibles. Nunca lanza: si el fichero no se puede leer o no trae
+    la pestaña, ``previsualizable`` es False y ``motivo`` lo explica, para que
+    el dashboard ofrezca la descarga.
     """
     nombre = os.path.basename(field_file.name)
     extension = os.path.splitext(nombre)[1].lower()
@@ -188,13 +219,18 @@ def leer_elementos_sueltos(field_file):
     try:
         field_file.open('rb')
         libro = load_workbook(field_file, read_only=True, data_only=True)
-        for hoja in libro.worksheets:
-            if getattr(hoja, 'sheet_state', 'visible') != 'visible':
-                continue
-            contenido = _leer_hoja(hoja)
-            if contenido is not None:
-                resultado['hojas'].append(contenido)
-        resultado['previsualizable'] = True
+        if hoja is None:
+            hojas = [h for h in libro.worksheets if getattr(h, 'sheet_state', 'visible') == 'visible']
+        else:
+            hojas = [h for h in libro.worksheets if _plano(h.title) == _plano(hoja)]
+        if hoja is not None and not hojas:
+            resultado['motivo'] = f'El despiece no trae la pestaña {hoja}. Descárgalo para abrirlo.'
+        else:
+            for libro_hoja in hojas:
+                contenido = _leer_hoja(libro_hoja)
+                if contenido is not None:
+                    resultado['hojas'].append(contenido)
+            resultado['previsualizable'] = True
     except FileNotFoundError:
         resultado['motivo'] = 'El archivo no está disponible en el servidor.'
     except Exception:

@@ -311,9 +311,9 @@ class PermissionAndDeviceAuthTests(APITestCase):
                 self.project_a.plano_archivo.save(
                     "plano-a.pdf", SimpleUploadedFile("plano-a.pdf", b"plano")
                 )
-                self.project_a.documentos_archivo.save(
-                    "documentos-a.zip",
-                    SimpleUploadedFile("documentos-a.zip", b"documentos"),
+                self.project_a.despiece_archivo.save(
+                    "despiece-a.xlsx",
+                    SimpleUploadedFile("despiece-a.xlsx", b"despiece"),
                 )
                 self.project_a.fichero_datos_tecnicos.save(
                     "datos-a.db",
@@ -376,7 +376,7 @@ class PermissionAndDeviceAuthTests(APITestCase):
                 other_project_file.write_bytes(b"keep")
 
                 plano_path = Path(self.project_a.plano_archivo.path)
-                documentos_path = Path(self.project_a.documentos_archivo.path)
+                despiece_path = Path(self.project_a.despiece_archivo.path)
                 technical_path = Path(
                     self.project_a.fichero_datos_tecnicos.path
                 )
@@ -391,12 +391,12 @@ class PermissionAndDeviceAuthTests(APITestCase):
                 self.assertFalse(project_image.exists())
                 self.assertFalse(project_photo.exists())
                 self.assertFalse(plano_path.exists())
-                self.assertFalse(documentos_path.exists())
+                self.assertFalse(despiece_path.exists())
                 self.assertFalse(technical_path.exists())
                 self.assertFalse(legacy_image_path.exists())
                 self.assertTrue(other_project_file.exists())
 
-    def test_project_files_require_pdf_and_zip_and_remove_replacements(self):
+    def test_project_files_require_pdf_and_excel_and_remove_replacements(self):
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {self.admin_token.key}")
 
         with tempfile.TemporaryDirectory() as media_root:
@@ -405,14 +405,15 @@ class PermissionAndDeviceAuthTests(APITestCase):
                     "plano-anterior.pdf",
                     SimpleUploadedFile("plano-anterior.pdf", b"plano-anterior"),
                 )
-                self.project_a.documentos_archivo.save(
+                # Un ZIP de documentacion de antes del despiece.
+                self.project_a.despiece_archivo.save(
                     "documentos-anteriores.zip",
                     SimpleUploadedFile(
                         "documentos-anteriores.zip", b"documentos-anteriores"
                     ),
                 )
                 old_plano_path = Path(self.project_a.plano_archivo.path)
-                old_documentos_path = Path(self.project_a.documentos_archivo.path)
+                old_despiece_path = Path(self.project_a.despiece_archivo.path)
 
                 invalid_response = self.client.patch(
                     f"/api/proyectos/{self.project_a.id}/",
@@ -420,8 +421,8 @@ class PermissionAndDeviceAuthTests(APITestCase):
                         "plano_archivo": SimpleUploadedFile(
                             "plano.png", b"imagen", "image/png"
                         ),
-                        "documentos_archivo": SimpleUploadedFile(
-                            "documentos.pdf", b"pdf", "application/pdf"
+                        "despiece_archivo": SimpleUploadedFile(
+                            "despiece.zip", b"zip", "application/zip"
                         ),
                     },
                     format="multipart",
@@ -429,9 +430,9 @@ class PermissionAndDeviceAuthTests(APITestCase):
 
                 self.assertEqual(invalid_response.status_code, 400)
                 self.assertIn("plano_archivo", invalid_response.data)
-                self.assertIn("documentos_archivo", invalid_response.data)
+                self.assertIn("despiece_archivo", invalid_response.data)
                 self.assertTrue(old_plano_path.exists())
-                self.assertTrue(old_documentos_path.exists())
+                self.assertTrue(old_despiece_path.exists())
 
                 with self.captureOnCommitCallbacks(execute=True):
                     valid_response = self.client.patch(
@@ -442,10 +443,10 @@ class PermissionAndDeviceAuthTests(APITestCase):
                                 b"plano-nuevo",
                                 "application/pdf",
                             ),
-                            "documentos_archivo": SimpleUploadedFile(
-                                "documentos-nuevos.zip",
-                                b"documentos-nuevos",
-                                "application/zip",
+                            "despiece_archivo": SimpleUploadedFile(
+                                "despiece-nuevo.xlsx",
+                                b"despiece-nuevo",
+                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                             ),
                         },
                         format="multipart",
@@ -454,12 +455,11 @@ class PermissionAndDeviceAuthTests(APITestCase):
                 self.assertEqual(valid_response.status_code, 200)
                 self.project_a.refresh_from_db()
                 self.assertFalse(old_plano_path.exists())
-                self.assertFalse(old_documentos_path.exists())
+                self.assertFalse(old_despiece_path.exists())
                 self.assertTrue(Path(self.project_a.plano_archivo.path).exists())
-                self.assertTrue(Path(self.project_a.documentos_archivo.path).exists())
-                self.assertEqual(
-                    valid_response.data["documentos_archivo"],
-                    valid_response.data["planilla_archivo"],
+                self.assertTrue(Path(self.project_a.despiece_archivo.path).exists())
+                self.assertTrue(
+                    valid_response.data["despiece_archivo"].startswith("/media/despieces/")
                 )
 
     def test_device_heartbeat_requires_valid_device_token(self):
@@ -6507,7 +6507,7 @@ class BastidorSelfServiceTests(APITestCase):
 
 
 class ElementosSueltosTests(APITestCase):
-    """Excel de elementos sueltos: se sube desde el admin y la ferralla lo ve como tabla."""
+    """Despiece: se sube desde el admin y la ferralla ve su pestaña ELEMENTOS SUELTOS como tabla."""
 
     def setUp(self):
         self._media_temp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
@@ -6525,13 +6525,9 @@ class ElementosSueltosTests(APITestCase):
         token, _ = Token.objects.get_or_create(user=user)
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
 
-    def _excel(self, nombre="elementos.xlsx"):
-        """Como ESN27_P1_elementos_sueltos.xlsx: bloques apilados con titulo, cabecera, filas y total."""
-        from openpyxl import Workbook
-
-        libro = Workbook()
-        hoja = libro.active
-        hoja.title = "ELEMENTOS SUELTOS"
+    @staticmethod
+    def _bloques(hoja):
+        """Como la pestaña de ESN27_P1: bloques apilados con titulo, cabecera, filas y total."""
         bloques = [
             ("ARMADURA SUPLEMENTARIA PILARES INFERIOR (PRE-MODULOS)", ["CANTIDAD", "DIAMETRO(mm)", "LONGITUD(m)"],
              [[34, 8, 0.83], [116, 8, 1.32]], [150, "TOTAL"]),
@@ -6552,6 +6548,37 @@ class ElementosSueltosTests(APITestCase):
             if total:
                 hoja.append(total)
             hoja.append([])
+
+    @staticmethod
+    def _guardar(libro, nombre):
+        contenido = io.BytesIO()
+        libro.save(contenido)
+        return SimpleUploadedFile(nombre, contenido.getvalue())
+
+    def _despiece(self, nombre="despiece.xlsx", pestana="ELEMENTOS SUELTOS"):
+        """Como ESN27_P1_componentes_resumen.xlsx: TOTAL, ELEMENTOS SUELTOS y una hoja por modulo."""
+        from openpyxl import Workbook
+
+        libro = Workbook()
+        total = libro.active
+        total.title = "TOTAL"
+        total.append(["DIAMETRO", "KG"])
+        total.append([8, 120.5])
+        if pestana:
+            self._bloques(libro.create_sheet(pestana))
+        modulo = libro.create_sheet("A01")
+        modulo.append(["POSICION", "CANTIDAD"])
+        modulo.append(["P1", 4])
+        return self._guardar(libro, nombre)
+
+    def _excel_aparte(self, nombre="elementos.xlsx"):
+        """El Excel de elementos sueltos que se subia aparte antes del despiece."""
+        from openpyxl import Workbook
+
+        libro = Workbook()
+        hoja = libro.active
+        hoja.title = "ELEMENTOS SUELTOS"
+        self._bloques(hoja)
         # Una tabla sin titulo en otra hoja, con fecha y una columna vacia.
         vigas = libro.create_sheet("Vigas")
         vigas.append(["Viga", None, "Peso (kg)", "Entrega"])
@@ -6560,29 +6587,28 @@ class ElementosSueltosTests(APITestCase):
         oculta.append(["no", "se", "ve"])
         oculta.sheet_state = "hidden"
         libro.create_sheet("Vacia")
-        contenido = io.BytesIO()
-        libro.save(contenido)
-        return SimpleUploadedFile(nombre, contenido.getvalue())
+        return self._guardar(libro, nombre)
 
-    def test_la_oficina_sube_el_excel_y_la_ferralla_lo_ve_por_bloques(self):
+    def test_la_oficina_sube_el_despiece_y_la_ferralla_ve_su_pestana_por_bloques(self):
         self._as(self.admin)
         response = self.client.patch(
             f"/api/proyectos/{self.project.id}/",
-            {"elementos_sueltos_archivo": self._excel()},
+            {"despiece_archivo": self._despiece()},
             format="multipart",
         )
         self.assertEqual(response.status_code, 200, response.data)
-        self.assertTrue(response.data["elementos_sueltos_archivo"].startswith("/media/elementos_sueltos/"))
+        self.assertTrue(response.data["despiece_archivo"].startswith("/media/despieces/"))
+        self.assertTrue(response.data["elementos_sueltos_disponible"])
 
         self._as(self.ferralla)
         response = self.client.get(f"/api/proyectos/{self.project.id}/elementos-sueltos/")
         self.assertEqual(response.status_code, 200)
         data = response.data
         self.assertTrue(data["previsualizable"])
-        self.assertEqual(data["nombre_archivo"], "elementos.xlsx")
-        self.assertTrue(data["url"].startswith("/media/elementos_sueltos/"))
-        # Ni la hoja oculta ni la vacia.
-        self.assertEqual([hoja["nombre"] for hoja in data["hojas"]], ["ELEMENTOS SUELTOS", "Vigas"])
+        self.assertEqual(data["nombre_archivo"], "despiece.xlsx")
+        self.assertTrue(data["url"].startswith("/media/despieces/"))
+        # Ni TOTAL ni las hojas de cada modulo: solo la pestaña de elementos sueltos.
+        self.assertEqual([hoja["nombre"] for hoja in data["hojas"]], ["ELEMENTOS SUELTOS"])
 
         secciones = data["hojas"][0]["secciones"]
         self.assertEqual(
@@ -6607,53 +6633,76 @@ class ElementosSueltosTests(APITestCase):
         self.assertEqual(secciones[3]["columnas"], ["UBICACIÓN", "CANTIDAD", "DEFINIDO EN"])
         self.assertEqual(secciones[3]["totales"], [])
 
-        vigas = data["hojas"][1]["secciones"]
-        self.assertEqual(len(vigas), 1)
-        self.assertIsNone(vigas[0]["titulo"])
-        self.assertEqual(vigas[0]["columnas"], ["Viga", "Peso (kg)", "Entrega"])
-        self.assertEqual(vigas[0]["filas"], [["V-01", 182.5, "15/10/2026"]])
+    def test_la_pestana_se_encuentra_sin_mirar_mayusculas_y_pre_montaje_es_antes(self):
+        from openpyxl import Workbook
+
+        # Como Ripagaña108_PT1: PRE-MONTAJE / POST-MONTAJE en vez de PRE-/POST-MODULOS.
+        libro = Workbook()
+        libro.active.title = "TOTAL"
+        hoja = libro.create_sheet(" Elementos  sueltos ")
+        hoja.append(["BARRAS MANTAS PILARES (PRE-MONTAJE)"])
+        hoja.append(["UNIDADES", "DIAMETRO(mm)", "LONGITUD(m)"])
+        hoja.append([132, 8, 1.32])
+        hoja.append([])
+        hoja.append(["BARRAS MANTAS PILARES (POST-MONTAJE)"])
+        hoja.append(["UNIDADES", "DIAMETRO(mm)", "LONGITUD(m)"])
+        hoja.append([132, 8, 1.32])
+        self.project.despiece_archivo.save("rip.xlsx", self._guardar(libro, "rip.xlsx"))
+
+        self._as(self.ferralla)
+        data = self.client.get(f"/api/proyectos/{self.project.id}/elementos-sueltos/").data
+        self.assertTrue(data["previsualizable"])
+        self.assertEqual(
+            [s["momento"] for s in data["hojas"][0]["secciones"]], ["antes", "despues"],
+        )
 
     def test_dos_titulos_seguidos_dejan_el_primero_como_nota(self):
         from openpyxl import Workbook
 
         libro = Workbook()
         hoja = libro.active
+        hoja.title = "ELEMENTOS SUELTOS"
         hoja.append(["OBRA ESNABIDE 27 - PLANTA 1"])
         hoja.append(["BARRAS"])
         hoja.append(["CANTIDAD", "DIAMETRO(mm)"])
         hoja.append([4, 12])
-        contenido = io.BytesIO()
-        libro.save(contenido)
-        self.project.elementos_sueltos_archivo.save("notas.xlsx", SimpleUploadedFile("notas.xlsx", contenido.getvalue()))
+        self.project.despiece_archivo.save("notas.xlsx", self._guardar(libro, "notas.xlsx"))
         self._as(self.ferralla)
         hoja = self.client.get(f"/api/proyectos/{self.project.id}/elementos-sueltos/").data["hojas"][0]
         self.assertEqual(hoja["notas"], ["OBRA ESNABIDE 27 - PLANTA 1"])
         self.assertEqual([s["titulo"] for s in hoja["secciones"]], ["BARRAS"])
         self.assertEqual(hoja["secciones"][0]["filas"], [[4, 12]])
 
-    def test_otra_ferralla_no_ve_el_excel_y_sin_excel_no_hay_nada(self):
+    def test_otra_ferralla_no_lo_ve_y_sin_despiece_excel_no_hay_nada(self):
         self._as(self.ferralla)
         response = self.client.get(f"/api/proyectos/{self.project.id}/elementos-sueltos/")
         self.assertEqual(response.status_code, 404)
+        self.assertFalse(self.client.get(f"/api/proyectos/{self.project.id}/").data["elementos_sueltos_disponible"])
 
-        self.project.elementos_sueltos_archivo.save("elementos.xlsx", self._excel())
+        # El ZIP de documentacion de antes del despiece se descarga, pero no trae elementos sueltos.
+        self.project.despiece_archivo.save("documentos.zip", SimpleUploadedFile("documentos.zip", b"PK"))
+        self.assertEqual(self.client.get(f"/api/proyectos/{self.project.id}/elementos-sueltos/").status_code, 404)
+        self.assertFalse(self.client.get(f"/api/proyectos/{self.project.id}/").data["elementos_sueltos_disponible"])
+
+        self.project.despiece_archivo.save("despiece.xlsx", self._despiece())
         self._as(self.otra)
         response = self.client.get(f"/api/proyectos/{self.project.id}/elementos-sueltos/")
         self.assertEqual(response.status_code, 404)
 
     def test_solo_admite_excel_y_un_xls_antiguo_se_descarga_pero_no_se_ve(self):
         self._as(self.admin)
-        response = self.client.patch(
-            f"/api/proyectos/{self.project.id}/",
-            {"elementos_sueltos_archivo": SimpleUploadedFile("plano.pdf", b"%PDF-1.4")},
-            format="multipart",
-        )
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("elementos_sueltos_archivo", response.data)
+        for nombre, contenido in (("plano.pdf", b"%PDF-1.4"), ("documentos.zip", b"PK")):
+            response = self.client.patch(
+                f"/api/proyectos/{self.project.id}/",
+                {"despiece_archivo": SimpleUploadedFile(nombre, contenido)},
+                format="multipart",
+            )
+            self.assertEqual(response.status_code, 400, nombre)
+            self.assertIn("despiece_archivo", response.data)
 
         response = self.client.patch(
             f"/api/proyectos/{self.project.id}/",
-            {"elementos_sueltos_archivo": SimpleUploadedFile("antiguo.xls", b"\xd0\xcf\x11\xe0")},
+            {"despiece_archivo": SimpleUploadedFile("antiguo.xls", b"\xd0\xcf\x11\xe0")},
             format="multipart",
         )
         self.assertEqual(response.status_code, 200)
@@ -6662,30 +6711,70 @@ class ElementosSueltosTests(APITestCase):
         self.assertIn(".xls", data["motivo"])
         self.assertEqual(data["hojas"], [])
 
+    def test_un_despiece_sin_la_pestana_ofrece_descargarlo(self):
+        self.project.despiece_archivo.save("despiece.xlsx", self._despiece(pestana=None))
+        self._as(self.ferralla)
+        data = self.client.get(f"/api/proyectos/{self.project.id}/elementos-sueltos/").data
+        self.assertFalse(data["previsualizable"])
+        self.assertIn("ELEMENTOS SUELTOS", data["motivo"])
+        self.assertEqual(data["hojas"], [])
+        self.assertTrue(data["url"].startswith("/media/despieces/"))
+
     def test_un_excel_roto_no_rompe_la_vista(self):
-        self.project.elementos_sueltos_archivo.save("roto.xlsx", SimpleUploadedFile("roto.xlsx", b"no es un excel"))
+        self.project.despiece_archivo.save("roto.xlsx", SimpleUploadedFile("roto.xlsx", b"no es un excel"))
         self._as(self.ferralla)
         data = self.client.get(f"/api/proyectos/{self.project.id}/elementos-sueltos/").data
         self.assertFalse(data["previsualizable"])
         self.assertIn("No se ha podido leer", data["motivo"])
 
-    def test_cambiar_el_excel_borra_el_anterior_del_disco(self):
+    def test_cambiar_el_despiece_borra_el_anterior_del_disco(self):
         self._as(self.admin)
         self.client.patch(
             f"/api/proyectos/{self.project.id}/",
-            {"elementos_sueltos_archivo": self._excel("v1.xlsx")},
+            {"despiece_archivo": self._despiece("v1.xlsx")},
             format="multipart",
         )
         self.project.refresh_from_db()
-        anterior = self.project.elementos_sueltos_archivo.path
+        anterior = self.project.despiece_archivo.path
         self.assertTrue(os.path.exists(anterior))
         with self.captureOnCommitCallbacks(execute=True):
             self.client.patch(
                 f"/api/proyectos/{self.project.id}/",
-                {"elementos_sueltos_archivo": self._excel("v2.xlsx")},
+                {"despiece_archivo": self._despiece("v2.xlsx")},
                 format="multipart",
             )
         self.assertFalse(os.path.exists(anterior))
+
+    def test_el_excel_aparte_de_antes_se_ve_entero_hasta_que_llega_el_despiece(self):
+        self.project.elementos_sueltos_archivo.save("elementos.xlsx", self._excel_aparte())
+        self._as(self.ferralla)
+        response = self.client.get(f"/api/proyectos/{self.project.id}/")
+        self.assertTrue(response.data["elementos_sueltos_disponible"])
+        data = self.client.get(f"/api/proyectos/{self.project.id}/elementos-sueltos/").data
+        self.assertTrue(data["url"].startswith("/media/elementos_sueltos/"))
+        # Todas las hojas visibles con datos: ni la oculta ni la vacia.
+        self.assertEqual([hoja["nombre"] for hoja in data["hojas"]], ["ELEMENTOS SUELTOS", "Vigas"])
+        vigas = data["hojas"][1]["secciones"]
+        self.assertEqual(len(vigas), 1)
+        self.assertIsNone(vigas[0]["titulo"])
+        self.assertEqual(vigas[0]["columnas"], ["Viga", "Peso (kg)", "Entrega"])
+        self.assertEqual(vigas[0]["filas"], [["V-01", 182.5, "15/10/2026"]])
+
+        # Ya no se sube aparte: el campo no cambia.
+        self._as(self.admin)
+        response = self.client.patch(
+            f"/api/proyectos/{self.project.id}/",
+            {"elementos_sueltos_archivo": self._excel_aparte("otro.xlsx")},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["elementos_sueltos_archivo"].endswith("/elementos.xlsx"))
+
+        # Con despiece manda su pestaña.
+        self.project.despiece_archivo.save("despiece.xlsx", self._despiece())
+        data = self.client.get(f"/api/proyectos/{self.project.id}/elementos-sueltos/").data
+        self.assertTrue(data["url"].startswith("/media/despieces/"))
+        self.assertEqual([hoja["nombre"] for hoja in data["hojas"]], ["ELEMENTOS SUELTOS"])
 
 
 class ImagenesMonitorTests(APITestCase):

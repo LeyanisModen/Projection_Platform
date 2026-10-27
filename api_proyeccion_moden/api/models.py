@@ -177,19 +177,24 @@ class Proyecto(models.Model):
         null=True,
         help_text='Plano PDF del proyecto.',
     )
-    documentos_archivo = models.FileField(
-        upload_to='documentos/',
+    # Antes era la documentacion en un ZIP (carpeta documentos/); los
+    # proyectos de entonces pueden conservarlo aqui.
+    despiece_archivo = models.FileField(
+        upload_to='despieces/',
         blank=True,
         null=True,
-        help_text='Archivo ZIP con la documentacion del proyecto.',
+        help_text=(
+            'Excel de despiece del proyecto. Su pestaña ELEMENTOS SUELTOS es '
+            'la que ve la ferralla en el dashboard.'
+        ),
     )
     elementos_sueltos_archivo = models.FileField(
         upload_to='elementos_sueltos/',
         blank=True,
         null=True,
         help_text=(
-            'Excel con los elementos sueltos a llevar a obra (barras, vigas, '
-            'zunchos) que no van dentro de un modulo.'
+            'Excel aparte de elementos sueltos, de antes del despiece. Ya no '
+            'se sube; solo se lee si el proyecto no tiene despiece en Excel.'
         ),
     )
     estrategia_bastidor = models.CharField(
@@ -225,6 +230,10 @@ class Proyecto(models.Model):
     # crea la propia ferralla nace aceptado; si Moden lo pasa a otra
     # ferralla, vuelve a estar pendiente.
     aceptado_por_ferralla_at = models.DateTimeField(null=True, blank=True)
+    # Kilos de los elementos sueltos que van a obra fuera de los modulos: la
+    # suma de la tabla elementos_sueltos de la base tecnica al importarla.
+    # Vacio mientras la base tecnica no la trae.
+    peso_elementos_sueltos_kg = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
 
     def __str__(self):
         return self.nombre
@@ -659,6 +668,24 @@ class ProyectoCheckAdjunto(models.Model):
 
     def __str__(self):
         return self.nombre_original
+
+
+class ProyectoKilosOtros(models.Model):
+    """Kilos que la ferralla suma a un proyecto por su cuenta (concepto + kg).
+
+    Moden no se mete en lo que son: solo cuentan en el total del proyecto.
+    """
+    proyecto = models.ForeignKey(Proyecto, on_delete=models.CASCADE, related_name='kilos_otros')
+    concepto = models.CharField(max_length=120)
+    kg = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(Decimal('0.01'))])
+    creado_por = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
+    creado_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['creado_at', 'id']
+
+    def __str__(self):
+        return f'{self.concepto}: {self.kg} kg'
 
 
 class TrabajadorOficina(models.Model):

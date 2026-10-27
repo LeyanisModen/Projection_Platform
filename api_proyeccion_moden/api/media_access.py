@@ -33,7 +33,9 @@ COOKIE_MAX_AGE = 365 * 24 * 3600
 # Top-level media folders whose file name is stored on the project itself.
 PROJECT_FILE_FIELDS = {
     'planos': 'plano_archivo',
-    'documentos': 'documentos_archivo',
+    'despieces': 'despiece_archivo',
+    # Los ZIP de documentacion de antes del despiece siguen en el mismo campo.
+    'documentos': 'despiece_archivo',
     'elementos_sueltos': 'elementos_sueltos_archivo',
     'datos_tecnicos': 'fichero_datos_tecnicos',
 }

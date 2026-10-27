@@ -24,6 +24,17 @@ export interface SplitArea {
   aboveLabel: string;
 }
 
+/** Una marca vertical sobre un dia (p. ej. una entrega a obra). `index` puede caer entre
+ *  dos columnas (x.5): entonces cuenta para la de despues. */
+export interface ChartMark {
+  index: number;
+  label: string;
+  /** Lineas de la lectura cuando el cursor cae en su columna. */
+  detalle: string[];
+  /** Mas suave: p. ej. una fecha aun orientativa. */
+  tenue?: boolean;
+}
+
 type PointState = 'normal' | 'cumple' | 'bajo' | 'curso';
 
 interface ChartPoint {
@@ -48,7 +59,12 @@ interface ChartLine {
   pico: { x: number; y: number; text: string } | null;
 }
 
-interface LegendItem { kind: 'line' | 'cumple' | 'bajo' | 'target' | 'area'; label: string; color: string; }
+interface LegendItem { kind: 'line' | 'cumple' | 'bajo' | 'target' | 'area' | 'mark' | 'mark-tenue'; label: string; color: string; }
+
+// Alto de cada fila de etiquetas de las marcas, encima de la grafica; si no caben en tres
+// filas (un movil), solo las lineas: el nombre lo da la lectura.
+const FILA_MARCA = 14;
+const MAX_FILAS_MARCA = 3;
 
 /** Eje de raiz cuadrada: abre los valores pequenos sin exagerarlos como un logaritmo
  *  (0 / 10 / 50 / 100 / 200 / 500). Las marcas, redondas y sin amontonarse. */
@@ -105,6 +121,8 @@ let nextChartId = 0;
                   @case ('cumple') { <circle cx="10" cy="5" r="4" class="lc-dot-cumple" /> }
                   @case ('bajo') { <circle cx="10" cy="5" r="3.5" class="lc-dot-hueco" [attr.stroke]="item.color" /> }
                   @case ('area') { <rect x="2" y="1" width="16" height="8" rx="2" [attr.fill]="item.color" fill-opacity="0.45" /> }
+                  @case ('mark') { <line x1="10" y1="0" x2="10" y2="10" class="lc-mark" /> }
+                  @case ('mark-tenue') { <line x1="10" y1="0" x2="10" y2="10" class="lc-mark lc-mark-tenue" /> }
                 }
               </svg>
               {{ item.label }}
@@ -163,6 +181,16 @@ let nextChartId = 0;
           @for (line of lines(); track line.name) {
             @if (line.area) { <path [attr.d]="line.area" [attr.fill]="'url(#' + line.areaId + ')'" /> }
           }
+          @for (marca of markLayout(); track $index) {
+            <line class="lc-mark" [class.lc-mark-tenue]="marca.tenue" [attr.x1]="marca.x" [attr.x2]="marca.x"
+              [attr.y1]="marca.y + 3" [attr.y2]="plot().y + plot().h" />
+          }
+          @for (marca of markLayout(); track $index) {
+            @if (marca.conEtiqueta) {
+            <text class="lc-mark-label" [class.lc-mark-tenue]="marca.tenue" [attr.x]="marca.anchor === 'end' ? marca.x - 3 : marca.x + 3"
+              [attr.y]="marca.y" [attr.text-anchor]="marca.anchor">{{ marca.label }}</text>
+            }
+          }
           @if (targetPath(); as objetivo) {
             <path class="lc-target" [attr.d]="objetivo.d" />
             <text class="lc-target-label" [attr.x]="objetivo.labelX" [attr.y]="objetivo.labelY" [attr.text-anchor]="objetivo.anchor">{{ targetLabel() }}</text>
@@ -207,6 +235,7 @@ let nextChartId = 0;
             }
             @if (tip.objetivo) { <span class="lc-tooltip-row lc-tooltip-muted"><span class="lc-key lc-key-target"></span>Objetivo {{ tip.objetivo }}</span> }
             @if (tip.estado) { <span class="lc-tooltip-estado">{{ tip.estado }}</span> }
+            @for (linea of tip.marcas; track $index) { <span class="lc-tooltip-marca">{{ linea }}</span> }
           </div>
         }
       }
@@ -246,11 +275,19 @@ let nextChartId = 0;
     .lc-tooltip-estado { color: var(--ink); font-weight: 600; }
     .lc-key { display: inline-block; width: 12px; height: 2px; border-radius: 1px; }
     .lc-key-target { height: 0; border-top: 2px dashed var(--text); background: none; }
+    .lc-mark { stroke: var(--ink); stroke-width: 1.25; stroke-dasharray: 3 3; opacity: 0.7; }
+    .lc-mark-tenue { opacity: 0.35; }
+    /* Con un halo del fondo: si una marca cruza la etiqueta de otra, la etiqueta se lee. */
+    .lc-mark-label { fill: var(--ink); font-size: 11px; font-weight: 600; paint-order: stroke; stroke: var(--surface); stroke-width: 3px; }
+    .lc-mark-label.lc-mark-tenue { fill: var(--muted); font-weight: 500; opacity: 1; }
+    .lc-tooltip-marca { color: var(--ink); font-weight: 600; }
   `,
 })
 export class StatsLineChart implements AfterViewInit, OnDestroy {
   readonly title = input('');
   readonly labels = input<string[]>([]);
+  /** Lo que dice la lectura de cada columna si el eje lo abrevia ("jue 12 nov" frente a "12/11"). */
+  readonly fullLabels = input<string[] | null>(null);
   readonly series = input<LineChartSeries[]>([]);
   /** Objetivo por columna; con objetivo, los puntos de la primera serie dicen si se llega. */
   readonly target = input<Array<number | null> | null>(null);
@@ -265,6 +302,10 @@ export class StatsLineChart implements AfterViewInit, OnDestroy {
   readonly split = input<SplitArea | null>(null);
   /** Columnas aun en curso: por debajo del objetivo no cuentan como incumplidas. */
   readonly pending = input<boolean[]>([]);
+  /** Marcas verticales con su etiqueta encima de la grafica (p. ej. las entregas). */
+  readonly marks = input<ChartMark[]>([]);
+  readonly markLabel = input('Entrega');
+  readonly markTenueLabel = input('');
   readonly unit = input('');
   readonly decimals = input(0);
   readonly height = input(220);
@@ -277,9 +318,35 @@ export class StatsLineChart implements AfterViewInit, OnDestroy {
   private observer: ResizeObserver | null = null;
   private readonly margin = { top: 18, right: 18, bottom: 28, left: 46 };
 
+  /** Marcas con su x y su fila de etiqueta: la que pisaria a otra baja una fila. */
+  readonly markLayout = computed(() => {
+    const m = this.margin;
+    const n = Math.max(this.labels().length, 1);
+    const w = Math.max(this.width() - m.left - m.right, 80);
+    const finDeFila: number[] = [];
+    const marcas = [...this.marks()].sort((a, b) => a.index - b.index).map(marca => {
+      const x = m.left + (marca.index + 0.5) * w / n;
+      const ancho = marca.label.length * 6.6 + 6;
+      // Pegada al borde derecho, la etiqueta va a la izquierda de su linea.
+      const anchor: 'start' | 'end' = x + ancho > this.width() ? 'end' : 'start';
+      const desde = anchor === 'end' ? x - ancho : x;
+      let fila = finDeFila.findIndex(fin => fin < desde - 4);
+      if (fila < 0) {
+        fila = finDeFila.length;
+        finDeFila.push(0);
+      }
+      finDeFila[fila] = anchor === 'end' ? x : x + ancho;
+      return { ...marca, x, fila, anchor, y: m.top - 4 + fila * FILA_MARCA, conEtiqueta: true };
+    });
+    if (finDeFila.length <= MAX_FILAS_MARCA) return marcas;
+    return marcas.map(marca => ({ ...marca, fila: -1, y: m.top - 3, conEtiqueta: false }));
+  });
+
   readonly plot = computed(() => {
     const m = this.margin;
-    return { x: m.left, y: m.top, w: Math.max(this.width() - m.left - m.right, 80), h: Math.max(this.height() - m.top - m.bottom, 40) };
+    const filas = this.markLayout().reduce((max, marca) => Math.max(max, marca.fila + 1), 0);
+    const top = m.top + filas * FILA_MARCA;
+    return { x: m.left, y: top, w: Math.max(this.width() - m.left - m.right, 80), h: Math.max(this.height() - top - m.bottom, 40) };
   });
 
   /** Con muchas columnas los puntos se encogen para no pisarse. */
@@ -344,7 +411,8 @@ export class StatsLineChart implements AfterViewInit, OnDestroy {
         fades.push({ id: `${this.uid}-out-${si}`, x1: last.x, y1: last.y, x2: plot.x + plot.w, y2: this.yAt((s.next + last.value) / 2), entra: false });
       }
       const maximo = points.reduce<ChartPoint | null>((best, p) => !best || p.value > best.value ? p : best, null);
-      const pico = principal && si === 0 && maximo && maximo.value > 0
+      // Con marcas, sus etiquetas van arriba: el maximo lo da la lectura.
+      const pico = principal && si === 0 && maximo && maximo.value > 0 && !this.marks().length
         ? { x: maximo.x, y: maximo.y - 11, text: this.format(maximo.value) } : null;
       return { name: s.name, color: s.color, path, area, areaId: `${this.uid}-area-${si}`, points, fades, pico };
     });
@@ -399,6 +467,11 @@ export class StatsLineChart implements AfterViewInit, OnDestroy {
     } else if (series.length > 1) {
       for (const s of series) items.push({ kind: 'line', label: s.name, color: s.color });
     }
+    const marcas = this.marks();
+    if (marcas.some(marca => !marca.tenue)) items.push({ kind: 'mark', label: this.markLabel(), color: '' });
+    if (marcas.some(marca => marca.tenue) && this.markTenueLabel()) {
+      items.push({ kind: 'mark-tenue', label: this.markTenueLabel(), color: '' });
+    }
     if (this.targetPath() && series.length) {
       items.push({ kind: 'cumple', label: 'Llega al objetivo', color: series[0].color });
       items.push({ kind: 'bajo', label: 'Por debajo', color: series[0].color });
@@ -429,8 +502,9 @@ export class StatsLineChart implements AfterViewInit, OnDestroy {
       : `Faltan ${this.format(objetivoValor - punto.value)}`;
     const flip = x > this.width() / 2;
     return {
-      label: this.labels()[index],
+      label: this.fullLabels()?.[index] ?? this.labels()[index],
       rows,
+      marcas: this.marks().filter(marca => Math.ceil(marca.index) === index).flatMap(marca => marca.detalle),
       objetivo: typeof objetivoValor === 'number' ? this.format(objetivoValor) : '',
       estado,
       flip,
