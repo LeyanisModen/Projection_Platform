@@ -125,6 +125,8 @@ def _tarjeta(proyecto, modulos_kg, fila_plan):
         'id': proyecto.id,
         'nombre': proyecto.nombre,
         'planta_etiqueta': proyecto.planta_etiqueta,
+        # La pagina agrupa las tarjetas en una columna por edificio.
+        'edificio': proyecto.edificio_id,
         'edificio_nombre': proyecto.edificio.nombre if proyecto.edificio_id else None,
         'fecha_entrega': entrega.isoformat() if entrega else None,
         'entrega_orientativa': entrega is not None and not proyecto.fecha_montaje_obra,

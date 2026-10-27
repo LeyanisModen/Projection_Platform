@@ -44,6 +44,16 @@ export function etiquetasCortas(nombres: string[]): Map<string, string> {
   }));
 }
 
+/** Los forjados de un edificio, en una columna con el total a obra de los que se ven. */
+export interface ColumnaEdificio {
+  clave: string;
+  nombre: string;
+  proyectos: PlanificacionTarjeta[];
+  kilos: number;
+  /** Forjados sin modulos subidos: sus kilos aun no suman. */
+  sinKilos: number;
+}
+
 /**
  * Planificacion de la ferralla a tres meses: los modulos al dia que piden las entregas
  * a obra, con cada entrega marcada, y debajo los kilos de cada proyecto (modulos,
@@ -103,6 +113,24 @@ export class PlanificacionFerralla implements OnInit {
   });
 
   readonly proyectos = computed(() => this.datos()?.proyectos ?? []);
+
+  /** Una columna por edificio, por orden de su primera entrega; lo que no es de un edificio, al final. */
+  readonly columnas = computed<ColumnaEdificio[]>(() => {
+    const columnas = new Map<string, ColumnaEdificio>();
+    for (const proyecto of this.proyectos()) {
+      const clave = proyecto.edificio === null ? 'sin-edificio' : String(proyecto.edificio);
+      let columna = columnas.get(clave);
+      if (!columna) {
+        columna = { clave, nombre: proyecto.edificio_nombre ?? 'Sin edificio', proyectos: [], kilos: 0, sinKilos: 0 };
+        columnas.set(clave, columna);
+      }
+      columna.proyectos.push(proyecto);
+      if (proyecto.kilos.total === null) columna.sinKilos++;
+      else columna.kilos += proyecto.kilos.total;
+    }
+    return Array.from(columnas.values())
+      .sort((a, b) => Number(a.clave === 'sin-edificio') - Number(b.clave === 'sin-edificio'));
+  });
   readonly resumen = computed(() => {
     const entregas = this.datos()?.entregas ?? [];
     const enVista = new Set(entregas.map(e => e.proyecto));
@@ -134,11 +162,6 @@ export class PlanificacionFerralla implements OnInit {
 
   elegirFerralla(id: string): void {
     if (id) this.cargar(Number(id));
-  }
-
-  /** "Edificio B · Planta 3" */
-  ubicacion(proyecto: PlanificacionTarjeta): string {
-    return [proyecto.edificio_nombre, proyecto.planta_etiqueta].filter(Boolean).join(' · ');
   }
 
   addOtros(proyecto: PlanificacionTarjeta): void {

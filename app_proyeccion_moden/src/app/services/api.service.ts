@@ -726,6 +726,8 @@ export interface PlanificacionTarjeta {
     id: number;
     nombre: string;
     planta_etiqueta: string | null;
+    /** Id del edificio: la pagina pone una columna por edificio. */
+    edificio: number | null;
     edificio_nombre: string | null;
     fecha_entrega: string | null;
     /** Sin la fecha de la ferralla: la orientativa hablada al confirmar el proyecto. */

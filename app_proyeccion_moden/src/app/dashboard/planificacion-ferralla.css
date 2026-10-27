@@ -15,11 +15,16 @@
 .pl-kpi-value small { color: var(--muted); font-size: 12px; font-weight: 500; }
 
 .pl-titulo { margin: 8px 0 0; color: var(--text); font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
-.pl-tarjetas { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 12px; }
+/* Una columna por edificio; con muchos, se desplazan en horizontal. */
+.pl-columnas { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(300px, 1fr); align-items: start; gap: 16px; overflow-x: auto; padding-bottom: 4px; }
+.pl-columna { display: grid; gap: 10px; min-width: 0; }
+.pl-columna-cabecera { display: grid; gap: 6px; padding: 12px 16px; border: 1px solid var(--line); border-bottom: 2px solid var(--line-strong); background: var(--surface); }
+.pl-columna-cabecera h4 { margin: 0; color: var(--ink); font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+.pl-columna-cabecera .pl-total { padding: 0; border: 0; }
 .pl-tarjeta { display: grid; align-content: start; gap: 10px; min-width: 0; padding: 14px 16px; border: 1px solid var(--line); border-left: 3px solid var(--line-strong); background: var(--surface); }
 .pl-tarjeta.pl-vencido { border-left-color: var(--danger); }
 .pl-tarjeta-cabecera { display: grid; gap: 2px; }
-.pl-tarjeta-cabecera h4 { margin: 0; color: var(--ink); font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+.pl-tarjeta-cabecera h5 { margin: 0; color: var(--ink); font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
 .pl-tenue { color: var(--muted); font-size: 12px; font-weight: 400; }
 .pl-entrega { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; margin: 0; color: var(--muted); font-size: 12px; }
 .pl-entrega strong { color: var(--ink); font-weight: 600; }
@@ -51,7 +56,9 @@
 .pl-boton:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-dark); }
 .pl-boton:disabled { opacity: 0.5; cursor: default; }
 
+@media (max-width: 760px) {
+  .pl-columnas { grid-auto-flow: row; grid-auto-columns: auto; overflow-x: visible; }
+}
 @media (max-width: 520px) {
-  .pl-tarjetas { grid-template-columns: 1fr; }
   .pl-kpi { min-width: 120px; }
 }

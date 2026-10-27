@@ -138,6 +138,7 @@ class PlanificacionTests(APITestCase):
         self.assertEqual(kilos['otros'][0]['concepto'], 'Esperas de pilares')
         self.assertEqual(kilos['total'], 697.4)
         self.assertEqual(tarjetas[self.p1.id]['fecha_entrega'], '2026-11-12')
+        self.assertIsNone(tarjetas[self.p1.id]['edificio'])
         self.assertFalse(tarjetas[self.p1.id]['entrega_orientativa'])
         # Sin tabla de sueltos en la base tecnica: pendiente, no cero. Y sin detalles de
         # sus modulos, sus kilos tampoco se saben: sin total.

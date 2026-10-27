@@ -40,16 +40,32 @@
             [labels]="labels()" [fullLabels]="labelsLargas()" [series]="series()"
             [marks]="marcas()" markLabel="Entrega a obra" markTenueLabel="Fecha orientativa" />
 
-        <h3 class="pl-titulo">Kilos por proyecto</h3>
+        <h3 class="pl-titulo">Kilos por edificio</h3>
         @if (!proyectos().length) {
             <p class="pl-estado">No hay proyectos con entrega en los próximos tres meses.</p>
         }
-        <div class="pl-tarjetas">
-            @for (proyecto of proyectos(); track proyecto.id) {
+        <div class="pl-columnas">
+            @for (columna of columnas(); track columna.clave) {
+            <section class="pl-columna" [attr.aria-label]="columna.nombre">
+                <header class="pl-columna-cabecera">
+                    <h4>{{ columna.nombre }}</h4>
+                    <div class="pl-total">
+                        <span>Total a obra</span>
+                        @if (columna.sinKilos !== columna.proyectos.length) {
+                            <strong>{{ columna.kilos | number:'1.0-0' }} <small>kg</small></strong>
+                        } @else {
+                            <strong class="pl-sin-dato" title="Faltan los kilos de los módulos">—</strong>
+                        }
+                    </div>
+                    <span class="pl-tenue">
+                        {{ columna.proyectos.length }} {{ columna.proyectos.length === 1 ? 'forjado' : 'forjados' }}@if (columna.sinKilos) { · {{ columna.sinKilos }} sin kilos de módulos }
+                    </span>
+                </header>
+            @for (proyecto of columna.proyectos; track proyecto.id) {
                 <article class="pl-tarjeta" [class.pl-vencido]="proyecto.estado === 'VENCIDO'">
                     <header class="pl-tarjeta-cabecera">
-                        <h4>{{ proyecto.nombre }}</h4>
-                        @if (ubicacion(proyecto)) { <span class="pl-tenue">{{ ubicacion(proyecto) }}</span> }
+                        <h5>{{ proyecto.nombre }}</h5>
+                        @if (proyecto.planta_etiqueta) { <span class="pl-tenue">{{ proyecto.planta_etiqueta }}</span> }
                     </header>
                     <p class="pl-entrega">
                         @if (proyecto.fecha_entrega) {
@@ -120,6 +136,8 @@
                         <p class="pl-error" role="alert">{{ erroresOtros()[proyecto.id] }}</p>
                     }
                 </article>
+            }
+            </section>
             }
         </div>
     }
