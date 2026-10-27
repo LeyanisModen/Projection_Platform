@@ -2756,6 +2756,25 @@ export class Dashboard implements OnInit, OnDestroy {
 
   /** Grafica del turno: debajo de la linea lo trabajado, encima el tiempo muerto. */
   readonly splitHoras: SplitArea = { below: CHART_AZUL, above: CHART_AMARILLO, belowLabel: 'Trabajo', aboveLabel: 'Tiempo muerto' };
+  readonly jornadaInfo = 'Horas trabajadas sobre las horas de turno. Las paradas para comer o descansar no se descuentan: salen como tiempo muerto.';
+
+  /** "Jornada productiva · 82 % aprovechado": lo trabajado sobre el turno de todo el periodo. */
+  jornadaProductivaTitulo(totals: ProductionStatsResponse['totals']): string {
+    const trabajo = totals.horas_trabajo ?? 0;
+    const turno = trabajo + (totals.horas_muertas ?? 0);
+    if (totals.horas_trabajo == null || turno <= 0) return 'Jornada productiva (%)';
+    return `Jornada productiva · ${formatNumber((trabajo / turno) * 100, 'en-US', '1.0-0')} % aprovechado`;
+  }
+
+  /** Explicacion de las dos cifras de kilos por hora-hombre. */
+  kgHoraHombreTitulo(totals: ProductionStatsResponse['totals']): string {
+    const trabajadas = totals.horas_hombre_trabajo != null
+      ? `En negro, con las horas trabajadas de verdad (${this.horasLabel(totals.horas_hombre_trabajo)} horas-hombre); en naranja, `
+      : 'Con ';
+    return 'Kilos fabricados por cada hora de cada persona. ' + trabajadas
+      + `con todas las horas de turno, también el tiempo muerto (${this.horasLabel(totals.horas_hombre ?? 0)} horas-hombre en el período). `
+      + 'Las personas de cada turno se ponen en los turnos de trabajo.';
+  }
 
   /** El servidor ya deduce trabajo y tiempo muerto (uno antiguo solo da horas de jornada). */
   hayActividad(): boolean {

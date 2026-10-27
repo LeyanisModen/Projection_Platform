@@ -791,6 +791,9 @@ export interface ProductionStatsResponse {
         /** Horas de jornada por las personas de cada turno, y kilos por cada una de ellas (null sin personas). */
         horas_hombre?: number;
         kg_por_hora_hombre?: number | null;
+        /** Lo mismo con las horas trabajadas de verdad (sin el tiempo muerto); sin actividad no viene. */
+        horas_hombre_trabajo?: number;
+        kg_por_hora_hombre_trabajo?: number | null;
         /** Horas de trabajo (señales de las mesas) y muertas (turno sin trabajo) del período. */
         horas_trabajo?: number;
         horas_muertas?: number;

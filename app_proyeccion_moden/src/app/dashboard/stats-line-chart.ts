@@ -109,7 +109,8 @@ let nextChartId = 0;
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="lc-header">
-      <h4 class="lc-title">{{ title() }}</h4>
+      <h4 class="lc-title">{{ title() }}@if (info()) {&ngsp;<i class="fa fa-info-circle lc-info" role="img" tabindex="0"
+          [attr.title]="info()" [attr.aria-label]="info()"></i>}</h4>
       @if (legend().length) {
         <ul class="lc-legend">
           @for (item of legend(); track item.label) {
@@ -245,6 +246,8 @@ let nextChartId = 0;
     :host { display: block; min-width: 0; padding: 14px 16px 8px; border: 1px solid var(--line); background: var(--surface); }
     .lc-header { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; margin-bottom: 2px; }
     .lc-title { margin: 0; color: var(--ink); font-size: 13px; font-weight: 600; }
+    .lc-info { color: var(--muted); font-size: 12px; cursor: help; }
+    .lc-info:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     .lc-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0; padding: 0; list-style: none; color: var(--muted); font-size: 11px; }
     .lc-legend li { display: inline-flex; align-items: center; gap: 5px; }
     .lc-body { position: relative; outline: none; }
@@ -285,6 +288,8 @@ let nextChartId = 0;
 })
 export class StatsLineChart implements AfterViewInit, OnDestroy {
   readonly title = input('');
+  /** Aclaracion del titulo: un icono (i) que la dice al pasar el raton. */
+  readonly info = input('');
   readonly labels = input<string[]>([]);
   /** Lo que dice la lectura de cada columna si el eje lo abrevia ("jue 12 nov" frente a "12/11"). */
   readonly fullLabels = input<string[] | null>(null);

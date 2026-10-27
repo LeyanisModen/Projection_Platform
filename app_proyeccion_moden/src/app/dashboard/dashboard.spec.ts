@@ -86,6 +86,19 @@ describe('Dashboard', () => {
       expect(text('.stats-kpi[title^="Kilos fabricados por cada hora de cada persona"] .stats-kpi-value')).toBe('— kg/h·persona');
     });
 
+    it('gives the kilos per man-hour twice: with the hours really worked (black) and with all the shift (orange)', () => {
+      stats.totals.horas_hombre = 48;
+      stats.totals.kg_por_hora_hombre = 12.34;
+      stats.totals.horas_hombre_trabajo = 30;
+      stats.totals.kg_por_hora_hombre_trabajo = 19.74;
+      render();
+      const casilla = fixture.nativeElement.querySelector('.stats-kpi-kg-hombre') as HTMLElement;
+      expect(casilla.querySelector('.stats-kpi-real')?.textContent?.trim()).toBe('19.7');
+      expect(casilla.querySelector('.stats-kpi-todas')?.textContent?.trim()).toBe('12.3');
+      expect(casilla.getAttribute('title')).toContain('En negro, con las horas trabajadas de verdad (30 horas-hombre)');
+      expect(casilla.getAttribute('title')).toContain('en naranja, con todas las horas de turno, también el tiempo muerto (48 horas-hombre');
+    });
+
     it('shows the time per panel as a KPI per phase and a column per mesa', () => {
       stats.tiempos = {
         inferior: {mediana_min: 34.4, media_min: 40.2, paneles: 12, medidos: 3},
@@ -135,6 +148,10 @@ describe('Dashboard', () => {
       // Modulos con dificultad (1), peso y desperdicio (1), turno trabajado y tiempo por panel (2).
       expect(fixture.nativeElement.querySelectorAll('app-stats-line-chart').length).toBe(4);
       expect(fixture.nativeElement.querySelector('app-stats-line-chart.stats-chart-turno')).not.toBeNull();
+      // Jornada productiva: lo aprovechado del turno, y por que el tiempo muerto incluye comer.
+      expect(text('app-stats-line-chart.stats-chart-turno .lc-title')).toBe('Jornada productiva · 36 % aprovechado');
+      expect(fixture.nativeElement.querySelector('app-stats-line-chart.stats-chart-turno .lc-info').getAttribute('title'))
+        .toContain('Las paradas para comer o descansar no se descuentan: salen como tiempo muerto.');
       expect(text('.stats-criterio')).toContain('van a menos de 20 min');
       expect(text('.stats-criterio')).toContain('hueco de hasta 90 min');
       // Sin trabajo detectado no hay ritmo "por hora de trabajo" que enseñar.

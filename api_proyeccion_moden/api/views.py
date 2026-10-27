@@ -6221,6 +6221,8 @@ class ProductionStatsView(APIView):
         # dia (la madrugada y la noche de un dia suman uno).
         dias_rango = {}
         ventanas_dia = {}
+        # Las mismas ventanas con las personas de su turno: horas-hombre trabajadas.
+        ventanas_personas_dia = {}
         horas_dia = set()
         eje_dia = []
         working_seconds = 0.0
@@ -6263,6 +6265,8 @@ class ProductionStatsView(APIView):
             if tramo.inicio < ahora:
                 # Solo lo que ya ha pasado: lo que queda de turno no es tiempo muerto.
                 ventanas_dia.setdefault(tramo.dia_fin.isoformat(), []).append((tramo.inicio, min(tramo.fin, ahora)))
+                ventanas_personas_dia.setdefault(tramo.dia_fin.isoformat(), []).append(
+                    (tramo.inicio, min(tramo.fin, ahora), tramo.turno.personas))
                 trabajado = (min(tramo.fin, ahora) - tramo.inicio).total_seconds()
                 working_seconds += trabajado
                 working_person_seconds += trabajado * tramo.turno.personas
@@ -6295,6 +6299,8 @@ class ProductionStatsView(APIView):
                 # solo esa parte puede tener tiempo muerto.
                 if cursor < ahora:
                     ventanas_dia.setdefault(fecha.isoformat(), []).append((cursor, min(corte, ahora)))
+                    ventanas_personas_dia.setdefault(fecha.isoformat(), []).append(
+                        (cursor, min(corte, ahora), tramo.turno.personas))
                     trabajado = (min(corte, ahora) - cursor).total_seconds()
                     working_seconds += trabajado
                     working_person_seconds += trabajado * tramo.turno.personas
@@ -6351,6 +6357,8 @@ class ProductionStatsView(APIView):
             )
             causas = {'sin_registro': 0.0, 'empezo_tarde': 0.0, 'acabo_pronto': 0.0, 'paradas': 0.0}
             trabajo_total = muerto_total = fuera_total = 0.0
+            # Horas-hombre de verdad: lo trabajado en cada turno por sus personas.
+            trabajo_hombre_total = 0.0
             # Todos los dias del rango: un sabado trabajado sin turno tambien
             # cuenta (como trabajo fuera de turno). Con un turno elegido, sus dias.
             if turno_sel is None:
@@ -6375,6 +6383,19 @@ class ProductionStatsView(APIView):
                 for causa in causas:
                     causas[causa] += desglose[causa]
                 trabajo_total += desglose['trabajo'] + fuera
+                con_personas = ventanas_personas_dia.get(fecha, [])
+                trabajo_hombre_total += sum(actividad.trabajo_en(a, b) * personas for a, b, personas in con_personas)
+                if fuera:
+                    # Lo trabajado fuera de turno, con las personas del turno del dia
+                    # o, sin turno ese dia, las del turno mas cercano.
+                    if con_personas:
+                        personas_fuera = con_personas[0][2]
+                    else:
+                        cercano = jornada.tramo_cercano(timezone.make_aware(timezone.datetime.combine(
+                            timezone.datetime.fromisoformat(fecha).date(), timezone.datetime.min.time()), current_tz,
+                        ) + timedelta(hours=12))
+                        personas_fuera = cercano.turno.personas if cercano is not None else 0
+                    trabajo_hombre_total += fuera * personas_fuera
                 muerto_total += desglose['muerto']
                 fuera_total += fuera
                 actividad_dia[fecha] = {
@@ -6394,6 +6415,12 @@ class ProductionStatsView(APIView):
             totals['horas_fuera_turno'] = _h(fuera_total)
             totals['modulos_por_hora_trabajo'] = (
                 round(modulos_completados / (trabajo_total / 3600.0), 2) if trabajo_total > 0 else 0.0
+            )
+            # Kilos por hora-hombre trabajada: sin el tiempo muerto (el otro,
+            # kg_por_hora_hombre, cuenta todas las horas de turno).
+            totals['horas_hombre_trabajo'] = _h(trabajo_hombre_total)
+            totals['kg_por_hora_hombre_trabajo'] = (
+                round(totals['peso_total_kg'] / (trabajo_hombre_total / 3600.0), 2) if trabajo_hombre_total > 0 else None
             )
             totals['kg_por_hora_trabajo'] = (
                 round(totals['peso_total_kg'] / (trabajo_total / 3600.0), 2) if trabajo_total > 0 else 0.0
