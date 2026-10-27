@@ -27,6 +27,22 @@ describe('Dashboard', () => {
     expect(component).toBeTruthy();
   });
 
+  it('does not ask for the queues again while the previous answer is still out', () => {
+    const api = TestBed.inject(ApiService);
+    const respuesta = new Subject<Record<string, MesaQueueItem[]>>();
+    const colas = vi.spyOn(api, 'getMesasQueues').mockReturnValue(respuesta);
+    component.mesas = [{ id: 1, nombre: 'Mesa 1' } as Mesa];
+
+    component.pollMesasQueue();
+    component.pollMesasQueue();
+    expect(colas).toHaveBeenCalledTimes(1);
+
+    respuesta.next({});
+    respuesta.complete();
+    component.pollMesasQueue();
+    expect(colas).toHaveBeenCalledTimes(2);
+  });
+
   describe('production summary and deadline demand', () => {
     let stats: ProductionStatsResponse;
     const render = () => {

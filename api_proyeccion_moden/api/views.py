@@ -4184,7 +4184,8 @@ class MesaViewSet(viewsets.ModelViewSet):
     def _queue_items_queryset(mesa):
         return (
             mesa.queue_items
-            .select_related('mesa', 'modulo', 'imagen')
+            # El serializador lee el proyecto y el bastidor de cada modulo.
+            .select_related('mesa', 'modulo', 'modulo__proyecto', 'modulo__grupo_bastidor', 'imagen')
             .prefetch_related(
                 'modulo__detalles_fase',
                 Prefetch(
@@ -4219,7 +4220,12 @@ class MesaViewSet(viewsets.ModelViewSet):
         with nothing MOSTRANDO gets its first EN_COLA item promoted; that is
         the "auto-advance" the browser used to do from the poll, now done
         once and atomically on the server.
+
+        Without the HECHO items: the dashboard drops them anyway and a busy
+        line piles up hundreds of them (seconds per poll).
         """
+        from api.models import MesaQueueStatus
+
         mesas = self.get_queryset()
         raw_ids = request.query_params.get('ids')
         if raw_ids:
@@ -4230,7 +4236,7 @@ class MesaViewSet(viewsets.ModelViewSet):
         for mesa in mesas:
             _promote_next_if_idle(mesa)
             payload[str(mesa.id)] = MesaQueueItemSerializer(
-                self._queue_items_queryset(mesa), many=True,
+                self._queue_items_queryset(mesa).exclude(status=MesaQueueStatus.HECHO), many=True,
                 context={'request': request, 'dificultad_scale': scale},
             ).data
         return Response(payload)

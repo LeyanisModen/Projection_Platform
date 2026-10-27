@@ -60,6 +60,15 @@ class MesaColasBulkTests(APITestCase):
         self.assertEqual(list(bulk.data), [str(self.mesa_a.id)])
         self.assertEqual(bulk.data[str(self.mesa_a.id)], single.data)
 
+    def test_leaves_out_what_is_done(self):
+        self._queue(self.mesa_a, self.modulo_1, 0, status=MesaQueueStatus.HECHO, imagen=self.imagen_1)
+        pendiente = self._queue(self.mesa_a, self.modulo_2, 1, status=MesaQueueStatus.MOSTRANDO)
+
+        response = self.client.get('/api/mesas/colas/')
+
+        self.assertEqual([row['id'] for row in response.data[str(self.mesa_a.id)]], [pendiente.id])
+        self.assertEqual(response.data[str(self.mesa_a.id)][0]['modulo_proyecto_nombre'], 'P')
+
     def test_promotes_first_en_cola_when_nothing_is_showing(self):
         first = self._queue(self.mesa_a, self.modulo_1, 0, imagen=self.imagen_1)
         second = self._queue(self.mesa_a, self.modulo_2, 1)

@@ -207,6 +207,9 @@ export class Dashboard implements OnInit, OnDestroy {
   private statsRequestId = 0;
   /** Peticiones de estadisticas aun sin respuesta: el refresco no manda otra encima. */
   private statsEnVuelo = 0;
+  /** Sondeo de 5 s aun sin respuesta: si el servidor va lento, no se amontona. */
+  private colasEnVuelo = false;
+  private modulosEnVuelo = false;
   statsPreset: 'day' | 'week' | 'month' | 'proyecto' | 'custom' = 'day';
   /** Proyecto al que se limitan las estadisticas; null = todos. */
   statsProyecto: number | null = null;
@@ -1643,6 +1646,8 @@ export class Dashboard implements OnInit, OnDestroy {
     interval(5000)
       .pipe(takeUntil(this.destroy$))
       .subscribe(() => {
+        // Las colas solo se ven en Produccion (y el player avanza solo).
+        if (this.vista !== 'produccion') return;
         this.pollMesasQueue();
         this.refreshActiveProjectModules();
       });
@@ -1665,14 +1670,15 @@ export class Dashboard implements OnInit, OnDestroy {
   // Polling function to refresh queues and check for auto-advance
   pollMesasQueue(): void {
     // Skip polling during cross-mesa transfers to avoid DOM conflicts
-    if (this.mesas.length === 0 || this.transferInProgress) return;
+    if (this.mesas.length === 0 || this.transferInProgress || this.colasEnVuelo) return;
 
     // One request for every mesa instead of one per mesa. The backend also
     // promotes the first EN_COLA item of any idle mesa before answering, so
     // the auto-advance below only fires if that somehow did not happen.
     const mesaIds = this.mesas.map(mesa => mesa.id);
+    this.colasEnVuelo = true;
     this.api.getMesasQueues(mesaIds)
-      .pipe(takeUntil(this.destroy$))
+      .pipe(takeUntil(this.destroy$), finalize(() => this.colasEnVuelo = false))
       .subscribe({
         next: (queues) => {
           this.mesas.forEach(mesa => {
@@ -2944,10 +2950,11 @@ export class Dashboard implements OnInit, OnDestroy {
 
   // Silent refresh for module status updates (polled)
   refreshActiveProjectModules(): void {
-    if (!this.selectedProyecto || this.loadingModulos) return;
+    if (!this.selectedProyecto || this.loadingModulos || this.modulosEnVuelo) return;
 
+    this.modulosEnVuelo = true;
     this.api.getModulos(this.selectedProyecto.id)
-      .pipe(takeUntil(this.destroy$))
+      .pipe(takeUntil(this.destroy$), finalize(() => this.modulosEnVuelo = false))
       .subscribe({
         next: (data) => {
           // Update list with standard sort
