@@ -271,6 +271,8 @@ def _guardar_turnos(profile, turnos):
         for turno in turnos
     ]
     changed = (profile.turnos or []) != nuevos
+    if changed:
+        _apuntar_turnos(profile, nuevos)
     profile.turnos = nuevos
     # Lo antiguo (una franja por dia) resume todos los turnos activos.
     from datetime import time as dtime
@@ -285,6 +287,23 @@ def _guardar_turnos(profile, turnos):
     if union:
         changed = _guardar_horario(profile, union) or changed
     return changed
+
+
+def _apuntar_turnos(profile, nuevos):
+    """Los turnos nuevos valen desde hoy: las estadisticas de los dias de
+    antes siguen con los que habia (api.turnos.Vigencias)."""
+    from api.models import HistorialTurnos
+    from api.turnos import PRINCIPIO, turnos_a_json, turnos_de
+
+    if not HistorialTurnos.objects.filter(ferralla_id=profile.user_id).exists():
+        # Sin historial: lo que habia hasta hoy, desde siempre.
+        HistorialTurnos.objects.create(
+            ferralla_id=profile.user_id, desde=PRINCIPIO,
+            turnos=turnos_a_json(turnos_de(profile, solo_activos=False)),
+        )
+    HistorialTurnos.objects.update_or_create(
+        ferralla_id=profile.user_id, desde=timezone.localdate(), defaults={'turnos': nuevos},
+    )
 
 
 def _horario_payload(profile):
@@ -5888,15 +5907,17 @@ class ProductionStatsView(APIView):
         else:
             profile = None
         from api.planning import annotated_projects, demand_summary, festivos_de, period_target_summary
-        from api.turnos import Jornada, turnos_de
+        from api.turnos import Jornada, turnos_de, vigencias_de
         # Festivos de la ferralla (y los de todas): no son dias de trabajo.
         festivos = festivos_de(profile_user.id if profile_user is not None else None)
         turnos = turnos_de(profile)
         turno_param = request.query_params.get('turno')
         turno_sel = next((t for t in turnos if str(t.indice) == str(turno_param)), None) if turno_param not in (None, '') else None
         contexto_dias = 14
+        # Cada dia, con los turnos (horario y personas) que tenia ese dia.
         jornada = Jornada(
-            turnos, from_date - timedelta(days=contexto_dias + 46), to_date + timedelta(days=contexto_dias + 1),
+            vigencias_de(profile_user.id if profile_user is not None else None, profile),
+            from_date - timedelta(days=contexto_dias + 46), to_date + timedelta(days=contexto_dias + 1),
             festivos, current_tz,
         )
 

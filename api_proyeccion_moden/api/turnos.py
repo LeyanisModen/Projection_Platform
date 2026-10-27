@@ -9,16 +9,21 @@ produccion".
 De aqui sale todo lo que depende del horario: las horas de jornada y el
 tiempo por panel de las estadisticas, los dias y la capacidad del plan de
 fabricacion (la capacidad es por turno) y la ventana de fotos de los mini-PC.
+
+Las estadisticas usan los turnos que habia cada dia (``Vigencias``, de
+``HistorialTurnos``): cambiar el horario o las personas cuenta desde ese dia.
 """
 from bisect import bisect_right
 from dataclasses import dataclass
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 
 from django.utils import timezone
 
 DAY_CODES = ('MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN')
 # Horario historico de una ferralla sin configurar.
 HORARIO_POR_DEFECTO = {day: (time(6, 50), time(15, 0)) for day in DAY_CODES[:5]}
+# "Desde siempre": la fecha de la primera version de los turnos de una ferralla.
+PRINCIPIO = date(2000, 1, 1)
 
 
 @dataclass(frozen=True)
@@ -133,6 +138,34 @@ def turnos_de(profile, solo_activos=True):
     return [t for t in turnos if t.activo] if solo_activos else turnos
 
 
+class Vigencias:
+    """Los turnos de una ferralla a lo largo del tiempo: [(desde, turnos activos)].
+
+    Cada dia valen los de la ultima version que empieza ese dia o antes; antes
+    de la primera, los de la primera.
+    """
+
+    def __init__(self, versiones):
+        self.versiones = sorted(versiones, key=lambda version: version[0])
+        self._desdes = [desde for desde, _ in self.versiones]
+
+    def en(self, dia):
+        return self.versiones[max(0, bisect_right(self._desdes, dia) - 1)][1]
+
+
+def vigencias_de(usuario_id, profile):
+    """Los turnos de cada dia de una ferralla; sin historial, los de ahora para todos."""
+    from .models import HistorialTurnos
+
+    versiones = []
+    if usuario_id is not None:
+        versiones = [
+            (version.desde, [turno for turno in leer_turnos(version.turnos) if turno.activo])
+            for version in HistorialTurnos.objects.filter(ferralla_id=usuario_id).order_by('desde')
+        ]
+    return Vigencias(versiones or [(PRINCIPIO, turnos_de(profile))])
+
+
 def turnos_por_dia(turnos):
     """{'MON': 2, 'SUN': 1}: cuantos turnos empiezan cada dia de la semana."""
     cuenta = {}
@@ -145,15 +178,17 @@ def turnos_por_dia(turnos):
 def tramos(turnos, desde, hasta, festivos=frozenset(), tz=None):
     """Tramos cuyo dia de produccion esta en [desde, hasta], por hora de inicio.
 
+    ``turnos``: una lista o unas ``Vigencias`` (cada dia, los que habia).
     Un festivo no tiene turnos (el turno de noche que empezo la vispera si).
     """
     tz = tz or timezone.get_current_timezone()
+    vigencias = turnos if isinstance(turnos, Vigencias) else Vigencias([(PRINCIPIO, turnos)])
     resultado = []
     fecha = desde
     while fecha <= hasta:
         if fecha not in festivos:
             day = DAY_CODES[fecha.weekday()]
-            for turno in turnos:
+            for turno in vigencias.en(fecha):
                 if day not in turno.horario:
                     continue
                 hora_inicio, hora_fin = turno.horario[day]

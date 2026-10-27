@@ -1296,6 +1296,29 @@ class UserProfile(models.Model):
         db_table = 'api_userprofile'
 
 
+class HistorialTurnos(models.Model):
+    """Los turnos de una ferralla (horario y personas) desde una fecha.
+
+    Las estadisticas de cada dia usan los vigentes ese dia, asi que cambiar
+    los turnos no reescribe el pasado. Antes de la primera version vale la
+    primera; sin ninguna, los de UserProfile.turnos.
+    """
+    ferralla = models.ForeignKey(User, on_delete=models.CASCADE, related_name='historial_turnos')
+    desde = models.DateField()
+    # Mismo formato que UserProfile.turnos (los apagados incluidos).
+    turnos = models.JSONField(default=list)
+    creado_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['ferralla', 'desde']
+        constraints = [
+            models.UniqueConstraint(fields=['ferralla', 'desde'], name='historial_turnos_una_version_por_dia'),
+        ]
+
+    def __str__(self):
+        return f'{self.ferralla_id} desde {self.desde}'
+
+
 class FerrallaContacto(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='contactos')
     nombre = models.CharField(max_length=120, blank=True)
