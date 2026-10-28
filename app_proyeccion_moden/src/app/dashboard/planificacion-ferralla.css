@@ -4,6 +4,10 @@
   /* Cada edificio, un bloque gris con su cabecera sombreada; sus forjados, en blanco dentro. */
   --pl-bloque: #eef1f4;
   --pl-bloque-cabecera: #e1e6eb;
+  /* Lo previsto estimado (modulos que faltan por subir, a su peso medio): en azul, que salte
+     a la vista como las horas muertas en mostaza. El azul de la segunda serie de las graficas,
+     un punto mas oscuro para leerse en letra pequena. */
+  --pl-estimado: #2264b8;
 }
 .pl-estado { margin: 0; color: var(--muted); font-size: 13px; }
 .pl-error { margin: 0; color: var(--danger); font-size: 12px; }
@@ -44,17 +48,19 @@
 .pl-total strong { color: var(--ink); font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1; }
 .pl-total small { color: var(--muted); font-size: 12px; font-weight: 500; }
 .pl-total .pl-sin-dato { color: var(--muted); font-weight: 400; }
-/* Lo previsto (modulos que faltan por subir, a su peso medio), en cursiva como las fechas orientativas. */
-.pl-total strong.pl-previsto { font-style: italic; }
 .pl-reparto { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .pl-tarjeta > .pl-reparto { margin-top: -6px; text-align: right; }
-.pl-reparto em, .pl-fila-prevista dd { font-style: italic; }
+.pl-reparto em, .pl-total strong.pl-estimado, .pl-total strong.pl-estimado small, .pl-estimado { color: var(--pl-estimado); }
+.pl-reparto em, .pl-total strong.pl-estimado { font-style: italic; }
+.pl-modulos .pl-estimado { font-weight: 600; }
 
 .pl-kilos { display: grid; gap: 4px; margin: 0; }
 .pl-fila { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 22px; font-size: 13px; }
 .pl-fila dt { min-width: 0; color: var(--text); font-weight: 400; overflow-wrap: anywhere; }
 .pl-fila dd { display: inline-flex; align-items: center; gap: 4px; margin: 0; color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pl-fila dd.pl-tenue { font-weight: 400; font-style: italic; }
+.pl-fila.pl-fila-estimada dt, .pl-fila.pl-fila-estimada dd { color: var(--pl-estimado); }
+.pl-fila.pl-fila-estimada dd { font-style: italic; }
 /* Lo fabricado y su desperdicio, y el peso medio de lo previsto: debajo, sin sumar en el total. */
 .pl-fila.pl-detalle { min-height: 0; margin: -2px 0 2px 12px; font-size: 12px; }
 .pl-fila.pl-detalle dt, .pl-fila.pl-detalle dd { color: var(--muted); font-weight: 400; }

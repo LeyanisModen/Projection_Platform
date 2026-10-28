@@ -26,15 +26,18 @@
                 <span class="pl-kpi-label">Entregas a obra</span>
                 <span class="pl-kpi-value">{{ resumen().entregas }}</span>
             </div>
-            <div class="pl-kpi" title="Los módulos que faltan de lo que se entrega en estos tres meses">
+            <div class="pl-kpi" title="Los módulos que faltan de lo que se entrega en estos tres meses: los subidos y, hasta que se suben, los previstos (una estimación)">
                 <span class="pl-kpi-label">Módulos por fabricar</span>
                 <span class="pl-kpi-value">{{ resumen().modulos }}</span>
+                @if (resumen().modulosEstimados) {
+                    <span class="pl-reparto">@if (resumen().modulos - resumen().modulosEstimados) {{{ resumen().modulos - resumen().modulosEstimados }} confirmados · <em>{{ resumen().modulosEstimados }} previstos estimados</em>} @else {<em>todos previstos estimados</em>}</span>
+                }
             </div>
-            <div class="pl-kpi" title="Módulos y elementos sueltos de lo que se entrega en estos tres meses: lo confirmado y lo previsto de los módulos que faltan por subir">
+            <div class="pl-kpi" title="Módulos y elementos sueltos de lo que se entrega en estos tres meses: lo confirmado y lo previsto estimado de los módulos que faltan por subir">
                 <span class="pl-kpi-label">Kilos a obra</span>
                 <span class="pl-kpi-value">{{ resumen().kilos | number:'1.0-0' }} <small>kg</small></span>
                 @if (resumen().previsto) {
-                    <span class="pl-reparto">@if (resumen().confirmado) {{{ resumen().confirmado | number:'1.0-0' }} confirmados · <em>{{ resumen().previsto | number:'1.0-0' }} previstos</em>} @else {<em>todo previsto</em>}</span>
+                    <span class="pl-reparto">@if (resumen().confirmado) {{{ resumen().confirmado | number:'1.0-0' }} confirmados · <em>{{ resumen().previsto | number:'1.0-0' }} previstos estimados</em>} @else {<em>todo previsto estimado</em>}</span>
                 }
             </div>
         </div>
@@ -55,13 +58,13 @@
                     <div class="pl-total">
                         <span>Total a obra</span>
                         @if (columna.sinKilos !== columna.proyectos.length) {
-                            <strong>{{ columna.kilos | number:'1.0-0' }} <small>kg</small></strong>
+                            <strong [class.pl-estimado]="!columna.confirmado">{{ columna.kilos | number:'1.0-0' }} <small>kg</small></strong>
                         } @else {
                             <strong class="pl-sin-dato" title="Faltan los kilos de los módulos">—</strong>
                         }
                     </div>
                     @if (columna.previsto) {
-                        <span class="pl-reparto">@if (columna.confirmado) {{{ columna.confirmado | number:'1.0-0' }} kg confirmados · <em>{{ columna.previsto | number:'1.0-0' }} kg previstos</em>} @else {<em>todo previsto</em>}</span>
+                        <span class="pl-reparto">@if (columna.confirmado) {{{ columna.confirmado | number:'1.0-0' }} kg confirmados · <em>{{ columna.previsto | number:'1.0-0' }} kg previstos estimados</em>} @else {<em>todo previsto estimado</em>}</span>
                     }
                     <span class="pl-tenue">
                         {{ columna.proyectos.length }} {{ columna.proyectos.length === 1 ? 'forjado' : 'forjados' }}@if (columna.sinKilos) { · {{ columna.sinKilos }} sin kilos }
@@ -83,19 +86,19 @@
                         } @else {
                             <span class="pl-aviso">Sin fecha de entrega</span>
                         }
-                        <span class="pl-modulos">{{ proyecto.modulos_completados }} / {{ proyecto.modulos_total }} módulos</span>
+                        <span class="pl-modulos">{{ proyecto.modulos_completados }} / <span [class.pl-estimado]="!!proyecto.kilos.previstos" [attr.title]="modulosEstimadosTitulo(proyecto) || null">{{ proyecto.modulos_total }}</span> módulos</span>
                     </p>
 
                     <div class="pl-total">
                         <span>Total a obra</span>
                         @if (proyecto.kilos.total !== null) {
-                            <strong [class.pl-previsto]="!proyecto.kilos.confirmado">{{ proyecto.kilos.total | number:'1.0-0' }} <small>kg</small></strong>
+                            <strong [class.pl-estimado]="!proyecto.kilos.confirmado">{{ proyecto.kilos.total | number:'1.0-0' }} <small>kg</small></strong>
                         } @else {
                             <strong class="pl-sin-dato" title="Faltan los kilos de los módulos">—</strong>
                         }
                     </div>
                     @if (proyecto.kilos.previsto && proyecto.kilos.confirmado) {
-                        <span class="pl-reparto">{{ proyecto.kilos.confirmado | number:'1.0-0' }} kg confirmados · <em>{{ proyecto.kilos.previsto | number:'1.0-0' }} kg previstos</em></span>
+                        <span class="pl-reparto">{{ proyecto.kilos.confirmado | number:'1.0-0' }} kg confirmados · <em>{{ proyecto.kilos.previsto | number:'1.0-0' }} kg previstos estimados</em></span>
                     }
 
                     <dl class="pl-kilos">
@@ -116,8 +119,8 @@
                             }
                         }
                         @if (proyecto.kilos.previstos; as previstos) {
-                            <div class="pl-fila pl-fila-prevista">
-                                <dt>{{ previstos.modulos }} {{ previstos.modulos === 1 ? 'módulo previsto' : 'módulos previstos' }}</dt>
+                            <div class="pl-fila pl-fila-estimada">
+                                <dt>{{ previstos.modulos }} {{ previstos.modulos === 1 ? 'módulo previsto estimado' : 'módulos previstos estimados' }}</dt>
                                 @if (previstos.kg !== null) {
                                     <dd>{{ previstos.kg | number:'1.0-0' }} kg</dd>
                                 } @else {

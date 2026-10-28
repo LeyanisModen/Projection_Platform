@@ -108,7 +108,9 @@ describe('PlanificacionFerralla', () => {
     ]);
     expect(texto(el().querySelector('.pl-ventana'))).toBe('Próximos tres meses: del lun 2 nov al mar 2 feb');
     expect(Array.from(el().querySelectorAll('.pl-kpi-value')).map(texto)).toEqual(['2', '12', '2,400 kg']);
-    expect(texto(el().querySelector('.pl-kpi .pl-reparto'))).toBe('2,100 confirmados · 300 previstos');
+    // Modulos por fabricar: de P06 faltan 2 por subir; de los 4 que pide su entrega, 2 son estimados.
+    expect(Array.from(el().querySelectorAll('.pl-kpi .pl-reparto')).map(texto))
+      .toEqual(['10 confirmados · 2 previstos estimados', '2,100 confirmados · 300 previstos estimados']);
     expect(Array.from(el().querySelectorAll('.lc-mark-label')).map(texto)).toEqual(['P05', 'P06']);
   });
 
@@ -134,24 +136,28 @@ describe('PlanificacionFerralla', () => {
     expect(texto(segunda.querySelector('.pl-entrega'))).toContain('orientativa');
     expect(segunda.querySelector('.pl-entrega strong')?.classList.contains('pl-orientativa')).toBe(true);
     expect(texto(segunda.querySelector('.pl-total strong'))).toBe('900 kg');
-    expect(texto(segunda.querySelector('.pl-reparto'))).toBe('600 kg confirmados · 300 kg previstos');
+    expect(texto(segunda.querySelector('.pl-reparto'))).toBe('600 kg confirmados · 300 kg previstos estimados');
     expect(filas(segunda)).toEqual([
       ['4 módulos confirmados', '600 kg'], ['Fabricado · desperdicio', '0 kg · 0 kg'],
-      ['2 módulos previstos', '300 kg'], ['A 150 kg/módulo, media de sus módulos subidos', ''],
+      ['2 módulos previstos estimados', '300 kg'], ['A 150 kg/módulo, media de sus módulos subidos', ''],
       ['Elementos sueltos', 'pendiente'],
     ]);
 
     // Nada subido: el total es todo previsto, en cursiva.
     expect(texto(tercera.querySelector('.pl-entrega'))).toContain('Sin fecha de entrega');
     expect(texto(tercera.querySelector('.pl-total strong'))).toBe('8,262 kg');
-    expect(tercera.querySelector('.pl-total strong')?.classList.contains('pl-previsto')).toBe(true);
+    expect(tercera.querySelector('.pl-total strong')?.classList.contains('pl-estimado')).toBe(true);
+    // Sus 64 modulos tambien son una estimacion, y se marca.
+    expect(tercera.querySelector('.pl-modulos .pl-estimado')?.getAttribute('title')).toBe('Previstos estimados: aún no hay módulos subidos');
+    expect(primera.querySelector('.pl-modulos .pl-estimado')).toBeNull();
+    expect(segunda.querySelector('.pl-modulos .pl-estimado')?.getAttribute('title')).toBe('4 confirmados · 2 previstos estimados');
     expect(tercera.querySelector('.pl-reparto')).toBeNull();
     expect(filas(tercera)).toEqual([
-      ['64 módulos previstos', '8,262 kg'], ['A 129 kg/módulo, media de los módulos de la ferralla', ''],
+      ['64 módulos previstos estimados', '8,262 kg'], ['A 129 kg/módulo, media de los módulos de la ferralla', ''],
       ['Elementos sueltos', 'pendiente'],
     ]);
 
-    expect(filas(cuarta)).toEqual([['12 módulos previstos', 'sin peso medio'], ['Elementos sueltos', 'pendiente']]);
+    expect(filas(cuarta)).toEqual([['12 módulos previstos estimados', 'sin peso medio'], ['Elementos sueltos', 'pendiente']]);
     expect(texto(cuarta.querySelector('.pl-total strong'))).toBe('—');
     expect(filas(quinta)).toEqual([['Módulos', 'pendiente'], ['Elementos sueltos', 'pendiente']]);
   });
@@ -162,7 +168,7 @@ describe('PlanificacionFerralla', () => {
     expect(cabeceras.map(c => texto(c.querySelector('h4')))).toEqual(['Bloque H', 'Sin edificio']);
     expect(columnas.map(c => c.querySelectorAll('.pl-tarjeta').length)).toEqual([1, 4]);
     expect(cabeceras.map(c => texto(c.querySelector('.pl-total strong')))).toEqual(['1,500 kg', '9,162 kg']);
-    expect(cabeceras.map(c => texto(c.querySelector('.pl-reparto')))).toEqual(['', '600 kg confirmados · 8,562 kg previstos']);
+    expect(cabeceras.map(c => texto(c.querySelector('.pl-reparto')))).toEqual(['', '600 kg confirmados · 8,562 kg previstos estimados']);
     // Lo que aun no tiene kilos no suma y se dice.
     expect(cabeceras.map(c => texto(c.querySelector(':scope > .pl-tenue')))).toEqual(['1 forjado', '4 forjados · 2 sin kilos']);
   });

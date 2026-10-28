@@ -64,7 +64,7 @@ const MEDIA_DE: Record<NonNullable<PlanificacionPrevistos['de']>, string> = {
 /**
  * Planificacion de la ferralla a tres meses: los modulos al dia que piden las entregas
  * a obra, con cada entrega marcada, y debajo los kilos de cada proyecto: los de los
- * modulos y los elementos sueltos, confirmados (lo subido) y previstos (los modulos que
+ * modulos y los elementos sueltos, confirmados (lo subido) y previstos estimados (los modulos que
  * faltan por subir, a su peso medio).
  */
 @Component({
@@ -143,14 +143,25 @@ export class PlanificacionFerralla implements OnInit {
     const enVista = new Set(entregas.map(e => e.proyecto));
     const proyectos = this.proyectos().filter(p => enVista.has(p.id));
     const suma = (kilos: (p: PlanificacionTarjeta) => number | null) => proyectos.reduce((total, p) => total + (kilos(p) ?? 0), 0);
+    // Hasta que se suben, los modulos que faltan son los previstos: una estimacion.
+    const estimados = new Map(proyectos.map(p => [p.id, p.kilos.previstos?.modulos ?? 0]));
     return {
       entregas: entregas.length,
       modulos: entregas.reduce((total, e) => total + e.modulos_pendientes, 0),
+      modulosEstimados: entregas.reduce((total, e) => total + Math.min(e.modulos_pendientes, estimados.get(e.proyecto) ?? 0), 0),
       kilos: suma(p => p.kilos.total),
       confirmado: suma(p => p.kilos.confirmado),
       previsto: suma(p => p.kilos.previsto),
     };
   });
+
+  /** Los modulos del proyecto que aun son una estimacion (los previstos que faltan por subir). */
+  modulosEstimadosTitulo(proyecto: PlanificacionTarjeta): string {
+    const estimados = proyecto.kilos.previstos?.modulos ?? 0;
+    if (!estimados) return '';
+    const subidos = proyecto.kilos.modulos_subidos;
+    return subidos ? `${subidos} confirmados · ${estimados} previstos estimados` : 'Previstos estimados: aún no hay módulos subidos';
+  }
 
   /** "A 129 kg/módulo, media de los módulos del edificio" */
   previstosDetalle(previstos: PlanificacionPrevistos): string {
