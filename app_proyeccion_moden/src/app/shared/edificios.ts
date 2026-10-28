@@ -38,3 +38,34 @@ export function agruparPorEdificio(proyectos: Proyecto[]): GrupoEdificio[] {
 export function ordenarPorEdificio(proyectos: Proyecto[]): Proyecto[] {
     return agruparPorEdificio(proyectos).flatMap(grupo => grupo.proyectos);
 }
+
+const SIN_PLANTA = 9999;
+const diaMes = (iso: string) => { const [, mes, dia] = iso.split('-'); return `${dia}/${mes}`; };
+
+/**
+ * Un edificio se monta de abajo arriba. Si con ``fecha`` el forjado se
+ * montaria antes que una planta de debajo o despues que una de encima, el
+ * aviso con la mas cercana (suele ser una errata); null si encaja. De las
+ * otras plantas cuenta la fecha que manda: la de montaje en obra o, sin
+ * ella, la orientativa.
+ */
+export function avisoOrdenDePlantas(proyecto: Proyecto, fecha: string, otros: Proyecto[]): string | null {
+    const orden = proyecto.orden_planta ?? SIN_PLANTA;
+    if (proyecto.edificio == null || orden >= SIN_PLANTA) return null;
+    let choque: { otro: Proyecto; fecha: string; distancia: number } | null = null;
+    for (const otro of otros) {
+        const otroOrden = otro.orden_planta ?? SIN_PLANTA;
+        const otraFecha = otro.fecha_montaje_obra || otro.fecha_montaje;
+        if (otro.id === proyecto.id || otro.edificio !== proyecto.edificio || otroOrden >= SIN_PLANTA || !otraFecha) continue;
+        const fuera = otroOrden < orden ? otraFecha > fecha : otroOrden > orden && otraFecha < fecha;
+        const distancia = Math.abs(otroOrden - orden);
+        if (fuera && (!choque || distancia < choque.distancia)) choque = { otro, fecha: otraFecha, distancia };
+    }
+    if (!choque) return null;
+    const debajo = (choque.otro.orden_planta ?? SIN_PLANTA) < orden;
+    const otraEtiqueta = choque.otro.planta_etiqueta || choque.otro.nombre;
+    const orientativa = choque.otro.fecha_montaje_obra ? '' : ', orientativa';
+    return `La ${proyecto.planta_etiqueta || proyecto.nombre} se montaría el ${diaMes(fecha)}, `
+        + `${debajo ? 'antes que' : 'después de'} la ${otraEtiqueta} (${diaMes(choque.fecha)}${orientativa}), `
+        + `que va ${debajo ? 'debajo' : 'encima'}.`;
+}

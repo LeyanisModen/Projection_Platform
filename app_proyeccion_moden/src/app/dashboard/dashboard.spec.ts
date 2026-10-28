@@ -990,6 +990,33 @@ describe('Dashboard', () => {
     expect(card.querySelector('.project-montaje-aviso')).toBeNull();
   });
 
+  it('asks before saving a site date that puts a floor before the one below it', () => {
+    const api = TestBed.inject(ApiService);
+    const planta = (id: number, n: number, fecha: string) =>
+      ({ id, nombre: `RIP_BH_P0${n}`, edificio: 8, orden_planta: 4000 + n, planta_etiqueta: `P${n}`,
+         modulos_count: 4, modulos_completados: 0, fecha_montaje: fecha, fecha_montaje_obra: fecha } as Proyecto);
+    component.proyectos = [planta(4, 4, '2026-11-11'), planta(7, 7, '2026-12-11')];
+    fixture.changeDetectorRef.markForCheck();
+    fixture.detectChanges();
+    const update = vi.spyOn(api, 'updateProyecto').mockReturnValue(of({ id: 7, fecha_montaje_obra: '2026-11-10' } as Proyecto));
+    const pregunta = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const input = fixture.nativeElement.querySelectorAll('.project-montaje-obra input')[1] as HTMLInputElement;
+
+    // Cancela: no se guarda y vuelve la fecha que tenia.
+    input.value = '2026-11-10';
+    input.dispatchEvent(new Event('change'));
+    expect(pregunta).toHaveBeenCalledWith('La P7 se montaría el 10/11, antes que la P4 (11/11), que va debajo. ¿Guardar igualmente?');
+    expect(update).not.toHaveBeenCalled();
+    expect(input.value).toBe('2026-12-11');
+
+    // Si de verdad es asi, se guarda.
+    pregunta.mockReturnValue(true);
+    input.value = '2026-11-10';
+    input.dispatchEvent(new Event('change'));
+    expect(update).toHaveBeenCalledWith(7, { fecha_montaje_obra: '2026-11-10' });
+    pregunta.mockRestore();
+  });
+
   it('lets the ferralla pick the superior order on the SUP card and reorder it by hand when manual', () => {
     const api = TestBed.inject(ApiService);
     const grupo = {

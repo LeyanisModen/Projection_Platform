@@ -31,7 +31,7 @@ import { catchError, finalize } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
 import { ZoomableImageComponent } from '../shared/zoomable-image/zoomable-image.component';
 import { planningIssues, planningLabel } from '../shared/project-planning';
-import { agruparPorEdificio, GrupoEdificio } from '../shared/edificios';
+import { agruparPorEdificio, avisoOrdenDePlantas, GrupoEdificio } from '../shared/edificios';
 
 // Graficas: naranja de marca para la serie principal, gris para las secundarias
 // y azul + naranja donde hay dos series (par validado para daltonismo).
@@ -1368,6 +1368,12 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   private guardarFechaObra(proyecto: Proyecto, valor: string | null, input?: HTMLInputElement): void {
+    // Una planta que se montaria antes que la de debajo suele ser una errata: que lo confirme.
+    const aviso = valor ? avisoOrdenDePlantas(proyecto, valor, [...this.proyectos, ...this.proyectosPendientes]) : null;
+    if (aviso && !confirm(`${aviso} ¿Guardar igualmente?`)) {
+      if (input) input.value = proyecto.fecha_montaje_obra || proyecto.fecha_montaje || '';
+      return;
+    }
     this.fechaObraGuardandoId = proyecto.id;
     this.cdr.detectChanges();
     this.api.updateProyecto(proyecto.id, { fecha_montaje_obra: valor })
