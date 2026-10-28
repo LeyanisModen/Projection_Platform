@@ -100,7 +100,7 @@ describe('StatsLineChart', () => {
     expect(Array.from(el().querySelectorAll('.lc-pico')).map(t => t.textContent)).toEqual(['3']);
     expect(el().querySelector('.lc-target-label')?.textContent).toBe('Objetivo 2 al día');
     expect(Array.from(el().querySelectorAll('.lc-legend li')).map(li => li.textContent?.trim()))
-      .toEqual(['Llega al objetivo', 'Por debajo', 'Objetivo 2 al día']);
+      .toEqual(['Llega al mínimo', 'Por debajo', 'Objetivo 2 al día']);
   });
 
   it('moves the target label to the start when the last point sits on the target line', () => {

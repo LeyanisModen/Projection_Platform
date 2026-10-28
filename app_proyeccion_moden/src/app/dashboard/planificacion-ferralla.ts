@@ -1,9 +1,8 @@
 import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { HttpErrorResponse } from '@angular/common/http';
 
-import { ApiService, KilosOtrosLinea, PlanificacionResponse, PlanificacionTarjeta } from '../services/api.service';
+import { ApiService, PlanificacionPrevistos, PlanificacionResponse, PlanificacionTarjeta } from '../services/api.service';
 import { ChartMark, LineChartSeries, StatsLineChart } from './stats-line-chart';
 
 // La serie de modulos, en el naranja de los modulos de Estadisticas.
@@ -50,14 +49,23 @@ export interface ColumnaEdificio {
   nombre: string;
   proyectos: PlanificacionTarjeta[];
   kilos: number;
-  /** Forjados sin modulos subidos: sus kilos aun no suman. */
+  confirmado: number;
+  previsto: number;
+  /** Forjados de los que aun no se sabe ningun kilo: no suman. */
   sinKilos: number;
 }
 
+const MEDIA_DE: Record<NonNullable<PlanificacionPrevistos['de']>, string> = {
+  proyecto: 'media de sus módulos subidos',
+  edificio: 'media de los módulos del edificio',
+  ferralla: 'media de los módulos de la ferralla',
+};
+
 /**
  * Planificacion de la ferralla a tres meses: los modulos al dia que piden las entregas
- * a obra, con cada entrega marcada, y debajo los kilos de cada proyecto (modulos,
- * elementos sueltos y lo que la ferralla apunte como "otros").
+ * a obra, con cada entrega marcada, y debajo los kilos de cada proyecto: los de los
+ * modulos y los elementos sueltos, confirmados (lo subido) y previstos estimados (los modulos que
+ * faltan por subir, a su peso medio).
  */
 @Component({
   selector: 'app-planificacion-ferralla',
@@ -72,11 +80,6 @@ export class PlanificacionFerralla implements OnInit {
   readonly datos = signal<PlanificacionResponse | null>(null);
   readonly cargando = signal(true);
   readonly error = signal(false);
-  /** Linea de "otros" que se esta guardando o borrando (por proyecto). */
-  readonly guardandoId = signal<number | null>(null);
-  readonly erroresOtros = signal<Record<number, string>>({});
-  nuevoConcepto: Record<number, string> = {};
-  nuevoKg: Record<number, string> = {};
 
   readonly fechaLarga = fechaLarga;
   readonly fechaCorta = fechaCorta;
@@ -121,12 +124,16 @@ export class PlanificacionFerralla implements OnInit {
       const clave = proyecto.edificio === null ? 'sin-edificio' : String(proyecto.edificio);
       let columna = columnas.get(clave);
       if (!columna) {
-        columna = { clave, nombre: proyecto.edificio_nombre ?? 'Sin edificio', proyectos: [], kilos: 0, sinKilos: 0 };
+        columna = {
+          clave, nombre: proyecto.edificio_nombre ?? 'Sin edificio', proyectos: [], kilos: 0, confirmado: 0, previsto: 0, sinKilos: 0,
+        };
         columnas.set(clave, columna);
       }
       columna.proyectos.push(proyecto);
       if (proyecto.kilos.total === null) columna.sinKilos++;
-      else columna.kilos += proyecto.kilos.total;
+      columna.kilos += proyecto.kilos.total ?? 0;
+      columna.confirmado += proyecto.kilos.confirmado ?? 0;
+      columna.previsto += proyecto.kilos.previsto ?? 0;
     }
     return Array.from(columnas.values())
       .sort((a, b) => Number(a.clave === 'sin-edificio') - Number(b.clave === 'sin-edificio'));
@@ -134,12 +141,33 @@ export class PlanificacionFerralla implements OnInit {
   readonly resumen = computed(() => {
     const entregas = this.datos()?.entregas ?? [];
     const enVista = new Set(entregas.map(e => e.proyecto));
+    const proyectos = this.proyectos().filter(p => enVista.has(p.id));
+    const suma = (kilos: (p: PlanificacionTarjeta) => number | null) => proyectos.reduce((total, p) => total + (kilos(p) ?? 0), 0);
+    // Hasta que se suben, los modulos que faltan son los previstos: una estimacion.
+    const estimados = new Map(proyectos.map(p => [p.id, p.kilos.previstos?.modulos ?? 0]));
     return {
       entregas: entregas.length,
       modulos: entregas.reduce((total, e) => total + e.modulos_pendientes, 0),
-      kilos: this.proyectos().filter(p => enVista.has(p.id)).reduce((total, p) => total + (p.kilos.total ?? 0), 0),
+      modulosEstimados: entregas.reduce((total, e) => total + Math.min(e.modulos_pendientes, estimados.get(e.proyecto) ?? 0), 0),
+      kilos: suma(p => p.kilos.total),
+      confirmado: suma(p => p.kilos.confirmado),
+      previsto: suma(p => p.kilos.previsto),
     };
   });
+
+  /** Los modulos del proyecto que aun son una estimacion (los previstos que faltan por subir). */
+  modulosEstimadosTitulo(proyecto: PlanificacionTarjeta): string {
+    const estimados = proyecto.kilos.previstos?.modulos ?? 0;
+    if (!estimados) return '';
+    const subidos = proyecto.kilos.modulos_subidos;
+    return subidos ? `${subidos} confirmados · ${estimados} previstos estimados` : 'Previstos estimados: aún no hay módulos subidos';
+  }
+
+  /** "A 129 kg/módulo, media de los módulos del edificio" */
+  previstosDetalle(previstos: PlanificacionPrevistos): string {
+    if (previstos.peso_medio === null || previstos.de === null) return '';
+    return `A ${Math.round(previstos.peso_medio)} kg/módulo, ${MEDIA_DE[previstos.de]}`;
+  }
 
   ngOnInit(): void {
     this.cargar();
@@ -162,60 +190,5 @@ export class PlanificacionFerralla implements OnInit {
 
   elegirFerralla(id: string): void {
     if (id) this.cargar(Number(id));
-  }
-
-  addOtros(proyecto: PlanificacionTarjeta): void {
-    const concepto = (this.nuevoConcepto[proyecto.id] ?? '').trim();
-    const kg = (this.nuevoKg[proyecto.id] ?? '').trim();
-    if (!concepto || !kg) {
-      this.setError(proyecto.id, 'Pon el concepto y los kilos.');
-      return;
-    }
-    this.guardandoId.set(proyecto.id);
-    this.api.addKilosOtros(proyecto.id, { concepto, kg }).subscribe({
-      next: otros => {
-        this.nuevoConcepto[proyecto.id] = '';
-        this.nuevoKg[proyecto.id] = '';
-        this.setOtros(proyecto.id, otros);
-      },
-      error: (err: HttpErrorResponse) => {
-        const detalle = err.error?.kg?.[0] ?? err.error?.concepto?.[0] ?? 'No se pudo guardar.';
-        this.setError(proyecto.id, detalle);
-        this.guardandoId.set(null);
-      },
-    });
-  }
-
-  removeOtros(proyecto: PlanificacionTarjeta, linea: KilosOtrosLinea): void {
-    this.guardandoId.set(proyecto.id);
-    this.api.deleteKilosOtros(proyecto.id, linea.id).subscribe({
-      next: otros => this.setOtros(proyecto.id, otros),
-      error: () => {
-        this.setError(proyecto.id, 'No se pudo quitar.');
-        this.guardandoId.set(null);
-      },
-    });
-  }
-
-  /** Las lineas que devuelve el servidor y el total del proyecto con ellas. */
-  private setOtros(proyectoId: number, otros: KilosOtrosLinea[]): void {
-    this.setError(proyectoId, '');
-    this.guardandoId.set(null);
-    this.datos.update(datos => datos && {
-      ...datos,
-      proyectos: datos.proyectos?.map(p => p.id !== proyectoId ? p : {
-        ...p,
-        kilos: {
-          ...p.kilos,
-          otros,
-          total: p.kilos.modulos === null ? null
-            : Math.round((p.kilos.modulos + (p.kilos.sueltos ?? 0) + otros.reduce((t, o) => t + o.kg, 0)) * 100) / 100,
-        },
-      }),
-    });
-  }
-
-  private setError(proyectoId: number, mensaje: string): void {
-    this.erroresOtros.update(errores => ({ ...errores, [proyectoId]: mensaje }));
   }
 }

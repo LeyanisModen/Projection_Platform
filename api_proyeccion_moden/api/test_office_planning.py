@@ -370,7 +370,7 @@ class OfficePlanningTests(APITestCase):
         # Sin fecha de montaje en obra no entra en mesa.
         response = self.client.post(url, {'proyecto': self.project.pk})
         self.assertEqual(response.status_code, 400)
-        self.assertIn('montaje en obra', response.data['detail'])
+        self.assertIn('entrega en obra', response.data['detail'])
         # Sin aceptarlo desde notificaciones, tampoco.
         nuevo = Proyecto.objects.create(nombre='Nuevo', usuario=self.factory, fecha_montaje_obra=date(2026, 11, 5))
         self.create_module(nuevo)

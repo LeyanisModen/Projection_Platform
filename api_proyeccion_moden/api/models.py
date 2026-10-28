@@ -673,24 +673,6 @@ class ProyectoCheckAdjunto(models.Model):
         return self.nombre_original
 
 
-class ProyectoKilosOtros(models.Model):
-    """Kilos que la ferralla suma a un proyecto por su cuenta (concepto + kg).
-
-    Moden no se mete en lo que son: solo cuentan en el total del proyecto.
-    """
-    proyecto = models.ForeignKey(Proyecto, on_delete=models.CASCADE, related_name='kilos_otros')
-    concepto = models.CharField(max_length=120)
-    kg = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(Decimal('0.01'))])
-    creado_por = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
-    creado_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ['creado_at', 'id']
-
-    def __str__(self):
-        return f'{self.concepto}: {self.kg} kg'
-
-
 class TrabajadorOficina(models.Model):
     nombre = models.CharField(max_length=150)
     activo = models.BooleanField(default=True)

@@ -7,7 +7,7 @@ from api import views
 from api.health import HealthView
 from api.office import CheckDefinitionViewSet, ProjectChecklistViewSet, WorkerViewSet, EventViewSet
 from api.edificios import EdificioViewSet
-from api.planificacion import KilosOtrosView, PlanificacionFerrallaView
+from api.planificacion import PlanificacionFerrallaView
 
 from django.contrib import admin
 
@@ -38,8 +38,6 @@ from rest_framework.authtoken import views as drf_views
 urlpatterns = [
     path("api/health/", HealthView.as_view(), name="health"),
     path("api/planificacion/", PlanificacionFerrallaView.as_view(), name="planificacion"),
-    path("api/proyectos/<int:pk>/kilos-otros/", KilosOtrosView.as_view(), name="kilos-otros"),
-    path("api/proyectos/<int:pk>/kilos-otros/<int:linea_id>/", KilosOtrosView.as_view(), name="kilos-otros-linea"),
     path("api/", include(router.urls)),
     path("api-auth/", include("rest_framework.urls", namespace="rest_framework")),
     path("api/token-auth/", views.CustomAuthToken.as_view()),

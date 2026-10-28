@@ -160,7 +160,7 @@ export interface Proyecto {
     url: string;
     nombre: string;
     fecha_montaje?: string | null;
-    /** Fecha de montaje en obra de la ferralla: suya, aparte de la de Moden. Sin ella el proyecto no entra en mesa. */
+    /** Fecha de entrega en obra de la ferralla: suya, aparte de la de Moden. Sin ella el proyecto no entra en mesa. */
     fecha_montaje_obra?: string | null;
     /** Si la ferralla la cambia, el admin ve cual era y cuando. */
     fecha_montaje_obra_anterior?: string | null;
@@ -715,11 +715,14 @@ export interface ElementosSueltos {
     hojas: ElementosSueltosHoja[];
 }
 
-/** Kilos que la ferralla suma a un proyecto por su cuenta. */
-export interface KilosOtrosLinea {
-    id: number;
-    concepto: string;
-    kg: number;
+/** Modulos que faltan por subir hasta los previstos, a su peso medio. */
+export interface PlanificacionPrevistos {
+    modulos: number;
+    /** kg por modulo; null si la ferralla aun no tiene ningun modulo pesado. */
+    peso_medio: number | null;
+    /** De donde sale el peso medio: el propio proyecto, su edificio o toda la ferralla. */
+    de: 'proyecto' | 'edificio' | 'ferralla' | null;
+    kg: number | null;
 }
 
 export interface PlanificacionTarjeta {
@@ -730,20 +733,25 @@ export interface PlanificacionTarjeta {
     edificio: number | null;
     edificio_nombre: string | null;
     fecha_entrega: string | null;
-    /** Sin la fecha de la ferralla: la orientativa hablada al confirmar el proyecto. */
+    /** Sin la fecha de la ferralla: la orientativa hablada en fase de proyecto. */
     entrega_orientativa: boolean;
     modulos_total: number;
     modulos_completados: number;
     estado: string;
     kilos: {
-        /** null: aun sin modulos subidos. */
+        /** Los de los modulos subidos; null: aun sin modulos subidos. */
         modulos: number | null;
+        modulos_subidos: number;
         fabricado: number;
         desperdicio: number;
         /** null: la base tecnica aun no trae los elementos sueltos. */
         sueltos: number | null;
-        otros: KilosOtrosLinea[];
-        /** Lo que va a obra: modulos, sueltos y otros (el desperdicio no); null sin los modulos. */
+        /** null: no falta ningun modulo por subir. */
+        previstos: PlanificacionPrevistos | null;
+        /** Lo que va a obra (el desperdicio no): modulos subidos y sueltos, y lo previsto. */
+        confirmado: number | null;
+        previsto: number | null;
+        /** null: aun no se sabe nada de sus kilos. */
         total: number | null;
     };
 }
@@ -1207,18 +1215,6 @@ export class ApiService {
     getPlanificacion(usuario?: number): Observable<PlanificacionResponse> {
         const qs = usuario != null ? `?usuario=${usuario}` : '';
         return this.http.get<PlanificacionResponse>(`${this.baseUrl}/planificacion/${qs}`, { headers: this.getHeaders() });
-    }
-
-    addKilosOtros(proyectoId: number, linea: { concepto: string; kg: string }): Observable<KilosOtrosLinea[]> {
-        return this.http.post<KilosOtrosLinea[]>(
-            `${this.baseUrl}/proyectos/${proyectoId}/kilos-otros/`, linea, { headers: this.getHeaders() },
-        );
-    }
-
-    deleteKilosOtros(proyectoId: number, lineaId: number): Observable<KilosOtrosLinea[]> {
-        return this.http.delete<KilosOtrosLinea[]>(
-            `${this.baseUrl}/proyectos/${proyectoId}/kilos-otros/${lineaId}/`, { headers: this.getHeaders() },
-        );
     }
 
     reiniciarModulo(id: number): Observable<Modulo> {
