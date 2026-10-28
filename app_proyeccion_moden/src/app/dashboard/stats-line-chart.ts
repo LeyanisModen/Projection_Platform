@@ -234,7 +234,7 @@ let nextChartId = 0;
                 @if (tip.rows.length > 1) { <span>{{ row.name }}</span> }
               </span>
             }
-            @if (tip.objetivo) { <span class="lc-tooltip-row lc-tooltip-muted"><span class="lc-key lc-key-target"></span>Objetivo {{ tip.objetivo }}</span> }
+            @if (tip.objetivo) { <span class="lc-tooltip-row lc-tooltip-muted"><span class="lc-key lc-key-target"></span>Mínimo {{ tip.objetivo }}</span> }
             @if (tip.estado) { <span class="lc-tooltip-estado">{{ tip.estado }}</span> }
             @for (linea of tip.marcas; track $index) { <span class="lc-tooltip-marca">{{ linea }}</span> }
           </div>
@@ -296,7 +296,7 @@ export class StatsLineChart implements AfterViewInit, OnDestroy {
   readonly series = input<LineChartSeries[]>([]);
   /** Objetivo por columna; con objetivo, los puntos de la primera serie dicen si se llega. */
   readonly target = input<Array<number | null> | null>(null);
-  readonly targetLabel = input('Objetivo');
+  readonly targetLabel = input('Mínimo');
   /** Area y etiqueta del maximo para la primera serie aunque haya mas de una. */
   readonly primaryArea = input(false);
   /** Techo fijo del eje (p. ej. 100 para un porcentaje). */
@@ -478,7 +478,7 @@ export class StatsLineChart implements AfterViewInit, OnDestroy {
       items.push({ kind: 'mark-tenue', label: this.markTenueLabel(), color: '' });
     }
     if (this.targetPath() && series.length) {
-      items.push({ kind: 'cumple', label: 'Llega al objetivo', color: series[0].color });
+      items.push({ kind: 'cumple', label: 'Llega al mínimo', color: series[0].color });
       items.push({ kind: 'bajo', label: 'Por debajo', color: series[0].color });
       items.push({ kind: 'target', label: this.targetLabel(), color: '' });
     }
@@ -502,7 +502,7 @@ export class StatsLineChart implements AfterViewInit, OnDestroy {
     const objetivoValor = this.target()?.[index];
     const punto = this.lines()[0]?.points.find(p => p.index === index);
     const estado = typeof objetivoValor !== 'number' || !punto ? ''
-      : punto.estado === 'cumple' ? 'Objetivo cumplido'
+      : punto.estado === 'cumple' ? 'Mínimo cumplido'
       : punto.estado === 'curso' ? 'En curso'
       : `Faltan ${this.format(objetivoValor - punto.value)}`;
     const flip = x > this.width() / 2;

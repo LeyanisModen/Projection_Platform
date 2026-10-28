@@ -391,7 +391,7 @@ describe('Dashboard', () => {
       expect(vista.labels).toEqual(['Lun 14', 'Mar 15', 'Mié 16', 'Jue 17', 'Vie 18']);
       expect(vista.modulos[0].values).toEqual([3, 1, 0, 3, 0]);
       expect(vista.objetivo).toEqual([2, 2, 2, 2, 2]);
-      expect(vista.objetivoLabel).toBe('Objetivo 2 al día');
+      expect(vista.objetivoLabel).toBe('Mínimo para las entregas: 2 al día');
       // La linea se prolonga hacia el viernes anterior y el lunes siguiente.
       expect(vista.modulos[0].prev).toBe(4);
       expect(vista.modulos[0].next).toBe(2);
@@ -520,7 +520,7 @@ describe('Dashboard', () => {
       expect(fixture.nativeElement.querySelectorAll('.stats-bloque-modulos .stats-kpi').length).toBe(5);
       expect(fixture.nativeElement.querySelectorAll('.stats-bloque-kilos .stats-kpi').length).toBe(4);
       expect(fixture.nativeElement.querySelectorAll('.stats-bloque-productividad .stats-kpi').length).toBe(3);
-      expect(text('.stats-kpi-value')).toBe('0 / 9 objetivo');
+      expect(text('.stats-kpi-value')).toBe('0 / 9 mínimo');
       expect(text('.stats-empty')).toContain('No hay producción registrada');
       expect(fixture.nativeElement.querySelector('.stats-table')).toBeNull();
       expect(fixture.nativeElement.querySelector('.stats-charts')).toBeNull();
@@ -533,8 +533,8 @@ describe('Dashboard', () => {
       stats.totals.fases_completadas = 106;
       stats.esperado.modulos_esperados = 64;
       render();
-      expect(text('.stats-kpi-value')).toBe('53 / 64 objetivo');
-      expect(text('.stats-kpi-modulos .stats-kpi-value')).toBe('53 / 64 objetivo');
+      expect(text('.stats-kpi-value')).toBe('53 / 64 mínimo');
+      expect(text('.stats-kpi-modulos .stats-kpi-value')).toBe('53 / 64 mínimo');
       expect(fixture.nativeElement.querySelector('.stats-table')).not.toBeNull();
       expect(fixture.nativeElement.querySelector('.stats-charts')).not.toBeNull();
       expect(fixture.nativeElement.querySelectorAll('app-stats-line-chart').length).toBe(3);  // sin actividad del servidor no hay grafica del turno
@@ -550,23 +550,23 @@ describe('Dashboard', () => {
       stats.planificacion!.modulos_hoy = 0;
       render();
       expect(component.statsPeriodTarget()).toBe(9);
-      expect(text('.stats-kpi-value')).toBe('0 / 9 objetivo');
+      expect(text('.stats-kpi-value')).toBe('0 / 9 mínimo');
     });
 
     it('advances actual production without subtracting it from the period target', () => {
       stats.totals.modulos_completados = 3;
       render();
-      expect(text('.stats-kpi-value')).toBe('3 / 9 objetivo');
+      expect(text('.stats-kpi-value')).toBe('3 / 9 mínimo');
       stats.totals.modulos_completados = 11;
       render();
-      expect(text('.stats-kpi-value')).toBe('11 / 9 objetivo');
+      expect(text('.stats-kpi-value')).toBe('11 / 9 mínimo');
     });
 
     it('keeps a historical target even when current deadlines have elapsed', () => {
       stats.planificacion!.modulos_por_dia = 0;
       stats.planificacion!.urgentes = 1;
       render();
-      expect(text('.stats-kpi-value')).toBe('0 / 9 objetivo');
+      expect(text('.stats-kpi-value')).toBe('0 / 9 mínimo');
       expect(fixture.nativeElement.querySelector('.stats-planning-warning')).toBeNull();
     });
 
@@ -578,8 +578,8 @@ describe('Dashboard', () => {
       stats.esperado.proyectos_sin_objetivo = 2;
       render();
       expect(component.statsPeriodTarget()).toBeNull();
-      expect(text('.stats-kpi-value')).toBe('0 / ? objetivo');
-      expect(text('.stats-kpi')).toBe('Módulos 0 / ? objetivo');
+      expect(text('.stats-kpi-value')).toBe('0 / ? mínimo');
+      expect(text('.stats-kpi')).toBe('Módulos 0 / ? mínimo');
       expect(text('.stats-planning-warning')).toContain('2 proyecto(s)');
     });
 
@@ -587,7 +587,7 @@ describe('Dashboard', () => {
       stats.planificacion!.sin_planificar = 1;
       stats.esperado.proyectos_sin_objetivo = 1;
       render();
-      expect(text('.stats-kpi-value')).toBe('0 / 9 objetivo');
+      expect(text('.stats-kpi-value')).toBe('0 / 9 mínimo');
       expect(text('.stats-planning-warning')).toContain('1 proyecto(s)');
     });
 
@@ -595,7 +595,7 @@ describe('Dashboard', () => {
       stats.planificacion!.modulos_por_dia = 0;
       stats.esperado.modulos_esperados = 0;
       render();
-      expect(text('.stats-kpi-value')).toBe('0 / 0 objetivo');
+      expect(text('.stats-kpi-value')).toBe('0 / 0 mínimo');
       expect(fixture.nativeElement.querySelector('.stats-planning-warning')).toBeNull();
     });
 
@@ -613,7 +613,7 @@ describe('Dashboard', () => {
       render();
       expect(request).toHaveBeenCalledTimes(2);
       expect(fixture.nativeElement.querySelector('.stats-error')).toBeNull();
-      expect(text('.stats-kpi-value')).toBe('0 / 9 objetivo');
+      expect(text('.stats-kpi-value')).toBe('0 / 9 mínimo');
     });
 
     it('never stacks a background refresh on a stats request still running, nor refreshes what is not on screen', () => {
@@ -860,9 +860,9 @@ describe('Dashboard', () => {
     // Los terminados no esperan; los que no tienen fecha, al final.
     expect(component.proyectosEnEspera(null).map(p => p.nombre)).toEqual(['Bloqueado', 'Libre', 'Sin fecha de obra']);
     expect(component.proyectosEnEspera(null).map(p => component.motivoNoSubeAMesa(p))).toEqual([
-      'Faltan validaciones de Moden antes de fabricarlo', '', 'Ponle fecha de montaje en obra para subirlo a mesa',
+      'Faltan validaciones de Moden antes de fabricarlo', '', 'Ponle fecha de entrega en obra para subirlo a mesa',
     ]);
-    expect(component.montajeColaLabel(1)).toBe('monta 20/11');
+    expect(component.montajeColaLabel(1)).toBe('entrega 20/11');
     expect(component.montajeColaLabel(4)).toBe('');
   });
 
@@ -891,7 +891,7 @@ describe('Dashboard', () => {
     expect(nombres('.cola-en-mesa')).toEqual(['P03', 'P04']);
     expect(modal.querySelector('.cola-en-mesa .cola-badge-head')?.textContent?.trim()).toBe('En fabricación');
     expect(nombres('.cola-en-espera')).toEqual(['P05', 'P06']);
-    expect(modal.querySelector('.cola-en-espera .cola-montaje')?.textContent).toBe('monta 20/11');
+    expect(modal.querySelector('.cola-en-espera .cola-montaje')?.textContent).toBe('entrega 20/11');
 
     const subir = vi.spyOn(api, 'colaGrupoMesasAdd').mockReturnValue(of(grupo));
     const bajar = vi.spyOn(api, 'colaGrupoMesasRemove').mockReturnValue(of(grupo));
@@ -966,10 +966,10 @@ describe('Dashboard', () => {
     expect(card.querySelector('.project-progress-donut')).toBeNull();
     expect(input.classList.contains('orientativa')).toBe(true);
     expect(card.querySelector('.project-montaje-aviso')?.textContent?.replace(/\s+/g, ' ').trim())
-      .toBe('Fecha orientativa hablada al confirmar el proyecto: confírmala o cámbiala para que quede aceptado y entre en el cálculo de objetivos.');
+      .toBe('Fecha orientativa hablada en fase de proyecto: confírmala o cámbiala para que quede aceptado y entre en el cálculo de objetivos.');
     // El boton va pegado a la fecha.
     expect(card.querySelector('.project-montaje-campo .project-montaje-confirmar')).not.toBeNull();
-    expect(component.motivoNoSubeAMesa(component.proyectos[0])).toContain('Confirma su fecha de montaje en obra');
+    expect(component.motivoNoSubeAMesa(component.proyectos[0])).toContain('Confirma su fecha de entrega en obra');
     expect(component.montajeColaLabel(7)).toBe('orientativa 12/11');
 
     const update = vi.spyOn(api, 'updateProyecto').mockReturnValue(of({ id: 7, fecha_montaje_obra: '2026-11-12' } as Proyecto));
@@ -980,7 +980,7 @@ describe('Dashboard', () => {
     expect(card.querySelector('.project-montaje-confirmar')).toBeNull();
     expect(card.querySelector('.project-montaje-aviso')).toBeNull();
     expect(card.querySelector('.project-progress-donut')).not.toBeNull();
-    expect(component.montajeColaLabel(7)).toBe('monta 12/11');
+    expect(component.montajeColaLabel(7)).toBe('entrega 12/11');
 
     // Con la suya puesta, aunque sea otra, ya no se ensena la orientativa.
     component.proyectos[0].fecha_montaje_obra = '2026-11-20';
@@ -1005,7 +1005,7 @@ describe('Dashboard', () => {
     // Cancela: no se guarda y vuelve la fecha que tenia.
     input.value = '2026-11-10';
     input.dispatchEvent(new Event('change'));
-    expect(pregunta).toHaveBeenCalledWith('La P7 se montaría el 10/11, antes que la P4 (11/11), que va debajo. ¿Guardar igualmente?');
+    expect(pregunta).toHaveBeenCalledWith('La P7 se entregaría el 10/11, antes que la P4 (11/11), que va debajo. ¿Guardar igualmente?');
     expect(update).not.toHaveBeenCalled();
     expect(input.value).toBe('2026-12-11');
 

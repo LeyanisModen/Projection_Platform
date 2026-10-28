@@ -138,7 +138,7 @@
                         <!-- Sin produccion pero con turno pasado, el trabajo y el tiempo muerto se ven igual. -->
                         @let vista = !sinProduccion || hayActividad() ? statsVista() : null;
                         @if (sinProduccion) {
-                            <div class="stats-empty">No hay producción registrada en el rango seleccionado. El objetivo sigue visible para planificar el trabajo.</div>
+                            <div class="stats-empty">No hay producción registrada en el rango seleccionado. El mínimo para llegar a las entregas sigue visible para planificar el trabajo.</div>
                         }
 
                         <!-- Tres bloques de lo que esté seleccionado (día, semana, turno...): módulos, kilos y productividad. -->
@@ -164,7 +164,7 @@
                                     <span class="stats-kpi-value">
                                         {{ statsData.totals.modulos_completados }}
                                         <span class="stats-module-target"
-                                              title="Objetivo del período: lo que exigen los montajes que vienen, por días laborables.">/ {{ statsPeriodTarget() ?? '?' }} objetivo</span>
+                                              title="Mínimo del período para llegar a las entregas que vienen, por días laborables. El objetivo es hacer más.">/ {{ statsPeriodTarget() ?? '?' }} mínimo</span>
                                     </span>
                                 </div>
                                 }
@@ -191,8 +191,8 @@
                             </div>
                             @if (statsPlanningIssues() > 0) {
                                 <p class="stats-planning-warning" role="note">
-                                    {{ statsPlanningIssues() }} proyecto(s) no tienen un objetivo calculable en este período. Revisa su fecha de montaje, sus módulos y sus días disponibles.
-                                    El objetivo solo incluye los proyectos con planificación calculable.
+                                    {{ statsPlanningIssues() }} proyecto(s) no tienen un mínimo calculable en este período. Revisa su fecha de entrega, sus módulos y sus días disponibles.
+                                    El mínimo solo incluye los proyectos con planificación calculable.
                                 </p>
                             }
                             @if (vista) {
@@ -388,7 +388,7 @@
                                         <th>{{ vista.periodoLabel }}</th>
                                         <th class="num">Módulos</th>
                                         @if (vista.objetivo) {
-                                            <th class="num">Objetivo</th>
+                                            <th class="num" title="Mínimo para llegar a las entregas">Mínimo</th>
                                             <th class="num">Diferencia</th>
                                         }
                                         <th class="num">Paneles</th>
@@ -417,7 +417,7 @@
                                                     @if (fila.meta_modulos > 0) {
                                                         <span class="stats-diferencia" [class.is-ok]="llegaAlObjetivo(fila)"
                                                             [class.is-bajo]="!llegaAlObjetivo(fila) && !fila.en_curso"
-                                                            [title]="llegaAlObjetivo(fila) ? 'Llega al objetivo' : fila.en_curso ? 'En curso' : 'Por debajo del objetivo'">{{ diferenciaLabel(fila) }}</span>
+                                                            [title]="llegaAlObjetivo(fila) ? 'Llega al mínimo' : fila.en_curso ? 'En curso' : 'Por debajo del mínimo'">{{ diferenciaLabel(fila) }}</span>
                                                     } @else { — }
                                                 </td>
                                             }
@@ -820,20 +820,20 @@
                                 <!-- La fecha y su boton de confirmar, siempre juntos en la misma linea. -->
                                 <span class="project-montaje-campo">
                                     <label>
-                                        <span>Montaje en obra</span>
+                                        <span>Entrega en obra</span>
                                         <!-- Sin la suya, la orientativa que se hablo al confirmar el proyecto ya marcada (en gris) para confirmarla o cambiarla. -->
                                         <input type="date" [value]="proyecto.fecha_montaje_obra || proyecto.fecha_montaje || ''"
                                             [class.orientativa]="!proyecto.fecha_montaje_obra && !!proyecto.fecha_montaje"
-                                            [title]="!proyecto.fecha_montaje_obra && proyecto.fecha_montaje ? 'Fecha orientativa hablada al confirmar el proyecto' : ''"
+                                            [title]="!proyecto.fecha_montaje_obra && proyecto.fecha_montaje ? 'Fecha orientativa hablada en fase de proyecto' : ''"
                                             [disabled]="fechaObraGuardandoId === proyecto.id"
                                             (change)="guardarFechaMontajeObra(proyecto, $event)"
-                                            aria-label="Fecha de montaje en obra">
+                                            aria-label="Fecha de entrega en obra">
                                     </label>
                                     @if (!proyecto.fecha_montaje_obra && proyecto.fecha_montaje) {
                                         <button type="button" class="project-montaje-confirmar"
                                             [disabled]="fechaObraGuardandoId === proyecto.id"
                                             (click)="confirmarFechaOrientativa(proyecto)"
-                                            [attr.aria-label]="'Confirmar el montaje en obra el ' + (proyecto.fecha_montaje | date:'dd/MM/yyyy')">
+                                            [attr.aria-label]="'Confirmar la entrega en obra el ' + (proyecto.fecha_montaje | date:'dd/MM/yyyy')">
                                             <i class="fa fa-check" aria-hidden="true"></i> Confirmar
                                         </button>
                                     }
@@ -841,7 +841,7 @@
                                 @if (!proyecto.fecha_montaje_obra && proyecto.fecha_montaje) {
                                     <span class="project-montaje-aviso" role="status">
                                         <i class="fa fa-exclamation-circle" aria-hidden="true"></i>
-                                        Fecha orientativa hablada al confirmar el proyecto: confírmala o cámbiala para que quede aceptado y entre en el cálculo de objetivos.
+                                        Fecha orientativa hablada en fase de proyecto: confírmala o cámbiala para que quede aceptado y entre en el cálculo de objetivos.
                                     </span>
                                 } @else if (!proyecto.fecha_montaje_obra) {
                                     <span class="project-montaje-aviso" role="status">
@@ -851,7 +851,7 @@
                                 }
                             </div>
                         </div>
-                        <!-- Sin fecha de montaje en obra confirmada no cuenta: sin donut. -->
+                        <!-- Sin fecha de entrega en obra confirmada no cuenta: sin donut. -->
                         @if (proyecto.modulos_count && proyecto.fecha_montaje_obra) {
                             <div class="project-progress-donut" [attr.title]="'Completados: ' + (proyecto.modulos_completados || 0) + '/' + proyecto.modulos_count + ' · Objetivo pendiente hoy: ' + getProyectoHoy(proyecto) + ' · Próximos 7 días: ' + (getProyectoHoy(proyecto) + getProyectoSemana(proyecto))">
                                 <svg viewBox="0 0 80 80">

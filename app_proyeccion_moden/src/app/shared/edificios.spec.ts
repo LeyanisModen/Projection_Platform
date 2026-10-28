@@ -41,12 +41,12 @@ describe('edificios', () => {
 
         it('avisa si una planta se montaria antes que la de debajo (la errata de la P7)', () => {
             expect(avisoOrdenDePlantas(p7, '2026-11-10', todos))
-                .toBe('La P7 se montaría el 10/11, antes que la P6 (27/11, orientativa), que va debajo.');
+                .toBe('La P7 se entregaría el 10/11, antes que la P6 (27/11, orientativa), que va debajo.');
         });
 
         it('y si se montaria despues que una de encima', () => {
             expect(avisoOrdenDePlantas(p4, '2026-11-20', todos))
-                .toBe('La P4 se montaría el 20/11, después de la P5 (19/11, orientativa), que va encima.');
+                .toBe('La P4 se entregaría el 20/11, después de la P5 (19/11, orientativa), que va encima.');
         });
 
         it('calla si encaja, el mismo dia o sin edificio o planta', () => {

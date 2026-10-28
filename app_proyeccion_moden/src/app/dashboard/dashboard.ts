@@ -327,7 +327,7 @@ export class Dashboard implements OnInit, OnDestroy {
   estrategiaBusyGrupoId: number | null = null;
   /** Mesa SUP cuya cola se está reordenando con las flechas del card. */
   mesaReorderBusyId: number | null = null;
-  /** Proyecto cuya fecha de montaje en obra se está guardando desde su card. */
+  /** Proyecto cuya fecha de entrega en obra se está guardando desde su card. */
   fechaObraGuardandoId: number | null = null;
   /** Proyectos que Moden ha asignado y la ferralla aún no ha aceptado. */
   proyectosPendientes: Proyecto[] = [];
@@ -1349,7 +1349,7 @@ export class Dashboard implements OnInit, OnDestroy {
       });
   }
 
-  /** La fecha de montaje en obra es de la ferralla: se edita en el card y sin ella el proyecto no entra en mesa. */
+  /** La fecha de entrega en obra es de la ferralla: se edita en el card y sin ella el proyecto no entra en mesa. */
   guardarFechaMontajeObra(proyecto: Proyecto, event: Event): void {
     const input = event.target as HTMLInputElement;
     const valor = input.value || null;
@@ -1388,7 +1388,7 @@ export class Dashboard implements OnInit, OnDestroy {
         error: (err) => {
           if (input) input.value = proyecto.fecha_montaje_obra || proyecto.fecha_montaje || '';
           this.fechaObraGuardandoId = null;
-          alert(err?.error?.detail || err?.error?.fecha_montaje_obra?.[0] || 'No se pudo guardar la fecha de montaje en obra.');
+          alert(err?.error?.detail || err?.error?.fecha_montaje_obra?.[0] || 'No se pudo guardar la fecha de entrega en obra.');
           this.cdr.detectChanges();
         },
       });
@@ -1396,13 +1396,13 @@ export class Dashboard implements OnInit, OnDestroy {
 
   /** Proyectos que se pueden añadir a la cola de este grupo: los que no
    * están ya en ella, aún tienen módulos pendientes, Moden ha validado y
-   * la ferralla les ha puesto fecha de montaje en obra (sin ella no entran).
+   * la ferralla les ha puesto fecha de entrega en obra (sin ella no entran).
    * Los que tienen validaciones previas sin completar (geometría,
    * equivalencias...) no se ofrecen ni se mencionan: la ferralla no los
    * ve hasta que Moden los libera. Los proyectos sin pendientes los
    * expulsa _plan_cola en el backend al replanificar. */
   /** Proyectos de la ferralla que no estan en mesa y aun tienen trabajo, por
-   *  fecha de montaje en obra (los que no la tienen, al final). */
+   *  fecha de entrega en obra (los que no la tienen, al final). */
   proyectosEnEspera(grupo: GrupoMesas | null): Proyecto[] {
     const enCola = new Set(grupo?.proyectos_cola.map(e => e.proyecto) ?? []);
     return this.proyectos
@@ -1421,18 +1421,18 @@ export class Dashboard implements OnInit, OnDestroy {
   /** Por que un proyecto en espera no puede subir a mesa ('' si puede). */
   motivoNoSubeAMesa(p: Proyecto): string {
     if (p.produccion_bloqueada) return 'Faltan validaciones de Moden antes de fabricarlo';
-    if (!p.fecha_montaje_obra && p.fecha_montaje) return 'Confirma su fecha de montaje en obra (la orientativa o la vuestra) para subirlo a mesa';
-    if (!p.fecha_montaje_obra) return 'Ponle fecha de montaje en obra para subirlo a mesa';
+    if (!p.fecha_montaje_obra && p.fecha_montaje) return 'Confirma su fecha de entrega en obra (la orientativa o la vuestra) para subirlo a mesa';
+    if (!p.fecha_montaje_obra) return 'Ponle fecha de entrega en obra para subirlo a mesa';
     return '';
   }
 
-  /** "monta 12/11" con la fecha de montaje en obra del proyecto. */
+  /** "entrega 12/11" con la fecha de entrega en obra del proyecto. */
   montajeColaLabel(proyectoId: number): string {
     const proyecto = this.proyectos.find(p => p.id === proyectoId);
     const fecha = proyecto?.fecha_montaje_obra || proyecto?.fecha_montaje;
     if (!fecha) return '';
     const [, mes, dia] = fecha.split('-');
-    return `${proyecto?.fecha_montaje_obra ? 'monta' : 'orientativa'} ${dia}/${mes}`;
+    return `${proyecto?.fecha_montaje_obra ? 'entrega' : 'orientativa'} ${dia}/${mes}`;
   }
 
   /** Persist grupo rename (only if it actually changed). */
@@ -1488,7 +1488,7 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
 
-  /** Flecha de la lista de espera: el servidor lo coloca en mesa por su fecha de montaje en obra. */
+  /** Flecha de la lista de espera: el servidor lo coloca en mesa por su fecha de entrega en obra. */
   subirAMesa(proyecto: Proyecto): void {
     if (!this.gestionandoGrupo || this.gestionarBusy || this.motivoNoSubeAMesa(proyecto)) return;
     const grupo = this.gestionandoGrupo;
@@ -2618,9 +2618,9 @@ export class Dashboard implements OnInit, OnDestroy {
       labels: buckets.map(b => b.label),
       pending: buckets.map(b => b.en_curso),
       objetivo: hayObjetivo ? buckets.map(b => b.meta_modulos > 0 ? b.meta_modulos : null) : null,
-      objetivoLabel: granularity === 'hour' ? `Objetivo ${capLabel} por hora`
-        : granularity === 'week' ? 'Objetivo de la semana'
-        : `Objetivo ${capLabel} al día`,
+      objetivoLabel: granularity === 'hour' ? `Mínimo para las entregas: ${capLabel} por hora`
+        : granularity === 'week' ? 'Mínimo de la semana para las entregas'
+        : `Mínimo para las entregas: ${capLabel} al día`,
       modulos: [
         {
           name: 'Módulos', color: CHART_NARANJA, values: valores(b => b.modulos_completados),

@@ -44,9 +44,9 @@ const diaMes = (iso: string) => { const [, mes, dia] = iso.split('-'); return `$
 
 /**
  * Un edificio se monta de abajo arriba. Si con ``fecha`` el forjado se
- * montaria antes que una planta de debajo o despues que una de encima, el
+ * entregaria antes que una planta de debajo o despues que una de encima, el
  * aviso con la mas cercana (suele ser una errata); null si encaja. De las
- * otras plantas cuenta la fecha que manda: la de montaje en obra o, sin
+ * otras plantas cuenta la fecha que manda: la de entrega en obra o, sin
  * ella, la orientativa.
  */
 export function avisoOrdenDePlantas(proyecto: Proyecto, fecha: string, otros: Proyecto[]): string | null {
@@ -65,7 +65,7 @@ export function avisoOrdenDePlantas(proyecto: Proyecto, fecha: string, otros: Pr
     const debajo = (choque.otro.orden_planta ?? SIN_PLANTA) < orden;
     const otraEtiqueta = choque.otro.planta_etiqueta || choque.otro.nombre;
     const orientativa = choque.otro.fecha_montaje_obra ? '' : ', orientativa';
-    return `La ${proyecto.planta_etiqueta || proyecto.nombre} se montaría el ${diaMes(fecha)}, `
+    return `La ${proyecto.planta_etiqueta || proyecto.nombre} se entregaría el ${diaMes(fecha)}, `
         + `${debajo ? 'antes que' : 'después de'} la ${otraEtiqueta} (${diaMes(choque.fecha)}${orientativa}), `
         + `que va ${debajo ? 'debajo' : 'encima'}.`;
 }

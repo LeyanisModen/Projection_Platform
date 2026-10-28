@@ -4704,7 +4704,7 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         # proyecto no entra en mesa (su card lo avisa en rojo).
         if proyecto.fecha_montaje_obra is None:
             return Response(
-                {'detail': 'Ponle fecha de montaje en obra antes de ponerlo en mesa.'},
+                {'detail': 'Ponle fecha de entrega en obra antes de ponerlo en mesa.'},
                 status=400,
             )
 
