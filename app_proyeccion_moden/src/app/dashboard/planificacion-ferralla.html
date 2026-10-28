@@ -30,9 +30,12 @@
                 <span class="pl-kpi-label">Módulos por fabricar</span>
                 <span class="pl-kpi-value">{{ resumen().modulos }}</span>
             </div>
-            <div class="pl-kpi" title="Módulos, elementos sueltos y otros de lo que se entrega en estos tres meses">
+            <div class="pl-kpi" title="Módulos y elementos sueltos de lo que se entrega en estos tres meses: lo confirmado y lo previsto de los módulos que faltan por subir">
                 <span class="pl-kpi-label">Kilos a obra</span>
                 <span class="pl-kpi-value">{{ resumen().kilos | number:'1.0-0' }} <small>kg</small></span>
+                @if (resumen().previsto) {
+                    <span class="pl-reparto">@if (resumen().confirmado) {{{ resumen().confirmado | number:'1.0-0' }} confirmados · <em>{{ resumen().previsto | number:'1.0-0' }} previstos</em>} @else {<em>todo previsto</em>}</span>
+                }
             </div>
         </div>
 
@@ -57,8 +60,11 @@
                             <strong class="pl-sin-dato" title="Faltan los kilos de los módulos">—</strong>
                         }
                     </div>
+                    @if (columna.previsto) {
+                        <span class="pl-reparto">@if (columna.confirmado) {{{ columna.confirmado | number:'1.0-0' }} kg confirmados · <em>{{ columna.previsto | number:'1.0-0' }} kg previstos</em>} @else {<em>todo previsto</em>}</span>
+                    }
                     <span class="pl-tenue">
-                        {{ columna.proyectos.length }} {{ columna.proyectos.length === 1 ? 'forjado' : 'forjados' }}@if (columna.sinKilos) { · {{ columna.sinKilos }} sin kilos de módulos }
+                        {{ columna.proyectos.length }} {{ columna.proyectos.length === 1 ? 'forjado' : 'forjados' }}@if (columna.sinKilos) { · {{ columna.sinKilos }} sin kilos }
                     </span>
                 </header>
                 <div class="pl-columna-forjados">
@@ -83,25 +89,51 @@
                     <div class="pl-total">
                         <span>Total a obra</span>
                         @if (proyecto.kilos.total !== null) {
-                            <strong>{{ proyecto.kilos.total | number:'1.0-0' }} <small>kg</small></strong>
+                            <strong [class.pl-previsto]="!proyecto.kilos.confirmado">{{ proyecto.kilos.total | number:'1.0-0' }} <small>kg</small></strong>
                         } @else {
                             <strong class="pl-sin-dato" title="Faltan los kilos de los módulos">—</strong>
                         }
                     </div>
+                    @if (proyecto.kilos.previsto && proyecto.kilos.confirmado) {
+                        <span class="pl-reparto">{{ proyecto.kilos.confirmado | number:'1.0-0' }} kg confirmados · <em>{{ proyecto.kilos.previsto | number:'1.0-0' }} kg previstos</em></span>
+                    }
 
                     <dl class="pl-kilos">
-                        <div class="pl-fila">
-                            <dt>Módulos</dt>
+                        @if (proyecto.kilos.modulos_subidos) {
+                            <div class="pl-fila">
+                                <dt>{{ proyecto.kilos.modulos_subidos }} {{ proyecto.kilos.modulos_subidos === 1 ? 'módulo confirmado' : 'módulos confirmados' }}</dt>
+                                @if (proyecto.kilos.modulos !== null) {
+                                    <dd>{{ proyecto.kilos.modulos | number:'1.0-0' }} kg</dd>
+                                } @else {
+                                    <dd class="pl-tenue" title="Los módulos subidos aún no traen sus pesos">pendiente</dd>
+                                }
+                            </div>
                             @if (proyecto.kilos.modulos !== null) {
-                                <dd>{{ proyecto.kilos.modulos | number:'1.0-0' }} kg</dd>
-                            } @else {
-                                <dd class="pl-tenue" title="Los módulos aún no están subidos">pendiente</dd>
+                                <div class="pl-fila pl-detalle">
+                                    <dt>Fabricado · desperdicio</dt>
+                                    <dd>{{ proyecto.kilos.fabricado | number:'1.0-0' }} kg · {{ proyecto.kilos.desperdicio | number:'1.0-0' }} kg</dd>
+                                </div>
                             }
-                        </div>
-                        @if (proyecto.kilos.modulos !== null) {
-                            <div class="pl-fila pl-detalle">
-                                <dt>Fabricado · desperdicio</dt>
-                                <dd>{{ proyecto.kilos.fabricado | number:'1.0-0' }} kg · {{ proyecto.kilos.desperdicio | number:'1.0-0' }} kg</dd>
+                        }
+                        @if (proyecto.kilos.previstos; as previstos) {
+                            <div class="pl-fila pl-fila-prevista">
+                                <dt>{{ previstos.modulos }} {{ previstos.modulos === 1 ? 'módulo previsto' : 'módulos previstos' }}</dt>
+                                @if (previstos.kg !== null) {
+                                    <dd>{{ previstos.kg | number:'1.0-0' }} kg</dd>
+                                } @else {
+                                    <dd class="pl-tenue" title="Aún no hay módulos pesados con los que calcular un peso medio">sin peso medio</dd>
+                                }
+                            </div>
+                            @if (previstosDetalle(previstos); as detalle) {
+                                <div class="pl-fila pl-detalle">
+                                    <dt>{{ detalle }}</dt>
+                                </div>
+                            }
+                        }
+                        @if (!proyecto.kilos.modulos_subidos && !proyecto.kilos.previstos) {
+                            <div class="pl-fila">
+                                <dt>Módulos</dt>
+                                <dd class="pl-tenue" title="Ni subidos ni previstos">pendiente</dd>
                             </div>
                         }
                         <div class="pl-fila">
@@ -112,30 +144,7 @@
                                 <dd class="pl-tenue" title="Llegarán con la base técnica del proyecto">pendiente</dd>
                             }
                         </div>
-                        @for (linea of proyecto.kilos.otros; track linea.id) {
-                            <div class="pl-fila pl-otro">
-                                <dt>{{ linea.concepto }}</dt>
-                                <dd>
-                                    {{ linea.kg | number:'1.0-2' }} kg
-                                    <button type="button" class="pl-quitar" [disabled]="guardandoId() === proyecto.id"
-                                        (click)="removeOtros(proyecto, linea)" [attr.aria-label]="'Quitar ' + linea.concepto">
-                                        <i class="fa fa-times" aria-hidden="true"></i>
-                                    </button>
-                                </dd>
-                            </div>
-                        }
                     </dl>
-
-                    <form class="pl-otros-form" (ngSubmit)="addOtros(proyecto)">
-                        <input type="text" name="concepto" maxlength="120" placeholder="Otros: concepto"
-                            [(ngModel)]="nuevoConcepto[proyecto.id]" [attr.aria-label]="'Concepto de otros kilos de ' + proyecto.nombre">
-                        <input type="text" name="kg" inputmode="decimal" placeholder="kg" class="pl-otros-kg"
-                            [(ngModel)]="nuevoKg[proyecto.id]" [attr.aria-label]="'Kilos de ' + proyecto.nombre">
-                        <button type="submit" class="pl-boton" [disabled]="guardandoId() === proyecto.id">Añadir</button>
-                    </form>
-                    @if (erroresOtros()[proyecto.id]) {
-                        <p class="pl-error" role="alert">{{ erroresOtros()[proyecto.id] }}</p>
-                    }
                 </article>
             }
                 </div>

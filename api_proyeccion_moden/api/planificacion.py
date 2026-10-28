@@ -4,9 +4,10 @@ La grafica: los modulos al dia que exigen las entregas a obra (el plan por
 tramos de montaje de ``api.planning``) y el dia de entrega de cada forjado,
 que para Moden es el de montaje y para la ferralla el de suministrar a obra.
 Las tarjetas: los kilos de cada proyecto, lo que la ferralla mira de verdad:
-los de los modulos (todo, lo fabricado y su desperdicio, como Estadisticas),
-los de los elementos sueltos que van a obra fuera de los modulos (de la base
-tecnica) y los "otros" que apunta la propia ferralla.
+los de los modulos y los de los elementos sueltos que van a obra fuera de
+ellos (de la base tecnica). Confirmados, los de lo que ya esta subido (todo,
+lo fabricado y su desperdicio, como Estadisticas); previstos, los de los
+modulos que faltan por subir hasta los previstos, a su peso medio.
 """
 import calendar
 import os
@@ -16,14 +17,14 @@ from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 
 from django.contrib.auth.models import User
-from django.db.models import Q, Sum
+from django.db.models import Count, Q, Sum
 from django.utils import timezone
-from rest_framework import permissions, status
-from rest_framework.exceptions import NotFound, ValidationError
+from rest_framework import permissions
+from rest_framework.exceptions import NotFound
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import DetalleModuloFase, Proyecto, ProyectoKilosOtros
+from .models import DetalleModuloFase, Proyecto
 from .planning import annotated_projects, dias_laborables, fecha_de_montaje, festivos_de, plan_ferralla
 
 MESES_VISTA = 3
@@ -109,17 +110,57 @@ def kilos_de_modulos(proyectos):
     }
 
 
-def otros_de(proyecto):
-    return [
-        {'id': linea.id, 'concepto': linea.concepto, 'kg': _kg(linea.kg)}
-        for linea in proyecto.kilos_otros.all()
-    ]
+def pesos_medios(usuario_id):
+    """Kilos medios de un modulo de la ferralla: por proyecto, por edificio y en total.
+
+    De los modulos subidos con sus detalles, archivados incluidos (sus datos
+    siguen). Con ellos se preven los kilos de los modulos que aun no estan.
+    """
+    filas = (
+        DetalleModuloFase.objects.filter(modulo__proyecto__usuario_id=usuario_id)
+        .order_by().values('modulo__proyecto', 'modulo__proyecto__edificio')
+        .annotate(modulos=Count('modulo', distinct=True), **{campo: Sum(campo) for campo in CAMPOS_PESO})
+    )
+    sumas = {'proyecto': {}, 'edificio': {}, 'ferralla': {}}
+    for fila in filas:
+        kg = sum(_kg(fila[campo]) for campo in CAMPOS_PESO)
+        if kg <= 0:
+            continue
+        claves = [('proyecto', fila['modulo__proyecto']), ('ferralla', None)]
+        if fila['modulo__proyecto__edificio'] is not None:
+            claves.append(('edificio', fila['modulo__proyecto__edificio']))
+        for nivel, clave in claves:
+            total_kg, modulos = sumas[nivel].get(clave, (0.0, 0))
+            sumas[nivel][clave] = (total_kg + kg, modulos + fila['modulos'])
+    return {
+        nivel: {clave: kg / modulos for clave, (kg, modulos) in por_clave.items()}
+        for nivel, por_clave in sumas.items()
+    }
 
 
-def _tarjeta(proyecto, modulos_kg, fila_plan):
+def _previstos(proyecto, medios):
+    """Los modulos que faltan por subir hasta los previstos y sus kilos, a su peso medio:
+    el del propio proyecto, el de su edificio o el de la ferralla. None si no falta ninguno."""
+    faltan = max((proyecto.modulos_previstos or 0) - proyecto._modulos_count, 0)
+    if not faltan:
+        return None
+    for de, medio in (
+        ('proyecto', medios['proyecto'].get(proyecto.pk)),
+        ('edificio', medios['edificio'].get(proyecto.edificio_id)),
+        ('ferralla', medios['ferralla'].get(None)),
+    ):
+        if medio:
+            return {'modulos': faltan, 'peso_medio': round(medio, 1), 'de': de, 'kg': round(faltan * medio, 2)}
+    # Sin ningun modulo pesado en la ferralla: no hay con que prever.
+    return {'modulos': faltan, 'peso_medio': None, 'de': None, 'kg': None}
+
+
+def _tarjeta(proyecto, modulos_kg, fila_plan, medios):
     todo, fabricado, desperdicio = modulos_kg or (None, 0.0, 0.0)
-    otros = otros_de(proyecto)
     sueltos = None if proyecto.peso_elementos_sueltos_kg is None else _kg(proyecto.peso_elementos_sueltos_kg)
+    previstos = _previstos(proyecto, medios)
+    previsto_kg = previstos['kg'] if previstos else None
+    confirmado = None if todo is None and sueltos is None else round((todo or 0) + (sueltos or 0), 2)
     entrega = fecha_de_montaje(proyecto)
     return {
         'id': proyecto.id,
@@ -134,16 +175,19 @@ def _tarjeta(proyecto, modulos_kg, fila_plan):
         'modulos_completados': proyecto._modulos_completados,
         'estado': fila_plan['estado'],
         'kilos': {
-            # None: aun sin modulos subidos.
+            # Los de los modulos subidos; None: aun sin modulos subidos.
             'modulos': None if todo is None else round(todo, 2),
+            'modulos_subidos': proyecto._modulos_count,
             'fabricado': round(fabricado, 2),
             'desperdicio': round(desperdicio, 2),
             # None: la base tecnica aun no trae los elementos sueltos.
             'sueltos': sueltos,
-            'otros': otros,
-            # Lo que va a obra: los modulos, los sueltos y lo suyo (el desperdicio no).
-            # Sin los modulos no hay total que dar.
-            'total': None if todo is None else round(todo + (sueltos or 0) + sum(linea['kg'] for linea in otros), 2),
+            # Los modulos que faltan por subir, a su peso medio; None si no falta ninguno.
+            'previstos': previstos,
+            # Lo que va a obra (el desperdicio no): lo confirmado mas lo previsto.
+            'confirmado': confirmado,
+            'previsto': previsto_kg,
+            'total': None if confirmado is None and previsto_kg is None else round((confirmado or 0) + (previsto_kg or 0), 2),
         },
     }
 
@@ -171,7 +215,7 @@ def planificacion_de(usuario_id, desde=None):
     proyectos = []
     for proyecto in annotated_projects(
         Proyecto.objects.filter(usuario_id=usuario_id, archivado_at__isnull=True, aceptado_por_ferralla_at__isnull=False)
-    ).select_related('edificio').prefetch_related('kilos_otros'):
+    ).select_related('edificio'):
         entrega = fecha_de_montaje(proyecto)
         if entrega is not None and entrega > hasta:
             continue
@@ -180,6 +224,7 @@ def planificacion_de(usuario_id, desde=None):
             proyectos.append(proyecto)
     proyectos.sort(key=lambda p: (fecha_de_montaje(p) or date.max, p.orden_planta, p.nombre))
     kilos = kilos_de_modulos(proyectos)
+    medios = pesos_medios(usuario_id)
 
     entregas = []
     for proyecto in proyectos:
@@ -201,7 +246,7 @@ def planificacion_de(usuario_id, desde=None):
         'tramos': [{'desde': t['desde'], 'hasta': t['hasta'], 'ritmo': t['ritmo']} for t in plan['tramos']],
         'entregas': entregas,
         'proyectos': [
-            _tarjeta(proyecto, kilos.get(proyecto.pk), plan['proyectos'][proyecto.pk])
+            _tarjeta(proyecto, kilos.get(proyecto.pk), plan['proyectos'][proyecto.pk], medios)
             for proyecto in proyectos
         ],
     }
@@ -232,43 +277,3 @@ class PlanificacionFerrallaView(APIView):
             raise NotFound('Ferralla no encontrada.')
         return Response({'ferrallas': lista, 'ferralla': _ferralla(usuario), **planificacion_de(usuario.id)})
 
-
-class KilosOtrosView(APIView):
-    """Lineas de "otros" kilos de un proyecto: las pone la ferralla (o la oficina)."""
-
-    permission_classes = [permissions.IsAuthenticated]
-
-    def _proyecto(self, request, pk):
-        proyectos = Proyecto.objects.all() if _es_oficina(request.user) else Proyecto.objects.filter(usuario=request.user)
-        proyecto = proyectos.filter(pk=pk).first()
-        if proyecto is None:
-            raise NotFound('Proyecto no encontrado.')
-        return proyecto
-
-    def get(self, request, pk):
-        return Response(otros_de(self._proyecto(request, pk)))
-
-    def post(self, request, pk):
-        proyecto = self._proyecto(request, pk)
-        concepto = str(request.data.get('concepto') or '').strip()
-        if not concepto:
-            raise ValidationError({'concepto': 'Pon de qué son estos kilos.'})
-        if len(concepto) > 120:
-            raise ValidationError({'concepto': 'Como mucho 120 caracteres.'})
-        try:
-            kg = Decimal(str(request.data.get('kg')).strip().replace(',', '.'))
-        except InvalidOperation:
-            raise ValidationError({'kg': 'Los kilos tienen que ser un número.'})
-        if not kg.is_finite() or kg < Decimal('0.01') or kg >= Decimal('100000000'):
-            raise ValidationError({'kg': 'Los kilos tienen que ser mayores que cero.'})
-        ProyectoKilosOtros.objects.create(
-            proyecto=proyecto, concepto=concepto, kg=kg.quantize(Decimal('0.01')), creado_por=request.user,
-        )
-        return Response(otros_de(proyecto), status=status.HTTP_201_CREATED)
-
-    def delete(self, request, pk, linea_id):
-        proyecto = self._proyecto(request, pk)
-        borradas, _ = proyecto.kilos_otros.filter(pk=linea_id).delete()
-        if not borradas:
-            raise NotFound('Línea no encontrada.')
-        return Response(otros_de(proyecto))

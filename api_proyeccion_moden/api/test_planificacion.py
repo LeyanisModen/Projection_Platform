@@ -11,7 +11,7 @@ from django.test import SimpleTestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
-from .models import DetalleModuloFase, EventoCalendario, Modulo, Proyecto, ProyectoKilosOtros
+from .models import DetalleModuloFase, Edificio, EventoCalendario, Modulo, Proyecto
 from .planificacion import planificacion_de, sumar_meses
 
 _MEDIA_TMP = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
@@ -124,7 +124,6 @@ class PlanificacionTests(APITestCase):
                      desperdicio_kg=Decimal('9'))
         self.p1.peso_elementos_sueltos_kg = Decimal('412.40')
         self.p1.save(update_fields=['peso_elementos_sueltos_kg'])
-        ProyectoKilosOtros.objects.create(proyecto=self.p1, concepto='Esperas de pilares', kg=Decimal('80'))
 
         tarjetas = {t['id']: t for t in planificacion_de(self.ferralla.id, LUNES)['proyectos']}
 
@@ -135,8 +134,10 @@ class PlanificacionTests(APITestCase):
         # Desperdicio solo de lo fabricado, como en Estadisticas.
         self.assertEqual(kilos['desperdicio'], 10.0)
         self.assertEqual(kilos['sueltos'], 412.4)
-        self.assertEqual(kilos['otros'][0]['concepto'], 'Esperas de pilares')
-        self.assertEqual(kilos['total'], 697.4)
+        self.assertEqual(kilos['modulos_subidos'], 8)
+        # Sin modulos previstos de mas, todo confirmado.
+        self.assertIsNone(kilos['previstos'])
+        self.assertEqual((kilos['confirmado'], kilos['previsto'], kilos['total']), (617.4, None, 617.4))
         self.assertEqual(tarjetas[self.p1.id]['fecha_entrega'], '2026-11-12')
         self.assertIsNone(tarjetas[self.p1.id]['edificio'])
         self.assertFalse(tarjetas[self.p1.id]['entrega_orientativa'])
@@ -146,6 +147,45 @@ class PlanificacionTests(APITestCase):
         self.assertIsNone(tarjetas[self.p2.id]['kilos']['modulos'])
         self.assertIsNone(tarjetas[self.p2.id]['kilos']['total'])
         self.assertTrue(tarjetas[self.p2.id]['entrega_orientativa'])
+
+    def test_modules_still_to_upload_are_forecast_at_their_average_weight(self):
+        aceptado = timezone.now()
+        edificio = Edificio.objects.create(usuario=self.ferralla, nombre='OBRA')
+        # P01: 8 subidos de 10 previstos; los pesados, 120 kg de media.
+        uno, dos = Modulo.objects.filter(proyecto=self.p1)[:2]
+        self.detalle(uno, 'INFERIOR', peso_malla_final_kg=Decimal('100'))
+        self.detalle(dos, 'INFERIOR', peso_malla_final_kg=Decimal('90'))
+        self.detalle(dos, 'SUPERIOR', peso_refuerzos_kg=Decimal('50'))
+        Proyecto.objects.filter(pk=self.p1.pk).update(edificio=edificio, modulos_previstos=10)
+        # Uno ya archivado, fuera de edificio, a 60 kg: cuenta para la media de la ferralla (90).
+        viejo = Proyecto.objects.create(nombre='VIEJO', usuario=self.ferralla, aceptado_por_ferralla_at=aceptado,
+                                        archivado_at=aceptado)
+        for nombre in ('V1', 'V2'):
+            self.detalle(Modulo.objects.create(nombre=nombre, proyecto=viejo), 'INFERIOR', peso_malla_final_kg=Decimal('60'))
+        # Sin modulos subidos: a la media de su edificio o, sin edificio, a la de la ferralla.
+        Proyecto.objects.create(nombre='OBRA_P03', usuario=self.ferralla, aceptado_por_ferralla_at=aceptado,
+                                fecha_montaje=date(2026, 12, 1), edificio=edificio, modulos_previstos=64)
+        Proyecto.objects.create(nombre='APARTE', usuario=self.ferralla, aceptado_por_ferralla_at=aceptado,
+                                fecha_montaje=date(2026, 12, 15), modulos_previstos=5)
+        # Una ferralla sin ningun modulo pesado no tiene con que prever.
+        Proyecto.objects.filter(pk=self.ajeno.pk).update(modulos_previstos=3)
+
+        tarjetas = {t['nombre']: t['kilos'] for t in planificacion_de(self.ferralla.id, LUNES)['proyectos']}
+
+        self.assertEqual(tarjetas['OBRA_P01']['previstos'], {'modulos': 2, 'peso_medio': 120.0, 'de': 'proyecto', 'kg': 240.0})
+        self.assertEqual(
+            (tarjetas['OBRA_P01']['confirmado'], tarjetas['OBRA_P01']['previsto'], tarjetas['OBRA_P01']['total']),
+            (240.0, 240.0, 480.0),
+        )
+        self.assertEqual(tarjetas['OBRA_P03']['previstos'], {'modulos': 64, 'peso_medio': 120.0, 'de': 'edificio', 'kg': 7680.0})
+        self.assertEqual(
+            (tarjetas['OBRA_P03']['modulos'], tarjetas['OBRA_P03']['confirmado'], tarjetas['OBRA_P03']['total']),
+            (None, None, 7680.0),
+        )
+        self.assertEqual(tarjetas['APARTE']['previstos'], {'modulos': 5, 'peso_medio': 90.0, 'de': 'ferralla', 'kg': 450.0})
+        ajeno = planificacion_de(self.otra.id, LUNES)['proyectos'][0]['kilos']
+        self.assertEqual(ajeno['previstos'], {'modulos': 3, 'peso_medio': None, 'de': None, 'kg': None})
+        self.assertIsNone(ajeno['total'])
 
     def test_cards_are_what_is_due_in_the_window_or_still_pending(self):
         aceptado = timezone.now()
@@ -182,39 +222,6 @@ class PlanificacionTests(APITestCase):
         self.assertEqual([t['nombre'] for t in elegida.data['proyectos']], ['AJENO'])
         self.assertEqual(self.client.get('/api/planificacion/', {'usuario': self.oficina.id}).status_code, 404)
         self.assertEqual(self.client.get('/api/planificacion/', {'usuario': 'x'}).status_code, 404)
-
-    def test_the_factory_adds_and_removes_its_own_kilos(self):
-        self.client.force_authenticate(self.ferralla)
-        url = f'/api/proyectos/{self.p1.id}/kilos-otros/'
-
-        creada = self.client.post(url, {'concepto': '  Mallas de reparto ', 'kg': '125,5'}, format='json')
-        self.assertEqual(creada.status_code, 201)
-        self.assertEqual(creada.data, [{'id': creada.data[0]['id'], 'concepto': 'Mallas de reparto', 'kg': 125.5}])
-        linea = ProyectoKilosOtros.objects.get()
-        self.assertEqual(linea.creado_por, self.ferralla)
-        self.assertEqual(linea.kg, Decimal('125.50'))
-
-        for malo in [{'concepto': '', 'kg': 3}, {'concepto': 'x' * 121, 'kg': 3}, {'concepto': 'A', 'kg': 'mucho'},
-                     {'concepto': 'A', 'kg': 0}, {'concepto': 'A', 'kg': -4}, {'concepto': 'A', 'kg': 'NaN'},
-                     {'concepto': 'A'}]:
-            self.assertEqual(self.client.post(url, malo, format='json').status_code, 400, malo)
-
-        self.assertEqual(self.client.delete(f'{url}{linea.id}/').data, [])
-        self.assertEqual(self.client.delete(f'{url}{linea.id}/').status_code, 404)
-
-    def test_nobody_touches_the_kilos_of_another_factory(self):
-        ajena = ProyectoKilosOtros.objects.create(proyecto=self.ajeno, concepto='Suyo', kg=Decimal('10'))
-        self.client.force_authenticate(self.ferralla)
-        url = f'/api/proyectos/{self.ajeno.id}/kilos-otros/'
-        self.assertEqual(self.client.get(url).status_code, 404)
-        self.assertEqual(self.client.post(url, {'concepto': 'A', 'kg': 1}, format='json').status_code, 404)
-        self.assertEqual(self.client.delete(f'{url}{ajena.id}/').status_code, 404)
-        # Una linea de otro proyecto no se borra desde uno propio.
-        self.assertEqual(self.client.delete(f'/api/proyectos/{self.p1.id}/kilos-otros/{ajena.id}/').status_code, 404)
-        self.assertTrue(ProyectoKilosOtros.objects.filter(pk=ajena.pk).exists())
-
-        self.client.force_authenticate(self.oficina)
-        self.assertEqual(self.client.get(url).data, [{'id': ajena.id, 'concepto': 'Suyo', 'kg': 10.0}])
 
     def test_the_loose_elements_weight_comes_with_the_technical_base(self):
         self.client.force_authenticate(self.oficina)
