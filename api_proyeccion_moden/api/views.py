@@ -51,6 +51,7 @@ from api.planificacion import peso_sueltos_de_base_tecnica
 from api.queue_sync import (
     EARLY_IMAGE_INDEX_LIMIT,
     _ensure_project_in_group_queue,
+    activar_siguiente,
     activate_queue_item,
     apply_queue_progress,
     capture_phase_assignment_hints,
@@ -7366,12 +7367,11 @@ class DeviceViewSet(viewsets.ViewSet):
 
             current_item.marcar_hecho(user=None)
 
-            next_item = siguiente_activable(mesa, (
+            if not activar_siguiente(mesa, (
                 mesa.queue_items.select_for_update()
                 .filter(status=MesaQueueStatus.EN_COLA).order_by('position', 'id')
-            ))
-            activate_queue_item(mesa, next_item)
-            reconcile_superior_queue_if_adaptive(mesa.grupo)
+            )):
+                reconcile_superior_queue_if_adaptive(mesa.grupo)
 
         return Response({'status': 'ok'})
 
@@ -7847,14 +7847,15 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
         item.marcar_hecho(user=request.user)
 
         # Auto-advance only if the item was currently showing.
+        reconciled = False
         if previous_status == MesaQueueStatus.MOSTRANDO:
-            next_item = siguiente_activable(mesa, MesaQueueItem.objects.filter(
+            reconciled = activar_siguiente(mesa, MesaQueueItem.objects.filter(
                 mesa=mesa,
                 status=MesaQueueStatus.EN_COLA
             ).order_by('position', 'id'))
-            activate_queue_item(mesa, next_item)
 
-        reconcile_superior_queue_if_adaptive(mesa.grupo)
+        if not reconciled:
+            reconcile_superior_queue_if_adaptive(mesa.grupo)
 
         serializer = self.get_serializer(item)
         return Response(serializer.data)
