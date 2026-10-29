@@ -576,6 +576,19 @@ usando la regla de las dos imágenes `_insert_phase` (rehacer una fase a petici�
 del supervisor; módulo que llega tarde a un bastidor de la inferior en pantalla),
 el estado del módulo y si se puede recalcular el bastidor.
 
+**Orden de lo no pedido en adaptativo (2026-10-29):** detrás de lo pedido,
+`_orden_adaptativo` da el turno a la inferior con menos superiores por delante
+(hechos, en pantalla o pedidos cuentan como turno gastado). Si empatan, va la
+más avanzada en el módulo que tiene en la mesa (imagen / imágenes); si también,
+se alterna como en la planificada. Una inferior parada (desactivada o más de
+`INFERIOR_PARADA` = 50 min sin pasar de imagen; en Sanchos un inferior tarda
+~57 min y en 9 de cada 10 ninguna imagen pasa de 50 min) no recibe más que su
+siguiente módulo: lo demás suyo va al final hasta que se vuelva a mover. Lo
+siguiente de la superior se decide al marcar hecho (`activar_siguiente`), con
+las inferiores como van entonces. Lo pidió el usuario: la superior alterna
+mesa 1 / mesa 2, el adaptativo solo adelanta la que va más rápida y no gasta
+superior en una inferior parada.
+
 ### 6.7 Las mesas inferiores gobiernan el bastidor
 
 Un bastidor físico se llena desde una sola mesa inferior. La cola superior se

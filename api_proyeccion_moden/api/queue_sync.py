@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from django.db import transaction
 from django.db.models import Count, Max, Q
 from django.utils import timezone
@@ -21,6 +23,10 @@ from api.models import (
 
 ACTIVE_QUEUE_STATUSES = [MesaQueueStatus.EN_COLA, MesaQueueStatus.MOSTRANDO]
 EARLY_IMAGE_INDEX_LIMIT = 1
+# Inferior que se da por parada para la cola adaptativa de la superior. En
+# Sanchos (oct 2026, 327 modulos) un inferior tarda ~57 min y, mientras se
+# trabaja, en 9 de cada 10 ninguna imagen pasa de 50 min.
+INFERIOR_PARADA = timedelta(minutes=50)
 
 
 def orden_de_proyectos(group):
@@ -1057,6 +1063,28 @@ def register_superior_demand_for_mesa(mesa, needed_at=None):
     return bool(changed)
 
 
+def activar_siguiente(mesa, items):
+    """Pone en ``mesa`` lo siguiente de ``items`` al acabar lo que tenia.
+
+    En una superior adaptativa lo siguiente se decide en este momento, con
+    las inferiores como van ahora y no como iban cuando salio lo anterior.
+    Devuelve True si ya ha reconciliado la cola del grupo.
+    """
+    group = mesa.grupo
+    if (
+        mesa.tipo == MesaTipo.SUPERIOR
+        and group is not None
+        and group.estrategia_cola_superior == EstrategiaColaSuperior.ADAPTATIVA
+    ):
+        reconcile_superior_queue_for_group(group)
+        if mesa.queue_items.filter(status=MesaQueueStatus.MOSTRANDO).exists():
+            return True
+        activate_queue_item(mesa, siguiente_activable(mesa, items))
+        return True
+    activate_queue_item(mesa, siguiente_activable(mesa, items))
+    return False
+
+
 def reconcile_superior_queue_if_adaptive(group):
     """Reconcile a group only when its explicit adaptive policy is active."""
     if not group:
@@ -1066,14 +1094,80 @@ def reconcile_superior_queue_if_adaptive(group):
     return reconcile_superior_queue_for_group(group)
 
 
+def _inferiores_paradas(mesas, now=None):
+    """Ids de las mesas inferiores desactivadas o sin pasar de imagen hace rato."""
+    now = now or timezone.now()
+    ultima = dict(
+        EventoFabricacion.objects.filter(mesa_id__in=[mesa.id for mesa in mesas])
+        .order_by()
+        .values("mesa_id")
+        .annotate(ultima=Max("at"))
+        .values_list("mesa_id", "ultima")
+    )
+    return {
+        mesa.id
+        for mesa in mesas
+        if not mesa.activa
+        or (
+            ultima.get(mesa.id) is not None
+            and now - ultima[mesa.id] > INFERIOR_PARADA
+        )
+    }
+
+
+def _avance_inferior(items):
+    """Parte de las imagenes hecha del modulo que la inferior tiene en pantalla."""
+    showing = next(
+        (item for item in items if item.status == MesaQueueStatus.MOSTRANDO),
+        None,
+    )
+    if showing is None:
+        return 0
+    total = showing.modulo.imagenes.filter(fase=Fase.INFERIOR, activo=True).count()
+    if not total:
+        return 0
+    return min(showing.mesa.current_image_index / total, 1)
+
+
+def _orden_adaptativo(mesa_ids, queues, cursor, inferior_by_mesa):
+    """Lo que ninguna inferior ha pedido todavia, en la cola adaptativa.
+
+    Cada hueco de ``queues`` es un turno de su inferior; los ``None`` son
+    superiores ya hechos, en pantalla o pedidos. Va antes lo de la inferior
+    que menos superiores tiene por delante; si empatan, la que va mas
+    avanzada en el modulo que tiene en la mesa; si tambien, se alterna desde
+    ``cursor`` como en la planificada. A una inferior parada no se le hace
+    mas que su siguiente modulo: lo demas suyo espera al final hasta que se
+    vuelva a mover.
+    """
+    paradas = _inferiores_paradas(
+        [inferior_by_mesa[mesa_id][0].mesa for mesa_id in mesa_ids]
+    )
+    desempate = {
+        mesa_id: (
+            -_avance_inferior(inferior_by_mesa[mesa_id]),
+            (index - cursor) % len(mesa_ids),
+        )
+        for index, mesa_id in enumerate(mesa_ids)
+    }
+    turnos = [
+        ((mesa_id in paradas and turno > 0, turno, desempate[mesa_id]), item)
+        for mesa_id, queue in zip(mesa_ids, queues)
+        for turno, item in enumerate(queue)
+        if item is not None
+    ]
+    turnos.sort(key=lambda par: par[0])
+    return [item for _, item in turnos]
+
+
 def reconcile_superior_queue_for_group(group):
     """Backfill and order SUP work according to the group's selected policy.
 
     Whatever a superior mesa is showing stays anchored until it is done, even
     on its first images. Planned groups use the round-robin merge of inferior
     mesas. Adaptive groups serve next the modules already requested by real
-    INF progress; untouched and superior-only work retains the theoretical
-    order afterwards.
+    INF progress; the rest follows the inferior mesas as they are going (see
+    ``_orden_adaptativo``) and superior-only work goes last.
     """
     adaptive = (
         group.estrategia_cola_superior == EstrategiaColaSuperior.ADAPTATIVA
@@ -1186,6 +1280,10 @@ def reconcile_superior_queue_for_group(group):
                     inferior_item.modulo_id in anchored_module_ids
                     or inferior_item.modulo_id in priority_module_ids
                 ):
+                    if adaptive:
+                        # Ya en la superior o justo detras: su turno cuenta
+                        # como gastado, igual que un superior ya hecho.
+                        queue.append(None)
                     continue
 
                 superior_item = superior_by_module.get(inferior_item.modulo_id)
@@ -1219,15 +1317,20 @@ def reconcile_superior_queue_for_group(group):
                     cursor = mesa_index[source_id]
 
         desired = list(priority_items)
-        while any(queues):
-            for _ in range(len(queues)):
-                if queues[cursor]:
-                    superior_item = queues[cursor].pop(0)
-                    if superior_item is not None:
-                        desired.append(superior_item)
+        if adaptive:
+            desired.extend(
+                _orden_adaptativo(mesa_ids, queues, cursor, inferior_by_mesa)
+            )
+        else:
+            while any(queues):
+                for _ in range(len(queues)):
+                    if queues[cursor]:
+                        superior_item = queues[cursor].pop(0)
+                        if superior_item is not None:
+                            desired.append(superior_item)
+                        cursor = (cursor + 1) % len(queues)
+                        break
                     cursor = (cursor + 1) % len(queues)
-                    break
-                cursor = (cursor + 1) % len(queues)
 
         desired_ids = {item.id for item in desired}
         standalone = [

@@ -20,7 +20,7 @@ from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
 from api.models import (
-    Imagen, Mesa, MesaQueueItem, Modulo, Proyecto,
+    EventoFabricacion, Imagen, Mesa, MesaQueueItem, Modulo, Proyecto,
     DetalleModuloFase, GrupoMesas, FotoFabricacion,
     FerrallaContacto, FerrallaDireccion, PairingSession,
     MesaQueueStatus, ModuloEstado, GrupoBastidor, GrupoMesasProyecto,
@@ -5185,12 +5185,170 @@ class PlanningFoundationTests(APITestCase):
             .order_by("position")
             .values_list("modulo__nombre", "status")
         )
+        # H03 y F09 hacen falta a la vez (tres modulos por delante en cada
+        # inferior): empatan y se alterna.
         self.assertEqual(superior, [
             ("F11", "MOSTRANDO"),
             ("F10", "EN_COLA"),
             ("H04", "EN_COLA"),
-            ("H03", "EN_COLA"),
             ("F09", "EN_COLA"),
+            ("H03", "EN_COLA"),
+        ])
+
+    def _grupo_superior_por_delante(self, nombre):
+        """Inferior 1 con A2 y la 2 con B1, los dos con su superior hecho; la
+        superior ya hace A3 mientras abajo siguen con A2."""
+        grupo = self._crear_grupo(nombre)
+        grupo.estrategia_cola_superior = "ADAPTATIVA"
+        grupo.save(update_fields=["estrategia_cola_superior"])
+        mesa_inf_1 = grupo.mesas.get(tipo="INFERIOR", indice=1)
+        mesa_inf_2 = grupo.mesas.get(tipo="INFERIOR", indice=2)
+        mesa_sup = grupo.mesas.get(tipo="SUPERIOR", indice=3)
+        modulos = {
+            nombre: Modulo.objects.create(
+                nombre=nombre,
+                proyecto=self.project,
+                superior_hecho=nombre in ("A2", "B1"),
+                estado=(
+                    ModuloEstado.EN_PROGRESO
+                    if nombre in ("A2", "B1")
+                    else ModuloEstado.PENDIENTE
+                ),
+            )
+            for nombre in ["A2", "A3", "A4", "A5", "B1", "B2", "B3"]
+        }
+        hace_un_rato = timezone.now() - timedelta(minutes=10)
+        for mesa, nombres in ((mesa_inf_1, ["A2", "A3", "A4", "A5"]), (mesa_inf_2, ["B1", "B2", "B3"])):
+            for position, nombre in enumerate(nombres):
+                item = MesaQueueItem.objects.create(
+                    mesa=mesa, modulo=modulos[nombre], fase="INFERIOR", position=position,
+                    status="MOSTRANDO" if position == 0 else "EN_COLA",
+                )
+                if position == 0:
+                    EventoFabricacion.objects.create(
+                        item=item, mesa=mesa, modulo=modulos[nombre], fase="INFERIOR",
+                        tipo="INICIO", paso=0, at=hace_un_rato,
+                    )
+        sup_items = {}
+        for position, nombre in enumerate(["A3", "A4", "A5", "B2", "B3"]):
+            sup_items[nombre] = MesaQueueItem.objects.create(
+                mesa=mesa_sup, modulo=modulos[nombre], fase="SUPERIOR", position=position,
+                status="MOSTRANDO" if position == 0 else "EN_COLA",
+            )
+
+        def cola():
+            return list(
+                mesa_sup.queue_items.filter(fase="SUPERIOR", status__in=["MOSTRANDO", "EN_COLA"])
+                .order_by("position").values_list("modulo__nombre", "status")
+            )
+
+        return grupo, mesa_inf_2, sup_items, cola
+
+    def test_superior_adaptativo_no_adelanta_mas_a_una_inferior_parada(self):
+        """La superior va sobrada: si una inferior esta parada le deja hecho su
+        siguiente modulo y sigue con la que trabaja."""
+        from api.queue_sync import reconcile_superior_queue_for_group
+
+        grupo, mesa_inf_2, _, cola = self._grupo_superior_por_delante("Grupo SUP inferior parada")
+
+        # Las dos trabajando: la 2 solo tiene B1 por delante, le toca a ella.
+        reconcile_superior_queue_for_group(grupo)
+        self.assertEqual(cola()[:2], [("A3", "MOSTRANDO"), ("B2", "EN_COLA")])
+
+        # La inferior 2 lleva una hora sin pasar de imagen: lo suyo espera al
+        # final y la superior sigue con la 1.
+        EventoFabricacion.objects.filter(mesa=mesa_inf_2).update(
+            at=timezone.now() - timedelta(hours=1),
+        )
+        reconcile_superior_queue_for_group(grupo)
+        self.assertEqual(cola(), [
+            ("A3", "MOSTRANDO"),
+            ("A4", "EN_COLA"),
+            ("A5", "EN_COLA"),
+            ("B2", "EN_COLA"),
+            ("B3", "EN_COLA"),
+        ])
+
+    def test_superior_adaptativo_decide_el_siguiente_al_terminar(self):
+        """Lo siguiente de la superior se decide al marcar hecho, con las
+        inferiores como van entonces, no como iban cuando salio lo anterior."""
+        from api.queue_sync import reconcile_superior_queue_for_group
+
+        grupo, mesa_inf_2, sup_items, cola = self._grupo_superior_por_delante("Grupo SUP decide al terminar")
+        reconcile_superior_queue_for_group(grupo)
+        self.assertEqual(cola()[1], ("B2", "EN_COLA"))
+
+        # Mientras la superior hace A3, la inferior 2 se para.
+        EventoFabricacion.objects.filter(mesa=mesa_inf_2).update(
+            at=timezone.now() - timedelta(hours=1),
+        )
+        response = self.client.post(f"/api/mesa-queue-items/{sup_items['A3'].id}/marcar_hecho/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(cola(), [
+            ("A4", "MOSTRANDO"),
+            ("A5", "EN_COLA"),
+            ("B2", "EN_COLA"),
+            ("B3", "EN_COLA"),
+        ])
+
+    def test_superior_adaptativo_empate_va_primero_la_inferior_mas_avanzada(self):
+        """Sanchos, 27/10: con el mismo adelanto en las dos inferiores salia el
+        de la que iba atrasada (A64) y la otra empezaba el suyo minutos despues."""
+        from api.queue_sync import reconcile_superior_queue_for_group
+
+        grupo = self._crear_grupo("Grupo SUP empate")
+        grupo.estrategia_cola_superior = "ADAPTATIVA"
+        grupo.save(update_fields=["estrategia_cola_superior"])
+        mesa_inf_1 = grupo.mesas.get(tipo="INFERIOR", indice=1)
+        mesa_inf_2 = grupo.mesas.get(tipo="INFERIOR", indice=2)
+        mesa_sup = grupo.mesas.get(tipo="SUPERIOR", indice=3)
+        modulos = {
+            nombre: Modulo.objects.create(
+                nombre=nombre,
+                proyecto=self.project,
+                superior_hecho=nombre in ("A1", "B1"),
+                estado=(
+                    ModuloEstado.EN_PROGRESO
+                    if nombre in ("A1", "B1")
+                    else ModuloEstado.PENDIENTE
+                ),
+            )
+            for nombre in ["A1", "A2", "A3", "B1", "B2", "B3"]
+        }
+        for mesa, nombres, imagen in ((mesa_inf_1, ["A1", "A2", "A3"], 5), (mesa_inf_2, ["B1", "B2", "B3"], 18)):
+            for position, nombre in enumerate(nombres):
+                MesaQueueItem.objects.create(
+                    mesa=mesa, modulo=modulos[nombre], fase="INFERIOR", position=position,
+                    status="MOSTRANDO" if position == 0 else "EN_COLA",
+                )
+            Imagen.objects.bulk_create(
+                Imagen(
+                    modulo=modulos[nombres[0]], fase="INFERIOR", orden=orden,
+                    status="PUBLISHED", activo=True, url=f"/media/{nombres[0]}_{orden}.png",
+                )
+                for orden in range(1, 21)
+            )
+            mesa.current_image_index = imagen
+            mesa.save(update_fields=["current_image_index"])
+        # La superior acaba de terminar; lo planificado empezaba por la 1.
+        for position, nombre in enumerate(["A2", "B2", "A3", "B3"]):
+            MesaQueueItem.objects.create(
+                mesa=mesa_sup, modulo=modulos[nombre], fase="SUPERIOR", position=position,
+                status="EN_COLA",
+            )
+
+        reconcile_superior_queue_for_group(grupo)
+
+        superior = list(
+            mesa_sup.queue_items.filter(fase="SUPERIOR", status__in=["MOSTRANDO", "EN_COLA"])
+            .order_by("position").values_list("modulo__nombre", "status")
+        )
+        # La 2 esta en la imagen 18 de 20 y la 1 en la 5: B2 hace falta antes.
+        self.assertEqual(superior, [
+            ("B2", "MOSTRANDO"),
+            ("A2", "EN_COLA"),
+            ("B3", "EN_COLA"),
+            ("A3", "EN_COLA"),
         ])
 
     def test_activar_adaptativo_recupera_inferior_corto_ya_terminado(self):
