@@ -5073,11 +5073,51 @@ class PlanningFoundationTests(APITestCase):
             .values_list("modulo__nombre", "status")
         )
         self.assertEqual(superior, [
-            ("A1", "MOSTRANDO"),
+            ("B1", "MOSTRANDO"),
+            ("A1", "EN_COLA"),
             ("A2", "EN_COLA"),
-            ("B1", "EN_COLA"),
             ("B2", "EN_COLA"),
         ])
+
+    def test_superior_adaptativo_no_aparta_el_que_ya_esta_en_pantalla(self):
+        """Sanchos, 27-28/10: la superior sacaba uno sin demanda; cuando una
+        inferior pasaba sus primeras imagenes, su superior lo apartaba a medio
+        hacer y el apartado volvia cinco modulos despues."""
+        from api.queue_sync import register_superior_demand_for_mesa
+
+        grupo = self._crear_grupo("Grupo SUP en pantalla")
+        grupo.estrategia_cola_superior = "ADAPTATIVA"
+        grupo.save(update_fields=["estrategia_cola_superior"])
+        mesa_inf_1 = grupo.mesas.get(tipo="INFERIOR", indice=1)
+        mesa_inf_2 = grupo.mesas.get(tipo="INFERIOR", indice=2)
+        mesa_sup = grupo.mesas.get(tipo="SUPERIOR", indice=3)
+        modulos = {
+            nombre: Modulo.objects.create(nombre=nombre, proyecto=self.project)
+            for nombre in ["A1", "A2", "B1", "B2"]
+        }
+        for mesa, nombres in ((mesa_inf_1, ["A1", "A2"]), (mesa_inf_2, ["B1", "B2"])):
+            for position, nombre in enumerate(nombres):
+                MesaQueueItem.objects.create(
+                    mesa=mesa, modulo=modulos[nombre], fase="INFERIOR", position=position,
+                    status="MOSTRANDO" if position == 0 else "EN_COLA",
+                )
+        # La superior ya trabaja en B2 (sin demanda todavia), en su primera imagen.
+        for position, nombre in enumerate(["B2", "B1", "A1", "A2"]):
+            MesaQueueItem.objects.create(
+                mesa=mesa_sup, modulo=modulos[nombre], fase="SUPERIOR", position=position,
+                status="MOSTRANDO" if position == 0 else "EN_COLA",
+            )
+
+        # La inferior 1 pasa sus primeras imagenes: A1 pide su superior.
+        mesa_inf_1.current_image_index = 2
+        mesa_inf_1.save(update_fields=["current_image_index"])
+        self.assertTrue(register_superior_demand_for_mesa(mesa_inf_1))
+
+        cola = list(
+            mesa_sup.queue_items.filter(fase="SUPERIOR", status__in=["MOSTRANDO", "EN_COLA"])
+            .order_by("position").values_list("modulo__nombre", "status")
+        )
+        self.assertEqual(cola[:2], [("B2", "MOSTRANDO"), ("A1", "EN_COLA")])
 
     def test_superior_adaptativo_cuenta_sup_terminados_como_turnos_consumidos(self):
         from api.queue_sync import reconcile_superior_queue_for_group
@@ -5212,7 +5252,9 @@ class PlanningFoundationTests(APITestCase):
             .order_by("position")
             .values_list("modulo__nombre", "status")
         )
-        self.assertEqual(superior[0], ("SOLO-SUP", "MOSTRANDO"))
+        # Lo que la superior tiene en pantalla no se aparta: el que ya pide
+        # superior va justo detras.
+        self.assertEqual(superior[:2], [("REGULAR", "MOSTRANDO"), ("SOLO-SUP", "EN_COLA")])
 
     def test_avance_inferior_reordena_adaptativo_sin_mover_sup_empezado(self):
         grupo = self._crear_grupo("Grupo SUP Anclado")
@@ -5312,11 +5354,11 @@ class PlanningFoundationTests(APITestCase):
         corto.refresh_from_db()
         self.assertTrue(corto.inferior_hecho)
         self.assertIsNotNone(corto.superior_needed_at)
-        head = mesa_sup.queue_items.filter(
-            fase="SUPERIOR",
-            status="MOSTRANDO",
-        ).get()
-        self.assertEqual(head.modulo_id, corto.id)
+        cola = list(
+            mesa_sup.queue_items.filter(fase="SUPERIOR", status__in=["MOSTRANDO", "EN_COLA"])
+            .order_by("position").values_list("modulo_id", "status")
+        )
+        self.assertEqual(cola, [(previsto.id, "MOSTRANDO"), (corto.id, "EN_COLA")])
 
     def test_reiniciar_solo_superior_demanda_y_completarlo_limpia_prioridad(self):
         grupo = self._crear_grupo("Grupo SUP Reinicio")
@@ -5555,17 +5597,19 @@ class PlanningFoundationTests(APITestCase):
             .order_by("position")
             .values_list("modulo__nombre", "status")
         )
+        # B1 ya esta en la superior (imagen 1): en fabrica lo han empezado y no
+        # se aparta. Lo de la inferior mas avanzada (A1) va justo detras.
         self.assertEqual(
             superior,
             [
-                ("A1", "MOSTRANDO"),
-                ("B1", "EN_COLA"),
-                ("A2", "EN_COLA"),
+                ("B1", "MOSTRANDO"),
+                ("A1", "EN_COLA"),
                 ("B2", "EN_COLA"),
+                ("A2", "EN_COLA"),
             ],
         )
         mesa_sup.refresh_from_db()
-        self.assertEqual(mesa_sup.current_image_index, 0)
+        self.assertEqual(mesa_sup.current_image_index, 1)
 
     def test_planificar_grupo_usa_ancho_del_modulo_para_agrupacion(self):
         self.project.bastidor_longitud_cm = 20
