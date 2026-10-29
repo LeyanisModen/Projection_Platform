@@ -565,6 +565,17 @@ módulo, pero no debe marcar una fase como terminada. Por ello se expone
 Los índices 0 y 1 son preparación. A partir del índice 2, mostrado como imagen
 3, la posición física se considera comprometida y el módulo queda bloqueado.
 
+**Excepción, mesa superior (2026-10-29):** el reordenado automático de la superior
+(`reconcile_superior_queue_for_group`, planificada y adaptativa) ya no aparta lo
+que está en pantalla aunque siga en la imagen 1 o 2: en fábrica lo empiezan en
+cuanto sale. En adaptativo, el que sacaba sin demanda (detrás de los que pedían
+las inferiores) cedía el sitio en cuanto una inferior pasaba sus primeras
+imágenes, y quedaba a medio hacer hasta cinco módulos después (Sanchos 27-28/10:
+siete veces, tras 7-33 min en pantalla). Ahora lo pedido va justo detrás. Siguen
+usando la regla de las dos imágenes `_insert_phase` (rehacer una fase a petición
+del supervisor; módulo que llega tarde a un bastidor de la inferior en pantalla),
+el estado del módulo y si se puede recalcular el bastidor.
+
 ### 6.7 Las mesas inferiores gobiernan el bastidor
 
 Un bastidor físico se llena desde una sola mesa inferior. La cola superior se

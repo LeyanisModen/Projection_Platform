@@ -1069,10 +1069,10 @@ def reconcile_superior_queue_if_adaptive(group):
 def reconcile_superior_queue_for_group(group):
     """Backfill and order SUP work according to the group's selected policy.
 
-    Superior work past the initial images remains anchored so an in-progress
-    sequence is never interrupted. Planned groups use the round-robin merge of
-    inferior mesas. Adaptive groups first serve modules already requested by
-    real INF progress; untouched and superior-only work retains the theoretical
+    Whatever a superior mesa is showing stays anchored until it is done, even
+    on its first images. Planned groups use the round-robin merge of inferior
+    mesas. Adaptive groups serve next the modules already requested by real
+    INF progress; untouched and superior-only work retains the theoretical
     order afterwards.
     """
     adaptive = (
@@ -1131,25 +1131,19 @@ def reconcile_superior_queue_for_group(group):
         mesa_ids = list(inferior_by_mesa)
         mesa_index = {mesa_id: index for index, mesa_id in enumerate(mesa_ids)}
         superior_by_module = {item.modulo_id: item for item in superior_items}
+        # Lo que ya esta en pantalla en una superior no se cambia solo: en
+        # fabrica lo empiezan en cuanto sale, aunque siga en las primeras
+        # imagenes. Antes, uno sin demanda en la imagen 0 o 1 cedia el sitio
+        # al que pedia una inferior y quedaba a medio hacer (Sanchos, 27-28/10:
+        # siete apartados tras 7-33 min en pantalla). Lo que pide el avance
+        # real va justo detras.
         anchored = [
             item for item in superior_items
             if item.status == MesaQueueStatus.MOSTRANDO
-            and item.mesa.current_image_index > EARLY_IMAGE_INDEX_LIMIT
         ]
         priority_source_id = None
         priority_items = []
         if adaptive:
-            if not anchored:
-                # Once a genuinely requested SUP item has been selected for
-                # display, keep it at the head even during its setup images.
-                # This is especially important for supervisor-triggered
-                # rework, which _insert_phase intentionally preempts while
-                # the previous item has not really started.
-                anchored = [
-                    item for item in superior_items
-                    if item.status == MesaQueueStatus.MOSTRANDO
-                    and item.modulo.superior_needed_at is not None
-                ]
             priority_items = sorted(
                 (
                     item for item in superior_items
@@ -1162,15 +1156,9 @@ def reconcile_superior_queue_for_group(group):
                     item.id,
                 ),
             )
-            if not anchored and not priority_items:
-                # With no real demand yet, preserve the current initial item.
-                # This makes adaptive mode indistinguishable from the planned
-                # sequence while both inferior mesas still advance together.
-                anchored = [
-                    item for item in superior_items
-                    if item.status == MesaQueueStatus.MOSTRANDO
-                ]
         elif not anchored:
+            # Superior libre: empieza por lo de la inferior que va claramente
+            # por delante.
             progress_by_mesa = {
                 mesa_id: items[0].mesa.current_image_index
                 for mesa_id, items in inferior_by_mesa.items()
@@ -1187,14 +1175,6 @@ def reconcile_superior_queue_for_group(group):
                 and len(leading_mesas) == 1
             ):
                 priority_source_id = leading_mesas[0]
-            else:
-                # Without a clear dependency priority, retain an initial item
-                # as a soft anchor. This avoids disrupting fresh plans and
-                # inserting a newly imported module ahead of existing work.
-                anchored = [
-                    item for item in superior_items
-                    if item.status == MesaQueueStatus.MOSTRANDO
-                ]
         anchored_module_ids = {item.modulo_id for item in anchored}
         priority_module_ids = {item.modulo_id for item in priority_items}
 
