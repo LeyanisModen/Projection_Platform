@@ -645,7 +645,7 @@ la PIN. Casos habituales:
 |---------|----------------|---------|
 | Chrome tarda 1 min en arrancar | Windows 11 startup delay + apps parasitas | Paso 8 (StartupDelayInMSec=0 + limpiar Inicio) |
 | Chrome queda en Google o muestra perfiles | Chrome normal sustituyo el kiosko | El supervisor cierra esa ventana y recupera el perfil tecnico en unos 30 s |
-| El servicio o el kiosko se cierra solo | Proceso detenido o fallo puntual | `MODEN Player` lo relanza; revisar `logs\player-watchdog.log` |
+| El servicio o el kiosko se cierra solo | Proceso detenido o fallo puntual | `MODEN Player` lo relanza; revisar `logs\player-watchdog.log` (copia en el admin de Django, «Logs de mini-PC», subida cada hora) |
 | El visor queda "dormido" hasta clicar | `CalculateNativeWinOcclusion` | Ya incluido en los flags de `start-player.bat` |
 | `/capture` tarda 30s sin responder | MSMF hang / OBSBOT Center ocupada | `CAP_DSHOW` (ya en el .py) + matar `*obsbot*` |
 | `MissingSectionHeaderError` en el capture service | BOM en `config.ini` por PowerShell | Reescribir sin BOM (one-liner al final) |

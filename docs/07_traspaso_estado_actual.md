@@ -185,6 +185,14 @@ Endpoints locales:
 | `GET/POST /device_token` | Recuperar/persistir pairing |
 | `POST /close_browser` | Cerrar kiosk con pausa de mantenimiento |
 
+Logs en el servidor (desde VERSION 2026-11-02.1): cada hora el servicio sube
+las líneas nuevas de `logs\player-watchdog.log`, `auto-update.log` y
+`capture-service-error.log` a `POST /api/device/logs/` (token de la mesa). Se
+leen en el admin de Django, «Logs de mini-PC», y se guardan 90 días. Así se
+puede saber qué ventana le quitó el foco al player sin que nadie vaya al
+mini-PC (incidente de las botoneras de Sanchos del 30/10/2026). Se apaga con
+`log_upload_enabled = false` en `config.ini`.
+
 ### 3.5 Herramienta de perspectiva y timelapse
 
 - Aplicación de escritorio independiente.

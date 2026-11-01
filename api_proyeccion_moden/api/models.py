@@ -1684,3 +1684,24 @@ class EventoFabricacion(models.Model):
 
     def __str__(self):
         return f'{self.tipo} {self.fase} {self.modulo_id} @ {self.at:%d/%m %H:%M}'
+
+
+class LogMiniPC(models.Model):
+    """Lineas de un log del mini-PC de una mesa, subidas por su servicio de
+    captura para poder leerlas sin nadie en la fabrica."""
+    FICHEROS = ('player-watchdog.log', 'auto-update.log', 'capture-service-error.log')
+
+    id = models.AutoField(primary_key=True)
+    mesa = models.ForeignKey(Mesa, on_delete=models.CASCADE, related_name='logs_minipc')
+    fichero = models.CharField(max_length=64)
+    contenido = models.TextField()
+    recibido_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        db_table = 'api_log_minipc'
+        ordering = ['-recibido_at', '-id']
+        verbose_name = 'log de mini-PC'
+        verbose_name_plural = 'logs de mini-PC'
+
+    def __str__(self):
+        return f'{self.mesa} {self.fichero} @ {self.recibido_at:%d/%m %H:%M}'

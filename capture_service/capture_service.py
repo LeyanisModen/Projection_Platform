@@ -121,6 +121,11 @@ class Config:
         self.remote_config_timeout_seconds = 15.0
         self.remote_config_retry_seconds = 600.0
         self.remote_config_check_hours = (6, 9, 12, 15)
+        # The mini-PC logs reach the server so they can be read without
+        # anyone at the factory (see log_upload_loop).
+        self.log_upload_enabled = True
+        self.log_upload_url = 'https://moden.up.railway.app/api/device/logs/'
+        self.log_upload_interval_seconds = 3600.0
 
         # documentation defaults (disabled until the .ini turns it on)
         self.doc_enabled = False
@@ -268,6 +273,19 @@ class Config:
                     check_hours.append(hour)
             if check_hours:
                 self.remote_config_check_hours = tuple(sorted(check_hours))
+            self.log_upload_enabled = s.getboolean(
+                'log_upload_enabled', self.log_upload_enabled
+            )
+            self.log_upload_url = s.get(
+                'log_upload_url', self.log_upload_url
+            ).strip()
+            self.log_upload_interval_seconds = max(
+                300.0,
+                s.getfloat(
+                    'log_upload_interval_seconds',
+                    self.log_upload_interval_seconds,
+                ),
+            )
 
         if cp.has_section('documentation'):
             d = cp['documentation']
@@ -633,6 +651,8 @@ _stats = {
     'last_remote_config_applied_at': None,
     'next_remote_config_check_at': None,
     'remote_config_error': None,
+    'last_log_upload_at': None,
+    'log_upload_error': None,
     'skipped_out_of_schedule': 0,
     # Sharpness check starts on the first active tick. Low-confidence
     # results are retried during the day so an early dark frame is not final.
@@ -1775,6 +1795,149 @@ def remote_config_loop():
         outcome = _sync_remote_config_once()
 
 
+# ---------------------------------------------------------------------------
+# Log upload: the server keeps a copy of the mini-PC logs
+# ---------------------------------------------------------------------------
+LOG_UPLOAD_FILES = (
+    'player-watchdog.log',
+    'auto-update.log',
+    'capture-service-error.log',
+)
+LOG_UPLOAD_CHUNK_BYTES = 256 * 1024
+# On the first run only the end of each log goes up; the watchdog log is
+# emptied at 1 MB anyway.
+LOG_UPLOAD_FIRST_BYTES = 1024 * 1024
+
+
+def _logs_dir() -> Path:
+    return Path(__file__).resolve().parent / 'logs'
+
+
+def _log_upload_state_path() -> Path:
+    # Inside logs/, which the updater never replaces.
+    return _logs_dir() / '.log_upload_state.json'
+
+
+def _read_log_upload_state():
+    try:
+        data = json.loads(_log_upload_state_path().read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {
+        name: value for name, value in data.items()
+        if name in LOG_UPLOAD_FILES and isinstance(value, int) and value >= 0
+    }
+
+
+def _write_log_upload_state(state):
+    path = _log_upload_state_path()
+    temp_path = path.with_name(f'{path.name}.{os.getpid()}.tmp')
+    try:
+        temp_path.write_text(json.dumps(state), encoding='utf-8')
+        os.replace(temp_path, path)
+    finally:
+        try:
+            temp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _pending_log_chunk(path: Path, offset):
+    """Next whole lines of ``path`` after byte ``offset``.
+
+    Returns ``(text, new_offset)``. ``offset`` None means never sent: start
+    near the end. A file shorter than ``offset`` was emptied (the watchdog
+    clears its log at 1 MB), so it starts again from the beginning. A line
+    still being written waits for the next round.
+    """
+    size = path.stat().st_size
+    mid_line = False
+    if offset is None:
+        offset = max(0, size - LOG_UPLOAD_FIRST_BYTES)
+        mid_line = offset > 0
+    elif size < offset:
+        offset = 0
+    if size <= offset:
+        return '', offset
+    with path.open('rb') as handle:
+        handle.seek(offset)
+        raw = handle.read(LOG_UPLOAD_CHUNK_BYTES)
+    if mid_line:
+        # Started in the middle of a line: skip it.
+        start = raw.find(b'\n') + 1
+        raw = raw[start:]
+        offset += start
+    end = raw.rfind(b'\n')
+    if end < 0:
+        if len(raw) < LOG_UPLOAD_CHUNK_BYTES:
+            return '', offset
+        end = len(raw) - 1
+    raw = raw[:end + 1]
+    text = raw.decode('utf-8', errors='replace')
+    text = text.replace('\ufeff', '').replace('\x00', '')
+    return text, offset + len(raw)
+
+
+def _upload_logs_once():
+    """Send the new lines of each log. Returns the error, or None."""
+    token = _read_stored_token()
+    if not token:
+        return 'device token not available'
+    state = _read_log_upload_state()
+    error = None
+    for name in LOG_UPLOAD_FILES:
+        path = _logs_dir() / name
+        if not path.is_file():
+            continue
+        offset = state.get(name)
+        try:
+            while True:
+                text, new_offset = _pending_log_chunk(path, offset)
+                if new_offset == offset:
+                    break
+                if text.strip():
+                    _remote_request_json(
+                        'POST',
+                        CONFIG.log_upload_url,
+                        token,
+                        {'fichero': name, 'contenido': text},
+                    )
+                offset = new_offset
+                state[name] = offset
+                _write_log_upload_state(state)
+        except (RemoteConfigTransientError, RemoteConfigPermanentError) as exc:
+            # Nothing is marked as sent: the same lines go next round.
+            error = f'{name}: {exc}'
+            break
+        except OSError as exc:
+            # A log held open by another process: try the others.
+            error = f'{name}: {exc}'
+    return error
+
+
+def log_upload_loop():
+    if not CONFIG.log_upload_enabled:
+        print('[LogUpload] Disabled in config.ini')
+        return
+    # Let the service settle first (token, remote config).
+    time.sleep(60)
+    while True:
+        try:
+            error = _upload_logs_once()
+        except Exception as exc:
+            error = str(exc)
+        if error:
+            print(f'[LogUpload] {error}')
+        with _stats_lock:
+            _stats['last_log_upload_at'] = datetime.now().isoformat(
+                timespec='seconds'
+            )
+            _stats['log_upload_error'] = error
+        time.sleep(CONFIG.log_upload_interval_seconds)
+
+
 def _close_chrome_processes():
     """Close the kiosk browser without touching the capture service."""
     try:
@@ -2100,6 +2263,13 @@ def main():
         daemon=True,
     )
     remote_config_thread.start()
+
+    log_upload_thread = threading.Thread(
+        target=log_upload_loop,
+        name='LogUploadLoop',
+        daemon=True,
+    )
+    log_upload_thread.start()
 
     drive_guard_thread = threading.Thread(
         target=google_drive_process_guard_loop,
