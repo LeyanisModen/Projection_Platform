@@ -694,6 +694,45 @@ class PermissionAndDeviceAuthTests(APITestCase):
         self.assertEqual(self.mesa_a.capture_config_applied_revision, 1)
         self.assertEqual(self.mesa_a.capture_config_revision, 2)
 
+    def test_device_sube_sus_logs(self):
+        from api.models import LogMiniPC
+
+        sin_token = self.client.post(
+            '/api/device/logs/', {'fichero': 'player-watchdog.log', 'contenido': 'x\n'}, format='json',
+        )
+        self.assertEqual(sin_token.status_code, 401)
+
+        subida = self.client.post(
+            '/api/device/logs/',
+            {'fichero': 'player-watchdog.log', 'contenido': '2026-10-30 15:12:30 Could not restore kiosk keyboard focus\r\n'},
+            format='json',
+            HTTP_AUTHORIZATION=f'Bearer {self.device_token}',
+        )
+        self.assertEqual(subida.status_code, 201)
+        log = LogMiniPC.objects.get()
+        self.assertEqual((log.mesa, log.fichero), (self.mesa_a, 'player-watchdog.log'))
+        self.assertIn('Could not restore', log.contenido)
+
+        # Solo los logs conocidos: no es un sitio para subir cualquier cosa.
+        otro = self.client.post(
+            '/api/device/logs/', {'fichero': '../config.ini', 'contenido': 'x\n'}, format='json',
+            HTTP_AUTHORIZATION=f'Bearer {self.device_token}',
+        )
+        self.assertEqual(otro.status_code, 400)
+        grande = self.client.post(
+            '/api/device/logs/', {'fichero': 'auto-update.log', 'contenido': 'x' * (512 * 1024 + 1)}, format='json',
+            HTTP_AUTHORIZATION=f'Bearer {self.device_token}',
+        )
+        self.assertEqual(grande.status_code, 413)
+
+        # Se guardan 90 dias.
+        LogMiniPC.objects.filter(id=log.id).update(recibido_at=timezone.now() - timedelta(days=91))
+        self.client.post(
+            '/api/device/logs/', {'fichero': 'auto-update.log', 'contenido': 'nuevo\n'}, format='json',
+            HTTP_AUTHORIZATION=f'Bearer {self.device_token}',
+        )
+        self.assertEqual(list(LogMiniPC.objects.values_list('contenido', flat=True)), ['nuevo\n'])
+
     def test_pair_rejects_expired_mesa_code(self):
         self.mesa_a.pairing_code = "ABC123"
         self.mesa_a.pairing_code_expires_at = timezone.now() - timedelta(minutes=1)

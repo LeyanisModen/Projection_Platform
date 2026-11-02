@@ -36,7 +36,7 @@ from api.models import (
     DetalleModuloFase, MesaQueueStatus, ModuloEstado, Fase,
     GrupoBastidor, MaterialPieza, MaterialInformado, MaterialOrigenCheck,
     MaterialTipo, MesaTipo, UserProfile, EstrategiaColaSuperior,
-    EventoFabricacion, EventoFabricacionTipo,
+    EventoFabricacion, EventoFabricacionTipo, LogMiniPC,
 )
 from api.project_media import (
     collect_module_media,
@@ -7229,6 +7229,29 @@ class DeviceViewSet(viewsets.ViewSet):
                 'image_rotation': mesa.image_rotation,
             },
         })
+
+    @action(detail=False, methods=['post'], url_path='logs')
+    def subir_log(self, request):
+        """El servicio de captura sube las lineas nuevas de sus logs (se
+        guardan 90 dias por mesa)."""
+        from datetime import timedelta
+
+        mesa = self._authenticate_device(request)
+        if not mesa:
+            return Response({'detail': 'Unauthorized'}, status=401)
+        fichero = request.data.get('fichero')
+        contenido = request.data.get('contenido')
+        if fichero not in LogMiniPC.FICHEROS or not isinstance(contenido, str):
+            return Response({'detail': 'Fichero o contenido no valido.'}, status=400)
+        if len(contenido) > 512 * 1024:
+            return Response({'detail': 'Contenido demasiado grande.'}, status=413)
+        contenido = contenido.replace('\x00', '')
+        if contenido.strip():
+            LogMiniPC.objects.create(mesa=mesa, fichero=fichero, contenido=contenido)
+        LogMiniPC.objects.filter(
+            mesa=mesa, recibido_at__lt=timezone.now() - timedelta(days=90),
+        ).delete()
+        return Response({'status': 'ok'}, status=201)
 
     @action(detail=False, methods=['post'], url_path='config-ack')
     def capture_config_ack(self, request):

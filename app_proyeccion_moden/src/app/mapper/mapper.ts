@@ -16,6 +16,26 @@ interface TableData {
   submodules: Submodule[];
 }
 
+/** Imagenes de proyeccion con margen: 16 px alrededor del tamaño de siempre
+ *  (1728x768). Lo de dentro se encaja en las esquinas calibradas (el area
+ *  util de la mesa) y el margen cae por fuera, hasta donde llegue el
+ *  proyector. Se reconocen por el tamaño; las demas van enteras como siempre. */
+export const MARGEN_PROYECCION_PX = 16;
+const TAMANO_SIN_MARGEN = { ancho: 1728, alto: 768 };
+
+export function margenDeImagen(ancho: number, alto: number): number {
+  return ancho === TAMANO_SIN_MARGEN.ancho + 2 * MARGEN_PROYECCION_PX
+    && alto === TAMANO_SIN_MARGEN.alto + 2 * MARGEN_PROYECCION_PX ? MARGEN_PROYECCION_PX : 0;
+}
+
+/** Puntos de la superficie (w x h, la imagen estirada) que van a las esquinas
+ *  calibradas (TL, TR, BL, BR): toda la imagen o, si trae margen, lo de dentro. */
+export function esquinasDeOrigen(w: number, h: number, margen = 0, ancho = 0, alto = 0): number[] {
+  const mx = margen && ancho ? (margen * w) / ancho : 0;
+  const my = margen && alto ? (margen * h) / alto : 0;
+  return [mx, my, w - mx, my, mx, h - my, w - mx, h - my];
+}
+
 @Component({
   selector: 'app-mapper',
   standalone: true,
@@ -142,6 +162,8 @@ export class Mapper implements OnChanges {
 
   // const document = window.document;
   private corners: number[] = [];
+  // Margen de la imagen que se ve (0 = sin margen) y su tamaño natural.
+  private margenImagen = { px: 0, ancho: 0, alto: 0 };
   private markers: ElementRef<HTMLInputElement>[] = [];
   private currentCorner: HTMLInputElement | null = null;
   private currentCornerArrow: HTMLInputElement | null = null;
@@ -560,7 +582,8 @@ export class Mapper implements OnChanges {
       h = this.screenHeight || window.innerHeight;
     }
 
-    const from = [0, 0, w, 0, 0, h, w, h];
+    const { px, ancho, alto } = this.margenImagen;
+    const from = esquinasDeOrigen(w, h, px, ancho, alto);
     const to = this.corners;
 
     this.transform2d(from, to);
@@ -747,7 +770,20 @@ export class Mapper implements OnChanges {
   };
 
   notifyImageReady(): void {
+    // En el mismo evento en que llega la imagen nueva: su primer fotograma
+    // ya sale con su encaje (con margen o sin el).
+    const img = this.correctedVideo?.nativeElement as unknown as HTMLImageElement | undefined;
+    if (img) this.aplicarMargen(img.naturalWidth, img.naturalHeight);
     if (this.imageUrl) this.imageReady.emit(this.imageUrl);
+  }
+
+  private aplicarMargen(ancho: number, alto: number): void {
+    const px = margenDeImagen(ancho, alto);
+    if (px === this.margenImagen.px) return;
+    this.margenImagen = { px, ancho, alto };
+    if (!this.plainView && this.markers?.length === 4 && this.corners?.length === 8) {
+      this.update();
+    }
   }
 
   notifyImageFailed(): void {

@@ -11,7 +11,8 @@ from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from .models import (
-    EventoFabricacion, HistorialTurnos, Mesa, MesaQueueItem, MesaQueueStatus, Modulo, Proyecto, UserProfile,
+    EventoCalendario, EventoFabricacion, HistorialTurnos, Mesa, MesaQueueItem, MesaQueueStatus, Modulo, Proyecto,
+    UserProfile,
 )
 from .planning import plan_ferralla
 from .turnos import PRINCIPIO, Jornada, Vigencias, leer_turnos, tramos, turnos_de
@@ -41,9 +42,11 @@ class TurnosTests(TestCase):
         self.assertEqual(jornada.tramo_de(aware(2026, 9, 29, 3)).turno.nombre, 'Noche')
         # Entre turnos no se trabaja: de 15:00 a 20:00 solo cuentan dos horas.
         self.assertEqual(jornada.segundos_entre(aware(2026, 9, 28, 15), aware(2026, 9, 28, 20)), 2 * 3600)
-        # El domingo solo hay turno de noche; un festivo no tiene turnos.
+        # El domingo solo hay turno de noche; un festivo no tiene turnos, salvo
+        # la noche que acaba en un dia de trabajo.
         self.assertEqual([t.turno.nombre for t in tramos(turnos, date(2026, 9, 27), date(2026, 9, 27))], ['Noche'])
-        self.assertEqual(tramos(turnos, lunes, lunes, festivos={lunes}), [])
+        self.assertEqual([t.turno.nombre for t in tramos(turnos, lunes, lunes, festivos={lunes})], ['Noche'])
+        self.assertEqual(tramos(turnos, lunes, lunes, festivos={lunes, date(2026, 9, 29)}), [])
 
     def test_sin_turnos_guardados_se_usa_el_horario_de_antes_y_los_apagados_no_cuentan(self):
         user = User.objects.create_user('sin-turnos')
@@ -143,6 +146,26 @@ class TurnosPlanYEstadisticasTests(APITestCase):
         # Lo de la manana sigue siendo de la manana.
         manana = self.client.get('/api/stats/production/', {'from': '2026-09-29', 'to': '2026-09-29', 'turno': 0}).data
         self.assertEqual([m['nombre'] for m in manana['modulos']], ['M2'])
+
+    def test_la_noche_de_un_domingo_festivo_es_del_lunes(self):
+        # Domingo 1/11/2026, Todos los Santos: la noche del domingo al lunes se
+        # trabaja y es del lunes.
+        EventoCalendario.objects.create(tipo=EventoCalendario.Tipo.FESTIVO, titulo='Todos los Santos',
+                                        inicio=date(2026, 11, 1), fin=date(2026, 11, 1))
+        self._hecho('N1', aware(2026, 11, 1, 22, 40))
+        self._hecho('N2', aware(2026, 11, 2, 3, 10))
+        self._hecho('M1', aware(2026, 11, 2, 9))
+        dia = lambda **extra: self.client.get(
+            '/api/stats/production/', {'from': '2026-11-02', 'to': '2026-11-02', **extra},
+        ).data
+        noche = dia(turno=1)
+        self.assertEqual(sorted(m['nombre'] for m in noche['modulos']), ['N1', 'N2'])
+        self.assertEqual(noche['totals']['horas_productivas'], 10.0)
+        self.assertEqual([m['nombre'] for m in dia(turno=0)['modulos']], ['M1'])
+        # Sin turno, el lunes de 00:00 a 24:00; la madrugada ya es jornada.
+        lunes = dia()
+        self.assertEqual(sorted(m['nombre'] for m in lunes['modulos']), ['M1', 'N2'])
+        self.assertEqual({m['nombre']: m['turno'] for m in lunes['modulos']}, {'M1': 'Mañana', 'N2': 'Noche'})
 
     def test_los_kilos_por_hora_hombre_usan_las_personas_fijas_de_cada_turno(self):
         # Sin personas configuradas no hay cifra.

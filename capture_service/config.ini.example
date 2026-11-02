@@ -49,6 +49,13 @@ remote_config_timeout_seconds = 15
 remote_config_retry_seconds = 600
 remote_config_check_hours = 6,9,12,15
 
+; Every hour the new lines of logs\player-watchdog.log, auto-update.log and
+; capture-service-error.log go to the server (admin: Logs de mini-PC), so
+; nobody has to sit at the mini-PC to read them.
+log_upload_enabled = true
+log_upload_url = https://moden.up.railway.app/api/device/logs/
+log_upload_interval_seconds = 3600
+
 
 [documentation]
 ; Set enabled = false to turn the periodic capture loop off entirely.
