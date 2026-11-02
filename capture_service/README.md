@@ -21,7 +21,7 @@ to the Chrome kiosk. Single Python process:
 - Background thread that saves one FullHD JPEG every 20 seconds into a
   local buffer, so Marketing + QA have a record of the whole shift without
   competing with production for internet bandwidth.
-- Google Drive Desktop process guard: Drive runs Friday 15:15 through Monday
+- Google Drive Desktop process guard: Drive runs Friday 18:00 through Monday
   06:35 for photo sync. Outside that window it is closed so no error dialog
   can cover Chrome kiosk. Software updates come directly from GitHub.
 
@@ -110,7 +110,7 @@ curl http://127.0.0.1:5555/stats
 
 During production, check that new files appear under
 `C:\moden\capture_buffer\<mesa_id>\<YYYY-MM-DD>\HH-MM-SS.jpg`. They are copied
-to `G:\Mi unidad\capturas_moden\...` from Friday 15:30 through Monday 05:00.
+to `G:\Mi unidad\capturas_moden\...` from Friday 18:15 through Monday 05:00.
 
 ## What the documentation loop writes
 

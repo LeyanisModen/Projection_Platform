@@ -513,8 +513,8 @@ relanza el instalador (el PATH solo se refresca al crear el proceso).
             @{ Section = 'documentation'; Key = 'sync_interval_seconds'; Value = '1800' },
             @{ Section = 'documentation'; Key = 'sync_weekly_enabled'; Value = 'true' },
             @{ Section = 'documentation'; Key = 'sync_weekly_start_day'; Value = 'FRI' },
-            @{ Section = 'documentation'; Key = 'sync_weekly_start_hour'; Value = '15' },
-            @{ Section = 'documentation'; Key = 'sync_weekly_start_minute'; Value = '30' },
+            @{ Section = 'documentation'; Key = 'sync_weekly_start_hour'; Value = '18' },
+            @{ Section = 'documentation'; Key = 'sync_weekly_start_minute'; Value = '15' },
             @{ Section = 'documentation'; Key = 'sync_weekly_end_day'; Value = 'MON' },
             @{ Section = 'documentation'; Key = 'sync_weekly_end_hour'; Value = '5' },
             @{ Section = 'documentation'; Key = 'sync_weekly_end_minute'; Value = '0' },
@@ -526,8 +526,8 @@ relanza el instalador (el PATH solo se refresca al crear el proceso).
             @{ Section = 'documentation'; Key = 'drive_stop_minute'; Value = '45' },
             @{ Section = 'documentation'; Key = 'drive_weekend_enabled'; Value = 'true' },
             @{ Section = 'documentation'; Key = 'drive_weekend_start_day'; Value = 'FRI' },
-            @{ Section = 'documentation'; Key = 'drive_weekend_start_hour'; Value = '15' },
-            @{ Section = 'documentation'; Key = 'drive_weekend_start_minute'; Value = '15' },
+            @{ Section = 'documentation'; Key = 'drive_weekend_start_hour'; Value = '18' },
+            @{ Section = 'documentation'; Key = 'drive_weekend_start_minute'; Value = '0' },
             @{ Section = 'documentation'; Key = 'drive_weekend_end_day'; Value = 'MON' },
             @{ Section = 'documentation'; Key = 'drive_weekend_end_hour'; Value = '6' },
             @{ Section = 'documentation'; Key = 'drive_weekend_end_minute'; Value = '35' },
@@ -540,8 +540,8 @@ relanza el instalador (el PATH solo se refresca al crear el proceso).
         )
         Set-IniValues $configPath $safeConfigUpdates
         Write-Host "  Â· capturas: 06:50-15:00, cada 20 segundos"
-        Write-Host "  Â· Drive solo fin de semana VIE 15:15-LUN 06:35"
-        Write-Host "  Â· copia de fotos a G: VIE 15:30-LUN 05:00; retencion local 7 dias"
+        Write-Host "  Â· Drive solo fin de semana VIE 18:00-LUN 06:35"
+        Write-Host "  Â· copia de fotos a G: VIE 18:15-LUN 05:00; retencion local 7 dias"
         Write-Host "  Â· sharpness: threshold_blurry=2, retry_minutes=15"
     }
 
