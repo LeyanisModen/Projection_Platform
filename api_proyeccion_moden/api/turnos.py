@@ -179,24 +179,26 @@ def tramos(turnos, desde, hasta, festivos=frozenset(), tz=None):
     """Tramos cuyo dia de produccion esta en [desde, hasta], por hora de inicio.
 
     ``turnos``: una lista o unas ``Vigencias`` (cada dia, los que habia).
-    Un festivo no tiene turnos (el turno de noche que empezo la vispera si).
+    Un festivo no tiene turnos (el turno de noche que empezo la vispera si),
+    salvo el de noche que acaba en un dia de trabajo: la noche del domingo
+    es del lunes aunque el domingo sea festivo.
     """
     tz = tz or timezone.get_current_timezone()
     vigencias = turnos if isinstance(turnos, Vigencias) else Vigencias([(PRINCIPIO, turnos)])
     resultado = []
     fecha = desde
     while fecha <= hasta:
-        if fecha not in festivos:
-            day = DAY_CODES[fecha.weekday()]
-            for turno in vigencias.en(fecha):
-                if day not in turno.horario:
-                    continue
-                hora_inicio, hora_fin = turno.horario[day]
-                inicio = timezone.make_aware(datetime.combine(fecha, hora_inicio), tz)
-                fin = timezone.make_aware(datetime.combine(fecha, hora_fin), tz)
-                if fin <= inicio:
-                    fin = timezone.make_aware(datetime.combine(fecha + timedelta(days=1), hora_fin), tz)
-                resultado.append(Tramo(turno=turno, fecha=fecha, inicio=inicio, fin=fin))
+        day = DAY_CODES[fecha.weekday()]
+        for turno in vigencias.en(fecha):
+            if day not in turno.horario:
+                continue
+            hora_inicio, hora_fin = turno.horario[day]
+            cruza = hora_fin <= hora_inicio
+            if fecha in festivos and not (cruza and fecha + timedelta(days=1) not in festivos):
+                continue
+            inicio = timezone.make_aware(datetime.combine(fecha, hora_inicio), tz)
+            fin = timezone.make_aware(datetime.combine(fecha + timedelta(days=1 if cruza else 0), hora_fin), tz)
+            resultado.append(Tramo(turno=turno, fecha=fecha, inicio=inicio, fin=fin))
         fecha += timedelta(days=1)
     resultado.sort(key=lambda tramo: (tramo.inicio, tramo.turno.indice))
     return resultado
