@@ -449,6 +449,7 @@ Autogestión de la ferralla (septiembre 2026):
 - Aviso persistente si no hay cámara y opción de continuar.
 - Animación repetida cuando el nombre contiene `warning`.
 - Calibración y distorsión de proyección. En el visor (supervisor) la imagen se ve plana y con hueco abajo para la leyenda de teclas; la deformación solo se aplica en el player y, en el visor, mientras se calibra con `C` (`Mapper.plainView`).
+- Imágenes con margen (2026-11-02, `mapper/mapper.ts`, `margenDeImagen`/`esquinasDeOrigen`): una imagen de proyección de 1760×800 (las de siempre, 1728×768, con 16 px más por cada lado) lleva un margen para sombrear el contorno (p. ej. el lateral rojo de un módulo en el borde del forjado). El player encaja lo de dentro en las esquinas calibradas (el área útil, como hasta ahora) y el margen cae por fuera, hasta donde llegue el proyector; lo que no entra no se ve. La calibración y la cuadrícula no cambian y las imágenes de 1728×768 se proyectan igual que antes. El encaje se recalcula en el `load` de la imagen, así que el primer fotograma ya sale bien. En el mismo cambio se vio que en varias mesas el área útil llega casi al borde del cuadro del proyector (Sanchos 2 por tres lados): para ver el margen entero hay que dejar sitio moviendo el proyector o el zoom.
 - Overlays de teclas compactos, transparentes y centrados.
 - Recuperación automática del foco del kiosk.
 - Doble `Q` para cerrar kiosk y entrar en pausa de mantenimiento.
