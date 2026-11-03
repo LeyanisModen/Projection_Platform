@@ -3769,7 +3769,7 @@ class PlanningFoundationTests(APITestCase):
         self.assertTrue(GrupoBastidor.objects.filter(id=bastidor.id).exists())
         self.assertTrue(Modulo.objects.filter(id=self.modulo.id).exists())
 
-    def test_eliminar_bastidor_entero_borra_partes_modulos_y_media_y_renumera(self):
+    def test_eliminar_bastidor_entero_borra_partes_modulos_y_media(self):
         admin = User.objects.create_user(
             username="bastidor_delete_admin",
             password="pass123",
@@ -3832,9 +3832,10 @@ class PlanningFoundationTests(APITestCase):
         )
         queda.refresh_from_db()
         self.assertEqual(queda.grupo_bastidor_id, segundo.id)
+        # Los demas conservan su numero: el siguiente que se cree sera el 4.
         segundo.refresh_from_db()
         tercero.refresh_from_db()
-        self.assertEqual((segundo.indice, tercero.indice), (1, 2))
+        self.assertEqual((segundo.indice, tercero.indice), (2, 3))
         self.assertEqual([g["id"] for g in response.data], [segundo.id, tercero.id])
 
     def test_no_elimina_bastidor_con_un_modulo_fabricado(self):

@@ -3807,13 +3807,12 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_409_CONFLICT,
             )
 
+        # Sin renumerar, como al borrar sus modulos uno a uno: cada bastidor
+        # guarda su nombre ('Bastidor 4') y el siguiente que se cree toma el
+        # ultimo indice + 1, asi que renumerar repetiria nombres.
         with transaction.atomic():
             _borrar_modulos(modulos)
             GrupoBastidor.objects.filter(pk=raiz.pk).delete()
-            # Como al vaciar un bastidor moviendo modulos: numeros 1..N y
-            # colas rehechas con los numeros nuevos.
-            self._reindex_grupos(proyecto)
-            self._replan_grupos_operativos(proyecto, request.user)
 
         return Response(self._grupos_respuesta(proyecto))
 
