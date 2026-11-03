@@ -497,8 +497,8 @@ Un mini-PC puede llevar un monitor a la altura del operario además del proyecto
 - Reintento temporal cada 10 minutos si falla la conexión.
 - Búfer local, límite de 30 GB y reserva mínima de 5 GB.
 - Retención local de siete días solo si Drive tiene ruta y tamaño equivalentes.
-- Sincronización viernes 15:30 a lunes 05:00.
-- Drive abierto viernes 15:15 a lunes 06:35 y cerrado durante producción.
+- Sincronización viernes 18:15 a lunes 05:00.
+- Drive abierto viernes 18:00 a lunes 06:35 y cerrado durante producción (a las 15:15 se quedaba con el foco del player en el turno del viernes).
 - Detección diaria de nitidez/lente con umbrales conservadores.
 - Watchdog restaura cámara/kiosk y recupera foco.
 - Actualización automática desde la rama `deploy` a las 17:30 (desde la VERSION 2026-10-19.1; antes 04:15). Sanchos trabaja a dos turnos y solo deja libre de 17:00 a 19:00, e instalar una versión cierra Chrome un minuto: la ventana permitida del actualizador es 17-19 y la propia actualización vuelve a registrar `MODEN Auto Update` a las 17:30. Cuando Ferralia vuelva a producir habrá que revisar si esa hora le vale.

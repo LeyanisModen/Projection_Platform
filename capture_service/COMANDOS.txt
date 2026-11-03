@@ -36,7 +36,7 @@ Las fotos periodicas se guardan primero en:
 
   C:\moden\capture_buffer
 
-Se copian a Google Drive desde el viernes 15:30 hasta el lunes 05:00. Drive
+Se copian a Google Drive desde el viernes 18:15 hasta el lunes 05:00. Drive
 permanece cerrado entre semana. La actualizacion automatica consulta GitHub y
 no necesita abrir Drive. Para comprobarlo:
 

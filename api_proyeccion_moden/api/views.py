@@ -3232,6 +3232,7 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
       - POST /grupos-bastidor/reorder/      -> {proyecto, orden: [grupo_id,...]}
       - POST /grupos-bastidor/{id}/dividir/ -> una parte por mesa inferior activa
       - POST /grupos-bastidor/{id}/unir/    -> recompone el bastidor raiz
+      - DELETE /grupos-bastidor/{id}/       -> bastidor entero con sus modulos (admin)
     """
     queryset = _grupos_with_reorder_data(
         GrupoBastidor.objects.all()
@@ -3239,7 +3240,7 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
     serializer_class = GrupoBastidorSerializer
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = None
-    http_method_names = ['get', 'patch', 'post', 'head', 'options']
+    http_method_names = ['get', 'patch', 'post', 'delete', 'head', 'options']
 
     def get_queryset(self):
         queryset = _grupos_with_reorder_data(
@@ -3756,6 +3757,158 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
 
         return Response(self._grupos_respuesta(proyecto))
 
+    def destroy(self, request, *args, **kwargs):
+        """Borra el bastidor entero (con sus partes de fabricacion) y todos
+        sus modulos. Solo admin y solo si nada se ha fabricado; fotos,
+        historial de cola o un modulo avanzado en mesa piden ?force=true,
+        como al borrar un modulo."""
+        if not _is_admin(request.user):
+            return Response(
+                {'detail': 'Solo admin puede eliminar bastidores.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        raiz = self.get_object().raiz
+        proyecto = raiz.proyecto
+        force = str(request.query_params.get('force', '')).lower() in (
+            'true', '1', 'yes'
+        )
+        modulos = list(Modulo.objects.filter(
+            Q(grupo_bastidor=raiz) | Q(grupo_bastidor__dividido_de=raiz)
+        ))
+        con_fabricacion = [m.nombre for m in modulos if _modulo_con_fabricacion(m)]
+        if con_fabricacion:
+            return Response(
+                {
+                    'detail': (
+                        'No se puede eliminar: ya tienen fabricacion, fases '
+                        f'terminadas o estan cerrados: {", ".join(con_fabricacion)}.'
+                    )
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        items = MesaQueueItem.objects.filter(modulo__in=modulos)
+        necesita_force = (
+            FotoFabricacion.objects.filter(modulo__in=modulos).exists()
+            or items.filter(status=MesaQueueStatus.HECHO).exists()
+            or items.filter(
+                status=MesaQueueStatus.MOSTRANDO,
+                mesa__current_image_index__gt=EARLY_IMAGE_INDEX_LIMIT,
+            ).exists()
+        )
+        if necesita_force and not force:
+            return Response(
+                {
+                    'detail': (
+                        'El bastidor tiene fotos, historial de cola o un modulo '
+                        'avanzado en mesa. Reintenta con ?force=true para '
+                        'confirmar el borrado.'
+                    )
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        # Sin renumerar, como al borrar sus modulos uno a uno: cada bastidor
+        # guarda su nombre ('Bastidor 4') y el siguiente que se cree toma el
+        # ultimo indice + 1, asi que renumerar repetiria nombres.
+        with transaction.atomic():
+            _borrar_modulos(modulos)
+            GrupoBastidor.objects.filter(pk=raiz.pk).delete()
+
+        return Response(self._grupos_respuesta(proyecto))
+
+
+def _modulo_con_fabricacion(modulo):
+    return (
+        modulo.estado != ModuloEstado.PENDIENTE
+        or modulo.inferior_hecho
+        or modulo.superior_hecho
+        or modulo.cerrado
+    )
+
+
+def _borrar_modulos(modulos):
+    """Borra modulos ya validados: sus imagenes y fotos del disco (al
+    confirmar), sus filas de cola compactando las mesas afectadas y el
+    bastidor que se quede vacio."""
+    modulo_ids = [modulo.id for modulo in modulos]
+    items = MesaQueueItem.objects.filter(modulo_id__in=modulo_ids)
+    affected_mesa_ids = list(items.values_list('mesa_id', flat=True).distinct())
+    showing_mesa_ids = set(
+        items.filter(status=MesaQueueStatus.MOSTRANDO)
+        .values_list('mesa_id', flat=True)
+    )
+    media_snapshots = [collect_module_media(modulo) for modulo in modulos]
+    bastidor_ids = {m.grupo_bastidor_id for m in modulos if m.grupo_bastidor_id}
+
+    with transaction.atomic():
+        for modulo in modulos:
+            modulo.delete()
+
+        # Partes antes que raices: una raiz dividida se conserva mientras
+        # tenga partes, aunque se quede sin modulos propios.
+        bastidores = sorted(
+            GrupoBastidor.objects.filter(id__in=bastidor_ids),
+            key=lambda bastidor: bastidor.dividido_de_id is None,
+        )
+        for bastidor in bastidores:
+            remaining_modules = list(bastidor.modulos.order_by('orden_intra', 'id'))
+            if not remaining_modules:
+                if not bastidor.divisiones.exists():
+                    bastidor.delete()
+                continue
+            for index, remaining in enumerate(remaining_modules, start=1):
+                if remaining.orden_intra != index:
+                    remaining.orden_intra = index
+                    remaining.save(update_fields=['orden_intra'])
+
+        for mesa in Mesa.objects.select_for_update().filter(
+            id__in=affected_mesa_ids
+        ):
+            active_items = list(
+                mesa.queue_items.filter(status__in=ACTIVE_QUEUE_STATUSES)
+                .order_by('position', 'id')
+            )
+            current = next(
+                (
+                    item for item in active_items
+                    if item.status == MesaQueueStatus.MOSTRANDO
+                ),
+                None,
+            )
+            if current is None and active_items:
+                current = active_items[0]
+
+            for position, item in enumerate(active_items):
+                desired_status = (
+                    MesaQueueStatus.MOSTRANDO
+                    if current and item.id == current.id
+                    else MesaQueueStatus.EN_COLA
+                )
+                updates = []
+                if item.position != position:
+                    item.position = position
+                    updates.append('position')
+                if item.status != desired_status:
+                    item.status = desired_status
+                    updates.append('status')
+                if updates:
+                    item.save(update_fields=updates)
+
+            if mesa.id in showing_mesa_ids:
+                mesa.imagen_actual = current.imagen if current else None
+                mesa.current_image_index = 0
+                mesa.save(update_fields=[
+                    'imagen_actual',
+                    'current_image_index',
+                    'ultima_actualizacion',
+                ])
+
+        for snapshot in media_snapshots:
+            transaction.on_commit(
+                lambda snapshot=snapshot: delete_module_media(snapshot),
+                robust=True,
+            )
+
 
 class ModuloViewSet(viewsets.ModelViewSet):
     """
@@ -3799,12 +3952,7 @@ class ModuloViewSet(viewsets.ModelViewSet):
         has_done_queue = modulo.mesa_queue_items.filter(
             status=MesaQueueStatus.HECHO
         ).exists()
-        if (
-            modulo.estado != ModuloEstado.PENDIENTE
-            or modulo.inferior_hecho
-            or modulo.superior_hecho
-            or modulo.cerrado
-        ):
+        if _modulo_con_fabricacion(modulo):
             return Response(
                 {
                     'detail': (
@@ -3850,75 +3998,7 @@ class ModuloViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_409_CONFLICT,
             )
 
-        media_snapshot = collect_module_media(modulo)
-        affected_mesa_ids = list(
-            modulo.mesa_queue_items.values_list('mesa_id', flat=True).distinct()
-        )
-        showing_mesa_ids = {item.mesa_id for item in showing_items}
-        bastidor = modulo.grupo_bastidor
-
-        with transaction.atomic():
-            modulo.delete()
-
-            if bastidor:
-                remaining_modules = list(
-                    bastidor.modulos.order_by('orden_intra', 'id')
-                )
-                if not remaining_modules:
-                    bastidor.delete()
-                else:
-                    for index, remaining in enumerate(remaining_modules, start=1):
-                        if remaining.orden_intra != index:
-                            remaining.orden_intra = index
-                            remaining.save(update_fields=['orden_intra'])
-
-            for mesa in Mesa.objects.select_for_update().filter(
-                id__in=affected_mesa_ids
-            ):
-                active_items = list(
-                    mesa.queue_items.filter(status__in=ACTIVE_QUEUE_STATUSES)
-                    .order_by('position', 'id')
-                )
-                current = next(
-                    (
-                        item for item in active_items
-                        if item.status == MesaQueueStatus.MOSTRANDO
-                    ),
-                    None,
-                )
-                if current is None and active_items:
-                    current = active_items[0]
-
-                for position, item in enumerate(active_items):
-                    desired_status = (
-                        MesaQueueStatus.MOSTRANDO
-                        if current and item.id == current.id
-                        else MesaQueueStatus.EN_COLA
-                    )
-                    updates = []
-                    if item.position != position:
-                        item.position = position
-                        updates.append('position')
-                    if item.status != desired_status:
-                        item.status = desired_status
-                        updates.append('status')
-                    if updates:
-                        item.save(update_fields=updates)
-
-                if mesa.id in showing_mesa_ids:
-                    mesa.imagen_actual = current.imagen if current else None
-                    mesa.current_image_index = 0
-                    mesa.save(update_fields=[
-                        'imagen_actual',
-                        'current_image_index',
-                        'ultima_actualizacion',
-                    ])
-
-            transaction.on_commit(
-                lambda: delete_module_media(media_snapshot),
-                robust=True,
-            )
-
+        _borrar_modulos([modulo])
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @staticmethod

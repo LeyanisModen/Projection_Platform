@@ -3758,6 +3758,113 @@ class PlanningFoundationTests(APITestCase):
         self.assertEqual(response.status_code, 409)
         self.assertTrue(Modulo.objects.filter(id=self.modulo.id).exists())
 
+    def test_solo_admin_puede_eliminar_bastidor(self):
+        bastidor = GrupoBastidor.objects.create(proyecto=self.project, indice=1)
+        self.modulo.grupo_bastidor = bastidor
+        self.modulo.save(update_fields=["grupo_bastidor"])
+
+        response = self.client.delete(f"/api/grupos-bastidor/{bastidor.id}/")
+
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(GrupoBastidor.objects.filter(id=bastidor.id).exists())
+        self.assertTrue(Modulo.objects.filter(id=self.modulo.id).exists())
+
+    def test_eliminar_bastidor_entero_borra_partes_modulos_y_media(self):
+        admin = User.objects.create_user(
+            username="bastidor_delete_admin",
+            password="pass123",
+            is_staff=True,
+        )
+        admin_token = Token.objects.create(user=admin)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {admin_token.key}")
+        primero = GrupoBastidor.objects.create(proyecto=self.project, indice=1)
+        parte = GrupoBastidor.objects.create(
+            proyecto=self.project, indice=1, sufijo="B", dividido_de=primero,
+        )
+        segundo = GrupoBastidor.objects.create(proyecto=self.project, indice=2)
+        tercero = GrupoBastidor.objects.create(proyecto=self.project, indice=3)
+        self.modulo.grupo_bastidor = primero
+        self.modulo.orden_intra = 1
+        self.modulo.save(update_fields=["grupo_bastidor", "orden_intra"])
+        en_parte = Modulo.objects.create(
+            nombre="M-01B", proyecto=self.project, grupo_bastidor=parte, orden_intra=1,
+        )
+        queda = Modulo.objects.create(
+            nombre="M-02", proyecto=self.project, grupo_bastidor=segundo, orden_intra=1,
+        )
+        Modulo.objects.create(
+            nombre="M-03", proyecto=self.project, grupo_bastidor=tercero, orden_intra=1,
+        )
+
+        with tempfile.TemporaryDirectory() as media_root:
+            with override_settings(MEDIA_ROOT=media_root):
+                photo_path = (
+                    Path(media_root) / "fotos" / str(self.project.id)
+                    / str(en_parte.id) / "prueba.jpg"
+                )
+                photo_path.parent.mkdir(parents=True)
+                photo_path.write_bytes(b"foto-prueba")
+                FotoFabricacion.objects.create(
+                    modulo=en_parte,
+                    fase="INFERIOR",
+                    paso=0,
+                    url=f"/media/fotos/{self.project.id}/{en_parte.id}/prueba.jpg",
+                )
+
+                # Desde la parte se borra el bastidor entero; con fotos pide force.
+                response = self.client.delete(f"/api/grupos-bastidor/{parte.id}/")
+                self.assertEqual(response.status_code, 409)
+                self.assertTrue(Modulo.objects.filter(id=en_parte.id).exists())
+
+                with self.captureOnCommitCallbacks(execute=True):
+                    response = self.client.delete(
+                        f"/api/grupos-bastidor/{parte.id}/?force=true"
+                    )
+
+                self.assertEqual(response.status_code, 200)
+                self.assertFalse(photo_path.exists())
+
+        self.assertFalse(
+            GrupoBastidor.objects.filter(id__in=[primero.id, parte.id]).exists()
+        )
+        self.assertFalse(
+            Modulo.objects.filter(id__in=[self.modulo.id, en_parte.id]).exists()
+        )
+        queda.refresh_from_db()
+        self.assertEqual(queda.grupo_bastidor_id, segundo.id)
+        # Los demas conservan su numero: el siguiente que se cree sera el 4.
+        segundo.refresh_from_db()
+        tercero.refresh_from_db()
+        self.assertEqual((segundo.indice, tercero.indice), (2, 3))
+        self.assertEqual([g["id"] for g in response.data], [segundo.id, tercero.id])
+
+    def test_no_elimina_bastidor_con_un_modulo_fabricado(self):
+        admin = User.objects.create_user(
+            username="bastidor_delete_guard_admin",
+            password="pass123",
+            is_staff=True,
+        )
+        admin_token = Token.objects.create(user=admin)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {admin_token.key}")
+        bastidor = GrupoBastidor.objects.create(proyecto=self.project, indice=1)
+        self.modulo.grupo_bastidor = bastidor
+        self.modulo.save(update_fields=["grupo_bastidor"])
+        hecho = Modulo.objects.create(
+            nombre="M-HECHO", proyecto=self.project, grupo_bastidor=bastidor,
+            estado=ModuloEstado.EN_PROGRESO, inferior_hecho=True,
+        )
+
+        response = self.client.delete(
+            f"/api/grupos-bastidor/{bastidor.id}/?force=true"
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("M-HECHO", response.data["detail"])
+        self.assertTrue(GrupoBastidor.objects.filter(id=bastidor.id).exists())
+        self.assertEqual(
+            Modulo.objects.filter(id__in=[self.modulo.id, hecho.id]).count(), 2
+        )
+
     def test_reiniciar_fase_rechaza_fase_desconocida(self):
         self.modulo.estado = ModuloEstado.COMPLETADO
         self.modulo.save()

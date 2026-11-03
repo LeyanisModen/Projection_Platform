@@ -144,8 +144,8 @@ class Config:
         self.sync_interval_seconds = 1800.0
         self.sync_weekly_enabled = True
         self.sync_weekly_start_day = DAY_NAME_TO_INDEX['FRI']
-        self.sync_weekly_start_hour = 15
-        self.sync_weekly_start_minute = 30
+        self.sync_weekly_start_hour = 18
+        self.sync_weekly_start_minute = 15
         self.sync_weekly_end_day = DAY_NAME_TO_INDEX['MON']
         self.sync_weekly_end_hour = 5
         self.sync_weekly_end_minute = 0
@@ -161,9 +161,11 @@ class Config:
         self.drive_stop_hour = 4
         self.drive_stop_minute = 45
         self.drive_weekend_enabled = True
+        # Well after the Friday shift: when Drive starts, its window keeps the
+        # keyboard focus and the watchdog cannot hand it back to the player.
         self.drive_weekend_start_day = DAY_NAME_TO_INDEX['FRI']
-        self.drive_weekend_start_hour = 15
-        self.drive_weekend_start_minute = 15
+        self.drive_weekend_start_hour = 18
+        self.drive_weekend_start_minute = 0
         self.drive_weekend_end_day = DAY_NAME_TO_INDEX['MON']
         self.drive_weekend_end_hour = 6
         self.drive_weekend_end_minute = 35

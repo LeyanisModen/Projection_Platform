@@ -143,6 +143,24 @@ describe('Project detail rack order switch', () => {
         alerta.mockRestore();
     });
 
+    it('borra el bastidor entero desde su cabecera y solo si nada esta fabricado', () => {
+        const component = fixture.componentInstance;
+        const borrar = () => fixture.nativeElement.querySelector('.grupo-delete-btn') as HTMLButtonElement | null;
+        const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(true);
+        borrar()!.click();
+        expect(confirmar.mock.calls[0][0]).toContain('Eliminar definitivamente Group 1 y sus 3 módulos?');
+        const request = http.expectOne(r => r.url === '/api/grupos-bastidor/1/');
+        expect(request.request.method).toBe('DELETE');
+        expect(request.request.params.get('force')).toBe('true');
+        request.flush([]);
+
+        component.grupos[0].modulos[0].estado = 'EN_PROGRESO';
+        fixture.changeDetectorRef.markForCheck();
+        fixture.detectChanges();
+        expect(borrar()).toBeNull();
+        confirmar.mockRestore();
+    });
+
     it('defaults to fabrication order with an accessible selected option', () => {
         expect(fixture.nativeElement.querySelector('.rack-view-toggle .segmented').getAttribute('role')).toBe('group');
         expect(buttons().map(button => button.getAttribute('aria-pressed'))).toEqual(['true', 'false']);
