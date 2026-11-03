@@ -407,6 +407,15 @@
                                             [attr.aria-label]="(grupo.en_espera ? 'Soltar ' : 'Apartar ') + grupoEtiqueta(grupo)">
                                             <i class="fa" [class.fa-pause]="!grupo.en_espera" [class.fa-play]="grupo.en_espera" aria-hidden="true"></i>
                                         </button>
+                                        <button *ngIf="puedeEliminarBastidor(grupo)"
+                                            type="button"
+                                            class="grupo-delete-btn"
+                                            (click)="eliminarBastidor(grupo, $event)"
+                                            [disabled]="movingModulo"
+                                            title="Eliminar el bastidor entero con sus módulos"
+                                            [attr.aria-label]="'Eliminar ' + grupoEtiqueta(grupo)">
+                                            <i class="fa fa-trash" aria-hidden="true"></i>
+                                        </button>
                                     </span>
                                 </div>
                             </div>

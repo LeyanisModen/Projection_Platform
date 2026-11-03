@@ -1251,6 +1251,17 @@ export class ApiService {
         );
     }
 
+    /** Borra el bastidor entero (con sus partes) y sus modulos; devuelve los que quedan. */
+    deleteBastidor(id: number, force = false): Observable<GrupoBastidor[]> {
+        return this.http.delete<GrupoBastidor[]>(
+            `${this.baseUrl}/grupos-bastidor/${id}/`,
+            {
+                headers: this.getHeaders(),
+                params: force ? { force: 'true' } : {}
+            }
+        );
+    }
+
     getGruposBastidor(proyectoId: number): Observable<GrupoBastidor[]> {
         return this.http.get<GrupoBastidor[]>(
             `${this.baseUrl}/grupos-bastidor/?proyecto=${proyectoId}`,

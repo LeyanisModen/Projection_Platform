@@ -1759,6 +1759,50 @@ export class ProyectoDetailComponent implements OnInit {
         });
     }
 
+    /** Modulos del bastidor entero: los suyos y los de sus partes de fabricacion. */
+    modulosDeBastidor(grupo: GrupoBastidor): GrupoBastidorModulo[] {
+        return this.grupos
+            .filter(g => g.id === grupo.id || g.dividido_de === grupo.id)
+            .flatMap(g => g.modulos);
+    }
+
+    puedeEliminarBastidor(grupo: GrupoBastidor): boolean {
+        return !grupo.es_division && this.modulosDeBastidor(grupo).every(m =>
+            m.estado === 'PENDIENTE' && !m.inferior_hecho && !m.superior_hecho && !m.cerrado
+        );
+    }
+
+    eliminarBastidor(grupo: GrupoBastidor, event?: Event): void {
+        event?.stopPropagation();
+        if (this.movingModulo) return;
+        const modulos = this.modulosDeBastidor(grupo);
+        const fotosCount = modulos.reduce((total, m) => total + (m.fotos_count || 0), 0);
+        const fotosWarning = fotosCount > 0
+            ? ` También se eliminarán ${fotosCount} foto${fotosCount === 1 ? '' : 's'}.`
+            : '';
+        const confirmed = confirm(
+            `Eliminar definitivamente ${this.grupoEtiqueta(grupo)} y sus ` +
+            `${modulos.length} módulo${modulos.length === 1 ? '' : 's'}? ` +
+            'Se quitarán sus imágenes y sus asignaciones de las mesas.' +
+            fotosWarning + ' Esta acción no se puede deshacer.'
+        );
+        if (!confirmed) return;
+
+        this.movingModulo = true;
+        this.api.deleteBastidor(grupo.id, true).subscribe({
+            next: () => {
+                this.movingModulo = false;
+                this.loadData();
+            },
+            error: (err: any) => {
+                console.error('Error eliminando bastidor', err);
+                this.movingModulo = false;
+                alert(err?.error?.detail || 'No se pudo eliminar el bastidor.');
+                this.loadData();
+            }
+        });
+    }
+
     downloadFotosZip(scope: 'modulo' | 'proyecto'): void {
         this.downloadingZip = true;
         let params: { modulo?: number; proyecto?: number } = {};
