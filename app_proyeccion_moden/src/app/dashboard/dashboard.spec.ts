@@ -1138,7 +1138,7 @@ describe('Dashboard', () => {
       render();
       const etiquetas = Array.from(fixture.nativeElement.querySelectorAll('.project-actions button'))
         .map(boton => (boton as HTMLElement).getAttribute('aria-label'));
-      expect(etiquetas.slice(-3)).toEqual(['Abrir plano PDF', 'Ver elementos sueltos', 'Descargar despiece']);
+      expect(etiquetas.slice(-3)).toEqual(['Ver plano', 'Ver elementos sueltos', 'Descargar despiece']);
     });
 
     it('shows each block of the Excel with its title, header, rows and total, and offers the despiece', () => {

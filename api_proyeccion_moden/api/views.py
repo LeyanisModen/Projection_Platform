@@ -1909,6 +1909,19 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         proyecto.refresh_from_db()
         return Response(self.get_serializer(proyecto).data)
 
+    @action(detail=True, methods=['get'])
+    def plano(self, request, pk=None):
+        """Plano de la planta desde la base tecnica, con el estado de modulos y bastidores."""
+        from api.plano import plano
+
+        datos = plano(self.get_object())
+        if datos is None:
+            return Response(
+                {'detail': 'La base técnica de este proyecto no trae el plano.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        return Response(datos)
+
     @action(detail=True, methods=['get'], url_path='elementos-sueltos')
     def elementos_sueltos(self, request, pk=None):
         """Pestaña ELEMENTOS SUELTOS del despiece leida como tablas."""
