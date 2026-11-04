@@ -365,10 +365,16 @@
                     <div class="mesas-section panel">
                         <div class="panel-header">
                             <div><span class="section-label">Grupos de mesas</span></div>
-                            <button type="button" class="btn btn-sm" (click)="toggleAddMesaForm()"
-                                *ngIf="!showAddMesaForm">
-                                <i class="fa fa-plus" aria-hidden="true"></i> Grupo
-                            </button>
+                            <div class="panel-header-actions">
+                                <button type="button" class="btn btn-sm pausar-mesas-btn" (click)="openPausaModal()"
+                                    *ngIf="mesasDeLaFerralla.length" title="Pausar varias mesas a la vez">
+                                    <i class="fa fa-pause" aria-hidden="true"></i> Pausar mesas
+                                </button>
+                                <button type="button" class="btn btn-sm" (click)="toggleAddMesaForm()"
+                                    *ngIf="!showAddMesaForm">
+                                    <i class="fa fa-plus" aria-hidden="true"></i> Grupo
+                                </button>
+                            </div>
                         </div>
 
                         <div class="add-group" *ngIf="showAddMesaForm">
@@ -458,6 +464,16 @@
                                                         Lente
                                                     </span>
                                                 </div>
+                                                <div class="mesa-pausas" *ngIf="pausasDeMesa(mesa.id).length">
+                                                    <span class="mesa-pausa-pill" *ngFor="let pausa of pausasDeMesa(mesa.id)"
+                                                        [class.activa]="pausa.activa" [title]="pausa.motivo || 'Pausa de Moden'">
+                                                        <i class="fa fa-pause" aria-hidden="true"></i>
+                                                        {{ pausaEtiqueta(pausa) }}
+                                                        <button type="button" class="mesa-pausa-quitar" (click)="terminarPausa(pausa)"
+                                                            [title]="pausa.activa ? 'Reanudar' : 'Quitar la pausa'"
+                                                            [attr.aria-label]="(pausa.activa ? 'Reanudar ' : 'Quitar la pausa de ') + mesa.nombre">&times;</button>
+                                                    </span>
+                                                </div>
                                             </div>
                                             <div class="mesa-controls">
                                                 <div class="mesa-estado-switch"
@@ -486,6 +502,10 @@
                                                     </button>
                                                 </div>
                                                 <div class="mesa-actions">
+                                                    <button type="button" class="btn-icon mesa-pausar-btn" (click)="openPausaModal(mesa)"
+                                                        [attr.aria-label]="'Pausar ' + mesa.nombre" title="Pausar la mesa">
+                                                        <i class="fa fa-pause" aria-hidden="true"></i>
+                                                    </button>
                                                     <button class="btn-icon mesa-visor-btn"
                                                         type="button"
                                                         (click)="openMesaVisor(mesa)"
@@ -555,6 +575,60 @@
             <button type="button" class="btn btn-primary" (click)="submitPairing()" *ngIf="!pairingSuccess"
                 [disabled]="pairingLoading || pairingCode.length < 6">
                 {{ pairingLoading ? 'Vinculando...' : 'Vincular' }}
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-backdrop" *ngIf="showPausaModal" (click)="closePausaModal()"></div>
+<div class="custom-modal" *ngIf="showPausaModal">
+    <div class="modal-content pausa-modal" role="dialog" aria-modal="true" aria-labelledby="pausa-modal-title">
+        <div class="modal-header">
+            <h5 id="pausa-modal-title">Pausar mesas</h5>
+            <button type="button" class="close" (click)="closePausaModal()" aria-label="Cerrar">
+                <span>&times;</span>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="pausa-mesas" role="group" aria-label="Mesas que se paran">
+                <label *ngFor="let mesa of mesasDeLaFerralla">
+                    <input type="checkbox" [checked]="pausaMesaIds.has(mesa.id)" (change)="togglePausaMesa(mesa.id)"
+                        [disabled]="savingPausa">
+                    {{ mesa.nombre }}
+                </label>
+            </div>
+            <div class="pausa-cuando" role="radiogroup" aria-label="Cuándo">
+                <label><input type="radio" name="pausaCuando" value="AHORA" [(ngModel)]="pausaCuando" [disabled]="savingPausa"> Ahora</label>
+                <label><input type="radio" name="pausaCuando" value="OTRO_DIA" [(ngModel)]="pausaCuando" [disabled]="savingPausa"> Otro día</label>
+                <label><input type="radio" name="pausaCuando" value="CADA_DIA" [(ngModel)]="pausaCuando" [disabled]="savingPausa"> Cada día</label>
+            </div>
+            <div class="pausa-horas" *ngIf="pausaCuando === 'AHORA'">
+                <label>Hasta las
+                    <input type="time" class="field" name="pausaHasta" [(ngModel)]="pausaHasta" [disabled]="savingPausa">
+                </label>
+                <span class="meta" *ngIf="!pausaHasta">sin hora: hasta reanudarla</span>
+            </div>
+            <div class="pausa-horas" *ngIf="pausaCuando !== 'AHORA'">
+                <label *ngIf="pausaCuando === 'OTRO_DIA'">Día
+                    <input type="date" class="field" name="pausaDia" [(ngModel)]="pausaDia" [disabled]="savingPausa">
+                </label>
+                <label>De
+                    <input type="time" class="field" name="pausaDesde" [(ngModel)]="pausaDesdeHora" [disabled]="savingPausa">
+                </label>
+                <label>a
+                    <input type="time" class="field" name="pausaHastaHora" [(ngModel)]="pausaHastaHora" [disabled]="savingPausa">
+                </label>
+            </div>
+            <label class="pausa-motivo">Motivo
+                <input type="text" class="field" name="pausaMotivo" [(ngModel)]="pausaMotivo" maxlength="200"
+                    placeholder="Sale en la mesa" [disabled]="savingPausa">
+            </label>
+            <div *ngIf="pausaError" class="alert alert-danger">{{ pausaError }}</div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn" (click)="closePausaModal()" [disabled]="savingPausa">Cancelar</button>
+            <button type="button" class="btn btn-primary pausa-guardar" (click)="guardarPausa()" [disabled]="savingPausa">
+                {{ savingPausa ? 'Pausando...' : 'Pausar' }}
             </button>
         </div>
     </div>

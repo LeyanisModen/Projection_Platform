@@ -6,6 +6,7 @@ import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { interval, Subscription, switchMap, of, catchError, exhaustMap, startWith } from 'rxjs';
 import { Mapper } from '../mapper/mapper';
 import { environment } from '../../environments/environment';
+import { PausaActiva, pausaHastaLabel } from '../shared/pausa';
 
 interface MesaState {
   id: number;
@@ -21,6 +22,8 @@ interface MesaState {
   capture_service_online?: boolean | null;
   camera_sharpness?: 'ok' | 'warning' | 'blurry' | 'unknown' | null;
   check_overlay?: 'success' | 'error' | 'no_camera' | null;
+  /** Pausa que pone Moden desde el admin: tapa la proyección y no deja avanzar. */
+  pausa?: PausaActiva | null;
 }
 
 interface PairingResponse {
@@ -55,7 +58,7 @@ export class VisorComponent implements OnInit, OnDestroy {
   // AnyDesk whether the kiosk is actually running the latest bundle
   // or a cached one. F12 is blocked in kiosk; this is the simplest
   // version probe we can offer the operator on screen.
-  readonly buildTag = '2026-09-03_shutdown-chord';
+  readonly buildTag = '2026-11-04_pausa';
   // Surfaces what's happening inside recoverTokenOrPair on the
   // LOADING screen so we can diagnose from AnyDesk without DevTools.
   loadingMessage: string = 'Conectando…';
@@ -723,6 +726,12 @@ export class VisorComponent implements OnInit, OnDestroy {
 
     if (this.handleShutdownChordKeyDown(key, event)) return;
 
+    // Mesa en pausa (Moden): solo recargar, cerrar y apagar.
+    if (this.mesaState?.pausa) {
+      event.preventDefault();
+      return;
+    }
+
     // A failed color check blocks navigation until the operator
     // acknowledges it with space. SPACE clears the red overlay AND
     // advances to the next slide (the visual-revision step). The
@@ -1128,8 +1137,12 @@ export class VisorComponent implements OnInit, OnDestroy {
     this.updateProjectedImage();
   }
 
+  get pausaHasta(): string {
+    return pausaHastaLabel(this.mesaState?.pausa?.hasta);
+  }
+
   nextImage(): void {
-    if (this.currentIndex < 0) return;
+    if (this.currentIndex < 0 || this.mesaState?.pausa) return;
     const continuingAfterPhotoError = this.hasSimplePhotoCaptureError();
     if (continuingAfterPhotoError) {
       this.clearSimplePhotoCaptureError();
@@ -1209,7 +1222,7 @@ export class VisorComponent implements OnInit, OnDestroy {
   }
 
   prevImage(): void {
-    if (this.currentIndex < 0) return;
+    if (this.currentIndex < 0 || this.mesaState?.pausa) return;
     if (this.capturingPhoto && this.captureMode === 'check') return;
     if (this.hasSimplePhotoCaptureError()) {
       this.clearSimplePhotoCaptureError();

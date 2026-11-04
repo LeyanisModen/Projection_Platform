@@ -200,6 +200,16 @@ def _is_admin(user):
     return bool(user and (user.is_staff or user.is_superuser))
 
 
+def _respuesta_si_en_pausa(mesa):
+    """409 si Moden ha puesto la mesa en pausa: no avanza hasta que acabe."""
+    from api.pausas import pausa_activa
+
+    pausa = pausa_activa(mesa)
+    if pausa is None:
+        return None
+    return Response({'detail': 'Mesa en pausa.', 'pausa': pausa}, status=status.HTTP_409_CONFLICT)
+
+
 CAPTURE_DAY_ORDER = {
     day: index
     for index, day in enumerate(['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'])
@@ -4470,6 +4480,9 @@ class MesaViewSet(viewsets.ModelViewSet):
         Triggers mesa update timestamp so device SSE picks up the change.
         """
         mesa = self.get_object()
+        en_pausa = _respuesta_si_en_pausa(mesa)
+        if en_pausa:
+            return en_pausa
         index = request.data.get('index')
         if index is None:
             return Response({'detail': 'Index required'}, status=400)
@@ -4482,6 +4495,97 @@ class MesaViewSet(viewsets.ModelViewSet):
         record_step(mesa, mesa.current_image_index)
         register_superior_demand_for_mesa(mesa)
         return Response({'status': 'ok', 'index': mesa.current_image_index})
+
+
+class PausaMesaViewSet(viewsets.ViewSet):
+    """Pausas de mesa que pone Moden (api/pausas.py). Solo la oficina.
+
+    - GET  /pausas-mesa/?usuario=<ferralla>  -> las que no han acabado
+    - POST /pausas-mesa/  {mesas, tipo, motivo, inicio?, fin?, hora_desde?, hora_hasta?}
+    - POST /pausas-mesa/{id}/terminar/        -> la reanuda (la programada, la quita)
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    @staticmethod
+    def _solo_oficina(request):
+        if not _is_admin(request.user):
+            raise PermissionDenied('Solo Moden puede pausar mesas.')
+
+    @staticmethod
+    def _fecha_hora(valor):
+        from django.utils.dateparse import parse_datetime
+
+        if not valor:
+            return None
+        fecha = parse_datetime(str(valor))
+        if fecha is None:
+            raise ValidationError({'detail': 'Fecha y hora no válidas.'})
+        return fecha if timezone.is_aware(fecha) else timezone.make_aware(fecha)
+
+    def list(self, request):
+        from api.pausas import resumen, vigentes
+
+        self._solo_oficina(request)
+        mesas = Mesa.objects.all()
+        if request.query_params.get('usuario'):
+            mesas = mesas.filter(usuario_id=request.query_params['usuario'])
+        ahora = timezone.now()
+        return Response([resumen(pausa, ahora) for pausa in vigentes(mesas, ahora)])
+
+    def create(self, request):
+        from django.utils.dateparse import parse_time
+        from api.models import PausaMesa, PausaMesaTipo
+        from api.pausas import resumen
+
+        self._solo_oficina(request)
+        datos = request.data
+        try:
+            ids = {int(mesa_id) for mesa_id in datos.get('mesas') or []}
+        except (TypeError, ValueError):
+            ids = set()
+        mesas = list(Mesa.objects.filter(id__in=ids).order_by('id'))
+        if not mesas or len(mesas) != len(ids):
+            return Response({'detail': 'Elige las mesas que se paran.'}, status=status.HTTP_400_BAD_REQUEST)
+        tipo = datos.get('tipo') or PausaMesaTipo.PUNTUAL
+        if tipo not in PausaMesaTipo.values:
+            return Response({'detail': 'Tipo de pausa no válido.'}, status=status.HTTP_400_BAD_REQUEST)
+        ahora = timezone.now()
+        campos = {
+            'tipo': tipo, 'motivo': str(datos.get('motivo') or '').strip()[:200],
+            'inicio': self._fecha_hora(datos.get('inicio')) or ahora, 'creada_por': request.user,
+        }
+        if tipo == PausaMesaTipo.DIARIA:
+            desde = parse_time(str(datos.get('hora_desde') or ''))
+            hasta = parse_time(str(datos.get('hora_hasta') or ''))
+            if desde is None or hasta is None or desde == hasta:
+                return Response({'detail': 'Pon a qué hora empieza y a qué hora acaba cada día.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            campos.update(hora_desde=desde, hora_hasta=hasta)
+        else:
+            fin = self._fecha_hora(datos.get('fin'))
+            if fin is not None and (fin <= campos['inicio'] or fin <= ahora):
+                return Response({'detail': 'La pausa tiene que acabar después de empezar.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            campos['fin'] = fin
+        creadas = [PausaMesa.objects.create(mesa=mesa, **campos) for mesa in mesas]
+        return Response([resumen(pausa, ahora) for pausa in creadas], status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'])
+    def terminar(self, request, pk=None):
+        from api.models import PausaMesa
+
+        self._solo_oficina(request)
+        pausa = PausaMesa.objects.filter(pk=pk).first()
+        if pausa is None:
+            return Response({'detail': 'Esa pausa ya no existe.'}, status=status.HTTP_404_NOT_FOUND)
+        ahora = timezone.now()
+        if pausa.inicio > ahora:
+            # Programada y sin empezar: no queda nada que guardar.
+            pausa.delete()
+        elif pausa.fin is None or pausa.fin > ahora:
+            pausa.fin = ahora
+            pausa.save(update_fields=['fin'])
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class GrupoMesasViewSet(viewsets.ModelViewSet):
@@ -7425,7 +7529,10 @@ class DeviceViewSet(viewsets.ViewSet):
         mesa = self._authenticate_device(request)
         if not mesa:
             return Response({'detail': 'Unauthorized'}, status=401)
-            
+        en_pausa = _respuesta_si_en_pausa(mesa)
+        if en_pausa:
+            return en_pausa
+
         index = request.data.get('index')
         if index is None:
             return Response({'detail': 'Index required'}, status=400)
@@ -7494,6 +7601,9 @@ class DeviceViewSet(viewsets.ViewSet):
         mesa = self._authenticate_device(request)
         if not mesa:
             return Response({'detail': 'Unauthorized'}, status=401)
+        en_pausa = _respuesta_si_en_pausa(mesa)
+        if en_pausa:
+            return en_pausa
 
         from api.models import MesaQueueStatus
 
@@ -7918,6 +8028,9 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
         eventually transitions to COMPLETADO / CERRADO.
         """
         item = self.get_object()
+        en_pausa = _respuesta_si_en_pausa(item.mesa)
+        if en_pausa:
+            return en_pausa
         item.marcar_hecho(user=request.user)
         reconcile_superior_queue_if_adaptive(item.mesa.grupo)
 
@@ -7988,6 +8101,9 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
 
         previous_status = item.status
         mesa = item.mesa
+        en_pausa = _respuesta_si_en_pausa(mesa)
+        if en_pausa:
+            return en_pausa
         item.marcar_hecho(user=request.user)
 
         # Auto-advance only if the item was currently showing.
@@ -8010,6 +8126,9 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
         from api.models import MesaQueueStatus
         item = self.get_object()
         mesa = item.mesa
+        en_pausa = _respuesta_si_en_pausa(mesa)
+        if en_pausa:
+            return en_pausa
         # Whatever was showing steps aside but remembers its image.
         for displaced in MesaQueueItem.objects.filter(
             mesa=mesa,

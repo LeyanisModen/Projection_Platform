@@ -3,6 +3,7 @@ import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { Subscription, catchError, exhaustMap, interval, of, startWith } from 'rxjs';
 import { environment } from '../../environments/environment';
+import { PausaActiva, pausaHastaLabel } from '../shared/pausa';
 
 interface MonitorMesaState {
   id: number;
@@ -12,6 +13,7 @@ interface MonitorMesaState {
   blackout: boolean;
   locked: boolean;
   check_overlay?: 'success' | 'error' | 'no_camera' | 'none' | null;
+  pausa?: PausaActiva | null;
 }
 
 interface MonitorItem {
@@ -74,6 +76,8 @@ export class MonitorComponent implements OnInit, OnDestroy {
   readonly state = signal<MonitorMesaState | null>(null);
   readonly item = signal<MonitorItem | null>(null);
 
+  readonly pausa = computed(() => this.state()?.pausa ?? null);
+  readonly pausaHasta = computed(() => pausaHastaLabel(this.pausa()?.hasta));
   readonly images = computed(() => this.item()?.images ?? []);
   readonly index = computed(() => this.state()?.current_image_index ?? 0);
   /** Negative indexes are the player's calibration / projector-setup slides. */

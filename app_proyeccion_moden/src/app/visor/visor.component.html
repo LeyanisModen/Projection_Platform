@@ -203,4 +203,13 @@
     </div>
     }
 
+    <!-- Pausa de Moden desde el admin: la cola sigue ahí, pero no se trabaja. -->
+    @if (mode === 'PROJECTION' && mesaState?.pausa; as pausa) {
+    <div class="pause-screen" role="status" aria-live="polite">
+        <p class="pause-title">MESA EN PAUSA</p>
+        @if (pausa.motivo) { <p class="pause-reason">{{ pausa.motivo }}</p> }
+        @if (pausaHasta) { <p class="pause-until">{{ pausaHasta }}</p> }
+    </div>
+    }
+
 </div>

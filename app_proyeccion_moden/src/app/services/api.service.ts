@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { EMPTY, Observable, expand, map, reduce, tap } from 'rxjs';
+import { PausaActiva } from '../shared/pausa';
 
 // =============================================================================
 // INTERFACES
@@ -13,6 +14,7 @@ interface PagedResponse<T> {
     previous: string | null;
     results: T[];
 }
+
 
 export interface User {
     id: number;
@@ -375,6 +377,8 @@ export interface Mesa {
     is_linked: boolean;
     capture_service_online?: boolean | null;
     camera_sharpness?: 'ok' | 'warning' | 'blurry' | 'unknown' | null;
+    /** Pausa de Moden: la mesa no avanza y la ferralla no la puede quitar. */
+    pausa?: PausaActiva | null;
 }
 
 export interface ModuloQueue {
@@ -433,6 +437,31 @@ export interface GrupoMesaResumen {
     last_seen?: string | null;
     capture_service_online?: boolean | null;
     camera_sharpness?: 'ok' | 'warning' | 'blurry' | 'unknown' | null;
+    pausa?: PausaActiva | null;
+}
+
+/** Pausa de mesa de Moden, como la lista el admin (activas y programadas). */
+export interface PausaMesa {
+    id: number;
+    mesa: number;
+    /** PUNTUAL: de inicio a fin (sin fin, hasta reanudarla). DIARIA: cada día de hora_desde a hora_hasta. */
+    tipo: 'PUNTUAL' | 'DIARIA';
+    motivo: string;
+    inicio: string;
+    fin: string | null;
+    hora_desde: string | null;
+    hora_hasta: string | null;
+    activa: boolean;
+}
+
+export interface NuevaPausaMesa {
+    mesas: number[];
+    tipo: PausaMesa['tipo'];
+    motivo: string;
+    inicio?: string | null;
+    fin?: string | null;
+    hora_desde?: string;
+    hora_hasta?: string;
 }
 
 export type CaptureDay = 'MON' | 'TUE' | 'WED' | 'THU' | 'FRI' | 'SAT' | 'SUN';
@@ -1415,6 +1444,20 @@ export class ApiService {
         }
         return this.http.get<PagedResponse<Mesa>>(url, { headers: this.getHeaders() })
             .pipe(map(response => response.results));
+    }
+
+    /** Pausas de las mesas de una ferralla que aún no han acabado (solo Moden). */
+    getPausasMesa(usuarioId: number): Observable<PausaMesa[]> {
+        return this.http.get<PausaMesa[]>(`${this.baseUrl}/pausas-mesa/`, { headers: this.getHeaders(), params: { usuario: String(usuarioId) } });
+    }
+
+    crearPausasMesa(data: NuevaPausaMesa): Observable<PausaMesa[]> {
+        return this.http.post<PausaMesa[]>(`${this.baseUrl}/pausas-mesa/`, data, { headers: this.getHeaders() });
+    }
+
+    /** Reanuda la mesa; si la pausa estaba programada y no ha empezado, la quita. */
+    terminarPausaMesa(id: number): Observable<void> {
+        return this.http.post<void>(`${this.baseUrl}/pausas-mesa/${id}/terminar/`, {}, { headers: this.getHeaders() });
     }
 
     getGruposMesas(usuarioId?: number): Observable<GrupoMesas[]> {

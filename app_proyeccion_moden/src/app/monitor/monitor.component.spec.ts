@@ -149,6 +149,17 @@ describe('MonitorComponent', () => {
         expect(fixture.nativeElement.textContent).toContain('Sin trabajo en curso');
     });
 
+    it('covers everything with the pause Moden puts on the mesa', () => {
+        pair();
+        http.expectOne('/api/device/state/').flush(state(1, {pausa: {motivo: 'Formación', hasta: null}}));
+        http.expectOne('/api/device/current_item/').flush(item);
+        fixture.detectChanges();
+        const pausa: HTMLElement = fixture.nativeElement.querySelector('.monitor-pausa');
+        expect(pausa.textContent).toContain('MESA EN PAUSA');
+        expect(pausa.textContent).toContain('Formación');
+        expect(fixture.nativeElement.querySelector('img')).toBeNull();
+    });
+
     it('keeps the last picture on network errors and re-reads the token on 401', () => {
         pair();
         http.expectOne('/api/device/state/').flush(state(0));

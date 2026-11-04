@@ -16,6 +16,7 @@ import {
 import { LineChartSeries, SplitArea, StatsLineChart } from './stats-line-chart';
 import { PlanificacionFerralla } from './planificacion-ferralla';
 import { PlanoProyecto } from './plano-proyecto';
+import { pausaHastaLabel } from '../shared/pausa';
 import { TurnosEditorComponent } from '../shared/turnos-editor.component';
 import { copiarTurnos, turnosError, turnosLabel } from '../shared/turnos';
 import {
@@ -173,6 +174,7 @@ interface Subfase {
 })
 export class Dashboard implements OnInit, OnDestroy {
   readonly planningLabel = planningLabel;
+  readonly pausaHastaLabel = pausaHastaLabel;
   // Sidebar State
   panelState: 'collapsed' | 'expanded' = 'expanded';
   // Data
@@ -3203,7 +3205,11 @@ export class Dashboard implements OnInit, OnDestroy {
         },
         error: (err) => {
           console.error('Error mostrando item', err);
-          // Revert optimistically if needed, but for now just log
+          if (err?.status === 409) {
+            // Mesa en pausa (Moden): se deshace lo que se pinto de antemano.
+            if (mesaId) this.loadMesaQueueItems(mesaId);
+            alert(err.error?.detail === 'Mesa en pausa.' ? 'La mesa está en pausa: la ha parado Moden.' : err.error?.detail);
+          }
         }
       });
   }
@@ -3263,7 +3269,13 @@ export class Dashboard implements OnInit, OnDestroy {
           this.cdr.detectChanges();
           this.cerrarConfirmModal();
         },
-        error: (err) => console.error('Error marcando hecho', err)
+        error: (err) => {
+          console.error('Error marcando hecho', err);
+          if (err?.status === 409) {
+            this.cerrarConfirmModal();
+            alert('La mesa está en pausa: la ha parado Moden.');
+          }
+        }
       });
   }
 

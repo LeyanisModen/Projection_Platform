@@ -236,3 +236,19 @@ select.form-control { padding-right: 28px; }
     .mesa-controls { flex-wrap: wrap; }
     .address-row, .contact-row { grid-template-columns: minmax(0, 1fr) 34px; }
 }
+
+/* Pausas de Moden: en la fila de la mesa, y el modal para pausar una o varias. */
+.panel-header-actions { display: flex; align-items: center; gap: 6px; }
+.mesa-pausas { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.mesa-pausa-pill { display: inline-flex; align-items: center; gap: 5px; padding: 1px 4px 1px 8px; border: 1px solid var(--line-strong); border-radius: 999px; color: var(--text); font-size: 12px; }
+.mesa-pausa-pill.activa { border-color: var(--accent); color: var(--accent-dark); font-weight: 600; }
+.mesa-pausa-quitar { padding: 0 4px; border: 0; background: transparent; color: var(--muted); font-size: 15px; line-height: 1; cursor: pointer; }
+.mesa-pausa-quitar:hover { color: var(--danger); }
+.pausa-modal .modal-body { display: grid; gap: 14px; }
+.pausa-mesas { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.pausa-mesas label, .pausa-cuando label { display: inline-flex; align-items: center; gap: 6px; margin: 0; color: var(--text); font-size: 14px; }
+.pausa-cuando { display: flex; flex-wrap: wrap; gap: 6px 18px; padding-top: 12px; border-top: 1px solid var(--line); }
+.pausa-horas { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.pausa-horas label, .pausa-motivo { display: inline-flex; align-items: center; gap: 8px; margin: 0; color: var(--text); font-size: 14px; }
+.pausa-motivo { display: grid; gap: 4px; }
+.pausa-motivo .field { width: 100%; }
