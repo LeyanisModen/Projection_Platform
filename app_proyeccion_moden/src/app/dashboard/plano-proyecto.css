@@ -26,7 +26,8 @@
 .pp-pendiente rect { fill: var(--surface); stroke: var(--line-strong); }
 .pp-en-curso rect { fill: var(--accent-soft); stroke: var(--accent); }
 .pp-terminado rect { fill: var(--pp-terminado); stroke: var(--ok); }
-.pp-bastidor-terminado rect { fill: var(--ok); stroke: var(--ok); }
+/* Borde blanco: los modulos de un bastidor entero no se funden en un bloque. */
+.pp-bastidor-terminado rect { fill: var(--ok); stroke: #fff; stroke-width: 1.5px; }
 .pp-ajeno { cursor: default; }
 .pp-ajeno rect { fill: none; stroke: var(--line-strong); stroke-dasharray: 4 3; }
 .con-resaltado .pp-modulo:not(.pp-activo), .con-resaltado .pp-etiqueta:not(.pp-activo) { opacity: 0.3; }
