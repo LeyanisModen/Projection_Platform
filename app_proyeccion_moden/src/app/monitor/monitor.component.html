@@ -4,6 +4,13 @@
         <div class="spinner" aria-hidden="true"></div>
         <p>Esperando al player de esta mesa…</p>
     </div>
+    } @else if (pausa(); as pausa) {
+    <!-- Pausa de Moden: lo mismo que tapa la proyección. -->
+    <div class="monitor-pausa" role="status">
+        <strong>MESA EN PAUSA</strong>
+        @if (pausa.motivo) { <span>{{ pausa.motivo }}</span> }
+        @if (pausaHasta()) { <span class="monitor-pausa-hasta">{{ pausaHasta() }}</span> }
+    </div>
     } @else if (pantallaCompleta()) {
     <!-- Imagen de monitor del paso: a pantalla completa, tal como se diseña. -->
     <main class="monitor-full">

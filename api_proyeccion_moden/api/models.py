@@ -1705,3 +1705,37 @@ class LogMiniPC(models.Model):
 
     def __str__(self):
         return f'{self.mesa} {self.fichero} @ {self.recibido_at:%d/%m %H:%M}'
+
+
+class PausaMesaTipo(models.TextChoices):
+    PUNTUAL = 'PUNTUAL', 'Una vez'
+    DIARIA = 'DIARIA', 'Cada día'
+
+
+class PausaMesa(models.Model):
+    """Moden para una mesa desde el admin (formacion, luz que no deja ver la
+    proyeccion...). La mesa conserva su cola y sus bastidores pero muestra
+    "Mesa en pausa" y no avanza; la ferralla no la puede quitar.
+
+    PUNTUAL: de ``inicio`` a ``fin`` (sin fin, hasta que se reanude).
+    DIARIA: cada dia de ``hora_desde`` a ``hora_hasta`` desde ``inicio``
+    hasta que se quite, que le pone ``fin``.
+    """
+    id = models.AutoField(primary_key=True)
+    mesa = models.ForeignKey(Mesa, on_delete=models.CASCADE, related_name='pausas')
+    tipo = models.CharField(max_length=16, choices=PausaMesaTipo.choices, default=PausaMesaTipo.PUNTUAL)
+    motivo = models.CharField(max_length=200, blank=True, default='')
+    inicio = models.DateTimeField(default=timezone.now)
+    fin = models.DateTimeField(null=True, blank=True)
+    hora_desde = models.TimeField(null=True, blank=True)
+    hora_hasta = models.TimeField(null=True, blank=True)
+    creada_por = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
+    creada_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'api_pausa_mesa'
+        ordering = ['mesa', 'inicio', 'id']
+        indexes = [models.Index(fields=['mesa', 'fin'])]
+
+    def __str__(self):
+        return f'Pausa {self.get_tipo_display()} de {self.mesa}'

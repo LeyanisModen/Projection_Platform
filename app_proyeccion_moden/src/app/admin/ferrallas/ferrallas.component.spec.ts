@@ -27,6 +27,7 @@ function setup(queryParams: Record<string, string> = {}) {
 /** Abrir una ferralla carga sus grupos de mesas y su configuracion de captura. */
 function flushFerrallaDetail(http: HttpTestingController, id: number) {
     http.expectOne(`/api/grupos-mesas/?usuario=${id}`).flush({results: [], next: null, count: 0});
+    http.expectOne(`/api/pausas-mesa/?usuario=${id}`).flush([]);
     http.expectOne(`/api/users/${id}/capture-config/`).flush({
         user_id: id, active_days: [], start_time: '07:00', end_time: '19:00', horario: [],
         interval_seconds: 600, check_times: [], mesas: [],
@@ -126,5 +127,57 @@ describe('FerrallasComponent', () => {
         expect(component.fichaError).toContain('mayor que 0');
         http.verify();
         fixture.destroy();
+    });
+    it('pausa varias mesas a la vez, las muestra en su fila y las reanuda', () => {
+        const {http, fixture} = setup();
+        http.expectOne('/api/users/').flush({results: [user(2, 'sancho')], next: null, count: 1});
+        const mesa = (id: number, indice: number) => ({id, nombre: `Mesa ${indice}`, tipo: 'INFERIOR', indice, activa: true, is_linked: true});
+        http.expectOne('/api/grupos-mesas/?usuario=2').flush({results: [{
+            id: 9, nombre: 'Línea 1', usuario: 2, activa: true, mesas: [mesa(31, 1), mesa(32, 2), mesa(33, 3)], proyectos_cola: [],
+        }], next: null, count: 1});
+        http.expectOne('/api/pausas-mesa/?usuario=2').flush([{
+            id: 5, mesa: 31, tipo: 'DIARIA', motivo: 'Luz de las ventanas', inicio: '2026-11-04T20:00:00+01:00', fin: null,
+            hora_desde: '13:00', hora_hasta: '16:00', activa: false,
+        }]);
+        http.expectOne('/api/users/2/capture-config/').flush({
+            user_id: 2, active_days: [], start_time: '07:00', end_time: '19:00', horario: [],
+            interval_seconds: 600, check_times: [], mesas: [],
+        });
+        fixture.detectChanges();
+        const el: HTMLElement = fixture.nativeElement;
+        expect(el.querySelector('.mesa-pausa-pill')!.textContent).toContain('Pausa cada día 13:00-16:00');
+
+        (el.querySelector('.pausar-mesas-btn') as HTMLButtonElement).click();
+        fixture.detectChanges();
+        const marcas = () => Array.from(el.querySelectorAll('.pausa-mesas input')) as HTMLInputElement[];
+        expect(marcas().map(m => m.checked)).toEqual([true, true, true]);
+        // La de la formación sigue.
+        marcas()[2].click();
+        const component = fixture.componentInstance;
+        component.pausaMotivo = ' Formación ';
+        component.pausaHasta = '';
+        (el.querySelector('.pausa-guardar') as HTMLButtonElement).click();
+        const crear = http.expectOne('/api/pausas-mesa/');
+        expect(crear.request.body).toEqual({mesas: [31, 32], motivo: 'Formación', tipo: 'PUNTUAL', fin: null});
+        crear.flush([]);
+        http.expectOne('/api/pausas-mesa/?usuario=2').flush([]);
+        http.expectOne('/api/grupos-mesas/?usuario=2').flush({results: [], next: null, count: 0});
+
+        // Cada dia, con una mesa: solo esa.
+        component.openPausaModal(component.gruposMesas[0]?.mesas[0] ?? {id: 31} as any);
+        component.pausaCuando = 'CADA_DIA';
+        component.pausaDesdeHora = '13:00';
+        component.pausaHastaHora = '13:00';
+        component.guardarPausa();
+        expect(component.pausaError).toBe('Pon a qué hora empieza y a qué hora acaba.');
+        component.pausaHastaHora = '16:00';
+        component.guardarPausa();
+        expect(http.expectOne('/api/pausas-mesa/').request.body).toEqual({
+            mesas: [31], motivo: '', tipo: 'DIARIA', hora_desde: '13:00', hora_hasta: '16:00',
+        });
+
+        vi.spyOn(window, 'confirm').mockReturnValue(true);
+        component.terminarPausa({id: 5, mesa: 31, tipo: 'DIARIA', motivo: '', inicio: '', fin: null, hora_desde: '13:00', hora_hasta: '16:00', activa: false});
+        expect(http.expectOne('/api/pausas-mesa/5/terminar/').request.method).toBe('POST');
     });
 });

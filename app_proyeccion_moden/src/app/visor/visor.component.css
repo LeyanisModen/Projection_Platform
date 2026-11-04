@@ -627,3 +627,45 @@
     font-weight: 600;
 }
 
+
+/* Mesa en pausa (Moden): tapa la proyeccion y los avisos; el de apagar queda encima.
+   El estado llega tambien con blackout (para los players de antes): esto si se ve. */
+.visor-container.blackout .pause-screen,
+.visor-container.blackout .pause-screen * {
+    visibility: visible;
+}
+
+.pause-screen {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3vh;
+    padding: 5vw;
+    background: #000;
+    color: #fff;
+    text-align: center;
+}
+
+.pause-title {
+    margin: 0;
+    font-size: 9vw;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    line-height: 1;
+}
+
+.pause-reason {
+    margin: 0;
+    font-size: 3.6vw;
+}
+
+.pause-until {
+    margin: 0;
+    color: #f0640f;
+    font-size: 3.2vw;
+    font-weight: 600;
+}

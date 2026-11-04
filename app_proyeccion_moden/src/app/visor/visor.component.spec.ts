@@ -166,6 +166,24 @@ describe('VisorComponent slide lock', () => {
     expect(markDoneCalls()).toBe(1);
   });
 
+  it('with the mesa paused by Moden it neither moves nor closes the module, whatever is pressed', () => {
+    component.mesaState = { id: 1, nombre: 'Mesa 1', pausa: { motivo: 'Formación', hasta: null } } as any;
+    component.currentIndex = 3;
+    component.nextImage();
+    component.prevImage();
+    for (const key of ['ArrowRight', 'ArrowLeft', 'c', 'b']) {
+      component.handleKeyboardEvent(new KeyboardEvent('keydown', { key, cancelable: true }));
+    }
+    vi.advanceTimersByTime(2000);
+    expect(component.currentIndex).toBe(3);
+    expect(markDoneCalls()).toBe(0);
+
+    // Reanudada: sigue donde estaba.
+    component.mesaState = { ...component.mesaState!, pausa: null };
+    component.nextImage();
+    expect(markDoneCalls()).toBe(1);
+  });
+
   it('closes a module only once while the request is in flight', () => {
     const pending = new Subject<unknown>();
     httpPost.mockImplementation((url: string) => (String(url).endsWith('mark_done/') ? pending : of({ status: 'ok' })));

@@ -10,10 +10,49 @@ import {
   FerrallaDireccion,
   GrupoMesas,
   GrupoMesaResumen,
+  NuevaPausaMesa,
+  PausaMesa,
   User,
 } from '../../services/api.service';
 import { TurnosEditorComponent } from '../../shared/turnos-editor.component';
 import { copiarTurnos, turnosError } from '../../shared/turnos';
+
+type PausaCuando = 'AHORA' | 'OTRO_DIA' | 'CADA_DIA';
+
+const dos = (n: number): string => String(n).padStart(2, '0');
+
+/** Hoy a la hora HH:MM; si ya ha pasado, mañana. */
+function proximaHora(hhmm: string, ahora = new Date()): Date {
+  const [h, m] = hhmm.split(':').map(Number);
+  const fecha = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate(), h, m);
+  if (fecha <= ahora) fecha.setDate(fecha.getDate() + 1);
+  return fecha;
+}
+
+function fechaHora(dia: string, hhmm: string): Date {
+  const [anio, mes, d] = dia.split('-').map(Number);
+  const [h, m] = hhmm.split(':').map(Number);
+  return new Date(anio, mes - 1, d, h, m);
+}
+
+function horaDe(iso: string): string {
+  const fecha = new Date(iso);
+  return `${dos(fecha.getHours())}:${dos(fecha.getMinutes())}`;
+}
+
+function diaDe(iso: string): string {
+  const fecha = new Date(iso);
+  return `${dos(fecha.getDate())}/${dos(fecha.getMonth() + 1)}`;
+}
+
+/** Como se lee una pausa en la fila de su mesa. */
+export function pausaEtiqueta(pausa: PausaMesa, ahora = new Date()): string {
+  if (pausa.tipo === 'DIARIA') return `Pausa cada día ${pausa.hora_desde}-${pausa.hora_hasta}`;
+  if (pausa.activa) return pausa.fin ? `En pausa hasta las ${horaDe(pausa.fin)}` : 'En pausa';
+  const mismoDia = new Date(pausa.inicio).toDateString() === ahora.toDateString();
+  const fin = pausa.fin ? `-${horaDe(pausa.fin)}` : '';
+  return `Pausa ${mismoDia ? 'hoy' : diaDe(pausa.inicio)} ${horaDe(pausa.inicio)}${fin}`;
+}
 
 interface FichaDraft {
   first_name: string;
@@ -75,6 +114,21 @@ export class FerrallasComponent implements OnInit, OnDestroy {
   showCredentialsModal = false;
   credentialUser: User | null = null;
   private mesaRefreshTimer: any = null;
+
+  // Pausas de Moden: la mesa no avanza y la ferralla no las puede quitar.
+  pausas: PausaMesa[] = [];
+  showPausaModal = false;
+  pausaMesaIds = new Set<number>();
+  pausaCuando: PausaCuando = 'AHORA';
+  pausaMotivo = '';
+  /** AHORA: hasta esta hora (vacía: hasta reanudarla). */
+  pausaHasta = '';
+  pausaDia = '';
+  pausaDesdeHora = '';
+  pausaHastaHora = '';
+  savingPausa = false;
+  pausaError = '';
+  readonly pausaEtiqueta = pausaEtiqueta;
 
   constructor(
     private api: ApiService,
@@ -304,6 +358,7 @@ export class FerrallasComponent implements OnInit, OnDestroy {
     this.showForm = false;
     this.showAddMesaForm = false;
     this.loadGruposMesas(user.id);
+    this.loadPausas(user.id);
     this.loadCaptureConfig(user.id);
     this.startMesaAutoRefresh();
   }
@@ -314,6 +369,7 @@ export class FerrallasComponent implements OnInit, OnDestroy {
     this.showForm = false;
     this.showAddMesaForm = false;
     this.gruposMesas = [];
+    this.pausas = [];
     this.captureConfig = null;
     this.captureConfigError = '';
     this.captureConfigMessage = '';
@@ -424,11 +480,116 @@ export class FerrallasComponent implements OnInit, OnDestroy {
     });
   }
 
+  loadPausas(userId: number): void {
+    this.api.getPausasMesa(userId).subscribe({
+      next: pausas => {
+        if (this.selectedUser?.id !== userId) return;
+        this.pausas = pausas;
+        this.cdr.detectChanges();
+      },
+      error: err => console.error('Error loading pausas', err),
+    });
+  }
+
+  pausasDeMesa(mesaId: number): PausaMesa[] {
+    return this.pausas.filter(pausa => pausa.mesa === mesaId);
+  }
+
+  get mesasDeLaFerralla(): GrupoMesaResumen[] {
+    return this.gruposMesas.flatMap(grupo => grupo.mesas);
+  }
+
+  /** Con una mesa, solo esa marcada; sin ella (botón de arriba), todas. */
+  openPausaModal(mesa?: GrupoMesaResumen): void {
+    this.pausaMesaIds = new Set(mesa ? [mesa.id] : this.mesasDeLaFerralla.map(m => m.id));
+    this.pausaCuando = 'AHORA';
+    this.pausaMotivo = '';
+    this.pausaHasta = '';
+    const manana = new Date();
+    manana.setDate(manana.getDate() + 1);
+    this.pausaDia = `${manana.getFullYear()}-${dos(manana.getMonth() + 1)}-${dos(manana.getDate())}`;
+    this.pausaDesdeHora = '';
+    this.pausaHastaHora = '';
+    this.pausaError = '';
+    this.showPausaModal = true;
+  }
+
+  closePausaModal(): void {
+    if (this.savingPausa) return;
+    this.showPausaModal = false;
+  }
+
+  togglePausaMesa(mesaId: number): void {
+    if (this.pausaMesaIds.has(mesaId)) this.pausaMesaIds.delete(mesaId);
+    else this.pausaMesaIds.add(mesaId);
+  }
+
+  private nuevaPausa(): NuevaPausaMesa | string {
+    const base = { mesas: [...this.pausaMesaIds], motivo: this.pausaMotivo.trim() };
+    if (!base.mesas.length) return 'Marca las mesas que se paran.';
+    if (this.pausaCuando === 'AHORA') {
+      return { ...base, tipo: 'PUNTUAL', fin: this.pausaHasta ? proximaHora(this.pausaHasta).toISOString() : null };
+    }
+    if (!this.pausaDesdeHora || !this.pausaHastaHora || this.pausaDesdeHora === this.pausaHastaHora) {
+      return 'Pon a qué hora empieza y a qué hora acaba.';
+    }
+    if (this.pausaCuando === 'CADA_DIA') {
+      return { ...base, tipo: 'DIARIA', hora_desde: this.pausaDesdeHora, hora_hasta: this.pausaHastaHora };
+    }
+    if (!this.pausaDia) return 'Elige el día.';
+    const inicio = fechaHora(this.pausaDia, this.pausaDesdeHora);
+    const fin = fechaHora(this.pausaDia, this.pausaHastaHora);
+    // De noche: acaba al día siguiente.
+    if (fin <= inicio) fin.setDate(fin.getDate() + 1);
+    return { ...base, tipo: 'PUNTUAL', inicio: inicio.toISOString(), fin: fin.toISOString() };
+  }
+
+  guardarPausa(): void {
+    if (!this.selectedUser || this.savingPausa) return;
+    const pausa = this.nuevaPausa();
+    if (typeof pausa === 'string') {
+      this.pausaError = pausa;
+      return;
+    }
+    const userId = this.selectedUser.id;
+    this.savingPausa = true;
+    this.pausaError = '';
+    this.api.crearPausasMesa(pausa).subscribe({
+      next: () => {
+        this.savingPausa = false;
+        this.showPausaModal = false;
+        this.loadPausas(userId);
+        this.loadGruposMesas(userId, true);
+      },
+      error: err => {
+        this.savingPausa = false;
+        this.pausaError = err?.error?.detail || 'No se pudo pausar.';
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  terminarPausa(pausa: PausaMesa): void {
+    if (!this.selectedUser) return;
+    const mesa = this.mesasDeLaFerralla.find(m => m.id === pausa.mesa);
+    const pregunta = pausa.activa ? `¿Reanudar ${mesa?.nombre ?? 'la mesa'}?` : `¿Quitar la pausa de ${mesa?.nombre ?? 'la mesa'}?`;
+    if (!confirm(`${pregunta} (${pausaEtiqueta(pausa)})`)) return;
+    const userId = this.selectedUser.id;
+    this.api.terminarPausaMesa(pausa.id).subscribe({
+      next: () => {
+        this.loadPausas(userId);
+        this.loadGruposMesas(userId, true);
+      },
+      error: err => alert(err?.error?.detail || 'No se pudo quitar la pausa.'),
+    });
+  }
+
   private startMesaAutoRefresh(): void {
     this.clearMesaAutoRefresh();
     this.mesaRefreshTimer = setInterval(() => {
       if (!this.selectedUser || this.loadingMesas || this.showPairingModal || this.showUnbindModal) return;
       this.loadGruposMesas(this.selectedUser.id, true);
+      this.loadPausas(this.selectedUser.id);
     }, FerrallasComponent.MESA_REFRESH_MS);
   }
 

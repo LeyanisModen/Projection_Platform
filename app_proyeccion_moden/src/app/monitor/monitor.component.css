@@ -149,3 +149,21 @@
 @media (prefers-reduced-motion: reduce) {
     .spinner { animation: none; }
 }
+
+/* Mesa en pausa (Moden): toda la pantalla, como en la proyeccion. */
+.monitor-pausa {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3vh;
+  padding: 5vw;
+  background: #000;
+  color: #fff;
+  text-align: center;
+}
+.monitor-pausa strong { font-size: 8vw; font-weight: 800; letter-spacing: 0.04em; line-height: 1; }
+.monitor-pausa span { font-size: 3.4vw; }
+.monitor-pausa .monitor-pausa-hasta { color: #f0640f; font-weight: 600; }

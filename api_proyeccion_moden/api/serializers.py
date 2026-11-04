@@ -711,7 +711,9 @@ class MesaSerializer(serializers.HyperlinkedModelSerializer):
     grupo = serializers.PrimaryKeyRelatedField(queryset=GrupoMesas.objects.all(), allow_null=True, required=False)
     imagen = ImagenSerializer(source='imagen_actual', read_only=True)
     is_linked = serializers.SerializerMethodField()
-    
+    # Pausa de Moden (api/pausas.py): solo lectura, la ferralla no la quita.
+    pausa = serializers.SerializerMethodField()
+
     class Meta:
         model = Mesa
         fields = [
@@ -720,12 +722,16 @@ class MesaSerializer(serializers.HyperlinkedModelSerializer):
             "imagen_actual", "ultima_actualizacion", "imagen",
             "locked", "blackout", "last_seen", "is_linked",
             "capture_service_online", "camera_sharpness", "check_overlay",
-            "mapper_enabled", "current_image_index", "calibration_json"
+            "mapper_enabled", "current_image_index", "calibration_json", "pausa",
         ]
 
     def get_is_linked(self, obj):
         """Returns True if a device is linked to this Mesa."""
         return bool(obj.device_token_hash)
+
+    def get_pausa(self, obj):
+        from api.pausas import pausa_activa
+        return pausa_activa(obj)
 
 
 # =============================================================================
@@ -740,16 +746,21 @@ class ModuloQueueSerializer(serializers.ModelSerializer):
 
 class MesaResumenGrupoSerializer(serializers.ModelSerializer):
     is_linked = serializers.SerializerMethodField()
+    pausa = serializers.SerializerMethodField()
 
     class Meta:
         model = Mesa
         fields = [
             "id", "nombre", "tipo", "indice", "activa", "is_linked",
-            "last_seen", "capture_service_online", "camera_sharpness",
+            "last_seen", "capture_service_online", "camera_sharpness", "pausa",
         ]
 
     def get_is_linked(self, obj):
         return bool(obj.device_token_hash)
+
+    def get_pausa(self, obj):
+        from api.pausas import pausa_activa
+        return pausa_activa(obj)
 
 
 class GrupoMesasProyectoSerializer(serializers.ModelSerializer):
@@ -1077,6 +1088,8 @@ class DeviceCaptureConfigAckSerializer(serializers.Serializer):
 
 class MesaStateSerializer(serializers.ModelSerializer):
     image_url = serializers.CharField(source='imagen_actual.url', read_only=True)
+    # Con pausa, el player tapa la proyeccion con "Mesa en pausa".
+    pausa = serializers.SerializerMethodField()
 
     class Meta:
         model = Mesa
@@ -1084,5 +1097,16 @@ class MesaStateSerializer(serializers.ModelSerializer):
             'id', 'nombre',
             'imagen_actual', 'image_url',
             'mapper_enabled', 'current_image_index', 'calibration_json',
-            'blackout', 'locked', 'last_seen', 'check_overlay'
+            'blackout', 'locked', 'last_seen', 'check_overlay', 'pausa',
         ]
+
+    def get_pausa(self, obj):
+        from api.pausas import pausa_activa
+        return pausa_activa(obj)
+
+    def to_representation(self, obj):
+        data = super().to_representation(obj)
+        # Un player con la version de antes no sabe de pausas: en negro.
+        if data['pausa']:
+            data['blackout'] = True
+        return data
