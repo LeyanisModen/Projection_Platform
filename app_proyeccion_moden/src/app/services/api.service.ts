@@ -190,6 +190,8 @@ export interface Proyecto {
     datos_tecnicos_archivo?: string | null;
     datos_tecnicos_actualizados_at?: string | null;
     plano_archivo?: string | null;
+    /** La base técnica trae la losa y los encajes de los módulos: se puede dibujar el plano. */
+    plano_disponible?: boolean;
     /** Excel de despiece; su pestaña ELEMENTOS SUELTOS llena el modal de elementos sueltos. */
     despiece_archivo?: string | null;
     /** Excel de elementos sueltos que se subia aparte antes del despiece; ya no se sube. */
@@ -715,6 +717,45 @@ export interface ElementosSueltos {
     hojas: ElementosSueltosHoja[];
 }
 
+/** Punto del plano en metros, desde la esquina de arriba a la izquierda. */
+export type PlanoPunto = [number, number];
+
+export interface PlanoModulo {
+    nombre: string;
+    x: number;
+    y: number;
+    ancho: number;
+    alto: number;
+    /** null: pieza del encaje que no es un módulo del proyecto. */
+    estado: 'pendiente' | 'en_curso' | 'terminado' | null;
+    /** Segundo superior (SD) de este módulo: se hace con su superior. */
+    sd_de: string | null;
+    inferior_hecho: boolean;
+    superior_hecho: boolean;
+    bastidor: number | null;
+}
+
+export interface PlanoBastidor {
+    id: number;
+    indice: number;
+    etiqueta: string;
+    modulos: number;
+    terminados: number;
+    terminado: boolean;
+}
+
+export interface PlanoProyectoDatos {
+    ancho: number;
+    alto: number;
+    canto_losa_cm: number | null;
+    contorno: PlanoPunto[];
+    huecos: PlanoPunto[][];
+    huecos_circulares: { x: number; y: number; r: number }[];
+    pilares: { nombre: string; puntos: PlanoPunto[] }[];
+    modulos: PlanoModulo[];
+    bastidores: PlanoBastidor[];
+}
+
 /** Modulos que faltan por subir hasta los previstos, a su peso medio. */
 export interface PlanificacionPrevistos {
     modulos: number;
@@ -1021,6 +1062,13 @@ export class ApiService {
     getElementosSueltos(proyectoId: number): Observable<ElementosSueltos> {
         return this.http.get<ElementosSueltos>(
             `${this.baseUrl}/proyectos/${proyectoId}/elementos-sueltos/`, { headers: this.getHeaders() },
+        );
+    }
+
+    /** Plano de la planta desde su base técnica, con el estado de módulos y bastidores. */
+    getPlanoProyecto(proyectoId: number): Observable<PlanoProyectoDatos> {
+        return this.http.get<PlanoProyectoDatos>(
+            `${this.baseUrl}/proyectos/${proyectoId}/plano/`, { headers: this.getHeaders() },
         );
     }
 

@@ -15,6 +15,7 @@ import {
 } from '../services/api.service';
 import { LineChartSeries, SplitArea, StatsLineChart } from './stats-line-chart';
 import { PlanificacionFerralla } from './planificacion-ferralla';
+import { PlanoProyecto } from './plano-proyecto';
 import { TurnosEditorComponent } from '../shared/turnos-editor.component';
 import { copiarTurnos, turnosError, turnosLabel } from '../shared/turnos';
 import {
@@ -168,7 +169,7 @@ interface Subfase {
   standalone: true,
   templateUrl: './dashboard.html',
   styleUrls: ['../admin/admin-theme.css', './dashboard.css', './dashboard-responsive.css'],
-  imports: [CommonModule, DragDropModule, FormsModule, ZoomableImageComponent, StatsLineChart, TurnosEditorComponent, PlanificacionFerralla]
+  imports: [CommonModule, DragDropModule, FormsModule, ZoomableImageComponent, StatsLineChart, TurnosEditorComponent, PlanificacionFerralla, PlanoProyecto]
 })
 export class Dashboard implements OnInit, OnDestroy {
   readonly planningLabel = planningLabel;
@@ -298,6 +299,8 @@ export class Dashboard implements OnInit, OnDestroy {
   elementosModalError = '';
   elementosModalHoja = 0;
   private elementosModalRequest = 0;
+  /** Plano de la planta dibujado desde su base técnica. */
+  planoModalProyecto: Proyecto | null = null;
 
   showMaterialesModal = false;
   materialesModalProyecto: Proyecto | null = null;
@@ -1149,6 +1152,21 @@ export class Dashboard implements OnInit, OnDestroy {
 
   elementosMomentoLabel(momento: ElementosSueltosSeccion['momento']): string {
     return momento === 'antes' ? 'Antes de los módulos' : momento === 'despues' ? 'Después de los módulos' : '';
+  }
+
+  /** El plano dibujado si la base técnica lo trae; si no, el PDF de antes, si lo hay. */
+  openPlano(proyecto: Proyecto, event?: Event): void {
+    event?.stopPropagation();
+    if (proyecto.plano_disponible) {
+      this.planoModalProyecto = proyecto;
+      this.cdr.detectChanges();
+    } else {
+      this.openProjectDocument(proyecto, 'plano');
+    }
+  }
+
+  closePlano(): void {
+    this.planoModalProyecto = null;
   }
 
   openProjectDocument(proyecto: Proyecto, type: 'plano' | 'despiece', event?: Event): void {

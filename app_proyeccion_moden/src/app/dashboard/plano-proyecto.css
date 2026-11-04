@@ -1,0 +1,68 @@
+/* Plano de la planta: la losa en gris, cada modulo por su estado. Verde lo terminado y
+   relleno entero el bastidor que esta completo; naranja claro lo que esta a medias. */
+:host {
+  display: grid; gap: 14px; min-width: 0;
+  --pp-terminado: #e3f1e9;
+}
+.pp-estado { margin: 0; color: var(--muted); font-size: 13px; }
+.pp-error { color: var(--danger); }
+
+/* Casillas en dos lineas, nombre y dato, como las de Estadisticas. */
+.pp-kpis { display: flex; flex-wrap: wrap; gap: 10px; }
+.pp-kpi { display: grid; gap: 4px; min-width: 160px; padding: 10px 14px; border: 1px solid var(--line); background: var(--surface); }
+.pp-kpi-label { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.pp-kpi-value { color: var(--ink); font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1; white-space: nowrap; }
+.pp-kpi-value small { color: var(--muted); font-size: 12px; font-weight: 500; }
+
+.pp-cuerpo { display: grid; grid-template-columns: minmax(0, 1fr) 190px; gap: 16px; align-items: start; }
+.pp-svg { display: block; width: 100%; height: auto; max-height: 66vh; }
+
+.pp-losa { fill: var(--surface-2); stroke: var(--ink); stroke-width: 1.5px; vector-effect: non-scaling-stroke; }
+.pp-hueco { fill: var(--surface); stroke: var(--muted); stroke-width: 1px; vector-effect: non-scaling-stroke; pointer-events: none; }
+.pp-pilar { fill: var(--text); }
+
+.pp-modulo { cursor: pointer; transition: opacity 0.15s; }
+.pp-modulo rect { stroke-width: 1px; vector-effect: non-scaling-stroke; }
+.pp-pendiente rect { fill: var(--surface); stroke: var(--line-strong); }
+.pp-en-curso rect { fill: var(--accent-soft); stroke: var(--accent); }
+.pp-terminado rect { fill: var(--pp-terminado); stroke: var(--ok); }
+.pp-bastidor-terminado rect { fill: var(--ok); stroke: var(--ok); }
+.pp-ajeno { cursor: default; }
+.pp-ajeno rect { fill: none; stroke: var(--line-strong); stroke-dasharray: 4 3; }
+.con-resaltado .pp-modulo:not(.pp-activo), .con-resaltado .pp-etiqueta:not(.pp-activo) { opacity: 0.3; }
+.pp-modulo.pp-activo rect { stroke: var(--ink); stroke-width: 2.5px; }
+
+/* Con un borde del color de su fondo: se leen aunque caigan sobre un hueco o un pilar. */
+.pp-etiqueta {
+  fill: var(--ink); font-weight: 600; text-anchor: middle; dominant-baseline: central; pointer-events: none;
+  paint-order: stroke; stroke: var(--surface); stroke-width: 0.07; stroke-linejoin: round; transition: opacity 0.15s;
+}
+.pp-etiqueta.pp-en-curso { stroke: var(--accent-soft); }
+.pp-etiqueta.pp-terminado { stroke: var(--pp-terminado); }
+.pp-etiqueta.pp-bastidor-terminado { fill: #fff; stroke: var(--ok); }
+.pp-etiqueta.pp-ajeno { fill: var(--muted); font-weight: 400; }
+
+/* Lista plana de bastidores: al pasar por uno se ven sus modulos en el plano. */
+.pp-bastidores { max-height: 66vh; overflow: auto; margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
+.pp-bastidores li { border-bottom: 1px solid var(--line); }
+.pp-bastidores button {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 8px; width: 100%; padding: 8px 10px;
+  border: 0; border-left: 3px solid transparent; background: transparent; color: var(--text); font: inherit; font-size: 13px; text-align: left; cursor: pointer;
+}
+.pp-bastidores button:hover, .pp-bastidores button.pp-activo { background: var(--surface-2); color: var(--ink); }
+.pp-bastidores button[aria-pressed="true"] { border-left-color: var(--ink); }
+.pp-cuenta { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pp-hecho .pp-cuenta { color: var(--ok); font-weight: 600; }
+
+.pp-leyenda { display: flex; flex-wrap: wrap; gap: 6px 16px; color: var(--muted); font-size: 12px; }
+.pp-leyenda span { display: inline-flex; align-items: center; gap: 6px; }
+.pp-muestra { display: inline-block; width: 16px; height: 10px; border: 1px solid; }
+.pp-muestra.pp-pendiente { background: var(--surface); border-color: var(--line-strong); }
+.pp-muestra.pp-en-curso { background: var(--accent-soft); border-color: var(--accent); }
+.pp-muestra.pp-terminado { background: var(--pp-terminado); border-color: var(--ok); }
+.pp-muestra.pp-bastidor-terminado { background: var(--ok); border-color: var(--ok); }
+
+@media (max-width: 760px) {
+  .pp-cuerpo { grid-template-columns: 1fr; }
+  .pp-bastidores { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); max-height: none; }
+}

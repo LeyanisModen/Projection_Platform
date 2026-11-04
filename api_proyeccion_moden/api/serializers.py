@@ -246,6 +246,8 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
     bastidor_longitud_cm = serializers.SerializerMethodField()
     # Enciende el boton de elementos sueltos del dashboard (api/elementos_sueltos.py).
     elementos_sueltos_disponible = serializers.SerializerMethodField()
+    # Enciende el boton del plano: la base tecnica trae la losa y los encajes (api/plano.py).
+    plano_disponible = serializers.SerializerMethodField()
 
     class Meta:
         model = Proyecto
@@ -256,7 +258,7 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
             "aceptado_por_ferralla_at",
             "bastidor_longitud_cm", "peso_maximo_grua_kg", "datos_tecnicos_importados",
             "datos_tecnicos_archivo", "datos_tecnicos_actualizados_at",
-            "plano_archivo", "despiece_archivo",
+            "plano_archivo", "plano_disponible", "despiece_archivo",
             "elementos_sueltos_archivo", "elementos_sueltos_disponible", "peso_elementos_sueltos_kg",
             "estrategia_bastidor",
             "grupos_count", "modulos_count", "modulos_completados",
@@ -304,6 +306,10 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
     def get_elementos_sueltos_disponible(self, obj):
         from api.elementos_sueltos import fuente
         return fuente(obj)[0] is not None
+
+    def get_plano_disponible(self, obj):
+        from api.plano import tiene_plano
+        return tiene_plano(obj)
 
     def get_archivado_por_nombre(self, obj):
         usuario = obj.archivado_por

@@ -773,12 +773,12 @@
                                         <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
                                     </svg>
                                 </button>
-                                <button class="project-icon" type="button"
-                                    [class.project-icon-disabled]="!proyecto.plano_archivo"
-                                    [title]="proyecto.plano_archivo ? 'Abrir plano PDF' : 'Plano no disponible'"
-                                    aria-label="Abrir plano PDF"
-                                    [disabled]="!proyecto.plano_archivo"
-                                    (click)="openProjectDocument(proyecto, 'plano', $event)">
+                                <button class="project-icon project-icon-plano" type="button"
+                                    [class.project-icon-disabled]="!proyecto.plano_disponible && !proyecto.plano_archivo"
+                                    [title]="proyecto.plano_disponible || proyecto.plano_archivo ? 'Ver plano' : 'Plano no disponible'"
+                                    aria-label="Ver plano"
+                                    [disabled]="!proyecto.plano_disponible && !proyecto.plano_archivo"
+                                    (click)="openPlano(proyecto, $event)">
                                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                         <path d="M9 18 3 20V6l6-2 6 2 6-2v14l-6 2-6-2z"></path>
                                         <path d="M9 4v14"></path>
@@ -1246,6 +1246,19 @@
                         </div>
                     }
                 }
+            </div>
+        </div>
+    }
+
+    @if (planoModalProyecto) {
+        <div class="modal-overlay" (click)="closePlano()">
+            <div class="modal-content plano-modal" role="dialog" aria-modal="true" aria-labelledby="plano-modal-title"
+                (click)="$event.stopPropagation()">
+                <div class="plan-modal-header">
+                    <h3 id="plano-modal-title">Plano · {{ planoModalProyecto.nombre }}</h3>
+                    <button type="button" class="plan-modal-close" (click)="closePlano()" title="Cerrar" aria-label="Cerrar">×</button>
+                </div>
+                <app-plano-proyecto [proyectoId]="planoModalProyecto.id" [nombre]="planoModalProyecto.nombre" />
             </div>
         </div>
     }

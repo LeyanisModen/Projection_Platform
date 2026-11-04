@@ -1,0 +1,72 @@
+@if (cargando()) {
+    <p class="pp-estado">Cargando plano…</p>
+} @else if (error()) {
+    <p class="pp-estado pp-error" role="alert">{{ error() }}</p>
+} @else if (datos(); as plano) {
+    <div class="pp-kpis">
+        <div class="pp-kpi">
+            <span class="pp-kpi-label">Bastidores terminados</span>
+            <span class="pp-kpi-value">{{ resumen().bastidoresTerminados }} <small>/ {{ resumen().bastidores }}</small></span>
+        </div>
+        <div class="pp-kpi">
+            <span class="pp-kpi-label">Módulos terminados</span>
+            <span class="pp-kpi-value">{{ resumen().modulosTerminados }} <small>/ {{ resumen().modulos }}</small></span>
+        </div>
+    </div>
+
+    <div class="pp-cuerpo">
+        <svg class="pp-svg" [attr.viewBox]="'0 0 ' + plano.ancho + ' ' + plano.alto" role="img"
+            [attr.aria-label]="'Plano de ' + nombre()" [class.con-resaltado]="bastidorActivo() !== null">
+            <polygon class="pp-losa" [attr.points]="puntos(plano.contorno)" />
+            @for (modulo of plano.modulos; track $index) {
+                <g [class]="'pp-modulo pp-' + relleno(modulo)"
+                    [class.pp-activo]="modulo.bastidor !== null && modulo.bastidor === bastidorActivo()"
+                    (mouseenter)="resaltado.set(modulo.bastidor)" (mouseleave)="resaltado.set(null)"
+                    (click)="modulo.bastidor !== null && fijar(modulo.bastidor)">
+                    <title>{{ titulo(modulo) }}</title>
+                    <rect [attr.x]="modulo.x" [attr.y]="modulo.y" [attr.width]="modulo.ancho" [attr.height]="modulo.alto" />
+                </g>
+            }
+            @for (hueco of plano.huecos; track $index) {
+                <polygon class="pp-hueco" [attr.points]="puntos(hueco)" />
+            }
+            @for (hueco of plano.huecos_circulares; track $index) {
+                <circle class="pp-hueco" [attr.cx]="hueco.x" [attr.cy]="hueco.y" [attr.r]="hueco.r" />
+            }
+            @for (pilar of plano.pilares; track $index) {
+                <polygon class="pp-pilar" [attr.points]="puntos(pilar.puntos)"><title>Pilar {{ pilar.nombre }}</title></polygon>
+            }
+            <!-- Los nombres, encima de huecos y pilares. -->
+            @for (modulo of plano.modulos; track $index) {
+                <text [class]="'pp-etiqueta pp-' + relleno(modulo)"
+                    [class.pp-activo]="modulo.bastidor !== null && modulo.bastidor === bastidorActivo()"
+                    [attr.x]="modulo.x + modulo.ancho / 2" [attr.y]="modulo.y + modulo.alto / 2"
+                    [attr.font-size]="tamanoTexto(modulo)">{{ modulo.nombre }}</text>
+            }
+        </svg>
+
+        <ul class="pp-bastidores" aria-label="Bastidores">
+            @for (bastidor of plano.bastidores; track bastidor.id) {
+                <li>
+                    <button type="button" [class.pp-activo]="bastidor.id === bastidorActivo()" [class.pp-hecho]="bastidor.terminado"
+                        [attr.aria-pressed]="fijado() === bastidor.id"
+                        (mouseenter)="resaltado.set(bastidor.id)" (mouseleave)="resaltado.set(null)"
+                        (focus)="resaltado.set(bastidor.id)" (blur)="resaltado.set(null)" (click)="fijar(bastidor.id)">
+                        <span>{{ bastidor.etiqueta }}</span>
+                        <span class="pp-cuenta">
+                            @if (bastidor.terminado) { <i class="fa fa-check" aria-hidden="true"></i> }
+                            {{ bastidor.terminados }}/{{ bastidor.modulos }}
+                        </span>
+                    </button>
+                </li>
+            }
+        </ul>
+    </div>
+
+    <div class="pp-leyenda" aria-hidden="true">
+        <span><i class="pp-muestra pp-pendiente"></i>Pendiente</span>
+        <span><i class="pp-muestra pp-en-curso"></i>En curso</span>
+        <span><i class="pp-muestra pp-terminado"></i>Terminado</span>
+        <span><i class="pp-muestra pp-bastidor-terminado"></i>Bastidor terminado</span>
+    </div>
+}
