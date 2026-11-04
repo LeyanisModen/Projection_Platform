@@ -1881,6 +1881,34 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         proyecto.refresh_from_db()
         return Response(self.get_serializer(proyecto).data)
 
+    @action(detail=True, methods=['post'], url_path='copiar-de')
+    def copiar_de(self, request, pk=None):
+        """Planta tipo: este proyecto, aun sin modulos, copia los de otro con
+        sus bastidores, presentaciones, base tecnica y despiece."""
+        from api import copia_planta
+
+        if not _is_admin(request.user):
+            raise PermissionDenied('Solo la oficina puede copiar proyectos.')
+        proyecto = self.get_object()
+        try:
+            origen = Proyecto.objects.filter(pk=int(request.data.get('origen'))).first()
+        except (TypeError, ValueError):
+            origen = None
+        if origen is None:
+            return Response({'detail': 'Elige el proyecto del que copiar.'}, status=status.HTTP_400_BAD_REQUEST)
+        motivos = copia_planta.motivos_para_no_copiar(origen, proyecto)
+        if motivos:
+            return Response({'detail': ' '.join(motivos)}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            modulos = copia_planta.copiar(origen, proyecto)
+        except ValueError as exc:
+            # Le han subido modulos mientras tanto.
+            return Response({'detail': str(exc)}, status=status.HTTP_409_CONFLICT)
+        for modulo in modulos:
+            sync_new_module(modulo, assigned_by=request.user)
+        proyecto.refresh_from_db()
+        return Response(self.get_serializer(proyecto).data)
+
     @action(detail=True, methods=['get'], url_path='elementos-sueltos')
     def elementos_sueltos(self, request, pk=None):
         """Pestaña ELEMENTOS SUELTOS del despiece leida como tablas."""

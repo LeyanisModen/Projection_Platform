@@ -1068,6 +1068,11 @@ export class ApiService {
         return this.http.post<Proyecto>(`${this.baseUrl}/proyectos/${id}/archivar/`, { confirmado: true }, { headers: this.getHeaders() });
     }
 
+    /** Planta tipo: el proyecto, aun sin modulos, copia los de otro con todo lo suyo. */
+    copiarProyectoDe(id: number, origen: number): Observable<Proyecto> {
+        return this.http.post<Proyecto>(`${this.baseUrl}/proyectos/${id}/copiar-de/`, { origen }, { headers: this.getHeaders() });
+    }
+
     /**
      * Import project structure with images from folder.
      * @param proyectoId - The project ID to import into

@@ -161,6 +161,48 @@ describe('Project detail rack order switch', () => {
         confirmar.mockRestore();
     });
 
+    it('copia de otro proyecto solo cuando aun no tiene modulos', () => {
+        const component = fixture.componentInstance;
+        const copiar = () => fixture.nativeElement.querySelector('.copy-project-btn') as HTMLButtonElement | null;
+        expect(copiar()).toBeNull();
+
+        component.proyecto = {...component.proyecto!, nombre: 'OBRA_BH_P05'};
+        component.modulos = [];
+        component.grupos = [];
+        fixture.changeDetectorRef.markForCheck();
+        fixture.detectChanges();
+        http.expectOne('/api/proyecto-checklist/7/').flush([]);
+        copiar()!.click();
+        fixture.detectChanges();
+        http.expectOne('/api/proyectos/').flush({next: null, results: [
+            {id: 7, nombre: 'OBRA_BH_P05', modulos_count: 0},
+            {id: 3, nombre: 'OTRA_P02', modulos_count: 40},
+            {id: 4, nombre: 'OBRA_BI_P03', modulos_count: 64},
+            {id: 5, nombre: 'OBRA_BH_P04', modulos_count: 64},
+            {id: 6, nombre: 'OBRA_BH_P01', modulos_count: 64, archivado_at: '2026-10-01T10:00:00'},
+            {id: 8, nombre: 'OBRA_BH_P06', modulos_count: 0},
+        ]});
+        fixture.detectChanges();
+        const filas = () => Array.from(fixture.nativeElement.querySelectorAll('.copy-candidates button')) as HTMLButtonElement[];
+        // Los de la misma obra primero; ni archivados, ni vacios, ni el mismo.
+        expect(filas().map(fila => fila.querySelector('span')!.textContent)).toEqual(['OBRA_BH_P04', 'OBRA_BI_P03', 'OTRA_P02']);
+        const confirmar = fixture.nativeElement.querySelector('.copy-confirm-btn') as HTMLButtonElement;
+        expect(confirmar.disabled).toBe(true);
+
+        const recargar = vi.spyOn(component, 'loadData').mockImplementation(() => undefined);
+        filas()[0].click();
+        fixture.detectChanges();
+        confirmar.click();
+        const request = http.expectOne('/api/proyectos/7/copiar-de/');
+        expect(request.request.method).toBe('POST');
+        expect(request.request.body).toEqual({origen: 5});
+        request.flush({...component.proyecto, modulos_count: 64});
+        fixture.detectChanges();
+        http.match('/api/proyecto-checklist/7/').forEach(pendiente => pendiente.flush([]));
+        expect(recargar).toHaveBeenCalled();
+        expect(component.showCopyModal).toBe(false);
+    });
+
     it('defaults to fabrication order with an accessible selected option', () => {
         expect(fixture.nativeElement.querySelector('.rack-view-toggle .segmented').getAttribute('role')).toBe('group');
         expect(buttons().map(button => button.getAttribute('aria-pressed'))).toEqual(['true', 'false']);
