@@ -38,6 +38,12 @@ const PROJECT_FILE_FIELDS = {
 
 const EXCEL_EXTENSIONS = ['.xlsx', '.xlsm', '.xls'];
 
+function prefijoComun(a: string, b: string): number {
+    let i = 0;
+    while (i < a.length && i < b.length && a[i] === b[i]) i++;
+    return i;
+}
+
 @Component({
     selector: 'app-proyecto-detalle',
     standalone: true,
@@ -97,6 +103,14 @@ export class ProyectoDetailComponent implements OnInit {
     archiving = false;
     archiveError = '';
     archiveFileName = '';
+    // Planta tipo: un proyecto sin modulos copia los de otro.
+    showCopyModal = false;
+    copyCandidates: Proyecto[] = [];
+    copyFilter = '';
+    copySourceId: number | null = null;
+    loadingCopyCandidates = false;
+    copying = false;
+    copyError = '';
     checkingProjectFiles = false;
     projectFileExists = { despiece: false };
     dropdownOpen = false;
@@ -168,6 +182,11 @@ export class ProyectoDetailComponent implements OnInit {
         }
         if (this.showModuleImportModal && event.key === 'Escape') {
             this.closeModuleImportSelection();
+            event.preventDefault();
+            return;
+        }
+        if (this.showCopyModal && event.key === 'Escape') {
+            this.closeCopyModal();
             event.preventDefault();
             return;
         }
@@ -1342,6 +1361,62 @@ export class ProyectoDetailComponent implements OnInit {
             error: err => {
                 this.archiving = false;
                 this.archiveError = err?.error?.detail || 'No se pudo archivar el proyecto.';
+                this.cdr.detectChanges();
+            },
+        });
+    }
+
+    openCopyModal(): void {
+        if (!this.proyecto) return;
+        const { id, nombre } = this.proyecto;
+        this.copyFilter = '';
+        this.copySourceId = null;
+        this.copyError = '';
+        this.copyCandidates = [];
+        this.loadingCopyCandidates = true;
+        this.showCopyModal = true;
+        this.api.getProyectos().subscribe({
+            next: proyectos => {
+                // Los de la misma obra primero: empiezan igual que este.
+                this.copyCandidates = proyectos
+                    .filter(p => p.id !== id && !p.archivado_at && (p.modulos_count ?? 0) > 0)
+                    .sort((a, b) => prefijoComun(b.nombre, nombre) - prefijoComun(a.nombre, nombre)
+                        || a.nombre.localeCompare(b.nombre, 'es', { numeric: true }));
+                this.loadingCopyCandidates = false;
+                this.cdr.detectChanges();
+            },
+            error: () => {
+                this.loadingCopyCandidates = false;
+                this.copyError = 'No se pudieron cargar los proyectos.';
+                this.cdr.detectChanges();
+            },
+        });
+    }
+
+    get filteredCopyCandidates(): Proyecto[] {
+        const filtro = this.copyFilter.trim().toLowerCase();
+        return filtro ? this.copyCandidates.filter(p => p.nombre.toLowerCase().includes(filtro)) : this.copyCandidates;
+    }
+
+    closeCopyModal(): void {
+        if (this.copying) return;
+        this.showCopyModal = false;
+    }
+
+    confirmCopy(): void {
+        if (!this.proyecto || this.copySourceId === null || this.copying) return;
+        this.copying = true;
+        this.copyError = '';
+        this.api.copiarProyectoDe(this.proyecto.id, this.copySourceId).subscribe({
+            next: proyecto => {
+                this.copying = false;
+                this.proyecto = proyecto;
+                this.showCopyModal = false;
+                this.loadData();
+            },
+            error: err => {
+                this.copying = false;
+                this.copyError = err?.error?.detail || 'No se pudo copiar el proyecto.';
                 this.cdr.detectChanges();
             },
         });

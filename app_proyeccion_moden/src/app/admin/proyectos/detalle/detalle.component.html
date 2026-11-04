@@ -594,6 +594,8 @@
                     <h3 class="mt-3">Aún no hay módulos</h3>
                     <p class="meta" *ngIf="!importing">Elige la carpeta del proyecto para cargarlos.</p>
                     <p class="meta" *ngIf="importing">{{ importProgress }}</p>
+                    <button type="button" class="btn btn-sm btn-outline-secondary copy-project-btn" *ngIf="!importing && !proyecto.archivado_at"
+                        (click)="openCopyModal()">Copiar de otro proyecto</button>
                 </div>
             </ng-template>
 
@@ -890,6 +892,37 @@
             </li>
         </ol>
         @if (archiveError) { <p class="archive-error" role="alert">{{ archiveError }}</p> }
+    </div>
+</div>
+
+<div class="project-files-modal-backdrop" *ngIf="showCopyModal" (click)="closeCopyModal()">
+    <div class="project-files-modal copy-modal" role="dialog" aria-modal="true" aria-labelledby="copy-title" (click)="$event.stopPropagation()">
+        <div class="project-files-modal-header">
+            <h4 id="copy-title">Copiar de otro proyecto</h4>
+            <button class="btn btn-sm btn-outline-secondary" (click)="closeCopyModal()" [disabled]="copying">Cerrar</button>
+        </div>
+        <input type="search" class="project-config-input copy-filter" name="copyFilter" [(ngModel)]="copyFilter"
+            placeholder="Buscar" aria-label="Buscar proyecto" [disabled]="copying">
+        <ul class="copy-candidates" aria-label="Proyecto del que copiar">
+            @for (candidato of filteredCopyCandidates; track candidato.id) {
+                <li>
+                    <button type="button" [class.is-selected]="copySourceId === candidato.id" [attr.aria-pressed]="copySourceId === candidato.id"
+                        (click)="copySourceId = candidato.id" [disabled]="copying">
+                        <span>{{ candidato.nombre }}</span>
+                        <small>{{ candidato.modulos_count }} mód.</small>
+                    </button>
+                </li>
+            } @empty {
+                <li class="copy-candidates-empty">{{ loadingCopyCandidates ? 'Cargando...' : 'Ningún proyecto con módulos' }}</li>
+            }
+        </ul>
+        @if (copyError) { <p class="archive-error" role="alert">{{ copyError }}</p> }
+        <div class="copy-actions">
+            <button type="button" class="btn btn-sm btn-primary copy-confirm-btn" (click)="confirmCopy()" [disabled]="copySourceId === null || copying"
+                title="Módulos, bastidores, presentaciones, base técnica y despiece">
+                {{ copying ? 'Copiando...' : 'Copiar' }}
+            </button>
+        </div>
     </div>
 </div>
 
