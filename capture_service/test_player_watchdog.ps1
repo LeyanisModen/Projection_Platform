@@ -69,6 +69,11 @@ Assert-Scenario 'dual: still inside the cool-down'  @($player)           $dual '
 $monitorReopenAfter = (Get-Date).AddSeconds(-1)
 Assert-Scenario 'dual: cool-down over -> reopen'    @($player)           $dual 'place:Player@1920 | start-monitor:0,0 | focus:100'
 
+# ---- monitor switched off at the end of the shift and on again in the morning
+Assert-Scenario 'monitor on before switching it off' @($player, $monitor) $dual 'place:Player@1920 | place:Monitor view@0 | focus:100'
+Assert-Scenario 'monitor off: the watchdog closes the view' @($player, $monitor) $null 'kill:200 | focus:100'
+Assert-Scenario 'monitor on: view back at once, no cool-down' @($player)       $dual 'place:Player@1920 | start-monitor:0,0 | focus:100'
+
 # ---- Q pause: nothing is touched and it does not count as "monitor closed"
 $monitorWasRunning = $true
 New-Item -ItemType File -Path $pauseMarker | Out-Null
