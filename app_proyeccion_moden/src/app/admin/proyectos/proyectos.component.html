@@ -16,6 +16,10 @@
             <option [ngValue]="null">Sin ferralla</option>
             <option *ngFor="let user of users" [ngValue]="user.url">{{ user.first_name || user.username }}</option>
         </select>
+        <label class="new-project-fantasma" title="Solo para la planificación de Moden: la ferralla no lo ve hasta pasarlo a real">
+            <input type="checkbox" name="fantasma" [(ngModel)]="newProject.fantasma" [disabled]="loading || !newProject.usuario">
+            Fantasma
+        </label>
         <button type="submit" class="btn btn-primary" [disabled]="loading || !newProject.nombre.trim()">
             {{ loading ? 'Creando...' : 'Crear' }}
         </button>
@@ -48,7 +52,7 @@
                 (click)="manageProject(project)"
                 (keydown)="onProjectRowKeydown($event, project)">
                 <div class="project-main">
-                    <div class="project-name">{{ project.nombre }}@if (project.planta_etiqueta) { <span class="planta-chip">{{ project.planta_etiqueta }}</span> }</div>
+                    <div class="project-name">{{ project.nombre }}@if (project.planta_etiqueta) { <span class="planta-chip">{{ project.planta_etiqueta }}</span> }@if (project.fantasma) { <span class="fantasma-chip" title="Solo lo ve Moden en la planificación">Fantasma</span> }</div>
                     <div class="meta project-info">
                         @if (group.archived && project.usuario_nombre) { <span>{{ project.usuario_nombre }}</span> }
                         @if (project.fecha_montaje) { <span>Montaje {{ project.fecha_montaje | date:'dd/MM/yyyy' }}</span> }
@@ -60,7 +64,7 @@
                                 Obra {{ project.fecha_montaje_obra | date:'dd/MM/yyyy' }}@if (project.fecha_montaje_obra_cambiada_at) { · cambiada por la ferralla el {{ project.fecha_montaje_obra_cambiada_at | date:'dd/MM' }} }
                             </span>
                         }
-                        @if (project.usuario && !project.aceptado_por_ferralla_at && !group.archived) {
+                        @if (project.usuario && !project.aceptado_por_ferralla_at && !project.fantasma && !group.archived) {
                             <span class="is-warn" title="La ferralla aún no lo ha aceptado desde sus notificaciones">Pendiente de aceptar por la ferralla</span>
                         }
                         <span [class.is-warn]="project.planificacion?.estado === 'VENCIDO' || project.planificacion?.estado === 'SIN_DIAS'">{{ planningLabel(project) }}</span>

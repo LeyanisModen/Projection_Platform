@@ -72,22 +72,24 @@ describe('ProyectosComponent — alta de proyecto', () => {
     expect(filas[0].querySelector('.project-checks')?.getAttribute('aria-label')).toBe('Lista de control: 1 de 3 hechos');
   });
 
-  it('pide solo nombre y ferralla', () => {
+  it('pide solo nombre, ferralla y si es fantasma (que necesita ferralla)', async () => {
     component.toggleForm();
     fixture.detectChanges();
+    await fixture.whenStable();
     const form: HTMLElement = fixture.nativeElement.querySelector('.new-project');
-    expect(form.querySelectorAll('input, select').length).toBe(2);
+    expect(form.querySelectorAll('input, select').length).toBe(3);
     expect((form.querySelector('button[type=submit]') as HTMLButtonElement).disabled).toBe(true);
+    expect((form.querySelector('input[name=fantasma]') as HTMLInputElement).disabled).toBe(true);
   });
 
   it('crea con el nombre y salta al detalle del proyecto nuevo', () => {
     component.toggleForm();
-    component.newProject = { nombre: '  Torre Norte ', usuario: '/api/users/9/' };
+    component.newProject = { nombre: '  Torre Norte ', usuario: '/api/users/9/', fantasma: false };
     component.createProyecto();
 
     const request = http.expectOne('/api/proyectos/');
     expect(request.request.method).toBe('POST');
-    expect(request.request.body).toEqual({ nombre: 'Torre Norte', usuario: '/api/users/9/' });
+    expect(request.request.body).toEqual({ nombre: 'Torre Norte', usuario: '/api/users/9/', fantasma: false });
     request.flush({ id: 42, nombre: 'Torre Norte', usuario: '/api/users/9/' });
 
     expect(navigate).toHaveBeenCalledWith(['/admin-dashboard/proyectos', 42]);
@@ -96,21 +98,32 @@ describe('ProyectosComponent — alta de proyecto', () => {
 
   it('sin ferralla envía usuario nulo y no crea con el nombre vacío', () => {
     component.toggleForm();
-    component.newProject = { nombre: '   ', usuario: null };
+    component.newProject = { nombre: '   ', usuario: null, fantasma: false };
     component.createProyecto();
     http.expectNone('/api/proyectos/');
 
-    component.newProject = { nombre: 'Solo nombre', usuario: null };
+    component.newProject = { nombre: 'Solo nombre', usuario: null, fantasma: true };
     component.createProyecto();
     const request = http.expectOne('/api/proyectos/');
-    expect(request.request.body).toEqual({ nombre: 'Solo nombre', usuario: null });
+    // Sin ferralla no hay fantasma: se simula sobre una.
+    expect(request.request.body).toEqual({ nombre: 'Solo nombre', usuario: null, fantasma: false });
     request.flush({ id: 43, nombre: 'Solo nombre', usuario: null });
     expect(navigate).toHaveBeenCalledWith(['/admin-dashboard/proyectos', 43]);
   });
 
+  it('crea un fantasma sobre una ferralla', () => {
+    component.toggleForm();
+    component.newProject = { nombre: 'Torre Sur', usuario: '/api/users/9/', fantasma: true };
+    component.createProyecto();
+    const request = http.expectOne('/api/proyectos/');
+    expect(request.request.body).toEqual({ nombre: 'Torre Sur', usuario: '/api/users/9/', fantasma: true });
+    request.flush({ id: 44, nombre: 'Torre Sur', usuario: '/api/users/9/', fantasma: true });
+    expect(navigate).toHaveBeenCalledWith(['/admin-dashboard/proyectos', 44]);
+  });
+
   it('muestra el error de la API y se queda en el formulario', () => {
     component.toggleForm();
-    component.newProject = { nombre: 'Repetido', usuario: null };
+    component.newProject = { nombre: 'Repetido', usuario: null, fantasma: false };
     component.createProyecto();
     http.expectOne('/api/proyectos/').flush({ nombre: ['Ya existe un proyecto con este nombre.'] }, { status: 400, statusText: 'Bad Request' });
     expect(component.error).toContain('Ya existe');

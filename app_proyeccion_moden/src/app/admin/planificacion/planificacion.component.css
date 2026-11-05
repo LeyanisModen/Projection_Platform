@@ -1,0 +1,54 @@
+/* Una ferralla detras de otra: rotulo, casillas, grafica y sus entregas por mes. */
+.pm-ferralla { display: grid; gap: 14px; padding: 18px 0 28px; border-top: 1px solid var(--line-strong); }
+.pm-ferralla:first-of-type { border-top: 0; padding-top: 0; }
+.pm-cabecera { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.pm-nombre { margin: 0; color: var(--ink); font-size: 13px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+
+/* Casillas en dos lineas, nombre y dato; el ancho lo pide el dato. */
+.pm-kpis { display: flex; flex-wrap: wrap; gap: 10px; }
+.pm-kpi { display: grid; gap: 4px; padding: 10px 14px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); }
+.pm-kpi-label { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.pm-kpi-value { color: var(--ink); font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1; white-space: nowrap; }
+.pm-kpi-value small { color: var(--muted); font-size: 12px; font-weight: 500; }
+/* Lo de los fantasmas, en el azul de su linea. */
+.pm-azul { color: #2264b8; }
+
+/* Lista plana: el mes de entrega es un rotulo y los forjados van debajo. */
+.pm-lista { display: grid; }
+.pm-mes { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 16px 8px 6px; border-bottom: 1px solid var(--line-strong); }
+.pm-mes:first-child { padding-top: 4px; }
+.pm-mes-nombre { color: var(--text); font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+.pm-fila {
+    display: flex; align-items: center; gap: 12px; padding: 9px 8px 9px 28px;
+    border-bottom: 1px solid var(--line); color: inherit; text-decoration: none;
+}
+.pm-fila:hover { background: var(--surface-2); }
+.pm-fila:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.pm-proyecto { flex: 0 1 auto; min-width: 0; color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
+.pm-datos { display: flex; flex-wrap: wrap; gap: 0 6px; margin-left: auto; text-align: right; justify-content: flex-end; }
+.pm-datos > span + span::before { content: '·'; margin-right: 6px; color: var(--line-strong); }
+.pm-estimado { font-style: italic; }
+.pm-chevron { color: var(--line-strong); font-size: 12px; }
+.pm-fila:hover .pm-chevron { color: var(--muted); }
+.pm-es-fantasma .pm-proyecto { color: var(--text); }
+.fantasma-chip { margin-left: 6px; padding: 1px 6px; border: 1px dashed var(--muted); border-radius: 4px; color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; vertical-align: 1px; }
+
+/* Alta de un fantasma. */
+.modal-backdrop { position: fixed; inset: 0; z-index: 1040; background: rgba(31, 41, 51, 0.45); }
+.custom-modal { position: fixed; inset: 0; z-index: 1050; display: grid; place-items: center; padding: 16px; pointer-events: none; }
+.custom-modal .modal-content { width: min(420px, 100%); pointer-events: auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2); }
+.modal-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+.modal-header h5 { margin: 0; color: var(--ink); font-size: 16px; font-weight: 600; }
+.modal-header .close { border: 0; background: none; color: var(--muted); font-size: 22px; line-height: 1; cursor: pointer; }
+.modal-body { padding: 18px; }
+.modal-footer { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--line); }
+.pm-nuevo { display: grid; gap: 12px; }
+.pm-nuevo label { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
+.pm-nuevo .alert-inline { margin: 0; }
+
+@media (max-width: 760px) {
+    .page-wide { padding-left: 12px; padding-right: 12px; }
+    .pm-fila { flex-wrap: wrap; padding-left: 12px; }
+    .pm-datos { flex-basis: 100%; margin-left: 0; text-align: left; justify-content: flex-start; }
+    .pm-chevron { display: none; }
+}

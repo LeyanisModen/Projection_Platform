@@ -5,6 +5,7 @@
             <a routerLink="/admin-dashboard/proyectos" class="back-link" aria-label="Volver a proyectos"><i class="fa fa-arrow-left" aria-hidden="true"></i></a>
             <div class="project-title-wrap" *ngIf="!editingProjectName; else editProjectNameTpl">
                 <h1 class="project-title mb-0">{{ proyecto.nombre }}</h1>
+                @if (proyecto.fantasma) { <span class="fantasma-chip">Fantasma</span> }
                 <button
                     type="button"
                     class="project-title-edit-btn"
@@ -113,6 +114,19 @@
                     </div>
                 </div>
             </div>
+
+            @if (proyecto.usuario && !proyecto.archivado_at && (proyecto.fantasma || !proyecto.aceptado_por_ferralla_at)) {
+            <div class="side-panel estado-panel">
+                <span class="section-label">Estado</span>
+                <div class="estado-row">
+                    <span class="estado-valor">{{ proyecto.fantasma ? 'Fantasma' : 'Pendiente de aceptar' }}</span>
+                    <button type="button" class="btn btn-sm" (click)="cambiarFantasma(!proyecto.fantasma)" [disabled]="guardandoEstado">
+                        {{ proyecto.fantasma ? 'Pasar a real' : 'Pasar a fantasma' }}
+                    </button>
+                </div>
+                @if (estadoError) { <p class="edificio-error" role="alert">{{ estadoError }}</p> }
+            </div>
+            }
 
             @if (proyecto.usuario) {
             <div class="side-panel edificio-panel">

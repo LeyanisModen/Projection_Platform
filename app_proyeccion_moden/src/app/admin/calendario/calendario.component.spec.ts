@@ -441,7 +441,10 @@ describe('CalendarioComponent', () => {
         const component = fixture.componentInstance;
         component.load();
         http.expectOne(r => r.url === '/api/eventos/').flush(events);
-        http.expectOne('/api/proyectos/').flush({results: [{id: 7, nombre: 'Esnabide', fecha_montaje: '2026-09-15'}], next: null, count: 1});
+        // El montaje de un fantasma es una hipotesis de la planificacion: no sale.
+        http.expectOne('/api/proyectos/').flush({results: [
+            {id: 7, nombre: 'Esnabide', fecha_montaje: '2026-09-15'}, {id: 8, nombre: 'Torre', fecha_montaje: '2026-09-17', fantasma: true},
+        ], next: null, count: 2});
         http.expectOne('/api/trabajadores/').flush(workers);
         http.expectOne(r => r.url === '/api/proyecto-checklist/vencimientos/').flush([
             {id: 5, proyecto: 7, proyecto_nombre: 'Esnabide', titulo: 'Geometría y armados confirmados', fecha_limite: '2026-09-15', completado: false,

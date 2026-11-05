@@ -52,7 +52,7 @@ export class ProyectosComponent implements OnInit {
   loading = false;
   error = '';
   showForm = false;
-  newProject: { nombre: string; usuario: string | null } = { nombre: '', usuario: null };
+  newProject: { nombre: string; usuario: string | null; fantasma: boolean } = { nombre: '', usuario: null, fantasma: false };
 
   constructor(private api: ApiService, private router: Router, private cdr: ChangeDetectorRef) { }
 
@@ -176,7 +176,7 @@ export class ProyectosComponent implements OnInit {
   toggleForm() {
     this.showForm = !this.showForm;
     this.error = '';
-    this.newProject = { nombre: '', usuario: null };
+    this.newProject = { nombre: '', usuario: null, fantasma: false };
     this.cdr.detectChanges();
   }
 
@@ -185,7 +185,9 @@ export class ProyectosComponent implements OnInit {
     if (!nombre || this.loading) return;
     this.error = '';
     this.loading = true;
-    this.api.createProyecto({ nombre, usuario: this.newProject.usuario || null }).subscribe({
+    const usuario = this.newProject.usuario || null;
+    // Un fantasma se simula sobre una ferralla.
+    this.api.createProyecto({ nombre, usuario, fantasma: !!usuario && this.newProject.fantasma }).subscribe({
       next: (project) => {
         this.loading = false;
         this.manageProject(project);

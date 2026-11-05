@@ -169,6 +169,8 @@ export interface Proyecto {
     fecha_montaje_obra_cambiada_at?: string | null;
     /** Un proyecto nuevo espera en notificaciones hasta que la ferralla lo acepta. */
     aceptado_por_ferralla_at?: string | null;
+    /** Fantasma: Moden lo simula en la planificacion; la ferralla no lo ve hasta pasarlo a real. */
+    fantasma?: boolean;
     /** La oficina lo marca en el calendario cuando el montaje ya se hizo. */
     montaje_realizado_at?: string | null;
     planificacion?: PlanificacionProyecto;
@@ -847,6 +849,41 @@ export interface PlanificacionResponse {
     proyectos?: PlanificacionTarjeta[];
 }
 
+/** Un proyecto en la planificacion de Moden: la tarjeta de la ferralla y si es fantasma. */
+export interface PlanificacionModenProyecto extends PlanificacionTarjeta {
+    fantasma: boolean;
+    /** Real, pero la ferralla aun no lo ha aceptado. */
+    pendiente_aceptar: boolean;
+    modulos_pendientes: number;
+}
+
+export interface PlanificacionModenFerralla {
+    ferralla: { id: number; nombre: string };
+    /** Dias laborables: modulos al dia para llegar con lo real y sumando los fantasmas. */
+    dias: Array<{ fecha: string; real: number; con_fantasmas: number }>;
+    festivos: string[];
+    entregas: Array<PlanificacionEntrega & { fantasma: boolean }>;
+    proyectos: PlanificacionModenProyecto[];
+    resumen: {
+        /** El tramo mas apretado: lo que hay que sacar al dia ya. */
+        ritmo_real: number | null;
+        ritmo_con_fantasmas: number | null;
+        manda_real: string | null;
+        manda_con_fantasmas: string | null;
+        fantasmas: number;
+        modulos_real: number;
+        modulos_fantasmas: number;
+        kilos_real: number;
+        kilos_fantasmas: number;
+    };
+}
+
+export interface PlanificacionModenResponse {
+    desde: string;
+    hasta: string;
+    ferrallas: PlanificacionModenFerralla[];
+}
+
 export interface ProductionStatsResponse {
     range: {
         from: string; to: string; working_days: number; festivos?: string[];
@@ -1297,6 +1334,11 @@ export class ApiService {
     getPlanificacion(usuario?: number): Observable<PlanificacionResponse> {
         const qs = usuario != null ? `?usuario=${usuario}` : '';
         return this.http.get<PlanificacionResponse>(`${this.baseUrl}/planificacion/${qs}`, { headers: this.getHeaders() });
+    }
+
+    /** Planificacion de Moden: todas las ferrallas a seis meses, con sus fantasmas. */
+    getPlanificacionModen(): Observable<PlanificacionModenResponse> {
+        return this.http.get<PlanificacionModenResponse>(`${this.baseUrl}/planificacion-moden/`, { headers: this.getHeaders() });
     }
 
     reiniciarModulo(id: number): Observable<Modulo> {

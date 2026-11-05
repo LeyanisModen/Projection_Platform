@@ -103,10 +103,10 @@ def user_may_read(user, rel_path):
     if folder in PROJECT_SCOPED_FOLDERS:
         if len(parts) < 2 or not parts[1].isdigit():
             return False
-        return Proyecto.objects.filter(pk=int(parts[1]), usuario=user).exists()
+        return Proyecto.objects.filter(pk=int(parts[1]), usuario=user, fantasma=False).exists()
     field = PROJECT_FILE_FIELDS.get(folder)
     if field:
-        return Proyecto.objects.filter(usuario=user, **{field: rel_path}).exists()
+        return Proyecto.objects.filter(usuario=user, fantasma=False, **{field: rel_path}).exists()
     return False
 
 

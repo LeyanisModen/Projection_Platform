@@ -110,14 +110,18 @@ def kilos_de_modulos(proyectos):
     }
 
 
-def pesos_medios(usuario_id):
+def pesos_medios(usuario_id, con_fantasmas=False):
     """Kilos medios de un modulo de la ferralla: por proyecto, por edificio y en total.
 
     De los modulos subidos con sus detalles, archivados incluidos (sus datos
     siguen). Con ellos se preven los kilos de los modulos que aun no estan.
+    Los de los fantasmas solo cuentan en la planificacion de Moden.
     """
+    detalles = DetalleModuloFase.objects.filter(modulo__proyecto__usuario_id=usuario_id)
+    if not con_fantasmas:
+        detalles = detalles.filter(modulo__proyecto__fantasma=False)
     filas = (
-        DetalleModuloFase.objects.filter(modulo__proyecto__usuario_id=usuario_id)
+        detalles
         .order_by().values('modulo__proyecto', 'modulo__proyecto__edificio')
         .annotate(modulos=Count('modulo', distinct=True), **{campo: Sum(campo) for campo in CAMPOS_PESO})
     )
@@ -214,7 +218,9 @@ def planificacion_de(usuario_id, desde=None):
     # con la entrega ya pasada).
     proyectos = []
     for proyecto in annotated_projects(
-        Proyecto.objects.filter(usuario_id=usuario_id, archivado_at__isnull=True, aceptado_por_ferralla_at__isnull=False)
+        Proyecto.objects.filter(
+            usuario_id=usuario_id, archivado_at__isnull=True, aceptado_por_ferralla_at__isnull=False, fantasma=False,
+        )
     ).select_related('edificio'):
         entrega = fecha_de_montaje(proyecto)
         if entrega is not None and entrega > hasta:

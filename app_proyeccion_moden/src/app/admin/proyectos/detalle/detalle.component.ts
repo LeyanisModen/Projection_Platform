@@ -86,6 +86,8 @@ export class ProyectoDetailComponent implements OnInit {
     private edificiosCargadosPara: number | null = null;
     guardandoEdificio = false;
     edificioError = '';
+    guardandoEstado = false;
+    estadoError = '';
     readonly plantaTipos: { value: PlantaTipo; label: string; numero: boolean }[] = [
         { value: 'SOTANO', label: 'Sótano', numero: true },
         { value: 'SEMISOTANO', label: 'Semisótano', numero: false },
@@ -1283,6 +1285,32 @@ export class ProyectoDetailComponent implements OnInit {
         this.guardarEdificioPlanta({
             planta_tipo: tipo,
             planta_numero: conNumero && numero != null && Number.isFinite(numero) ? numero : null,
+        });
+    }
+
+    /** Fantasma: Moden lo simula en la planificacion y la ferralla no lo ve. Al
+     *  pasarlo a real le llega como proyecto nuevo, pendiente de aceptar. */
+    cambiarFantasma(fantasma: boolean): void {
+        if (!this.proyecto || this.guardandoEstado) return;
+        const ferralla = this.getSelectedFerrallaLabel();
+        const aviso = fantasma
+            ? `¿Pasar ${this.proyecto.nombre} a fantasma? ${ferralla} dejará de verlo.`
+            : `¿Pasar ${this.proyecto.nombre} a real? A ${ferralla} le llegará como proyecto nuevo, pendiente de aceptar.`;
+        if (!confirm(aviso)) return;
+        this.guardandoEstado = true;
+        this.estadoError = '';
+        this.api.updateProyecto(this.proyecto.id, { fantasma }).subscribe({
+            next: proyecto => {
+                this.proyecto = proyecto;
+                this.guardandoEstado = false;
+                this.cdr.detectChanges();
+            },
+            error: err => {
+                const detalle = err?.error?.fantasma ?? err?.error?.detail;
+                this.estadoError = (Array.isArray(detalle) ? detalle[0] : detalle) || 'No se pudo cambiar el estado.';
+                this.guardandoEstado = false;
+                this.cdr.detectChanges();
+            },
         });
     }
 

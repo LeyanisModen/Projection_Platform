@@ -255,7 +255,7 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
             "id", "url", "nombre", "usuario", "usuario_nombre",
             "fecha_montaje", "planificacion", "modulos_previstos",
             "fecha_montaje_obra", "fecha_montaje_obra_anterior", "fecha_montaje_obra_cambiada_at",
-            "aceptado_por_ferralla_at",
+            "aceptado_por_ferralla_at", "fantasma",
             "bastidor_longitud_cm", "peso_maximo_grua_kg", "datos_tecnicos_importados",
             "datos_tecnicos_archivo", "datos_tecnicos_actualizados_at",
             "plano_archivo", "plano_disponible", "despiece_archivo",
@@ -318,11 +318,13 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
     def get_planificacion(self, obj):
         if obj.usuario_id is None or obj.archivado_at:
             return project_demand(obj)
-        # Un plan por ferralla y peticion: en la lista todos sus proyectos lo comparten.
+        # Un plan por ferralla y peticion: en la lista todos sus proyectos lo
+        # comparten. Un fantasma, con los demas fantasmas de su ferralla.
         planes = self.context.setdefault('_planes_ferralla', {})
-        plan = planes.get(obj.usuario_id)
+        clave = (obj.usuario_id, obj.fantasma)
+        plan = planes.get(clave)
         if plan is None or obj.pk not in plan['proyectos']:
-            plan = planes[obj.usuario_id] = plan_ferralla(obj.usuario_id, override=obj)
+            plan = planes[clave] = plan_ferralla(obj.usuario_id, override=obj, con_fantasmas=obj.fantasma)
         return plan['proyectos'][obj.pk]
 
     def validate(self, attrs):
@@ -340,6 +342,17 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
                 raise serializers.ValidationError('Solo administracion puede fijar el edificio y la planta.')
             if 'montaje_realizado' in attrs:
                 raise serializers.ValidationError('Solo administracion puede marcar el montaje como hecho.')
+            if 'fantasma' in attrs:
+                raise serializers.ValidationError('Solo administracion puede cambiar el estado del proyecto.')
+        # Fantasma: un proyecto que Moden simula sobre una ferralla, que aun no
+        # lo ha visto. Una vez aceptado ya es trabajo suyo.
+        fantasma = attrs['fantasma'] if 'fantasma' in attrs else getattr(self.instance, 'fantasma', False)
+        if fantasma:
+            usuario = attrs['usuario'] if 'usuario' in attrs else getattr(self.instance, 'usuario', None)
+            if usuario is None or usuario.is_staff or usuario.is_superuser:
+                raise serializers.ValidationError({'fantasma': 'Un proyecto fantasma necesita la ferralla en la que se simula.'})
+            if self.instance is not None and not self.instance.fantasma and self.instance.aceptado_por_ferralla_at:
+                raise serializers.ValidationError({'fantasma': 'La ferralla ya lo ha aceptado: no puede volver a fantasma.'})
         if 'montaje_realizado' in attrs:
             # Volver a marcarlo no cambia el dia en que se hizo.
             hecho = getattr(self.instance, 'montaje_realizado_at', None)
