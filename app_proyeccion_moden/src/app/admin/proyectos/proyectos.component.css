@@ -11,6 +11,8 @@
 .new-project-ferralla { flex: 1 1 200px; }
 .new-project-fantasma { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; color: var(--text); font-size: 14px; }
 .new-project-error { flex-basis: 100%; }
+/* Fantasma marcado sin ferralla: falta elegirla. */
+.new-project-ferralla.is-missing { border-color: var(--accent); }
 
 /* Lista plana sobre el fondo: la ferralla es un separador, no una tarjeta. */
 /* Rotulo de seccion: pequeno y en mayusculas; los proyectos van indentados debajo. */

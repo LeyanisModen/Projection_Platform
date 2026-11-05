@@ -77,9 +77,21 @@ describe('ProyectosComponent — alta de proyecto', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     const form: HTMLElement = fixture.nativeElement.querySelector('.new-project');
+    const crear = () => form.querySelector('button[type=submit]') as HTMLButtonElement;
     expect(form.querySelectorAll('input, select').length).toBe(3);
-    expect((form.querySelector('button[type=submit]') as HTMLButtonElement).disabled).toBe(true);
-    expect((form.querySelector('input[name=fantasma]') as HTMLInputElement).disabled).toBe(true);
+    expect(crear().disabled).toBe(true);
+    // Se puede marcar antes de elegir la ferralla: entonces la pide.
+    expect((form.querySelector('input[name=fantasma]') as HTMLInputElement).disabled).toBe(false);
+    component.newProject = { nombre: 'Torre Sur', usuario: null, fantasma: true };
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const ferralla = form.querySelector('select') as HTMLSelectElement;
+    expect(ferralla.classList.contains('is-missing')).toBe(true);
+    expect(ferralla.options[0].textContent?.trim()).toBe('Elige la ferralla');
+    expect(crear().disabled).toBe(true);
+    component.createProyecto();
+    http.expectNone('/api/proyectos/');
   });
 
   it('crea con el nombre y salta al detalle del proyecto nuevo', () => {
@@ -102,10 +114,9 @@ describe('ProyectosComponent — alta de proyecto', () => {
     component.createProyecto();
     http.expectNone('/api/proyectos/');
 
-    component.newProject = { nombre: 'Solo nombre', usuario: null, fantasma: true };
+    component.newProject = { nombre: 'Solo nombre', usuario: null, fantasma: false };
     component.createProyecto();
     const request = http.expectOne('/api/proyectos/');
-    // Sin ferralla no hay fantasma: se simula sobre una.
     expect(request.request.body).toEqual({ nombre: 'Solo nombre', usuario: null, fantasma: false });
     request.flush({ id: 43, nombre: 'Solo nombre', usuario: null });
     expect(navigate).toHaveBeenCalledWith(['/admin-dashboard/proyectos', 43]);

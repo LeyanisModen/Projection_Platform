@@ -11,16 +11,16 @@
         <input type="text" id="nombre" name="nombre" class="field new-project-name"
             [(ngModel)]="newProject.nombre" required placeholder="Nombre del proyecto"
             aria-label="Nombre del proyecto" autocomplete="off" autofocus [disabled]="loading">
-        <select id="usuario" name="usuario" class="field new-project-ferralla"
+        <select id="usuario" name="usuario" class="field new-project-ferralla" [class.is-missing]="faltaFerralla"
             [(ngModel)]="newProject.usuario" aria-label="Ferralla" [disabled]="loading">
-            <option [ngValue]="null">Sin ferralla</option>
+            <option [ngValue]="null">{{ faltaFerralla ? 'Elige la ferralla' : 'Sin ferralla' }}</option>
             <option *ngFor="let user of users" [ngValue]="user.url">{{ user.first_name || user.username }}</option>
         </select>
         <label class="new-project-fantasma" title="Solo para la planificación de Moden: la ferralla no lo ve hasta pasarlo a real">
-            <input type="checkbox" name="fantasma" [(ngModel)]="newProject.fantasma" [disabled]="loading || !newProject.usuario">
+            <input type="checkbox" name="fantasma" [(ngModel)]="newProject.fantasma" [disabled]="loading">
             Fantasma
         </label>
-        <button type="submit" class="btn btn-primary" [disabled]="loading || !newProject.nombre.trim()">
+        <button type="submit" class="btn btn-primary" [disabled]="loading || !newProject.nombre.trim() || faltaFerralla">
             {{ loading ? 'Creando...' : 'Crear' }}
         </button>
         <div *ngIf="error" class="alert-inline new-project-error" role="alert">{{ error }}</div>
