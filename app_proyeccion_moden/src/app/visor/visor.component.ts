@@ -58,7 +58,7 @@ export class VisorComponent implements OnInit, OnDestroy {
   // AnyDesk whether the kiosk is actually running the latest bundle
   // or a cached one. F12 is blocked in kiosk; this is the simplest
   // version probe we can offer the operator on screen.
-  readonly buildTag = '2026-11-05_sin_contorno';
+  readonly buildTag = '2026-11-05_revision';
   // Surfaces what's happening inside recoverTokenOrPair on the
   // LOADING screen so we can diagnose from AnyDesk without DevTools.
   loadingMessage: string = 'Conectando…';
@@ -185,6 +185,22 @@ export class VisorComponent implements OnInit, OnDestroy {
   private shutdownHoldTimer: any = null;
   private shutdownCountdownTimer: any = null;
   private shutdownStatusTimer: any = null;
+  // Paso de revision del supervisor ('supervisor' en el nombre de la imagen):
+  // con siguiente solo no se pasa; con espacio y siguiente a la vez, al
+  // soltarlos. Sin aviso en pantalla: lo saben los responsables.
+  private chordKeysSeen = new Set<string>();
+  // Doble atras en la primera imagen: vuelve al ultimo modulo terminado en
+  // la mesa (se paso sin querer). Solo si el de ahora no ha pasado de ella.
+  private static readonly VOLVER_CONFIRM_MS = 4000;
+  volverStatus: 'confirm' | 'error' | null = null;
+  volverError = '';
+  private volverConfirmUntil = 0;
+  private volverStatusTimer: any = null;
+  private volviendo = false;
+  /** Imagen en la que dejar el modulo reabierto cuando llegue. */
+  private indiceAlVolver: number | null = null;
+  /** Lo mas lejos que ha llegado lo que hay en la mesa. */
+  private maxIndiceItem = 0;
 
   get isSupervisor(): boolean {
     return !!this.mesaIdForPairing;
@@ -785,6 +801,15 @@ export class VisorComponent implements OnInit, OnDestroy {
     event.preventDefault();
     this.shutdownChordPressedKeys.delete(key);
 
+    if (this.shutdownChordPressedKeys.size === 0) {
+      const vistas = this.chordKeysSeen;
+      this.chordKeysSeen = new Set();
+      // Solo espacio y siguiente: con atras tambien es el apagado.
+      if (vistas.size === 2 && vistas.has('space') && vistas.has('arrowright') && this.shutdownStatus === null) {
+        this.pasarRevision();
+      }
+    }
+
     if (this.shutdownStatus === 'holding') {
       this.shutdownChordArmed = false;
       this.cancelShutdownHold(true);
@@ -802,6 +827,7 @@ export class VisorComponent implements OnInit, OnDestroy {
   handleWindowBlur(): void {
     this.cancelPendingShutdownChordActions();
     this.shutdownChordPressedKeys.clear();
+    this.chordKeysSeen.clear();
     this.shutdownChordArmed = true;
     if (this.shutdownStatus === 'holding') {
       this.cancelShutdownHold(true);
@@ -822,6 +848,7 @@ export class VisorComponent implements OnInit, OnDestroy {
     if (event.repeat || this.shutdownChordPressedKeys.has(key)) return true;
 
     this.shutdownChordPressedKeys.add(key);
+    this.chordKeysSeen.add(key);
     if (!this.shutdownChordArmed || this.shutdownStatus === 'shutting-down') return true;
 
     if (this.shutdownStatus === 'cancelled' || this.shutdownStatus === 'error') {
@@ -1141,13 +1168,17 @@ export class VisorComponent implements OnInit, OnDestroy {
     return pausaHastaLabel(this.mesaState?.pausa?.hasta);
   }
 
-  nextImage(): void {
+  nextImage(revisado = false): void {
     if (this.currentIndex < 0 || this.mesaState?.pausa) return;
+    // En la revision del supervisor siguiente solo no hace nada (ver
+    // pasarRevision); desde el visor del dashboard la pasa el supervisor.
+    const revision = this.isRevisionSlide(this.currentIndex);
+    if (revision && !revisado && !this.isSupervisor) return;
     const continuingAfterPhotoError = this.hasSimplePhotoCaptureError();
     if (continuingAfterPhotoError) {
       this.clearSimplePhotoCaptureError();
     }
-    if (!continuingAfterPhotoError && this.shouldApplySlideLock() && Date.now() < this.slideLockUntil) {
+    if (!revisado && !continuingAfterPhotoError && this.shouldApplySlideLock() && Date.now() < this.slideLockUntil) {
       this.slideLockUntil = Math.max(
         this.slideLockUntil,
         Date.now() + VisorComponent.SLIDE_LOCK_REARM_MS,
@@ -1170,7 +1201,7 @@ export class VisorComponent implements OnInit, OnDestroy {
     const autoCheckPassed = this.checkOverlay === 'success';
 
     if (this.currentIndex >= this.images.length - 1) {
-      if (this.images.length > 0) this.finishActiveItem();
+      if (this.images.length > 0) this.finishActiveItem(revision);
       return;
     }
 
@@ -1188,8 +1219,9 @@ export class VisorComponent implements OnInit, OnDestroy {
         && this.isVisualSlide(this.currentIndex)) {
       this.currentIndex += 1;
     }
+    this.maxIndiceItem = Math.max(this.maxIndiceItem, this.currentIndex);
 
-    this.updateProjectedImage();
+    this.updateProjectedImage(revision);
     if (this.shouldApplySlideLock()) {
       this.slideLockUntil = Date.now() + VisorComponent.SLIDE_LOCK_MS;
       this.startSlideLockIndicator();
@@ -1209,6 +1241,23 @@ export class VisorComponent implements OnInit, OnDestroy {
     // 'check visual', 'check_visual', etc. Detect the word with any
     // surrounding separator so we don't miss new variants.
     return this.hasFilenameToken(filename, 'visual');
+  }
+
+  /** Revision del supervisor: 'supervisor' en el nombre de la imagen. */
+  private isRevisionSlide(index: number): boolean {
+    const img = this.images[index];
+    if (!img) return false;
+    const url: string = img.url || img.src || '';
+    // Sin lo que va detras de '#': en las mesas sin camara la url acaba en '#/sin-camara'.
+    const filename = (url.split(/[?#]/)[0].split('/').pop() || '').toLowerCase();
+    return this.hasFilenameToken(filename, 'supervisor');
+  }
+
+  /** Espacio y siguiente a la vez en la revision del supervisor: se pasa y se apunta la hora. */
+  private pasarRevision(): void {
+    if (this.mode !== 'PROJECTION' || this.currentIndex < 0 || this.checkBlock) return;
+    if (!this.isRevisionSlide(this.currentIndex)) return;
+    this.nextImage(true);
   }
 
   private isWarningSlide(index: number): boolean {
@@ -1243,7 +1292,66 @@ export class VisorComponent implements OnInit, OnDestroy {
       this.slideLockUntil = 0;
       this.clearSlideLockIndicator();
       this.updateProjectedImage();
+    } else {
+      this.pedirVolverAlAnterior();
     }
+  }
+
+  /** Atras en la primera imagen: la primera vez avisa; la segunda, en unos
+   *  segundos, vuelve al ultimo modulo terminado en la mesa. El servidor
+   *  comprueba que lo de ahora no ha avanzado. */
+  private pedirVolverAlAnterior(): void {
+    if (this.volviendo || this.maxIndiceItem > 0) return;
+    if (Date.now() > this.volverConfirmUntil) {
+      this.volverConfirmUntil = Date.now() + VisorComponent.VOLVER_CONFIRM_MS;
+      this.mostrarVolver('confirm', VisorComponent.VOLVER_CONFIRM_MS);
+      return;
+    }
+    this.volverConfirmUntil = 0;
+    this.volviendo = true;
+    const mesaId = this.mesaIdForPairing || this.mesaState?.id;
+    const peticion = this.isSupervisor
+      ? this.http.post<any>(`/api/mesas/${mesaId}/volver_anterior/`, {}, { headers: this.getUserAuthHeaders() })
+      : this.http.post<any>(`${this.apiUrl}volver_anterior/`, {}, { headers: this.getAuthHeaders() });
+    peticion.subscribe({
+      next: (res) => {
+        this.volviendo = false;
+        this.ocultarVolver();
+        this.indiceAlVolver = typeof res?.index === 'number' ? res.index : null;
+        this.pendingIndexSync = null;
+        this.slideLockUntil = 0;
+        this.activeItem = null;
+        this.images = [];
+        this.checkActiveItem();
+      },
+      error: (err) => {
+        this.volviendo = false;
+        this.volverError = err?.error?.detail || 'No se puede volver al módulo anterior';
+        this.mostrarVolver('error', 3000);
+      },
+    });
+  }
+
+  private mostrarVolver(estado: 'confirm' | 'error', ms: number): void {
+    if (this.volverStatusTimer) clearTimeout(this.volverStatusTimer);
+    this.volverStatus = estado;
+    this.cdr.detectChanges();
+    this.volverStatusTimer = setTimeout(() => this.ocultarVolver(), ms);
+  }
+
+  private ocultarVolver(): void {
+    if (this.volverStatusTimer) clearTimeout(this.volverStatusTimer);
+    this.volverStatusTimer = null;
+    this.volverStatus = null;
+    this.cdr.detectChanges();
+  }
+
+  /** El modulo reabierto llega a la mesa en su ultima imagen, no en la primera. */
+  private aplicarIndiceAlVolver(): void {
+    if (this.indiceAlVolver === null || !this.images.length) return;
+    this.currentIndex = Math.min(this.indiceAlVolver, this.images.length - 1);
+    this.maxIndiceItem = this.currentIndex;
+    this.indiceAlVolver = null;
   }
 
   private isCaptureSlide(index: number): boolean {
@@ -1274,17 +1382,19 @@ export class VisorComponent implements OnInit, OnDestroy {
       );
   }
 
-  private hasFilenameToken(filename: string, token: 'foto' | 'photo' | 'check' | 'visual'): boolean {
+  private hasFilenameToken(filename: string, token: 'foto' | 'photo' | 'check' | 'visual' | 'supervisor'): boolean {
     return new RegExp(`(^|[\\s_\\-.])${token}([\\s_\\-.]|$)`, 'i').test(filename);
   }
 
-  updateProjectedImage(): void {
+  updateProjectedImage(revision = false): void {
     this.markPendingIndexSync(this.currentIndex);
+    // Al pasar la revision del supervisor el servidor apunta la hora.
+    const extra = revision ? { revision: true } : {};
 
     if (this.isSupervisor) {
       const mesaId = this.mesaIdForPairing || this.mesaState?.id;
       if (!mesaId) return;
-      this.http.post(`/api/mesas/${mesaId}/set_index/`, { index: this.currentIndex }, { headers: this.getUserAuthHeaders() })
+      this.http.post(`/api/mesas/${mesaId}/set_index/`, { index: this.currentIndex, ...extra }, { headers: this.getUserAuthHeaders() })
         .subscribe({
           next: () => this.cdr.detectChanges(),
           error: (err) => {
@@ -1298,7 +1408,7 @@ export class VisorComponent implements OnInit, OnDestroy {
     const mesaId = this.mesaIdForPairing || this.mesaState?.id;
     if (!mesaId) return;
 
-    this.http.post(`${this.apiUrl}set_index/`, { mesa_id: mesaId, index: this.currentIndex }, { headers: this.getAuthHeaders() })
+    this.http.post(`${this.apiUrl}set_index/`, { mesa_id: mesaId, index: this.currentIndex, ...extra }, { headers: this.getAuthHeaders() })
       .subscribe({
         next: () => this.cdr.detectChanges(),
         error: (err) => {
@@ -1308,7 +1418,7 @@ export class VisorComponent implements OnInit, OnDestroy {
       });
   }
 
-  finishActiveItem(): void {
+  finishActiveItem(revision = false): void {
     // One close per module: a second request while the first is in flight
     // would mark the module the backend has just promoted as done too.
     if (!this.activeItem || this.finishingItem) return;
@@ -1321,6 +1431,7 @@ export class VisorComponent implements OnInit, OnDestroy {
             this.activeItem = null;
             this.images = [];
             this.currentIndex = 0;
+            this.maxIndiceItem = 0;
             this.cdr.detectChanges();
             this.checkActiveItem();
           },
@@ -1332,7 +1443,7 @@ export class VisorComponent implements OnInit, OnDestroy {
       return;
     }
 
-    this.http.post(`${this.apiUrl}mark_done/`, {}, { headers: this.getAuthHeaders() })
+    this.http.post(`${this.apiUrl}mark_done/`, revision ? { revision: true } : {}, { headers: this.getAuthHeaders() })
       .subscribe({
         next: () => {
           this.finishingItem = false;
@@ -1342,6 +1453,7 @@ export class VisorComponent implements OnInit, OnDestroy {
           this.activeItem = null;
           this.images = [];
           this.currentIndex = 0;
+          this.maxIndiceItem = 0;
           this.cdr.detectChanges();
           this.checkActiveItem();
         },
@@ -1877,6 +1989,7 @@ export class VisorComponent implements OnInit, OnDestroy {
       const previousIndex = this.currentIndex;
       if (syncedIndex !== null) {
         this.currentIndex = syncedIndex;
+        this.maxIndiceItem = Math.max(this.maxIndiceItem, syncedIndex);
       }
       // In supervisor mode the camera lives on the mini-PC, not on
       // localhost, so we mirror what the mini-PC last reported.
@@ -1958,6 +2071,7 @@ export class VisorComponent implements OnInit, OnDestroy {
       if (this.activeItem) {
         this.activeItem = null;
         this.images = [];
+        this.maxIndiceItem = 0;
         this.pendingIndexSync = null;
         this.clearSimplePhotoCaptureError();
         this.cdr.detectChanges();
@@ -1969,6 +2083,7 @@ export class VisorComponent implements OnInit, OnDestroy {
       this.clearSimplePhotoCaptureError();
       this.pendingIndexSync = null;
       this.activeItem = item;
+      this.maxIndiceItem = 0;
       // New module/phase started: restart local counter (UI shows currentIndex + 1 => starts at 1).
       if (this.currentIndex >= 0) {
         this.currentIndex = 0;
@@ -1978,6 +2093,7 @@ export class VisorComponent implements OnInit, OnDestroy {
         if (this.currentIndex >= 0 && this.currentIndex >= this.images.length) {
           this.currentIndex = 0;
         }
+        this.aplicarIndiceAlVolver();
         this.loadingImages = false;
         this.cdr.detectChanges();
         this.checkPhotoTrigger();
@@ -1999,6 +2115,7 @@ export class VisorComponent implements OnInit, OnDestroy {
         if (this.currentIndex >= 0) {
           this.currentIndex = 0;
         }
+        this.aplicarIndiceAlVolver();
         this.loadingImages = false;
         this.cdr.detectChanges();
       },

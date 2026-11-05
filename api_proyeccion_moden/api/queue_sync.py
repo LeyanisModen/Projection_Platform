@@ -12,6 +12,7 @@ from api.models import (
     GrupoBastidor,
     GrupoMesas,
     GrupoMesasProyecto,
+    Imagen,
     Mesa,
     MesaQueueItem,
     MesaQueueStatus,
@@ -1092,6 +1093,95 @@ def reconcile_superior_queue_if_adaptive(group):
     if group.estrategia_cola_superior != EstrategiaColaSuperior.ADAPTATIVA:
         return []
     return reconcile_superior_queue_for_group(group)
+
+
+def registrar_revision(mesa):
+    """Apunta la hora en que se paso el paso de revision del supervisor de lo
+    que muestra la mesa (la ultima, si se vuelve atras y se revisa otra vez)."""
+    item = (
+        mesa.queue_items.filter(status=MesaQueueStatus.MOSTRANDO)
+        .order_by("position", "id")
+        .first()
+    )
+    if item is not None:
+        item.revisado_at = timezone.now()
+        item.save(update_fields=["revisado_at"])
+    return item
+
+
+def volver_al_anterior(mesa):
+    """Vuelve a poner en ``mesa`` lo ultimo que se marco hecho en ella.
+
+    Para cuando se paso sin querer: solo si lo que salio despues sigue en su
+    primera imagen y no ha avanzado nunca. La fase deja de estar hecha, lo
+    que salio despues vuelve a la cola el primero y la mesa queda en la
+    ultima imagen. El FIN se queda como senal y su tiempo cuenta desde ahora
+    (un INICIO nuevo): no suma el rato que estuvo cerrada. Si el proyecto
+    habia salido de la cola por terminado, vuelve a entrar el primero.
+
+    Llamar dentro de una transaccion con la mesa bloqueada. Devuelve
+    ``(item, None)`` o ``(None, motivo)``.
+    """
+    previo = (
+        mesa.queue_items.select_related("modulo")
+        .filter(status=MesaQueueStatus.HECHO, done_at__isnull=False)
+        .order_by("-done_at", "-id")
+        .first()
+    )
+    if previo is None:
+        return None, "No hay nada terminado en esta mesa."
+    actual = (
+        mesa.queue_items.filter(status=MesaQueueStatus.MOSTRANDO)
+        .order_by("position", "id")
+        .first()
+    )
+    if actual is not None:
+        avanzado = mesa.current_image_index > 0 or EventoFabricacion.objects.filter(
+            item=actual, tipo=EventoFabricacionTipo.PASO, paso__gt=0, at__gte=previo.done_at,
+        ).exists()
+        if avanzado:
+            return None, "El módulo de ahora ya ha avanzado."
+    modulo = previo.modulo
+    hecho = modulo.inferior_hecho if previo.fase == Fase.INFERIOR else modulo.superior_hecho
+    if modulo.cerrado or not hecho:
+        return None, "Ese módulo ya se ha cerrado o reiniciado."
+    if MesaQueueItem.objects.filter(
+        modulo=modulo, fase=previo.fase, status__in=ACTIVE_QUEUE_STATUSES,
+    ).exists():
+        return None, "Ese módulo ya está otra vez en una mesa."
+
+    if actual is not None:
+        actual.status = MesaQueueStatus.EN_COLA
+        actual.save(update_fields=["status"])
+        stash_showing_progress(actual, 0)
+
+    previo.status = MesaQueueStatus.MOSTRANDO
+    previo.done_at = None
+    previo.done_by = None
+    previo.save(update_fields=["status", "done_at", "done_by"])
+    if previo.fase == Fase.INFERIOR:
+        modulo.inferior_hecho = False
+    else:
+        modulo.superior_hecho = False
+        modulo.superior_needed_at = timezone.now()
+    modulo.actualizar_estado()
+
+    group = mesa.grupo
+    if group is not None and not group.proyectos_cola.filter(proyecto_id=modulo.proyecto_id).exists():
+        # Delante de los demas: es el que se esta fabricando.
+        for entry in group.proyectos_cola.order_by("-orden", "-id"):
+            entry.orden += 1
+            entry.save(update_fields=["orden"])
+        GrupoMesasProyecto.objects.create(grupo_mesas=group, proyecto_id=modulo.proyecto_id, orden=0)
+        compactar_cola_proyectos(group)
+
+    ultima = max(Imagen.objects.filter(modulo=modulo, fase=previo.fase, activo=True).count() - 1, 0)
+    mesa.imagen_actual = previo.imagen
+    mesa.current_image_index = ultima
+    mesa.save(update_fields=["imagen_actual", "current_image_index", "ultima_actualizacion"])
+    open_showing_interval(previo, mesa, ultima)
+    reconcile_superior_queue_if_adaptive(group)
+    return previo, None
 
 
 def _inferiores_paradas(mesas, now=None):
