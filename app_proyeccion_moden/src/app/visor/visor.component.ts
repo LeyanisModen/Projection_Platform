@@ -58,7 +58,7 @@ export class VisorComponent implements OnInit, OnDestroy {
   // AnyDesk whether the kiosk is actually running the latest bundle
   // or a cached one. F12 is blocked in kiosk; this is the simplest
   // version probe we can offer the operator on screen.
-  readonly buildTag = '2026-11-04_pausa';
+  readonly buildTag = '2026-11-05_sin_contorno';
   // Surfaces what's happening inside recoverTokenOrPair on the
   // LOADING screen so we can diagnose from AnyDesk without DevTools.
   loadingMessage: string = 'Conectando…';

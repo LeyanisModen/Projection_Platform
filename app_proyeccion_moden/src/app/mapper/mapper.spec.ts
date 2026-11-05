@@ -42,6 +42,20 @@ describe('Mapper', () => {
     expect(surface.style.transform.startsWith('matrix3d(')).toBe(true);
   });
 
+  it('shows the corners and the white outline only while calibrating', () => {
+    fixture.detectChanges();
+    const guias = (): string[] => Array.from(fixture.nativeElement.querySelectorAll('.corner, .line'))
+      .map(el => (el as HTMLElement).style.visibility);
+    expect(guias().length).toBe(8);
+    expect(guias().every(v => v === 'hidden')).toBe(true);
+
+    component.ngOnChanges({ isCalibrationActive: new SimpleChange(false, true, false) });
+    expect(guias().every(v => v === 'visible')).toBe(true);
+
+    component.ngOnChanges({ isCalibrationActive: new SimpleChange(true, false, false) });
+    expect(guias().every(v => v === 'hidden')).toBe(true);
+  });
+
   it('recognises images with a margin by their size', () => {
     expect(margenDeImagen(1760, 800)).toBe(16);
     expect(margenDeImagen(1728, 768)).toBe(0);
