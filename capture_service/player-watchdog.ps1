@@ -742,6 +742,12 @@ function Repair-Kiosk {
     $projector = $null
     if ($layout) {
         $projector = $layout.Projector
+    } else {
+        # With one display the watchdog closes the monitor view itself, so
+        # when the monitor is switched on again it opens without the
+        # "somebody closed it" cool-down.
+        $script:monitorWasRunning = $false
+        $script:monitorReopenAfter = [datetime]::MinValue
     }
 
     $profilePattern = [regex]::Escape($kioskProfile)
