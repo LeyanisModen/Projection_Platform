@@ -58,6 +58,7 @@ from api.queue_sync import (
     capture_queue_progress,
     close_showing_interval,
     record_step,
+    registrar_revision,
     module_fabrication_started_map,
     module_reorderability,
     module_reorderability_map,
@@ -69,6 +70,7 @@ from api.queue_sync import (
     siguiente_activable,
     sync_module_phases,
     sync_new_module,
+    volver_al_anterior,
 )
 from django.utils import timezone
 from rest_framework.authtoken.views import ObtainAuthToken
@@ -203,6 +205,16 @@ def _de_la_ferralla(user, proyecto):
 
 def _is_admin(user):
     return bool(user and (user.is_staff or user.is_superuser))
+
+
+def _volver_al_anterior(mesa):
+    """409 con el motivo si no se puede; si no, la imagen en la que queda."""
+    with transaction.atomic():
+        mesa = Mesa.objects.select_for_update().get(pk=mesa.pk)
+        item, motivo = volver_al_anterior(mesa)
+    if item is None:
+        return Response({'detail': motivo}, status=status.HTTP_409_CONFLICT)
+    return Response({'status': 'ok', 'item': item.id, 'index': mesa.current_image_index})
 
 
 def _respuesta_si_en_pausa(mesa):
@@ -4498,10 +4510,22 @@ class MesaViewSet(viewsets.ModelViewSet):
         except (TypeError, ValueError):
             return Response({'detail': 'Index must be an integer'}, status=400)
 
+        if request.data.get('revision'):
+            registrar_revision(mesa)
         mesa.save(update_fields=['current_image_index', 'ultima_actualizacion'])
         record_step(mesa, mesa.current_image_index)
         register_superior_demand_for_mesa(mesa)
         return Response({'status': 'ok', 'index': mesa.current_image_index})
+
+    @action(detail=True, methods=['post'])
+    def volver_anterior(self, request, pk=None):
+        """Desde el visor del supervisor: vuelve al ultimo modulo terminado
+        en la mesa si lo de ahora no ha pasado de su primera imagen."""
+        mesa = self.get_object()
+        en_pausa = _respuesta_si_en_pausa(mesa)
+        if en_pausa:
+            return en_pausa
+        return _volver_al_anterior(mesa)
 
 
 class PausaMesaViewSet(viewsets.ViewSet):
@@ -7557,6 +7581,8 @@ class DeviceViewSet(viewsets.ViewSet):
             return Response({'detail': 'Index must be an integer'}, status=400)
         with transaction.atomic():
             mesa = Mesa.objects.select_for_update().get(pk=mesa.pk)
+            if request.data.get('revision'):
+                registrar_revision(mesa)
             mesa.current_image_index = index
             mesa.save(update_fields=['current_image_index', 'ultima_actualizacion'])
             record_step(mesa, index)
@@ -7634,6 +7660,8 @@ class DeviceViewSet(viewsets.ViewSet):
             if not current_item:
                 return Response({'detail': 'No item currently showing'}, status=404)
 
+            if request.data.get('revision'):
+                registrar_revision(mesa)
             current_item.marcar_hecho(user=None)
 
             if not activar_siguiente(mesa, (
@@ -7643,6 +7671,18 @@ class DeviceViewSet(viewsets.ViewSet):
                 reconcile_superior_queue_if_adaptive(mesa.grupo)
 
         return Response({'status': 'ok'})
+
+    @action(detail=False, methods=['post'])
+    def volver_anterior(self, request):
+        """Doble atras en la primera imagen: vuelve al ultimo modulo terminado
+        en la mesa (se paso sin querer). Solo si lo de ahora no ha avanzado."""
+        mesa = self._authenticate_device(request)
+        if not mesa:
+            return Response({'detail': 'Unauthorized'}, status=401)
+        en_pausa = _respuesta_si_en_pausa(mesa)
+        if en_pausa:
+            return en_pausa
+        return _volver_al_anterior(mesa)
 
     @action(detail=False, methods=['post'])
     def upload_foto(self, request):

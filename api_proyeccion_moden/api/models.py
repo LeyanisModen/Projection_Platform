@@ -1479,6 +1479,10 @@ class MesaQueueItem(models.Model):
         related_name='mesa_queue_items_done'
     )
     done_at = models.DateTimeField(null=True, blank=True)
+    # Paso de revision del supervisor (imagen con 'supervisor' en el nombre):
+    # cuando se paso con espacio y siguiente a la vez. La llegada a ese paso
+    # es su PASO en EventoFabricacion: la diferencia es la espera.
+    revisado_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
         return f"Mesa {self.mesa.nombre} - {self.modulo.nombre} ({self.fase}) - {self.status}"

@@ -165,6 +165,13 @@
             </div>
             }
 
+            @if (volverStatus) {
+            <div class="browser-close-status" [class.confirm]="volverStatus === 'confirm'" [class.error]="volverStatus === 'error'" role="status">
+                @if (volverStatus === 'confirm') { Pulsa &larr; otra vez para volver al módulo anterior }
+                @else { {{ volverError }} }
+            </div>
+            }
+
             @if (browserCloseStatus) {
             <div class="browser-close-status"
                 [class.confirm]="browserCloseStatus === 'confirm'"
