@@ -173,6 +173,11 @@ export class ProyectosComponent implements OnInit {
     return `${project.edificio_nombre} · ${forjados} ${forjados === 1 ? 'forjado' : 'forjados'}`;
   }
 
+  /** Un fantasma se simula sobre una ferralla: hasta elegirla no se crea. */
+  get faltaFerralla(): boolean {
+    return this.newProject.fantasma && !this.newProject.usuario;
+  }
+
   toggleForm() {
     this.showForm = !this.showForm;
     this.error = '';
@@ -182,12 +187,11 @@ export class ProyectosComponent implements OnInit {
 
   createProyecto() {
     const nombre = this.newProject.nombre.trim();
-    if (!nombre || this.loading) return;
+    if (!nombre || this.loading || this.faltaFerralla) return;
     this.error = '';
     this.loading = true;
     const usuario = this.newProject.usuario || null;
-    // Un fantasma se simula sobre una ferralla.
-    this.api.createProyecto({ nombre, usuario, fantasma: !!usuario && this.newProject.fantasma }).subscribe({
+    this.api.createProyecto({ nombre, usuario, fantasma: this.newProject.fantasma }).subscribe({
       next: (project) => {
         this.loading = false;
         this.manageProject(project);
