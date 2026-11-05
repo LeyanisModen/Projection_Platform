@@ -200,11 +200,7 @@ export class Mapper implements OnChanges {
         // We might need to call toggleCalibration, but toggleCalibration toggles.
         // Better to set it explicitly.
         this.calibrating = active;
-        if (this.markers) { // markers populated in ngAfterViewInit
-          this.markers.forEach(marker => {
-            marker.nativeElement.style.visibility = active ? "visible" : "hidden";
-          });
-        }
+        this.mostrarGuias(active);
       }
     }
 
@@ -213,6 +209,17 @@ export class Mapper implements OnChanges {
     }
 
     // Note: calibrationJson is now handled by setter, not here
+  }
+
+  /** Esquinas y lineas del contorno, solo mientras se calibra: fuera de la
+   *  calibracion las lineas blancas parecen una barra mas de la proyeccion. */
+  private mostrarGuias(visible: boolean): void {
+    const visibility = visible ? 'visible' : 'hidden';
+    // Antes de ngAfterViewInit no hay esquinas ni lineas todavia.
+    this.markers?.forEach(marker => marker.nativeElement.style.visibility = visibility);
+    [this.line1, this.line2, this.line3, this.line4].forEach(line => {
+      if (line) line.nativeElement.style.visibility = visibility;
+    });
   }
 
   private applyViewMode(): void {
@@ -374,14 +381,7 @@ export class Mapper implements OnChanges {
 
   toggleCalibration() {
     this.calibrating = !this.calibrating;
-
-    this.markers.forEach(marker => {
-      if (this.calibrating) {
-        marker.nativeElement.style.visibility = "visible";
-      } else {
-        marker.nativeElement.style.visibility = "hidden";
-      }
-    });
+    this.mostrarGuias(this.calibrating);
 
     if (!this.calibrating) {
       this.setDeselectCorner();
@@ -1049,9 +1049,7 @@ export class Mapper implements OnChanges {
     this.correctedVideo.nativeElement.ondragstart = () => {
       return false;
     };
-    this.markers.forEach(marker => {
-      marker.nativeElement.style.visibility = this.calibrating ? "visible" : "hidden";
-    });
+    this.mostrarGuias(this.calibrating);
 
     // Handle background tab throttling: force update when tab becomes visible
     this.document.addEventListener('visibilitychange', () => {
