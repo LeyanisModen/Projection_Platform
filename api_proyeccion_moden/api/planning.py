@@ -288,22 +288,24 @@ def _redondeo(valor):
     return round(valor + _EPS, 1)
 
 
-def plan_ferralla(usuario_id, today=None, override=None):
+def plan_ferralla(usuario_id, today=None, override=None, con_fantasmas=False):
     """Plan de fabricacion de todos los proyectos de una ferralla.
 
     ``override``: proyecto con cambios aun no guardados que sustituye a su
-    copia en la base de datos.
+    copia en la base de datos. ``con_fantasmas``: tambien los proyectos
+    fantasma (la planificacion de Moden); el plan de la ferralla, sin ellos.
     """
     from .models import Proyecto
 
     today = today or timezone.localdate()
     # Los archivados ya no se fabrican: fuera del plan.
-    proyectos = list(annotated_projects(
-        Proyecto.objects.filter(usuario_id=usuario_id, archivado_at__isnull=True)
-    ))
+    proyectos = Proyecto.objects.filter(usuario_id=usuario_id, archivado_at__isnull=True)
+    if not con_fantasmas:
+        proyectos = proyectos.filter(fantasma=False)
+    proyectos = list(annotated_projects(proyectos))
     if override is not None:
         proyectos = [p for p in proyectos if p.pk != override.pk]
-        if not override.archivado_at:
+        if not override.archivado_at and (con_fantasmas or not override.fantasma):
             proyectos.append(override)
     if not proyectos:
         return {'ritmo': None, 'tramos': [], 'manda': None, 'objetivo_hoy': 0, 'objetivo_semana': 0,
@@ -384,7 +386,8 @@ def project_demand(project, today=None, plan=None):
     if project.usuario_id is None:
         return _base_demand(project, today, frozenset())
     if plan is None or project.pk not in plan['proyectos']:
-        plan = plan_ferralla(project.usuario_id, today, override=project)
+        # Un fantasma se planifica con los demas fantasmas de su ferralla.
+        plan = plan_ferralla(project.usuario_id, today, override=project, con_fantasmas=project.fantasma)
     return plan['proyectos'][project.pk]
 
 
@@ -448,7 +451,7 @@ def period_target_summary(projects, start, end):
     por_dia = {}
     for factory_id in factories:
         factory_projects = list(
-            Proyecto.objects.filter(usuario_id=factory_id, archivado_at__isnull=True)
+            Proyecto.objects.filter(usuario_id=factory_id, archivado_at__isnull=True, fantasma=False)
             .annotate(
                 _period_total=Count('modulos', distinct=True),
                 _period_done_before=Count('modulos', distinct=True, filter=done_before),

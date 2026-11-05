@@ -3,7 +3,8 @@ import { PlanificacionProyecto, Proyecto } from '../services/api.service';
 const ddmm = (iso?: string | null): string => iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : '';
 
 function plan(projects: Proyecto[]): PlanificacionProyecto | undefined {
-    return projects.find(p => p.planificacion?.ritmo_ferralla != null)?.planificacion;
+    // Un fantasma lleva el plan con los fantasmas; el de la ferralla es sin ellos.
+    return projects.find(p => !p.fantasma && p.planificacion?.ritmo_ferralla != null)?.planificacion;
 }
 
 /** Ritmo necesario hoy: modulos por dia laborable del tramo en curso. */

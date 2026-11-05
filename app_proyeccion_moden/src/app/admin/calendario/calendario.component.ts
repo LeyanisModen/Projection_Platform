@@ -207,7 +207,8 @@ export class CalendarioComponent {
     readonly filteredDeadlines = computed(() => this.deadlines().filter(d => this.shows(this.controlKind(d))));
     /** Montajes que se ven con los filtros puestos. */
     readonly visibleMounts = computed(() => this.workerFilter() !== null || !this.shows('montajes') ? []
-        : this.projects().filter(p => !!p.fecha_montaje));
+        // Un fantasma es solo una hipotesis de la planificacion: su montaje no se apunta.
+        : this.projects().filter(p => !!p.fecha_montaje && !p.fantasma));
     readonly selectedEvents = computed(() => this.eventsOn(this.selected()));
     readonly selectedDeadlines = computed(() => this.workerFilter() !== null
         ? [] : this.filteredDeadlines().filter(d => deadlineDay(d) === this.selected()));

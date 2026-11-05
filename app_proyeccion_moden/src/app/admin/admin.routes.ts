@@ -13,6 +13,7 @@ export const ADMIN_ROUTES: Routes = [
             { path: '', redirectTo: 'proyectos', pathMatch: 'full' },
             { path: 'proyectos', component: ProyectosComponent, title: 'Admin - Proyectos' },
             { path: 'ferrallas', component: FerrallasComponent, title: 'Admin - Ferrallas' },
+            { path: 'planificacion', loadComponent: () => import('./planificacion/planificacion.component').then(m => m.PlanificacionComponent), title: 'Admin - Planificación' },
             { path: 'calendario', loadComponent: () => import('./calendario/calendario.component').then(m => m.CalendarioComponent), title: 'Admin - Calendario' },
             { path: 'lista-control', loadComponent: () => import('./lista-control/lista-control.component').then(m => m.ListaControlComponent), title: 'Admin - Lista de control' },
             {

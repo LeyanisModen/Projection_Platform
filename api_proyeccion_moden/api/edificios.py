@@ -12,6 +12,7 @@ edificio ``RIPAGAINA108_BH``, planta 2.
 """
 import re
 
+from django.db.models import Count, Q
 from rest_framework import permissions, serializers, viewsets
 from rest_framework.exceptions import PermissionDenied
 
@@ -85,6 +86,10 @@ class EdificioSerializer(serializers.ModelSerializer):
         read_only_fields = ['created_at']
 
     def get_forjados(self, obj):
+        request = self.context.get('request')
+        if request is not None and not EdificioViewSet._es_oficina(request.user):
+            # Los fantasmas no existen para la ferralla.
+            return obj.forjados.filter(fantasma=False).count()
         return obj.forjados.count()
 
     def validate_nombre(self, value):
@@ -109,7 +114,11 @@ class EdificioViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = super().get_queryset()
         if not self._es_oficina(self.request.user):
-            queryset = queryset.filter(usuario=self.request.user)
+            # Un edificio que solo tiene fantasmas tampoco existe para ella.
+            queryset = queryset.filter(usuario=self.request.user).annotate(
+                _reales=Count('forjados', filter=Q(forjados__fantasma=False)),
+                _fantasmas=Count('forjados', filter=Q(forjados__fantasma=True)),
+            ).exclude(_reales=0, _fantasmas__gt=0)
         usuario = self.request.query_params.get('usuario')
         if usuario and str(usuario).isdigit():
             queryset = queryset.filter(usuario_id=int(usuario))

@@ -196,6 +196,11 @@ def _grupos_with_reorder_data(queryset):
     )
 
 
+def _de_la_ferralla(user, proyecto):
+    """El proyecto es de esta ferralla y existe para ella: un fantasma no."""
+    return proyecto.usuario_id == user.id and not proyecto.fantasma
+
+
 def _is_admin(user):
     return bool(user and (user.is_staff or user.is_superuser))
 
@@ -1580,7 +1585,7 @@ class ProyectoViewSet(viewsets.ModelViewSet):
             ).order_by("nombre")
         if user.is_authenticated:
             return self._annotate_counts(
-                Proyecto.objects.filter(usuario=user)
+                Proyecto.objects.filter(usuario=user, fantasma=False)
                 .select_related('usuario', 'usuario__profile')
             ).order_by("nombre")
         return Proyecto.objects.none()
@@ -1864,8 +1869,10 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         """La ferralla acepta un proyecto nuevo: hasta entonces no sale en su
         dashboard ni se puede poner en mesa. Aceptar dos veces no cambia nada."""
         proyecto = self.get_object()
-        if not _is_admin(request.user) and proyecto.usuario_id != request.user.id:
+        if not _is_admin(request.user) and not _de_la_ferralla(request.user, proyecto):
             raise PermissionDenied('Solo la ferralla del proyecto puede aceptarlo.')
+        if proyecto.fantasma:
+            raise ValidationError({'detail': 'Un proyecto fantasma no se acepta: pásalo antes a real.'})
         if proyecto.aceptado_por_ferralla_at is None:
             proyecto.aceptado_por_ferralla_at = timezone.now()
             proyecto.save(update_fields=['aceptado_por_ferralla_at'])
@@ -3140,7 +3147,7 @@ def _proyectos_activos_for_user(user):
     if user.is_staff or user.is_superuser:
         qs = Proyecto.objects.all()
     else:
-        qs = Proyecto.objects.filter(usuario=user)
+        qs = Proyecto.objects.filter(usuario=user, fantasma=False)
 
     return qs.filter(
         modulos__estado__in=[ModuloEstado.PENDIENTE, ModuloEstado.EN_PROGRESO]
@@ -3298,7 +3305,7 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
             GrupoBastidor.objects.all()
         ).order_by('proyecto', 'indice', 'sufijo', 'id')
         if not _is_admin(self.request.user):
-            queryset = queryset.filter(proyecto__usuario=self.request.user)
+            queryset = queryset.filter(proyecto__usuario=self.request.user, proyecto__fantasma=False)
         proyecto_id = self.request.query_params.get('proyecto', None)
         if proyecto_id is not None:
             queryset = queryset.filter(proyecto_id=proyecto_id)
@@ -3306,7 +3313,7 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
 
     @staticmethod
     def _puede_gestionar(user, proyecto):
-        return _is_admin(user) or proyecto.usuario_id == user.id
+        return _is_admin(user) or _de_la_ferralla(user, proyecto)
 
     @staticmethod
     def _asignar_orden_raices(proyecto, orden_raices):
@@ -3678,7 +3685,7 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
         # La ferralla ordena dentro de su bastidor; cambiar de bastidor
         # altera el acopio y el transporte, asi que sigue siendo de admin.
         if not _is_admin(request.user):
-            if cross_group or proyecto.usuario_id != request.user.id:
+            if cross_group or not _de_la_ferralla(request.user, proyecto):
                 return Response({'detail': 'Solo admin puede mover modulos entre bastidores.'},
                                 status=status.HTTP_403_FORBIDDEN)
         movible, error = self._modulo_es_movible(modulo, cross_group=cross_group)
@@ -3983,7 +3990,7 @@ class ModuloViewSet(viewsets.ModelViewSet):
             )
         ).order_by("id")
         if not _is_admin(self.request.user):
-            queryset = queryset.filter(proyecto__usuario=self.request.user)
+            queryset = queryset.filter(proyecto__usuario=self.request.user, proyecto__fantasma=False)
         proyecto_id = self.request.query_params.get('proyecto', None)
         if proyecto_id is not None:
             queryset = queryset.filter(proyecto_id=proyecto_id)
@@ -4270,7 +4277,7 @@ class ImagenViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = Imagen.objects.select_related('modulo').filter(activo=True).order_by("modulo", "fase", "orden")
         if not _is_admin(self.request.user):
-            queryset = queryset.filter(modulo__proyecto__usuario=self.request.user)
+            queryset = queryset.filter(modulo__proyecto__usuario=self.request.user, modulo__proyecto__fantasma=False)
         modulo_id = self.request.query_params.get('modulo', None)
         fase = self.request.query_params.get('fase', None)
         if modulo_id is not None:
@@ -4896,6 +4903,11 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
             proyecto = Proyecto.objects.get(pk=proyecto_id)
         except Proyecto.DoesNotExist:
             return Response({'detail': 'Proyecto no encontrado.'}, status=404)
+        # Un fantasma solo vive en la planificacion de Moden.
+        if proyecto.fantasma:
+            if not _is_admin(request.user):
+                return Response({'detail': 'Proyecto no encontrado.'}, status=404)
+            return Response({'detail': 'Un proyecto fantasma no se pone en mesa: pásalo antes a real.'}, status=400)
 
         # Guardarrail: _plan_cola expulsa automaticamente proyectos sin
         # modulos pendientes. Sin esta validacion, anadir un proyecto
@@ -5795,7 +5807,7 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
             grupo.proyectos_cola.select_related('proyecto').order_by('orden', 'id')
         )
         for entry in entries:
-            if not _is_admin(user) and entry.proyecto.usuario_id != user.id:
+            if not _is_admin(user) and not _de_la_ferralla(user, entry.proyecto):
                 raise PermissionDenied('No puedes planificar proyectos de otra ferralla')
 
         progress, pins = capture_queue_progress(grupo)
@@ -5829,8 +5841,10 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
                 proyecto = Proyecto.objects.get(id=int(explicit_id))
             except (TypeError, ValueError, Proyecto.DoesNotExist):
                 raise ValidationError({'proyecto_id': 'Proyecto inválido'})
-            if not _is_admin(request.user) and proyecto.usuario_id != request.user.id:
+            if not _is_admin(request.user) and not _de_la_ferralla(request.user, proyecto):
                 raise PermissionDenied('No puedes planificar proyectos de otra ferralla')
+            if proyecto.fantasma:
+                raise PermissionDenied('Un proyecto fantasma no se pone en mesa.')
             with transaction.atomic():
                 existing = grupo.proyectos_cola.filter(proyecto=proyecto).first()
                 if existing is None:
@@ -5878,7 +5892,7 @@ def _compute_dificultad_scale(user, fallback_detalles=None, proyecto_id=None):
     if proyecto_id:
         qs = qs.filter(modulo__proyecto_id=proyecto_id)
     if user is not None and not (user.is_staff or user.is_superuser):
-        qs = qs.filter(modulo__proyecto__usuario=user)
+        qs = qs.filter(modulo__proyecto__usuario=user, modulo__proyecto__fantasma=False)
     detalles = list(qs)
     if not detalles and fallback_detalles:
         detalles = list(fallback_detalles)
@@ -6181,7 +6195,7 @@ class ProductionStatsView(APIView):
         elif proyecto_id:
             proyectos_visibles = Proyecto.objects.filter(pk=proyecto_id)
             if not _is_admin(request.user):
-                proyectos_visibles = proyectos_visibles.filter(usuario=request.user)
+                proyectos_visibles = proyectos_visibles.filter(usuario=request.user, fantasma=False)
             # Un proyecto ajeno o inexistente no da error: simplemente no hay datos.
             proyecto_filtrado = proyectos_visibles.first()
             alcance_ids = [int(proyecto_id)] if str(proyecto_id).isdigit() else []
@@ -6276,7 +6290,7 @@ class ProductionStatsView(APIView):
         if alcance_ids is not None:
             modulos_qs = modulos_qs.filter(proyecto_id__in=alcance_ids)
         if not _is_admin(request.user):
-            modulos_qs = modulos_qs.filter(proyecto__usuario=request.user)
+            modulos_qs = modulos_qs.filter(proyecto__usuario=request.user, proyecto__fantasma=False)
 
         modulos_list = [m for m in modulos_qs if en_rango(m.completado_at)]
         modulos_completados = len(modulos_list)
@@ -6505,7 +6519,8 @@ class ProductionStatsView(APIView):
                     add_detalle(por_mesa[manual_key], detalle)
 
         # Required output comes from current project deadlines.
-        planning_projects = Proyecto.objects.all()
+        # Los fantasmas no son trabajo de la ferralla: fuera tambien para Moden.
+        planning_projects = Proyecto.objects.filter(fantasma=False)
         if alcance_ids is not None:
             planning_projects = planning_projects.filter(pk__in=alcance_ids)
         if not _is_admin(request.user):
@@ -6880,7 +6895,7 @@ class ProductionStatsView(APIView):
         if alcance_ids is not None:
             contexto_base = contexto_base.filter(proyecto_id__in=alcance_ids)
         if not _is_admin(request.user):
-            contexto_base = contexto_base.filter(proyecto__usuario=request.user)
+            contexto_base = contexto_base.filter(proyecto__usuario=request.user, proyecto__fantasma=False)
         contexto_modulos = [
             modulo for modulo in contexto_base.filter(
                 Q(completado_at__gte=contexto_desde - timedelta(days=1), completado_at__lt=from_dt + timedelta(days=1))
@@ -7056,7 +7071,7 @@ class DetalleModuloFaseViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = DetalleModuloFase.objects.select_related('modulo', 'modulo__proyecto').all()
         if not _is_admin(self.request.user):
-            queryset = queryset.filter(modulo__proyecto__usuario=self.request.user)
+            queryset = queryset.filter(modulo__proyecto__usuario=self.request.user, modulo__proyecto__fantasma=False)
         modulo_id = self.request.query_params.get('modulo')
         proyecto_id = self.request.query_params.get('proyecto')
         fase = self.request.query_params.get('fase')
@@ -7072,7 +7087,7 @@ class DetalleModuloFaseViewSet(viewsets.ModelViewSet):
         from rest_framework.exceptions import PermissionDenied
 
         modulo = serializer.validated_data.get('modulo')
-        if modulo and (not _is_admin(self.request.user)) and modulo.proyecto.usuario_id != self.request.user.id:
+        if modulo and (not _is_admin(self.request.user)) and not _de_la_ferralla(self.request.user, modulo.proyecto):
             raise PermissionDenied('No puedes crear detalles tecnicos en proyectos de otro usuario')
         serializer.save()
 
@@ -7080,7 +7095,7 @@ class DetalleModuloFaseViewSet(viewsets.ModelViewSet):
         from rest_framework.exceptions import PermissionDenied
 
         modulo = serializer.validated_data.get('modulo') or serializer.instance.modulo
-        if modulo and (not _is_admin(self.request.user)) and modulo.proyecto.usuario_id != self.request.user.id:
+        if modulo and (not _is_admin(self.request.user)) and not _de_la_ferralla(self.request.user, modulo.proyecto):
             raise PermissionDenied('No puedes editar detalles tecnicos en proyectos de otro usuario')
         serializer.save()
 
@@ -7096,7 +7111,7 @@ class ModuloQueueViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = ModuloQueue.objects.all()
         if not _is_admin(self.request.user):
-            queryset = queryset.filter(proyecto__usuario=self.request.user)
+            queryset = queryset.filter(proyecto__usuario=self.request.user, proyecto__fantasma=False)
         proyecto_id = self.request.query_params.get('proyecto', None)
         if proyecto_id is not None:
             queryset = queryset.filter(proyecto_id=proyecto_id)
@@ -7114,7 +7129,7 @@ class ModuloQueueItemViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = ModuloQueueItem.objects.select_related('modulo', 'modulo__proyecto').all().order_by('position')
         if not _is_admin(self.request.user):
-            queryset = queryset.filter(queue__proyecto__usuario=self.request.user)
+            queryset = queryset.filter(queue__proyecto__usuario=self.request.user, queue__proyecto__fantasma=False)
         queue_id = self.request.query_params.get('queue', None)
         proyecto_id = self.request.query_params.get('proyecto', None)
         if queue_id is not None:
@@ -7125,7 +7140,7 @@ class ModuloQueueItemViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         queue = serializer.validated_data.get('queue')
-        if queue and (not _is_admin(self.request.user)) and queue.proyecto.usuario_id != self.request.user.id:
+        if queue and (not _is_admin(self.request.user)) and not _de_la_ferralla(self.request.user, queue.proyecto):
             from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied('No puedes crear items en colas de otro usuario')
         serializer.save()
@@ -7137,7 +7152,7 @@ class ModuloQueueItemViewSet(viewsets.ModelViewSet):
         for item_data in items_data:
             try:
                 item = ModuloQueueItem.objects.get(id=item_data['id'])
-                if not _is_admin(request.user) and item.queue.proyecto.usuario_id != request.user.id:
+                if not _is_admin(request.user) and not _de_la_ferralla(request.user, item.queue.proyecto):
                     continue
                 item.position = item_data['position']
                 item.save(update_fields=['position'])
@@ -8281,7 +8296,7 @@ class FotoFabricacionViewSet(viewsets.ReadOnlyModelViewSet):
         ).all()
 
         if not _is_admin(self.request.user):
-            queryset = queryset.filter(modulo__proyecto__usuario=self.request.user)
+            queryset = queryset.filter(modulo__proyecto__usuario=self.request.user, modulo__proyecto__fantasma=False)
 
         modulo_ids = self._get_modulo_ids(self.request)
         proyecto_id = self.request.query_params.get('proyecto')

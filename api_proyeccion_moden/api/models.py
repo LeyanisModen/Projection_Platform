@@ -230,6 +230,11 @@ class Proyecto(models.Model):
     # crea la propia ferralla nace aceptado; si Moden lo pasa a otra
     # ferralla, vuelve a estar pendiente.
     aceptado_por_ferralla_at = models.DateTimeField(null=True, blank=True)
+    # Fantasma: un proyecto que Moden simula para ver si su ferralla llegaria
+    # (planificacion de Moden). Solo existe en el admin: la ferralla no lo ve
+    # en ningun sitio ni entra en su plan. Al pasarlo a real le llega como
+    # pendiente de aceptar, con lo que ya se haya preparado.
+    fantasma = models.BooleanField(default=False)
     # Kilos de los elementos sueltos que van a obra fuera de los modulos: la
     # suma de la tabla elementos_sueltos de la base tecnica al importarla.
     # Vacio mientras la base tecnica no la trae.

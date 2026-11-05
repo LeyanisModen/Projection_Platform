@@ -363,3 +363,9 @@
 .edificio-row select { flex: 1 1 auto; min-width: 0; }
 .edificio-row .planta-numero { flex: 0 0 76px; }
 .edificio-error { margin: 0; color: var(--danger); font-size: 12px; }
+
+/* Estado: fantasma (solo Moden) o pendiente de aceptar por la ferralla. */
+.estado-panel { display: grid; gap: 8px; }
+.estado-row { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+.estado-valor { color: var(--ink); font-weight: 600; }
+.fantasma-chip { padding: 1px 8px; border: 1px dashed var(--muted); border-radius: 4px; color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
