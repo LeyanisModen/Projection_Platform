@@ -89,7 +89,7 @@ export function vistaDe(ferralla: PlanificacionModenFerralla, desde: string): Vi
       label: delDia.map(e => cortas.get(e.nombre)).join(' · '),
       // Tenue: solo entregan fantasmas ese dia.
       tenue: delDia.every(e => e.fantasma),
-      detalle: delDia.map(e => `${e.fantasma ? 'Fantasma' : 'Entrega'} ${e.nombre}${e.orientativa ? ' (orientativa)' : ''} · ${e.modulos_pendientes} mód. por fabricar`),
+      detalle: delDia.map(e => `Entrega ${e.nombre}${e.fantasma ? ' (en estudio)' : e.orientativa ? ' (orientativa)' : ''} · ${e.modulos_pendientes} mód. por fabricar`),
     };
   });
 
@@ -127,6 +127,7 @@ export class PlanificacionComponent implements OnInit {
   private usuarios: User[] = [];
 
   readonly cifra = cifra;
+  readonly azul = AZUL;
   readonly fechaLarga = fechaLarga;
   readonly fechaCorta = fechaCorta;
 

@@ -10,8 +10,8 @@
 .pm-kpi-label { color: var(--muted); font-size: 12px; white-space: nowrap; }
 .pm-kpi-value { color: var(--ink); font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1; white-space: nowrap; }
 .pm-kpi-value small { color: var(--muted); font-size: 12px; font-weight: 500; }
-/* Lo de los fantasmas, en el azul de su linea. */
-.pm-azul { color: #2264b8; }
+/* Lo de los proyectos en estudio, en el azul de su linea. */
+.pm-azul { color: var(--estudio); }
 
 /* Lista plana: el mes de entrega es un rotulo y los forjados van debajo. */
 .pm-lista { display: grid; }
@@ -30,8 +30,8 @@
 .pm-estimado { font-style: italic; }
 .pm-chevron { color: var(--line-strong); font-size: 12px; }
 .pm-fila:hover .pm-chevron { color: var(--muted); }
-.pm-es-fantasma .pm-proyecto { color: var(--text); }
-.fantasma-chip { margin-left: 6px; padding: 1px 6px; border: 1px dashed var(--muted); border-radius: 4px; color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; vertical-align: 1px; }
+.pm-es-fantasma .pm-proyecto { color: var(--estudio); }
+.fantasma-chip { margin-left: 6px; padding: 1px 6px; border: 1px dashed var(--estudio); border-radius: 4px; color: var(--estudio); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; vertical-align: 1px; }
 
 /* Alta de un fantasma. */
 .modal-backdrop { position: fixed; inset: 0; z-index: 1040; background: rgba(31, 41, 51, 0.45); }

@@ -14,6 +14,8 @@
     --ok: #1a7f4b;
     --warn: #b7791f;
     --danger: #c0392b;
+    /* Proyectos en estudio: el azul de lo estimado. */
+    --estudio: #2264b8;
     --radius: 10px;
     --radius-sm: 7px;
     --control-h: 40px;

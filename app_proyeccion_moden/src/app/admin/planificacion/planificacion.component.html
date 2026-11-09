@@ -26,26 +26,24 @@
                     <span class="pm-kpi-label">Para llegar</span>
                     <span class="pm-kpi-value">{{ cifra(vista.datos.resumen.ritmo_real, 1) }} <small>mód./día</small></span>
                 </div>
+                <div class="pm-kpi">
+                    <span class="pm-kpi-label">Módulos por fabricar</span>
+                    <span class="pm-kpi-value">{{ cifra(vista.datos.resumen.modulos_real) }}</span>
+                </div>
+                <div class="pm-kpi">
+                    <span class="pm-kpi-label">Kilos a obra</span>
+                    <span class="pm-kpi-value">{{ cifra(vista.datos.resumen.kilos_real) }} <small>kg</small></span>
+                </div>
                 @if (vista.datos.resumen.fantasmas) {
                 <div class="pm-kpi" [title]="vista.datos.resumen.manda_con_fantasmas ? 'Lo marca ' + vista.datos.resumen.manda_con_fantasmas : ''">
                     <span class="pm-kpi-label">Con proyectos en estudio</span>
                     <span class="pm-kpi-value pm-azul">{{ cifra(vista.datos.resumen.ritmo_con_fantasmas, 1) }} <small>mód./día</small></span>
                 </div>
-                }
-                <div class="pm-kpi">
-                    <span class="pm-kpi-label">Módulos por fabricar</span>
-                    <span class="pm-kpi-value">{{ cifra(vista.datos.resumen.modulos_real) }}</span>
-                </div>
-                @if (vista.datos.resumen.fantasmas) {
                 <div class="pm-kpi">
                     <span class="pm-kpi-label">Módulos en estudio</span>
                     <span class="pm-kpi-value pm-azul">{{ cifra(vista.datos.resumen.modulos_fantasmas) }}</span>
                 </div>
                 }
-                <div class="pm-kpi">
-                    <span class="pm-kpi-label">Kilos a obra</span>
-                    <span class="pm-kpi-value">{{ cifra(vista.datos.resumen.kilos_real) }} <small>kg</small></span>
-                </div>
                 @if (vista.datos.resumen.kilos_fantasmas) {
                 <div class="pm-kpi">
                     <span class="pm-kpi-label">Kilos en estudio</span>
@@ -57,7 +55,7 @@
             @if (vista.conCarga) {
             <app-stats-line-chart title="Módulos al día para llegar" unit="mód./día" [decimals]="1" [height]="240"
                 [labels]="vista.labels" [fullLabels]="vista.labelsLargas" [series]="vista.series"
-                [marks]="vista.marcas" markLabel="Entrega a obra" [markTenueLabel]="vista.datos.resumen.fantasmas ? 'Solo en estudio' : ''" />
+                [marks]="vista.marcas" markLabel="Entrega a obra" [markTenueLabel]="vista.datos.resumen.fantasmas ? 'Solo en estudio' : ''" [markTenueColor]="azul" />
             }
 
             @if (!vista.meses.length) {
