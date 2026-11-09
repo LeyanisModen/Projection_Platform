@@ -368,4 +368,5 @@
 .estado-panel { display: grid; gap: 8px; }
 .estado-row { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
 .estado-valor { color: var(--ink); font-weight: 600; }
-.fantasma-chip { padding: 1px 8px; border: 1px dashed var(--muted); border-radius: 4px; color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+.project-title.en-estudio, .estado-valor.en-estudio { color: var(--estudio); }
+.fantasma-chip { padding: 1px 8px; border: 1px dashed var(--estudio); border-radius: 4px; color: var(--estudio); font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }

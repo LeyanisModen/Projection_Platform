@@ -4,8 +4,8 @@
         <div class="header-content d-flex align-items-center" style="gap: 0.75rem;">
             <a routerLink="/admin-dashboard/proyectos" class="back-link" aria-label="Volver a proyectos"><i class="fa fa-arrow-left" aria-hidden="true"></i></a>
             <div class="project-title-wrap" *ngIf="!editingProjectName; else editProjectNameTpl">
-                <h1 class="project-title mb-0">{{ proyecto.nombre }}</h1>
-                @if (proyecto.fantasma) { <span class="fantasma-chip">Fantasma</span> }
+                <h1 class="project-title mb-0" [class.en-estudio]="proyecto.fantasma">{{ proyecto.nombre }}</h1>
+                @if (proyecto.fantasma) { <span class="fantasma-chip">En estudio</span> }
                 <button
                     type="button"
                     class="project-title-edit-btn"
@@ -119,9 +119,9 @@
             <div class="side-panel estado-panel">
                 <span class="section-label">Estado</span>
                 <div class="estado-row">
-                    <span class="estado-valor">{{ proyecto.fantasma ? 'Fantasma' : 'Pendiente de aceptar' }}</span>
+                    <span class="estado-valor" [class.en-estudio]="proyecto.fantasma">{{ proyecto.fantasma ? 'En estudio' : 'Pendiente de aceptar' }}</span>
                     <button type="button" class="btn btn-sm" (click)="cambiarFantasma(!proyecto.fantasma)" [disabled]="guardandoEstado">
-                        {{ proyecto.fantasma ? 'Pasar a real' : 'Pasar a fantasma' }}
+                        {{ proyecto.fantasma ? 'Enviar a la ferralla' : 'Pasar a estudio' }}
                     </button>
                 </div>
                 @if (estadoError) { <p class="edificio-error" role="alert">{{ estadoError }}</p> }

@@ -32,6 +32,13 @@ export interface MesPlanificacion {
   kilos: number;
 }
 
+/** Donde mas aprietan los proyectos en estudio: su dia mas alto y hasta donde sigue igual. */
+export interface PicoEstudio {
+  ritmo: number;
+  desde: string;
+  hasta: string;
+}
+
 export interface VistaFerralla {
   id: number;
   nombre: string;
@@ -43,6 +50,20 @@ export interface VistaFerralla {
   meses: MesPlanificacion[];
   /** Algo que fabricar en estos seis meses: sin nada, la grafica sobra. */
   conCarga: boolean;
+  picoEstudio: PicoEstudio | null;
+}
+
+/** El dia mas alto de los que cambian por los proyectos en estudio: ahi es donde hay que centrarse. */
+export function picoEstudio(dias: PlanificacionModenFerralla['dias']): PicoEstudio | null {
+  const influye = (i: number) => dias[i].con_fantasmas > dias[i].real;
+  let mayor = -1;
+  dias.forEach((dia, i) => {
+    if (influye(i) && (mayor < 0 || dia.con_fantasmas > dias[mayor].con_fantasmas)) mayor = i;
+  });
+  if (mayor < 0) return null;
+  let fin = mayor;
+  while (fin + 1 < dias.length && influye(fin + 1) && dias[fin + 1].con_fantasmas === dias[mayor].con_fantasmas) fin++;
+  return { ritmo: dias[mayor].con_fantasmas, desde: dias[mayor].fecha, hasta: dias[fin].fecha };
 }
 
 /** Por mes de entrega; antes lo que ya tenia que estar y al final lo que aun no tiene fecha. */
@@ -74,7 +95,7 @@ export function vistaDe(ferralla: PlanificacionModenFerralla, desde: string): Vi
   const real: LineChartSeries = { name: 'Real', color: NARANJA, values: dias.map(d => d.real) };
   // Lo real por encima: con fantasmas nunca pide menos.
   const series = conFantasmas
-    ? [{ name: 'Con fantasmas', color: AZUL, values: dias.map(d => d.con_fantasmas) }, real]
+    ? [{ name: 'Con proyectos en estudio', color: AZUL, values: dias.map(d => d.con_fantasmas) }, real]
     : [real];
 
   // Una marca por dia de entrega; si cae en un dia sin fabricacion, entre el de antes y el de despues.
@@ -87,9 +108,12 @@ export function vistaDe(ferralla: PlanificacionModenFerralla, desde: string): Vi
     return {
       index,
       label: delDia.map(e => cortas.get(e.nombre)).join(' · '),
-      // Tenue: solo entregan fantasmas ese dia.
+      // Tenue: solo entregan fantasmas ese dia; si se juntan con reales, cada nombre con su color.
       tenue: delDia.every(e => e.fantasma),
-      detalle: delDia.map(e => `${e.fantasma ? 'Fantasma' : 'Entrega'} ${e.nombre}${e.orientativa ? ' (orientativa)' : ''} · ${e.modulos_pendientes} mód. por fabricar`),
+      partes: delDia.some(e => e.fantasma) && delDia.some(e => !e.fantasma)
+        ? delDia.map(e => ({ texto: cortas.get(e.nombre) ?? e.nombre, tenue: e.fantasma }))
+        : undefined,
+      detalle: delDia.map(e => `Entrega ${e.nombre}${e.fantasma ? ' (en estudio)' : e.orientativa ? ' (orientativa)' : ''} · ${e.modulos_pendientes} mód. por fabricar`),
     };
   });
 
@@ -103,6 +127,7 @@ export function vistaDe(ferralla: PlanificacionModenFerralla, desde: string): Vi
     marcas,
     meses: porMes(ferralla.proyectos, desde),
     conCarga: dias.some(d => d.real || d.con_fantasmas),
+    picoEstudio: conFantasmas ? picoEstudio(dias) : null,
   };
 }
 
@@ -127,6 +152,7 @@ export class PlanificacionComponent implements OnInit {
   private usuarios: User[] = [];
 
   readonly cifra = cifra;
+  readonly azul = AZUL;
   readonly fechaLarga = fechaLarga;
   readonly fechaCorta = fechaCorta;
 
@@ -196,7 +222,7 @@ export class PlanificacionComponent implements OnInit {
       error: err => {
         const datos = err?.error;
         const primero = datos && typeof datos === 'object' ? Object.values(datos)[0] : null;
-        this.errorNuevo.set((Array.isArray(primero) ? primero[0] : primero) || 'No se pudo crear el fantasma.');
+        this.errorNuevo.set((Array.isArray(primero) ? primero[0] : primero) || 'No se pudo crear el proyecto.');
         this.guardando.set(false);
       },
     });

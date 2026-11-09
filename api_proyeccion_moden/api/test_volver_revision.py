@@ -1,4 +1,5 @@
 import hashlib
+from datetime import timedelta
 
 from django.contrib.auth.models import User
 from rest_framework.test import APITestCase
@@ -106,7 +107,9 @@ class VolverAlAnteriorYRevisionTests(APITestCase):
         self.assertIsNotNone(item.revisado_at)
         # Desde el visor del supervisor en el dashboard, igual.
         self.client.force_authenticate(self.ferralla)
-        anterior = item.revisado_at
+        # Atras a mano: en Windows dos peticiones seguidas pueden dar la misma hora.
+        anterior = item.revisado_at - timedelta(seconds=1)
+        MesaQueueItem.objects.filter(pk=item.pk).update(revisado_at=anterior)
         respuesta = self.client.post(f'/api/mesas/{self.mesa.id}/set_index/', {'index': 3, 'revision': True}, format='json')
         self.assertEqual(respuesta.status_code, 200)
         item.refresh_from_db()

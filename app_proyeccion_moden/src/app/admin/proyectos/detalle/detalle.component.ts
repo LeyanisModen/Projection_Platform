@@ -1288,14 +1288,14 @@ export class ProyectoDetailComponent implements OnInit {
         });
     }
 
-    /** Fantasma: Moden lo simula en la planificacion y la ferralla no lo ve. Al
-     *  pasarlo a real le llega como proyecto nuevo, pendiente de aceptar. */
+    /** En estudio (fantasma): Moden lo simula en la planificacion y la ferralla no lo ve.
+     *  Al enviarselo le llega como proyecto nuevo, pendiente de aceptar. */
     cambiarFantasma(fantasma: boolean): void {
         if (!this.proyecto || this.guardandoEstado) return;
         const ferralla = this.getSelectedFerrallaLabel();
         const aviso = fantasma
-            ? `¿Pasar ${this.proyecto.nombre} a fantasma? ${ferralla} dejará de verlo.`
-            : `¿Pasar ${this.proyecto.nombre} a real? A ${ferralla} le llegará como proyecto nuevo, pendiente de aceptar.`;
+            ? `¿Pasar ${this.proyecto.nombre} a estudio? ${ferralla} dejará de verlo.`
+            : `¿Enviar ${this.proyecto.nombre} a ${ferralla}? Le llegará como proyecto nuevo, pendiente de aceptar.`;
         if (!confirm(aviso)) return;
         this.guardandoEstado = true;
         this.estadoError = '';

@@ -4,7 +4,7 @@ import { of } from 'rxjs';
 import { vi } from 'vitest';
 
 import { ApiService, PlanificacionModenProyecto, PlanificacionModenResponse } from '../../services/api.service';
-import { PlanificacionComponent, cifra, porMes } from './planificacion.component';
+import { PlanificacionComponent, cifra, picoEstudio, porMes, vistaDe } from './planificacion.component';
 
 function proyecto(id: number, nombre: string, fecha: string | null, pendientes: number, fantasma = false, kilos: number | null = 1000): PlanificacionModenProyecto {
   return {
@@ -85,30 +85,59 @@ describe('PlanificacionComponent', () => {
     expect(secciones.map(s => texto(s.querySelector('.pm-nombre')))).toEqual(['Sanchos', 'Europa']);
     const casillas = (s: Element) => Array.from(s.querySelectorAll('.pm-kpi')).map(k => [texto(k.querySelector('.pm-kpi-label')), texto(k.querySelector('.pm-kpi-value'))]);
     expect(casillas(secciones[0])).toEqual([
-      ['Para llegar', '1 mód./día'], ['Con fantasmas', '1,6 mód./día'], ['Módulos por fabricar', '12'],
-      ['Módulos fantasma', '10'], ['Kilos a obra', '2.000 kg'], ['Kilos fantasma', '1.290 kg'],
+      // Primero lo real; despues lo que suman los proyectos en estudio.
+      ['Para llegar', '1 mód./día'], ['Módulos por fabricar', '12'], ['Kilos a obra', '2.000 kg'],
+      ['Con proyectos en estudio', '1,6 mód./día'], ['Módulos en estudio', '10'], ['Kilos en estudio', '1.290 kg'],
     ]);
+    // Lo azul dice cuando: su dia mas alto y hasta donde sigue igual.
+    expect(texto(secciones[0].querySelector('.pm-kpi-nota'))).toBe('del 02/11 al 04/11');
     // Sin fantasmas, solo lo real.
     expect(casillas(secciones[1]).map(c => c[0])).toEqual(['Para llegar', 'Módulos por fabricar', 'Kilos a obra']);
 
     const [sanchos, europa] = fixture.componentInstance.vistas();
-    expect(sanchos.series.map(s => [s.name, s.values])).toEqual([['Con fantasmas', [1.6, 1.6, 1.6]], ['Real', [1, 1, 0.7]]]);
+    expect(sanchos.series.map(s => [s.name, s.values])).toEqual([['Con proyectos en estudio', [1.6, 1.6, 1.6]], ['Real', [1, 1, 0.7]]]);
     expect(europa.series.map(s => s.name)).toEqual(['Real']);
     // Sin nada que fabricar, sin grafica.
     expect(secciones.map(s => !!s.querySelector('app-stats-line-chart'))).toEqual([true, false]);
     expect(sanchos.marcas.map(m => [m.label, m.tenue])).toEqual([['OBRA_P01', false], ['TORRE_P01', true]]);
+    expect(sanchos.marcas[1].detalle).toEqual(['Entrega TORRE_P01 (en estudio) · 10 mód. por fabricar']);
   });
 
   it('lists the deliveries by month with the ghosts tagged, each one opening its project', () => {
     const seccion = el().querySelector('.pm-ferralla')!;
     expect(Array.from(seccion.querySelectorAll('.pm-mes')).map(texto)).toEqual([
-      'noviembre 2026 8 mód. · 10 fantasma · 2.290 kg', 'diciembre 2026 4 mód. · 1.000 kg',
+      'noviembre 2026 8 mód. · 10 en estudio · 2.290 kg', 'diciembre 2026 4 mód. · 1.000 kg',
     ]);
     const filas = Array.from(seccion.querySelectorAll('a.pm-fila'));
-    expect(filas.map(f => texto(f.querySelector('.pm-proyecto')))).toEqual(['OBRA_P01', 'TORRE_P01 Fantasma', 'OBRA_P02']);
+    expect(filas.map(f => texto(f.querySelector('.pm-proyecto')))).toEqual(['OBRA_P01', 'TORRE_P01 En estudio', 'OBRA_P02']);
     expect(filas[1].getAttribute('href')).toBe('/admin-dashboard/proyectos/3');
+    // Lo que esta en estudio lleva el nombre en azul.
+    expect(filas.map(f => f.classList.contains('pm-es-fantasma'))).toEqual([false, true, false]);
     // La fecha de un fantasma siempre es la de Moden: no se dice orientativa.
     expect(Array.from(filas[1].querySelectorAll('.pm-datos > span')).map(texto)).toEqual(['Entrega 04/11', '10 mód. por fabricar', '1.290 kg']);
+  });
+
+  it('finds the highest day the projects under study change, which is where to focus', () => {
+    const dia = (fecha: string, real: number, con_fantasmas: number) => ({ fecha, real, con_fantasmas });
+    expect(picoEstudio([
+      // Hoy manda lo real (igual con y sin ellos): no cuenta aunque sea mas alto.
+      dia('2026-11-09', 64, 64), dia('2026-11-10', 36, 36),
+      dia('2026-11-19', 21.3, 26.7), dia('2026-11-20', 21.3, 26.7), dia('2026-11-23', 20, 24), dia('2026-11-24', 20, 26.7),
+    ])).toEqual({ ritmo: 26.7, desde: '2026-11-19', hasta: '2026-11-20' });
+    expect(picoEstudio([dia('2026-11-09', 5, 5), dia('2026-11-10', 3, 3)])).toBeNull();
+  });
+
+  it('splits the label of a day that mixes real and study deliveries, each in its colour', () => {
+    const ferralla = respuesta().ferrallas[0];
+    ferralla.entregas = [
+      { proyecto: 1, nombre: 'OBRA_BH_P10', fecha: '2026-11-03', orientativa: false, fantasma: false, modulos_pendientes: 8 },
+      { proyecto: 3, nombre: 'test2', fecha: '2026-11-03', orientativa: false, fantasma: true, modulos_pendientes: 10 },
+      { proyecto: 4, nombre: 'test3', fecha: '2026-11-04', orientativa: false, fantasma: true, modulos_pendientes: 5 },
+    ];
+    const [mezcla, soloEstudio] = vistaDe(ferralla, '2026-11-02').marcas;
+    expect(mezcla.tenue).toBe(false);
+    expect(mezcla.partes?.map(p => [p.texto, p.tenue])).toEqual([['P10', false], ['test2', true]]);
+    expect([soloEstudio.tenue, soloEstudio.partes]).toEqual([true, undefined]);
   });
 
   it('puts what was due before and what has no date around the months', () => {

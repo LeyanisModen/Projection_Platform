@@ -17,7 +17,7 @@
             <header class="pm-cabecera">
                 <h2 class="pm-nombre">{{ vista.nombre }}</h2>
                 <button type="button" class="btn btn-sm" (click)="abrirNuevo(vista)">
-                    <i class="fa fa-plus" aria-hidden="true"></i> Fantasma
+                    <i class="fa fa-plus" aria-hidden="true"></i> Proyecto en estudio
                 </button>
             </header>
 
@@ -26,29 +26,33 @@
                     <span class="pm-kpi-label">Para llegar</span>
                     <span class="pm-kpi-value">{{ cifra(vista.datos.resumen.ritmo_real, 1) }} <small>mód./día</small></span>
                 </div>
-                @if (vista.datos.resumen.fantasmas) {
-                <div class="pm-kpi" [title]="vista.datos.resumen.manda_con_fantasmas ? 'Lo marca ' + vista.datos.resumen.manda_con_fantasmas : ''">
-                    <span class="pm-kpi-label">Con fantasmas</span>
-                    <span class="pm-kpi-value pm-azul">{{ cifra(vista.datos.resumen.ritmo_con_fantasmas, 1) }} <small>mód./día</small></span>
-                </div>
-                }
                 <div class="pm-kpi">
                     <span class="pm-kpi-label">Módulos por fabricar</span>
                     <span class="pm-kpi-value">{{ cifra(vista.datos.resumen.modulos_real) }}</span>
                 </div>
-                @if (vista.datos.resumen.fantasmas) {
-                <div class="pm-kpi">
-                    <span class="pm-kpi-label">Módulos fantasma</span>
-                    <span class="pm-kpi-value pm-azul">{{ cifra(vista.datos.resumen.modulos_fantasmas) }}</span>
-                </div>
-                }
                 <div class="pm-kpi">
                     <span class="pm-kpi-label">Kilos a obra</span>
                     <span class="pm-kpi-value">{{ cifra(vista.datos.resumen.kilos_real) }} <small>kg</small></span>
                 </div>
+                @if (vista.datos.resumen.fantasmas) {
+                <div class="pm-kpi">
+                    <span class="pm-kpi-label">Con proyectos en estudio</span>
+                    @if (vista.picoEstudio; as pico) {
+                    <span class="pm-kpi-value pm-azul">{{ cifra(pico.ritmo, 1) }} <small>mód./día</small></span>
+                    <span class="pm-kpi-nota">{{ pico.desde === pico.hasta ? 'el ' + fechaCorta(pico.desde) : 'del ' + fechaCorta(pico.desde) + ' al ' + fechaCorta(pico.hasta) }}</span>
+                    } @else {
+                    <span class="pm-kpi-value pm-azul">{{ cifra(null) }}</span>
+                    <span class="pm-kpi-nota">no cambian el ritmo</span>
+                    }
+                </div>
+                <div class="pm-kpi">
+                    <span class="pm-kpi-label">Módulos en estudio</span>
+                    <span class="pm-kpi-value pm-azul">{{ cifra(vista.datos.resumen.modulos_fantasmas) }}</span>
+                </div>
+                }
                 @if (vista.datos.resumen.kilos_fantasmas) {
                 <div class="pm-kpi">
-                    <span class="pm-kpi-label">Kilos fantasma</span>
+                    <span class="pm-kpi-label">Kilos en estudio</span>
                     <span class="pm-kpi-value pm-azul">{{ cifra(vista.datos.resumen.kilos_fantasmas) }} <small>kg</small></span>
                 </div>
                 }
@@ -57,7 +61,7 @@
             @if (vista.conCarga) {
             <app-stats-line-chart title="Módulos al día para llegar" unit="mód./día" [decimals]="1" [height]="240"
                 [labels]="vista.labels" [fullLabels]="vista.labelsLargas" [series]="vista.series"
-                [marks]="vista.marcas" markLabel="Entrega a obra" [markTenueLabel]="vista.datos.resumen.fantasmas ? 'Solo fantasmas' : ''" />
+                [marks]="vista.marcas" markLabel="Entrega a obra" [markTenueLabel]="vista.datos.resumen.fantasmas ? 'Solo en estudio' : ''" [markTenueColor]="azul" />
             }
 
             @if (!vista.meses.length) {
@@ -68,14 +72,14 @@
                 <div class="pm-mes">
                     <span class="pm-mes-nombre">{{ mes.nombre }}</span>
                     <span class="meta">
-                        {{ cifra(mes.modulos) }} mód.@if (mes.modulosFantasma) { · <span class="pm-azul">{{ cifra(mes.modulosFantasma) }} fantasma</span>} · {{ cifra(mes.kilos) }} kg
+                        {{ cifra(mes.modulos) }} mód.@if (mes.modulosFantasma) { · <span class="pm-azul">{{ cifra(mes.modulosFantasma) }} en estudio</span>} · {{ cifra(mes.kilos) }} kg
                     </span>
                 </div>
                 @for (proyecto of mes.proyectos; track proyecto.id) {
                 <a class="pm-fila" [class.pm-es-fantasma]="proyecto.fantasma" [routerLink]="['/admin-dashboard/proyectos', proyecto.id]">
                     <span class="pm-proyecto">
                         {{ proyecto.nombre }}
-                        @if (proyecto.fantasma) { <span class="fantasma-chip">Fantasma</span> }
+                        @if (proyecto.fantasma) { <span class="fantasma-chip">En estudio</span> }
                     </span>
                     <span class="meta pm-datos">
                         @if (proyecto.fecha_entrega) { <span>Entrega {{ fechaCorta(proyecto.fecha_entrega) }}@if (proyecto.entrega_orientativa && !proyecto.fantasma) { orientativa }</span> }
@@ -109,7 +113,7 @@
 <div class="custom-modal">
     <form class="modal-content" role="dialog" aria-modal="true" aria-labelledby="pm-nuevo-titulo" (ngSubmit)="crearFantasma()" autocomplete="off">
         <div class="modal-header">
-            <h5 id="pm-nuevo-titulo">Fantasma en {{ vista.nombre }}</h5>
+            <h5 id="pm-nuevo-titulo">Proyecto en estudio para {{ vista.nombre }}</h5>
             <button type="button" class="close" (click)="cerrarNuevo()" aria-label="Cerrar"><span>&times;</span></button>
         </div>
         <div class="modal-body pm-nuevo">

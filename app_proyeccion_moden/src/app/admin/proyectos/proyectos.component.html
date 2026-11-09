@@ -16,9 +16,9 @@
             <option [ngValue]="null">{{ faltaFerralla ? 'Elige la ferralla' : 'Sin ferralla' }}</option>
             <option *ngFor="let user of users" [ngValue]="user.url">{{ user.first_name || user.username }}</option>
         </select>
-        <label class="new-project-fantasma" title="Solo para la planificación de Moden: la ferralla no lo ve hasta pasarlo a real">
+        <label class="new-project-fantasma" title="Solo para la planificación de Moden: la ferralla no lo ve hasta enviárselo">
             <input type="checkbox" name="fantasma" [(ngModel)]="newProject.fantasma" [disabled]="loading">
-            Fantasma
+            En estudio
         </label>
         <button type="submit" class="btn btn-primary" [disabled]="loading || !newProject.nombre.trim() || faltaFerralla">
             {{ loading ? 'Creando...' : 'Crear' }}
@@ -52,7 +52,7 @@
                 (click)="manageProject(project)"
                 (keydown)="onProjectRowKeydown($event, project)">
                 <div class="project-main">
-                    <div class="project-name">{{ project.nombre }}@if (project.planta_etiqueta) { <span class="planta-chip">{{ project.planta_etiqueta }}</span> }@if (project.fantasma) { <span class="fantasma-chip" title="Solo lo ve Moden en la planificación">Fantasma</span> }</div>
+                    <div class="project-name" [class.en-estudio]="project.fantasma">{{ project.nombre }}@if (project.planta_etiqueta) { <span class="planta-chip">{{ project.planta_etiqueta }}</span> }@if (project.fantasma) { <span class="fantasma-chip" title="Solo lo ve Moden en la planificación">En estudio</span> }</div>
                     <div class="meta project-info">
                         @if (group.archived && project.usuario_nombre) { <span>{{ project.usuario_nombre }}</span> }
                         @if (project.fecha_montaje) { <span>Montaje {{ project.fecha_montaje | date:'dd/MM/yyyy' }}</span> }

@@ -33,6 +33,8 @@ export interface ChartMark {
   detalle: string[];
   /** Mas suave: p. ej. una fecha aun orientativa. */
   tenue?: boolean;
+  /** Un dia que junta marcas normales y tenues: la etiqueta por trozos, cada uno con su color. */
+  partes?: Array<{ texto: string; tenue: boolean }>;
 }
 
 type PointState = 'normal' | 'cumple' | 'bajo' | 'curso';
@@ -123,7 +125,7 @@ let nextChartId = 0;
                   @case ('bajo') { <circle cx="10" cy="5" r="3.5" class="lc-dot-hueco" [attr.stroke]="item.color" /> }
                   @case ('area') { <rect x="2" y="1" width="16" height="8" rx="2" [attr.fill]="item.color" fill-opacity="0.45" /> }
                   @case ('mark') { <line x1="10" y1="0" x2="10" y2="10" class="lc-mark" /> }
-                  @case ('mark-tenue') { <line x1="10" y1="0" x2="10" y2="10" class="lc-mark lc-mark-tenue" /> }
+                  @case ('mark-tenue') { <line x1="10" y1="0" x2="10" y2="10" class="lc-mark lc-mark-tenue" [style.stroke]="markTenueColor() || null" /> }
                 }
               </svg>
               {{ item.label }}
@@ -184,12 +186,12 @@ let nextChartId = 0;
           }
           @for (marca of markLayout(); track $index) {
             <line class="lc-mark" [class.lc-mark-tenue]="marca.tenue" [attr.x1]="marca.x" [attr.x2]="marca.x"
-              [attr.y1]="marca.y + 3" [attr.y2]="plot().y + plot().h" />
+              [attr.y1]="marca.y + 3" [attr.y2]="plot().y + plot().h" [style.stroke]="marca.tenue ? markTenueColor() || null : null" />
           }
           @for (marca of markLayout(); track $index) {
             @if (marca.conEtiqueta) {
             <text class="lc-mark-label" [class.lc-mark-tenue]="marca.tenue" [attr.x]="marca.anchor === 'end' ? marca.x - 3 : marca.x + 3"
-              [attr.y]="marca.y" [attr.text-anchor]="marca.anchor">{{ marca.label }}</text>
+              [attr.y]="marca.y" [attr.text-anchor]="marca.anchor" [style.fill]="marca.tenue ? markTenueColor() || null : null">@if (marca.partes; as partes) {@for (parte of partes; track $index) {@if ($index) {<tspan>{{ ' · ' }}</tspan>}<tspan [class.lc-mark-tenue]="parte.tenue" [style.fill]="parte.tenue ? markTenueColor() || null : null">{{ parte.texto }}</tspan>}} @else {{{ marca.label }}}</text>
             }
           }
           @if (targetPath(); as objetivo) {
@@ -282,7 +284,7 @@ let nextChartId = 0;
     .lc-mark-tenue { opacity: 0.35; }
     /* Con un halo del fondo: si una marca cruza la etiqueta de otra, la etiqueta se lee. */
     .lc-mark-label { fill: var(--ink); font-size: 11px; font-weight: 600; paint-order: stroke; stroke: var(--surface); stroke-width: 3px; }
-    .lc-mark-label.lc-mark-tenue { fill: var(--muted); font-weight: 500; opacity: 1; }
+    .lc-mark-label.lc-mark-tenue, .lc-mark-label .lc-mark-tenue { fill: var(--muted); font-weight: 500; opacity: 1; }
     .lc-tooltip-marca { color: var(--ink); font-weight: 600; }
   `,
 })
@@ -311,6 +313,8 @@ export class StatsLineChart implements AfterViewInit, OnDestroy {
   readonly marks = input<ChartMark[]>([]);
   readonly markLabel = input('Entrega');
   readonly markTenueLabel = input('');
+  /** Color de las marcas tenues (por defecto, gris). */
+  readonly markTenueColor = input('');
   readonly unit = input('');
   readonly decimals = input(0);
   readonly height = input(220);
