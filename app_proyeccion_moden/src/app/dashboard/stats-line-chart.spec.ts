@@ -206,4 +206,22 @@ describe('StatsLineChart', () => {
     fixture.detectChanges();
     expect(el().querySelectorAll('.lc-tooltip-marca').length).toBe(4);
   });
+
+  it('colours each name of a day that mixes normal and soft marks', () => {
+    fixture.componentRef.setInput('series', [{ name: 'Módulos al día', color: '#f0640f', values: [1, 1, 0.7, 0.7] }]);
+    fixture.componentRef.setInput('markTenueColor', '#2264b8');
+    fixture.componentRef.setInput('marks', [{
+      index: 2, label: 'BH_P10 · test2', detalle: [],
+      partes: [{ texto: 'BH_P10', tenue: false }, { texto: 'test2', tenue: true }],
+    }]);
+    fixture.detectChanges();
+
+    const etiqueta = el().querySelector('.lc-mark-label')!;
+    expect(etiqueta.textContent).toBe('BH_P10 · test2');
+    expect(etiqueta.classList.contains('lc-mark-tenue')).toBe(false);
+    const trozos = Array.from(etiqueta.querySelectorAll('tspan'));
+    expect(trozos.map(t => [t.textContent, (t as SVGElement).style.fill])).toEqual([
+      ['BH_P10', ''], [' · ', ''], ['test2', '#2264b8'],
+    ]);
+  });
 });

@@ -33,6 +33,8 @@ export interface ChartMark {
   detalle: string[];
   /** Mas suave: p. ej. una fecha aun orientativa. */
   tenue?: boolean;
+  /** Un dia que junta marcas normales y tenues: la etiqueta por trozos, cada uno con su color. */
+  partes?: Array<{ texto: string; tenue: boolean }>;
 }
 
 type PointState = 'normal' | 'cumple' | 'bajo' | 'curso';
@@ -189,7 +191,7 @@ let nextChartId = 0;
           @for (marca of markLayout(); track $index) {
             @if (marca.conEtiqueta) {
             <text class="lc-mark-label" [class.lc-mark-tenue]="marca.tenue" [attr.x]="marca.anchor === 'end' ? marca.x - 3 : marca.x + 3"
-              [attr.y]="marca.y" [attr.text-anchor]="marca.anchor" [style.fill]="marca.tenue ? markTenueColor() || null : null">{{ marca.label }}</text>
+              [attr.y]="marca.y" [attr.text-anchor]="marca.anchor" [style.fill]="marca.tenue ? markTenueColor() || null : null">@if (marca.partes; as partes) {@for (parte of partes; track $index) {@if ($index) {<tspan>{{ ' · ' }}</tspan>}<tspan [class.lc-mark-tenue]="parte.tenue" [style.fill]="parte.tenue ? markTenueColor() || null : null">{{ parte.texto }}</tspan>}} @else {{{ marca.label }}}</text>
             }
           }
           @if (targetPath(); as objetivo) {
@@ -282,7 +284,7 @@ let nextChartId = 0;
     .lc-mark-tenue { opacity: 0.35; }
     /* Con un halo del fondo: si una marca cruza la etiqueta de otra, la etiqueta se lee. */
     .lc-mark-label { fill: var(--ink); font-size: 11px; font-weight: 600; paint-order: stroke; stroke: var(--surface); stroke-width: 3px; }
-    .lc-mark-label.lc-mark-tenue { fill: var(--muted); font-weight: 500; opacity: 1; }
+    .lc-mark-label.lc-mark-tenue, .lc-mark-label .lc-mark-tenue { fill: var(--muted); font-weight: 500; opacity: 1; }
     .lc-tooltip-marca { color: var(--ink); font-weight: 600; }
   `,
 })

@@ -108,8 +108,11 @@ export function vistaDe(ferralla: PlanificacionModenFerralla, desde: string): Vi
     return {
       index,
       label: delDia.map(e => cortas.get(e.nombre)).join(' · '),
-      // Tenue: solo entregan fantasmas ese dia.
+      // Tenue: solo entregan fantasmas ese dia; si se juntan con reales, cada nombre con su color.
       tenue: delDia.every(e => e.fantasma),
+      partes: delDia.some(e => e.fantasma) && delDia.some(e => !e.fantasma)
+        ? delDia.map(e => ({ texto: cortas.get(e.nombre) ?? e.nombre, tenue: e.fantasma }))
+        : undefined,
       detalle: delDia.map(e => `Entrega ${e.nombre}${e.fantasma ? ' (en estudio)' : e.orientativa ? ' (orientativa)' : ''} · ${e.modulos_pendientes} mód. por fabricar`),
     };
   });

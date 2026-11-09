@@ -4,7 +4,7 @@ import { of } from 'rxjs';
 import { vi } from 'vitest';
 
 import { ApiService, PlanificacionModenProyecto, PlanificacionModenResponse } from '../../services/api.service';
-import { PlanificacionComponent, cifra, picoEstudio, porMes } from './planificacion.component';
+import { PlanificacionComponent, cifra, picoEstudio, porMes, vistaDe } from './planificacion.component';
 
 function proyecto(id: number, nombre: string, fecha: string | null, pendientes: number, fantasma = false, kilos: number | null = 1000): PlanificacionModenProyecto {
   return {
@@ -125,6 +125,19 @@ describe('PlanificacionComponent', () => {
       dia('2026-11-19', 21.3, 26.7), dia('2026-11-20', 21.3, 26.7), dia('2026-11-23', 20, 24), dia('2026-11-24', 20, 26.7),
     ])).toEqual({ ritmo: 26.7, desde: '2026-11-19', hasta: '2026-11-20' });
     expect(picoEstudio([dia('2026-11-09', 5, 5), dia('2026-11-10', 3, 3)])).toBeNull();
+  });
+
+  it('splits the label of a day that mixes real and study deliveries, each in its colour', () => {
+    const ferralla = respuesta().ferrallas[0];
+    ferralla.entregas = [
+      { proyecto: 1, nombre: 'OBRA_BH_P10', fecha: '2026-11-03', orientativa: false, fantasma: false, modulos_pendientes: 8 },
+      { proyecto: 3, nombre: 'test2', fecha: '2026-11-03', orientativa: false, fantasma: true, modulos_pendientes: 10 },
+      { proyecto: 4, nombre: 'test3', fecha: '2026-11-04', orientativa: false, fantasma: true, modulos_pendientes: 5 },
+    ];
+    const [mezcla, soloEstudio] = vistaDe(ferralla, '2026-11-02').marcas;
+    expect(mezcla.tenue).toBe(false);
+    expect(mezcla.partes?.map(p => [p.texto, p.tenue])).toEqual([['P10', false], ['test2', true]]);
+    expect([soloEstudio.tenue, soloEstudio.partes]).toEqual([true, undefined]);
   });
 
   it('puts what was due before and what has no date around the months', () => {
