@@ -4,7 +4,7 @@ import { of } from 'rxjs';
 import { vi } from 'vitest';
 
 import { ApiService, PlanificacionModenProyecto, PlanificacionModenResponse } from '../../services/api.service';
-import { PlanificacionComponent, cifra, porMes } from './planificacion.component';
+import { PlanificacionComponent, cifra, picoEstudio, porMes } from './planificacion.component';
 
 function proyecto(id: number, nombre: string, fecha: string | null, pendientes: number, fantasma = false, kilos: number | null = 1000): PlanificacionModenProyecto {
   return {
@@ -89,6 +89,8 @@ describe('PlanificacionComponent', () => {
       ['Para llegar', '1 mód./día'], ['Módulos por fabricar', '12'], ['Kilos a obra', '2.000 kg'],
       ['Con proyectos en estudio', '1,6 mód./día'], ['Módulos en estudio', '10'], ['Kilos en estudio', '1.290 kg'],
     ]);
+    // Lo azul dice cuando: su dia mas alto y hasta donde sigue igual.
+    expect(texto(secciones[0].querySelector('.pm-kpi-nota'))).toBe('del 02/11 al 04/11');
     // Sin fantasmas, solo lo real.
     expect(casillas(secciones[1]).map(c => c[0])).toEqual(['Para llegar', 'Módulos por fabricar', 'Kilos a obra']);
 
@@ -113,6 +115,16 @@ describe('PlanificacionComponent', () => {
     expect(filas.map(f => f.classList.contains('pm-es-fantasma'))).toEqual([false, true, false]);
     // La fecha de un fantasma siempre es la de Moden: no se dice orientativa.
     expect(Array.from(filas[1].querySelectorAll('.pm-datos > span')).map(texto)).toEqual(['Entrega 04/11', '10 mód. por fabricar', '1.290 kg']);
+  });
+
+  it('finds the highest day the projects under study change, which is where to focus', () => {
+    const dia = (fecha: string, real: number, con_fantasmas: number) => ({ fecha, real, con_fantasmas });
+    expect(picoEstudio([
+      // Hoy manda lo real (igual con y sin ellos): no cuenta aunque sea mas alto.
+      dia('2026-11-09', 64, 64), dia('2026-11-10', 36, 36),
+      dia('2026-11-19', 21.3, 26.7), dia('2026-11-20', 21.3, 26.7), dia('2026-11-23', 20, 24), dia('2026-11-24', 20, 26.7),
+    ])).toEqual({ ritmo: 26.7, desde: '2026-11-19', hasta: '2026-11-20' });
+    expect(picoEstudio([dia('2026-11-09', 5, 5), dia('2026-11-10', 3, 3)])).toBeNull();
   });
 
   it('puts what was due before and what has no date around the months', () => {

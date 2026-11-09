@@ -35,9 +35,15 @@
                     <span class="pm-kpi-value">{{ cifra(vista.datos.resumen.kilos_real) }} <small>kg</small></span>
                 </div>
                 @if (vista.datos.resumen.fantasmas) {
-                <div class="pm-kpi" [title]="vista.datos.resumen.manda_con_fantasmas ? 'Lo marca ' + vista.datos.resumen.manda_con_fantasmas : ''">
+                <div class="pm-kpi">
                     <span class="pm-kpi-label">Con proyectos en estudio</span>
-                    <span class="pm-kpi-value pm-azul">{{ cifra(vista.datos.resumen.ritmo_con_fantasmas, 1) }} <small>mód./día</small></span>
+                    @if (vista.picoEstudio; as pico) {
+                    <span class="pm-kpi-value pm-azul">{{ cifra(pico.ritmo, 1) }} <small>mód./día</small></span>
+                    <span class="pm-kpi-nota">{{ pico.desde === pico.hasta ? 'el ' + fechaCorta(pico.desde) : 'del ' + fechaCorta(pico.desde) + ' al ' + fechaCorta(pico.hasta) }}</span>
+                    } @else {
+                    <span class="pm-kpi-value pm-azul">{{ cifra(null) }}</span>
+                    <span class="pm-kpi-nota">no cambian el ritmo</span>
+                    }
                 </div>
                 <div class="pm-kpi">
                     <span class="pm-kpi-label">Módulos en estudio</span>

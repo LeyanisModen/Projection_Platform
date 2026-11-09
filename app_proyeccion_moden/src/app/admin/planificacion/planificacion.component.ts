@@ -32,6 +32,13 @@ export interface MesPlanificacion {
   kilos: number;
 }
 
+/** Donde mas aprietan los proyectos en estudio: su dia mas alto y hasta donde sigue igual. */
+export interface PicoEstudio {
+  ritmo: number;
+  desde: string;
+  hasta: string;
+}
+
 export interface VistaFerralla {
   id: number;
   nombre: string;
@@ -43,6 +50,20 @@ export interface VistaFerralla {
   meses: MesPlanificacion[];
   /** Algo que fabricar en estos seis meses: sin nada, la grafica sobra. */
   conCarga: boolean;
+  picoEstudio: PicoEstudio | null;
+}
+
+/** El dia mas alto de los que cambian por los proyectos en estudio: ahi es donde hay que centrarse. */
+export function picoEstudio(dias: PlanificacionModenFerralla['dias']): PicoEstudio | null {
+  const influye = (i: number) => dias[i].con_fantasmas > dias[i].real;
+  let mayor = -1;
+  dias.forEach((dia, i) => {
+    if (influye(i) && (mayor < 0 || dia.con_fantasmas > dias[mayor].con_fantasmas)) mayor = i;
+  });
+  if (mayor < 0) return null;
+  let fin = mayor;
+  while (fin + 1 < dias.length && influye(fin + 1) && dias[fin + 1].con_fantasmas === dias[mayor].con_fantasmas) fin++;
+  return { ritmo: dias[mayor].con_fantasmas, desde: dias[mayor].fecha, hasta: dias[fin].fecha };
 }
 
 /** Por mes de entrega; antes lo que ya tenia que estar y al final lo que aun no tiene fecha. */
@@ -103,6 +124,7 @@ export function vistaDe(ferralla: PlanificacionModenFerralla, desde: string): Vi
     marcas,
     meses: porMes(ferralla.proyectos, desde),
     conCarga: dias.some(d => d.real || d.con_fantasmas),
+    picoEstudio: conFantasmas ? picoEstudio(dias) : null,
   };
 }
 

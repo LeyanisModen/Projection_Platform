@@ -10,6 +10,7 @@
 .pm-kpi-label { color: var(--muted); font-size: 12px; white-space: nowrap; }
 .pm-kpi-value { color: var(--ink); font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1; white-space: nowrap; }
 .pm-kpi-value small { color: var(--muted); font-size: 12px; font-weight: 500; }
+.pm-kpi-nota { color: var(--muted); font-size: 12px; white-space: nowrap; }
 /* Lo de los proyectos en estudio, en el azul de su linea. */
 .pm-azul { color: var(--estudio); }
 
