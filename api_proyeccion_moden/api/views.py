@@ -1884,7 +1884,7 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         if not _is_admin(request.user) and not _de_la_ferralla(request.user, proyecto):
             raise PermissionDenied('Solo la ferralla del proyecto puede aceptarlo.')
         if proyecto.fantasma:
-            raise ValidationError({'detail': 'Un proyecto fantasma no se acepta: pásalo antes a real.'})
+            raise ValidationError({'detail': 'Un proyecto en estudio no se acepta: envíalo antes a la ferralla.'})
         if proyecto.aceptado_por_ferralla_at is None:
             proyecto.aceptado_por_ferralla_at = timezone.now()
             proyecto.save(update_fields=['aceptado_por_ferralla_at'])
@@ -4931,7 +4931,7 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         if proyecto.fantasma:
             if not _is_admin(request.user):
                 return Response({'detail': 'Proyecto no encontrado.'}, status=404)
-            return Response({'detail': 'Un proyecto fantasma no se pone en mesa: pásalo antes a real.'}, status=400)
+            return Response({'detail': 'Un proyecto en estudio no se pone en mesa: envíalo antes a la ferralla.'}, status=400)
 
         # Guardarrail: _plan_cola expulsa automaticamente proyectos sin
         # modulos pendientes. Sin esta validacion, anadir un proyecto

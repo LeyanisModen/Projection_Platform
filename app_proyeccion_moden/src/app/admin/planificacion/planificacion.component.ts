@@ -74,7 +74,7 @@ export function vistaDe(ferralla: PlanificacionModenFerralla, desde: string): Vi
   const real: LineChartSeries = { name: 'Real', color: NARANJA, values: dias.map(d => d.real) };
   // Lo real por encima: con fantasmas nunca pide menos.
   const series = conFantasmas
-    ? [{ name: 'Con fantasmas', color: AZUL, values: dias.map(d => d.con_fantasmas) }, real]
+    ? [{ name: 'Con proyectos en estudio', color: AZUL, values: dias.map(d => d.con_fantasmas) }, real]
     : [real];
 
   // Una marca por dia de entrega; si cae en un dia sin fabricacion, entre el de antes y el de despues.
@@ -196,7 +196,7 @@ export class PlanificacionComponent implements OnInit {
       error: err => {
         const datos = err?.error;
         const primero = datos && typeof datos === 'object' ? Object.values(datos)[0] : null;
-        this.errorNuevo.set((Array.isArray(primero) ? primero[0] : primero) || 'No se pudo crear el fantasma.');
+        this.errorNuevo.set((Array.isArray(primero) ? primero[0] : primero) || 'No se pudo crear el proyecto.');
         this.guardando.set(false);
       },
     });

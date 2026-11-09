@@ -85,14 +85,14 @@ describe('PlanificacionComponent', () => {
     expect(secciones.map(s => texto(s.querySelector('.pm-nombre')))).toEqual(['Sanchos', 'Europa']);
     const casillas = (s: Element) => Array.from(s.querySelectorAll('.pm-kpi')).map(k => [texto(k.querySelector('.pm-kpi-label')), texto(k.querySelector('.pm-kpi-value'))]);
     expect(casillas(secciones[0])).toEqual([
-      ['Para llegar', '1 mód./día'], ['Con fantasmas', '1,6 mód./día'], ['Módulos por fabricar', '12'],
-      ['Módulos fantasma', '10'], ['Kilos a obra', '2.000 kg'], ['Kilos fantasma', '1.290 kg'],
+      ['Para llegar', '1 mód./día'], ['Con proyectos en estudio', '1,6 mód./día'], ['Módulos por fabricar', '12'],
+      ['Módulos en estudio', '10'], ['Kilos a obra', '2.000 kg'], ['Kilos en estudio', '1.290 kg'],
     ]);
     // Sin fantasmas, solo lo real.
     expect(casillas(secciones[1]).map(c => c[0])).toEqual(['Para llegar', 'Módulos por fabricar', 'Kilos a obra']);
 
     const [sanchos, europa] = fixture.componentInstance.vistas();
-    expect(sanchos.series.map(s => [s.name, s.values])).toEqual([['Con fantasmas', [1.6, 1.6, 1.6]], ['Real', [1, 1, 0.7]]]);
+    expect(sanchos.series.map(s => [s.name, s.values])).toEqual([['Con proyectos en estudio', [1.6, 1.6, 1.6]], ['Real', [1, 1, 0.7]]]);
     expect(europa.series.map(s => s.name)).toEqual(['Real']);
     // Sin nada que fabricar, sin grafica.
     expect(secciones.map(s => !!s.querySelector('app-stats-line-chart'))).toEqual([true, false]);
@@ -102,10 +102,10 @@ describe('PlanificacionComponent', () => {
   it('lists the deliveries by month with the ghosts tagged, each one opening its project', () => {
     const seccion = el().querySelector('.pm-ferralla')!;
     expect(Array.from(seccion.querySelectorAll('.pm-mes')).map(texto)).toEqual([
-      'noviembre 2026 8 mód. · 10 fantasma · 2.290 kg', 'diciembre 2026 4 mód. · 1.000 kg',
+      'noviembre 2026 8 mód. · 10 en estudio · 2.290 kg', 'diciembre 2026 4 mód. · 1.000 kg',
     ]);
     const filas = Array.from(seccion.querySelectorAll('a.pm-fila'));
-    expect(filas.map(f => texto(f.querySelector('.pm-proyecto')))).toEqual(['OBRA_P01', 'TORRE_P01 Fantasma', 'OBRA_P02']);
+    expect(filas.map(f => texto(f.querySelector('.pm-proyecto')))).toEqual(['OBRA_P01', 'TORRE_P01 En estudio', 'OBRA_P02']);
     expect(filas[1].getAttribute('href')).toBe('/admin-dashboard/proyectos/3');
     // La fecha de un fantasma siempre es la de Moden: no se dice orientativa.
     expect(Array.from(filas[1].querySelectorAll('.pm-datos > span')).map(texto)).toEqual(['Entrega 04/11', '10 mód. por fabricar', '1.290 kg']);

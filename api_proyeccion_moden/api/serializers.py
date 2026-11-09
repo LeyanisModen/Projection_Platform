@@ -350,9 +350,9 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
         if fantasma:
             usuario = attrs['usuario'] if 'usuario' in attrs else getattr(self.instance, 'usuario', None)
             if usuario is None or usuario.is_staff or usuario.is_superuser:
-                raise serializers.ValidationError({'fantasma': 'Un proyecto fantasma necesita la ferralla en la que se simula.'})
+                raise serializers.ValidationError({'fantasma': 'Un proyecto en estudio necesita la ferralla en la que se simula.'})
             if self.instance is not None and not self.instance.fantasma and self.instance.aceptado_por_ferralla_at:
-                raise serializers.ValidationError({'fantasma': 'La ferralla ya lo ha aceptado: no puede volver a fantasma.'})
+                raise serializers.ValidationError({'fantasma': 'La ferralla ya lo ha aceptado: no puede volver a estudio.'})
         if 'montaje_realizado' in attrs:
             # Volver a marcarlo no cambia el dia en que se hizo.
             hecho = getattr(self.instance, 'montaje_realizado_at', None)
