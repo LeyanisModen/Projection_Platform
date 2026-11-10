@@ -884,6 +884,29 @@ export interface PlanificacionModenResponse {
     ferrallas: PlanificacionModenFerralla[];
 }
 
+/** Un turno concreto: el de mañana de hoy, de 06:00 a 16:00. */
+export interface SeguimientoTurno {
+    nombre: string;
+    inicio: string;
+    fin: string;
+}
+
+/** ``GET /api/seguimiento/``: sin ferralla elegida solo viene la lista. */
+export interface SeguimientoResponse {
+    ferrallas: Array<{ id: number; nombre: string }>;
+    ferralla: { id: number; nombre: string } | null;
+    ahora?: string;
+    mesas?: number;
+    /** Mesas con una señal de hace menos de 20 minutos (45 si es una foto). */
+    mesas_trabajando?: number;
+    mesas_en_pausa?: number;
+    ultima_senal?: string | null;
+    turno?: SeguimientoTurno | null;
+    siguiente_turno?: SeguimientoTurno | null;
+    /** Los proyectos de lo que están mostrando las mesas. */
+    en_mesa?: Array<{ id: number; nombre: string; modulos: number; terminados: number; fecha_montaje: string | null }>;
+}
+
 export interface ProductionStatsResponse {
     range: {
         from: string; to: string; working_days: number; festivos?: string[];
@@ -1316,9 +1339,11 @@ export class ApiService {
         );
     }
 
-    getProductionStats(params: { from?: string; to?: string; proyecto?: number; edificio?: number; rango?: 'proyecto' | 'edificio'; turno?: number } = {}): Observable<ProductionStatsResponse> {
+    getProductionStats(params: { from?: string; to?: string; proyecto?: number; edificio?: number; rango?: 'proyecto' | 'edificio'; turno?: number; usuario?: number } = {}): Observable<ProductionStatsResponse> {
         const query = new URLSearchParams();
         if (params.from) query.set('from', params.from);
+        // Solo la oficina: una ferralla, tal como la ve ella.
+        if (params.usuario != null) query.set('usuario', String(params.usuario));
         if (params.turno != null) query.set('turno', String(params.turno));
         if (params.to) query.set('to', params.to);
         if (params.proyecto != null) query.set('proyecto', String(params.proyecto));
@@ -1339,6 +1364,12 @@ export class ApiService {
     /** Planificacion de Moden: todas las ferrallas a seis meses, con sus fantasmas. */
     getPlanificacionModen(): Observable<PlanificacionModenResponse> {
         return this.http.get<PlanificacionModenResponse>(`${this.baseUrl}/planificacion-moden/`, { headers: this.getHeaders() });
+    }
+
+    /** Seguimiento de la oficina: las ferrallas y, con una elegida, como esta ahora. */
+    getSeguimiento(usuario?: number): Observable<SeguimientoResponse> {
+        const qs = usuario != null ? `?usuario=${usuario}` : '';
+        return this.http.get<SeguimientoResponse>(`${this.baseUrl}/seguimiento/${qs}`, { headers: this.getHeaders() });
     }
 
     reiniciarModulo(id: number): Observable<Modulo> {

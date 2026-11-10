@@ -1,0 +1,114 @@
+<div class="page">
+    <div class="page-header">
+        <h1>Seguimiento</h1>
+        @if (ferrallas().length) {
+        <select class="field sg-ferralla" aria-label="Ferralla" [ngModel]="elegida()" (ngModelChange)="elegir($event)">
+            @for (ferralla of ferrallas(); track ferralla.id) {
+            <option [ngValue]="ferralla.id">{{ ferralla.nombre }}</option>
+            }
+        </select>
+        }
+    </div>
+
+    @if (cargandoLista()) {
+        <p class="meta">Cargando…</p>
+    } @else if (errorLista()) {
+        <p class="alert-inline" role="alert">
+            No se pudieron cargar las ferrallas.
+            <button type="button" class="btn btn-sm" (click)="cargarLista()">Reintentar</button>
+        </p>
+    } @else if (!ferrallas().length) {
+        <p class="meta">No hay ferrallas.</p>
+    } @else {
+        @if (estado(); as e) {
+        <section class="sg-ahora" aria-label="Ahora">
+            <p class="sg-estado">
+                <span class="sg-estado-texto" [class.is-ok]="e.tono === 'ok'" [class.is-warn]="e.tono === 'warn'">
+                    <i class="fa fa-circle" aria-hidden="true"></i> {{ e.texto }}
+                </span>
+                @for (dato of e.detalle; track $index) { <span class="meta sg-dato">{{ dato }}</span> }
+            </p>
+            <div class="sg-lista">
+                <span class="section-label">En las mesas</span>
+                @for (proyecto of ahora()?.en_mesa ?? []; track proyecto.id) {
+                <a class="sg-fila" [routerLink]="['/admin-dashboard/proyectos', proyecto.id]">
+                    <span class="sg-proyecto">{{ proyecto.nombre }}</span>
+                    <span class="meta sg-datos">
+                        <span>{{ cifra(proyecto.terminados) }} de {{ cifra(proyecto.modulos) }} módulos</span>
+                        @if (proyecto.fecha_montaje) { <span>montaje {{ fechaCorta(proyecto.fecha_montaje) }}</span> }
+                    </span>
+                    <i class="fa fa-chevron-right sg-chevron" aria-hidden="true"></i>
+                </a>
+                } @empty {
+                <p class="meta sg-vacio">Nada en las mesas.</p>
+                }
+            </div>
+        </section>
+        }
+
+        <div class="sg-periodo">
+            <button type="button" class="btn-icon" (click)="mover(-1)" title="Anterior" aria-label="Periodo anterior">
+                <i class="fa fa-chevron-left" aria-hidden="true"></i>
+            </button>
+            <div class="sg-tabs" role="tablist" aria-label="Periodo">
+                <button type="button" class="btn" role="tab" [attr.aria-selected]="periodo() === 'dia'" (click)="elegirPeriodo('dia')">Día</button>
+                <button type="button" class="btn" role="tab" [attr.aria-selected]="periodo() === 'semana'" (click)="elegirPeriodo('semana')">Semana</button>
+                <button type="button" class="btn" role="tab" [attr.aria-selected]="periodo() === 'mes'" (click)="elegirPeriodo('mes')">Mes</button>
+            </div>
+            <button type="button" class="btn-icon" (click)="mover(1)" [disabled]="!puedeMover(1)" title="Siguiente" aria-label="Periodo siguiente">
+                <i class="fa fa-chevron-right" aria-hidden="true"></i>
+            </button>
+            <span class="sg-periodo-texto">{{ etiqueta() }}</span>
+        </div>
+
+        @if (cargando()) {
+            <p class="meta">Cargando…</p>
+        } @else if (error()) {
+            <p class="alert-inline" role="alert">
+                No se pudieron cargar los datos.
+                <button type="button" class="btn btn-sm" (click)="cargar()">Reintentar</button>
+            </p>
+        } @else if (stats(); as s) {
+            <div class="sg-kpis">
+                <div class="sg-kpi">
+                    <span class="sg-kpi-label">Módulos</span>
+                    <span class="sg-kpi-value">
+                        {{ cifra(s.totals.modulos_completados) }}
+                        @if (s.esperado.modulos_esperados) { <small>/ {{ cifra(s.esperado.modulos_esperados) }} mínimo</small> }
+                    </span>
+                </div>
+                <div class="sg-kpi">
+                    <span class="sg-kpi-label">Kilos</span>
+                    <span class="sg-kpi-value">{{ cifra(s.totals.peso_total_kg) }} <small>kg</small></span>
+                </div>
+                @if (s.totals.horas_trabajo !== undefined) {
+                <div class="sg-kpi">
+                    <span class="sg-kpi-label">Trabajo + muertas</span>
+                    <span class="sg-kpi-value">{{ horas(s.totals.horas_trabajo) }} <small>&nbsp;+&nbsp;</small><span class="is-warn">{{ horas(s.totals.horas_muertas) }}</span></span>
+                </div>
+                }
+            </div>
+
+            @if (grafica(); as g) {
+            <app-stats-line-chart [title]="periodo() === 'dia' ? 'Módulos por hora' : 'Módulos por día'" unit="módulos" [height]="220" [primaryArea]="true"
+                [labels]="g.labels" [fullLabels]="g.fullLabels" [series]="g.series" [target]="g.target" [pending]="g.pending" />
+            }
+
+            <div class="sg-lista">
+                <span class="section-label">Terminado</span>
+                @for (hecho of hechos(); track hecho.id) {
+                <a class="sg-fila" [routerLink]="['/admin-dashboard/proyectos', hecho.id]">
+                    <span class="sg-proyecto">{{ hecho.nombre }}</span>
+                    <span class="meta sg-datos">
+                        <span>{{ cifra(hecho.modulos) }} {{ hecho.modulos === 1 ? 'módulo' : 'módulos' }}</span>
+                        <span>{{ cifra(hecho.kilos) }} kg</span>
+                    </span>
+                    <i class="fa fa-chevron-right sg-chevron" aria-hidden="true"></i>
+                </a>
+                } @empty {
+                <p class="meta sg-vacio">Ningún módulo terminado.</p>
+                }
+            </div>
+        }
+    }
+</div>

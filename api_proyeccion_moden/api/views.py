@@ -17,7 +17,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import Count, Max, Prefetch, Q
 from rest_framework import permissions, viewsets, status
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -6188,6 +6188,7 @@ class ProductionStatsView(APIView):
     - from: YYYY-MM-DD (default: today, local time)
     - to:   YYYY-MM-DD (default: same as from)
     - proyecto: project id to scope the stats (optional)
+    - usuario: solo la oficina, una ferralla vista como la ve ella (optional)
     """
     permission_classes = [permissions.IsAuthenticated]
 
@@ -6201,6 +6202,18 @@ class ProductionStatsView(APIView):
         proyecto_id = request.query_params.get('proyecto')
         edificio_id = request.query_params.get('edificio')
         current_tz = timezone.get_current_timezone()
+
+        # De quien son las estadisticas: la ferralla, las suyas; la oficina,
+        # todas o, con ?usuario=, las de una ferralla tal como las ve ella
+        # (sus proyectos sin los en estudio, su horario y sus mesas).
+        ferralla_vista = None if _is_admin(request.user) else request.user
+        elegida = request.query_params.get('usuario')
+        if ferralla_vista is None and elegida:
+            ferralla_vista = User.objects.filter(
+                pk=int(elegida) if str(elegida).isdigit() else None, is_staff=False, is_superuser=False,
+            ).first()
+            if ferralla_vista is None:
+                raise NotFound('Ferralla no encontrada.')
 
         # Estadisticas de un proyecto o de un edificio (todos sus forjados):
         # solo lo suyo y, con rango=proyecto|edificio, desde su primera fase o
@@ -6243,8 +6256,8 @@ class ProductionStatsView(APIView):
             proyecto = Proyecto.objects.select_related('usuario__profile').filter(id=proyecto_id).first()
             if proyecto and proyecto.usuario:
                 profile_user = proyecto.usuario
-        if profile_user is None and request.user.is_authenticated and not _is_admin(request.user):
-            profile_user = request.user
+        if profile_user is None and ferralla_vista is not None:
+            profile_user = ferralla_vista
         if profile_user is not None and hasattr(profile_user, 'profile'):
             profile = profile_user.profile
         else:
@@ -6313,8 +6326,8 @@ class ProductionStatsView(APIView):
         )
         if alcance_ids is not None:
             modulos_qs = modulos_qs.filter(proyecto_id__in=alcance_ids)
-        if not _is_admin(request.user):
-            modulos_qs = modulos_qs.filter(proyecto__usuario=request.user, proyecto__fantasma=False)
+        if ferralla_vista is not None:
+            modulos_qs = modulos_qs.filter(proyecto__usuario=ferralla_vista, proyecto__fantasma=False)
 
         modulos_list = [m for m in modulos_qs if en_rango(m.completado_at)]
         modulos_completados = len(modulos_list)
@@ -6325,7 +6338,7 @@ class ProductionStatsView(APIView):
         for m in modulos_list:
             fallback.extend(m.detalles_fase.all())
         dificultad_scale = _compute_dificultad_scale(
-            request.user, fallback_detalles=fallback, proyecto_id=proyecto_id
+            ferralla_vista or request.user, fallback_detalles=fallback, proyecto_id=proyecto_id
         )
 
         # Build a lookup of MesaQueueItem HECHO for the same (modulo, fase)
@@ -6547,8 +6560,8 @@ class ProductionStatsView(APIView):
         planning_projects = Proyecto.objects.filter(fantasma=False)
         if alcance_ids is not None:
             planning_projects = planning_projects.filter(pk__in=alcance_ids)
-        if not _is_admin(request.user):
-            planning_projects = planning_projects.filter(usuario=request.user)
+        if ferralla_vista is not None:
+            planning_projects = planning_projects.filter(usuario=ferralla_vista)
         planning = demand_summary(annotated_projects(planning_projects))
         # El objetivo es lo que tiene que sacar la ferralla con todo su trabajo:
         # mirar un proyecto o un edificio no cambia los modulos que necesita al dia.
@@ -6822,8 +6835,8 @@ class ProductionStatsView(APIView):
             .filter(status=MesaQueueStatus.HECHO, done_at__gte=ventana_desde, done_at__lt=ventana_hasta)
             .exclude(mesa__isnull=True)
         )
-        if not _is_admin(request.user):
-            tiempo_items_qs = tiempo_items_qs.filter(mesa__usuario=request.user)
+        if ferralla_vista is not None:
+            tiempo_items_qs = tiempo_items_qs.filter(mesa__usuario=ferralla_vista)
         elif profile_user is not None:
             tiempo_items_qs = tiempo_items_qs.filter(mesa__usuario=profile_user)
         ventana_items = list(tiempo_items_qs)
@@ -6918,8 +6931,8 @@ class ProductionStatsView(APIView):
         contexto_base = Modulo.objects.prefetch_related('detalles_fase').filter(completado_at__isnull=False)
         if alcance_ids is not None:
             contexto_base = contexto_base.filter(proyecto_id__in=alcance_ids)
-        if not _is_admin(request.user):
-            contexto_base = contexto_base.filter(proyecto__usuario=request.user, proyecto__fantasma=False)
+        if ferralla_vista is not None:
+            contexto_base = contexto_base.filter(proyecto__usuario=ferralla_vista, proyecto__fantasma=False)
         contexto_modulos = [
             modulo for modulo in contexto_base.filter(
                 Q(completado_at__gte=contexto_desde - timedelta(days=1), completado_at__lt=from_dt + timedelta(days=1))
