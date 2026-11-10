@@ -1,0 +1,54 @@
+.page-header { flex-wrap: wrap; }
+.sg-ferralla { min-width: 220px; }
+
+/* Ahora: como estan y que tienen en las mesas. */
+.sg-ahora { display: grid; gap: 14px; margin-bottom: 28px; }
+.sg-estado { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 0; }
+.sg-estado-texto { color: var(--muted); font-size: 20px; font-weight: 600; }
+.sg-estado-texto .fa { font-size: 11px; vertical-align: 3px; }
+.sg-estado-texto.is-ok { color: var(--ok); }
+.sg-estado-texto.is-warn { color: var(--warn); }
+.sg-dato + .sg-dato::before { content: '·'; margin-right: 10px; color: var(--line-strong); }
+
+/* Periodo: flechas, dia/semana/mes y la fecha. */
+.sg-periodo { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 18px; margin-bottom: 14px; border-top: 1px solid var(--line-strong); }
+.sg-periodo .btn-icon:disabled { opacity: 0.35; cursor: default; background: transparent; }
+.sg-tabs { display: inline-grid; grid-template-columns: repeat(3, auto); gap: 2px; padding: 3px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); }
+.sg-tabs .btn { height: 30px; border-color: transparent; color: var(--muted); }
+.sg-tabs [aria-selected="true"] { color: #fff; background: var(--ink); }
+.sg-tabs [aria-selected="true"]:hover:not(:disabled) { background: var(--ink); }
+.sg-periodo-texto { margin-left: 6px; color: var(--ink); font-weight: 600; }
+
+/* Casillas en dos lineas, nombre y dato; el ancho lo pide el dato. */
+.sg-kpis { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+.sg-kpi { display: grid; gap: 4px; padding: 10px 14px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); }
+.sg-kpi-label { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.sg-kpi-value { color: var(--ink); font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1; white-space: nowrap; }
+.sg-kpi-value small { color: var(--muted); font-size: 12px; font-weight: 500; }
+.sg-kpi-value .is-warn { color: var(--warn); }
+
+/* Listas planas: rotulo y filas debajo. */
+.sg-lista { display: grid; margin-top: 8px; }
+app-stats-line-chart + .sg-lista { margin-top: 24px; }
+.sg-lista .section-label { padding: 0 8px 6px; border-bottom: 1px solid var(--line-strong); }
+.sg-fila {
+    display: flex; align-items: center; gap: 12px; padding: 9px 8px 9px 28px;
+    border-bottom: 1px solid var(--line); color: inherit; text-decoration: none;
+}
+.sg-fila:hover { background: var(--surface-2); }
+.sg-fila:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.sg-proyecto { flex: 0 1 auto; min-width: 0; color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
+.sg-datos { display: flex; flex-wrap: wrap; gap: 0 6px; margin-left: auto; text-align: right; justify-content: flex-end; }
+.sg-datos > span + span::before { content: '·'; margin-right: 6px; color: var(--line-strong); }
+.sg-chevron { color: var(--line-strong); font-size: 12px; }
+.sg-fila:hover .sg-chevron { color: var(--muted); }
+.sg-vacio { margin: 0; padding: 9px 8px 9px 28px; }
+
+@media (max-width: 760px) {
+    .page { padding-left: 12px; padding-right: 12px; }
+    .sg-ferralla { flex: 1 1 100%; }
+    .sg-fila, .sg-vacio { padding-left: 12px; }
+    .sg-fila { flex-wrap: wrap; }
+    .sg-datos { flex-basis: 100%; margin-left: 0; text-align: left; justify-content: flex-start; }
+    .sg-chevron { display: none; }
+}
