@@ -143,6 +143,37 @@ Debe devolver:
 True
 
 
+PASO 8 -- Guardar el encuadre (el servicio lo mantiene)
+-----------------------------------------
+Desde la version 2026-11-11.1 el servicio mira cada 5 minutos donde apunta
+la camara y, si un golpe la ha movido, la devuelve a la posicion guardada.
+Hasta que se guarda una posicion no hace nada.
+
+Con la camara ya bien encuadrada, OBSBOT cerrado y el player arrancado
+(espera 1 minuto despues del PASO 6), copia y pega:
+
+Invoke-RestMethod -Method Post http://127.0.0.1:5555/encuadre/guardar
+
+Debe responder resultado "guardada" con pan, tilt y zoom. Al guardar, la
+camara se mueve como mucho medio grado: la deja en grados enteros, que es
+a donde sabe volver. Mira la foto que deja:
+
+start C:\moden\encuadre\referencia.jpg
+
+Si la mesa se ve bien, listo.
+- Si responde "no_abre": OBSBOT sigue abierto. Cierralo (PASO 5) y repite.
+- Si sale el aviso "posicion de fabrica (0, 0, 0)": la camara no esta
+  encuadrada. Vuelve al PASO 4.
+
+MUY IMPORTANTE: cada vez que se reencuadre la camara a proposito, repite
+este paso. Si no, en menos de 5 minutos el servicio la devuelve a la
+posicion guardada antes.
+
+Ver la posicion guardada y lo ultimo que ha hecho:
+
+Invoke-RestMethod http://127.0.0.1:5555/encuadre
+
+
 ===========================================================
 COMANDOS DE RESCATE
 ===========================================================

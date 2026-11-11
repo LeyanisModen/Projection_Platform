@@ -57,6 +57,7 @@ function Install-SourceFiles {
     $files = @(
         'VERSION',
         'capture_service.py',
+        'encuadre.py',
         'config.ini.example',
         'player-watchdog.ps1',
         'repair-config.ps1',

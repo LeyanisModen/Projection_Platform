@@ -434,6 +434,18 @@ curl.exe http://127.0.0.1:5555/health
 curl.exe -X POST http://127.0.0.1:5555/capture -o test.jpg --max-time 15
 start test.jpg
 
+# Encuadre: guardar la posicion buena (camara bien encuadrada, OBSBOT
+# cerrado). Repetir cada vez que se reencuadre a proposito; si no, el
+# servicio la devuelve a la anterior en menos de 5 minutos.
+
+Invoke-RestMethod -Method Post http://127.0.0.1:5555/encuadre/guardar
+start C:\moden\encuadre\referencia.jpg
+
+# Encuadre: comprobar ahora / ver lo guardado y lo ultimo que hizo:
+
+Invoke-RestMethod -Method Post http://127.0.0.1:5555/encuadre/comprobar
+Invoke-RestMethod http://127.0.0.1:5555/encuadre
+
 # Stats del servicio:
 
 (Invoke-WebRequest http://127.0.0.1:5555/stats -UseBasicParsing).Content
