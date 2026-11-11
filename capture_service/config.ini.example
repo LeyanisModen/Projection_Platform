@@ -161,3 +161,21 @@ retry_minutes = 15
 ; reports 'unknown' instead of a false dirty-lens warning.
 min_brightness = 18
 min_contrast = 8
+
+
+[encuadre]
+; The camera hangs from a post and a bump can move the gimbal. Once a
+; position is saved (POST /encuadre/guardar, see PUESTA_EN_MARCHA_FABRICA
+; PASO 8) the service reads pan/tilt/zoom through DirectShow every few
+; minutes and sends the camera back if it moved. Corrections go to the
+; mini-PC log (capture-service-error.log) and to /encuadre. Nothing happens
+; until a position is saved.
+enabled = true
+
+; Outside the service folder: the updater mirrors that folder and would
+; delete the saved position.
+dir = C:/moden/encuadre
+
+; Minutes between checks inside the working window and outside it.
+interval_minutes = 5
+idle_interval_minutes = 30

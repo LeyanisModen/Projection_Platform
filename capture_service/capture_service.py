@@ -25,6 +25,11 @@ Listens on localhost:5555. Two jobs in one process:
                                   survives a Chrome profile reset.
      POST /close_browser      -> close Chrome kiosk on this mini-PC.
      POST /shutdown_pc        -> shut down this Windows mini-PC.
+     POST /encuadre/guardar   -> save the current pan/tilt/zoom as the
+                                  framing to keep (local scripts only).
+     POST /encuadre/comprobar -> check the framing now and send the
+                                  camera back if it moved.
+     GET  /encuadre           -> saved framing and last check.
      GET  /health             -> { "status": "ok" }
      GET  /stats              -> { documentation / counters / local
                                   disk usage }
@@ -39,6 +44,12 @@ Listens on localhost:5555. Two jobs in one process:
      configured retention, or when the local footprint exceeds
      `max_local_gb`.
 
+  3. Framing thread (encuadre_loop)
+     The OBSBOT hangs from a post and a bump can move its gimbal. Once a
+     position is saved (POST /encuadre/guardar) the service checks it every
+     few minutes through encuadre.py (DirectShow, separate process) and
+     sends the camera back if it moved.
+
 Hardware and storage settings come from `config.ini`. The working window,
 capture interval and image rotation can be overridden by the admin dashboard;
 the last valid revision is cached atomically in `remote_config.json`.
@@ -48,6 +59,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import threading
 import time
 import urllib.error
@@ -188,6 +200,14 @@ class Config:
         self.sharpness_min_brightness = 18.0
         self.sharpness_min_contrast = 8.0
         self.sharpness_retry_minutes = 15.0
+
+        # Framing: the OBSBOT is sent back to the saved pan/tilt/zoom if a
+        # bump moved it (see encuadre_loop). The saved position lives outside
+        # the service folder because the updater mirrors that folder.
+        self.encuadre_enabled = True
+        self.encuadre_dir = Path('C:/moden/encuadre')
+        self.encuadre_interval_minutes = 5.0
+        self.encuadre_idle_interval_minutes = 30.0
 
         if path.exists():
             self._load(path)
@@ -405,6 +425,17 @@ class Config:
             )
             self.sharpness_retry_minutes = s.getfloat(
                 'retry_minutes', self.sharpness_retry_minutes
+            )
+
+        if cp.has_section('encuadre'):
+            s = cp['encuadre']
+            self.encuadre_enabled = s.getboolean('enabled', self.encuadre_enabled)
+            self.encuadre_dir = Path(s.get('dir', str(self.encuadre_dir)))
+            self.encuadre_interval_minutes = s.getfloat(
+                'interval_minutes', self.encuadre_interval_minutes
+            )
+            self.encuadre_idle_interval_minutes = s.getfloat(
+                'idle_interval_minutes', self.encuadre_idle_interval_minutes
             )
 
     @staticmethod
@@ -663,6 +694,14 @@ _stats = {
     'sharpness_checked_at': None,
     'sharpness_checked_date': None,
     'sharpness_blurry_streak': 0,
+    # Framing check (encuadre_loop).
+    'encuadre_estado': 'desconocido',  # desconocido | sin_referencia | ok | no_vuelve | error
+    'encuadre_comprobado_at': None,
+    'encuadre_posicion': None,
+    'encuadre_ultima_correccion_at': None,
+    'encuadre_correcciones_hoy': 0,
+    'encuadre_correcciones_fecha': None,
+    'encuadre_detalle': None,
 }
 
 
@@ -812,6 +851,205 @@ def _ensure_sharpness_checked_today():
         )
     except Exception as exc:
         _set_last_error(f'sharpness: {exc}')
+
+
+# ---------------------------------------------------------------------------
+# Framing — the camera hangs from a post and a bump can move the gimbal. The
+# position the camera must keep is saved once (POST /encuadre/guardar) and
+# encuadre_loop sends the camera back to it.
+# ---------------------------------------------------------------------------
+ENCUADRE_SCRIPT = Path(__file__).resolve().with_name('encuadre.py')
+ENCUADRE_TIMEOUT_SECONDS = 40
+
+
+def _encuadre_reference_path() -> Path:
+    return CONFIG.encuadre_dir / 'referencia.json'
+
+
+def _encuadre_reference():
+    try:
+        return json.loads(_encuadre_reference_path().read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+
+
+def _log_encuadre(message: str):
+    # stderr is the stream the watchdog keeps (capture-service-error.log),
+    # and that log reaches the admin through log_upload_loop.
+    stamp = datetime.now().isoformat(sep=' ', timespec='seconds')
+    print(f'{stamp} [Encuadre] {message}', file=sys.stderr, flush=True)
+
+
+def _encuadre_python() -> str:
+    # python.exe rather than pythonw.exe so the JSON line comes back on stdout.
+    executable = Path(sys.executable)
+    console = executable.with_name('python.exe')
+    return str(console if console.is_file() else executable)
+
+
+def _run_encuadre_process(mode: str) -> dict:
+    """Run encuadre.py with the camera released. Caller must hold
+    _camera_lock. The service's handle is reopened afterwards, so the camera
+    is only closed for the few seconds the check takes."""
+    global _camera, _camera_read_failures
+    if not ENCUADRE_SCRIPT.is_file():
+        return {'resultado': 'error', 'detalle': 'falta encuadre.py'}
+    if _camera is not None:
+        try:
+            _camera.release()
+        except Exception as exc:
+            print(f'[CaptureService] Camera release failed: {exc}')
+        _camera = None
+        _camera_read_failures = 0
+    command = [
+        _encuadre_python(), str(ENCUADRE_SCRIPT), mode,
+        str(CONFIG.camera_index), str(_encuadre_reference_path()),
+    ]
+    try:
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+        )
+        try:
+            stdout, stderr = process.communicate(timeout=ENCUADRE_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            # Kill the whole tree: the venv python.exe is a launcher with
+            # the real interpreter (the one holding the camera) as a child.
+            if os.name == 'nt':
+                subprocess.run(
+                    ['taskkill', '/PID', str(process.pid), '/T', '/F'],
+                    capture_output=True, timeout=15,
+                )
+            process.kill()
+            process.communicate()
+            return {
+                'resultado': 'error',
+                'detalle': f'sin respuesta en {ENCUADRE_TIMEOUT_SECONDS} s',
+            }
+        for line in reversed((stdout or '').splitlines()):
+            if line.startswith('{'):
+                return json.loads(line)
+        detail = ' | '.join((stderr or '').strip().splitlines()[-3:])
+        return {'resultado': 'error', 'detalle': detail or 'sin salida'}
+    except Exception as exc:
+        return {'resultado': 'error', 'detalle': f'{type(exc).__name__}: {exc}'}
+    finally:
+        get_camera()
+
+
+def _short_position(position) -> str:
+    if not position:
+        return '?'
+    return ', '.join(
+        f'{axis} {position[axis]:g}'
+        for axis in ('pan', 'tilt', 'zoom')
+        if isinstance(position.get(axis), (int, float))
+    )
+
+
+def _record_encuadre(result: dict):
+    """Expose the outcome in /stats and log what is worth reading later:
+    saves, corrections, failures, and the first result after a change."""
+    outcome = result.get('resultado')
+    now = datetime.now()
+    now_iso = now.isoformat(timespec='seconds')
+    today = now.date().isoformat()
+    state = {
+        'ok': 'ok', 'corregida': 'ok', 'guardada': 'ok', 'leida': None,
+        'sin_referencia': 'sin_referencia', 'no_vuelve': 'no_vuelve',
+    }.get(outcome, 'error')
+    with _stats_lock:
+        previous_state = _stats['encuadre_estado']
+        if state is not None:
+            _stats['encuadre_estado'] = state
+        _stats['encuadre_comprobado_at'] = now_iso
+        _stats['encuadre_posicion'] = (
+            result.get('despues') or result.get('posicion')
+        )
+        _stats['encuadre_detalle'] = result.get('detalle') or result.get('aviso')
+        if _stats['encuadre_correcciones_fecha'] != today:
+            _stats['encuadre_correcciones_fecha'] = today
+            _stats['encuadre_correcciones_hoy'] = 0
+        if outcome in ('corregida', 'no_vuelve'):
+            _stats['encuadre_ultima_correccion_at'] = now_iso
+            _stats['encuadre_correcciones_hoy'] += 1
+
+    if outcome == 'guardada':
+        message = f'position saved: {_short_position(result.get("posicion"))}'
+        if result.get('aviso'):
+            message += f' (WARNING: {result["aviso"]})'
+        _log_encuadre(message)
+    elif outcome in ('corregida', 'no_vuelve'):
+        verb = 'corrected' if outcome == 'corregida' else 'DID NOT RETURN'
+        _log_encuadre(
+            f'{verb}: was {_short_position(result.get("antes"))}; '
+            f'saved {_short_position(result.get("referencia"))}; '
+            f'now {_short_position(result.get("despues"))}'
+        )
+    elif state != previous_state:
+        detail = result.get('detalle')
+        position = _short_position(result.get('posicion'))
+        _log_encuadre(
+            f'{outcome}'
+            + (f': {detail}' if detail else '')
+            + (f' ({position})' if result.get('posicion') else '')
+        )
+
+
+def comprobar_encuadre() -> dict:
+    with _camera_lock:
+        result = _run_encuadre_process('comprobar')
+    _record_encuadre(result)
+    return result
+
+
+def guardar_encuadre() -> dict:
+    """Save the current position as the one to keep, plus a photo of it so
+    anyone can see later what "well framed" looked like for this table."""
+    with _camera_lock:
+        result = _run_encuadre_process('guardar')
+        if result.get('resultado') == 'guardada':
+            ret, frame = capture_frame(stabilize_luminance=True)
+            if ret and frame is not None:
+                ok, buf = cv2.imencode(
+                    '.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, CONFIG.jpeg_quality]
+                )
+                if ok:
+                    photo = CONFIG.encuadre_dir / 'referencia.jpg'
+                    try:
+                        photo.write_bytes(buf.tobytes())
+                        result['foto'] = str(photo)
+                    except OSError as exc:
+                        result['foto_error'] = str(exc)
+    _record_encuadre(result)
+    return result
+
+
+def encuadre_loop():
+    if not CONFIG.encuadre_enabled:
+        print('[Encuadre] Disabled in config.ini')
+        return
+    # Let the service settle first (camera, token, remote config).
+    time.sleep(120)
+    while True:
+        try:
+            if _encuadre_reference_path().is_file():
+                comprobar_encuadre()
+            else:
+                _record_encuadre({
+                    'resultado': 'sin_referencia',
+                    'detalle': 'not checked until POST /encuadre/guardar',
+                })
+        except Exception as exc:
+            _log_encuadre(f'check failed: {exc}')
+        minutes = (
+            CONFIG.encuadre_interval_minutes if in_active_window()
+            else CONFIG.encuadre_idle_interval_minutes
+        )
+        time.sleep(max(60.0, minutes * 60.0))
 
 
 # ---------------------------------------------------------------------------
@@ -2058,6 +2296,14 @@ class CaptureHandler(BaseHTTPRequestHandler):
                 self.send_error(403, 'Forbidden')
                 return
             self._respond_json(200, {'device_token': _read_stored_token()}, restricted=True)
+        elif self.path == '/encuadre':
+            with _stats_lock:
+                payload = {
+                    key: value for key, value in _stats.items()
+                    if key.startswith('encuadre_')
+                }
+            payload['referencia'] = _encuadre_reference()
+            self._respond_json(200, payload)
         else:
             self.send_error(404)
 
@@ -2072,8 +2318,21 @@ class CaptureHandler(BaseHTTPRequestHandler):
             self._handle_close_browser()
         elif self.path == '/shutdown_pc':
             self._handle_shutdown_pc()
+        elif self.path == '/encuadre/guardar':
+            self._handle_encuadre(guardar_encuadre)
+        elif self.path == '/encuadre/comprobar':
+            self._handle_encuadre(comprobar_encuadre)
         else:
             self.send_error(404)
+
+    def _handle_encuadre(self, action):
+        # Only from a script on this PC (PowerShell sends no Origin). A web
+        # page always sends one and must not be able to move the camera or
+        # change the position it is kept at.
+        if self.headers.get('Origin'):
+            self.send_error(403, 'Forbidden')
+            return
+        self._respond_json(200, action())
 
     def _handle_store_device_token(self):
         if not self._origin_allowed():
@@ -2291,6 +2550,11 @@ def main():
     )
     sync_thread.start()
 
+    encuadre_thread = threading.Thread(
+        target=encuadre_loop, name='EncuadreLoop', daemon=True
+    )
+    encuadre_thread.start()
+
     # Threaded: a /capture holds the camera for up to ~3 s while exposure
     # settles, and the watchdog's /health (3 s timeout) must not queue
     # behind it. _camera_lock keeps the camera itself single-access.
@@ -2303,6 +2567,9 @@ def main():
     print('[CaptureService] POST /device_token       -> persist pairing token to disk')
     print('[CaptureService] POST /close_browser      -> close Chrome kiosk')
     print('[CaptureService] POST /shutdown_pc        -> shut down this Windows mini-PC')
+    print('[CaptureService] POST /encuadre/guardar   -> keep the camera at its current framing')
+    print('[CaptureService] POST /encuadre/comprobar -> check the framing now')
+    print('[CaptureService] GET  /encuadre           -> saved framing and last check')
     print('[CaptureService] GET  /health             -> health check')
     print('[CaptureService] GET  /stats              -> documentation stats')
     try:
