@@ -6796,11 +6796,37 @@ class BastidorSelfServiceTests(APITestCase):
             format="json",
         )
 
+    def test_llevar_dividir_y_apartar_tambien_piden_la_incidencia(self):
+        self._planificar()
+        url = f"/api/grupos-bastidor/{self.bastidor.id}"
+        sin = [
+            self.client.post(f"{url}/dividir/", {}, format="json"),
+            self.client.post(f"{url}/mesa/", {"mesa": self.mesa_2.id}, format="json"),
+            self.client.post(f"{url}/espera/", {"en_espera": True}, format="json"),
+        ]
+        self.assertEqual([r.status_code for r in sin], [403, 403, 403])
+        self.assertIn("Modificar bastidores", sin[0].data["detail"])
+        self.bastidor.refresh_from_db()
+        self.assertEqual((self.bastidor.mesa_preferida_id, self.bastidor.en_espera), (None, False))
+        self.assertFalse(self.bastidor.divisiones.exists())
+
+        incidencia = self._incidencia("La mesa 1 tiene el proyector roto")
+        con = [
+            self.client.post(f"{url}/mesa/", {"mesa": self.mesa_2.id, "incidencia": incidencia}, format="json"),
+            self.client.post(f"{url}/espera/", {"en_espera": True, "incidencia": incidencia}, format="json"),
+            # Soltarlo y unirlo vuelven a lo de Moden: no piden nada.
+            self.client.post(f"{url}/espera/", {"en_espera": False}, format="json"),
+            self.client.post(f"{url}/dividir/", {"incidencia": incidencia}, format="json"),
+            self.client.post(f"{url}/unir/", {}, format="json"),
+        ]
+        self.assertEqual([r.status_code for r in con], [200, 200, 200, 200, 200])
+        self.assertEqual(IncidenciaOrden.objects.get(pk=incidencia).cambios, 3)
+
     def test_sin_incidencia_la_ferralla_no_cambia_el_orden(self):
         self._planificar()
         response = self._reordenar()
         self.assertEqual(response.status_code, 403)
-        self.assertIn("Ordenar bastidores", response.data["detail"])
+        self.assertIn("Modificar bastidores", response.data["detail"])
         self.bastidor.refresh_from_db()
         self.assertEqual(self.bastidor.indice, 1)
 
@@ -6895,7 +6921,7 @@ class BastidorSelfServiceTests(APITestCase):
         self.mesa_1.current_image_index = 3
         self.mesa_1.save(update_fields=["current_image_index"])
 
-        response = self.client.post(f"/api/grupos-bastidor/{self.bastidor.id}/dividir/")
+        response = self.client.post(f"/api/grupos-bastidor/{self.bastidor.id}/dividir/", {"incidencia": self._incidencia()}, format="json")
         self.assertEqual(response.status_code, 200)
 
         grupos = [g for g in response.data if g["indice"] == 1]
@@ -6932,15 +6958,15 @@ class BastidorSelfServiceTests(APITestCase):
         self.assertEqual(item_a5.status, MesaQueueStatus.MOSTRANDO)
         self.assertEqual(self.mesa_1.current_image_index, 3)
 
-        again = self.client.post(f"/api/grupos-bastidor/{self.bastidor.id}/dividir/")
+        again = self.client.post(f"/api/grupos-bastidor/{self.bastidor.id}/dividir/", {"incidencia": self._incidencia()}, format="json")
         self.assertEqual(again.status_code, 400)
         parte_id = parte["id"]
-        parte_again = self.client.post(f"/api/grupos-bastidor/{parte_id}/dividir/")
+        parte_again = self.client.post(f"/api/grupos-bastidor/{parte_id}/dividir/", {"incidencia": self._incidencia()}, format="json")
         self.assertEqual(parte_again.status_code, 400)
 
     def test_unir_recompone_el_bastidor_en_su_orden_original(self):
         self._planificar()
-        self.assertEqual(self.client.post(f"/api/grupos-bastidor/{self.bastidor.id}/dividir/").status_code, 200)
+        self.assertEqual(self.client.post(f"/api/grupos-bastidor/{self.bastidor.id}/dividir/", {"incidencia": self._incidencia()}, format="json").status_code, 200)
         parte = GrupoBastidor.objects.get(dividido_de=self.bastidor)
         item_a3 = MesaQueueItem.objects.get(modulo=self.modulos[2], fase="INFERIOR")
         self.assertEqual(item_a3.mesa_id, self.mesa_2.id)
@@ -6963,7 +6989,7 @@ class BastidorSelfServiceTests(APITestCase):
         Modulo.objects.filter(grupo_bastidor=self.bastidor).update(
             inferior_hecho=True, superior_hecho=True, estado=ModuloEstado.COMPLETADO,
         )
-        self.assertEqual(self.client.post(f"/api/grupos-bastidor/{self.bastidor.id}/dividir/").status_code, 400)
+        self.assertEqual(self.client.post(f"/api/grupos-bastidor/{self.bastidor.id}/dividir/", {"incidencia": self._incidencia()}, format="json").status_code, 400)
 
         nada = self.client.post(f"/api/grupos-bastidor/{self.bastidor.id}/unir/")
         self.assertEqual(nada.status_code, 400)
@@ -6973,7 +6999,7 @@ class BastidorSelfServiceTests(APITestCase):
             modulo.nombre = nombre
             modulo.save(update_fields=["nombre"])
         self._planificar()
-        self.assertEqual(self.client.post(f"/api/grupos-bastidor/{self.bastidor.id}/dividir/").status_code, 200)
+        self.assertEqual(self.client.post(f"/api/grupos-bastidor/{self.bastidor.id}/dividir/", {"incidencia": self._incidencia()}, format="json").status_code, 200)
         self.assertEqual(
             list(Modulo.objects.filter(proyecto=self.project, orden_intra_previo__isnull=False)
                  .order_by("orden_intra_previo").values_list("nombre", flat=True)),
@@ -7000,7 +7026,7 @@ class BastidorSelfServiceTests(APITestCase):
         self.assertIsNone(grupos[self.bastidor.id]["mesa_preferida"])
 
         response = self.client.post(
-            f"/api/grupos-bastidor/{self.bastidor.id}/mesa/", {"mesa": self.mesa_2.id}, format="json",
+            f"/api/grupos-bastidor/{self.bastidor.id}/mesa/", {"incidencia": self._incidencia(), "mesa": self.mesa_2.id}, format="json",
         )
         self.assertEqual(response.status_code, 200)
         grupo = next(g for g in response.data if g["id"] == self.bastidor.id)
@@ -7020,20 +7046,20 @@ class BastidorSelfServiceTests(APITestCase):
         self.assertEqual(self._cola(self.mesa_1), [])
         self.assertEqual(self._cola(self.mesa_2)[0], "B1")
 
-        suelto = self.client.post(f"/api/grupos-bastidor/{self.bastidor.id}/mesa/", {"mesa": None}, format="json")
+        suelto = self.client.post(f"/api/grupos-bastidor/{self.bastidor.id}/mesa/", {"incidencia": self._incidencia(), "mesa": None}, format="json")
         self.assertEqual(suelto.status_code, 200)
         self.assertIsNone(next(g for g in suelto.data if g["id"] == self.bastidor.id)["mesa_preferida"])
 
     def test_llevar_un_bastidor_rechaza_mesas_que_no_valen(self):
         self._planificar()
         superior = self.client.post(
-            f"/api/grupos-bastidor/{self.bastidor.id}/mesa/", {"mesa": self.mesa_sup.id}, format="json",
+            f"/api/grupos-bastidor/{self.bastidor.id}/mesa/", {"incidencia": self._incidencia(), "mesa": self.mesa_sup.id}, format="json",
         )
         self.assertEqual(superior.status_code, 400)
         otra = User.objects.create_user(username="otra_ferralla_mesa", password="pass123")
         ajena = Mesa.objects.create(nombre="Ajena", usuario=otra, tipo="INFERIOR", indice=1, activa=True)
         response = self.client.post(
-            f"/api/grupos-bastidor/{self.bastidor.id}/mesa/", {"mesa": ajena.id}, format="json",
+            f"/api/grupos-bastidor/{self.bastidor.id}/mesa/", {"incidencia": self._incidencia(), "mesa": ajena.id}, format="json",
         )
         self.assertEqual(response.status_code, 400)
         self.bastidor.refresh_from_db()
@@ -7042,7 +7068,7 @@ class BastidorSelfServiceTests(APITestCase):
     def test_desactivar_la_mesa_suelta_el_bastidor_fijado(self):
         self._planificar()
         self.assertEqual(
-            self.client.post(f"/api/grupos-bastidor/{self.bastidor.id}/mesa/", {"mesa": self.mesa_2.id}, format="json").status_code,
+            self.client.post(f"/api/grupos-bastidor/{self.bastidor.id}/mesa/", {"incidencia": self._incidencia(), "mesa": self.mesa_2.id}, format="json").status_code,
             200,
         )
         response = self.client.post(
@@ -7060,7 +7086,7 @@ class BastidorSelfServiceTests(APITestCase):
         self.assertEqual(self._cola(self.mesa_1), ["A5", "A4", "A3", "A2", "A1"])
 
         apartar = self.client.post(
-            f"/api/grupos-bastidor/{self.bastidor.id}/espera/", {"en_espera": True}, format="json",
+            f"/api/grupos-bastidor/{self.bastidor.id}/espera/", {"en_espera": True, "incidencia": self._incidencia()}, format="json",
         )
         self.assertEqual(apartar.status_code, 200)
         grupo = next(g for g in apartar.data if g["id"] == self.bastidor.id)
@@ -7092,8 +7118,8 @@ class BastidorSelfServiceTests(APITestCase):
         self.assertEqual(self._cola(self.mesa_1), ["A6", "A5", "A4", "A3", "A2", "A1"])
 
         # Al dividir, las partes heredan la espera.
-        self.assertEqual(self.client.post(f"/api/grupos-bastidor/{self.bastidor.id}/espera/", {"en_espera": True}, format="json").status_code, 200)
-        self.assertEqual(self.client.post(f"/api/grupos-bastidor/{self.bastidor.id}/dividir/").status_code, 200)
+        self.assertEqual(self.client.post(f"/api/grupos-bastidor/{self.bastidor.id}/espera/", {"en_espera": True, "incidencia": self._incidencia()}, format="json").status_code, 200)
+        self.assertEqual(self.client.post(f"/api/grupos-bastidor/{self.bastidor.id}/dividir/", {"incidencia": self._incidencia()}, format="json").status_code, 200)
         self.assertTrue(all(GrupoBastidor.objects.filter(indice=self.bastidor.indice, proyecto=self.project).values_list("en_espera", flat=True)))
         self.assertEqual(self._cola(self.mesa_1), [])
         malo = self.client.post(f"/api/grupos-bastidor/{self.bastidor.id}/espera/", {"en_espera": "si"}, format="json")

@@ -241,6 +241,10 @@ def _texto_incidencia_orden(request):
 
 
 INCIDENCIA_ORDEN_SIN_TEXTO = 'Cuenta qué ha pasado para necesitar cambiar el orden.'
+BASTIDORES_SIN_INCIDENCIA = (
+    'Para cambiar los bastidores pulsa "Modificar bastidores" y cuenta la incidencia. '
+    'Si ya lo has hecho, recarga la página.'
+)
 SUPERIOR_SIN_INCIDENCIA = (
     'Para ordenar a mano la mesa superior hay que contar antes la incidencia. '
     'Si ya lo has hecho, recarga la página.'
@@ -3507,6 +3511,18 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
         return _is_admin(user) or _de_la_ferralla(user, proyecto)
 
     @staticmethod
+    def _incidencia_para_cambiar(request, proyecto):
+        """Lo que fija Moden (orden, mesa, division, espera) la ferralla solo
+        lo cambia con la incidencia que conto al pulsar "Modificar
+        bastidores". Devuelve (incidencia, respuesta 403); Moden no la necesita."""
+        if _is_admin(request.user):
+            return None, None
+        incidencia = _incidencia_orden_abierta(request.user, request.data.get('incidencia'), proyecto=proyecto)
+        if incidencia is None:
+            return None, Response({'detail': BASTIDORES_SIN_INCIDENCIA}, status=status.HTTP_403_FORBIDDEN)
+        return incidencia, None
+
+    @staticmethod
     def _asignar_orden_raices(proyecto, orden_raices):
         """Numera los bastidores raiz 1..N en el orden dado; cada division
         hereda el indice de su raiz y se reletra B, C..."""
@@ -3629,6 +3645,9 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
         if not self._puede_gestionar(request.user, proyecto):
             return Response({'detail': 'No puedes gestionar bastidores de otra ferralla.'},
                             status=status.HTTP_403_FORBIDDEN)
+        incidencia, sin_incidencia = self._incidencia_para_cambiar(request, proyecto)
+        if sin_incidencia:
+            return sin_incidencia
         if grupo.dividido_de_id is not None or grupo.divisiones.exists():
             return Response(
                 {'detail': 'Este bastidor ya esta dividido. Unelo antes de volver a dividirlo.'},
@@ -3677,6 +3696,8 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
         # Los modulos que pasan a una parte no la atan a la mesa de la raiz:
         # cada parte busca una mesa distinta.
         self._replan_grupos_operativos(proyecto, request.user, moved_modulo_ids=movidos)
+        if incidencia is not None:
+            _sumar_cambio_orden(incidencia)
         return Response(self._grupos_respuesta(proyecto))
 
     @classmethod
@@ -3737,6 +3758,13 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
         if not isinstance(valor, bool):
             return Response({'detail': 'Envia {en_espera: true|false}.'},
                             status=status.HTTP_400_BAD_REQUEST)
+        # Apartarlo cambia el plan de Moden; soltarlo (p.ej. el que Moden
+        # aparto al subirlo sin acero) es lo normal y no pide nada.
+        incidencia = None
+        if valor:
+            incidencia, sin_incidencia = self._incidencia_para_cambiar(request, proyecto)
+            if sin_incidencia:
+                return sin_incidencia
         raiz = grupo.raiz
         familia = list(GrupoBastidor.objects.filter(Q(pk=raiz.pk) | Q(dividido_de=raiz)))
         if valor:
@@ -3761,6 +3789,8 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
                         g.save(update_fields=['mesa_preferida'])
         GrupoBastidor.objects.filter(id__in=[g.id for g in familia]).update(en_espera=valor)
         self._replan_grupos_operativos(proyecto, request.user)
+        if incidencia is not None:
+            _sumar_cambio_orden(incidencia)
         return Response(self._grupos_respuesta(proyecto))
 
     @action(detail=True, methods=['post'], url_path='mesa')
@@ -3777,6 +3807,9 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
         if not self._puede_gestionar(request.user, proyecto):
             return Response({'detail': 'No puedes gestionar bastidores de otra ferralla.'},
                             status=status.HTTP_403_FORBIDDEN)
+        incidencia, sin_incidencia = self._incidencia_para_cambiar(request, proyecto)
+        if sin_incidencia:
+            return sin_incidencia
 
         mesa_id = request.data.get('mesa')
         if mesa_id in (None, '', 'null'):
@@ -3796,6 +3829,8 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
         grupo.save(update_fields=['mesa_preferida'])
 
         self._replan_grupos_operativos(proyecto, request.user)
+        if incidencia is not None:
+            _sumar_cambio_orden(incidencia)
         return Response(self._grupos_respuesta(proyecto))
 
     @action(detail=True, methods=['post'], url_path='unir')
@@ -3981,17 +4016,9 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
         if not self._puede_gestionar(request.user, proyecto):
             return Response({'detail': 'No puedes reordenar bastidores de otra ferralla.'},
                             status=status.HTTP_403_FORBIDDEN)
-        # Moden fija el orden; la ferralla solo lo cambia con una incidencia
-        # contada al abrir "Ordenar bastidores" en el proyecto.
-        incidencia = None
-        if not _is_admin(request.user):
-            incidencia = _incidencia_orden_abierta(request.user, request.data.get('incidencia'), proyecto=proyecto)
-            if incidencia is None:
-                return Response(
-                    {'detail': 'Para cambiar el orden pulsa "Ordenar bastidores" y cuenta la incidencia. '
-                               'Si ya lo has hecho, recarga la página.'},
-                    status=status.HTTP_403_FORBIDDEN,
-                )
+        incidencia, sin_incidencia = self._incidencia_para_cambiar(request, proyecto)
+        if sin_incidencia:
+            return sin_incidencia
 
         # Se acepta el orden de todos los grupos o solo el de las raices:
         # las divisiones siempre van pegadas a su raiz.

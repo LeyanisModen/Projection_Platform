@@ -1493,28 +1493,29 @@ export class ApiService {
     }
 
     /** Reparte el bastidor entre todas las mesas inferiores activas (2, 2B, 2C...). */
-    dividirBastidor(id: number): Observable<GrupoBastidor[]> {
+    /** ``incidencia``: la ferralla la necesita para cambiar lo que fijó Moden (dividir, llevar, apartar). */
+    dividirBastidor(id: number, incidencia?: number): Observable<GrupoBastidor[]> {
         return this.http.post<GrupoBastidor[]>(
             `${this.baseUrl}/grupos-bastidor/${id}/dividir/`,
-            {},
+            incidencia ? { incidencia } : {},
             { headers: this.getHeaders() }
         );
     }
 
     /** Aparta el bastidor de las mesas o lo suelta para que entre en cola. */
-    esperaBastidor(id: number, enEspera: boolean): Observable<GrupoBastidor[]> {
+    esperaBastidor(id: number, enEspera: boolean, incidencia?: number): Observable<GrupoBastidor[]> {
         return this.http.post<GrupoBastidor[]>(
             `${this.baseUrl}/grupos-bastidor/${id}/espera/`,
-            { en_espera: enEspera },
+            incidencia ? { en_espera: enEspera, incidencia } : { en_espera: enEspera },
             { headers: this.getHeaders() }
         );
     }
 
     /** Lleva el bastidor a una mesa inferior y lo deja fijado alli; null lo suelta. */
-    llevarBastidorAMesa(id: number, mesaId: number | null): Observable<GrupoBastidor[]> {
+    llevarBastidorAMesa(id: number, mesaId: number | null, incidencia?: number): Observable<GrupoBastidor[]> {
         return this.http.post<GrupoBastidor[]>(
             `${this.baseUrl}/grupos-bastidor/${id}/mesa/`,
-            { mesa: mesaId },
+            incidencia ? { mesa: mesaId, incidencia } : { mesa: mesaId },
             { headers: this.getHeaders() }
         );
     }

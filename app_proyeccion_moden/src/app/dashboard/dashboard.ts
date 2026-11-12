@@ -302,6 +302,7 @@ export class Dashboard implements OnInit, OnDestroy {
   /** Pregunta abierta "¿Qué incidencia ha ocurrido…?" y qué hacer al contestarla. */
   incidenciaDialogo: {
     titulo: string;
+    pregunta: string;
     crear: (texto: string) => Observable<IncidenciaOrden>;
     alGuardar: (incidencia: IncidenciaOrden) => void;
   } | null = null;
@@ -463,21 +464,26 @@ export class Dashboard implements OnInit, OnDestroy {
   /** Abre la pregunta de la incidencia; ``alGuardar`` sigue con lo que se quería hacer. */
   private abrirIncidenciaOrden(
     titulo: string,
+    pregunta: string,
     crear: (texto: string) => Observable<IncidenciaOrden>,
     alGuardar: (incidencia: IncidenciaOrden) => void,
   ): void {
-    this.incidenciaDialogo = { titulo, crear, alGuardar };
+    this.incidenciaDialogo = { titulo, pregunta, crear, alGuardar };
     this.incidenciaOrdenTexto = '';
     this.incidenciaOrdenError = '';
     this.cdr.detectChanges();
   }
 
-  /** Hay más de un bastidor que se pueda mover en alguna mesa: si no, no hay nada que ordenar. */
-  planModalHayQueOrdenar(): boolean {
-    return this.planModalColumnas().some(c => c.secciones.filter(s => s.grupo && !s.grupo.es_division).length > 1);
+  /** Queda algún bastidor por fabricar: se puede cambiar su orden, su mesa, dividirlo o apartarlo. */
+  planModalHayQueModificar(): boolean {
+    return this.planModalSecciones().some(s => !!s.grupo && !s.terminado);
   }
 
-  /** Botón "Ordenar bastidores": abre la pregunta o, si ya está abierto, lo vuelve a cerrar. */
+  /**
+   * Botón "Modificar bastidores": abre la pregunta o, si ya está abierto, lo
+   * vuelve a cerrar. Subir/bajar, llevar a otra mesa, dividir y apartar
+   * cambian lo que fijó Moden y solo salen con la incidencia contada.
+   */
   toggleOrdenarBastidores(): void {
     const proyecto = this.planModalProyecto;
     if (!proyecto) return;
@@ -487,7 +493,8 @@ export class Dashboard implements OnInit, OnDestroy {
       return;
     }
     this.abrirIncidenciaOrden(
-      `Ordenar bastidores · ${proyecto.nombre}`,
+      `Modificar bastidores · ${proyecto.nombre}`,
+      '¿Qué incidencia ha ocurrido para necesitar cambiar los bastidores?',
       texto => this.api.crearIncidenciaOrden(proyecto.id, texto),
       incidencia => {
         if (this.planModalProyecto?.id === proyecto.id) this.ordenIncidenciaId = incidencia.id;
@@ -540,6 +547,7 @@ export class Dashboard implements OnInit, OnDestroy {
   private pedirIncidenciaSuperior(grupo: GrupoMesas, despues: () => void): void {
     this.abrirIncidenciaOrden(
       `Orden manual de la superior · ${grupo.nombre}`,
+      '¿Qué incidencia ha ocurrido para necesitar cambiar el orden?',
       texto => this.api.crearIncidenciaOrdenSuperior(grupo.id, texto),
       incidencia => {
         this.ordenSupIncidencia.set(grupo.id, incidencia.id);
@@ -735,8 +743,9 @@ export class Dashboard implements OnInit, OnDestroy {
 
   moverBastidorAMesa(grupo: GrupoBastidor, dir: -1 | 1): void {
     const vecina = this.mesaVecina(grupo, dir);
-    if (!vecina || vecina.id === null) return;
-    this.runPlanAction(this.api.llevarBastidorAMesa(grupo.id, vecina.id));
+    const incidencia = this.ordenIncidenciaId;
+    if (!vecina || vecina.id === null || incidencia === null) return;
+    this.runPlanAction(this.api.llevarBastidorAMesa(grupo.id, vecina.id, incidencia));
   }
 
   /** Orden real de fabricacion del bastidor: inverso al card del admin. */
@@ -770,7 +779,14 @@ export class Dashboard implements OnInit, OnDestroy {
 
   /** Aparta el bastidor de las mesas (p.ej. sin acero cortado) o lo suelta. */
   toggleEsperaEnPlan(grupo: GrupoBastidor): void {
-    this.runPlanAction(this.api.esperaBastidor(grupo.id, !grupo.en_espera));
+    // Soltarlo vuelve al plan; apartarlo lo cambia y pide la incidencia.
+    if (grupo.en_espera) {
+      this.runPlanAction(this.api.esperaBastidor(grupo.id, false));
+      return;
+    }
+    const incidencia = this.ordenIncidenciaId;
+    if (incidencia === null) return;
+    this.runPlanAction(this.api.esperaBastidor(grupo.id, true, incidencia));
   }
 
   canUnir(grupo: GrupoBastidor): boolean {
@@ -790,8 +806,9 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   dividirGrupoEnPlan(grupo: GrupoBastidor): void {
-    if (!this.canDividir(grupo)) return;
-    this.runPlanAction(this.api.dividirBastidor(grupo.id));
+    const incidencia = this.ordenIncidenciaId;
+    if (!this.canDividir(grupo) || incidencia === null) return;
+    this.runPlanAction(this.api.dividirBastidor(grupo.id, incidencia));
   }
 
   unirGrupoEnPlan(grupo: GrupoBastidor): void {

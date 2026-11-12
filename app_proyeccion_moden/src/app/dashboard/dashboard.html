@@ -915,13 +915,13 @@
                         }
                     </div>
                     <div class="plan-modal-header-actions">
-                        @if (!loadingPlanModal && planModalHayQueOrdenar()) {
+                        @if (!loadingPlanModal && planModalHayQueModificar()) {
                             <button type="button" class="plan-modal-download" [class.is-active]="ordenIncidenciaId !== null"
                                 (click)="toggleOrdenarBastidores()" [attr.aria-pressed]="ordenIncidenciaId !== null"
                                 [disabled]="planModalBusy"
-                                [title]="ordenIncidenciaId !== null ? 'Dejar de ordenar' : 'Cambiar el orden de fabricación de los bastidores'">
-                                <i class="fa fa-sort" aria-hidden="true"></i>
-                                Ordenar bastidores
+                                [title]="ordenIncidenciaId !== null ? 'Dejar de modificar' : 'Cambiar el orden, la mesa, dividir o apartar bastidores'">
+                                <i class="fa fa-pencil" aria-hidden="true"></i>
+                                Modificar bastidores
                             </button>
                         }
                         <button type="button" class="plan-modal-download" [class.is-active]="planModalShowDone"
@@ -976,13 +976,15 @@
                                     </div>
                                     @if (seccion.grupo; as grupo) {
                                         <div class="plan-grupo-actions">
+                                            <!-- Lo que cambia el plan de Moden, solo tras contar la incidencia -->
+                                            @if (ordenIncidenciaId !== null) {
                                             <button type="button" class="plan-mesa-btn" (click)="moverBastidorAMesa(grupo, -1)"
                                                 [disabled]="planModalBusy || !canMoverBastidorAMesa(grupo, -1)"
                                                 [title]="mesaVecina(grupo, -1) ? 'Llevar a ' + mesaVecina(grupo, -1)!.nombre : 'Es la primera mesa'"
                                                 [attr.aria-label]="'Llevar ' + seccion.titulo + ' a la mesa de la izquierda'">
                                                 <i class="fa fa-arrow-left" aria-hidden="true"></i>
                                             </button>
-                                            @if (!grupo.es_division && ordenIncidenciaId !== null) {
+                                            @if (!grupo.es_division) {
                                                 <button type="button" class="plan-order-btn" (click)="moveGrupoEnPlan(grupo, -1)"
                                                     [disabled]="planModalBusy || !canMoveGrupo(grupo, -1)"
                                                     title="Fabricar antes" [attr.aria-label]="'Fabricar antes ' + seccion.titulo">
@@ -1005,12 +1007,14 @@
                                                     [disabled]="planModalBusy" title="Repartir este bastidor entre las mesas"
                                                     [attr.aria-label]="'Dividir ' + seccion.titulo + ' entre mesas'">Dividir</button>
                                             }
+                                            }
+                                            <!-- Unir y soltar vuelven a lo de Moden: siempre a mano -->
                                             @if (canUnir(grupo)) {
                                                 <button type="button" class="plan-grupo-btn" (click)="unirGrupoEnPlan(grupo)"
                                                     [disabled]="planModalBusy" title="Volver a juntar las partes en un solo bastidor"
                                                     [attr.aria-label]="'Unir ' + seccion.titulo">Unir</button>
                                             }
-                                            @if (!seccion.terminado) {
+                                            @if (!seccion.terminado && (grupo.en_espera || ordenIncidenciaId !== null)) {
                                                 <button type="button" class="plan-mesa-btn" (click)="toggleEsperaEnPlan(grupo)"
                                                     [disabled]="planModalBusy"
                                                     [title]="grupo.en_espera ? 'Soltar: vuelve a entrar en la mesa' : 'Apartar de las mesas hasta tener el acero'"
@@ -1119,7 +1123,7 @@
                 aria-labelledby="incidencia-orden-title"
                 (click)="$event.stopPropagation()" (keydown.escape)="cancelIncidenciaOrden()" tabindex="-1">
                 <h3 id="incidencia-orden-title">{{ dialogo.titulo }}</h3>
-                <label for="incidencia-orden-texto">¿Qué incidencia ha ocurrido para necesitar cambiar el orden?</label>
+                <label for="incidencia-orden-texto">{{ dialogo.pregunta }}</label>
                 <textarea id="incidencia-orden-texto" rows="4" maxlength="1000"
                     [(ngModel)]="incidenciaOrdenTexto" [disabled]="incidenciaOrdenBusy"></textarea>
                 @if (incidenciaOrdenError) { <p role="alert">{{ incidenciaOrdenError }}</p> }

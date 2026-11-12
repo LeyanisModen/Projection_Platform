@@ -1372,14 +1372,24 @@ describe('Dashboard', () => {
       // El card del admin se fabrica de abajo arriba: A3 (hecho) sale primero.
       expect(Array.from(secciones[0].querySelectorAll('.plan-modulo-nombre')).map(e => e.textContent?.trim()))
         .toEqual(['A3', 'A2', 'A1']);
-      expect(secciones[0].querySelector('[aria-label="Dividir Grupo 1 entre mesas"]')).not.toBeNull();
-      expect(secciones[0].querySelector('[aria-label="Unir Grupo 1"]')).toBeNull();
+      // Sin contar la incidencia no hay nada que cambie el plan de Moden.
+      expect(secciones[0].querySelector('.plan-grupo-actions button')).toBeNull();
+      component.ordenIncidenciaId = 5;
+      fixture.changeDetectorRef.markForCheck();
+      fixture.detectChanges();
+      const conIncidencia: HTMLElement = fixture.nativeElement.querySelectorAll('.plan-grupo')[0];
+      expect(Array.from(conIncidencia.querySelectorAll('.plan-grupo-actions button')).map(b => b.getAttribute('aria-label')))
+        .toEqual([
+          'Llevar Grupo 1 a la mesa de la izquierda', 'Fabricar antes Grupo 1', 'Fabricar después Grupo 1',
+          'Llevar Grupo 1 a la mesa de la derecha', 'Dividir Grupo 1 entre mesas', 'Apartar Grupo 1',
+        ]);
+      expect(conIncidencia.querySelector('[aria-label="Unir Grupo 1"]')).toBeNull();
       expect(secciones[2].querySelector('.plan-modulo-order')).toBeNull();
     });
 
     const botonOrdenar = (): HTMLButtonElement | undefined => Array.from(
       fixture.nativeElement.querySelectorAll('.plan-modal-header-actions button') as NodeListOf<HTMLButtonElement>,
-    ).find(b => b.textContent?.includes('Ordenar bastidores'));
+    ).find(b => b.textContent?.includes('Modificar bastidores'));
 
     it('hides the order arrows until the ferralla tells the incident, and again after closing', () => {
       const api = TestBed.inject(ApiService);
@@ -1410,11 +1420,27 @@ describe('Dashboard', () => {
       expect(component.ordenIncidenciaId).toBeNull();
     });
 
-    it('does not offer ordering with a single bastidor per mesa', () => {
-      component.planModalGrupos = [component.planModalGrupos[0]];
+    it('does not offer modifying when every bastidor is finished', () => {
+      component.planModalModulos = component.planModalModulos.map(m => ({...m, inferior_hecho: true, superior_hecho: true}));
       fixture.changeDetectorRef.markForCheck();
       fixture.detectChanges();
       expect(botonOrdenar()).toBeUndefined();
+    });
+
+    it('moves, splits and holds only with the incident, and sends it', () => {
+      const api = TestBed.inject(ApiService);
+      const dividir = vi.spyOn(api, 'dividirBastidor').mockReturnValue(of([]));
+      const espera = vi.spyOn(api, 'esperaBastidor').mockReturnValue(of([]));
+      const [g1] = component.planModalGrupos;
+      component.dividirGrupoEnPlan(g1);
+      component.toggleEsperaEnPlan(g1);
+      expect(dividir).not.toHaveBeenCalled();
+      expect(espera).not.toHaveBeenCalled();
+      component.ordenIncidenciaId = 5;
+      component.dividirGrupoEnPlan(g1);
+      expect(dividir).toHaveBeenCalledWith(10, 5);
+      component.toggleEsperaEnPlan(g1);
+      expect(espera).toHaveBeenCalledWith(10, true, 5);
     });
 
     it('reorders root bastidores with the incident and shows the backend error', () => {
@@ -1465,7 +1491,10 @@ describe('Dashboard', () => {
       const api = TestBed.inject(ApiService);
       const llevar = vi.spyOn(api, 'llevarBastidorAMesa').mockReturnValue(throwError(() => ({error: {detail: 'x'}})));
       component.moverBastidorAMesa(g1, 1);
-      expect(llevar).toHaveBeenCalledWith(10, 2);
+      expect(llevar).not.toHaveBeenCalled();
+      component.ordenIncidenciaId = 5;
+      component.moverBastidorAMesa(g1, 1);
+      expect(llevar).toHaveBeenCalledWith(10, 2, 5);
     });
 
     it('has no superior mesa in the project plan: its order lives in the mesa card', () => {
@@ -1649,8 +1678,9 @@ describe('Dashboard', () => {
       const apartado = columna.querySelectorAll('.plan-grupo')[1];
       expect(apartado.classList.contains('is-espera')).toBe(true);
       expect(apartado.querySelector('.plan-grupo-tag')?.textContent).toBe('En espera');
+      // Soltar vuelve al plan de Moden y siempre esta; apartar pide la incidencia.
       expect(apartado.querySelector('[aria-label="Soltar Grupo 1"]')).not.toBeNull();
-      expect(columna.querySelector('[aria-label="Apartar Grupo 2"]')).not.toBeNull();
+      expect(columna.querySelector('[aria-label="Apartar Grupo 2"]')).toBeNull();
 
       const api = TestBed.inject(ApiService);
       const espera = vi.spyOn(api, 'esperaBastidor').mockReturnValue(throwError(() => ({error: {detail: 'x'}})));
