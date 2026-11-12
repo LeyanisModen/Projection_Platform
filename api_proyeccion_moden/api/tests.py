@@ -24,7 +24,7 @@ from api.models import (
     DetalleModuloFase, GrupoMesas, FotoFabricacion,
     FerrallaContacto, FerrallaDireccion, PairingSession,
     MesaQueueStatus, ModuloEstado, GrupoBastidor, GrupoMesasProyecto,
-    UserProfile,
+    UserProfile, IncidenciaOrden,
 )
 
 
@@ -1710,7 +1710,8 @@ class PlanningFoundationTests(APITestCase):
                     cantidad_refuerzos_inf INTEGER,
                     cantidad_refuerzos_sup INTEGER,
                     peso_mallazo_recortado_inf REAL,
-                    peso_mallazo_recortado_sup REAL
+                    peso_mallazo_recortado_sup REAL,
+                    num_bastidor INTEGER
                 )
                 """
             )
@@ -1724,8 +1725,9 @@ class PlanningFoundationTests(APITestCase):
                         cantidad_refuerzos_inf,
                         cantidad_refuerzos_sup,
                         peso_mallazo_recortado_inf,
-                        peso_mallazo_recortado_sup
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        peso_mallazo_recortado_sup,
+                        num_bastidor
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         index,
@@ -1738,6 +1740,7 @@ class PlanningFoundationTests(APITestCase):
                         row.get("refuerzos_sup", 0),
                         row.get("peso_inf", 10),
                         row.get("peso_sup", 10),
+                        row.get("num_bastidor"),
                     ),
                 )
             connection.commit()
@@ -4732,6 +4735,57 @@ class PlanningFoundationTests(APITestCase):
         )
         self.assertEqual(self.project.grupos_bastidor.count(), 2)
 
+    def test_los_bastidores_salen_del_num_bastidor_de_la_base(self):
+        # Anchos que por largo irian cada uno en su bastidor: manda el numero de Moden.
+        self.project.bastidor_longitud_cm = 114
+        self.project.save(update_fields=["bastidor_longitud_cm"])
+        # Proyecto vacio: los bastidores nacen al subir los primeros modulos.
+        self.project.modulos.all().delete()
+        self.project.grupos_bastidor.all().delete()
+        base = self._technical_db_file(
+            "base_numerada.db",
+            [
+                {"nombre": "M-01", "ancho": 100, "num_bastidor": 2},
+                {"nombre": "M-02", "ancho": 100, "num_bastidor": 1},
+                {"nombre": "M-03", "ancho": 100, "num_bastidor": 2},
+                {"nombre": "M-04", "ancho": 100, "num_bastidor": 1},
+                {"nombre": "M-05", "ancho": 20, "num_bastidor": 4},
+                {"nombre": "M-06", "ancho": 20, "num_bastidor": 1},
+            ],
+        )
+        response = self.client.post(
+            f"/api/proyectos/{self.project.id}/import-technical-data/", {"technical_file": base}, format="multipart",
+        )
+        self.assertEqual(response.status_code, 200)
+
+        def subir(*nombres):
+            respuesta = self.client.post(
+                f"/api/proyectos/{self.project.id}/import-structure/",
+                {"modulos": json.dumps([{"nombre": nombre, "imagenes": []} for nombre in nombres])},
+                format="multipart",
+            )
+            self.assertEqual(respuesta.status_code, 200)
+
+        def bastidores():
+            return [
+                (g.indice, g.nombre, list(g.modulos.order_by("orden_intra").values_list("nombre", flat=True)))
+                for g in self.project.grupos_bastidor.order_by("indice")
+            ]
+
+        subir("M-01", "M-02", "M-03", "M-04")
+        self.assertEqual(bastidores(), [
+            (1, "Bastidor 1", ["M-02", "M-04"]),
+            (2, "Bastidor 2", ["M-01", "M-03"]),
+        ])
+        # Lo que llega despues va a su bastidor: uno nuevo con su numero o con los suyos.
+        subir("M-05", "M-06")
+        self.assertEqual(bastidores(), [
+            (1, "Bastidor 1", ["M-02", "M-04", "M-06"]),
+            (2, "Bastidor 2", ["M-01", "M-03"]),
+            (3, "Bastidor 4", ["M-05"]),
+        ])
+        self.assertEqual(Modulo.objects.get(proyecto=self.project, nombre="M-05").num_bastidor, 4)
+
     def test_nueva_base_actualiza_datos_sin_reconstruir_bastidores(self):
         first_response = self.client.post(
             f"/api/proyectos/{self.project.id}/import-technical-data/",
@@ -6467,6 +6521,22 @@ class BastidorSelfServiceTests(APITestCase):
         )
         self.assertEqual(response.status_code, 200)
 
+    def _incidencia_sup(self, texto="El superior de A3 no tiene el refuerzo"):
+        """Lo que cuenta la ferralla antes de ordenar a mano la mesa superior."""
+        response = self.client.post(
+            f"/api/grupos-mesas/{self.grupo.id}/incidencias-orden/", {"texto": texto}, format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        return response.data["id"]
+
+    def _incidencia(self, texto="Falta acero del bastidor 1"):
+        """Lo que cuenta la ferralla al pulsar "Ordenar bastidores"."""
+        response = self.client.post(
+            f"/api/proyectos/{self.project.id}/incidencias-orden/", {"texto": texto}, format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        return response.data["id"]
+
     def _cola(self, mesa):
         return list(
             mesa.queue_items.filter(
@@ -6492,10 +6562,13 @@ class BastidorSelfServiceTests(APITestCase):
         en_mesa, siguiente, tercera = cola[0], cola[1], cola[2]
         activate_queue_item(self.mesa_sup, en_mesa)
 
+        incidencia = self._incidencia_sup()
+
         def poner_delante(item, otro):
             return self.client.post(
                 "/api/mesa-queue-items/reorder/",
-                {"items": [{"id": item.id, "position": otro.position}, {"id": otro.id, "position": item.position}]},
+                {"items": [{"id": item.id, "position": otro.position}, {"id": otro.id, "position": item.position}],
+                 "incidencia": incidencia},
                 format="json",
             )
 
@@ -6543,7 +6616,8 @@ class BastidorSelfServiceTests(APITestCase):
         a, b = items[0], items[1]
         response = self.client.post(
             "/api/mesa-queue-items/reorder/",
-            {"items": [{"id": a.id, "position": b.position}, {"id": b.id, "position": a.position}]},
+            {"items": [{"id": a.id, "position": b.position}, {"id": b.id, "position": a.position}],
+             "incidencia": self._incidencia_sup()},
             format="json",
         )
         self.assertEqual(response.status_code, 200)
@@ -6561,7 +6635,7 @@ class BastidorSelfServiceTests(APITestCase):
         self.assertEqual(self._cola_sup(), manual)
         reorder = self.client.post(
             "/api/grupos-bastidor/reorder/",
-            {"proyecto": self.project.id, "orden": [self.otro_bastidor.id, self.bastidor.id]},
+            {"proyecto": self.project.id, "incidencia": self._incidencia(), "orden": [self.otro_bastidor.id, self.bastidor.id]},
             format="json",
         )
         self.assertEqual(reorder.status_code, 200)
@@ -6613,6 +6687,64 @@ class BastidorSelfServiceTests(APITestCase):
         )
         self.assertEqual(EventoFabricacion.objects.filter(item=siguiente, tipo="INICIO").count(), 2)
 
+    def test_la_superior_a_mano_solo_contando_la_incidencia(self):
+        self._planificar()
+        before = self._cola_sup()
+        a, b = list(self.mesa_sup.queue_items.filter(status=MesaQueueStatus.EN_COLA).order_by("position"))[:2]
+        intercambio = {"items": [{"id": a.id, "position": b.position}, {"id": b.id, "position": a.position}]}
+
+        # Sin incidencia ni se mueve ni pasa a manual, por ninguna de las dos vias.
+        response = self.client.post("/api/mesa-queue-items/reorder/", intercambio, format="json")
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("incidencia", response.data["detail"])
+        response = self.client.patch(
+            f"/api/grupos-mesas/{self.grupo.id}/", {"estrategia_cola_superior": "MANUAL"}, format="json",
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(self._cola_sup(), before)
+        self.grupo.refresh_from_db()
+        self.assertEqual(self.grupo.estrategia_cola_superior, "PLANIFICADA")
+
+        # Una de bastidores no vale para la superior.
+        response = self.client.post(
+            "/api/mesa-queue-items/reorder/", {**intercambio, "incidencia": self._incidencia()}, format="json",
+        )
+        self.assertEqual(response.status_code, 403)
+
+        incidencia = self._incidencia_sup()
+        response = self.client.patch(
+            f"/api/grupos-mesas/{self.grupo.id}/",
+            {"estrategia_cola_superior": "MANUAL", "incidencia": incidencia}, format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        response = self.client.post(
+            "/api/mesa-queue-items/reorder/", {**intercambio, "incidencia": incidencia}, format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertNotEqual(self._cola_sup(), before)
+        guardada = IncidenciaOrden.objects.get(pk=incidencia)
+        self.assertEqual(
+            (guardada.tipo, guardada.grupo_mesas_id, guardada.proyecto_id, guardada.cambios),
+            ("SUPERIOR", self.grupo.id, self.project.id, 1),
+        )
+        # Volver a automatico no pide nada.
+        response = self.client.patch(
+            f"/api/grupos-mesas/{self.grupo.id}/", {"estrategia_cola_superior": "ADAPTATIVA"}, format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+
+        # Moden la ve en el proyecto que se estaba fabricando, con su linea.
+        admin = User.objects.create_user(username="moden_sup", password="pass123", is_staff=True)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=admin).key}")
+        filas = self.client.get(f"/api/proyectos/{self.project.id}/incidencias-orden/").data
+        self.assertEqual(
+            [(f["tipo"], f["grupo_mesas_nombre"]) for f in filas],
+            [("SUPERIOR", "Grupo Auto"), ("BASTIDORES", None)],
+        )
+        # Y ordena sin contar nada.
+        response = self.client.post("/api/mesa-queue-items/reorder/", intercambio, format="json")
+        self.assertEqual(response.status_code, 200)
+
     def test_la_ferralla_no_reordena_las_mesas_de_otra(self):
         self._planificar()
         otra = User.objects.create_user(username="ferralla_ajena", password="pass123")
@@ -6634,7 +6766,7 @@ class BastidorSelfServiceTests(APITestCase):
         self._planificar()
         response = self.client.post(
             "/api/grupos-bastidor/reorder/",
-            {"proyecto": self.project.id, "orden": [self.otro_bastidor.id, self.bastidor.id]},
+            {"proyecto": self.project.id, "incidencia": self._incidencia(), "orden": [self.otro_bastidor.id, self.bastidor.id]},
             format="json",
         )
         self.assertEqual(response.status_code, 200)
@@ -6651,6 +6783,86 @@ class BastidorSelfServiceTests(APITestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 403)
+        # Tampoco puede dejar incidencias en un proyecto que no es suyo.
+        response = self.client.post(
+            f"/api/proyectos/{self.project.id}/incidencias-orden/", {"texto": "Hola"}, format="json",
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def _reordenar(self, **extra):
+        return self.client.post(
+            "/api/grupos-bastidor/reorder/",
+            {"proyecto": self.project.id, "orden": [self.otro_bastidor.id, self.bastidor.id], **extra},
+            format="json",
+        )
+
+    def test_sin_incidencia_la_ferralla_no_cambia_el_orden(self):
+        self._planificar()
+        response = self._reordenar()
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("Ordenar bastidores", response.data["detail"])
+        self.bastidor.refresh_from_db()
+        self.assertEqual(self.bastidor.indice, 1)
+
+        # Una incidencia vacia no abre el orden.
+        response = self.client.post(
+            f"/api/proyectos/{self.project.id}/incidencias-orden/", {"texto": "  "}, format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(IncidenciaOrden.objects.exists())
+
+    def test_la_incidencia_abre_el_orden_y_cuenta_los_cambios(self):
+        self._planificar()
+        incidencia = self._incidencia("  La grúa no llega al bastidor 1  ")
+        self.assertEqual(self._reordenar(incidencia=incidencia).status_code, 200)
+        self.assertEqual(
+            self.client.post(
+                "/api/grupos-bastidor/reorder/",
+                {"proyecto": self.project.id, "incidencia": incidencia,
+                 "orden": [self.bastidor.id, self.otro_bastidor.id]},
+                format="json",
+            ).status_code,
+            200,
+        )
+        guardada = IncidenciaOrden.objects.get(pk=incidencia)
+        self.assertEqual(guardada.texto, "La grúa no llega al bastidor 1")
+        self.assertEqual(guardada.usuario, self.user)
+        self.assertEqual(guardada.cambios, 2)
+
+    def test_la_incidencia_caduca_y_es_del_proyecto(self):
+        self._planificar()
+        vieja = self._incidencia()
+        IncidenciaOrden.objects.filter(pk=vieja).update(
+            creada_at=timezone.now() - timedelta(hours=13),
+        )
+        self.assertEqual(self._reordenar(incidencia=vieja).status_code, 403)
+
+        otro = Proyecto.objects.create(nombre="Otro forjado", usuario=self.user)
+        ajena = self.client.post(
+            f"/api/proyectos/{otro.id}/incidencias-orden/", {"texto": "En el otro forjado"}, format="json",
+        ).data["id"]
+        self.assertEqual(self._reordenar(incidencia=ajena).status_code, 403)
+        self.assertEqual(self._reordenar(incidencia="abc").status_code, 403)
+
+    def test_moden_ve_las_incidencias_del_proyecto_y_ordena_sin_ellas(self):
+        self._planificar()
+        incidencia = self._incidencia("Material retrasado")
+        self._reordenar(incidencia=incidencia)
+
+        admin = User.objects.create_user(username="moden_admin", password="pass123", is_staff=True)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=admin).key}")
+        response = self.client.get(f"/api/proyectos/{self.project.id}/incidencias-orden/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+        fila = response.data[0]
+        self.assertEqual(
+            (fila["texto"], fila["usuario"], fila["cambios"]),
+            ("Material retrasado", "ferralla_auto", 1),
+        )
+        self.assertIsNotNone(fila["creada_at"])
+
+        # Moden ordena desde el admin sin contar nada.
+        self.assertEqual(self._reordenar().status_code, 200)
 
     def test_ferralla_ordena_dentro_del_bastidor_pero_no_cambia_de_bastidor(self):
         self._planificar()
@@ -6801,7 +7013,7 @@ class BastidorSelfServiceTests(APITestCase):
         # Sigue en su mesa aunque se replanifique por otro motivo.
         reorder = self.client.post(
             "/api/grupos-bastidor/reorder/",
-            {"proyecto": self.project.id, "orden": [self.otro_bastidor.id, self.bastidor.id]},
+            {"proyecto": self.project.id, "incidencia": self._incidencia(), "orden": [self.otro_bastidor.id, self.bastidor.id]},
             format="json",
         )
         self.assertEqual(reorder.status_code, 200)

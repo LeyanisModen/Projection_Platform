@@ -390,6 +390,12 @@ class Modulo(models.Model):
         default='',
         help_text='Tipologia del modulo para agrupacion: CENTRAL, CENTRAL_GIRADO, LADO_LARGO, LADO_CORTO, ESQUINA.'
     )
+    num_bastidor = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text='Bastidor que le da Moden en la base tecnica (columna num_bastidor del resumen). '
+                  'Si esta, los bastidores se hacen con el en vez de calcularlos.',
+    )
     ancho_cm = models.DecimalField(
         max_digits=6,
         decimal_places=2,
@@ -1748,3 +1754,41 @@ class PausaMesa(models.Model):
 
     def __str__(self):
         return f'Pausa {self.get_tipo_display()} de {self.mesa}'
+
+
+
+class IncidenciaOrdenTipo(models.TextChoices):
+    BASTIDORES = 'BASTIDORES', 'Orden de bastidores'
+    SUPERIOR = 'SUPERIOR', 'Orden manual de la superior'
+
+
+class IncidenciaOrden(models.Model):
+    """Motivo que da la ferralla para cambiar un orden que fija Moden (acopio):
+    el de los bastidores de un proyecto o, en orden manual, el de la cola de
+    una mesa superior. Sin contar antes qué ha pasado no se puede cambiar, y
+    Moden lo ve en el admin del proyecto. ``cambios`` cuenta los movimientos
+    hechos con esta incidencia.
+
+    BASTIDORES: ``proyecto`` es el del modal. SUPERIOR: ``grupo_mesas`` es la
+    línea y ``proyecto`` el que estaba fabricando al contarla."""
+    id = models.AutoField(primary_key=True)
+    tipo = models.CharField(max_length=16, choices=IncidenciaOrdenTipo.choices, default=IncidenciaOrdenTipo.BASTIDORES)
+    proyecto = models.ForeignKey(
+        Proyecto, null=True, blank=True, on_delete=models.CASCADE, related_name='incidencias_orden',
+    )
+    grupo_mesas = models.ForeignKey(
+        GrupoMesas, null=True, blank=True, on_delete=models.SET_NULL, related_name='incidencias_orden',
+    )
+    usuario = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
+    texto = models.TextField()
+    creada_at = models.DateTimeField(default=timezone.now, db_index=True)
+    cambios = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        db_table = 'api_incidencia_orden'
+        ordering = ['-creada_at', '-id']
+        verbose_name = 'incidencia de orden'
+        verbose_name_plural = 'incidencias de orden'
+
+    def __str__(self):
+        return f'{self.get_tipo_display()} @ {self.creada_at:%d/%m %H:%M}'

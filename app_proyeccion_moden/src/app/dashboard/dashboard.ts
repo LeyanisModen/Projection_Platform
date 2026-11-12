@@ -11,7 +11,7 @@ import {
   GrupoBastidor, GrupoBastidorModulo, FerrallaCaptureConfig, TurnoConfig,
   TiempoFabricacion, ProductionStatsBucket, ProductionStatsTiempos, ProductionStatsModulo, ProductionStatsModuloFase,
   ProductionStatsActividadDia,
-  ElementosSueltos, ElementosSueltosHoja, ElementosSueltosSeccion, ElementosSueltosCelda,
+  ElementosSueltos, ElementosSueltosHoja, ElementosSueltosSeccion, ElementosSueltosCelda, IncidenciaOrden,
 } from '../services/api.service';
 import { LineChartSeries, SplitArea, StatsLineChart } from './stats-line-chart';
 import { PlanificacionFerralla } from './planificacion-ferralla';
@@ -155,6 +155,15 @@ export interface PlanColumna {
 const compareModulosByName = (a: Modulo, b: Modulo) =>
   a.nombre.localeCompare(b.nombre, undefined, { numeric: true });
 
+/**
+ * La lista de la compra salió de producción (2026-11-13) hasta rehacerla:
+ * solo se ve en staging y en local. El mismo build sirve a los dos
+ * entornos, así que se decide por el dominio.
+ */
+export function listaCompraDisponible(hostname: string = globalThis.location?.hostname ?? ''): boolean {
+  return /staging|localhost|127\.0\.0\.1/i.test(hostname);
+}
+
 // Logical entity for display and drag-drop
 interface Subfase {
   id: string; // "moduloId-FASE" (e.g. "101-INFERIOR")
@@ -174,6 +183,7 @@ interface Subfase {
 })
 export class Dashboard implements OnInit, OnDestroy {
   readonly planningLabel = planningLabel;
+  readonly listaCompraActiva = listaCompraDisponible();
   readonly pausaHastaLabel = pausaHastaLabel;
   // Sidebar State
   panelState: 'collapsed' | 'expanded' = 'expanded';
@@ -277,6 +287,27 @@ export class Dashboard implements OnInit, OnDestroy {
   planModalError = '';
   /** Los bastidores terminados se apilan al principio de su mesa, plegados por defecto. */
   planModalShowDone = false;
+  /**
+   * El orden de los bastidores lo fija Moden: las flechas de "Fabricar
+   * antes/después" solo salen tras contar la incidencia, y hasta cerrar el
+   * proyecto. Es el id de esa incidencia (va con cada cambio de orden).
+   */
+  ordenIncidenciaId: number | null = null;
+  /**
+   * Orden manual de la superior: la incidencia contada para cada línea en
+   * esta sesión (id de grupo -> id de incidencia). Sin ella, pasar a
+   * "Manual" o mover con las flechas pregunta antes.
+   */
+  readonly ordenSupIncidencia = new Map<number, number>();
+  /** Pregunta abierta "¿Qué incidencia ha ocurrido…?" y qué hacer al contestarla. */
+  incidenciaDialogo: {
+    titulo: string;
+    crear: (texto: string) => Observable<IncidenciaOrden>;
+    alGuardar: (incidencia: IncidenciaOrden) => void;
+  } | null = null;
+  incidenciaOrdenTexto = '';
+  incidenciaOrdenBusy = false;
+  incidenciaOrdenError = '';
   private planSeccionesCache: { modulos: Modulo[]; grupos: GrupoBastidor[]; value: PlanSeccion[] } | null = null;
   private planColumnasCache: {
     secciones: PlanSeccion[]; grupos: GrupoMesas[]; showDone: boolean; value: PlanColumna[];
@@ -380,6 +411,7 @@ export class Dashboard implements OnInit, OnDestroy {
     this.planModalModulos = [];
     this.planModalGrupos = [];
     this.planModalError = '';
+    this.resetOrdenIncidencia();
     // Un proyecto terminado solo tiene bastidores terminados: se abren a la vista.
     this.planModalShowDone = !!proyecto.modulos_count && (proyecto.modulos_completados ?? 0) >= proyecto.modulos_count;
     this.loadingPlanModal = true;
@@ -404,7 +436,7 @@ export class Dashboard implements OnInit, OnDestroy {
   }
 
   closePlanModal(): void {
-    if (this.resettingPhase || this.planModalBusy) return;
+    if (this.resettingPhase || this.planModalBusy || this.incidenciaOrdenBusy) return;
     this.phaseResetTarget = null;
     this.showPlanModal = false;
     this.planModalProyecto = null;
@@ -412,8 +444,108 @@ export class Dashboard implements OnInit, OnDestroy {
     this.planModalGrupos = [];
     this.planModalError = '';
     this.planModalShowDone = false;
+    // Al cerrar el proyecto el orden vuelve a quedar cerrado.
+    this.resetOrdenIncidencia();
     this.closePlanFotosModal();
     this.cdr.detectChanges();
+  }
+
+  // ---- Cambiar un orden de Moden: solo contando la incidencia -----------
+
+  private resetOrdenIncidencia(): void {
+    this.ordenIncidenciaId = null;
+    this.incidenciaDialogo = null;
+    this.incidenciaOrdenTexto = '';
+    this.incidenciaOrdenBusy = false;
+    this.incidenciaOrdenError = '';
+  }
+
+  /** Abre la pregunta de la incidencia; ``alGuardar`` sigue con lo que se quería hacer. */
+  private abrirIncidenciaOrden(
+    titulo: string,
+    crear: (texto: string) => Observable<IncidenciaOrden>,
+    alGuardar: (incidencia: IncidenciaOrden) => void,
+  ): void {
+    this.incidenciaDialogo = { titulo, crear, alGuardar };
+    this.incidenciaOrdenTexto = '';
+    this.incidenciaOrdenError = '';
+    this.cdr.detectChanges();
+  }
+
+  /** Hay más de un bastidor que se pueda mover en alguna mesa: si no, no hay nada que ordenar. */
+  planModalHayQueOrdenar(): boolean {
+    return this.planModalColumnas().some(c => c.secciones.filter(s => s.grupo && !s.grupo.es_division).length > 1);
+  }
+
+  /** Botón "Ordenar bastidores": abre la pregunta o, si ya está abierto, lo vuelve a cerrar. */
+  toggleOrdenarBastidores(): void {
+    const proyecto = this.planModalProyecto;
+    if (!proyecto) return;
+    if (this.ordenIncidenciaId !== null) {
+      this.ordenIncidenciaId = null;
+      this.cdr.detectChanges();
+      return;
+    }
+    this.abrirIncidenciaOrden(
+      `Ordenar bastidores · ${proyecto.nombre}`,
+      texto => this.api.crearIncidenciaOrden(proyecto.id, texto),
+      incidencia => {
+        if (this.planModalProyecto?.id === proyecto.id) this.ordenIncidenciaId = incidencia.id;
+      },
+    );
+  }
+
+  cancelIncidenciaOrden(): void {
+    if (this.incidenciaOrdenBusy) return;
+    this.incidenciaDialogo = null;
+    this.incidenciaOrdenError = '';
+    this.cdr.detectChanges();
+  }
+
+  confirmIncidenciaOrden(): void {
+    const dialogo = this.incidenciaDialogo;
+    const texto = this.incidenciaOrdenTexto.trim();
+    if (!dialogo || this.incidenciaOrdenBusy) return;
+    if (texto.length < 3) {
+      this.incidenciaOrdenError = 'Cuenta qué ha pasado para necesitar cambiar el orden.';
+      this.cdr.detectChanges();
+      return;
+    }
+    this.incidenciaOrdenBusy = true;
+    this.incidenciaOrdenError = '';
+    this.cdr.detectChanges();
+    dialogo.crear(texto).pipe(takeUntil(this.destroy$)).subscribe({
+      next: incidencia => {
+        this.incidenciaOrdenBusy = false;
+        if (this.incidenciaDialogo !== dialogo) return;
+        this.incidenciaDialogo = null;
+        this.incidenciaOrdenTexto = '';
+        dialogo.alGuardar(incidencia);
+        this.cdr.detectChanges();
+      },
+      error: error => {
+        this.incidenciaOrdenBusy = false;
+        this.incidenciaOrdenError = error?.error?.detail || 'No se pudo guardar la incidencia.';
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  /** Línea de una mesa (para la incidencia del orden manual de su superior). */
+  private grupoDeMesa(mesa: Mesa): GrupoMesas | undefined {
+    return this.gruposMesas.find(g => g.id === mesa.grupo || (g.mesas || []).some(m => m.id === mesa.id));
+  }
+
+  /** Orden manual de la superior sin incidencia en esta sesión: se pregunta y luego se sigue. */
+  private pedirIncidenciaSuperior(grupo: GrupoMesas, despues: () => void): void {
+    this.abrirIncidenciaOrden(
+      `Orden manual de la superior · ${grupo.nombre}`,
+      texto => this.api.crearIncidenciaOrdenSuperior(grupo.id, texto),
+      incidencia => {
+        this.ordenSupIncidencia.set(grupo.id, incidencia.id);
+        despues();
+      },
+    );
   }
 
   // ---- Plan por bastidores: lo que la ferralla puede tocar --------------
@@ -550,13 +682,19 @@ export class Dashboard implements OnInit, OnDestroy {
   /** Flechas del card de la mesa SUP en orden manual: el superior pasa delante o detrás de su vecino. */
   moverSupEnMesa(mesa: Mesa, item: MesaQueueItem, dir: -1 | 1): void {
     if (this.mesaReorderBusyId != null || !this.canMoverSupEnMesa(mesa, item, dir)) return;
+    const grupo = this.grupoDeMesa(mesa);
+    const incidencia = grupo ? this.ordenSupIncidencia.get(grupo.id) : undefined;
+    if (grupo && incidencia === undefined) {
+      this.pedirIncidenciaSuperior(grupo, () => this.moverSupEnMesa(mesa, item, dir));
+      return;
+    }
     const todos = this.colaSuperiorDeMesa(mesa);
     const desde = todos.indexOf(item);
     if (!this.confirmarMoverSup(item, todos[desde + dir], dir, mesa.nombre)) return;
     todos.splice(desde + dir, 0, todos.splice(desde, 1)[0]);
     this.mesaReorderBusyId = mesa.id;
     this.cdr.detectChanges();
-    this.api.reorderMesaQueue(todos.map((i, index) => ({ id: i.id, position: index })))
+    this.api.reorderMesaQueue(todos.map((i, index) => ({ id: i.id, position: index })), incidencia)
       .pipe(takeUntil(this.destroy$)).subscribe({
         next: () => {
           this.mesaReorderBusyId = null;
@@ -566,6 +704,8 @@ export class Dashboard implements OnInit, OnDestroy {
         },
         error: error => {
           this.mesaReorderBusyId = null;
+          // Incidencia caducada (más de 12 h): la próxima flecha pregunta otra vez.
+          if (grupo && error?.status === 403) this.ordenSupIncidencia.delete(grupo.id);
           alert(error?.error?.detail || 'No se pudo cambiar el orden de la mesa superior.');
           this.cdr.detectChanges();
         },
@@ -639,13 +779,14 @@ export class Dashboard implements OnInit, OnDestroy {
 
   /** Adelanta o retrasa el bastidor respecto a su vecino en la misma mesa. */
   moveGrupoEnPlan(grupo: GrupoBastidor, dir: -1 | 1): void {
-    if (!this.planModalProyecto || !this.canMoveGrupo(grupo, dir)) return;
+    const incidencia = this.ordenIncidenciaId;
+    if (!this.planModalProyecto || incidencia === null || !this.canMoveGrupo(grupo, dir)) return;
     const vecinas = this.raicesEnSuMesa(grupo);
     const vecino = vecinas[vecinas.findIndex(g => g.id === grupo.id) + dir];
     const ids = this.planRoots().map(g => g.id).filter(id => id !== grupo.id);
     const posVecino = ids.indexOf(vecino.id);
     ids.splice(dir < 0 ? posVecino : posVecino + 1, 0, grupo.id);
-    this.runPlanAction(this.api.reorderBastidores(this.planModalProyecto.id, ids));
+    this.runPlanAction(this.api.reorderBastidores(this.planModalProyecto.id, ids, incidencia));
   }
 
   dividirGrupoEnPlan(grupo: GrupoBastidor): void {
@@ -1485,12 +1626,21 @@ export class Dashboard implements OnInit, OnDestroy {
     if (this.estrategiaBusyGrupoId != null) return;
     const anterior = grupo.estrategia_cola_superior || 'PLANIFICADA';
     if (anterior === estrategia) return;
+    // A manual solo contando la incidencia; volver a automático no pide nada.
+    const incidencia = estrategia === 'MANUAL' ? this.ordenSupIncidencia.get(grupo.id) : undefined;
+    if (estrategia === 'MANUAL' && incidencia === undefined) {
+      this.pedirIncidenciaSuperior(grupo, () => this.setEstrategiaColaSuperior(grupo, estrategia));
+      return;
+    }
 
     grupo.estrategia_cola_superior = estrategia;
     this.estrategiaBusyGrupoId = grupo.id;
     this.cdr.detectChanges();
 
-    this.api.updateGrupoMesas(grupo.id, { estrategia_cola_superior: estrategia })
+    const cambio = incidencia === undefined
+      ? { estrategia_cola_superior: estrategia }
+      : { estrategia_cola_superior: estrategia, incidencia };
+    this.api.updateGrupoMesas(grupo.id, cambio)
       .pipe(takeUntil(this.destroy$)).subscribe({
         next: (updated) => {
           this.applyGestionarGrupoUpdate(updated);
@@ -1501,6 +1651,7 @@ export class Dashboard implements OnInit, OnDestroy {
         error: (err) => {
           grupo.estrategia_cola_superior = anterior;
           this.estrategiaBusyGrupoId = null;
+          if (err?.status === 403) this.ordenSupIncidencia.delete(grupo.id);
           alert(err?.error?.detail || 'No se pudo cambiar el orden de superiores.');
           this.cdr.detectChanges();
         },

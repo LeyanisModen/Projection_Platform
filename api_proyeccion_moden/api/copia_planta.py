@@ -119,7 +119,7 @@ def copiar(origen, destino):
                         proyecto=destino, grupo_bastidor=bastidor,
                         orden_intra=posicion if bastidor else modulo.orden_intra,
                         nombre=modulo.nombre, tipo_modulo=modulo.tipo_modulo, ancho_cm=modulo.ancho_cm,
-                        codigos_color=modulo.codigos_color,
+                        codigos_color=modulo.codigos_color, num_bastidor=modulo.num_bastidor,
                     )
 
             DetalleModuloFase.objects.bulk_create([

@@ -265,6 +265,27 @@ describe('VisorComponent revisión del supervisor y volver al anterior', () => {
     expect(llamadas('set_index/')).toHaveLength(0);
   });
 
+  it('a NN_FOTO_supervisor step takes the photo on arrival and still needs both buttons', () => {
+    component.mesaState = { id: 5, nombre: 'Mesa 1' } as any;
+    component.images = [image('01_a'), image('02_b'), image('03_FOTO_supervisor'), image('04_FIN')];
+    component.currentIndex = 1;
+    const foto = vi.spyOn(component, 'triggerPhotoCapture').mockImplementation(() => undefined);
+    component.nextImage();
+    expect(component.currentIndex).toBe(2);
+    expect(foto).toHaveBeenCalledWith('foto');
+
+    vi.advanceTimersByTime(6000);
+    component.handleKeyboardEvent(key('keydown', 'ArrowRight'));
+    component.handleKeyboardUp(key('keyup', 'ArrowRight'));
+    expect(component.currentIndex).toBe(2);
+    component.handleKeyboardEvent(key('keydown', ' '));
+    component.handleKeyboardEvent(key('keydown', 'ArrowRight'));
+    component.handleKeyboardUp(key('keyup', ' '));
+    component.handleKeyboardUp(key('keyup', 'ArrowRight'));
+    expect(component.currentIndex).toBe(3);
+    expect(llamadas('set_index/').at(-1)?.[1]).toEqual({ mesa_id: 5, index: 3, revision: true });
+  });
+
   it('from the dashboard visor the supervisor passes it with next', () => {
     component.mesaIdForPairing = 7;
     component.handleKeyboardEvent(key('keydown', 'ArrowRight'));
