@@ -8,13 +8,14 @@ import sqlite3
 import tempfile
 import unicodedata
 import uuid
+from datetime import timedelta
 
 from django.contrib.auth.models import User
 from django.utils.text import get_valid_filename
 from decimal import Decimal, InvalidOperation
 
 from django.db import IntegrityError, transaction
-from django.db.models import Count, Max, Prefetch, Q
+from django.db.models import Count, F, Max, Prefetch, Q
 from rest_framework import permissions, viewsets, status
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
@@ -36,7 +37,7 @@ from api.models import (
     DetalleModuloFase, MesaQueueStatus, ModuloEstado, Fase,
     GrupoBastidor, MaterialPieza, MaterialInformado, MaterialOrigenCheck,
     MaterialTipo, MesaTipo, UserProfile, EstrategiaColaSuperior,
-    EventoFabricacion, EventoFabricacionTipo, LogMiniPC,
+    EventoFabricacion, EventoFabricacionTipo, LogMiniPC, IncidenciaOrden, IncidenciaOrdenTipo,
 )
 from api.project_media import (
     collect_module_media,
@@ -114,6 +115,7 @@ MODULE_FIELD_ALIASES = {
     'tipo_modulo': [
         'tipo_modulo', 'tipo', 'tipologia', 'tipologia_modulo', 'module_type',
     ],
+    'num_bastidor': ['num_bastidor', 'numero_bastidor'],
 }
 
 
@@ -205,6 +207,70 @@ def _de_la_ferralla(user, proyecto):
 
 def _is_admin(user):
     return bool(user and (user.is_staff or user.is_superuser))
+
+
+INCIDENCIA_ORDEN_MIN_CARACTERES = 3
+INCIDENCIA_ORDEN_MAX_CARACTERES = 1000
+# La incidencia abre el orden mientras la ferralla tiene el proyecto abierto;
+# pasado este rato hay que volver a contarla (pestaña olvidada abierta).
+INCIDENCIA_ORDEN_VIGENCIA = timedelta(hours=12)
+
+
+def _incidencia_orden_data(incidencia):
+    usuario = incidencia.usuario
+    grupo = incidencia.grupo_mesas
+    return {
+        'id': incidencia.id,
+        'tipo': incidencia.tipo,
+        'proyecto': incidencia.proyecto_id,
+        'grupo_mesas': incidencia.grupo_mesas_id,
+        'grupo_mesas_nombre': grupo.nombre if grupo else None,
+        'texto': incidencia.texto,
+        'creada_at': incidencia.creada_at,
+        'usuario': usuario.username if usuario else None,
+        'cambios': incidencia.cambios,
+    }
+
+
+def _texto_incidencia_orden(request):
+    """El texto de la incidencia o None si no cuenta nada."""
+    texto = str(request.data.get('texto') or '').strip()
+    if len(texto) < INCIDENCIA_ORDEN_MIN_CARACTERES:
+        return None
+    return texto[:INCIDENCIA_ORDEN_MAX_CARACTERES]
+
+
+INCIDENCIA_ORDEN_SIN_TEXTO = 'Cuenta qué ha pasado para necesitar cambiar el orden.'
+BASTIDORES_SIN_INCIDENCIA = (
+    'Para cambiar los bastidores pulsa "Modificar bastidores" y cuenta la incidencia. '
+    'Si ya lo has hecho, recarga la página.'
+)
+SUPERIOR_SIN_INCIDENCIA = (
+    'Para ordenar a mano la mesa superior hay que contar antes la incidencia. '
+    'Si ya lo has hecho, recarga la página.'
+)
+
+
+def _incidencia_orden_abierta(user, incidencia_id, *, proyecto=None, grupo_mesas=None):
+    """La incidencia con la que la ferralla ordena: suya, reciente y del
+    proyecto (bastidores) o de la línea (superior). None si no vale."""
+    try:
+        incidencia_id = int(incidencia_id)
+    except (TypeError, ValueError):
+        return None
+    filtro = {'proyecto': proyecto, 'tipo': IncidenciaOrdenTipo.BASTIDORES}
+    if grupo_mesas is not None:
+        filtro = {'grupo_mesas': grupo_mesas, 'tipo': IncidenciaOrdenTipo.SUPERIOR}
+    return IncidenciaOrden.objects.filter(
+        pk=incidencia_id,
+        usuario=user,
+        creada_at__gte=timezone.now() - INCIDENCIA_ORDEN_VIGENCIA,
+        **filtro,
+    ).first()
+
+
+def _sumar_cambio_orden(incidencia):
+    IncidenciaOrden.objects.filter(pk=incidencia.pk).update(cambios=F('cambios') + 1)
 
 
 def _volver_al_anterior(mesa):
@@ -679,6 +745,7 @@ def _load_technical_records_from_sqlite(uploaded_file):
                 'ancho_cm': ancho_cm,
                 'codigos_color': codigos_color,
                 'tipo_modulo': row_dict.get('tipo_modulo'),
+                'num_bastidor': row_dict.get('num_bastidor'),
                 'inf_peso_malla_inicial_kg': row_dict.get('peso_mallazo_pedido_inf'),
                 'sup_peso_malla_inicial_kg': row_dict.get('peso_mallazo_pedido_sup'),
                 'inf_desperdicio_kg': row_dict.get('peso_mallazo_desperdicio_inf'),
@@ -1069,7 +1136,63 @@ def _get_inferior_difficulty(modulo):
         return Decimal('0')
 
 
+def _num_bastidor(value):
+    """Numero de bastidor de la base tecnica (1, 2...) o None si no lo trae."""
+    if value in (None, ''):
+        return None
+    try:
+        numero = int(float(str(value).strip().replace(',', '.')))
+    except (TypeError, ValueError):
+        return None
+    return numero if numero > 0 else None
+
+
 def _build_bastidor_groups(proyecto, modulos, estrategia=None):
+    """Los bastidores del proyecto, en orden de fabricacion.
+
+    Si la base tecnica trae ``num_bastidor`` (Moden ya los ha hecho para el
+    acopio), cada numero es un bastidor, en orden de numero y con sus modulos
+    por nombre; los que no lo traigan se calculan detras como siempre.
+    """
+    numerados = {}
+    sin_numero = []
+    for modulo in modulos:
+        numero = getattr(modulo, 'num_bastidor', None)
+        if numero:
+            numerados.setdefault(numero, []).append(modulo)
+        else:
+            sin_numero.append(modulo)
+    if numerados:
+        groups = [
+            sorted(numerados[numero], key=lambda modulo: _natural_sort_key(modulo.nombre))
+            for numero in sorted(numerados)
+        ]
+        if sin_numero:
+            groups.extend(_calcular_bastidores(proyecto, sin_numero, estrategia))
+        return groups
+    return _calcular_bastidores(proyecto, modulos, estrategia)
+
+
+def _nombres_bastidores(grouped):
+    """'Bastidor N' con el numero de Moden si lo trae; si no, el siguiente libre."""
+    usados = {g[0].num_bastidor for g in grouped if g and getattr(g[0], 'num_bastidor', None)}
+    nombres = []
+    siguiente = 1
+    for indice, modulos_in_group in enumerate(grouped, start=1):
+        numero = getattr(modulos_in_group[0], 'num_bastidor', None) if modulos_in_group else None
+        if not numero:
+            if not usados:
+                numero = indice
+            else:
+                while siguiente in usados:
+                    siguiente += 1
+                numero = siguiente
+                usados.add(numero)
+        nombres.append(f'Bastidor {numero}')
+    return nombres
+
+
+def _calcular_bastidores(proyecto, modulos, estrategia=None):
     """Calcula los bastidores agrupando modulos por su orden natural.
 
     estrategia:
@@ -1165,11 +1288,13 @@ def _persist_bastidor_groups(proyecto):
     grouped = _build_bastidor_groups(proyecto, modulos)
 
     created_groups = 0
-    for indice, modulos_in_group in enumerate(grouped, start=1):
+    for indice, (modulos_in_group, nombre) in enumerate(
+        zip(grouped, _nombres_bastidores(grouped)), start=1,
+    ):
         grupo = GrupoBastidor.objects.create(
             proyecto=proyecto,
             indice=indice,
-            nombre=f'Bastidor {indice}',
+            nombre=nombre,
         )
         created_groups += 1
         # Asigna grupo + orden_intra 1..N en el orden devuelto por
@@ -1193,6 +1318,31 @@ def _assign_modulo_to_group_on_create(modulo, force_new_group=False):
 
     proyecto = modulo.proyecto
     if not proyecto.datos_tecnicos_importados:
+        return
+
+    if modulo.num_bastidor:
+        # Su bastidor de Moden: con los que ya lo tienen o, si es el primero
+        # de ese numero, uno nuevo al final con ese nombre.
+        companero = (
+            proyecto.modulos.filter(num_bastidor=modulo.num_bastidor, grupo_bastidor__isnull=False)
+            .exclude(pk=modulo.pk)
+            .select_related('grupo_bastidor__dividido_de')
+            .first()
+        )
+        if companero is not None:
+            grupo = companero.grupo_bastidor.dividido_de or companero.grupo_bastidor
+            max_orden = grupo.modulos.aggregate(mx=Max('orden_intra'))['mx'] or 0
+            modulo.grupo_bastidor = grupo
+            modulo.orden_intra = max_orden + 1
+        else:
+            ultimo = proyecto.grupos_bastidor.order_by('-indice').first()
+            modulo.grupo_bastidor = GrupoBastidor.objects.create(
+                proyecto=proyecto,
+                indice=(ultimo.indice + 1) if ultimo else 1,
+                nombre=f'Bastidor {modulo.num_bastidor}',
+            )
+            modulo.orden_intra = 1
+        modulo.save(update_fields=['grupo_bastidor', 'orden_intra'])
         return
 
     bastidor_longitud = _get_project_rack_length(proyecto)
@@ -1756,6 +1906,11 @@ class ProyectoViewSet(viewsets.ModelViewSet):
             if tipo_canonical and tipo_canonical != modulo.tipo_modulo:
                 modulo.tipo_modulo = tipo_canonical
                 updated_fields.append('tipo_modulo')
+
+        num_bastidor = _num_bastidor(fields.get('num_bastidor'))
+        if num_bastidor is not None and num_bastidor != modulo.num_bastidor:
+            modulo.num_bastidor = num_bastidor
+            updated_fields.append('num_bastidor')
 
         if updated_fields:
             modulo.save(update_fields=updated_fields)
@@ -2684,9 +2839,11 @@ class ProyectoViewSet(viewsets.ModelViewSet):
             proyecto.modulos.select_related('proyecto').prefetch_related('detalles_fase')
         )
         grouped = _build_bastidor_groups(proyecto, modulos, estrategia=estrategia)
-        for indice, modulos_in_group in enumerate(grouped, start=1):
+        for indice, (modulos_in_group, nombre) in enumerate(
+            zip(grouped, _nombres_bastidores(grouped)), start=1,
+        ):
             grupo = GrupoBastidor.objects.create(
-                proyecto=proyecto, indice=indice, nombre=f'Bastidor {indice}',
+                proyecto=proyecto, indice=indice, nombre=nombre,
             )
             for orden, m in enumerate(modulos_in_group, start=1):
                 proyecto.modulos.filter(id=m.id).update(
@@ -2809,6 +2966,32 @@ class ProyectoViewSet(viewsets.ModelViewSet):
             'proyecto_id': proyecto.id,
             'stats': stats,
         })
+
+    @action(detail=True, methods=['get', 'post'], url_path='incidencias-orden')
+    def incidencias_orden(self, request, pk=None):
+        """GET: incidencias por las que se ha cambiado el orden de los
+        bastidores (lo mira Moden en el admin). POST {texto}: la ferralla
+        cuenta qué ha pasado antes de poder ordenar; devuelve la incidencia,
+        cuyo id acompaña a cada reorder."""
+        proyecto = self.get_object()
+        if request.method == 'GET':
+            return Response([
+                _incidencia_orden_data(i)
+                for i in proyecto.incidencias_orden.select_related('usuario', 'grupo_mesas')
+            ])
+        if not (_is_admin(request.user) or _de_la_ferralla(request.user, proyecto)):
+            return Response({'detail': 'No puedes ordenar bastidores de otra ferralla.'},
+                            status=status.HTTP_403_FORBIDDEN)
+        texto = _texto_incidencia_orden(request)
+        if texto is None:
+            return Response({'detail': INCIDENCIA_ORDEN_SIN_TEXTO}, status=status.HTTP_400_BAD_REQUEST)
+        incidencia = IncidenciaOrden.objects.create(
+            tipo=IncidenciaOrdenTipo.BASTIDORES,
+            proyecto=proyecto,
+            usuario=request.user,
+            texto=texto,
+        )
+        return Response(_incidencia_orden_data(incidencia), status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['get'], url_path='lista-materiales')
     def lista_materiales(self, request, pk=None):
@@ -3328,6 +3511,18 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
         return _is_admin(user) or _de_la_ferralla(user, proyecto)
 
     @staticmethod
+    def _incidencia_para_cambiar(request, proyecto):
+        """Lo que fija Moden (orden, mesa, division, espera) la ferralla solo
+        lo cambia con la incidencia que conto al pulsar "Modificar
+        bastidores". Devuelve (incidencia, respuesta 403); Moden no la necesita."""
+        if _is_admin(request.user):
+            return None, None
+        incidencia = _incidencia_orden_abierta(request.user, request.data.get('incidencia'), proyecto=proyecto)
+        if incidencia is None:
+            return None, Response({'detail': BASTIDORES_SIN_INCIDENCIA}, status=status.HTTP_403_FORBIDDEN)
+        return incidencia, None
+
+    @staticmethod
     def _asignar_orden_raices(proyecto, orden_raices):
         """Numera los bastidores raiz 1..N en el orden dado; cada division
         hereda el indice de su raiz y se reletra B, C..."""
@@ -3450,6 +3645,9 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
         if not self._puede_gestionar(request.user, proyecto):
             return Response({'detail': 'No puedes gestionar bastidores de otra ferralla.'},
                             status=status.HTTP_403_FORBIDDEN)
+        incidencia, sin_incidencia = self._incidencia_para_cambiar(request, proyecto)
+        if sin_incidencia:
+            return sin_incidencia
         if grupo.dividido_de_id is not None or grupo.divisiones.exists():
             return Response(
                 {'detail': 'Este bastidor ya esta dividido. Unelo antes de volver a dividirlo.'},
@@ -3498,6 +3696,8 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
         # Los modulos que pasan a una parte no la atan a la mesa de la raiz:
         # cada parte busca una mesa distinta.
         self._replan_grupos_operativos(proyecto, request.user, moved_modulo_ids=movidos)
+        if incidencia is not None:
+            _sumar_cambio_orden(incidencia)
         return Response(self._grupos_respuesta(proyecto))
 
     @classmethod
@@ -3558,6 +3758,13 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
         if not isinstance(valor, bool):
             return Response({'detail': 'Envia {en_espera: true|false}.'},
                             status=status.HTTP_400_BAD_REQUEST)
+        # Apartarlo cambia el plan de Moden; soltarlo (p.ej. el que Moden
+        # aparto al subirlo sin acero) es lo normal y no pide nada.
+        incidencia = None
+        if valor:
+            incidencia, sin_incidencia = self._incidencia_para_cambiar(request, proyecto)
+            if sin_incidencia:
+                return sin_incidencia
         raiz = grupo.raiz
         familia = list(GrupoBastidor.objects.filter(Q(pk=raiz.pk) | Q(dividido_de=raiz)))
         if valor:
@@ -3582,6 +3789,8 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
                         g.save(update_fields=['mesa_preferida'])
         GrupoBastidor.objects.filter(id__in=[g.id for g in familia]).update(en_espera=valor)
         self._replan_grupos_operativos(proyecto, request.user)
+        if incidencia is not None:
+            _sumar_cambio_orden(incidencia)
         return Response(self._grupos_respuesta(proyecto))
 
     @action(detail=True, methods=['post'], url_path='mesa')
@@ -3598,6 +3807,9 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
         if not self._puede_gestionar(request.user, proyecto):
             return Response({'detail': 'No puedes gestionar bastidores de otra ferralla.'},
                             status=status.HTTP_403_FORBIDDEN)
+        incidencia, sin_incidencia = self._incidencia_para_cambiar(request, proyecto)
+        if sin_incidencia:
+            return sin_incidencia
 
         mesa_id = request.data.get('mesa')
         if mesa_id in (None, '', 'null'):
@@ -3617,6 +3829,8 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
         grupo.save(update_fields=['mesa_preferida'])
 
         self._replan_grupos_operativos(proyecto, request.user)
+        if incidencia is not None:
+            _sumar_cambio_orden(incidencia)
         return Response(self._grupos_respuesta(proyecto))
 
     @action(detail=True, methods=['post'], url_path='unir')
@@ -3802,6 +4016,9 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
         if not self._puede_gestionar(request.user, proyecto):
             return Response({'detail': 'No puedes reordenar bastidores de otra ferralla.'},
                             status=status.HTTP_403_FORBIDDEN)
+        incidencia, sin_incidencia = self._incidencia_para_cambiar(request, proyecto)
+        if sin_incidencia:
+            return sin_incidencia
 
         # Se acepta el orden de todos los grupos o solo el de las raices:
         # las divisiones siempre van pegadas a su raiz.
@@ -3824,6 +4041,8 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
             self._asignar_orden_raices(proyecto, orden_raices)
             # El orden de los cards es tambien el orden de fabricacion.
             self._replan_grupos_operativos(proyecto, request.user)
+            if incidencia is not None:
+                _sumar_cambio_orden(incidencia)
 
         return Response(self._grupos_respuesta(proyecto))
 
@@ -4662,6 +4881,18 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         if not _is_admin(self.request.user) and usuario and usuario.id != self.request.user.id:
             raise PermissionDenied('No puedes mover grupos a otra ferralla')
         previous_strategy = serializer.instance.estrategia_cola_superior
+        nueva = serializer.validated_data.get('estrategia_cola_superior', previous_strategy)
+        if (
+            nueva == EstrategiaColaSuperior.MANUAL
+            and previous_strategy != EstrategiaColaSuperior.MANUAL
+            and not _is_admin(self.request.user)
+            and _incidencia_orden_abierta(
+                self.request.user, self.request.data.get('incidencia'), grupo_mesas=serializer.instance,
+            ) is None
+        ):
+            # El orden manual de la superior, como el de los bastidores, solo
+            # contando antes la incidencia.
+            raise PermissionDenied(SUPERIOR_SIN_INCIDENCIA)
         with transaction.atomic():
             group = serializer.save()
             if group.estrategia_cola_superior != previous_strategy:
@@ -4718,6 +4949,31 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         from rest_framework.exceptions import PermissionDenied
         if not _is_admin(self.request.user) and grupo.usuario_id != self.request.user.id:
             raise PermissionDenied('No puedes gestionar grupos de otra ferralla')
+
+    @action(detail=True, methods=['get', 'post'], url_path='incidencias-orden')
+    def incidencias_orden(self, request, pk=None):
+        """POST {texto}: la ferralla cuenta por qué necesita ordenar a mano la
+        mesa superior de esta línea; el id va con el cambio a orden manual y
+        con cada movimiento de su cola. GET: las de la línea."""
+        grupo = self.get_object()
+        self._check_grupo_access(grupo)
+        if request.method == 'GET':
+            return Response([
+                _incidencia_orden_data(i)
+                for i in grupo.incidencias_orden.select_related('usuario', 'grupo_mesas')
+            ])
+        texto = _texto_incidencia_orden(request)
+        if texto is None:
+            return Response({'detail': INCIDENCIA_ORDEN_SIN_TEXTO}, status=status.HTTP_400_BAD_REQUEST)
+        incidencia = IncidenciaOrden.objects.create(
+            tipo=IncidenciaOrdenTipo.SUPERIOR,
+            grupo_mesas=grupo,
+            # Para verla en el admin con el proyecto que se estaba fabricando.
+            proyecto=grupo.proyecto_actual,
+            usuario=request.user,
+            texto=texto,
+        )
+        return Response(_incidencia_orden_data(incidencia), status=status.HTTP_201_CREATED)
 
     def _replan_after_plan_change(self, grupo, user, proyecto=None, ignore_pin_modulo_ids=(), repartir=False):
         """Rebuild the grupo's queues from the persisted plan.
@@ -8279,18 +8535,38 @@ class MesaQueueItemViewSet(viewsets.ModelViewSet):
         anade al final lo que falte, hasta que vuelvan al modo automatico.
         """
         items_data = request.data.get('items', [])
+        es_admin = _is_admin(request.user)
+        cambios = []
+        for item_data in items_data:
+            try:
+                item = MesaQueueItem.objects.select_related('mesa__grupo').get(id=item_data['id'])
+            except (MesaQueueItem.DoesNotExist, KeyError, TypeError):
+                continue
+            if not es_admin and item.mesa.usuario_id != request.user.id:
+                continue
+            cambios.append((item, item_data.get('position', item.position)))
+        # La cola de una superior solo se ordena a mano contando la incidencia
+        # (la de su linea); la de bastidores va por /grupos-bastidor/reorder/.
+        incidencias = {}
+        if not es_admin:
+            for item, _ in cambios:
+                grupo = item.mesa.grupo
+                if item.mesa.tipo != MesaTipo.SUPERIOR or grupo is None or grupo.id in incidencias:
+                    continue
+                incidencia = _incidencia_orden_abierta(
+                    request.user, request.data.get('incidencia'), grupo_mesas=grupo,
+                )
+                if incidencia is None:
+                    return Response({'detail': SUPERIOR_SIN_INCIDENCIA}, status=status.HTTP_403_FORBIDDEN)
+                incidencias[grupo.id] = incidencia
         mesas_tocadas = {}
         with transaction.atomic():
-            for item_data in items_data:
-                try:
-                    item = MesaQueueItem.objects.select_related('mesa__grupo').get(id=item_data['id'])
-                except (MesaQueueItem.DoesNotExist, KeyError, TypeError):
-                    continue
-                if not _is_admin(request.user) and item.mesa.usuario_id != request.user.id:
-                    continue
-                item.position = item_data.get('position', item.position)
+            for item, position in cambios:
+                item.position = position
                 item.save(update_fields=['position'])
                 mesas_tocadas[item.mesa_id] = item.mesa
+            for incidencia in incidencias.values():
+                _sumar_cambio_orden(incidencia)
             for mesa in mesas_tocadas.values():
                 if mesa.tipo == MesaTipo.SUPERIOR:
                     # Lo que queda primero es lo que se proyecta.

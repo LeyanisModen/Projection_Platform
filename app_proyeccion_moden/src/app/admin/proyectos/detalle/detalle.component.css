@@ -67,6 +67,13 @@
 .archivo-proyecto-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 13px; }
 .archivo-proyecto-list strong { color: var(--text); font-weight: 500; margin-right: 4px; }
 .archivo-proyecto-list .is-ok i { font-size: 11px; }
+/* Incidencias de orden: lista plana, la última primero; los textos largos se cortan con scroll. */
+.incidencias-orden-list { list-style: none; margin: 0; padding: 0; max-height: 320px; overflow-y: auto; }
+.incidencias-orden-list li { padding: 8px 0; border-top: 1px solid var(--line); }
+.incidencias-orden-list li:first-child { border-top: 0; padding-top: 0; }
+.incidencia-orden-meta { display: flex; flex-wrap: wrap; gap: 4px 10px; color: var(--muted); font-size: 12px; }
+.incidencia-orden-meta time { color: var(--text); font-weight: 500; }
+.incidencia-orden-texto { margin: 2px 0 0; color: var(--ink); font-size: 13px; white-space: pre-line; overflow-wrap: anywhere; }
 
 /* ---- Modulos ------------------------------------------------------------ */
 .modules-panel { min-width: 0; }

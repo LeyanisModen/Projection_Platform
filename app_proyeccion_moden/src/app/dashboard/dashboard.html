@@ -731,6 +731,7 @@
             <section class="projects-section" id="proyectos-section">
                 <div class="section-header legacy-header projects-header">
                     <h2>Proyectos</h2>
+                    @if (listaCompraActiva) {
                     <button type="button" class="btn-materiales-general"
                         (click)="openMaterialesGeneralModal()"
                         title="Lista de materiales general (todos los proyectos)">
@@ -741,6 +742,7 @@
                         </svg>
                         Lista de materiales general
                     </button>
+                    }
                 </div>
                 <div class="projects-inline-grid">
                     @if (loadingProyectos) { <div class="loading">Cargando...</div> }
@@ -772,6 +774,7 @@
                                     (click)="openPlanModal(proyecto, $event)">
                                     <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
                                 </button>
+                                @if (listaCompraActiva) {
                                 <button class="project-icon project-icon-materiales" type="button"
                                     title="Lista de materiales del proyecto"
                                     aria-label="Lista de materiales del proyecto"
@@ -782,6 +785,7 @@
                                         <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
                                     </svg>
                                 </button>
+                                }
                                 <button class="project-icon project-icon-plano" type="button"
                                     [class.project-icon-disabled]="!proyecto.plano_disponible && !proyecto.plano_archivo"
                                     [title]="proyecto.plano_disponible || proyecto.plano_archivo ? 'Ver plano' : 'Plano no disponible'"
@@ -911,6 +915,15 @@
                         }
                     </div>
                     <div class="plan-modal-header-actions">
+                        @if (!loadingPlanModal && planModalHayQueModificar()) {
+                            <button type="button" class="plan-modal-download" [class.is-active]="ordenIncidenciaId !== null"
+                                (click)="toggleOrdenarBastidores()" [attr.aria-pressed]="ordenIncidenciaId !== null"
+                                [disabled]="planModalBusy"
+                                [title]="ordenIncidenciaId !== null ? 'Dejar de modificar' : 'Cambiar el orden, la mesa, dividir o apartar bastidores'">
+                                <i class="fa fa-pencil" aria-hidden="true"></i>
+                                Modificar bastidores
+                            </button>
+                        }
                         <button type="button" class="plan-modal-download" [class.is-active]="planModalShowDone"
                             (click)="togglePlanModalDone()" [attr.aria-pressed]="planModalShowDone"
                             title="Mostrar u ocultar los bastidores ya fabricados">
@@ -963,6 +976,8 @@
                                     </div>
                                     @if (seccion.grupo; as grupo) {
                                         <div class="plan-grupo-actions">
+                                            <!-- Lo que cambia el plan de Moden, solo tras contar la incidencia -->
+                                            @if (ordenIncidenciaId !== null) {
                                             <button type="button" class="plan-mesa-btn" (click)="moverBastidorAMesa(grupo, -1)"
                                                 [disabled]="planModalBusy || !canMoverBastidorAMesa(grupo, -1)"
                                                 [title]="mesaVecina(grupo, -1) ? 'Llevar a ' + mesaVecina(grupo, -1)!.nombre : 'Es la primera mesa'"
@@ -992,12 +1007,14 @@
                                                     [disabled]="planModalBusy" title="Repartir este bastidor entre las mesas"
                                                     [attr.aria-label]="'Dividir ' + seccion.titulo + ' entre mesas'">Dividir</button>
                                             }
+                                            }
+                                            <!-- Unir y soltar vuelven a lo de Moden: siempre a mano -->
                                             @if (canUnir(grupo)) {
                                                 <button type="button" class="plan-grupo-btn" (click)="unirGrupoEnPlan(grupo)"
                                                     [disabled]="planModalBusy" title="Volver a juntar las partes en un solo bastidor"
                                                     [attr.aria-label]="'Unir ' + seccion.titulo">Unir</button>
                                             }
-                                            @if (!seccion.terminado) {
+                                            @if (!seccion.terminado && (grupo.en_espera || ordenIncidenciaId !== null)) {
                                                 <button type="button" class="plan-mesa-btn" (click)="toggleEsperaEnPlan(grupo)"
                                                     [disabled]="planModalBusy"
                                                     [title]="grupo.en_espera ? 'Soltar: vuelve a entrar en la mesa' : 'Apartar de las mesas hasta tener el acero'"
@@ -1095,6 +1112,24 @@
                 <div class="phase-reset-actions">
                     <button type="button" (click)="cancelPhaseReset()" [disabled]="resettingPhase">Cancelar</button>
                     <button type="button" (click)="confirmPhaseReset()" [disabled]="resettingPhase">{{ resettingPhase ? 'Reiniciando...' : 'Confirmar reinicio' }}</button>
+                </div>
+            </section>
+        </div>
+    }
+
+    @if (incidenciaDialogo; as dialogo) {
+        <div class="modal-overlay phase-reset-overlay" (click)="cancelIncidenciaOrden()">
+            <section class="modal-content phase-reset-modal incidencia-orden-modal" role="dialog" aria-modal="true"
+                aria-labelledby="incidencia-orden-title"
+                (click)="$event.stopPropagation()" (keydown.escape)="cancelIncidenciaOrden()" tabindex="-1">
+                <h3 id="incidencia-orden-title">{{ dialogo.titulo }}</h3>
+                <label for="incidencia-orden-texto">{{ dialogo.pregunta }}</label>
+                <textarea id="incidencia-orden-texto" rows="4" maxlength="1000"
+                    [(ngModel)]="incidenciaOrdenTexto" [disabled]="incidenciaOrdenBusy"></textarea>
+                @if (incidenciaOrdenError) { <p role="alert">{{ incidenciaOrdenError }}</p> }
+                <div class="phase-reset-actions">
+                    <button type="button" (click)="cancelIncidenciaOrden()" [disabled]="incidenciaOrdenBusy">Cancelar</button>
+                    <button type="button" (click)="confirmIncidenciaOrden()" [disabled]="incidenciaOrdenBusy">{{ incidenciaOrdenBusy ? 'Guardando...' : 'Continuar' }}</button>
                 </div>
             </section>
         </div>

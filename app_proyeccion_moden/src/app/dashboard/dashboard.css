@@ -380,3 +380,8 @@ a.plan-modal-download { text-decoration: none; }
 .phase-reset-modal { text-align: left; }
 .phase-reset-modal p { margin: 8px 0 0; }
 .phase-reset-modal [role="alert"] { color: var(--danger); }
+/* Incidencia antes de ordenar bastidores */
+.incidencia-orden-modal { width: 520px; }
+.incidencia-orden-modal label { display: block; margin: 12px 0 6px; color: var(--text); font-size: 14px; }
+.incidencia-orden-modal textarea { width: 100%; min-height: 96px; padding: 8px 12px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); font: inherit; color: var(--ink); box-sizing: border-box; resize: vertical; }
+.incidencia-orden-modal textarea:focus { outline: none; border-color: var(--ink); }

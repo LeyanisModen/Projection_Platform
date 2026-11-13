@@ -12,7 +12,7 @@ import {
 import {
     ApiService, Proyecto, Modulo, User, FotoFabricacion, Imagen,
     DetalleModuloFase, TechnicalImportStats, GrupoBastidor, GrupoBastidorModulo,
-    EstrategiaBastidor, ModuloFase, Edificio, PlantaTipo
+    EstrategiaBastidor, ModuloFase, Edificio, PlantaTipo, IncidenciaOrden
 } from '../../../services/api.service';
 import { switchMap, forkJoin, of, Observable } from 'rxjs';
 import { environment } from '../../../../environments/environment';
@@ -63,6 +63,8 @@ export class ProyectoDetailComponent implements OnInit {
     proyecto: Proyecto | null = null;
     modulos: Modulo[] = [];
     grupos: GrupoBastidor[] = [];
+    /** Incidencias que contó la ferralla para cambiar el orden de los bastidores, la última primero. */
+    incidenciasOrden: IncidenciaOrden[] = [];
     users: User[] = [];
 
     loading = false;
@@ -217,6 +219,7 @@ export class ProyectoDetailComponent implements OnInit {
     loadData() {
         if (!this.proyectoId) return;
         this.loading = true;
+        this.loadIncidenciasOrden();
         forkJoin({
             proyecto: this.api.getProyecto(this.proyectoId),
             users: this.api.getUsers(),
@@ -460,6 +463,20 @@ export class ProyectoDetailComponent implements OnInit {
                 this.movingModulo = false;
                 this.loadData();
             }
+        });
+    }
+
+    /** Por qué ha cambiado la ferralla el orden de los bastidores (lo cuenta al pulsar "Ordenar bastidores"). */
+    loadIncidenciasOrden(): void {
+        const proyectoId = this.proyectoId;
+        if (!proyectoId) return;
+        this.api.getIncidenciasOrden(proyectoId).subscribe({
+            next: incidencias => {
+                if (this.proyectoId !== proyectoId) return;
+                this.incidenciasOrden = incidencias || [];
+                this.cdr.detectChanges();
+            },
+            error: () => { /* el panel se queda como estaba */ },
         });
     }
 

@@ -259,6 +259,28 @@
                 </ul>
             </div>
 
+            <!-- Por qué ha cambiado la ferralla el orden de los bastidores -->
+            <div class="side-panel incidencias-orden-panel">
+                <span class="section-label">Incidencias de orden</span>
+                @if (incidenciasOrden.length === 0) {
+                    <span class="meta">Ninguna</span>
+                } @else {
+                    <ul class="incidencias-orden-list">
+                        @for (incidencia of incidenciasOrden; track incidencia.id) {
+                            <li>
+                                <div class="incidencia-orden-meta">
+                                    <time [attr.datetime]="incidencia.creada_at">{{ incidencia.creada_at | date:'dd/MM/yyyy HH:mm' }}</time>
+                                    <span>{{ incidencia.tipo === 'SUPERIOR' ? 'Superior' + (incidencia.grupo_mesas_nombre ? ' · ' + incidencia.grupo_mesas_nombre : '') : 'Bastidores' }}</span>
+                                    @if (incidencia.usuario) { <span>{{ incidencia.usuario }}</span> }
+                                    <span>{{ incidencia.cambios }} {{ incidencia.cambios === 1 ? 'cambio' : 'cambios' }}</span>
+                                </div>
+                                <p class="incidencia-orden-texto">{{ incidencia.texto }}</p>
+                            </li>
+                        }
+                    </ul>
+                }
+            </div>
+
         </div>
 
 

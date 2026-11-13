@@ -237,6 +237,24 @@ export interface GrupoBastidorModulo {
     motivo_bloqueo?: string | null;
 }
 
+/**
+ * Motivo que da la ferralla para cambiar un orden que fija Moden: el de los
+ * bastidores de un proyecto o el de la cola de su mesa superior (orden manual).
+ */
+export interface IncidenciaOrden {
+    id: number;
+    tipo: 'BASTIDORES' | 'SUPERIOR';
+    /** En las de superior, el proyecto que se fabricaba al contarla. */
+    proyecto: number | null;
+    grupo_mesas: number | null;
+    grupo_mesas_nombre: string | null;
+    texto: string;
+    creada_at: string;
+    usuario: string | null;
+    /** Movimientos hechos con esta incidencia. */
+    cambios: number;
+}
+
 export interface GrupoBastidor {
     id: number;
     proyecto: number;
@@ -1440,37 +1458,64 @@ export class ApiService {
         );
     }
 
-    reorderBastidores(proyectoId: number, orden: number[]): Observable<GrupoBastidor[]> {
+    /** ``incidencia``: la que contó la ferralla al pulsar "Ordenar bastidores" (Moden no la necesita). */
+    reorderBastidores(proyectoId: number, orden: number[], incidencia?: number): Observable<GrupoBastidor[]> {
         return this.http.post<GrupoBastidor[]>(
             `${this.baseUrl}/grupos-bastidor/reorder/`,
-            { proyecto: proyectoId, orden },
+            incidencia ? { proyecto: proyectoId, orden, incidencia } : { proyecto: proyectoId, orden },
+            { headers: this.getHeaders() }
+        );
+    }
+
+    /** La ferralla cuenta por qué necesita cambiar el orden de los bastidores. */
+    crearIncidenciaOrden(proyectoId: number, texto: string): Observable<IncidenciaOrden> {
+        return this.http.post<IncidenciaOrden>(
+            `${this.baseUrl}/proyectos/${proyectoId}/incidencias-orden/`,
+            { texto },
+            { headers: this.getHeaders() }
+        );
+    }
+
+    /** La ferralla cuenta por qué necesita ordenar a mano la mesa superior de una línea. */
+    crearIncidenciaOrdenSuperior(grupoId: number, texto: string): Observable<IncidenciaOrden> {
+        return this.http.post<IncidenciaOrden>(
+            `${this.baseUrl}/grupos-mesas/${grupoId}/incidencias-orden/`,
+            { texto },
+            { headers: this.getHeaders() }
+        );
+    }
+
+    getIncidenciasOrden(proyectoId: number): Observable<IncidenciaOrden[]> {
+        return this.http.get<IncidenciaOrden[]>(
+            `${this.baseUrl}/proyectos/${proyectoId}/incidencias-orden/`,
             { headers: this.getHeaders() }
         );
     }
 
     /** Reparte el bastidor entre todas las mesas inferiores activas (2, 2B, 2C...). */
-    dividirBastidor(id: number): Observable<GrupoBastidor[]> {
+    /** ``incidencia``: la ferralla la necesita para cambiar lo que fijó Moden (dividir, llevar, apartar). */
+    dividirBastidor(id: number, incidencia?: number): Observable<GrupoBastidor[]> {
         return this.http.post<GrupoBastidor[]>(
             `${this.baseUrl}/grupos-bastidor/${id}/dividir/`,
-            {},
+            incidencia ? { incidencia } : {},
             { headers: this.getHeaders() }
         );
     }
 
     /** Aparta el bastidor de las mesas o lo suelta para que entre en cola. */
-    esperaBastidor(id: number, enEspera: boolean): Observable<GrupoBastidor[]> {
+    esperaBastidor(id: number, enEspera: boolean, incidencia?: number): Observable<GrupoBastidor[]> {
         return this.http.post<GrupoBastidor[]>(
             `${this.baseUrl}/grupos-bastidor/${id}/espera/`,
-            { en_espera: enEspera },
+            incidencia ? { en_espera: enEspera, incidencia } : { en_espera: enEspera },
             { headers: this.getHeaders() }
         );
     }
 
     /** Lleva el bastidor a una mesa inferior y lo deja fijado alli; null lo suelta. */
-    llevarBastidorAMesa(id: number, mesaId: number | null): Observable<GrupoBastidor[]> {
+    llevarBastidorAMesa(id: number, mesaId: number | null, incidencia?: number): Observable<GrupoBastidor[]> {
         return this.http.post<GrupoBastidor[]>(
             `${this.baseUrl}/grupos-bastidor/${id}/mesa/`,
-            { mesa: mesaId },
+            incidencia ? { mesa: mesaId, incidencia } : { mesa: mesaId },
             { headers: this.getHeaders() }
         );
     }
@@ -1546,7 +1591,8 @@ export class ApiService {
         return this.http.post<GrupoMesas>(`${this.baseUrl}/grupos-mesas/`, data, { headers: this.getHeaders() });
     }
 
-    updateGrupoMesas(id: number, data: Partial<GrupoMesas>): Observable<GrupoMesas> {
+    /** Pasar la superior a orden manual pide a la ferralla la ``incidencia``. */
+    updateGrupoMesas(id: number, data: Partial<GrupoMesas> & { incidencia?: number }): Observable<GrupoMesas> {
         return this.http.patch<GrupoMesas>(`${this.baseUrl}/grupos-mesas/${id}/`, data, { headers: this.getHeaders() });
     }
 
@@ -1695,8 +1741,10 @@ export class ApiService {
         return this.http.post<MesaQueueItem>(`${this.baseUrl}/mesa-queue-items/${id}/mostrar/`, {}, { headers: this.getHeaders() });
     }
 
-    reorderMesaQueue(items: { id: number, position: number }[]): Observable<any> {
-        return this.http.post(`${this.baseUrl}/mesa-queue-items/reorder/`, { items }, { headers: this.getHeaders() });
+    /** ``incidencia``: la ferralla la necesita para ordenar a mano una mesa superior. */
+    reorderMesaQueue(items: { id: number, position: number }[], incidencia?: number): Observable<any> {
+        const body = incidencia ? { items, incidencia } : { items };
+        return this.http.post(`${this.baseUrl}/mesa-queue-items/reorder/`, body, { headers: this.getHeaders() });
     }
 
     deleteMesaQueueItem(id: number): Observable<void> {

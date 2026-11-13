@@ -1,6 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
-import { Dashboard } from './dashboard';
+import { Dashboard, listaCompraDisponible } from './dashboard';
 import {
   ApiService, FerrallaCaptureConfig, GrupoBastidor, GrupoBastidorModulo, GrupoMesas, Mesa, MesaQueueItem, Modulo, Proyecto,
   ProductionStatsBucket, ProductionStatsDay, ProductionStatsModuloFase, ProductionStatsResponse, ElementosSueltos,
@@ -1051,9 +1051,11 @@ describe('Dashboard', () => {
     const reorder = vi.spyOn(api, 'reorderMesaQueue').mockReturnValue(of({ status: 'ok' }));
     vi.spyOn(component, 'loadMesaQueueItems').mockImplementation(() => undefined);
     vi.spyOn(component, 'loadGruposMesas').mockImplementation(() => undefined);
+    // La incidencia de la linea ya se conto en esta sesion.
+    component.ordenSupIncidencia.set(1, 9);
     (sup3.querySelector('[aria-label="Fabricar antes A2"]') as HTMLButtonElement).click();
     // A2 pasa delante del modulo del otro proyecto; las posiciones son de toda la mesa.
-    expect(reorder).toHaveBeenCalledWith([{ id: 31, position: 0 }, { id: 32, position: 1 }, { id: 99, position: 2 }]);
+    expect(reorder).toHaveBeenCalledWith([{ id: 31, position: 0 }, { id: 32, position: 1 }, { id: 99, position: 2 }], 9);
     expect(component.mesaReorderBusyId).toBeNull();
 
     // Al volver a automatico las flechas desaparecen.
@@ -1370,23 +1372,87 @@ describe('Dashboard', () => {
       // El card del admin se fabrica de abajo arriba: A3 (hecho) sale primero.
       expect(Array.from(secciones[0].querySelectorAll('.plan-modulo-nombre')).map(e => e.textContent?.trim()))
         .toEqual(['A3', 'A2', 'A1']);
-      expect(secciones[0].querySelector('[aria-label="Dividir Grupo 1 entre mesas"]')).not.toBeNull();
-      expect(secciones[0].querySelector('[aria-label="Unir Grupo 1"]')).toBeNull();
+      // Sin contar la incidencia no hay nada que cambie el plan de Moden.
+      expect(secciones[0].querySelector('.plan-grupo-actions button')).toBeNull();
+      component.ordenIncidenciaId = 5;
+      fixture.changeDetectorRef.markForCheck();
+      fixture.detectChanges();
+      const conIncidencia: HTMLElement = fixture.nativeElement.querySelectorAll('.plan-grupo')[0];
+      expect(Array.from(conIncidencia.querySelectorAll('.plan-grupo-actions button')).map(b => b.getAttribute('aria-label')))
+        .toEqual([
+          'Llevar Grupo 1 a la mesa de la izquierda', 'Fabricar antes Grupo 1', 'Fabricar después Grupo 1',
+          'Llevar Grupo 1 a la mesa de la derecha', 'Dividir Grupo 1 entre mesas', 'Apartar Grupo 1',
+        ]);
+      expect(conIncidencia.querySelector('[aria-label="Unir Grupo 1"]')).toBeNull();
       expect(secciones[2].querySelector('.plan-modulo-order')).toBeNull();
     });
 
-    it('orders bastidores but no longer the modules inside them', () => {
+    const botonOrdenar = (): HTMLButtonElement | undefined => Array.from(
+      fixture.nativeElement.querySelectorAll('.plan-modal-header-actions button') as NodeListOf<HTMLButtonElement>,
+    ).find(b => b.textContent?.includes('Modificar bastidores'));
+
+    it('hides the order arrows until the ferralla tells the incident, and again after closing', () => {
+      const api = TestBed.inject(ApiService);
+      const crear = vi.spyOn(api, 'crearIncidenciaOrden').mockReturnValue(of({
+        id: 5, tipo: 'BASTIDORES', proyecto: 7, grupo_mesas: null, grupo_mesas_nombre: null,
+        texto: 'Falta acero', creada_at: '', usuario: 'ferralla', cambios: 0,
+      }));
       expect(fixture.nativeElement.querySelector('.plan-modulo-order')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[aria-label="Fabricar antes Grupo 1"]')).toBeNull();
+
+      botonOrdenar()!.click();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.incidencia-orden-modal')).not.toBeNull();
+      // Sin contar nada no se abre.
+      component.confirmIncidenciaOrden();
+      expect(crear).not.toHaveBeenCalled();
+      expect(component.incidenciaOrdenError).toBe('Cuenta qué ha pasado para necesitar cambiar el orden.');
+
+      component.incidenciaOrdenTexto = '  Falta acero  ';
+      component.confirmIncidenciaOrden();
+      expect(crear).toHaveBeenCalledWith(7, 'Falta acero');
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.incidencia-orden-modal')).toBeNull();
+      expect(component.ordenIncidenciaId).toBe(5);
       expect(fixture.nativeElement.querySelector('[aria-label="Fabricar antes Grupo 1"]')).not.toBeNull();
+
+      component.closePlanModal();
+      expect(component.ordenIncidenciaId).toBeNull();
     });
 
-    it('reorders root bastidores with the arrows and shows the backend error', () => {
+    it('does not offer modifying when every bastidor is finished', () => {
+      component.planModalModulos = component.planModalModulos.map(m => ({...m, inferior_hecho: true, superior_hecho: true}));
+      fixture.changeDetectorRef.markForCheck();
+      fixture.detectChanges();
+      expect(botonOrdenar()).toBeUndefined();
+    });
+
+    it('moves, splits and holds only with the incident, and sends it', () => {
+      const api = TestBed.inject(ApiService);
+      const dividir = vi.spyOn(api, 'dividirBastidor').mockReturnValue(of([]));
+      const espera = vi.spyOn(api, 'esperaBastidor').mockReturnValue(of([]));
+      const [g1] = component.planModalGrupos;
+      component.dividirGrupoEnPlan(g1);
+      component.toggleEsperaEnPlan(g1);
+      expect(dividir).not.toHaveBeenCalled();
+      expect(espera).not.toHaveBeenCalled();
+      component.ordenIncidenciaId = 5;
+      component.dividirGrupoEnPlan(g1);
+      expect(dividir).toHaveBeenCalledWith(10, 5);
+      component.toggleEsperaEnPlan(g1);
+      expect(espera).toHaveBeenCalledWith(10, true, 5);
+    });
+
+    it('reorders root bastidores with the incident and shows the backend error', () => {
       const api = TestBed.inject(ApiService);
       const reorder = vi.spyOn(api, 'reorderBastidores').mockReturnValue(throwError(() => ({error: {detail: 'No hay mesas'}})));
       const [g1, g2] = component.planModalGrupos;
       expect(component.canMoveGrupo(g1, -1)).toBe(false);
       component.moveGrupoEnPlan(g2, -1);
-      expect(reorder).toHaveBeenCalledWith(7, [11, 10]);
+      expect(reorder).not.toHaveBeenCalled();
+      component.ordenIncidenciaId = 5;
+      component.moveGrupoEnPlan(g2, -1);
+      expect(reorder).toHaveBeenCalledWith(7, [11, 10], 5);
       fixture.detectChanges();
       expect(fixture.nativeElement.querySelector('.plan-modal-error')?.textContent).toBe('No hay mesas');
     });
@@ -1425,7 +1491,10 @@ describe('Dashboard', () => {
       const api = TestBed.inject(ApiService);
       const llevar = vi.spyOn(api, 'llevarBastidorAMesa').mockReturnValue(throwError(() => ({error: {detail: 'x'}})));
       component.moverBastidorAMesa(g1, 1);
-      expect(llevar).toHaveBeenCalledWith(10, 2);
+      expect(llevar).not.toHaveBeenCalled();
+      component.ordenIncidenciaId = 5;
+      component.moverBastidorAMesa(g1, 1);
+      expect(llevar).toHaveBeenCalledWith(10, 2, 5);
     });
 
     it('has no superior mesa in the project plan: its order lives in the mesa card', () => {
@@ -1444,6 +1513,11 @@ describe('Dashboard', () => {
     });
 
     it('reorders the superior mesa from its card, asking before moving the one already started', () => {
+      component.gruposMesas = [{
+        id: 1, nombre: 'Grupo mesas', usuario: 1, proyecto_actual: 7, proyectos_cola: [], estrategia_cola_superior: 'MANUAL',
+        activa: true, created_at: '',
+        mesas: [{id: 3, nombre: 'Mesa 3', tipo: 'SUPERIOR', indice: 3, activa: true, is_linked: false}],
+      } as GrupoMesas];
       const api = TestBed.inject(ApiService);
       const sup = (id: number, nombre: string, position: number, status: 'MOSTRANDO' | 'EN_COLA', proyecto = 7) => ({
         id, mesa: 3, modulo: id, modulo_nombre: nombre, modulo_proyecto_id: proyecto, fase: 'SUPERIOR', position, status,
@@ -1460,10 +1534,21 @@ describe('Dashboard', () => {
       const reorder = vi.spyOn(api, 'reorderMesaQueue').mockReturnValue(of({status: 'ok'}));
       vi.spyOn(component, 'loadMesaQueueItems').mockImplementation(() => undefined);
       vi.spyOn(component, 'loadGruposMesas').mockImplementation(() => undefined);
+      // Sin incidencia de la linea en esta sesion, la primera flecha la pregunta y luego mueve.
+      const crear = vi.spyOn(api, 'crearIncidenciaOrdenSuperior').mockReturnValue(of({
+        id: 9, tipo: 'SUPERIOR', proyecto: 7, grupo_mesas: 1, grupo_mesas_nombre: 'Grupo mesas',
+        texto: 'Falta un refuerzo', creada_at: '', usuario: 'ferralla', cambios: 0,
+      }));
       component.moverSupEnMesa(mesa, items[3], -1);
+      expect(reorder).not.toHaveBeenCalled();
+      expect(component.incidenciaDialogo?.titulo).toBe('Orden manual de la superior · Grupo mesas');
+      component.incidenciaOrdenTexto = 'Falta un refuerzo';
+      component.confirmIncidenciaOrden();
+      expect(crear).toHaveBeenCalledWith(1, 'Falta un refuerzo');
+      expect(component.incidenciaDialogo).toBeNull();
       expect(reorder).toHaveBeenCalledWith([
         {id: 31, position: 0}, {id: 32, position: 1}, {id: 33, position: 2}, {id: 99, position: 3},
-      ]);
+      ], 9);
 
       // La que esta en mesa ya empezada (paso 3): se pregunta antes de apartarla.
       const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(false);
@@ -1475,13 +1560,39 @@ describe('Dashboard', () => {
       component.moverSupEnMesa(mesa, items[0], 1);
       expect(reorder).toHaveBeenCalledWith([
         {id: 32, position: 0}, {id: 31, position: 1}, {id: 99, position: 2}, {id: 33, position: 3},
-      ]);
+      ], 9);
+      expect(crear).toHaveBeenCalledTimes(1);
       // En el primer paso no pregunta.
       confirmar.mockClear();
       items[0].current_image_index = 0;
       component.moverSupEnMesa(mesa, items[0], 1);
       expect(confirmar).not.toHaveBeenCalled();
       confirmar.mockRestore();
+    });
+
+    it('asks the incident before switching the superior to manual, not when going back', () => {
+      component.gruposMesas = [{
+        id: 1, nombre: 'Grupo mesas', usuario: 1, proyecto_actual: 7, proyectos_cola: [], estrategia_cola_superior: 'MANUAL',
+        activa: true, created_at: '',
+        mesas: [{id: 3, nombre: 'Mesa 3', tipo: 'SUPERIOR', indice: 3, activa: true, is_linked: false}],
+      } as GrupoMesas];
+      const api = TestBed.inject(ApiService);
+      const linea = component.gruposMesas[0];
+      linea.estrategia_cola_superior = 'PLANIFICADA';
+      const update = vi.spyOn(api, 'updateGrupoMesas').mockImplementation((id, data) => of({ ...linea, ...data } as GrupoMesas));
+      vi.spyOn(component, 'loadMesas').mockImplementation(() => undefined);
+      vi.spyOn(api, 'crearIncidenciaOrdenSuperior').mockReturnValue(of({
+        id: 4, tipo: 'SUPERIOR', proyecto: 7, grupo_mesas: 1, grupo_mesas_nombre: 'Grupo mesas',
+        texto: 'Retraso del material', creada_at: '', usuario: 'ferralla', cambios: 0,
+      }));
+      component.setEstrategiaColaSuperior(linea, 'MANUAL');
+      expect(update).not.toHaveBeenCalled();
+      expect(linea.estrategia_cola_superior).toBe('PLANIFICADA');
+      component.incidenciaOrdenTexto = 'Retraso del material';
+      component.confirmIncidenciaOrden();
+      expect(update).toHaveBeenCalledWith(1, {estrategia_cola_superior: 'MANUAL', incidencia: 4});
+      component.setEstrategiaColaSuperior(linea, 'ADAPTATIVA');
+      expect(update).toHaveBeenLastCalledWith(1, {estrategia_cola_superior: 'ADAPTATIVA'});
     });
 
     it('stacks finished bastidores at the top of their mesa, folded until asked', () => {
@@ -1567,8 +1678,9 @@ describe('Dashboard', () => {
       const apartado = columna.querySelectorAll('.plan-grupo')[1];
       expect(apartado.classList.contains('is-espera')).toBe(true);
       expect(apartado.querySelector('.plan-grupo-tag')?.textContent).toBe('En espera');
+      // Soltar vuelve al plan de Moden y siempre esta; apartar pide la incidencia.
       expect(apartado.querySelector('[aria-label="Soltar Grupo 1"]')).not.toBeNull();
-      expect(columna.querySelector('[aria-label="Apartar Grupo 2"]')).not.toBeNull();
+      expect(columna.querySelector('[aria-label="Apartar Grupo 2"]')).toBeNull();
 
       const api = TestBed.inject(ApiService);
       const espera = vi.spyOn(api, 'esperaBastidor').mockReturnValue(throwError(() => ({error: {detail: 'x'}})));
@@ -1684,4 +1796,12 @@ describe('Dashboard', () => {
     expect(component.isMesaCameraUnavailable(unlinkedMesa)).toBe(false);
   });
 
+});
+
+describe('listaCompraDisponible', () => {
+  it('keeps the shopping list in staging and local, not in production', () => {
+    expect(listaCompraDisponible('moden.up.railway.app')).toBe(false);
+    expect(listaCompraDisponible('calm-curiosity-staging.up.railway.app')).toBe(true);
+    expect(listaCompraDisponible('localhost')).toBe(true);
+  });
 });
