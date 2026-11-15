@@ -7050,6 +7050,75 @@ class BastidorSelfServiceTests(APITestCase):
         self.assertEqual(suelto.status_code, 200)
         self.assertIsNone(next(g for g in suelto.data if g["id"] == self.bastidor.id)["mesa_preferida"])
 
+    def test_un_proyecto_sin_entrar_en_la_linea_sale_repartido_como_lo_hara_el_plan(self):
+        tercero = GrupoBastidor.objects.create(proyecto=self.project, indice=3, nombre="")
+        Modulo.objects.create(nombre="C1", proyecto=self.project, grupo_bastidor=tercero, orden_intra=1)
+
+        def repartos():
+            datos = self.client.get(f"/api/grupos-bastidor/?proyecto={self.project.id}").data
+            return {g["id"]: (g["mesa_actual"], g["mesa_prevista"]) for g in datos}
+
+        # Sin cola en las mesas: aun no se fabrica en ninguna, pero ya se
+        # sabe adonde ira cada bastidor (5 modulos a la 1, el resto a la 2).
+        self.assertEqual(repartos(), {
+            self.bastidor.id: (None, self.mesa_1.id),
+            self.otro_bastidor.id: (None, self.mesa_2.id),
+            tercero.id: (None, self.mesa_2.id),
+        })
+
+        # Lo que la ferralla lleva a otra mesa cambia la prevision del resto.
+        llevar = self.client.post(
+            f"/api/grupos-bastidor/{self.bastidor.id}/mesa/", {"incidencia": self._incidencia(), "mesa": self.mesa_2.id}, format="json",
+        )
+        self.assertEqual(llevar.status_code, 200)
+        prevista = {g["id"]: g["mesa_prevista"] for g in llevar.data}
+        self.assertEqual(prevista, {
+            self.bastidor.id: self.mesa_2.id,
+            self.otro_bastidor.id: self.mesa_1.id,
+            tercero.id: self.mesa_1.id,
+        })
+
+        # Al entrar en la linea cada bastidor cae donde se habia previsto.
+        self._planificar()
+        self.assertEqual({gid: actual for gid, (actual, _) in repartos().items()}, prevista)
+        self.assertEqual(self._cola(self.mesa_1), ["B1", "C1"])
+
+    def test_con_bastidores_impares_el_ultimo_se_ve_partido_como_quedara_al_entrar(self):
+        impar = Proyecto.objects.create(nombre="Proyecto Impar", usuario=self.user)
+        bastidores = []
+        for indice in range(1, 4):
+            bastidor = GrupoBastidor.objects.create(proyecto=impar, indice=indice, nombre="")
+            for n in range(1, 3):
+                Modulo.objects.create(nombre=f"P{indice}.{n}", proyecto=impar, grupo_bastidor=bastidor, orden_intra=n)
+            bastidores.append(bastidor)
+        primero, segundo, ultimo = bastidores
+
+        datos = {g["id"]: g for g in self.client.get(f"/api/grupos-bastidor/?proyecto={impar.id}").data}
+        self.assertEqual(datos[primero.id]["mesa_prevista"], self.mesa_1.id)
+        self.assertEqual(datos[segundo.id]["mesa_prevista"], self.mesa_2.id)
+        self.assertIsNone(datos[primero.id]["division_prevista"])
+        # Tres bastidores iguales: el ultimo, mitad en cada mesa.
+        partes = datos[ultimo.id]["division_prevista"]
+        self.assertEqual([(p["mesa"], p["etiqueta"], len(p["modulos"])) for p in partes], [
+            (self.mesa_1.id, "Bastidor 3", 1),
+            (self.mesa_2.id, "Bastidor 3B", 1),
+        ])
+        self.assertEqual(datos[ultimo.id]["mesa_prevista"], self.mesa_1.id)
+        self.assertEqual(GrupoBastidor.objects.filter(proyecto=impar).count(), 3)
+
+        # Al entrar en la linea se divide igual: mismos modulos en cada mesa.
+        response = self.client.post(
+            f"/api/grupos-mesas/{self.grupo.id}/planificar/", {"proyecto_id": impar.id}, format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        despues = self.client.get(f"/api/grupos-bastidor/?proyecto={impar.id}").data
+        real = sorted(
+            (g["mesa_actual"], g["etiqueta"], [m["id"] for m in g["modulos"]])
+            for g in despues if g["indice"] == 3
+        )
+        self.assertEqual(real, sorted((p["mesa"], p["etiqueta"], p["modulos"]) for p in partes))
+        self.assertTrue(all(g["division_prevista"] is None for g in despues))
+
     def test_llevar_un_bastidor_rechaza_mesas_que_no_valen(self):
         self._planificar()
         superior = self.client.post(

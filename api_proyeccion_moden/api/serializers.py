@@ -485,6 +485,8 @@ class GrupoBastidorSerializer(serializers.ModelSerializer):
     es_division = serializers.BooleanField(read_only=True)
     dividido = serializers.SerializerMethodField()
     mesa_actual = serializers.SerializerMethodField()
+    mesa_prevista = serializers.SerializerMethodField()
+    division_prevista = serializers.SerializerMethodField()
     en_espera = serializers.BooleanField(read_only=True)
     longitud_total_cm = serializers.SerializerMethodField()
     capacidad_cm = serializers.SerializerMethodField()
@@ -500,7 +502,7 @@ class GrupoBastidorSerializer(serializers.ModelSerializer):
         fields = [
             "id", "proyecto", "indice", "nombre", "created_at",
             "sufijo", "dividido_de", "etiqueta", "es_division", "dividido",
-            "mesa_preferida", "mesa_actual", "en_espera",
+            "mesa_preferida", "mesa_actual", "mesa_prevista", "division_prevista", "en_espera",
             "modulos", "longitud_total_cm", "capacidad_cm",
             "peso_total_kg", "capacidad_peso_kg", "peso_desconocido",
             "overflow_longitud", "overflow_peso", "overflow",
@@ -533,6 +535,21 @@ class GrupoBastidorSerializer(serializers.ModelSerializer):
         if not puntuacion:
             return None
         return max(puntuacion, key=lambda mesa_id: puntuacion[mesa_id])
+
+    def _prevision(self, obj):
+        return (self.context.get('prevision_bastidores') or {}).get(obj.id) or {}
+
+    def get_mesa_prevista(self, obj):
+        """Mesa inferior que le daria el reparto de Moden si el proyecto
+        entrara ahora en la linea (contexto ``prevision_bastidores``). None
+        si no se ha calculado o el bastidor no entra en el plan."""
+        return self._prevision(obj).get('mesa')
+
+    def get_division_prevista(self, obj):
+        """Si al entrar en la linea este ultimo bastidor se dividira entre las
+        mesas para que acaben a la vez: [{mesa, modulos, etiqueta}] por
+        parte, la raiz primero. None si no."""
+        return self._prevision(obj).get('partes')
 
     def get_dividido(self, obj):
         """True en un bastidor raiz que tiene partes de fabricacion."""

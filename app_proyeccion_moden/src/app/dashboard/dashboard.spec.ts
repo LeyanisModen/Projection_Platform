@@ -1472,15 +1472,17 @@ describe('Dashboard', () => {
         grupo(10, 1, {etiqueta: 'Grupo 1', mesa_actual: 1}, [{id: 1, nombre: 'A1', movible: true}]),
         grupo(11, 2, {etiqueta: 'Grupo 2', mesa_actual: 2}, [{id: 4, nombre: 'B1', movible: true}]),
         grupo(12, 3, {etiqueta: 'Grupo 3', mesa_actual: null}, [{id: 2, nombre: 'A2', movible: true}]),
+        grupo(13, 4, {etiqueta: 'Grupo 4', mesa_actual: null, mesa_prevista: 2}, [{id: 5, nombre: 'C1', movible: true}]),
       ];
       fixture.changeDetectorRef.markForCheck();
       fixture.detectChanges();
       const columnas: NodeListOf<HTMLElement> = fixture.nativeElement.querySelectorAll('.plan-mesa');
       expect(Array.from(columnas).map(c => c.querySelector('.plan-mesa-header strong')?.textContent)).toEqual(['Mesa 1', 'Mesa 2']);
       const titulos = (c: HTMLElement) => Array.from(c.querySelectorAll('.plan-grupo-title strong')).map(e => e.textContent);
-      // Sin mesa conocida cae en la primera; los sueltos tambien.
+      // Sin empezar va a la mesa que le da el reparto de Moden; sin ninguna
+      // mesa conocida cae en la primera, y los sueltos tambien.
       expect(titulos(columnas[0])).toEqual(['Grupo 1', 'Grupo 3', 'Sin bastidor']);
-      expect(titulos(columnas[1])).toEqual(['Grupo 2']);
+      expect(titulos(columnas[1])).toEqual(['Grupo 2', 'Grupo 4']);
       const [g1, g2] = component.planModalGrupos;
       expect(component.canMoverBastidorAMesa(g1, -1)).toBe(false);
       expect(component.canMoverBastidorAMesa(g2, 1)).toBe(false);
@@ -1495,6 +1497,43 @@ describe('Dashboard', () => {
       component.ordenIncidenciaId = 5;
       component.moverBastidorAMesa(g1, 1);
       expect(llevar).toHaveBeenCalledWith(10, 2, 5);
+    });
+
+    it('shows the last bastidor already split between the mesas it will go to', () => {
+      component.gruposMesas = [{
+        id: 1, nombre: 'Grupo mesas', usuario: 1, proyecto_actual: null, proyectos_cola: [], estrategia_cola_superior: 'PLANIFICADA',
+        activa: true, created_at: '',
+        mesas: [
+          {id: 1, nombre: 'Mesa 1', tipo: 'INFERIOR', indice: 1, activa: true, is_linked: false},
+          {id: 2, nombre: 'Mesa 2', tipo: 'INFERIOR', indice: 2, activa: true, is_linked: false},
+        ],
+      } as GrupoMesas];
+      component.planModalModulos = [
+        {id: 1, nombre: 'A1', grupo_bastidor: 10, inferior_hecho: false, superior_hecho: false} as Modulo,
+        {id: 2, nombre: 'A2', grupo_bastidor: 10, inferior_hecho: false, superior_hecho: false} as Modulo,
+        {id: 4, nombre: 'B1', grupo_bastidor: 11, inferior_hecho: false, superior_hecho: false} as Modulo,
+      ];
+      component.planModalGrupos = [
+        grupo(11, 1, {etiqueta: 'Grupo 1', mesa_actual: null, mesa_prevista: 1}, [{id: 4, nombre: 'B1', movible: true}]),
+        grupo(10, 2, {etiqueta: 'Grupo 2', mesa_actual: null, mesa_prevista: 1, division_prevista: [
+          {mesa: 1, modulos: [2], etiqueta: 'Grupo 2'}, {mesa: 2, modulos: [1], etiqueta: 'Grupo 2B'},
+        ]}, [{id: 1, nombre: 'A1', movible: true}, {id: 2, nombre: 'A2', movible: true}]),
+      ];
+      component.ordenIncidenciaId = 5;
+      fixture.changeDetectorRef.markForCheck();
+      fixture.detectChanges();
+      const columnas: HTMLElement[] = Array.from(fixture.nativeElement.querySelectorAll('.plan-mesa'));
+      const contenido = (c: HTMLElement) => Array.from(c.querySelectorAll('.plan-grupo')).map(s => [
+        s.querySelector('.plan-grupo-title strong')?.textContent,
+        Array.from(s.querySelectorAll('.plan-modulo-nombre')).map(e => e.textContent).join(','),
+      ]);
+      expect(contenido(columnas[0])).toEqual([['Grupo 1', 'B1'], ['Grupo 2', 'A2']]);
+      expect(contenido(columnas[1])).toEqual([['Grupo 2B', 'A1']]);
+      // La parte que aun no existe se ve como division, sin botones.
+      const parte: HTMLElement = columnas[1].querySelector('.plan-grupo')!;
+      expect(parte.classList.contains('is-division')).toBe(true);
+      expect(parte.querySelector('.plan-grupo-actions')).toBeNull();
+      expect(columnas[0].querySelectorAll('.plan-grupo-actions').length).toBe(2);
     });
 
     it('has no superior mesa in the project plan: its order lives in the mesa card', () => {

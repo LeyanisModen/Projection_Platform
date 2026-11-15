@@ -965,7 +965,7 @@
                                     }
                                 </div>
                                 @for (seccion of col.secciones; track seccion.key) {
-                            <section class="plan-grupo" [class.is-division]="seccion.grupo?.es_division"
+                            <section class="plan-grupo" [class.is-division]="seccion.grupo?.es_division || seccion.partePrevista"
                                 [class.is-terminado]="seccion.terminado" [class.is-espera]="seccion.grupo?.en_espera"
                                 [attr.aria-label]="seccion.titulo">
                                 <div class="plan-grupo-header">

@@ -272,6 +272,10 @@ export interface GrupoBastidor {
     mesa_preferida?: number | null;
     /** Mesa inferior donde se fabrica o se fabrico; null si aun no ha pasado por ninguna. */
     mesa_actual?: number | null;
+    /** Mesa inferior que le daria el reparto de Moden si el proyecto entrara ahora en la linea. */
+    mesa_prevista?: number | null;
+    /** Si al entrar en la linea este ultimo bastidor se dividira entre las mesas: cada parte, la raiz primero. */
+    division_prevista?: Array<{ mesa: number; modulos: number[]; etiqueta: string }> | null;
     /** Apartado de las mesas (sin acero cortado, etc.) hasta que se suelte. */
     en_espera?: boolean;
     created_at: string;

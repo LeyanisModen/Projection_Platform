@@ -141,6 +141,8 @@ export interface PlanSeccion {
   hechos: number;
   /** Todos sus modulos fabricados: ya no va a pasar por la mesa. */
   terminado: boolean;
+  /** Parte en que se dividira al entrar en la linea (aun no existe): sin botones. */
+  partePrevista?: boolean;
 }
 
 /** Una mesa inferior del plan con los bastidores que tiene por delante. */
@@ -629,7 +631,9 @@ export class Dashboard implements OnInit, OnDestroy {
   /**
    * Columnas del modal: cada mesa inferior con sus bastidores. Un bastidor
    * va a la columna de la mesa donde se fabrica; si aun no ha pasado por
-   * ninguna, a la primera. Los terminados se apilan al principio.
+   * ninguna, a la que le da el reparto de Moden (mesa_prevista), y si
+   * tampoco la hay, a la primera. El ultimo bastidor que se dividira al
+   * entrar sale ya partido en sus mesas. Los terminados se apilan al principio.
    */
   planModalColumnas(): PlanColumna[] {
     const secciones = this.planModalSecciones();
@@ -643,8 +647,8 @@ export class Dashboard implements OnInit, OnDestroy {
       key: `m${mesa.id ?? 'x'}`, mesaId: mesa.id, nombre: mesa.nombre, secciones: [], terminados: 0,
     }));
     const porMesa = new Map(columnas.map(c => [c.mesaId, c]));
-    for (const seccion of secciones) {
-      const destino = porMesa.get(seccion.grupo?.mesa_actual ?? null) || columnas[0];
+    for (const [mesaId, seccion] of secciones.flatMap(s => this.repartoEnMesas(s))) {
+      const destino = porMesa.get(mesaId) || columnas[0];
       if (seccion.terminado) {
         destino.terminados += 1;
         if (!this.planModalShowDone) continue;
@@ -660,6 +664,31 @@ export class Dashboard implements OnInit, OnDestroy {
       secciones, grupos: this.gruposMesas, showDone: this.planModalShowDone, value: columnas,
     };
     return columnas;
+  }
+
+  /**
+   * Mesa de cada seccion. Un bastidor que aun no esta en ninguna mesa y que
+   * se dividira al entrar sale en una seccion por parte, cada una en su mesa:
+   * la raiz con sus botones y las demas (que aun no existen) solo para ver.
+   */
+  private repartoEnMesas(seccion: PlanSeccion): Array<[number | null, PlanSeccion]> {
+    const grupo = seccion.grupo;
+    const partes = grupo && grupo.mesa_actual == null ? grupo.division_prevista : null;
+    if (!grupo || !partes || partes.length < 2) {
+      return [[grupo?.mesa_actual ?? grupo?.mesa_prevista ?? null, seccion]];
+    }
+    const enOtraParte = new Set(partes.slice(1).flatMap(p => p.modulos));
+    return partes.map((parte, j): [number | null, PlanSeccion] => {
+      const ids = new Set(parte.modulos);
+      // Lo que no va a ninguna parte se queda en la raiz.
+      const modulos = seccion.modulos.filter(m => (j === 0 ? !enOtraParte.has(m.id) : ids.has(m.id)));
+      const hechos = modulos.filter(m => m.inferior_hecho && m.superior_hecho).length;
+      const terminado = modulos.length > 0 && hechos === modulos.length;
+      const trozo: PlanSeccion = j === 0
+        ? {...seccion, modulos, hechos, terminado}
+        : {key: `${seccion.key}-${j}`, titulo: parte.etiqueta, grupo: null, modulos, hechos, terminado, partePrevista: true};
+      return [parte.mesa, trozo];
+    });
   }
 
   /** Superior en mesa pasado el paso 2: se puede mover, pero se pregunta antes. */
