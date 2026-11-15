@@ -200,6 +200,72 @@ def _grupos_with_reorder_data(queryset):
     )
 
 
+def _prevision_bastidores(proyecto):
+    """grupo_bastidor_id -> {'mesa', 'partes'}: la mesa inferior a la que iria
+    cada bastidor si el proyecto entrara ahora en su linea. Es el mismo
+    reparto que hace el plan al entrar: un proyecto solo entra cuando el
+    anterior ha terminado, asi que se equilibra solo, con las mesas vacias,
+    respetando lo fijado a mano y lo ya fabricado; y si las mesas no acaban
+    a la vez, el ultimo bastidor se divide entre ellas (``partes``: mesa,
+    modulos y etiqueta de cada parte, la raiz primero). Sirve para enseñar
+    repartidos los proyectos que aun no tienen cola en las mesas; solo
+    calcula, no cambia nada."""
+    try:
+        linea = (
+            GrupoMesas.objects.filter(proyectos_cola__proyecto=proyecto, activa=True)
+            .order_by('proyectos_cola__orden', 'id').first()
+            or GrupoMesas.objects.filter(usuario_id=proyecto.usuario_id, activa=True)
+            .order_by('nombre', 'id').first()
+        )
+        if linea is None:
+            return {}
+        mesas_inf = list(linea.mesas.filter(tipo=MesaTipo.INFERIOR, activa=True).order_by('indice'))
+        if not mesas_inf:
+            return {}
+        fuera = Modulo.objects.filter(proyecto=proyecto).filter(
+            Q(grupo_bastidor__en_espera=True)
+            | (Q(grupo_bastidor__asignado_a__isnull=False) & ~Q(grupo_bastidor__asignado_a=linea))
+        ).values_list('id', flat=True)
+        pins = GrupoMesasViewSet._bastidor_pins(proyecto, mesas_inf)
+        vacias = [0] * len(mesas_inf)
+        plan = GrupoMesasViewSet._build_plan_sequences(
+            proyecto,
+            num_inferiores=len(mesas_inf),
+            excluded_phase_keys={(mid, fase) for mid in fuera for fase in ('INFERIOR', 'SUPERIOR')},
+            initial_loads_inf=vacias,
+            mesa_pins=pins,
+        )
+        prevision = {
+            resumen['grupo_bastidor_id']: {'mesa': mesas_inf[resumen['target_inferior_idx']].id, 'partes': None}
+            for resumen in plan['group_summaries']
+            if resumen.get('grupo_bastidor_id')
+        }
+        division = GrupoMesasViewSet._division_del_ultimo(plan, vacias, pins)
+        if division is not None:
+            bastidor, pendientes, cuotas, cargas = division
+            modulos_por_parte = GrupoBastidorViewSet._modulos_por_parte(pendientes, cuotas)
+            base = bastidor.nombre or f'Bastidor {bastidor.indice}'
+            partes, usadas = [], set()
+            # Como al replanificar tras dividir: la raiz a la mesa mas libre y
+            # cada parte a una mesa distinta.
+            for j, modulos in enumerate(modulos_por_parte):
+                libres = [i for i in range(len(mesas_inf)) if i not in usadas] or list(range(len(mesas_inf)))
+                destino = min(libres, key=lambda i: (cargas[i], i))
+                usadas.add(destino)
+                cargas[destino] += len(modulos)
+                letra = chr(ord('B') + j - 1) if j else ''
+                partes.append({
+                    'mesa': mesas_inf[destino].id,
+                    'modulos': [m.id for m in modulos],
+                    'etiqueta': (f'{base} {letra}' if bastidor.nombre else f'{base}{letra}') if letra else bastidor.etiqueta,
+                })
+            prevision[bastidor.id] = {'mesa': partes[0]['mesa'], 'partes': partes}
+    except Exception:
+        logger.exception('No se pudo prever el reparto de bastidores del proyecto %s', proyecto.pk)
+        return {}
+    return prevision
+
+
 def _de_la_ferralla(user, proyecto):
     """El proyecto es de esta ferralla y existe para ella: un fantasma no."""
     return proyecto.usuario_id == user.id and not proyecto.fantasma
@@ -3552,12 +3618,23 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
         )
         cls._asignar_orden_raices(proyecto, raices)
 
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        proyecto_id = self.request.query_params.get('proyecto') if self.request else None
+        if self.action == 'list' and proyecto_id and str(proyecto_id).isdigit():
+            proyecto = Proyecto.objects.filter(pk=proyecto_id).first()
+            if proyecto is not None and self._puede_gestionar(self.request.user, proyecto):
+                context['prevision_bastidores'] = _prevision_bastidores(proyecto)
+        return context
+
     @staticmethod
     def _grupos_respuesta(proyecto):
         grupos = _grupos_with_reorder_data(
             proyecto.grupos_bastidor.all()
         ).order_by('indice', 'sufijo', 'id')
-        return GrupoBastidorSerializer(grupos, many=True).data
+        return GrupoBastidorSerializer(
+            grupos, many=True, context={'prevision_bastidores': _prevision_bastidores(proyecto)},
+        ).data
 
     @staticmethod
     def _replan_grupos_operativos(proyecto, user, moved_modulo_ids=()):
@@ -3700,13 +3777,29 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
             _sumar_cambio_orden(incidencia)
         return Response(self._grupos_respuesta(proyecto))
 
-    @classmethod
-    def _repartir_en_partes(cls, grupo, pendientes, cuotas):
-        """Reparte los pendientes del bastidor en partes (la raiz y 2B, 2C...)
-        de ``cuotas[j]`` modulos cada una y devuelve los ids que cambian de parte.
+    @staticmethod
+    def _modulos_por_parte(pendientes, cuotas):
+        """Que pendientes van a cada parte (``cuotas[j]`` modulos cada una).
 
         La cola inferior fabrica el bastidor de abajo arriba: se alterna en
         ese orden para que cada parte empiece por lo que tocaba antes.
+        """
+        quedan = list(cuotas)
+        partes = [[] for _ in cuotas]
+        parte = 0
+        for m in reversed(pendientes):
+            while quedan[parte] == 0:
+                parte = (parte + 1) % len(quedan)
+            quedan[parte] -= 1
+            partes[parte].append(m)
+            parte = (parte + 1) % len(quedan)
+        return partes
+
+    @classmethod
+    def _repartir_en_partes(cls, grupo, pendientes, cuotas):
+        """Reparte los pendientes del bastidor en partes (la raiz y 2B, 2C...)
+        de ``cuotas[j]`` modulos cada una (``_modulos_por_parte``) y devuelve
+        los ids que cambian de parte.
         """
         # Guardar el orden original de todo el bastidor para poder unirlo despues.
         for m in Modulo.objects.filter(grupo_bastidor=grupo):
@@ -3724,18 +3817,14 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
             )
             for j in range(len(cuotas) - 1)
         ]
-        quedan = list(cuotas)
         movidos = []
-        parte = 0
-        for m in reversed(pendientes):
-            while quedan[parte] == 0:
-                parte = (parte + 1) % len(quedan)
-            quedan[parte] -= 1
-            if parte:
+        for parte, modulos in enumerate(cls._modulos_por_parte(pendientes, cuotas)):
+            if not parte:
+                continue
+            for m in modulos:
                 m.grupo_bastidor = divisiones[parte - 1]
                 m.save(update_fields=['grupo_bastidor'])
                 movidos.append(m.id)
-            parte = (parte + 1) % len(quedan)
         for g in (grupo, *divisiones):
             cls._reindex_modulos_intra(g)
         return movidos
@@ -5775,21 +5864,24 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         return pins
 
     @staticmethod
-    def _dividir_el_ultimo_si_no_acaban_a_la_vez(proyecto, plan_data, initial_loads_inf, pins):
+    def _division_del_ultimo(plan_data, initial_loads_inf, pins):
         """Las mesas inferiores acaban el proyecto a la vez: si con el reparto
         alguna acabaria antes (mas de un modulo de diferencia), el ultimo
         bastidor, si aun no se ha empezado, se reparte entre ellas (como el
-        boton Dividir, pero con lo que le falta a cada mesa). Devuelve True
-        si lo divide."""
+        boton Dividir, pero con lo que le falta a cada mesa).
+
+        Solo calcula, no toca nada: devuelve ``(bastidor, pendientes, partes,
+        cargas_sin_el_ultimo)`` o None si no hay que dividirlo. ``partes``
+        es cuantos modulos lleva cada parte, la raiz primero (la mayor)."""
         num = len(initial_loads_inf)
         if num < 2:
-            return False
+            return None
         cargas = [initial_loads_inf[i] + len(seq) for i, seq in enumerate(plan_data['inferior_sequences'])]
         if max(cargas) - min(cargas) <= 1:
-            return False
+            return None
         ultimo = next((s for s in reversed(plan_data['group_summaries']) if s.get('grupo_bastidor_id')), None)
         if ultimo is None:
-            return False
+            return None
         bastidor = GrupoBastidor.objects.filter(pk=ultimo['grupo_bastidor_id']).first()
         if (
             bastidor is None
@@ -5799,7 +5891,7 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
             or bastidor.mesa_preferida_id is not None
             or bastidor.id in (pins or {})
         ):
-            return False
+            return None
         mostrando = set(MesaQueueItem.objects.filter(
             modulo__grupo_bastidor=bastidor, fase='INFERIOR', status=MesaQueueStatus.MOSTRANDO,
         ).values_list('modulo_id', flat=True))
@@ -5812,7 +5904,7 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         ]
         # Solo un bastidor sin empezar y entero en este plan.
         if len(pendientes) < 2 or len(pendientes) != len(ultimo['modules']):
-            return False
+            return None
         sin_ultimo = list(cargas)
         sin_ultimo[ultimo['target_inferior_idx']] -= len(pendientes)
         cuotas = [0] * num
@@ -5822,7 +5914,17 @@ class GrupoMesasViewSet(viewsets.ModelViewSet):
         # La raiz (que se planifica primero y va a la mesa mas libre) se lleva la mayor parte.
         partes = sorted((cuota for cuota in cuotas if cuota), reverse=True)
         if len(partes) < 2:
+            return None
+        return bastidor, pendientes, partes, sin_ultimo
+
+    @classmethod
+    def _dividir_el_ultimo_si_no_acaban_a_la_vez(cls, proyecto, plan_data, initial_loads_inf, pins):
+        """Divide el ultimo bastidor si las mesas no acabarian a la vez
+        (``_division_del_ultimo``). Devuelve True si lo divide."""
+        division = cls._division_del_ultimo(plan_data, initial_loads_inf, pins)
+        if division is None:
             return False
+        bastidor, pendientes, partes, _ = division
         GrupoBastidorViewSet._repartir_en_partes(bastidor, pendientes, partes)
         return True
 
