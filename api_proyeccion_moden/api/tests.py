@@ -3868,6 +3868,49 @@ class PlanningFoundationTests(APITestCase):
             Modulo.objects.filter(id__in=[self.modulo.id, hecho.id]).count(), 2
         )
 
+    def test_eliminar_todos_borra_los_bastidores_sin_fabricacion_y_deja_los_demas(self):
+        url = "/api/grupos-bastidor/eliminar-todos/"
+        # La ferralla no puede.
+        response = self.client.post(url, {"proyecto": self.project.id}, format="json")
+        self.assertEqual(response.status_code, 403)
+
+        admin = User.objects.create_user(
+            username="bastidor_delete_all_admin", password="pass123", is_staff=True,
+        )
+        admin_token = Token.objects.create(user=admin)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {admin_token.key}")
+        primero = GrupoBastidor.objects.create(proyecto=self.project, indice=1)
+        parte = GrupoBastidor.objects.create(
+            proyecto=self.project, indice=1, sufijo="B", dividido_de=primero,
+        )
+        fabricado = GrupoBastidor.objects.create(proyecto=self.project, indice=2)
+        vacio = GrupoBastidor.objects.create(proyecto=self.project, indice=3)
+        self.modulo.grupo_bastidor = primero
+        self.modulo.save(update_fields=["grupo_bastidor"])
+        en_parte = Modulo.objects.create(nombre="M-01B", proyecto=self.project, grupo_bastidor=parte)
+        hecho = Modulo.objects.create(
+            nombre="M-HECHO", proyecto=self.project, grupo_bastidor=fabricado,
+            estado=ModuloEstado.EN_PROGRESO, inferior_hecho=True,
+        )
+        FotoFabricacion.objects.create(modulo=en_parte, fase="INFERIOR", paso=0, url="/media/fotos/x.jpg")
+
+        # Con fotos pide force, como al borrar uno.
+        response = self.client.post(url, {"proyecto": self.project.id}, format="json")
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(GrupoBastidor.objects.filter(proyecto=self.project).count(), 4)
+
+        response = self.client.post(f"{url}?force=true", {"proyecto": self.project.id}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([g["id"] for g in response.data], [fabricado.id])
+        self.assertFalse(GrupoBastidor.objects.filter(id__in=[primero.id, parte.id, vacio.id]).exists())
+        self.assertFalse(Modulo.objects.filter(id__in=[self.modulo.id, en_parte.id]).exists())
+        self.assertTrue(Modulo.objects.filter(id=hecho.id, grupo_bastidor=fabricado).exists())
+
+        # Solo queda uno con fabricacion: no hay nada que borrar.
+        response = self.client.post(f"{url}?force=true", {"proyecto": self.project.id}, format="json")
+        self.assertEqual(response.status_code, 409)
+        self.assertTrue(GrupoBastidor.objects.filter(id=fabricado.id).exists())
+
     def test_reiniciar_fase_rechaza_fase_desconocida(self):
         self.modulo.estado = ModuloEstado.COMPLETADO
         self.modulo.save()

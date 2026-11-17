@@ -4194,6 +4194,64 @@ class GrupoBastidorViewSet(viewsets.ModelViewSet):
 
         return Response(self._grupos_respuesta(proyecto))
 
+    @action(detail=False, methods=['post'], url_path='eliminar-todos')
+    def eliminar_todos(self, request):
+        """Borra de una vez todos los bastidores que se podrian borrar uno a
+        uno (con sus partes y sus modulos); los que ya tienen fabricacion se
+        quedan. Solo admin; como al borrar uno, fotos, historial de cola o un
+        modulo avanzado en mesa piden ?force=true."""
+        if not _is_admin(request.user):
+            return Response(
+                {'detail': 'Solo admin puede eliminar bastidores.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        proyecto_id = str(request.data.get('proyecto') or '')
+        proyecto = Proyecto.objects.filter(pk=proyecto_id).first() if proyecto_id.isdigit() else None
+        if proyecto is None:
+            return Response({'detail': 'Proyecto no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+        force = str(request.query_params.get('force', '')).lower() in ('true', '1', 'yes')
+
+        modulos_de = {}
+        for modulo in Modulo.objects.filter(proyecto=proyecto, grupo_bastidor__isnull=False).select_related('grupo_bastidor'):
+            raiz_id = modulo.grupo_bastidor.dividido_de_id or modulo.grupo_bastidor_id
+            modulos_de.setdefault(raiz_id, []).append(modulo)
+        borrables = [
+            raiz.pk for raiz in proyecto.grupos_bastidor.filter(dividido_de__isnull=True)
+            if not any(_modulo_con_fabricacion(m) for m in modulos_de.get(raiz.pk, []))
+        ]
+        if not borrables:
+            return Response(
+                {'detail': 'No hay bastidores que se puedan eliminar: todos tienen fabricacion.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+        modulos = [m for pk in borrables for m in modulos_de.get(pk, [])]
+        items = MesaQueueItem.objects.filter(modulo__in=modulos)
+        necesita_force = (
+            FotoFabricacion.objects.filter(modulo__in=modulos).exists()
+            or items.filter(status=MesaQueueStatus.HECHO).exists()
+            or items.filter(
+                status=MesaQueueStatus.MOSTRANDO,
+                mesa__current_image_index__gt=EARLY_IMAGE_INDEX_LIMIT,
+            ).exists()
+        )
+        if necesita_force and not force:
+            return Response(
+                {
+                    'detail': (
+                        'Hay bastidores con fotos, historial de cola o un modulo '
+                        'avanzado en mesa. Reintenta con ?force=true para '
+                        'confirmar el borrado.'
+                    )
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        with transaction.atomic():
+            _borrar_modulos(modulos)
+            GrupoBastidor.objects.filter(pk__in=borrables).delete()
+
+        return Response(self._grupos_respuesta(proyecto))
+
 
 def _modulo_con_fabricacion(modulo):
     return (

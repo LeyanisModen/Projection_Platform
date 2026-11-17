@@ -1923,6 +1923,45 @@ export class ProyectoDetailComponent implements OnInit {
         });
     }
 
+    /** Los que se pueden borrar ahora: los mismos que tienen su papelera. */
+    bastidoresBorrables(): GrupoBastidor[] {
+        return this.grupos.filter(grupo => this.puedeEliminarBastidor(grupo));
+    }
+
+    eliminarTodosLosBastidores(): void {
+        const proyectoId = this.proyecto?.id ?? this.proyectoId;
+        const borrables = this.bastidoresBorrables();
+        if (this.movingModulo || !proyectoId || borrables.length === 0) return;
+        const modulos = borrables.flatMap(grupo => this.modulosDeBastidor(grupo));
+        const fotosCount = modulos.reduce((total, m) => total + (m.fotos_count || 0), 0);
+        const quedan = this.grupos.filter(grupo => !grupo.es_division).length - borrables.length;
+        const plural = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno : varios}`;
+        const confirmed = confirm(
+            `¿Eliminar definitivamente ${plural(borrables.length, 'bastidor', 'bastidores')} y sus ` +
+            `${plural(modulos.length, 'módulo', 'módulos')}? ` +
+            'Se quitarán sus imágenes y sus asignaciones de las mesas.' +
+            (fotosCount > 0 ? ` También se eliminarán ${plural(fotosCount, 'foto', 'fotos')}.` : '') +
+            (quedan === 1 ? ' Se queda 1 bastidor que ya tiene fabricación.' : '') +
+            (quedan > 1 ? ` Se quedan ${quedan} bastidores que ya tienen fabricación.` : '') +
+            ' Esta acción no se puede deshacer.'
+        );
+        if (!confirmed) return;
+
+        this.movingModulo = true;
+        this.api.deleteTodosBastidores(proyectoId, true).subscribe({
+            next: () => {
+                this.movingModulo = false;
+                this.loadData();
+            },
+            error: (err: any) => {
+                console.error('Error eliminando los bastidores', err);
+                this.movingModulo = false;
+                alert(err?.error?.detail || 'No se pudieron eliminar los bastidores.');
+                this.loadData();
+            }
+        });
+    }
+
     downloadFotosZip(scope: 'modulo' | 'proyecto'): void {
         this.downloadingZip = true;
         let params: { modulo?: number; proyecto?: number } = {};

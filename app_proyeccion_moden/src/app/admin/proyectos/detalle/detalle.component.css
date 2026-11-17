@@ -96,6 +96,9 @@
 .estrategia-pill:hover:not(:disabled) { color: var(--ink); background: var(--surface-2); }
 .estrategia-pill.active { color: #fff; background: var(--ink); }
 .estrategia-pill:disabled { cursor: default; }
+.eliminar-todos-btn { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border: 0; border-radius: 5px; background: transparent; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; }
+.eliminar-todos-btn:hover:not(:disabled) { color: var(--danger); background: #fbeae7; }
+.eliminar-todos-btn:disabled { opacity: 0.6; cursor: default; }
 .modules-body { min-width: 0; }
 .panel-note { display: grid; gap: 4px; padding: 14px 16px; border: 1px dashed var(--line-strong); color: var(--muted); font-size: 13px; }
 .panel-note strong { color: var(--text); }

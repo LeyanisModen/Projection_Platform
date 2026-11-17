@@ -1436,6 +1436,15 @@ export class ApiService {
     }
 
     /** Borra el bastidor entero (con sus partes) y sus modulos; devuelve los que quedan. */
+    /** Todos los bastidores del proyecto que aun no tienen fabricacion, con sus modulos. */
+    deleteTodosBastidores(proyectoId: number, force = false): Observable<GrupoBastidor[]> {
+        return this.http.post<GrupoBastidor[]>(
+            `${this.baseUrl}/grupos-bastidor/eliminar-todos/`,
+            { proyecto: proyectoId },
+            { headers: this.getHeaders(), params: force ? { force: 'true' } : {} }
+        );
+    }
+
     deleteBastidor(id: number, force = false): Observable<GrupoBastidor[]> {
         return this.http.delete<GrupoBastidor[]>(
             `${this.baseUrl}/grupos-bastidor/${id}/`,
