@@ -995,6 +995,13 @@ export interface ProductionStatsResponse {
         ritmo_necesario?: number;
         modulos_esperados: number | null;
         proyectos_sin_objetivo?: number;
+        /** Los que no entran en el minimo y por que (PASADA/SIN_DIAS con su fecha de montaje). */
+        sin_objetivo?: Array<{
+            id: number;
+            nombre: string;
+            motivo: 'SIN_FERRALLA' | 'SIN_MODULOS' | 'SIN_FECHA' | 'PASADA' | 'SIN_DIAS';
+            fecha: string | null;
+        }>;
         fecha_referencia?: string;
         /** Objetivo de cada dia laborable del rango (el ritmo de su tramo). */
         por_dia?: Record<string, number>;
@@ -1429,6 +1436,15 @@ export class ApiService {
     }
 
     /** Borra el bastidor entero (con sus partes) y sus modulos; devuelve los que quedan. */
+    /** Todos los bastidores del proyecto que aun no tienen fabricacion, con sus modulos. */
+    deleteTodosBastidores(proyectoId: number, force = false): Observable<GrupoBastidor[]> {
+        return this.http.post<GrupoBastidor[]>(
+            `${this.baseUrl}/grupos-bastidor/eliminar-todos/`,
+            { proyecto: proyectoId },
+            { headers: this.getHeaders(), params: force ? { force: 'true' } : {} }
+        );
+    }
+
     deleteBastidor(id: number, force = false): Observable<GrupoBastidor[]> {
         return this.http.delete<GrupoBastidor[]>(
             `${this.baseUrl}/grupos-bastidor/${id}/`,

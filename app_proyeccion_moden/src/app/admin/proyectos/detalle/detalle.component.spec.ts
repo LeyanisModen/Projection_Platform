@@ -161,6 +161,32 @@ describe('Project detail rack order switch', () => {
         confirmar.mockRestore();
     });
 
+    it('borra de una vez todos los bastidores sin fabricacion y avisa de los que se quedan', () => {
+        const component = fixture.componentInstance;
+        const otro = {...component.grupos[0], id: 2, nombre: 'Group 2',
+            modulos: [{id: 4, nombre: 'A04', estado: 'EN_PROGRESO', tiene_sd: false} as any]};
+        component.grupos = [...component.grupos, otro];
+        fixture.changeDetectorRef.markForCheck();
+        fixture.detectChanges();
+        const boton = () => fixture.nativeElement.querySelector('.eliminar-todos-btn') as HTMLButtonElement | null;
+        const confirmar = vi.spyOn(window, 'confirm').mockReturnValue(true);
+        boton()!.click();
+        expect(confirmar.mock.calls[0][0]).toContain('¿Eliminar definitivamente 1 bastidor y sus 3 módulos?');
+        expect(confirmar.mock.calls[0][0]).toContain('Se queda 1 bastidor que ya tiene fabricación.');
+        const request = http.expectOne(r => r.url === '/api/grupos-bastidor/eliminar-todos/');
+        expect(request.request.method).toBe('POST');
+        expect(request.request.body).toEqual({proyecto: 7});
+        expect(request.request.params.get('force')).toBe('true');
+        request.flush([]);
+
+        // Si todos tienen fabricacion, no sale.
+        component.grupos = [otro];
+        fixture.changeDetectorRef.markForCheck();
+        fixture.detectChanges();
+        expect(boton()).toBeNull();
+        confirmar.mockRestore();
+    });
+
     it('copia de otro proyecto solo cuando aun no tiene modulos', () => {
         const component = fixture.componentInstance;
         const copiar = () => fixture.nativeElement.querySelector('.copy-project-btn') as HTMLButtonElement | null;

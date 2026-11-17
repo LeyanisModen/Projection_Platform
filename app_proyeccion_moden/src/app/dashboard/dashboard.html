@@ -189,11 +189,8 @@
                                     <span class="stats-kpi-value">{{ (resumen?.kgPorModulo | number:'1.0-1') ?? '—' }} <small>kg/módulo</small></span>
                                 </div>
                             </div>
-                            @if (statsPlanningIssues() > 0) {
-                                <p class="stats-planning-warning" role="note">
-                                    {{ statsPlanningIssues() }} proyecto(s) no tienen un mínimo calculable en este período. Revisa su fecha de entrega, sus módulos y sus días disponibles.
-                                    El mínimo solo incluye los proyectos con planificación calculable.
-                                </p>
+                            @if (statsPlanningWarning(); as aviso) {
+                                <p class="stats-planning-warning" role="note">{{ aviso }}</p>
                             }
                             @if (vista) {
                             <div class="stats-charts">

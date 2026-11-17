@@ -349,6 +349,16 @@
                             </button>
                             </div>
                         </div>
+
+                        <button *ngIf="bastidoresBorrables().length > 0"
+                            type="button"
+                            class="eliminar-todos-btn"
+                            (click)="eliminarTodosLosBastidores()"
+                            [disabled]="movingModulo || recalculatingBastidores"
+                            title="Eliminar todos los bastidores que aún no tienen fabricación, con sus módulos">
+                            <i class="fa fa-trash" aria-hidden="true"></i>
+                            Eliminar bastidores
+                        </button>
                     </div>
                 </div>
 

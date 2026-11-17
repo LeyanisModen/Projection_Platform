@@ -591,6 +591,24 @@ describe('Dashboard', () => {
       expect(text('.stats-planning-warning')).toContain('1 proyecto(s)');
     });
 
+    it('names the project left out of the minimum and its mounting date', () => {
+      stats.esperado.proyectos_sin_objetivo = 1;
+      stats.esperado.sin_objetivo = [{id: 90, nombre: 'ESNABIDE_27_P4', motivo: 'PASADA', fecha: '2026-11-16'}];
+      render();
+      expect(text('.stats-planning-warning'))
+        .toBe('ESNABIDE_27_P4 no entra en el mínimo: su fecha de montaje (16/11) ya ha pasado.');
+
+      stats.esperado.proyectos_sin_objetivo = 2;
+      stats.esperado.sin_objetivo = [
+        {id: 90, nombre: 'ESNABIDE_27_P4', motivo: 'SIN_DIAS', fecha: '2026-11-17'},
+        {id: 91, nombre: 'Otro', motivo: 'SIN_FECHA', fecha: null},
+      ];
+      render();
+      expect(text('.stats-planning-warning')).toBe(
+        'No entran en el mínimo: ESNABIDE_27_P4, su fecha de montaje (17/11) no deja días para fabricar; ' +
+        'Otro, no tiene fecha de montaje.');
+    });
+
     it('shows zero demand when no projects need more production', () => {
       stats.planificacion!.modulos_por_dia = 0;
       stats.esperado.modulos_esperados = 0;
