@@ -443,7 +443,11 @@ def period_target_summary(projects, start, end):
         modulos__completado_at__isnull=True,
     )
     selected = set(projects.values_list('id', flat=True))
-    unknown = projects.filter(usuario__isnull=True).count()
+    # Los que se quedan fuera, con el motivo, para que la pantalla diga cuales.
+    sin_objetivo = [
+        {'id': pk, 'nombre': nombre, 'motivo': 'SIN_FERRALLA', 'fecha': None}
+        for pk, nombre in projects.filter(usuario__isnull=True).values_list('id', 'nombre')
+    ]
     factories = set(
         projects.filter(usuario__isnull=False).values_list('usuario_id', flat=True)
     )
@@ -462,14 +466,21 @@ def period_target_summary(projects, start, end):
         for project in factory_projects:
             total = max(project._period_total, project.modulos_previstos or 0)
             if total == 0:
-                unknown += project.pk in selected
+                if project.pk in selected:
+                    sin_objetivo.append({'id': project.pk, 'nombre': project.nombre,
+                                         'motivo': 'SIN_MODULOS', 'fecha': None})
                 continue
             remaining = max(0, total - project._period_done_before)
             if not remaining:
                 continue
             deadline = fecha_de_montaje(project)
             if not deadline or not production_day_count(start, deadline, DIAS_LABORABLES, festivos):
-                unknown += project.pk in selected
+                if project.pk in selected:
+                    # PASADA: el montaje es anterior al periodo; SIN_DIAS: no
+                    # queda un dia laborable antes (se monta el primer dia).
+                    motivo = 'SIN_FECHA' if not deadline else ('PASADA' if deadline < start else 'SIN_DIAS')
+                    sin_objetivo.append({'id': project.pk, 'nombre': project.nombre, 'motivo': motivo,
+                                         'fecha': deadline.isoformat() if deadline else None})
                 continue
             forjados.append((deadline, remaining, project.pk, project.orden_planta))
         if not forjados:
@@ -486,9 +497,11 @@ def period_target_summary(projects, start, end):
             if pk in selected:
                 target += produccion.modulos_entre(posiciones, acumulado, acumulado + remaining)
             acumulado += remaining
+    unknown = len(sin_objetivo)
     return {
         'modulos_esperados': int(round(target + _EPS)) if target or not unknown else None,
         'proyectos_sin_objetivo': unknown,
+        'sin_objetivo': sorted(sin_objetivo, key=lambda p: (p['nombre'] or '', p['id'])),
         'fecha_referencia': start.isoformat(),
         'por_dia': {dia: _redondeo(valor) for dia, valor in sorted(por_dia.items())},
     }

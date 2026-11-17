@@ -129,12 +129,28 @@ class ProductionTargetTests(APITestCase):
         self.assertEqual(response.data['esperado']['modulos_esperados'], 9)
 
     def test_missing_or_impossible_plans_are_unknown_not_zero(self):
-        for deadline in (None, date(2026, 9, 14), date(2026, 9, 11)):
+        casos = (
+            (None, 'SIN_FECHA', None),
+            (date(2026, 9, 14), 'SIN_DIAS', '2026-09-14'),
+            (date(2026, 9, 11), 'PASADA', '2026-09-11'),
+        )
+        for deadline, motivo, fecha in casos:
             self.project.fecha_montaje = deadline
             self.project.save()
             expected = self.stats()['esperado']
             self.assertIsNone(expected['modulos_esperados'])
             self.assertEqual(expected['proyectos_sin_objetivo'], 1)
+            # La pantalla dice cual y por que.
+            self.assertEqual(expected['sin_objetivo'], [
+                {'id': self.project.pk, 'nombre': 'Deadline', 'motivo': motivo, 'fecha': fecha},
+            ])
+
+    def test_the_site_date_set_by_the_factory_is_the_one_reported(self):
+        self.project.fecha_montaje_obra = date(2026, 9, 11)
+        self.project.save()
+        expected = self.stats()['esperado']
+        self.assertEqual([(p['motivo'], p['fecha']) for p in expected['sin_objetivo']],
+                         [('PASADA', '2026-09-11')])
 
     def test_partial_target_identifies_projects_not_included(self):
         missing = Proyecto.objects.create(nombre='No date', usuario=self.factory)
@@ -142,6 +158,8 @@ class ProductionTargetTests(APITestCase):
         expected = self.stats()['esperado']
         self.assertEqual(expected['modulos_esperados'], 8)
         self.assertEqual(expected['proyectos_sin_objetivo'], 1)
+        self.assertEqual([(p['nombre'], p['motivo']) for p in expected['sin_objetivo']],
+                         [('No date', 'SIN_FECHA')])
 
     def test_historical_period_can_reach_a_deadline_that_is_now_past(self):
         self.project.fecha_montaje = date(2026, 9, 18)

@@ -2336,6 +2336,30 @@ export class Dashboard implements OnInit, OnDestroy {
       : planningIssues(this.proyectos);
   }
 
+  /** El aviso del minimo: que proyecto se queda fuera y por que. */
+  statsPlanningWarning(): string | null {
+    const total = this.statsPlanningIssues();
+    if (total <= 0) return null;
+    const fuera = this.statsData?.esperado.sin_objetivo;
+    if (!fuera?.length) {
+      return `${total} proyecto(s) no tienen un mínimo calculable en este período. ` +
+        'Revisa su fecha de entrega, sus módulos y sus días disponibles. ' +
+        'El mínimo solo incluye los proyectos con planificación calculable.';
+    }
+    const motivo = (p: (typeof fuera)[number]): string => {
+      const fecha = p.fecha ? p.fecha.slice(8, 10) + '/' + p.fecha.slice(5, 7) : '';
+      switch (p.motivo) {
+        case 'PASADA': return `su fecha de montaje (${fecha}) ya ha pasado`;
+        case 'SIN_DIAS': return `su fecha de montaje (${fecha}) no deja días para fabricar`;
+        case 'SIN_FECHA': return 'no tiene fecha de montaje';
+        case 'SIN_MODULOS': return 'no tiene módulos';
+        default: return 'no tiene ferralla';
+      }
+    };
+    if (fuera.length === 1) return `${fuera[0].nombre} no entra en el mínimo: ${motivo(fuera[0])}.`;
+    return `No entran en el mínimo: ${fuera.map(p => `${p.nombre}, ${motivo(p)}`).join('; ')}.`;
+  }
+
   statsPeriodTarget(): number | null {
     return this.statsData?.esperado.modulos_esperados ?? null;
   }

@@ -995,6 +995,13 @@ export interface ProductionStatsResponse {
         ritmo_necesario?: number;
         modulos_esperados: number | null;
         proyectos_sin_objetivo?: number;
+        /** Los que no entran en el minimo y por que (PASADA/SIN_DIAS con su fecha de montaje). */
+        sin_objetivo?: Array<{
+            id: number;
+            nombre: string;
+            motivo: 'SIN_FERRALLA' | 'SIN_MODULOS' | 'SIN_FECHA' | 'PASADA' | 'SIN_DIAS';
+            fecha: string | null;
+        }>;
         fecha_referencia?: string;
         /** Objetivo de cada dia laborable del rango (el ritmo de su tramo). */
         por_dia?: Record<string, number>;
