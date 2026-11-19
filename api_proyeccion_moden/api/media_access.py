@@ -39,8 +39,13 @@ PROJECT_FILE_FIELDS = {
     'elementos_sueltos': 'elementos_sueltos_archivo',
     'datos_tecnicos': 'fichero_datos_tecnicos',
 }
-# Folders laid out as <folder>/<proyecto_id>/<modulo_id>/<file>.
-PROJECT_SCOPED_FOLDERS = ('imagenes', 'fotos')
+# Folders laid out as <folder>/<proyecto_id>/... (imagenes and fotos go on
+# with <modulo_id>/<file>; incidencias, the scanned sheets the supervisor
+# signs, straight with <file>).
+PROJECT_SCOPED_FOLDERS = ('imagenes', 'fotos', 'incidencias')
+# PDFs the dashboard and the admin show inside the page (an <iframe> of the
+# same origin); the rest keeps Django's X-Frame-Options: DENY.
+FRAMEABLE_FOLDERS = ('incidencias',)
 # 'controles/<proyecto_id>/<check_id>/<file>' (documentos de la lista de
 # control) is deliberately NOT project-scoped: the checklist is staff-only,
 # so its attachments are too (non-staff falls through to False below).
@@ -125,6 +130,9 @@ def protected_media(request, path):
             return JsonResponse({'detail': 'Forbidden'}, status=403)
 
     response = serve(request, rel_path, document_root=settings.MEDIA_ROOT)
+    if rel_path.split('/')[0] in FRAMEABLE_FOLDERS:
+        # XFrameOptionsMiddleware leaves a header that is already set alone.
+        response['X-Frame-Options'] = 'SAMEORIGIN'
     # Browser cache is fine (Last-Modified/304 keep working); shared caches
     # must not store per-user content.
     response['Cache-Control'] = 'private, max-age=0, must-revalidate'

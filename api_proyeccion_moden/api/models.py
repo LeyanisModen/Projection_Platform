@@ -1792,3 +1792,33 @@ class IncidenciaOrden(models.Model):
 
     def __str__(self):
         return f'{self.get_tipo_display()} @ {self.creada_at:%d/%m %H:%M}'
+
+
+def _hoja_incidencias_path(instance, filename):
+    return f'incidencias/{instance.proyecto_id}/{filename}'
+
+
+class HojaIncidencias(models.Model):
+    """PDF escaneado de las hojas que firma el supervisor junto a las mesas al
+    terminar cada modulo, con lo que haya pasado (una barra que no vino
+    cortada, un zuncho que faltaba...). La ferralla lo sube desde la tarjeta
+    del proyecto y Moden lo ve en el admin.
+
+    Vive en media/incidencias/<proyecto>/ y solo lo sirve /media/ a staff y a
+    la ferralla del proyecto (api/media_access.py); al archivar va al .zip y
+    se borra, como el resto de ficheros (api/archivo.py)."""
+    proyecto = models.ForeignKey(Proyecto, on_delete=models.CASCADE, related_name='hojas_incidencias')
+    archivo = models.FileField(upload_to=_hoja_incidencias_path, max_length=500)
+    nombre_original = models.CharField(max_length=255)
+    tamano = models.PositiveIntegerField(default=0)
+    subido_at = models.DateTimeField(default=timezone.now, db_index=True)
+    subido_por = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
+
+    class Meta:
+        db_table = 'api_hoja_incidencias'
+        ordering = ['-subido_at', '-id']
+        verbose_name = 'hoja de incidencias'
+        verbose_name_plural = 'hojas de incidencias'
+
+    def __str__(self):
+        return self.nombre_original

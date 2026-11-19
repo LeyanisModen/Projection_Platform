@@ -75,6 +75,12 @@
                             {{ project.modulos_completados || 0 }}/{{ project.modulos_count }} módulos
                         </span>
                         <span *ngIf="!project.modulos_count">sin módulos</span>
+                        @if (project.hojas_incidencias_count) {
+                            <span class="hojas-incidencias-resumen" title="Hojas de incidencias firmadas por el supervisor (PDF)">
+                                <i class="fa fa-file-pdf-o" aria-hidden="true"></i>
+                                {{ project.hojas_incidencias_count }} {{ project.hojas_incidencias_count === 1 ? 'hoja' : 'hojas' }}@if (project.hojas_incidencias_ultima) { · última {{ project.hojas_incidencias_ultima | date:'dd/MM' }} }
+                            </span>
+                        }
                         <span *ngIf="project.produccion_bloqueada" class="is-danger">
                             <i class="fa fa-lock" aria-hidden="true"></i> sin producción
                         </span>

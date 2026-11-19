@@ -15,7 +15,7 @@ from rest_framework.test import APITestCase
 
 from .models import (
     DetalleModuloFase, FotoFabricacion, GrupoBastidor, GrupoMesas, GrupoMesasProyecto, Imagen,
-    Mesa, MesaQueueItem, Modulo, Proyecto, ProyectoCheck, ProyectoCheckAdjunto,
+    Mesa, MesaQueueItem, Modulo, Proyecto, ProyectoCheck, ProyectoCheckAdjunto, HojaIncidencias,
 )
 from .planning import plan_ferralla
 
@@ -52,6 +52,10 @@ class ArchivoProyectoTests(APITestCase):
         paso = ProyectoCheck.objects.create(proyecto=self.project, titulo='Planos', orden=1)
         ProyectoCheckAdjunto.objects.create(
             paso=paso, archivo=SimpleUploadedFile('correo.eml', b'correo'), nombre_original='correo.eml', tamano=6,
+        )
+        self.hoja = HojaIncidencias.objects.create(
+            proyecto=self.project, archivo=SimpleUploadedFile('hojas.pdf', b'%PDF hojas'), nombre_original='Hojas mesa 1.pdf',
+            tamano=10, subido_at=timezone.make_aware(datetime(2026, 10, 6, 15, 30)),
         )
 
         # Fabricado en una mesa: es lo que cuentan las estadisticas.
@@ -93,6 +97,7 @@ class ArchivoProyectoTests(APITestCase):
             'presentaciones/A01/INF/MONITOR/MOD_A01_INF_MONITOR_00.png',
             'documentos/plano.pdf',
             'lista_control/01_Planos/correo.eml',
+            'incidencias/20261006-1530_Hojas mesa 1.pdf',
         ):
             self.assertIn(nombre, nombres)
         self.assertEqual(archivo.read('presentaciones/A01/INF/MONITOR/MOD_A01_INF_MONITOR_00.png'), b'monitor')
@@ -132,6 +137,8 @@ class ArchivoProyectoTests(APITestCase):
         self.assertFalse(Imagen.objects.filter(modulo__proyecto=self.project).exists())
         self.assertFalse(FotoFabricacion.objects.filter(modulo__proyecto=self.project).exists())
         self.assertFalse(ProyectoCheckAdjunto.objects.filter(paso__proyecto=self.project).exists())
+        self.assertFalse(HojaIncidencias.objects.filter(proyecto=self.project).exists())
+        self.assertFalse((Path(self.media) / 'incidencias' / str(self.project.pk)).exists())
         self.project.refresh_from_db()
         self.assertFalse(self.project.plano_archivo)
         # ...y los datos de fabricacion dentro: las estadisticas no cambian.

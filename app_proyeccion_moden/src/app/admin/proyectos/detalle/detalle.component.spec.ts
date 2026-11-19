@@ -32,10 +32,19 @@ describe('Project detail rack order switch', () => {
         }];
         fixture.detectChanges();
         http.expectOne('/api/proyecto-checklist/7/').flush([]);
+        // El panel de hojas de incidencias carga las suyas.
+        http.expectOne('/api/proyectos/7/hojas-incidencias/').flush([]);
         fixture.detectChanges();
     });
 
     afterEach(() => http.verify());
+
+    it('muestra las hojas de incidencias en su panel, sin visor', () => {
+        const panel = fixture.nativeElement.querySelector('.hojas-incidencias-panel') as HTMLElement;
+        expect(panel.querySelector('.section-label')?.textContent).toBe('Hojas de incidencias');
+        expect(panel.querySelector('.hojas-vacio')?.textContent).toBe('Aún no hay hojas.');
+        expect(panel.querySelector('.hojas-subir')).not.toBeNull();
+    });
 
     function buttons(): HTMLButtonElement[] {
         return Array.from(fixture.nativeElement.querySelectorAll('.rack-view-toggle button'));

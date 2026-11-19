@@ -216,6 +216,22 @@ export interface Proyecto {
     checks_resumen?: ProyectoCheckResumen[] | null;
     /** Validaciones bloqueantes sin completar: el cliente no puede fabricarlo aún. */
     produccion_bloqueada?: boolean;
+    /** Hojas de incidencias escaneadas (PDF) que ha subido la ferralla o Moden. */
+    hojas_incidencias_count?: number;
+    hojas_incidencias_ultima?: string | null;
+}
+
+/** PDF escaneado de las hojas que firma el supervisor al terminar los módulos. */
+export interface HojaIncidencias {
+    id: number;
+    nombre: string;
+    tamano: number;
+    /** Ruta relativa /media/...: va por el mismo origen con la cookie de /media/. */
+    url: string | null;
+    subido_at: string;
+    subido_por: string | null;
+    de_moden: boolean;
+    puede_borrar: boolean;
 }
 
 export interface GrupoBastidorModulo {
@@ -1177,6 +1193,26 @@ export class ApiService {
     }
 
     /** Excel de elementos sueltos del proyecto, leido como tablas (una por hoja). */
+    getHojasIncidencias(proyectoId: number): Observable<HojaIncidencias[]> {
+        return this.http.get<HojaIncidencias[]>(
+            `${this.baseUrl}/proyectos/${proyectoId}/hojas-incidencias/`, { headers: this.getHeaders() },
+        );
+    }
+
+    subirHojasIncidencias(proyectoId: number, archivos: File[]): Observable<HojaIncidencias[]> {
+        const form = new FormData();
+        for (const archivo of archivos) form.append('archivos', archivo, archivo.name);
+        return this.http.post<HojaIncidencias[]>(
+            `${this.baseUrl}/proyectos/${proyectoId}/hojas-incidencias/`, form, { headers: this.getAuthHeaders() },
+        );
+    }
+
+    borrarHojaIncidencias(proyectoId: number, hojaId: number): Observable<HojaIncidencias[]> {
+        return this.http.delete<HojaIncidencias[]>(
+            `${this.baseUrl}/proyectos/${proyectoId}/hojas-incidencias/${hojaId}/`, { headers: this.getHeaders() },
+        );
+    }
+
     getElementosSueltos(proyectoId: number): Observable<ElementosSueltos> {
         return this.http.get<ElementosSueltos>(
             `${this.baseUrl}/proyectos/${proyectoId}/elementos-sueltos/`, { headers: this.getHeaders() },

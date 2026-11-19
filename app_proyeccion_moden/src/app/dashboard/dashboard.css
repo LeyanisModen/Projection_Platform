@@ -183,6 +183,9 @@
 .project-icon:hover:not(:disabled) { color: var(--ink); background: var(--surface-2); }
 .project-icon svg { width: 18px; height: 18px; }
 .project-icon-disabled, .project-icon:disabled { opacity: 0.35; cursor: default; }
+/* Cuantas hojas de incidencias tiene: un numero gris pegado al icono. */
+.project-icon-incidencias { position: relative; }
+.project-icon-count { position: absolute; top: 0; right: -2px; min-width: 14px; height: 14px; padding: 0 3px; border-radius: 999px; background: var(--surface); color: var(--text); font-size: 10px; font-weight: 700; line-height: 14px; text-align: center; box-sizing: border-box; }
 .project-deadline { display: flex; flex-wrap: wrap; gap: 4px 10px; flex-basis: 100%; color: var(--muted); font-size: 12px; }
 .project-deadline .aprieta { color: #c2410c; font-weight: 600; }
 .project-montaje-obra { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; flex-basis: 100%; color: var(--muted); font-size: 12px; }
@@ -216,6 +219,8 @@
 /* Excel de elementos sueltos: un bloque por titulo, cada uno con su tabla y su total. */
 .modal-content.plano-modal { display: flex; flex-direction: column; gap: 14px; width: 96vw; max-width: 1200px; max-height: 94vh; text-align: left; }
 .modal-content.elementos-modal { display: flex; flex-direction: column; gap: 14px; width: 94vw; max-width: 820px; max-height: 88vh; text-align: left; }
+/* Hojas de incidencias: la lista a la izquierda y el PDF elegido al lado. */
+.modal-content.incidencias-modal { display: flex; flex-direction: column; gap: 14px; width: 96vw; max-width: 1150px; max-height: 94vh; overflow-y: auto; text-align: left; }
 a.plan-modal-download { text-decoration: none; }
 .elementos-hojas { display: flex; flex-wrap: wrap; gap: 6px; }
 .elementos-aviso { padding: 18px 0; }

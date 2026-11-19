@@ -1158,7 +1158,35 @@ describe('Dashboard', () => {
       render();
       const etiquetas = Array.from(fixture.nativeElement.querySelectorAll('.project-actions button'))
         .map(boton => (boton as HTMLElement).getAttribute('aria-label'));
-      expect(etiquetas.slice(-3)).toEqual(['Ver plano', 'Ver elementos sueltos', 'Descargar despiece']);
+      expect(etiquetas.slice(-4)).toEqual(['Ver plano', 'Ver elementos sueltos', 'Descargar despiece', 'Incidencias']);
+    });
+
+    it('opens the incident sheets from the card and keeps their count on it', () => {
+      const api = TestBed.inject(ApiService);
+      const hoja = {
+        id: 1, nombre: 'Hojas mesa 1.pdf', tamano: 1000, url: '/media/incidencias/7/hojas.pdf',
+        subido_at: '2026-11-18T16:05:00', subido_por: 'sanchos', de_moden: false, puede_borrar: true,
+      };
+      const lista = vi.spyOn(api, 'getHojasIncidencias').mockReturnValue(of([hoja, { ...hoja, id: 2 }]));
+      component.vista = 'produccion';
+      component.proyectos = [{ ...proyecto, modulos_count: 0, hojas_incidencias_count: 0 } as Proyecto];
+      render();
+      const boton = () => fixture.nativeElement.querySelector('.project-icon-incidencias') as HTMLButtonElement;
+      expect(boton().querySelector('.project-icon-count')).toBeNull();
+
+      boton().click();
+      render();
+      expect(lista).toHaveBeenCalledWith(7);
+      const modal: HTMLElement = fixture.nativeElement.querySelector('.incidencias-modal');
+      expect(modal.querySelector('h3')?.textContent).toBe('Incidencias · Torre Norte');
+      expect(modal.querySelectorAll('.hojas-lista li').length).toBe(2);
+      // Abrir la ventana no selecciona el proyecto.
+      expect(component.selectedProyecto).toBeFalsy();
+      expect(boton().querySelector('.project-icon-count')?.textContent?.trim()).toBe('2');
+
+      (modal.querySelector('.plan-modal-close') as HTMLButtonElement).click();
+      render();
+      expect(fixture.nativeElement.querySelector('.incidencias-modal')).toBeNull();
     });
 
     it('shows each block of the Excel with its title, header, rows and total, and offers the despiece', () => {
