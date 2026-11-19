@@ -281,6 +281,13 @@
                 }
             </div>
 
+            <!-- Hojas firmadas por el supervisor junto a las mesas, escaneadas en PDF -->
+            <div class="side-panel hojas-incidencias-panel">
+                <span class="section-label">Hojas de incidencias</span>
+                <app-hojas-incidencias [proyectoId]="proyecto.id" [archivado]="!!proyecto.archivado_at"
+                    [conVisor]="false" (cambio)="onHojasIncidenciasCambio($event)"></app-hojas-incidencias>
+            </div>
+
         </div>
 
 

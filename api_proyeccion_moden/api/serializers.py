@@ -248,6 +248,10 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
     elementos_sueltos_disponible = serializers.SerializerMethodField()
     # Enciende el boton del plano: la base tecnica trae la losa y los encajes (api/plano.py).
     plano_disponible = serializers.SerializerMethodField()
+    # Hojas de incidencias escaneadas (api/models.py HojaIncidencias): el numero
+    # en la tarjeta y la ultima subida en el listado del admin.
+    hojas_incidencias_count = serializers.SerializerMethodField()
+    hojas_incidencias_ultima = serializers.SerializerMethodField()
 
     class Meta:
         model = Proyecto
@@ -268,6 +272,7 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
             "edificio", "edificio_nombre", "planta_tipo", "planta_numero",
             "planta_etiqueta", "orden_planta",
             "montaje_realizado", "montaje_realizado_at",
+            "hojas_incidencias_count", "hojas_incidencias_ultima",
         ]
         extra_kwargs = {
             'usuario': {'required': False, 'allow_null': True},
@@ -310,6 +315,16 @@ class ProyectoSerializer(serializers.HyperlinkedModelSerializer):
     def get_plano_disponible(self, obj):
         from api.plano import tiene_plano
         return tiene_plano(obj)
+
+    def get_hojas_incidencias_count(self, obj):
+        valor = getattr(obj, '_hojas_incidencias', None)
+        return valor if valor is not None else obj.hojas_incidencias.count()
+
+    def get_hojas_incidencias_ultima(self, obj):
+        if hasattr(obj, '_hojas_incidencias_ultima'):
+            return obj._hojas_incidencias_ultima
+        ultima = obj.hojas_incidencias.order_by('-subido_at').first()
+        return ultima.subido_at if ultima else None
 
     def get_archivado_por_nombre(self, obj):
         usuario = obj.archivado_por

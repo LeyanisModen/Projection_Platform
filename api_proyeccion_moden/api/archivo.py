@@ -25,7 +25,7 @@ from django.utils import timezone
 from .models import (
     DetalleModuloFase, EventoFabricacion, FotoFabricacion, GrupoBastidor, GrupoMesasProyecto,
     Imagen, MaterialInformado, MaterialPieza, MesaQueueItem, MesaQueueStatus, Modulo,
-    ProyectoCheck, ProyectoCheckAdjunto,
+    ProyectoCheck, ProyectoCheckAdjunto, HojaIncidencias,
 )
 
 SALT = 'archivo-proyecto'
@@ -332,6 +332,10 @@ documentos/
 lista_control/
     Documentos adjuntos a cada paso de la lista de control.
 
+incidencias/
+    Hojas de incidencias que firmó el supervisor, escaneadas en PDF. El
+    nombre empieza por la fecha en que se subieron.
+
 Al archivar, la plataforma borra estos ficheros pero conserva los datos de
 fabricación (módulos, pesos, fechas y tiempos): las estadísticas de la
 ferralla siguen contando este proyecto.
@@ -373,6 +377,10 @@ def entradas(proyecto, usuario):
         ruta = _ruta_media(adjunto.archivo.name) if adjunto.archivo else None
         if ruta:
             ficheros.append((f'lista_control/{adjunto.paso.orden:02d}_{_parte(adjunto.paso.titulo)}/{_parte(adjunto.nombre_original or ruta.name)}', ruta))
+    for hoja in HojaIncidencias.objects.filter(proyecto=proyecto).order_by('subido_at', 'id'):
+        ruta = _ruta_media(hoja.archivo.name) if hoja.archivo else None
+        if ruta:
+            ficheros.append((f'incidencias/{_local(hoja.subido_at):%Y%m%d-%H%M}_{_parte(hoja.nombre_original or ruta.name)}', ruta))
 
     yield 'datos.xlsx', _excel(proyecto, datos, stats)
     yield 'proyecto.json', json.dumps({
@@ -463,6 +471,7 @@ def archivar(proyecto, usuario):
         Imagen.objects.filter(modulo__proyecto=proyecto).delete()
         FotoFabricacion.objects.filter(modulo__proyecto=proyecto).delete()
         ProyectoCheckAdjunto.objects.filter(paso__proyecto=proyecto).delete()
+        HojaIncidencias.objects.filter(proyecto=proyecto).delete()
         for campo in CAMPOS_FICHERO:
             setattr(proyecto, campo, None)
         proyecto.archivado_at = timezone.now()

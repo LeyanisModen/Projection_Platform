@@ -11,13 +11,14 @@ import {
   GrupoBastidor, GrupoBastidorModulo, FerrallaCaptureConfig, TurnoConfig,
   TiempoFabricacion, ProductionStatsBucket, ProductionStatsTiempos, ProductionStatsModulo, ProductionStatsModuloFase,
   ProductionStatsActividadDia,
-  ElementosSueltos, ElementosSueltosHoja, ElementosSueltosSeccion, ElementosSueltosCelda, IncidenciaOrden,
+  ElementosSueltos, ElementosSueltosHoja, ElementosSueltosSeccion, ElementosSueltosCelda, IncidenciaOrden, HojaIncidencias,
 } from '../services/api.service';
 import { LineChartSeries, SplitArea, StatsLineChart } from './stats-line-chart';
 import { PlanificacionFerralla } from './planificacion-ferralla';
 import { PlanoProyecto } from './plano-proyecto';
 import { pausaHastaLabel } from '../shared/pausa';
 import { TurnosEditorComponent } from '../shared/turnos-editor.component';
+import { HojasIncidenciasComponent } from '../shared/hojas-incidencias.component';
 import { copiarTurnos, turnosError, turnosLabel } from '../shared/turnos';
 import {
   ListaMaterialesService,
@@ -181,7 +182,7 @@ interface Subfase {
   standalone: true,
   templateUrl: './dashboard.html',
   styleUrls: ['../admin/admin-theme.css', './dashboard.css', './dashboard-responsive.css'],
-  imports: [CommonModule, DragDropModule, FormsModule, ZoomableImageComponent, StatsLineChart, TurnosEditorComponent, PlanificacionFerralla, PlanoProyecto]
+  imports: [CommonModule, DragDropModule, FormsModule, ZoomableImageComponent, StatsLineChart, TurnosEditorComponent, PlanificacionFerralla, PlanoProyecto, HojasIncidenciasComponent]
 })
 export class Dashboard implements OnInit, OnDestroy {
   readonly planningLabel = planningLabel;
@@ -329,6 +330,7 @@ export class Dashboard implements OnInit, OnDestroy {
 
   // Materiales-list Modal State (per-project)
   // Excel de elementos sueltos (barras, vigas, zunchos que van a obra fuera de los modulos).
+  incidenciasModalProyecto: Proyecto | null = null;
   elementosModalProyecto: Proyecto | null = null;
   elementosModalData: ElementosSueltos | null = null;
   elementosModalLoading = false;
@@ -1282,6 +1284,23 @@ export class Dashboard implements OnInit, OnDestroy {
 
   planModalDoneCount(): number {
     return this.planModalModulos.filter(m => m.inferior_hecho && m.superior_hecho).length;
+  }
+
+  /** Hojas de incidencias del proyecto: la ferralla sube el PDF escaneado y Moden lo ve en el admin. */
+  openIncidenciasModal(proyecto: Proyecto, event?: Event): void {
+    event?.stopPropagation();
+    this.incidenciasModalProyecto = proyecto;
+    this.cdr.detectChanges();
+  }
+
+  closeIncidenciasModal(): void {
+    this.incidenciasModalProyecto = null;
+  }
+
+  onHojasIncidenciasCambio(proyecto: Proyecto, hojas: HojaIncidencias[]): void {
+    proyecto.hojas_incidencias_count = hojas.length;
+    proyecto.hojas_incidencias_ultima = hojas[0]?.subido_at ?? null;
+    this.cdr.detectChanges();
   }
 
   openElementosModal(proyecto: Proyecto, event?: Event): void {

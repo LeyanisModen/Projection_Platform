@@ -12,7 +12,7 @@ import {
 import {
     ApiService, Proyecto, Modulo, User, FotoFabricacion, Imagen,
     DetalleModuloFase, TechnicalImportStats, GrupoBastidor, GrupoBastidorModulo,
-    EstrategiaBastidor, ModuloFase, Edificio, PlantaTipo, IncidenciaOrden
+    EstrategiaBastidor, ModuloFase, Edificio, PlantaTipo, IncidenciaOrden, HojaIncidencias
 } from '../../../services/api.service';
 import { switchMap, forkJoin, of, Observable } from 'rxjs';
 import { environment } from '../../../../environments/environment';
@@ -26,6 +26,7 @@ import {
     scanModuleImportFolder,
 } from './module-import.utils';
 import { getModuloPhaseAction } from './phase-action.utils';
+import { HojasIncidenciasComponent } from '../../../shared/hojas-incidencias.component';
 
 /** Ficheros del proyecto que la oficina sube desde "Archivos". El plano ya no se
  *  sube: se generara a partir de la base de datos del proyecto. Los elementos
@@ -54,6 +55,7 @@ function prefijoComun(a: string, b: string): number {
         DragDropModule,
         ProjectControlsComponent,
         ZoomableImageComponent,
+        HojasIncidenciasComponent,
     ],
     templateUrl: './detalle.component.html',
     styleUrls: ['../../admin-theme.css', './detalle.component.css', './detalle-responsive.css']
@@ -1921,6 +1923,12 @@ export class ProyectoDetailComponent implements OnInit {
                 this.loadData();
             }
         });
+    }
+
+    onHojasIncidenciasCambio(hojas: HojaIncidencias[]): void {
+        if (!this.proyecto) return;
+        this.proyecto.hojas_incidencias_count = hojas.length;
+        this.proyecto.hojas_incidencias_ultima = hojas[0]?.subido_at ?? null;
     }
 
     /** Los que se pueden borrar ahora: los mismos que tienen su papelera. */

@@ -37,7 +37,7 @@ from api.models import (
     DetalleModuloFase, MesaQueueStatus, ModuloEstado, Fase,
     GrupoBastidor, MaterialPieza, MaterialInformado, MaterialOrigenCheck,
     MaterialTipo, MesaTipo, UserProfile, EstrategiaColaSuperior,
-    EventoFabricacion, EventoFabricacionTipo, LogMiniPC, IncidenciaOrden, IncidenciaOrdenTipo,
+    EventoFabricacion, EventoFabricacionTipo, LogMiniPC, IncidenciaOrden, IncidenciaOrdenTipo, HojaIncidencias,
 )
 from api.project_media import (
     collect_module_media,
@@ -304,6 +304,39 @@ def _texto_incidencia_orden(request):
     if len(texto) < INCIDENCIA_ORDEN_MIN_CARACTERES:
         return None
     return texto[:INCIDENCIA_ORDEN_MAX_CARACTERES]
+
+
+HOJA_INCIDENCIAS_MAX_BYTES = 30 * 1024 * 1024
+
+
+def _hoja_incidencias_data(hoja, user):
+    usuario = hoja.subido_por
+    return {
+        'id': hoja.id,
+        'nombre': hoja.nombre_original,
+        'tamano': hoja.tamano,
+        # Ruta relativa: pasa por el nginx del frontend con la cookie de /media/.
+        'url': hoja.archivo.url if hoja.archivo else None,
+        'subido_at': hoja.subido_at,
+        'subido_por': (usuario.get_full_name() or usuario.username) if usuario else None,
+        'de_moden': _is_admin(usuario),
+        # La ferralla borra lo que ha subido ella (una hoja equivocada); Moden, cualquiera.
+        'puede_borrar': _is_admin(user) or (usuario is not None and usuario.id == user.id),
+    }
+
+
+def _error_hoja_incidencias(archivo):
+    """Por que no se acepta este fichero, o None si es un PDF que cabe."""
+    nombre = archivo.name or 'El fichero'
+    if not nombre.lower().endswith('.pdf'):
+        return f'{nombre}: solo se pueden subir PDF.'
+    if archivo.size > HOJA_INCIDENCIAS_MAX_BYTES:
+        return f'{nombre}: pesa más de 30 MB.'
+    cabecera = archivo.read(1024)
+    archivo.seek(0)
+    if b'%PDF' not in cabecera:
+        return f'{nombre}: no es un PDF válido.'
+    return None
 
 
 INCIDENCIA_ORDEN_SIN_TEXTO = 'Cuenta qué ha pasado para necesitar cambiar el orden.'
@@ -1779,8 +1812,15 @@ class ProyectoViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def _annotate_counts(self, queryset):
-        from django.db.models import Count
+        from django.db.models import Count, IntegerField, OuterRef, Subquery
+        from django.db.models.functions import Coalesce
+        # Subconsultas: otro Count con join multiplicaria las filas de los de abajo.
+        hojas = HojaIncidencias.objects.filter(proyecto=OuterRef('pk')).order_by().values('proyecto')
         return queryset.annotate(
+            _hojas_incidencias=Coalesce(
+                Subquery(hojas.annotate(n=Count('id')).values('n')[:1], output_field=IntegerField()), 0,
+            ),
+            _hojas_incidencias_ultima=Subquery(hojas.annotate(m=Max('subido_at')).values('m')[:1]),
             _grupos_count=Count('grupos_bastidor', distinct=True),
             _modulos_count=Count('modulos', distinct=True),
             _modulos_completados=Count(
@@ -3058,6 +3098,58 @@ class ProyectoViewSet(viewsets.ModelViewSet):
             texto=texto,
         )
         return Response(_incidencia_orden_data(incidencia), status=status.HTTP_201_CREATED)
+
+    @staticmethod
+    def _hojas_incidencias(proyecto, user):
+        return [
+            _hoja_incidencias_data(hoja, user)
+            for hoja in proyecto.hojas_incidencias.select_related('subido_por')
+        ]
+
+    @action(detail=True, methods=['get', 'post'], url_path='hojas-incidencias')
+    def hojas_incidencias(self, request, pk=None):
+        """Hojas que firma el supervisor al terminar los modulos, escaneadas en
+        PDF. GET: la lista, la mas nueva primero. POST multipart con uno o
+        varios ``archivos``: las sube la ferralla del proyecto o Moden;
+        devuelve la lista."""
+        proyecto = self.get_object()
+        if request.method == 'GET':
+            return Response(self._hojas_incidencias(proyecto, request.user))
+        if not (_is_admin(request.user) or _de_la_ferralla(request.user, proyecto)):
+            return Response({'detail': 'No puedes subir hojas a un proyecto de otra ferralla.'},
+                            status=status.HTTP_403_FORBIDDEN)
+        if proyecto.archivado_at:
+            return Response({'detail': 'El proyecto está archivado: ya no se le pueden añadir hojas.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        archivos = request.FILES.getlist('archivos') or request.FILES.getlist('archivo')
+        if not archivos:
+            return Response({'detail': 'Adjunta el PDF de las hojas escaneadas.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        errores = [error for error in map(_error_hoja_incidencias, archivos) if error]
+        if errores:
+            return Response({'detail': ' '.join(errores)}, status=status.HTTP_400_BAD_REQUEST)
+        with transaction.atomic():
+            for archivo in archivos:
+                HojaIncidencias.objects.create(
+                    proyecto=proyecto, archivo=archivo, nombre_original=archivo.name[:255],
+                    tamano=archivo.size, subido_por=request.user,
+                )
+        return Response(self._hojas_incidencias(proyecto, request.user), status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['delete'], url_path=r'hojas-incidencias/(?P<hoja_id>\d+)')
+    def borrar_hoja_incidencias(self, request, pk=None, hoja_id=None):
+        proyecto = self.get_object()
+        hoja = proyecto.hojas_incidencias.select_related('subido_por').filter(pk=hoja_id).first()
+        if hoja is None:
+            return Response({'detail': 'Esta hoja ya no existe.'}, status=status.HTTP_404_NOT_FOUND)
+        if not _hoja_incidencias_data(hoja, request.user)['puede_borrar']:
+            return Response({'detail': 'Solo la puede borrar quien la subió o Moden.'},
+                            status=status.HTTP_403_FORBIDDEN)
+        fichero = hoja.archivo.name
+        with transaction.atomic():
+            hoja.delete()
+            transaction.on_commit(lambda: delete_unreferenced_storage_files([fichero]), robust=True)
+        return Response(self._hojas_incidencias(proyecto, request.user))
 
     @action(detail=True, methods=['get'], url_path='lista-materiales')
     def lista_materiales(self, request, pk=None):
