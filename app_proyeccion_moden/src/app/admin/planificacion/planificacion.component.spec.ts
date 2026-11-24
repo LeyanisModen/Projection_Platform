@@ -4,7 +4,7 @@ import { of } from 'rxjs';
 import { vi } from 'vitest';
 
 import { ApiService, PlanificacionModenProyecto, PlanificacionModenResponse } from '../../services/api.service';
-import { PlanificacionComponent, cifra, picoEstudio, porMes, vistaDe } from './planificacion.component';
+import { PlanificacionComponent, cifra, picoEstudio, porMes, textoCapacidades, textoNoCabe, vistaDe } from './planificacion.component';
 
 function proyecto(id: number, nombre: string, fecha: string | null, pendientes: number, fantasma = false, kilos: number | null = 1000): PlanificacionModenProyecto {
   return {
@@ -62,7 +62,7 @@ function respuesta(): PlanificacionModenResponse {
 
 describe('PlanificacionComponent', () => {
   let fixture: ComponentFixture<PlanificacionComponent>;
-  let api: { getPlanificacionModen: ReturnType<typeof vi.fn>; getUsers: ReturnType<typeof vi.fn>; createProyecto: ReturnType<typeof vi.fn> };
+  let api: { getPlanificacionModen: ReturnType<typeof vi.fn>; getUsers: ReturnType<typeof vi.fn>; createProyecto: ReturnType<typeof vi.fn>; guardarAcopio: ReturnType<typeof vi.fn> };
   const el = (): HTMLElement => fixture.nativeElement;
   const texto = (nodo: Element | null | undefined): string => nodo?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 
@@ -71,6 +71,7 @@ describe('PlanificacionComponent', () => {
       getPlanificacionModen: vi.fn().mockReturnValue(of(respuesta())),
       getUsers: vi.fn().mockReturnValue(of([{ id: 7, url: '/api/users/7/', username: 'sanchos', first_name: 'Sanchos' }])),
       createProyecto: vi.fn().mockReturnValue(of({ id: 9 })),
+      guardarAcopio: vi.fn().mockReturnValue(of([])),
     };
     await TestBed.configureTestingModule({
       imports: [PlanificacionComponent],
@@ -147,6 +148,54 @@ describe('PlanificacionComponent', () => {
     expect(meses.map(m => m.nombre)).toEqual(['Entrega pasada', 'enero 2027', 'Sin fecha de entrega']);
     expect(cifra(null)).toBe('—');
     expect(cifra(24.44, 1)).toBe('24,4');
+  });
+
+  it('without a yard capacity there is no yard chart; with one, the yard against what fits and what does not fit', () => {
+    expect(el().querySelector('.pm-acopio')).toBeNull();
+    const datos = respuesta();
+    datos.ferrallas[0].acopio = {
+      capacidades: [{ desde: '2026-11-02', bastidores: 30 }, { desde: '2026-12-15', bastidores: 90 }],
+      excesos_real: [],
+      excesos_con_fantasmas: [{ fecha: '2026-11-03', bastidores: 2.4 }, { fecha: '2026-11-04', bastidores: 0.5 }],
+      dias: [
+        { fecha: '2026-11-02', real: 10, con_fantasmas: 12, capacidad: 30 },
+        { fecha: '2026-11-03', real: 28, con_fantasmas: 32.4, capacidad: 30 },
+        { fecha: '2026-11-04', real: 4, con_fantasmas: 30.5, capacidad: 30 },
+      ],
+    };
+    datos.ferrallas[0].resumen.acopio_frena_real = '2026-11-04';
+    api.getPlanificacionModen.mockReturnValue(of(datos));
+    fixture.componentInstance.cargar();
+    fixture.detectChanges();
+
+    const seccion = el().querySelector('.pm-ferralla')!;
+    expect(texto(seccion.querySelector('.pm-acopio-texto'))).toBe('Caben 30 bastidores · desde el 15/12, 90');
+    // Lo real cabe; lo que esta en estudio no, y se dice en azul.
+    expect(Array.from(seccion.querySelectorAll('.pm-acopio-aviso')).map(texto))
+      .toEqual(['Con los proyectos en estudio: No cabe entre el 03/11 y el 04/11: faltan hasta 3 bastidores de sitio']);
+    expect(texto(seccion.querySelector('.pm-kpi-nota'))).toBe('con el patio lleno hasta el 04/11');
+    const acopio = fixture.componentInstance.vistas()[0].acopio!;
+    expect(acopio.series.map(s => [s.name, s.values])).toEqual([['Con proyectos en estudio', [12, 32.4, 30.5]], ['Real', [10, 28, 4]]]);
+    expect(acopio.capacidad).toEqual([30, 30, 30]);
+    expect(seccion.querySelectorAll('app-stats-line-chart').length).toBe(2);
+    expect(textoCapacidades([])).toBe('Sin límite de acopio');
+    expect(textoNoCabe([{ fecha: '2026-11-03', bastidores: 1 }])).toBe('No cabe el 03/11: faltan hasta 1 bastidor de sitio');
+  });
+
+  it('saves the yard capacity of a factory by dates and reloads the planning', () => {
+    const componente = fixture.componentInstance;
+    componente.abrirAcopio(componente.vistas()[0]);
+    // Sin capacidad, empieza con una fila desde hoy.
+    expect(componente.filasAcopio).toEqual([{ desde: '2026-11-02', bastidores: 0 }]);
+    componente.filasAcopio[0].bastidores = 30;
+    componente.anadirFilaAcopio();
+    expect(componente.acopioValido).toBe(false);
+    componente.filasAcopio[1] = { desde: '2026-12-15', bastidores: '90' as unknown as number };
+    expect(componente.acopioValido).toBe(true);
+    componente.guardarAcopio();
+    expect(api.guardarAcopio).toHaveBeenCalledWith(7, [{ desde: '2026-11-02', bastidores: 30 }, { desde: '2026-12-15', bastidores: 90 }]);
+    expect(componente.acopioEn()).toBeNull();
+    expect(api.getPlanificacionModen).toHaveBeenCalledTimes(2);
   });
 
   it('creates a ghost in a factory and reloads the planning', () => {

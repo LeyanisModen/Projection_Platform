@@ -53,3 +53,13 @@
     .pm-datos { flex-basis: 100%; margin-left: 0; text-align: left; justify-content: flex-start; }
     .pm-chevron { display: none; }
 }
+
+/* Acopio: lo que cabe en el patio y la grafica de bastidores. */
+.pm-acciones { display: flex; gap: 8px; }
+.pm-acopio { display: flex; flex-direction: column; gap: 4px; margin-top: 18px; }
+.pm-acopio-texto, .pm-acopio-aviso { margin: 0; font-size: 13px; }
+.pm-acopio-modal { display: flex; flex-direction: column; gap: 8px; }
+.pm-acopio-fila { display: grid; grid-template-columns: 1fr 1fr 34px; align-items: center; gap: 8px; }
+.pm-acopio-cabecera { color: var(--muted); font-size: 12px; }
+.pm-acopio-anadir { align-self: flex-start; }
+.pm-acopio-fila .field { width: 100%; min-width: 0; box-sizing: border-box; }

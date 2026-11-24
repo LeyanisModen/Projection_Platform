@@ -9,13 +9,15 @@ la plataforma (turnos, mesas): aqui solo sale el ritmo necesario.
 from datetime import date, timedelta
 
 from django.contrib.auth.models import User
+from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Proyecto
+from .acopio import acopio_para_grafica, capacidades_de
+from .models import AcopioCapacidad, Proyecto
 from .planificacion import _es_oficina, _ferralla, _tarjeta, kilos_de_modulos, pesos_medios, sumar_meses
 from .planning import annotated_projects, dias_laborables, fecha_de_montaje, festivos_de, plan_ferralla
 
@@ -37,9 +39,10 @@ def planificacion_ferralla(usuario, desde, hasta):
     con_fantasmas = plan_ferralla(usuario.id, desde, con_fantasmas=True)
     ritmo_real = _ritmo_por_dia(real, festivos)
     ritmo_con = _ritmo_por_dia(con_fantasmas, festivos)
+    dias_vista = list(dias_laborables(desde, hasta + timedelta(days=1), festivos))
     dias = [
         {'fecha': dia.isoformat(), 'real': ritmo_real.get(dia, 0), 'con_fantasmas': ritmo_con.get(dia, 0)}
-        for dia in dias_laborables(desde, hasta + timedelta(days=1), festivos)
+        for dia in dias_vista
     ]
 
     # Lo que se entrega en estos seis meses y lo que aun no esta hecho (sin
@@ -91,6 +94,7 @@ def planificacion_ferralla(usuario, desde, hasta):
     return {
         'ferralla': _ferralla(usuario),
         'dias': dias,
+        'acopio': _acopio(real, con_fantasmas, dias_vista),
         'festivos': sorted(dia.isoformat() for dia in festivos if desde <= dia <= hasta),
         'entregas': entregas,
         'proyectos': filas,
@@ -100,12 +104,37 @@ def planificacion_ferralla(usuario, desde, hasta):
             'ritmo_con_fantasmas': con_fantasmas['ritmo'],
             'manda_real': real.get('manda_nombre'),
             'manda_con_fantasmas': con_fantasmas.get('manda_nombre'),
+            # Si el ritmo de hoy lo frena el patio lleno, hasta cuando.
+            'acopio_frena_real': _frena(real),
+            'acopio_frena_con_fantasmas': _frena(con_fantasmas),
             'fantasmas': sum(fila['fantasma'] for fila in filas),
             'modulos_real': suma('modulos_pendientes', False),
             'modulos_fantasmas': suma('modulos_pendientes', True),
             'kilos_real': kilos_de(False),
             'kilos_fantasmas': kilos_de(True),
         },
+    }
+
+
+def _frena(plan):
+    tramos = plan['tramos']
+    return tramos[0]['hasta'] if tramos and tramos[0].get('motivo') == 'acopio' else None
+
+
+def _acopio(real, con_fantasmas, dias):
+    """El patio cada dia con lo real y con los proyectos en estudio; None sin capacidad."""
+    solo_real = acopio_para_grafica(real['acopio'], dias)
+    if solo_real is None:
+        return None
+    con = acopio_para_grafica(con_fantasmas['acopio'], dias)
+    return {
+        'capacidades': solo_real['capacidades'],
+        'excesos_real': solo_real['excesos'],
+        'excesos_con_fantasmas': con['excesos'],
+        'dias': [
+            {'fecha': a['fecha'], 'real': a['bastidores'], 'con_fantasmas': b['bastidores'], 'capacidad': a['capacidad']}
+            for a, b in zip(solo_real['dias'], con['dias'])
+        ],
     }
 
 
@@ -136,3 +165,56 @@ class PlanificacionModenView(APIView):
         if not _es_oficina(request.user):
             return Response({'detail': 'Solo la oficina.'}, status=403)
         return Response(planificacion_moden())
+
+
+MAX_CAPACIDADES = 50
+
+
+class AcopioCapacidadView(APIView):
+    """``GET/PUT /api/planificacion-moden/acopio/<usuario>/``: los bastidores que
+    caben en el patio de una ferralla, por fechas. PUT {capacidades: [{desde,
+    bastidores}]} las sustituye todas (lista vacia: sin limite). Solo la oficina."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def _lista(self, usuario_id):
+        return [{'desde': d.isoformat(), 'bastidores': b} for d, b in capacidades_de(usuario_id)]
+
+    def _ferralla_o_404(self, request, usuario_id):
+        if not _es_oficina(request.user):
+            return None, Response({'detail': 'Solo la oficina.'}, status=403)
+        usuario = User.objects.filter(pk=usuario_id, is_staff=False, is_superuser=False).first()
+        if usuario is None:
+            return None, Response({'detail': 'Ferralla no encontrada.'}, status=404)
+        return usuario, None
+
+    def get(self, request, usuario_id):
+        usuario, error = self._ferralla_o_404(request, usuario_id)
+        return error or Response(self._lista(usuario.pk))
+
+    def put(self, request, usuario_id):
+        usuario, error = self._ferralla_o_404(request, usuario_id)
+        if error:
+            return error
+        filas = request.data.get('capacidades') if isinstance(request.data, dict) else None
+        if not isinstance(filas, list) or len(filas) > MAX_CAPACIDADES:
+            return Response({'detail': 'Envia {capacidades: [{desde, bastidores}]}.'}, status=400)
+        limpias = {}
+        for fila in filas:
+            try:
+                desde = date.fromisoformat(str(fila.get('desde')))
+                bastidores = int(fila.get('bastidores'))
+            except (AttributeError, TypeError, ValueError):
+                return Response({'detail': 'Cada capacidad necesita una fecha y un numero de bastidores.'}, status=400)
+            if bastidores < 0 or bastidores > 100000:
+                return Response({'detail': 'Los bastidores tienen que ser 0 o mas.'}, status=400)
+            if desde in limpias:
+                return Response({'detail': f'Hay dos capacidades para el {desde:%d/%m/%Y}.'}, status=400)
+            limpias[desde] = bastidores
+        with transaction.atomic():
+            AcopioCapacidad.objects.filter(usuario=usuario).delete()
+            AcopioCapacidad.objects.bulk_create([
+                AcopioCapacidad(usuario=usuario, desde=desde, bastidores=bastidores)
+                for desde, bastidores in sorted(limpias.items())
+            ])
+        return Response(self._lista(usuario.pk))

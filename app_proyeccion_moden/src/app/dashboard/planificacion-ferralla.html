@@ -46,6 +46,14 @@
             [labels]="labels()" [fullLabels]="labelsLargas()" [series]="series()"
             [marks]="marcas()" markLabel="Entrega a obra" markTenueLabel="Fecha orientativa" />
 
+        @if (acopio(); as patio) {
+            @if (patio.noCabe) { <p class="pl-estado pl-error" role="note">{{ patio.noCabe }}</p> }
+            <app-stats-line-chart title="Bastidores en el patio" unit="bastidores" [decimals]="1" [height]="200"
+                [labels]="labels()" [fullLabels]="labelsLargas()" [series]="patio.series"
+                [target]="patio.capacidad" targetLabel="Caben" [targetIsCeiling]="true"
+                [marks]="marcas()" markLabel="Entrega a obra" markTenueLabel="Fecha orientativa" />
+        }
+
         <h3 class="pl-titulo">Kilos por edificio</h3>
         @if (!proyectos().length) {
             <p class="pl-estado">No hay proyectos con entrega en los próximos tres meses.</p>

@@ -887,7 +887,7 @@ class OfficePlanningTests(APITestCase):
             return self.client.get(f'/api/proyectos/{project.pk}/').data['planificacion']
 
         primero, segundo = plan(self.project), plan(self.project2)
-        self.assertEqual(segundo['tramos_ferralla'], [{'hasta': '2026-09-18', 'ritmo': 5.6}])
+        self.assertEqual(segundo['tramos_ferralla'], [{'hasta': '2026-09-18', 'ritmo': 5.6, 'motivo': 'montaje'}])
         # La de la ferralla manda; la del otro es la orientativa de ingenieria.
         self.assertEqual((segundo['fecha_plan'], segundo['fecha_plan_orientativa']), ('2026-09-18', False))
         self.assertEqual((primero['fecha_plan'], primero['fecha_plan_orientativa']), ('2026-09-18', True))
@@ -913,7 +913,7 @@ class OfficePlanningTests(APITestCase):
         # P2 aprieta: 30 modulos en 3 dias son 10 al dia, mas que los 50 en 9
         # (5,6). Hasta el 10/09 el ritmo es 10; despues, los 20 de P1 en 6 dias.
         self.assertEqual((segundo['ritmo_ferralla'], segundo['ritmo_tramo'], segundo['cierra_tramo'], segundo['tramo']), (10.0, 10.0, True, 0))
-        self.assertEqual(segundo['tramos_ferralla'], [{'hasta': '2026-09-10', 'ritmo': 10.0}, {'hasta': '2026-09-18', 'ritmo': 3.3}])
+        self.assertEqual(segundo['tramos_ferralla'], [{'hasta': '2026-09-10', 'ritmo': 10.0, 'motivo': 'montaje'}, {'hasta': '2026-09-18', 'ritmo': 3.3, 'motivo': 'montaje'}])
         self.assertEqual(segundo['manda_nombre'], 'P2')
         self.assertEqual(
             (segundo['fabricacion_inicio'], segundo['fabricacion_fin'], segundo['ultimo_dia'], segundo['margen_dias']),
@@ -937,7 +937,7 @@ class OfficePlanningTests(APITestCase):
         # Con mas tiempo para P2, un solo tramo: 50 modulos en 9 dias.
         self.project2.fecha_montaje = date(2026, 9, 18)
         self.project2.save()
-        self.assertEqual((plan(self.project2)['ritmo_ferralla'], plan(self.project2)['tramos_ferralla']), (5.6, [{'hasta': '2026-09-18', 'ritmo': 5.6}]))
+        self.assertEqual((plan(self.project2)['ritmo_ferralla'], plan(self.project2)['tramos_ferralla']), (5.6, [{'hasta': '2026-09-18', 'ritmo': 5.6, 'motivo': 'montaje'}]))
 
     @patch('api.planning.timezone.localdate', return_value=date(2026, 9, 7))
     def test_queue_warning_looks_at_each_line_on_its_own(self, _today):

@@ -15,6 +15,8 @@ describe('project planning', () => {
         expect(requiredDaily(projects)).toBe(29);
         expect(planningPace(projects)).toBe('29 módulos/día hasta el 19/11 · después 21,3/día');
         expect(planningPace([project('PLANIFICADO', {...plan, tramos_ferralla: [{hasta: '2026-11-19', ritmo: 12.5}]})])).toBe('12,5 módulos/día hasta el 19/11');
+        // Con el patio lleno, el ritmo de hoy no lo marca un montaje: se dice.
+        expect(planningPace([project('PLANIFICADO', {...plan, tramos_ferralla: [{hasta: '2026-11-19', ritmo: 4, motivo: 'acopio'}, {hasta: '2026-12-01', ritmo: 9}]})])).toBe('4 módulos/día hasta el 19/11 (patio lleno) · después 9/día');
         expect(planningPace([project('COMPLETADO')])).toBe('Sin montajes por delante');
         expect(queueOutOfOrder(projects)).toEqual(['ESNABIDE_27_P3']);
     });

@@ -1822,3 +1822,25 @@ class HojaIncidencias(models.Model):
 
     def __str__(self):
         return self.nombre_original
+
+
+class AcopioCapacidad(models.Model):
+    """Cuantos bastidores caben en el patio de una ferralla a partir de una
+    fecha (posiciones en el suelo por alturas). Vale hasta la siguiente; antes
+    de la primera, la primera. Sin ninguna, el acopio no limita el plan
+    (api/acopio.py)."""
+    usuario = models.ForeignKey(User, on_delete=models.CASCADE, related_name='acopio_capacidades')
+    desde = models.DateField()
+    bastidores = models.PositiveIntegerField()
+
+    class Meta:
+        db_table = 'api_acopio_capacidad'
+        ordering = ['usuario_id', 'desde']
+        constraints = [
+            models.UniqueConstraint(fields=['usuario', 'desde'], name='acopio_capacidad_unica_por_dia'),
+        ]
+        verbose_name = 'capacidad de acopio'
+        verbose_name_plural = 'capacidades de acopio'
+
+    def __str__(self):
+        return f'{self.usuario_id} desde {self.desde}: {self.bastidores} bastidores'

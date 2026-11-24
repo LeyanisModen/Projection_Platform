@@ -19,6 +19,8 @@ from datetime import datetime, time, timedelta
 from django.db.models import Count, Q
 from django.utils import timezone
 
+from .acopio import almacen, capacidades_de, plan_con_acopio
+
 DAY_CODES = ('MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN')
 # Dias de fabricacion: de lunes a viernes. Un turno de noche o un domingo
 # son cosa de la ferralla; no cambian el objetivo.
@@ -309,14 +311,27 @@ def plan_ferralla(usuario_id, today=None, override=None, con_fantasmas=False):
             proyectos.append(override)
     if not proyectos:
         return {'ritmo': None, 'tramos': [], 'manda': None, 'objetivo_hoy': 0, 'objetivo_semana': 0,
-                'cola_fuera_de_orden': [], 'trabaja_hoy': False, 'proyectos': {}}
+                'cola_fuera_de_orden': [], 'trabaja_hoy': False, 'proyectos': {}, 'acopio': None}
 
     festivos = festivos_de(usuario_id)
     filas = {p.pk: _base_demand(p, today, festivos) for p in proyectos}
     serie = _serie(proyectos, filas)
-    tramos = tramos_de_ritmo(
-        [(fecha_de_montaje(p), filas[p.pk]['modulos_pendientes'], p.pk) for p in serie], today, festivos,
-    )
+    forjados = [(fecha_de_montaje(p), filas[p.pk]['modulos_pendientes'], p.pk) for p in serie]
+    capacidades = capacidades_de(usuario_id)
+    acopio = None
+    if capacidades:
+        # El patio limita lo que se puede adelantar (api/acopio.py).
+        cuentas = {p.pk: _counts(p) for p in proyectos}
+        info = almacen(
+            proyectos,
+            subidos={pk: total for pk, (total, _hechos) in cuentas.items()},
+            hechos={pk: hechos for pk, (_total, hechos) in cuentas.items()},
+            totales={p.pk: max(cuentas[p.pk][0], p.modulos_previstos or 0) for p in proyectos},
+            festivos=festivos, desde=today,
+        )
+        tramos, acopio = plan_con_acopio(forjados, info, today, festivos, capacidades)
+    else:
+        tramos = tramos_de_ritmo(forjados, today, festivos)
     produccion = _Produccion(tramos, festivos)
     hoy_trabaja = es_laborable(today, festivos)
     hoy = [pos for pos, dia in enumerate(produccion.dias) if dia == today]
@@ -338,7 +353,8 @@ def plan_ferralla(usuario_id, today=None, override=None, con_fantasmas=False):
                 'tramo': indice,
                 'ritmo_tramo': _redondeo(tramo['ritmo']),
                 'tramo_hasta': tramo['hasta'].isoformat(),
-                'cierra_tramo': clave == tramo['claves'][-1],
+                # Con el patio lleno el tramo no lo cierra ningun montaje.
+                'cierra_tramo': clave == tramo['claves'][-1] and tramo.get('motivo', 'montaje') == 'montaje',
                 'fabricacion_inicio': (produccion.dia_en_que_supera(inicio_modulo) or today).isoformat(),
                 'fabricacion_fin': fin.isoformat(),
                 'ultimo_dia': propios[-1].isoformat() if propios else None,
@@ -350,17 +366,19 @@ def plan_ferralla(usuario_id, today=None, override=None, con_fantasmas=False):
             acumulado = fin_modulo
 
     ritmo = _redondeo(tramos[0]['ritmo']) if tramos else None
-    manda = tramos[0]['claves'][-1] if tramos else None
+    # Lo marca el montaje que cierra el primer tramo; con el patio lleno, ninguno.
+    manda = tramos[0]['claves'][-1] if tramos and tramos[0]['claves'] and tramos[0].get('motivo', 'montaje') == 'montaje' else None
     manda_nombre = next((p.nombre for p in serie if p.pk == manda), None)
     cola_fuera_de_orden = _cola_fuera_de_orden(serie, usuario_id)
     resumen_tramos = [{
         'desde': t['desde'].isoformat(), 'hasta': t['hasta'].isoformat(), 'dias': t['dias'],
         'modulos': t['modulos'], 'ritmo': _redondeo(t['ritmo']), 'proyectos': t['claves'],
+        'motivo': t.get('motivo', 'montaje'),
     } for t in tramos]
     for fila in filas.values():
         fila.update({
             'ritmo_ferralla': ritmo,
-            'tramos_ferralla': [{'hasta': t['hasta'], 'ritmo': t['ritmo']} for t in resumen_tramos],
+            'tramos_ferralla': [{'hasta': t['hasta'], 'ritmo': t['ritmo'], 'motivo': t['motivo']} for t in resumen_tramos],
             'manda_nombre': manda_nombre,
             'cola_fuera_de_orden': cola_fuera_de_orden,
         })
@@ -374,6 +392,8 @@ def plan_ferralla(usuario_id, today=None, override=None, con_fantasmas=False):
         'cola_fuera_de_orden': cola_fuera_de_orden,
         'trabaja_hoy': hoy_trabaja,
         'proyectos': filas,
+        # Con capacidad de acopio: lo que hay en el patio cada dia (api/acopio.py).
+        'acopio': acopio,
     }
 
 
@@ -486,7 +506,19 @@ def period_target_summary(projects, start, end):
         if not forjados:
             continue
         forjados.sort(key=lambda f: (f[0], f[3], f[2]))
-        tramos = tramos_de_ritmo([(f[0], f[1], f[2]) for f in forjados], start, festivos)
+        capacidades = capacidades_de(factory_id)
+        if capacidades:
+            # El patio de entonces: lo hecho antes del periodo que aun no habia salido.
+            info = almacen(
+                factory_projects,
+                subidos={p.pk: p._period_total for p in factory_projects},
+                hechos={p.pk: p._period_done_before for p in factory_projects},
+                totales={p.pk: max(p._period_total, p.modulos_previstos or 0) for p in factory_projects},
+                festivos=festivos, desde=start,
+            )
+            tramos, _acopio = plan_con_acopio([(f[0], f[1], f[2]) for f in forjados], info, start, festivos, capacidades)
+        else:
+            tramos = tramos_de_ritmo([(f[0], f[1], f[2]) for f in forjados], start, festivos)
         produccion = _Produccion(tramos, festivos)
         posiciones = [pos for pos, dia in enumerate(produccion.dias) if start <= dia <= end]
         for pos in posiciones:

@@ -69,7 +69,8 @@ export interface PlanificacionProyecto {
     /** Ritmo necesario hoy (modulos por dia laborable del tramo en curso). */
     ritmo_ferralla?: number | null;
     /** Tramos de la ferralla: hasta que montaje y a que ritmo. */
-    tramos_ferralla?: Array<{ hasta: string; ritmo: number }>;
+    /** motivo: 'acopio' si el tramo acaba porque el patio esta lleno (luego sube el ritmo). */
+    tramos_ferralla?: Array<{ hasta: string; ritmo: number; motivo?: 'montaje' | 'acopio' }>;
     /** Forjado cuyo montaje marca el ritmo de hoy. */
     manda_nombre?: string | null;
     /** Forjados en la cola de las lineas por delante de otro que monta antes. */
@@ -882,9 +883,27 @@ export interface PlanificacionResponse {
     /** Dias laborables de la ventana con los modulos al dia que exigen las entregas. */
     dias?: Array<{ fecha: string; modulos: number }>;
     festivos?: string[];
-    tramos?: Array<{ desde: string; hasta: string; ritmo: number }>;
+    tramos?: Array<{ desde: string; hasta: string; ritmo: number; motivo?: 'montaje' | 'acopio' }>;
+    /** Con capacidad de acopio: los bastidores en el patio cada dia; null sin ella. */
+    acopio?: {
+        capacidades: AcopioCapacidad[];
+        excesos: AcopioExceso[];
+        dias: Array<{ fecha: string; bastidores: number; capacidad: number }>;
+    } | null;
     entregas?: PlanificacionEntrega[];
     proyectos?: PlanificacionTarjeta[];
+}
+
+/** Bastidores que caben en el patio de una ferralla a partir de una fecha. */
+export interface AcopioCapacidad {
+    desde: string;
+    bastidores: number;
+}
+
+/** Un dia en que, para llegar al montaje, hacen falta mas bastidores de los que caben. */
+export interface AcopioExceso {
+    fecha: string;
+    bastidores: number;
 }
 
 /** Un proyecto en la planificacion de Moden: la tarjeta de la ferralla y si es fantasma. */
@@ -902,6 +921,13 @@ export interface PlanificacionModenFerralla {
     festivos: string[];
     entregas: Array<PlanificacionEntrega & { fantasma: boolean }>;
     proyectos: PlanificacionModenProyecto[];
+    /** Con capacidad de acopio: bastidores en el patio cada dia con lo real y con lo que esta en estudio. */
+    acopio?: {
+        capacidades: AcopioCapacidad[];
+        excesos_real: AcopioExceso[];
+        excesos_con_fantasmas: AcopioExceso[];
+        dias: Array<{ fecha: string; real: number; con_fantasmas: number; capacidad: number }>;
+    } | null;
     resumen: {
         /** El tramo mas apretado: lo que hay que sacar al dia ya. */
         ritmo_real: number | null;
@@ -913,6 +939,9 @@ export interface PlanificacionModenFerralla {
         modulos_fantasmas: number;
         kilos_real: number;
         kilos_fantasmas: number;
+        /** Hasta cuando el ritmo de hoy lo frena el patio lleno (null: no lo frena). */
+        acopio_frena_real?: string | null;
+        acopio_frena_con_fantasmas?: string | null;
     };
 }
 
@@ -1429,6 +1458,13 @@ export class ApiService {
     /** Planificacion de Moden: todas las ferrallas a seis meses, con sus fantasmas. */
     getPlanificacionModen(): Observable<PlanificacionModenResponse> {
         return this.http.get<PlanificacionModenResponse>(`${this.baseUrl}/planificacion-moden/`, { headers: this.getHeaders() });
+    }
+
+    /** Sustituye las capacidades de acopio de una ferralla (lista vacia: sin limite). */
+    guardarAcopio(usuarioId: number, capacidades: AcopioCapacidad[]): Observable<AcopioCapacidad[]> {
+        return this.http.put<AcopioCapacidad[]>(
+            `${this.baseUrl}/planificacion-moden/acopio/${usuarioId}/`, { capacidades }, { headers: this.getHeaders() },
+        );
     }
 
     /** Seguimiento de la oficina: las ferrallas y, con una elegida, como esta ahora. */

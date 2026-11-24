@@ -16,15 +16,23 @@
         <section class="pm-ferralla" [attr.aria-label]="vista.nombre">
             <header class="pm-cabecera">
                 <h2 class="pm-nombre">{{ vista.nombre }}</h2>
-                <button type="button" class="btn btn-sm" (click)="abrirNuevo(vista)">
-                    <i class="fa fa-plus" aria-hidden="true"></i> Proyecto en estudio
-                </button>
+                <span class="pm-acciones">
+                    <button type="button" class="btn btn-sm pm-acopio-btn" (click)="abrirAcopio(vista)">
+                        <i class="fa fa-cubes" aria-hidden="true"></i> Acopio
+                    </button>
+                    <button type="button" class="btn btn-sm" (click)="abrirNuevo(vista)">
+                        <i class="fa fa-plus" aria-hidden="true"></i> Proyecto en estudio
+                    </button>
+                </span>
             </header>
 
             <div class="pm-kpis">
                 <div class="pm-kpi" [title]="vista.datos.resumen.manda_real ? 'Lo marca ' + vista.datos.resumen.manda_real : ''">
                     <span class="pm-kpi-label">Para llegar</span>
                     <span class="pm-kpi-value">{{ cifra(vista.datos.resumen.ritmo_real, 1) }} <small>mód./día</small></span>
+                    @if (vista.datos.resumen.acopio_frena_real; as frena) {
+                    <span class="pm-kpi-nota">con el patio lleno hasta el {{ fechaCorta(frena) }}</span>
+                    }
                 </div>
                 <div class="pm-kpi">
                     <span class="pm-kpi-label">Módulos por fabricar</span>
@@ -62,6 +70,18 @@
             <app-stats-line-chart title="Módulos al día para llegar" unit="mód./día" [decimals]="1" [height]="240"
                 [labels]="vista.labels" [fullLabels]="vista.labelsLargas" [series]="vista.series"
                 [marks]="vista.marcas" markLabel="Entrega a obra" [markTenueLabel]="vista.datos.resumen.fantasmas ? 'Solo en estudio' : ''" [markTenueColor]="azul" />
+            }
+
+            @if (vista.acopio; as acopio) {
+            <div class="pm-acopio">
+                <p class="meta pm-acopio-texto">{{ acopio.texto }}</p>
+                @if (acopio.noCabeReal) { <p class="is-danger pm-acopio-aviso" role="note">{{ acopio.noCabeReal }}</p> }
+                @if (acopio.noCabeEstudio) { <p class="pm-azul pm-acopio-aviso" role="note">Con los proyectos en estudio: {{ acopio.noCabeEstudio }}</p> }
+                <app-stats-line-chart title="Bastidores en el patio" unit="bastidores" [decimals]="1" [height]="200"
+                    [labels]="vista.labels" [fullLabels]="vista.labelsLargas" [series]="acopio.series"
+                    [target]="acopio.capacidad" targetLabel="Caben" [targetIsCeiling]="true"
+                    [marks]="vista.marcas" markLabel="Entrega a obra" [markTenueLabel]="vista.datos.resumen.fantasmas ? 'Solo en estudio' : ''" [markTenueColor]="azul" />
+            </div>
             }
 
             @if (!vista.meses.length) {
@@ -107,6 +127,42 @@
         }
     }
 </div>
+
+@if (acopioEn(); as vista) {
+<div class="modal-backdrop" (click)="cerrarAcopio()"></div>
+<div class="custom-modal">
+    <form class="modal-content" role="dialog" aria-modal="true" aria-labelledby="pm-acopio-titulo" (ngSubmit)="guardarAcopio()" autocomplete="off">
+        <div class="modal-header">
+            <h5 id="pm-acopio-titulo">Acopio de {{ vista.nombre }}</h5>
+            <button type="button" class="close" (click)="cerrarAcopio()" aria-label="Cerrar"><span>&times;</span></button>
+        </div>
+        <div class="modal-body pm-acopio-modal">
+            @if (filasAcopio.length) {
+            <div class="pm-acopio-fila pm-acopio-cabecera" aria-hidden="true"><span>Desde</span><span>Bastidores que caben</span><span></span></div>
+            }
+            @for (fila of filasAcopio; track $index; let i = $index) {
+            <div class="pm-acopio-fila">
+                <input type="date" class="field" [name]="'desde' + i" [(ngModel)]="fila.desde" required [disabled]="guardandoAcopio()" [attr.aria-label]="'Desde (fila ' + (i + 1) + ')'">
+                <input type="number" class="field" [name]="'bastidores' + i" min="0" step="1" [(ngModel)]="fila.bastidores" required [disabled]="guardandoAcopio()" [attr.aria-label]="'Bastidores que caben (fila ' + (i + 1) + ')'">
+                <button type="button" class="btn-icon danger" (click)="quitarFilaAcopio(i)" [disabled]="guardandoAcopio()" title="Quitar" aria-label="Quitar esta fecha">
+                    <i class="fa fa-trash" aria-hidden="true"></i>
+                </button>
+            </div>
+            } @empty {
+            <p class="meta">Sin límite de acopio.</p>
+            }
+            <button type="button" class="btn btn-sm pm-acopio-anadir" (click)="anadirFilaAcopio()" [disabled]="guardandoAcopio()">
+                <i class="fa fa-plus" aria-hidden="true"></i> Otra fecha
+            </button>
+            @if (errorAcopio()) { <p class="alert-inline" role="alert">{{ errorAcopio() }}</p> }
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn" (click)="cerrarAcopio()" [disabled]="guardandoAcopio()">Cancelar</button>
+            <button type="submit" class="btn btn-primary" [disabled]="guardandoAcopio() || !acopioValido">{{ guardandoAcopio() ? 'Guardando…' : 'Guardar' }}</button>
+        </div>
+    </form>
+</div>
+}
 
 @if (nuevoEn(); as vista) {
 <div class="modal-backdrop" (click)="cerrarNuevo()"></div>

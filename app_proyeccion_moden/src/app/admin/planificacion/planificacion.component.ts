@@ -4,7 +4,8 @@ import { RouterLink } from '@angular/router';
 import { forkJoin } from 'rxjs';
 
 import {
-  ApiService, PlanificacionModenFerralla, PlanificacionModenProyecto, PlanificacionModenResponse, User,
+  AcopioCapacidad, AcopioExceso, ApiService, PlanificacionModenFerralla, PlanificacionModenProyecto,
+  PlanificacionModenResponse, User,
 } from '../../services/api.service';
 import { ChartMark, LineChartSeries, StatsLineChart } from '../../dashboard/stats-line-chart';
 import { etiquetasCortas, fechaCorta, fechaLarga } from '../../dashboard/planificacion-ferralla';
@@ -39,6 +40,16 @@ export interface PicoEstudio {
   hasta: string;
 }
 
+/** El patio de la ferralla: bastidores cada dia contra lo que cabe. */
+export interface VistaAcopio {
+  series: LineChartSeries[];
+  capacidad: number[];
+  /** "Caben 30 bastidores · desde el 15/12, 90". */
+  texto: string;
+  noCabeReal: string | null;
+  noCabeEstudio: string | null;
+}
+
 export interface VistaFerralla {
   id: number;
   nombre: string;
@@ -51,6 +62,47 @@ export interface VistaFerralla {
   /** Algo que fabricar en estos seis meses: sin nada, la grafica sobra. */
   conCarga: boolean;
   picoEstudio: PicoEstudio | null;
+  /** Sin capacidad de acopio, null: el patio no limita. */
+  acopio: VistaAcopio | null;
+}
+
+/** "Caben 30 bastidores · desde el 15/12, 90". */
+export function textoCapacidades(capacidades: AcopioCapacidad[]): string {
+  if (!capacidades.length) return 'Sin límite de acopio';
+  const [primera, ...resto] = capacidades;
+  return [
+    `Caben ${cifra(primera.bastidores)} bastidores`,
+    ...resto.map(c => `desde el ${fechaCorta(c.desde)}, ${cifra(c.bastidores)}`),
+  ].join(' · ');
+}
+
+/** "No cabe entre el 18/09 y el 25/09: faltan hasta 4 bastidores de sitio". */
+export function textoNoCabe(excesos: AcopioExceso[]): string | null {
+  if (!excesos.length) return null;
+  const faltan = Math.ceil(Math.max(...excesos.map(e => e.bastidores)) - 1e-9);
+  const desde = excesos[0].fecha;
+  const hasta = excesos[excesos.length - 1].fecha;
+  const cuando = desde === hasta ? `el ${fechaCorta(desde)}` : `entre el ${fechaCorta(desde)} y el ${fechaCorta(hasta)}`;
+  return `No cabe ${cuando}: faltan hasta ${cifra(faltan)} ${faltan === 1 ? 'bastidor' : 'bastidores'} de sitio`;
+}
+
+export function vistaAcopio(ferralla: PlanificacionModenFerralla): VistaAcopio | null {
+  const acopio = ferralla.acopio;
+  if (!acopio) return null;
+  const conFantasmas = ferralla.resumen.fantasmas > 0;
+  const real: LineChartSeries = { name: 'Real', color: NARANJA, values: acopio.dias.map(d => d.real) };
+  const series = conFantasmas
+    ? [{ name: 'Con proyectos en estudio', color: AZUL, values: acopio.dias.map(d => d.con_fantasmas) }, real]
+    : [real];
+  return {
+    series,
+    capacidad: acopio.dias.map(d => d.capacidad),
+    texto: textoCapacidades(acopio.capacidades),
+    noCabeReal: textoNoCabe(acopio.excesos_real),
+    // Solo si lo que esta en estudio empeora lo real.
+    noCabeEstudio: conFantasmas && JSON.stringify(acopio.excesos_con_fantasmas) !== JSON.stringify(acopio.excesos_real)
+      ? textoNoCabe(acopio.excesos_con_fantasmas) : null,
+  };
 }
 
 /** El dia mas alto de los que cambian por los proyectos en estudio: ahi es donde hay que centrarse. */
@@ -128,6 +180,7 @@ export function vistaDe(ferralla: PlanificacionModenFerralla, desde: string): Vi
     meses: porMes(ferralla.proyectos, desde),
     conCarga: dias.some(d => d.real || d.con_fantasmas),
     picoEstudio: conFantasmas ? picoEstudio(dias) : null,
+    acopio: vistaAcopio(ferralla),
   };
 }
 
@@ -167,8 +220,61 @@ export class PlanificacionComponent implements OnInit {
   readonly errorNuevo = signal('');
   nuevo = { nombre: '', fecha_montaje: '', modulos_previstos: null as number | null };
 
+  // Capacidad de acopio de una ferralla: bastidores que caben a partir de cada fecha.
+  readonly acopioEn = signal<VistaFerralla | null>(null);
+  readonly guardandoAcopio = signal(false);
+  readonly errorAcopio = signal('');
+  filasAcopio: AcopioCapacidad[] = [];
+
   ngOnInit(): void {
     this.cargar();
+  }
+
+  abrirAcopio(vista: VistaFerralla): void {
+    const actuales = vista.datos.acopio?.capacidades ?? [];
+    const hoy = this.datos()?.desde ?? '';
+    this.filasAcopio = actuales.length ? actuales.map(c => ({ ...c })) : [{ desde: hoy, bastidores: 0 }];
+    this.errorAcopio.set('');
+    this.acopioEn.set(vista);
+  }
+
+  cerrarAcopio(): void {
+    if (!this.guardandoAcopio()) this.acopioEn.set(null);
+  }
+
+  anadirFilaAcopio(): void {
+    const ultima = this.filasAcopio[this.filasAcopio.length - 1];
+    this.filasAcopio = [...this.filasAcopio, { desde: '', bastidores: ultima?.bastidores ?? 0 }];
+  }
+
+  quitarFilaAcopio(indice: number): void {
+    this.filasAcopio = this.filasAcopio.filter((_f, i) => i !== indice);
+  }
+
+  get acopioValido(): boolean {
+    const fechas = this.filasAcopio.map(f => f.desde);
+    return this.filasAcopio.every(f => !!f.desde && Number.isInteger(Number(f.bastidores)) && Number(f.bastidores) >= 0)
+      && new Set(fechas).size === fechas.length;
+  }
+
+  /** Guarda las capacidades (sin filas: sin limite) y recarga el plan con ellas. */
+  guardarAcopio(): void {
+    const vista = this.acopioEn();
+    if (!vista || !this.acopioValido || this.guardandoAcopio()) return;
+    this.guardandoAcopio.set(true);
+    this.errorAcopio.set('');
+    const capacidades = this.filasAcopio.map(f => ({ desde: f.desde, bastidores: Number(f.bastidores) }));
+    this.api.guardarAcopio(vista.id, capacidades).subscribe({
+      next: () => {
+        this.guardandoAcopio.set(false);
+        this.acopioEn.set(null);
+        this.cargar();
+      },
+      error: err => {
+        this.errorAcopio.set(err?.error?.detail || 'No se pudo guardar el acopio.');
+        this.guardandoAcopio.set(false);
+      },
+    });
   }
 
   cargar(): void {
