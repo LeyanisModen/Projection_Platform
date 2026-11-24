@@ -225,23 +225,42 @@ export interface Proyecto {
 /** Un camion de un forjado: sale ese dia con sus bastidores (en orden de bastidor). */
 export interface Camion {
     orden?: number;
-    fecha: string;
+    /** El dia que sale: el fijo o el que le toca en el reparto (null sin montaje). */
+    fecha: string | null;
+    /** Movido a mano: no sigue el reparto de los dias de envio. */
+    fecha_fija?: boolean;
     bastidores: number;
     enviado: boolean;
     enviado_at?: string | null;
-    /** No esta guardado: lo que queda del forjado, el dia antes del montaje. */
+    /** No esta guardado: lo que queda del forjado, en el reparto. */
     por_defecto?: boolean;
+}
+
+/** Cuando salen los camiones de un forjado con los que saca la ferralla al dia. */
+export interface EnvioForjado {
+    camiones: number;
+    bastidores: number;
+    desde: string | null;
+    hasta: string | null;
+    /** Dias laborables del primero al ultimo. */
+    dias: number;
+    /** Los que ha elegido Moden en Planificacion; null: los justos. */
+    dias_elegidos: number | null;
+    /** Los que hacen falta con los camiones al dia de la ferralla. */
+    dias_minimos: number;
 }
 
 export interface CamionesProyecto {
     bastidores: number;
     /** Sin bastidores calculados (o con modulos por subir): a la media de la ferralla. */
     bastidores_estimados: boolean;
-    /** Dia laborable antes del montaje: cuando salen por defecto. */
+    /** Dia laborable antes del montaje: el ultimo en que salen. */
     salida: string | null;
     por_defecto: boolean;
     /** Los guardados llevan mas bastidores de los que tiene ahora el forjado. */
     sobran: number;
+    camiones_por_dia: number;
+    envio: EnvioForjado;
     camiones: Camion[];
 }
 
@@ -935,6 +954,16 @@ export interface PlanificacionModenProyecto extends PlanificacionTarjeta {
     /** Real, pero la ferralla aun no lo ha aceptado. */
     pendiente_aceptar: boolean;
     modulos_pendientes: number;
+    /** Cuando se fabrica con lo que esta en estudio (null: hecho, sin modulos o sin fecha). */
+    fabricacion_inicio?: string | null;
+    fabricacion_fin?: string | null;
+    envio?: EnvioForjado | null;
+}
+
+/** Un dia en que salen mas camiones de los que saca la ferralla. */
+export interface SobrecargaCamiones {
+    fecha: string;
+    camiones: number;
 }
 
 export interface PlanificacionModenFerralla {
@@ -944,6 +973,8 @@ export interface PlanificacionModenFerralla {
     festivos: string[];
     entregas: Array<PlanificacionEntrega & { fantasma: boolean }>;
     proyectos: PlanificacionModenProyecto[];
+    /** Camiones que saca al dia y dias en que, con lo que esta en estudio, salen mas. */
+    camiones?: { por_dia: number; sobrecargas: SobrecargaCamiones[] };
     /** Con capacidad de acopio: bastidores en el patio cada dia con lo real y con lo que esta en estudio. */
     acopio?: {
         capacidades: AcopioCapacidad[];
@@ -1253,12 +1284,12 @@ export class ApiService {
     guardarCamiones(proyectoId: number, camiones: Camion[]): Observable<CamionesProyecto> {
         return this.http.put<CamionesProyecto>(
             `${this.baseUrl}/proyectos/${proyectoId}/camiones/`,
-            { camiones: camiones.map(c => ({ fecha: c.fecha, bastidores: c.bastidores, enviado: c.enviado })) },
+            { camiones: camiones.map(c => ({ fecha: c.fecha, fecha_fija: !!c.fecha_fija, bastidores: c.bastidores, enviado: c.enviado })) },
             { headers: this.getHeaders() },
         );
     }
 
-    /** Vuelve a los camiones por defecto (de 4 en 4 el dia antes del montaje). */
+    /** Vuelve a los camiones por defecto (de 4 en 4, en el reparto de la ferralla). */
     camionesPorDefecto(proyectoId: number): Observable<CamionesProyecto> {
         return this.http.delete<CamionesProyecto>(`${this.baseUrl}/proyectos/${proyectoId}/camiones/`, { headers: this.getHeaders() });
     }
@@ -1505,6 +1536,15 @@ export class ApiService {
     guardarAcopio(usuarioId: number, capacidades: AcopioCapacidad[]): Observable<AcopioCapacidad[]> {
         return this.http.put<AcopioCapacidad[]>(
             `${this.baseUrl}/planificacion-moden/acopio/${usuarioId}/`, { capacidades }, { headers: this.getHeaders() },
+        );
+    }
+
+    /** Camiones al dia de una ferralla y en cuantos dias salen sus forjados (null: los justos). */
+    guardarCamionesFerralla(
+        usuarioId: number, datos: { camiones_por_dia: number; proyectos: Array<{ id: number; dias_envio: number | null }> },
+    ): Observable<{ camiones_por_dia: number; proyectos: Array<{ id: number; dias_envio: number | null }> }> {
+        return this.http.put<{ camiones_por_dia: number; proyectos: Array<{ id: number; dias_envio: number | null }> }>(
+            `${this.baseUrl}/planificacion-moden/camiones/${usuarioId}/`, datos, { headers: this.getHeaders() },
         );
     }
 

@@ -8,7 +8,7 @@ from api.health import HealthView
 from api.office import CheckDefinitionViewSet, ProjectChecklistViewSet, WorkerViewSet, EventViewSet
 from api.edificios import EdificioViewSet
 from api.planificacion import PlanificacionFerrallaView
-from api.planificacion_moden import AcopioCapacidadView, PlanificacionModenView
+from api.planificacion_moden import AcopioCapacidadView, CamionesFerrallaView, PlanificacionModenView
 from api.seguimiento import SeguimientoFerrallaView
 
 from django.contrib import admin
@@ -43,6 +43,7 @@ urlpatterns = [
     path("api/planificacion/", PlanificacionFerrallaView.as_view(), name="planificacion"),
     path("api/planificacion-moden/", PlanificacionModenView.as_view(), name="planificacion-moden"),
     path("api/planificacion-moden/acopio/<int:usuario_id>/", AcopioCapacidadView.as_view(), name="acopio-capacidad"),
+    path("api/planificacion-moden/camiones/<int:usuario_id>/", CamionesFerrallaView.as_view(), name="camiones-ferralla"),
     path("api/seguimiento/", SeguimientoFerrallaView.as_view(), name="seguimiento"),
     path("api/", include(router.urls)),
     path("api-auth/", include("rest_framework.urls", namespace="rest_framework")),

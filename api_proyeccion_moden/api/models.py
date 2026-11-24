@@ -157,6 +157,10 @@ class Proyecto(models.Model):
             'subidos. Vacio => se usan los subidos. Sirve para el ritmo diario.'
         ),
     )
+    # Dias laborables en que salen sus camiones, acabando el de antes del
+    # montaje (lo elige Moden en Planificacion). Vacio: los justos con los
+    # camiones al dia de la ferralla (api/acopio.py).
+    dias_envio = models.PositiveSmallIntegerField(null=True, blank=True)
     datos_tecnicos_importados = models.BooleanField(
         default=False,
         help_text='Indica si ya se importo el fichero de datos tecnicos y se calcularon los grupos.'
@@ -1263,6 +1267,8 @@ class UserProfile(models.Model):
     # sincronizados (todos los turnos juntos) para lo que aun los lee.
     turnos = models.JSONField(default=list, blank=True)
     capture_interval_seconds = models.PositiveIntegerField(default=20)
+    # Camiones que puede sacar al dia hacia las obras (api/acopio.py).
+    camiones_por_dia = models.PositiveSmallIntegerField(default=4)
 
     def horario_por_dia(self):
         """{'MON': (time, time), ...} solo con los dias de trabajo."""
@@ -1847,15 +1853,16 @@ class AcopioCapacidad(models.Model):
 
 
 class Camion(models.Model):
-    """Un camion de un forjado: sale ``fecha`` hacia la obra con ``bastidores``
-    (4 salvo el ultimo o uno compartido con la planta de al lado), en orden de
-    bastidor. Sin ninguno guardado, el forjado sale entero el dia laborable
-    anterior a su montaje, en camiones de 4 (api/acopio.py); al mover uno se
-    guardan todos. ``enviado``: ya salio ese dia (lo marca la ferralla; por
-    ahora tambien Moden, para los estudios)."""
+    """Un camion de un forjado: sale hacia la obra con ``bastidores`` (4 salvo
+    el ultimo o uno compartido con la planta de al lado), en orden de bastidor.
+    Sin ninguno guardado, el forjado sale en camiones de 4 repartidos en los
+    dias antes del montaje (api/acopio.py); al cambiar uno se guardan todos.
+    ``fecha`` vacia: el dia que le toca en ese reparto; con fecha, ese dia.
+    ``enviado``: ya salio ese dia (lo marca la ferralla; por ahora tambien
+    Moden, para los estudios)."""
     proyecto = models.ForeignKey(Proyecto, on_delete=models.CASCADE, related_name='camiones')
     orden = models.PositiveIntegerField()
-    fecha = models.DateField()
+    fecha = models.DateField(null=True, blank=True)
     bastidores = models.PositiveSmallIntegerField(default=4)
     enviado = models.BooleanField(default=False)
     enviado_at = models.DateTimeField(null=True, blank=True)

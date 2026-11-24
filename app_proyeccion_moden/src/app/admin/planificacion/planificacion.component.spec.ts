@@ -1,10 +1,12 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
 import { of } from 'rxjs';
 import { vi } from 'vitest';
 
 import { ApiService, PlanificacionModenProyecto, PlanificacionModenResponse } from '../../services/api.service';
-import { PlanificacionComponent, cifra, picoEstudio, porMes, textoCapacidades, textoNoCabe, vistaDe } from './planificacion.component';
+import {
+  PlanificacionComponent, cifra, columnaDe, obrasDe, picoEstudio, porMes, textoCapacidades, textoNoCabe, textoSobrecargas,
+} from './planificacion.component';
 
 function proyecto(id: number, nombre: string, fecha: string | null, pendientes: number, fantasma = false, kilos: number | null = 1000): PlanificacionModenProyecto {
   return {
@@ -36,10 +38,20 @@ function respuesta(): PlanificacionModenResponse {
           { proyecto: 3, nombre: 'TORRE_P01', fecha: '2026-11-04', orientativa: true, fantasma: true, modulos_pendientes: 10 },
         ],
         proyectos: [
-          proyecto(1, 'OBRA_P01', '2026-11-03', 8),
-          proyecto(3, 'TORRE_P01', '2026-11-04', 10, true, 1290),
-          proyecto(2, 'OBRA_P02', '2026-12-20', 4),
+          {
+            ...proyecto(1, 'OBRA_P01', '2026-11-03', 8), fabricacion_inicio: '2026-11-02', fabricacion_fin: '2026-11-02',
+            envio: { camiones: 2, bastidores: 6, desde: '2026-11-02', hasta: '2026-11-02', dias: 1, dias_elegidos: null, dias_minimos: 1 },
+          },
+          {
+            ...proyecto(3, 'TORRE_P01', '2026-11-04', 10, true, 1290), fabricacion_inicio: '2026-11-02', fabricacion_fin: '2026-11-03',
+            envio: { camiones: 1, bastidores: 2, desde: '2026-11-03', hasta: '2026-11-03', dias: 1, dias_elegidos: null, dias_minimos: 1 },
+          },
+          {
+            ...proyecto(2, 'OBRA_P02', '2026-12-20', 4), fabricacion_inicio: '2026-11-04', fabricacion_fin: '2026-11-30',
+            envio: { camiones: 3, bastidores: 10, desde: '2026-12-17', hasta: '2026-12-18', dias: 2, dias_elegidos: 2, dias_minimos: 1 },
+          },
         ],
+        camiones: { por_dia: 3, sobrecargas: [] },
         resumen: {
           ritmo_real: 1, ritmo_con_fantasmas: 1.6, manda_real: 'OBRA_P01', manda_con_fantasmas: 'TORRE_P01',
           fantasmas: 1, modulos_real: 12, modulos_fantasmas: 10, kilos_real: 2000, kilos_fantasmas: 1290,
@@ -62,7 +74,10 @@ function respuesta(): PlanificacionModenResponse {
 
 describe('PlanificacionComponent', () => {
   let fixture: ComponentFixture<PlanificacionComponent>;
-  let api: { getPlanificacionModen: ReturnType<typeof vi.fn>; getUsers: ReturnType<typeof vi.fn>; createProyecto: ReturnType<typeof vi.fn>; guardarAcopio: ReturnType<typeof vi.fn> };
+  let api: {
+    getPlanificacionModen: ReturnType<typeof vi.fn>; getUsers: ReturnType<typeof vi.fn>; createProyecto: ReturnType<typeof vi.fn>;
+    guardarAcopio: ReturnType<typeof vi.fn>; guardarCamionesFerralla: ReturnType<typeof vi.fn>;
+  };
   const el = (): HTMLElement => fixture.nativeElement;
   const texto = (nodo: Element | null | undefined): string => nodo?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 
@@ -72,6 +87,7 @@ describe('PlanificacionComponent', () => {
       getUsers: vi.fn().mockReturnValue(of([{ id: 7, url: '/api/users/7/', username: 'sanchos', first_name: 'Sanchos' }])),
       createProyecto: vi.fn().mockReturnValue(of({ id: 9 })),
       guardarAcopio: vi.fn().mockReturnValue(of([])),
+      guardarCamionesFerralla: vi.fn().mockReturnValue(of({ camiones_por_dia: 2, proyectos: [] })),
     };
     await TestBed.configureTestingModule({
       imports: [PlanificacionComponent],
@@ -100,8 +116,23 @@ describe('PlanificacionComponent', () => {
     expect(europa.series.map(s => s.name)).toEqual(['Real']);
     // Sin nada que fabricar, sin grafica.
     expect(secciones.map(s => !!s.querySelector('app-stats-line-chart'))).toEqual([true, false]);
-    expect(sanchos.marcas.map(m => [m.label, m.tenue])).toEqual([['OBRA_P01', false], ['TORRE_P01', true]]);
-    expect(sanchos.marcas[1].detalle).toEqual(['Entrega TORRE_P01 (en estudio) · 10 mód. por fabricar']);
+
+    // Debajo, cuando se fabrica cada obra en las mismas columnas, con su nombre.
+    expect(secciones.map(s => !!s.querySelector('app-fabricacion-obras'))).toEqual([true, false]);
+    expect(sanchos.obras.map(o => [o.nombre, o.desde, o.hasta, o.montaje, o.envioDesde, o.envioHasta, o.estudio])).toEqual([
+      ['OBRA_P01', 0, 0, 1, 0, 0, false],
+      ['TORRE_P01', 0, 1, 2, 1, 1, true],
+      // Se monta despues de la vista: la fabricacion sigue hasta el borde.
+      ['OBRA_P02', 2, 2, null, null, null, false],
+    ]);
+    expect(sanchos.obras[1].detalle)
+      .toBe('TORRE_P01 (en estudio) · fabricación del 02/11 al 03/11 (10 mód.) · 1 camión el 03/11 · montaje 04/11');
+    expect(Array.from(secciones[0].querySelectorAll('.fo-nombre')).map(texto)).toEqual(['OBRA_P01', 'TORRE_P01', 'OBRA_P02']);
+    // Pinchar una obra abre su ficha.
+    const router = TestBed.inject(Router);
+    const navegar = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+    (secciones[0].querySelectorAll('.fo-obra')[1] as SVGGElement).dispatchEvent(new MouseEvent('click'));
+    expect(navegar).toHaveBeenCalledWith(['/admin-dashboard/proyectos', 3]);
   });
 
   it('lists the deliveries by month with the ghosts tagged, each one opening its project', () => {
@@ -128,17 +159,43 @@ describe('PlanificacionComponent', () => {
     expect(picoEstudio([dia('2026-11-09', 5, 5), dia('2026-11-10', 3, 3)])).toBeNull();
   });
 
-  it('splits the label of a day that mixes real and study deliveries, each in its colour', () => {
+  it('places each date on the chart columns and draws a finished slab only waiting for its mounting', () => {
+    const dias = [{ fecha: '2026-11-06' }, { fecha: '2026-11-09' }];
+    expect(columnaDe(dias, '2026-11-06')).toBe(0);
+    // Un sabado, entre el viernes y el lunes; antes de la vista, delante; despues, fuera.
+    expect(columnaDe(dias, '2026-11-07')).toBe(0.5);
+    expect(columnaDe(dias, '2026-11-05')).toBe(-0.5);
+    expect(columnaDe(dias, '2026-11-10')).toBeNull();
     const ferralla = respuesta().ferrallas[0];
-    ferralla.entregas = [
-      { proyecto: 1, nombre: 'OBRA_BH_P10', fecha: '2026-11-03', orientativa: false, fantasma: false, modulos_pendientes: 8 },
-      { proyecto: 3, nombre: 'test2', fecha: '2026-11-03', orientativa: false, fantasma: true, modulos_pendientes: 10 },
-      { proyecto: 4, nombre: 'test3', fecha: '2026-11-04', orientativa: false, fantasma: true, modulos_pendientes: 5 },
-    ];
-    const [mezcla, soloEstudio] = vistaDe(ferralla, '2026-11-02').marcas;
-    expect(mezcla.tenue).toBe(false);
-    expect(mezcla.partes?.map(p => [p.texto, p.tenue])).toEqual([['P10', false], ['test2', true]]);
-    expect([soloEstudio.tenue, soloEstudio.partes]).toEqual([true, undefined]);
+    ferralla.proyectos = [{ ...proyecto(5, 'HECHO', '2026-11-04', 0), estado: 'COMPLETADO' }, proyecto(6, 'SIN_PLAN', '2026-11-04', 5)];
+    expect(obrasDe(ferralla, '2026-11-02').map(o => [o.nombre, o.desde, o.hasta, o.montaje, o.detalle]))
+      .toEqual([['HECHO', null, null, 2, 'HECHO · fabricado · montaje 04/11']]);
+  });
+
+  it('saves the trucks a day and the shipping days that changed, and reloads the planning', () => {
+    const componente = fixture.componentInstance;
+    componente.abrirCamiones(componente.vistas()[0]);
+    expect(componente.camionesPorDia).toBe(3);
+    expect(componente.filasCamiones.map(f => [f.nombre, f.camiones, f.salen, f.dias, f.minimos])).toEqual([
+      ['OBRA_P01', 2, 'el lun 02/11', null, 1],
+      ['TORRE_P01', 1, 'el mar 03/11', null, 1],
+      ['OBRA_P02', 3, 'del jue 17/12 al vie 18/12', 2, 1],
+    ]);
+    fixture.detectChanges();
+    expect(Array.from(el().querySelectorAll('.pm-camiones-lista .pm-camiones-obra')).map(texto)).toEqual(['OBRA_P01', 'TORRE_P01', 'OBRA_P02']);
+    componente.camionesPorDia = 2;
+    componente.filasCamiones[0].dias = 3;
+    // Vaciar el campo: los justos.
+    componente.filasCamiones[2].dias = '' as unknown as number;
+    expect(componente.camionesValido).toBe(true);
+    componente.guardarCamiones();
+    expect(api.guardarCamionesFerralla).toHaveBeenCalledWith(7, {
+      camiones_por_dia: 2, proyectos: [{ id: 1, dias_envio: 3 }, { id: 2, dias_envio: null }],
+    });
+    expect(componente.camionesEn()).toBeNull();
+    expect(api.getPlanificacionModen).toHaveBeenCalledTimes(2);
+    expect(textoSobrecargas([{ fecha: '2026-12-04', camiones: 6 }, { fecha: '2026-12-07', camiones: 4.5 }], 4))
+      .toBe('Salen más de 4 camiones al día: 6 el vie 04/12, 4,5 el lun 07/12');
   });
 
   it('puts what was due before and what has no date around the months', () => {

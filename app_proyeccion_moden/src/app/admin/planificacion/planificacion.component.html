@@ -20,6 +20,9 @@
                     <button type="button" class="btn btn-sm pm-acopio-btn" (click)="abrirAcopio(vista)">
                         <i class="fa fa-cubes" aria-hidden="true"></i> Acopio
                     </button>
+                    <button type="button" class="btn btn-sm pm-camiones-btn" (click)="abrirCamiones(vista)">
+                        <i class="fa fa-truck" aria-hidden="true"></i> Camiones
+                    </button>
                     <button type="button" class="btn btn-sm" (click)="abrirNuevo(vista)">
                         <i class="fa fa-plus" aria-hidden="true"></i> Proyecto en estudio
                     </button>
@@ -67,9 +70,19 @@
             </div>
 
             @if (vista.conCarga) {
-            <app-stats-line-chart title="Módulos al día para llegar" unit="mód./día" [decimals]="1" [height]="240"
-                [labels]="vista.labels" [fullLabels]="vista.labelsLargas" [series]="vista.series"
-                [marks]="vista.marcas" markLabel="Entrega a obra" [markTenueLabel]="vista.datos.resumen.fantasmas ? 'Solo en estudio' : ''" [markTenueColor]="azul" />
+            <div class="pm-graficas">
+                <app-stats-line-chart title="Módulos al día para llegar" unit="mód./día" [decimals]="1" [height]="240"
+                    [labels]="vista.labels" [fullLabels]="vista.labelsLargas" [series]="vista.series" />
+                @if (vista.obras.length) {
+                <app-fabricacion-obras [title]="vista.datos.resumen.fantasmas ? 'Cuándo se fabrica cada obra, con lo que está en estudio' : 'Cuándo se fabrica cada obra'"
+                    [labels]="vista.labels" [obras]="vista.obras" [colorEstudio]="azul" (abrir)="abrirObra($event)" />
+                }
+            </div>
+            }
+            @if (vista.datos.camiones; as camiones) {
+                @if (textoSobrecargas(camiones.sobrecargas, camiones.por_dia); as aviso) {
+                <p class="is-danger pm-acopio-aviso" role="note">{{ aviso }}</p>
+                }
             }
 
             @if (vista.acopio; as acopio) {
@@ -79,8 +92,7 @@
                 @if (acopio.noCabeEstudio) { <p class="pm-azul pm-acopio-aviso" role="note">Con los proyectos en estudio: {{ acopio.noCabeEstudio }}</p> }
                 <app-stats-line-chart title="Bastidores en el patio" unit="bastidores" [decimals]="1" [height]="200"
                     [labels]="vista.labels" [fullLabels]="vista.labelsLargas" [series]="acopio.series"
-                    [target]="acopio.capacidad" targetLabel="Caben" [targetIsCeiling]="true"
-                    [marks]="vista.marcas" markLabel="Entrega a obra" [markTenueLabel]="vista.datos.resumen.fantasmas ? 'Solo en estudio' : ''" [markTenueColor]="azul" />
+                    [target]="acopio.capacidad" targetLabel="Caben" [targetIsCeiling]="true" />
             </div>
             }
 
@@ -159,6 +171,49 @@
         <div class="modal-footer">
             <button type="button" class="btn" (click)="cerrarAcopio()" [disabled]="guardandoAcopio()">Cancelar</button>
             <button type="submit" class="btn btn-primary" [disabled]="guardandoAcopio() || !acopioValido">{{ guardandoAcopio() ? 'Guardando…' : 'Guardar' }}</button>
+        </div>
+    </form>
+</div>
+}
+
+@if (camionesEn(); as vista) {
+<div class="modal-backdrop" (click)="cerrarCamiones()"></div>
+<div class="custom-modal">
+    <form class="modal-content pm-camiones-dialogo" role="dialog" aria-modal="true" aria-labelledby="pm-camiones-titulo" (ngSubmit)="guardarCamiones()" autocomplete="off">
+        <div class="modal-header">
+            <h5 id="pm-camiones-titulo">Camiones de {{ vista.nombre }}</h5>
+            <button type="button" class="close" (click)="cerrarCamiones()" aria-label="Cerrar"><span>&times;</span></button>
+        </div>
+        <div class="modal-body pm-camiones-modal">
+            <label class="pm-camiones-dia">Camiones al día, como mucho
+                <input type="number" class="field" name="por_dia" min="1" max="50" step="1" [(ngModel)]="camionesPorDia" required [disabled]="guardandoCamiones()">
+            </label>
+            @if (filasCamiones.length) {
+            <div class="pm-camiones-fila pm-camiones-cabecera" aria-hidden="true">
+                <span>Obra</span><span>Montaje</span><span>Camiones</span><span>Días de envío</span><span>Salen</span>
+            </div>
+            <div class="pm-camiones-lista">
+                @for (fila of filasCamiones; track fila.id; let i = $index) {
+                <div class="pm-camiones-fila">
+                    <span class="pm-camiones-obra" [class.pm-azul]="fila.fantasma">{{ fila.nombre }}</span>
+                    <span class="meta">{{ diaCorto(fila.montaje) }}</span>
+                    <span class="meta">{{ fila.camiones }}</span>
+                    <input type="number" class="field" [name]="'dias' + i" min="1" max="60" step="1" [(ngModel)]="fila.dias"
+                        [placeholder]="'Justos (' + fila.minimos + ')'" [disabled]="guardandoCamiones()"
+                        [attr.aria-label]="'Días de envío de ' + fila.nombre">
+                    <span class="meta">{{ fila.salen }}</span>
+                </div>
+                }
+            </div>
+            <p class="meta pm-camiones-nota">Días de envío: en cuántos días laborables salen sus camiones, el último el día antes del montaje. Vacío: los justos con los camiones al día. Al cambiarlos, los camiones movidos a mano en la ficha vuelven al reparto.</p>
+            } @else {
+            <p class="meta">Sin forjados por montar con camiones.</p>
+            }
+            @if (errorCamiones()) { <p class="alert-inline" role="alert">{{ errorCamiones() }}</p> }
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn" (click)="cerrarCamiones()" [disabled]="guardandoCamiones()">Cancelar</button>
+            <button type="submit" class="btn btn-primary" [disabled]="guardandoCamiones() || !camionesValido">{{ guardandoCamiones() ? 'Guardando…' : 'Guardar' }}</button>
         </div>
     </form>
 </div>

@@ -1,14 +1,16 @@
 import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { forkJoin } from 'rxjs';
 
 import {
   AcopioCapacidad, AcopioExceso, ApiService, PlanificacionModenFerralla, PlanificacionModenProyecto,
-  PlanificacionModenResponse, User,
+  PlanificacionModenResponse, SobrecargaCamiones, User,
 } from '../../services/api.service';
-import { ChartMark, LineChartSeries, StatsLineChart } from '../../dashboard/stats-line-chart';
-import { etiquetasCortas, fechaCorta, fechaLarga } from '../../dashboard/planificacion-ferralla';
+import { LineChartSeries, StatsLineChart } from '../../dashboard/stats-line-chart';
+import { fechaCorta, fechaLarga } from '../../dashboard/planificacion-ferralla';
+import { diaCorto } from '../../shared/camiones-proyecto.component';
+import { FabricacionObras, ObraGantt } from './fabricacion-obras.component';
 
 // Lo real en el naranja de los modulos (como la planificacion de la ferralla);
 // con los fantasmas, en el azul de lo estimado.
@@ -57,7 +59,8 @@ export interface VistaFerralla {
   labels: string[];
   labelsLargas: string[];
   series: LineChartSeries[];
-  marcas: ChartMark[];
+  /** Cuando se fabrica cada obra, en las mismas columnas que la grafica. */
+  obras: ObraGantt[];
   meses: MesPlanificacion[];
   /** Algo que fabricar en estos seis meses: sin nada, la grafica sobra. */
   conCarga: boolean;
@@ -105,6 +108,70 @@ export function vistaAcopio(ferralla: PlanificacionModenFerralla): VistaAcopio |
   };
 }
 
+/** Columna de una fecha en los dias de la grafica: entre dos (x.5) si cae en un dia sin
+ *  fabricacion; antes del primero, -0.5; null si es despues del ultimo. */
+export function columnaDe(dias: Array<{ fecha: string }>, fecha: string | null | undefined): number | null {
+  if (!fecha) return null;
+  const despues = dias.findIndex(d => d.fecha >= fecha);
+  if (despues < 0) return null;
+  return dias[despues].fecha === fecha ? despues : despues - 0.5;
+}
+
+/** "del 02/12 al 05/12" o "el 02/12". */
+function rango(desde: string, hasta: string): string {
+  return desde === hasta ? `el ${fechaCorta(desde)}` : `del ${fechaCorta(desde)} al ${fechaCorta(hasta)}`;
+}
+
+/** Las obras con algo que fabricar o esperando su montaje en el patio, para el diagrama. */
+export function obrasDe(ferralla: PlanificacionModenFerralla, desde: string): ObraGantt[] {
+  const dias = ferralla.dias;
+  if (!dias.length) return [];
+  const ultima = dias.length - 1;
+  const obras: ObraGantt[] = [];
+  for (const p of ferralla.proyectos) {
+    const entrega = p.fecha_entrega && p.fecha_entrega >= desde ? p.fecha_entrega : null;
+    const montaje = columnaDe(dias, entrega);
+    const fabrica = !!(p.fabricacion_inicio && p.fabricacion_fin);
+    // Ya hecho: solo la espera en el patio hasta su montaje.
+    if (!fabrica && !(p.estado === 'COMPLETADO' && montaje !== null)) continue;
+    let inicio: number | null = null;
+    let fin: number | null = null;
+    if (fabrica) {
+      const a = columnaDe(dias, p.fabricacion_inicio);
+      if (a === null) continue;
+      inicio = Math.max(0, Math.ceil(a));
+      const b = columnaDe(dias, p.fabricacion_fin);
+      fin = b === null ? ultima : Math.max(inicio, Math.floor(b));
+    }
+    const envio = p.envio;
+    const e0 = envio?.desde ? columnaDe(dias, envio.desde) : null;
+    const e1 = envio?.hasta ? columnaDe(dias, envio.hasta) : null;
+    const partes = [`${p.nombre}${p.fantasma ? ' (en estudio)' : ''}`];
+    partes.push(fabrica ? `fabricación ${rango(p.fabricacion_inicio!, p.fabricacion_fin!)} (${cifra(p.modulos_pendientes)} mód.)` : 'fabricado');
+    if (envio?.desde && envio.hasta) partes.push(`${envio.camiones} ${envio.camiones === 1 ? 'camión' : 'camiones'} ${rango(envio.desde, envio.hasta)}`);
+    if (p.fecha_entrega) partes.push(`montaje ${fechaCorta(p.fecha_entrega)}`);
+    obras.push({
+      id: p.id,
+      nombre: p.nombre,
+      desde: inicio,
+      hasta: fin,
+      montaje,
+      envioDesde: e0 === null ? null : Math.max(0, Math.ceil(e0)),
+      envioHasta: e1 === null ? (e0 === null ? null : ultima) : Math.max(0, Math.floor(e1)),
+      estudio: p.fantasma,
+      detalle: partes.join(' · '),
+    });
+  }
+  return obras;
+}
+
+/** "Salen más de 4 camiones al día: 6 el vie 04/12, 5 el lun 07/12". */
+export function textoSobrecargas(sobrecargas: SobrecargaCamiones[], porDia: number): string | null {
+  if (!sobrecargas.length) return null;
+  const dias = sobrecargas.map(s => `${cifra(s.camiones, 1)} el ${diaCorto(s.fecha)}`);
+  return `Salen más de ${porDia} camiones al día: ${dias.join(', ')}`;
+}
+
 /** El dia mas alto de los que cambian por los proyectos en estudio: ahi es donde hay que centrarse. */
 export function picoEstudio(dias: PlanificacionModenFerralla['dias']): PicoEstudio | null {
   const influye = (i: number) => dias[i].con_fantasmas > dias[i].real;
@@ -150,25 +217,6 @@ export function vistaDe(ferralla: PlanificacionModenFerralla, desde: string): Vi
     ? [{ name: 'Con proyectos en estudio', color: AZUL, values: dias.map(d => d.con_fantasmas) }, real]
     : [real];
 
-  // Una marca por dia de entrega; si cae en un dia sin fabricacion, entre el de antes y el de despues.
-  const cortas = etiquetasCortas(ferralla.entregas.map(e => e.nombre));
-  const porFecha = new Map<string, typeof ferralla.entregas>();
-  for (const entrega of ferralla.entregas) porFecha.set(entrega.fecha, [...(porFecha.get(entrega.fecha) ?? []), entrega]);
-  const marcas = Array.from(porFecha, ([dia, delDia]) => {
-    const despues = dias.findIndex(d => d.fecha >= dia);
-    const index = despues < 0 ? dias.length - 0.5 : dias[despues].fecha === dia ? despues : despues - 0.5;
-    return {
-      index,
-      label: delDia.map(e => cortas.get(e.nombre)).join(' · '),
-      // Tenue: solo entregan fantasmas ese dia; si se juntan con reales, cada nombre con su color.
-      tenue: delDia.every(e => e.fantasma),
-      partes: delDia.some(e => e.fantasma) && delDia.some(e => !e.fantasma)
-        ? delDia.map(e => ({ texto: cortas.get(e.nombre) ?? e.nombre, tenue: e.fantasma }))
-        : undefined,
-      detalle: delDia.map(e => `Entrega ${e.nombre}${e.fantasma ? ' (en estudio)' : e.orientativa ? ' (orientativa)' : ''} · ${e.modulos_pendientes} mód. por fabricar`),
-    };
-  });
-
   return {
     id: ferralla.ferralla.id,
     nombre: ferralla.ferralla.nombre,
@@ -176,12 +224,44 @@ export function vistaDe(ferralla: PlanificacionModenFerralla, desde: string): Vi
     labels: dias.map(d => fechaCorta(d.fecha)),
     labelsLargas: dias.map(d => fechaLarga(d.fecha)),
     series,
-    marcas,
+    obras: obrasDe(ferralla, desde),
     meses: porMes(ferralla.proyectos, desde),
     conCarga: dias.some(d => d.real || d.con_fantasmas),
     picoEstudio: conFantasmas ? picoEstudio(dias) : null,
     acopio: vistaAcopio(ferralla),
   };
+}
+
+/** Un forjado en la ventana de camiones: cuantos lleva y en cuantos dias salen. */
+export interface FilaEnvio {
+  id: number;
+  nombre: string;
+  fantasma: boolean;
+  montaje: string;
+  camiones: number;
+  /** Lo que sale ahora ("del lun 23/11 al vie 27/11"). */
+  salen: string;
+  minimos: number;
+  /** Lo que hay en el campo: vacio, los justos. */
+  dias: number | null;
+  elegidos: number | null;
+}
+
+/** Los forjados por montar con camiones, por fecha de montaje. */
+export function filasEnvio(ferralla: PlanificacionModenFerralla, desde: string): FilaEnvio[] {
+  return ferralla.proyectos
+    .filter(p => p.envio && p.envio.camiones > 0 && p.fecha_entrega && p.fecha_entrega >= desde)
+    .sort((a, b) => a.fecha_entrega!.localeCompare(b.fecha_entrega!))
+    .map(p => {
+      const envio = p.envio!;
+      const salen = envio.desde && envio.hasta
+        ? envio.desde === envio.hasta ? `el ${diaCorto(envio.desde)}` : `del ${diaCorto(envio.desde)} al ${diaCorto(envio.hasta)}`
+        : '';
+      return {
+        id: p.id, nombre: p.nombre, fantasma: p.fantasma, montaje: p.fecha_entrega!, camiones: envio.camiones,
+        salen, minimos: envio.dias_minimos, dias: envio.dias_elegidos, elegidos: envio.dias_elegidos,
+      };
+    });
 }
 
 /**
@@ -192,12 +272,13 @@ export function vistaDe(ferralla: PlanificacionModenFerralla, desde: string): Vi
 @Component({
   selector: 'app-planificacion-moden',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, RouterLink, StatsLineChart],
+  imports: [FabricacionObras, FormsModule, RouterLink, StatsLineChart],
   templateUrl: './planificacion.component.html',
   styleUrls: ['../admin-theme.css', './planificacion.component.css'],
 })
 export class PlanificacionComponent implements OnInit {
   private readonly api = inject(ApiService);
+  private readonly router = inject(Router);
 
   readonly datos = signal<PlanificacionModenResponse | null>(null);
   readonly cargando = signal(true);
@@ -226,8 +307,59 @@ export class PlanificacionComponent implements OnInit {
   readonly errorAcopio = signal('');
   filasAcopio: AcopioCapacidad[] = [];
 
+  // Camiones de una ferralla: los que saca al dia y en cuantos dias salen sus forjados.
+  readonly camionesEn = signal<VistaFerralla | null>(null);
+  readonly guardandoCamiones = signal(false);
+  readonly errorCamiones = signal('');
+  camionesPorDia = 4;
+  filasCamiones: FilaEnvio[] = [];
+  readonly diaCorto = diaCorto;
+  readonly textoSobrecargas = textoSobrecargas;
+
   ngOnInit(): void {
     this.cargar();
+  }
+
+  abrirObra(id: number): void {
+    this.router.navigate(['/admin-dashboard/proyectos', id]);
+  }
+
+  abrirCamiones(vista: VistaFerralla): void {
+    this.camionesPorDia = vista.datos.camiones?.por_dia ?? 4;
+    this.filasCamiones = filasEnvio(vista.datos, this.datos()?.desde ?? '');
+    this.errorCamiones.set('');
+    this.camionesEn.set(vista);
+  }
+
+  cerrarCamiones(): void {
+    if (!this.guardandoCamiones()) this.camionesEn.set(null);
+  }
+
+  get camionesValido(): boolean {
+    const entero = (v: unknown, min: number, max: number) => Number.isInteger(Number(v)) && Number(v) >= min && Number(v) <= max;
+    return entero(this.camionesPorDia, 1, 50)
+      && this.filasCamiones.every(f => f.dias === null || (f.dias as unknown) === '' || entero(f.dias, 1, 60));
+  }
+
+  /** Guarda los camiones al dia y los dias que han cambiado, y recarga el plan con ellos. */
+  guardarCamiones(): void {
+    const vista = this.camionesEn();
+    if (!vista || !this.camionesValido || this.guardandoCamiones()) return;
+    const dias = (f: FilaEnvio) => (f.dias === null || (f.dias as unknown) === '' ? null : Number(f.dias));
+    const proyectos = this.filasCamiones.filter(f => dias(f) !== f.elegidos).map(f => ({ id: f.id, dias_envio: dias(f) }));
+    this.guardandoCamiones.set(true);
+    this.errorCamiones.set('');
+    this.api.guardarCamionesFerralla(vista.id, { camiones_por_dia: Number(this.camionesPorDia), proyectos }).subscribe({
+      next: () => {
+        this.guardandoCamiones.set(false);
+        this.camionesEn.set(null);
+        this.cargar();
+      },
+      error: err => {
+        this.errorCamiones.set(err?.error?.detail || 'No se pudieron guardar los camiones.');
+        this.guardandoCamiones.set(false);
+      },
+    });
   }
 
   abrirAcopio(vista: VistaFerralla): void {

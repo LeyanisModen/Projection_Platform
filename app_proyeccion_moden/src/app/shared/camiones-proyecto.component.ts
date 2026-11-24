@@ -14,12 +14,26 @@ export function diaCorto(iso: string | null): string {
   return `${DIAS[fecha.getDay()]} ${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 }
 
+/** "Salen del mié 25/11 al vie 27/11, como mucho 4 al día". */
+export function textoEnvio(datos: CamionesProyecto): string | null {
+  const envio = datos.envio;
+  if (!envio?.desde || !envio.hasta) return null;
+  const cuando = envio.desde === envio.hasta
+    ? `Salen el ${diaCorto(envio.desde)}`
+    : `Salen del ${diaCorto(envio.desde)} al ${diaCorto(envio.hasta)}`;
+  // Lo elegido nunca baja de los dias que hacen falta; un camion movido a mano puede salir fuera.
+  return envio.dias_elegidos
+    ? `${cuando}; el reparto, en ${Math.max(envio.dias_elegidos, envio.dias_minimos)} días elegidos en Planificación`
+    : `${cuando}, como mucho ${datos.camiones_por_dia} al día`;
+}
+
 /**
  * Camiones de un forjado: cada uno sale un dia con sus bastidores (4, salvo el
  * ultimo o uno que comparte con la planta de al lado), en orden de bastidor.
- * Por defecto salen todos el dia antes del montaje; moverlos cambia cuando
- * tienen que estar hechos y cuando queda sitio en el patio. Lo usa la ficha del
- * proyecto en el admin (por ahora Moden, para los estudios; despues la ferralla).
+ * Salen en los dias antes del montaje con los camiones al dia de la ferralla
+ * (en Planificacion se elige en cuantos dias); aqui se cambia lo que lleva
+ * cada uno o se mueve uno suelto a otro dia. Lo usa la ficha del proyecto en
+ * el admin (por ahora Moden, para los estudios; despues la ferralla).
  */
 @Component({
   selector: 'app-camiones-proyecto',
@@ -31,15 +45,23 @@ export function diaCorto(iso: string | null): string {
     } @else if (datos) {
       <p class="cam-resumen">
         {{ datos.bastidores }} {{ datos.bastidores === 1 ? 'bastidor' : 'bastidores' }}@if (datos.bastidores_estimados) { <span class="cam-meta">(estimados)</span>}
-        @if (datos.salida) { · por defecto salen el {{ diaCorto(datos.salida) }}, el día antes del montaje }
+        · {{ filas.length }} {{ filas.length === 1 ? 'camión' : 'camiones' }}
       </p>
+      @if (envio; as texto) { <p class="cam-meta">{{ texto }}</p> }
       @if (filas.length) {
       <ul class="cam-lista">
         @for (fila of filas; track $index; let i = $index) {
           <li [class.cam-defecto]="fila.por_defecto && !cambiado">
-            <span class="cam-nombre">Camión {{ i + 1 }}</span>
-            <input type="date" class="field cam-fecha" [ngModel]="fila.fecha" (ngModelChange)="cambiar(fila, 'fecha', $event)"
-              [disabled]="guardando || archivado" [attr.aria-label]="'Día del camión ' + (i + 1)">
+            <span class="cam-nombre">
+              Camión {{ i + 1 }}
+              @if (fila.fecha_fija) {
+                <button type="button" class="cam-reparto" (click)="alReparto(fila)" [disabled]="guardando || archivado"
+                  title="Que salga el día que le toca en el reparto">Día a mano · volver al reparto</button>
+              }
+            </span>
+            <input type="date" class="field cam-fecha" [class.cam-sigue]="!fila.fecha_fija" [ngModel]="fila.fecha"
+              (ngModelChange)="cambiar(fila, 'fecha', $event)" [disabled]="guardando || archivado"
+              [attr.aria-label]="'Día del camión ' + (i + 1)" [title]="fila.fecha_fija ? 'Día a mano' : 'El día que le toca en el reparto'">
             <select class="field cam-bastidores" [ngModel]="fila.bastidores" (ngModelChange)="cambiar(fila, 'bastidores', +$event)"
               [disabled]="guardando || archivado" [attr.aria-label]="'Bastidores del camión ' + (i + 1)">
               @for (n of opciones; track n) { <option [ngValue]="n">{{ n }}</option> }
@@ -56,7 +78,7 @@ export function diaCorto(iso: string | null): string {
         }
       </ul>
       } @else {
-        <p class="cam-meta">Sin camiones: el forjado no tiene fecha de montaje ni bastidores.</p>
+        <p class="cam-meta">Sin camiones: el forjado no tiene bastidores.</p>
       }
       @if (aviso(); as texto) { <p class="cam-aviso" role="note">{{ texto }}</p> }
       @if (error) { <p class="cam-error" role="alert">{{ error }}</p> }
@@ -97,7 +119,9 @@ export function diaCorto(iso: string | null): string {
     .cam-enviado { grid-area: enviado; }
     .cam-lista li .btn-icon { grid-area: quitar; justify-self: end; width: 28px; height: 24px; }
     .cam-lista li:first-child { border-top: 0; }
-    .cam-lista li.cam-defecto .cam-nombre, .cam-lista li.cam-defecto .field { color: var(--muted, #7b8794); }
+    .cam-lista li.cam-defecto .cam-nombre, .cam-lista li.cam-defecto .field, .cam-lista .field.cam-sigue { color: var(--muted, #7b8794); }
+    .cam-reparto { margin-left: 6px; padding: 0; border: 0; background: none; color: var(--accent, #f0640f); font-size: 12px; font-weight: 400; cursor: pointer; }
+    .cam-reparto:hover { text-decoration: underline; }
     .cam-nombre { color: var(--ink, #1f2933); font-size: 13px; font-weight: 500; }
     .cam-lista .field { width: 100%; min-width: 0; height: 30px; box-sizing: border-box; font-size: 13px; }
     .cam-enviado { display: inline-flex; align-items: center; gap: 4px; margin: 0; color: var(--text, #3e4c59); font-size: 12px; }
@@ -137,14 +161,17 @@ export class CamionesProyectoComponent implements OnChanges {
     });
   }
 
+  get envio(): string | null {
+    return this.datos ? textoEnvio(this.datos) : null;
+  }
+
   /** Lo que llevan entre todos frente a lo que tiene el forjado. */
   aviso(): string | null {
     if (!this.datos) return null;
     const llevan = this.filas.reduce((total, fila) => total + fila.bastidores, 0);
     const diferencia = this.datos.bastidores - llevan;
     if (diferencia > 0) {
-      const cuando = this.datos.salida ? ` el ${diaCorto(this.datos.salida)}` : '';
-      return `Llevan ${llevan} de ${this.datos.bastidores} bastidores: ${diferencia === 1 ? 'el que falta sale' : `los ${diferencia} que faltan salen`}${cuando}.`;
+      return `Llevan ${llevan} de ${this.datos.bastidores} bastidores: ${diferencia === 1 ? 'el que falta irá' : `los ${diferencia} que faltan irán`} en otro camión.`;
     }
     if (diferencia < 0) return `Llevan ${llevan} bastidores y el forjado tiene ${this.datos.bastidores}: sobran ${-diferencia}.`;
     return null;
@@ -152,13 +179,24 @@ export class CamionesProyectoComponent implements OnChanges {
 
   cambiar(fila: Camion, campo: 'fecha' | 'bastidores' | 'enviado', valor: string | number | boolean): void {
     (fila as unknown as Record<string, unknown>)[campo] = valor;
+    // Un dia cambiado a mano deja de seguir el reparto.
+    if (campo === 'fecha') fila.fecha_fija = true;
+    this.cambiado = true;
+    this.error = '';
+  }
+
+  /** Que vuelva al dia que le toca en el reparto (se ve al guardar). */
+  alReparto(fila: Camion): void {
+    fila.fecha_fija = false;
     this.cambiado = true;
     this.error = '';
   }
 
   anadir(): void {
     const ultima = this.filas[this.filas.length - 1];
-    this.filas = [...this.filas, { fecha: ultima?.fecha ?? this.datos?.salida ?? '', bastidores: 4, enviado: false }];
+    this.filas = [...this.filas, {
+      fecha: ultima?.fecha ?? this.datos?.salida ?? null, fecha_fija: false, bastidores: 4, enviado: false,
+    }];
     this.cambiado = true;
   }
 
@@ -173,7 +211,7 @@ export class CamionesProyectoComponent implements OnChanges {
       this.porDefecto();
       return;
     }
-    if (this.filas.some(f => !f.fecha)) {
+    if (this.filas.some(f => (f.fecha_fija || f.enviado) && !f.fecha)) {
       this.error = 'Cada camión necesita su día.';
       return;
     }

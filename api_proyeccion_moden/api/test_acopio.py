@@ -89,27 +89,38 @@ class AcopioPlanTests(TestCase):
         for dia in dias_laborables(LUNES, date(2026, 10, 5), frozenset()):
             en_patio, caben = acopio.ocupacion(dia)
             self.assertLessEqual(en_patio, caben + 1e-6, dia)
-        # La primera semana solo P1 (2 al dia): el patio esta lleno hasta que
-        # sale. Despues, los 50 de P2 en sus 10 dias.
+        # Hasta el jueves solo P1 (2,5 al dia): el patio esta lleno. El viernes
+        # sale P1 y su sitio vale ya ese dia; despues, los 50 de P2 en 11 dias.
         self.assertEqual([(t['ritmo'], t['dias'], t['motivo']) for t in plan['tramos']],
-                         [(2.0, 5, 'acopio'), (5.0, 10, 'montaje')])
+                         [(2.5, 4, 'acopio'), (4.5, 11, 'montaje')])
         self.assertIsNone(plan['manda_nombre'])
-        self.assertEqual(plan['proyectos'][p2.pk]['fabricacion_inicio'], '2026-09-21')
+        self.assertEqual(plan['proyectos'][p2.pk]['fabricacion_inicio'], '2026-09-18')
         self.assertEqual(acopio.excesos, [])
-        # El viernes esta P1 entero esperando su camion; el lunes, lo de P2.
-        self.assertEqual(round(acopio.ocupacion(date(2026, 9, 18))[0], 6), 2.0)
-        self.assertEqual(round(acopio.ocupacion(date(2026, 9, 21))[0], 6), 1.0)
+        # El jueves esta P1 entero esperando su camion; el viernes, ya salido, lo de P2.
+        self.assertEqual(round(acopio.ocupacion(date(2026, 9, 17))[0], 6), 2.0)
+        self.assertEqual(round(acopio.ocupacion(date(2026, 9, 18))[0], 3), 0.909)
 
-    def test_un_forjado_que_no_cabe_entero_se_apunta_como_exceso(self):
+    def test_un_forjado_que_no_cabe_entero_deja_lo_ultimo_para_el_dia_que_sale(self):
         self.forjado('Grande', date(2026, 9, 28), 60, 12)
         AcopioCapacidad.objects.create(usuario=self.ferralla, desde=LUNES, bastidores=8)
         plan = plan_ferralla(self.ferralla.pk, LUNES)
+        # Caben 8 de sus 12: el viernes, mientras salen los camiones, se hacen los 4 que faltan.
+        self.assertEqual([(t['ritmo'], t['dias']) for t in plan['tramos']], [(4.4, 9), (20.0, 1)])
+        self.assertEqual(plan['acopio'].excesos, [])
+
+    def test_lo_hecho_que_no_cabe_se_apunta_como_exceso(self):
+        hecho = self.forjado('Hecho', date(2026, 9, 28), 60, 12)
+        hecho.modulos.update(estado='COMPLETADO')
+        self.forjado('Siguiente', date(2026, 10, 5), 20, 4)
+        AcopioCapacidad.objects.create(usuario=self.ferralla, desde=LUNES, bastidores=8)
+        plan = plan_ferralla(self.ferralla.pk, LUNES)
         excesos = plan['acopio'].resumen()['excesos']
-        # Llega igual a su montaje, pero el ultimo dia hacen falta 4 bastidores mas.
-        self.assertEqual(round(sum(t['modulos'] for t in plan['tramos'])), 60)
-        self.assertEqual(excesos[-1], {'fecha': '2026-09-25', 'bastidores': 4.0})
-        # No lo deja todo para el ultimo dia: se pasa lo justo y reparte (6 al dia).
-        self.assertEqual([(t['ritmo'], t['dias']) for t in plan['tramos']], [(6.0, 10)])
+        # Hay 12 donde caben 8 hasta que sale (viernes 25): nada mas hasta entonces.
+        self.assertEqual((excesos[0], excesos[-1]), (
+            {'fecha': '2026-09-14', 'bastidores': 4.0}, {'fecha': '2026-09-24', 'bastidores': 4.0},
+        ))
+        self.assertEqual([(t['ritmo'], t['dias'], t['motivo']) for t in plan['tramos']],
+                         [(0.0, 9, 'acopio'), (3.3, 6, 'montaje')])
 
     def test_lo_ya_fabricado_ocupa_hasta_que_sale(self):
         uno = self.forjado('Hecho', date(2026, 9, 28), 20, 4)
@@ -117,14 +128,14 @@ class AcopioPlanTests(TestCase):
         self.forjado('Siguiente', date(2026, 10, 5), 20, 4)
         AcopioCapacidad.objects.create(usuario=self.ferralla, desde=LUNES, bastidores=6)
         plan = plan_ferralla(self.ferralla.pk, LUNES)
-        # Caben 6 y hay 4 de lo hecho: hasta que sale (viernes 25) solo 2
-        # bastidores mas (10 modulos en 10 dias); despues, los otros 10 en 5.
+        # Caben 6 y hay 4 de lo hecho: hasta el jueves 24 solo 2 bastidores
+        # mas (10 modulos en 9 dias); desde que sale (viernes 25), los otros 10 en 6.
         self.assertEqual([(t['ritmo'], t['dias'], t['motivo']) for t in plan['tramos']],
-                         [(1.0, 10, 'acopio'), (2.0, 5, 'montaje')])
+                         [(1.1, 9, 'acopio'), (1.7, 6, 'montaje')])
         ocupacion = plan['acopio'].ocupacion
-        self.assertEqual(round(ocupacion(LUNES)[0], 6), 4.2)
-        self.assertEqual(round(ocupacion(date(2026, 9, 25))[0], 6), 6.0)
-        self.assertEqual(round(ocupacion(date(2026, 9, 28))[0], 6), 2.4)
+        self.assertEqual(round(ocupacion(LUNES)[0], 3), 4.222)
+        self.assertEqual(round(ocupacion(date(2026, 9, 24))[0], 6), 6.0)
+        self.assertEqual(round(ocupacion(date(2026, 9, 25))[0], 3), 2.333)
         self.assertEqual(ocupacion(date(2026, 9, 28))[1], 6)
 
 
@@ -171,17 +182,17 @@ class AcopioPantallasTests(APITestCase):
         AcopioCapacidad.objects.create(usuario=self.ferralla, desde=LUNES, bastidores=3)
 
         ferralla = planificacion_de(self.ferralla.pk, desde=LUNES)
-        viernes = next(d for d in ferralla['acopio']['dias'] if d['fecha'] == '2026-09-18')
-        # El viernes P1 esta entero (2 bastidores) esperando el camion; la ferralla no ve lo que esta en estudio.
-        self.assertEqual(viernes, {'fecha': '2026-09-18', 'bastidores': 2.0, 'capacidad': 3})
+        jueves = next(d for d in ferralla['acopio']['dias'] if d['fecha'] == '2026-09-17')
+        # El jueves hay 8 de los 10 modulos de P1 esperando su camion; la ferralla no ve lo que esta en estudio.
+        self.assertEqual(jueves, {'fecha': '2026-09-17', 'bastidores': 1.6, 'capacidad': 3})
         self.assertEqual(ferralla['acopio']['excesos'], [])
 
         moden = planificacion_ferralla(self.ferralla, LUNES, date(2026, 10, 16))['acopio']
-        viernes = next(d for d in moden['dias'] if d['fecha'] == '2026-09-18')
-        # Con el proyecto en estudio (10 modulos mas, a 5 por bastidor) no cabe: 4 de 3.
-        self.assertEqual(viernes, {'fecha': '2026-09-18', 'real': 2.0, 'con_fantasmas': 4.0, 'capacidad': 3})
+        jueves = next(d for d in moden['dias'] if d['fecha'] == '2026-09-17')
+        # Con el proyecto en estudio (10 modulos mas, a 5 por bastidor) el patio se llena el jueves.
+        self.assertEqual(jueves, {'fecha': '2026-09-17', 'real': 1.6, 'con_fantasmas': 3.0, 'capacidad': 3})
         self.assertEqual(moden['excesos_real'], [])
-        self.assertEqual(moden['excesos_con_fantasmas'], [{'fecha': '2026-09-18', 'bastidores': 1.0}])
+        self.assertEqual(moden['excesos_con_fantasmas'], [])
 
 
 class CamionesTests(APITestCase):
@@ -235,11 +246,16 @@ class CamionesTests(APITestCase):
     def test_mover_un_camion_antes_deja_sitio_en_el_patio(self):
         proyecto = self.forjado('P', date(2026, 9, 28), 30, 6)
         AcopioCapacidad.objects.create(usuario=self.ferralla, desde=LUNES, bastidores=4)
-        self.assertTrue(plan_ferralla(self.ferralla.pk, LUNES)['acopio'].excesos)
+        # Caben 4 de sus 6 bastidores: los otros 2 (10 modulos), el viernes que sale.
+        self.assertEqual([(t['ritmo'], t['dias']) for t in plan_ferralla(self.ferralla.pk, LUNES)['tramos']],
+                         [(2.2, 9), (10.0, 1)])
         Camion.objects.create(proyecto=proyecto, orden=1, fecha=date(2026, 9, 18), bastidores=4)
         plan = plan_ferralla(self.ferralla.pk, LUNES)
+        # Con un camion el viernes 18 se recupera su sitio: 4 al dia y luego 2.
+        self.assertEqual([(t['ritmo'], t['dias']) for t in plan['tramos']], [(4.0, 5), (2.0, 5)])
         self.assertEqual(plan['acopio'].excesos, [])
-        self.assertEqual(round(plan['acopio'].ocupacion(date(2026, 9, 18))[0], 6), 4.0)
+        self.assertEqual(round(plan['acopio'].ocupacion(date(2026, 9, 17))[0], 6), 3.2)
+        self.assertEqual(round(plan['acopio'].ocupacion(date(2026, 9, 18))[0], 6), 0.0)
         self.assertEqual(round(plan['acopio'].ocupacion(date(2026, 9, 21))[0], 6), 0.4)
 
     def test_un_camion_enviado_ya_no_ocupa(self):
@@ -275,3 +291,160 @@ class CamionesTests(APITestCase):
         self.assertEqual(enviado.status_code, 200)
         self.assertTrue(enviado.data['camiones'][0]['enviado'])
         self.assertIsNotNone(enviado.data['camiones'][0]['enviado_at'])
+
+
+class RepartoCamionesTests(APITestCase):
+    """La ferralla saca unos camiones al dia: un forjado grande empieza a salir
+    unos dias antes del montaje, y Moden puede elegir en cuantos dias sale."""
+
+    def setUp(self):
+        self.ferralla = User.objects.create_user('reparto-ferralla')
+        self.oficina = User.objects.create_user('reparto-oficina', is_staff=True)
+
+    def forjado(self, nombre, montaje, bastidores, por_bastidor=2, fantasma=False):
+        modulos = bastidores * por_bastidor
+        proyecto = Proyecto.objects.create(
+            nombre=nombre, usuario=self.ferralla, fecha_montaje=montaje, aceptado_por_ferralla_at=timezone.now(),
+            fantasma=fantasma, modulos_previstos=modulos if fantasma else None,
+        )
+        if not fantasma:
+            Modulo.objects.bulk_create([Modulo(nombre=f'{nombre}-{i}', proyecto=proyecto) for i in range(modulos)])
+            GrupoBastidor.objects.bulk_create([GrupoBastidor(proyecto=proyecto, indice=i) for i in range(1, bastidores + 1)])
+        return proyecto
+
+    def dias(self, proyecto, desde=LUNES):
+        """{fecha: camiones} del forjado en su ficha."""
+        from .acopio import camiones_del_proyecto
+
+        cuenta = {}
+        for camion in camiones_del_proyecto(proyecto, desde)['camiones']:
+            cuenta[camion['fecha']] = cuenta.get(camion['fecha'], 0) + 1
+        return cuenta
+
+    def test_un_forjado_grande_empieza_a_salir_unos_dias_antes(self):
+        # 40 bastidores, 10 camiones: como mucho 4 al dia, lo mas tarde posible.
+        proyecto = self.forjado('Grande', date(2026, 9, 28), 40)
+        self.assertEqual(self.dias(proyecto), {'2026-09-23': 2, '2026-09-24': 4, '2026-09-25': 4})
+        envio = plan_ferralla(self.ferralla.pk, LUNES)['envios'][proyecto.pk]
+        self.assertEqual((envio['camiones'], envio['desde'], envio['hasta'], envio['dias'], envio['dias_minimos']),
+                         (10, '2026-09-23', '2026-09-25', 3, 3))
+
+    def test_dos_forjados_seguidos_no_pasan_de_los_camiones_al_dia(self):
+        # A se monta el lunes 28 y B el martes 29, 12 camiones cada uno: B sale
+        # lo mas tarde y A justo antes, cada uno seguido.
+        a = self.forjado('A', date(2026, 9, 28), 48)
+        b = self.forjado('B', date(2026, 9, 29), 48)
+        plan = plan_ferralla(self.ferralla.pk, LUNES)
+        self.assertEqual((plan['envios'][b.pk]['desde'], plan['envios'][b.pk]['hasta']), ('2026-09-24', '2026-09-28'))
+        self.assertEqual((plan['envios'][a.pk]['desde'], plan['envios'][a.pk]['hasta']), ('2026-09-21', '2026-09-23'))
+        self.assertEqual(plan['sobrecargas'], [])
+
+    def test_con_un_camion_al_dia_el_patio_se_vacia_antes(self):
+        self.forjado('P', date(2026, 9, 28), 6, por_bastidor=5)
+        AcopioCapacidad.objects.create(usuario=self.ferralla, desde=LUNES, bastidores=4)
+        # Con 4 al dia sale todo el viernes: hasta entonces caben 4 de sus 6.
+        self.assertEqual([(t['ritmo'], t['dias']) for t in plan_ferralla(self.ferralla.pk, LUNES)['tramos']],
+                         [(2.2, 9), (10.0, 1)])
+        from .models import UserProfile
+
+        UserProfile.objects.create(user=self.ferralla, camiones_por_dia=1)
+        # Con uno al dia, el primero (4 bastidores) sale el jueves y deja su sitio.
+        self.assertEqual([(t['ritmo'], t['dias']) for t in plan_ferralla(self.ferralla.pk, LUNES)['tramos']],
+                         [(2.5, 8), (5.0, 2)])
+
+    def test_los_dias_elegidos_reparten_parejo_y_nunca_menos_de_los_que_hacen_falta(self):
+        proyecto = self.forjado('A', date(2026, 9, 28), 48)
+        proyecto.dias_envio = 5
+        proyecto.save()
+        # 12 camiones en 5 dias: 2 los primeros y 3 los dos ultimos.
+        self.assertEqual(self.dias(proyecto), {
+            '2026-09-21': 2, '2026-09-22': 2, '2026-09-23': 2, '2026-09-24': 3, '2026-09-25': 3,
+        })
+        # En 2 dias no salen 12 camiones con 4 al dia: los 3 que hacen falta.
+        proyecto.dias_envio = 2
+        proyecto.save()
+        self.assertEqual(self.dias(proyecto), {'2026-09-23': 4, '2026-09-24': 4, '2026-09-25': 4})
+        # Con pocos camiones y muchos dias: el primero el primer dia y el ultimo el ultimo.
+        pequeno = self.forjado('B', date(2026, 10, 5), 12)
+        pequeno.dias_envio = 5
+        pequeno.save()
+        self.assertEqual(self.dias(pequeno), {'2026-09-28': 1, '2026-09-30': 1, '2026-10-02': 1})
+
+    def test_un_forjado_que_empieza_a_salir_antes_no_se_hace_entero_antes(self):
+        a = self.forjado('A', date(2026, 9, 28), 20)
+        b = self.forjado('B', date(2026, 10, 5), 20)
+        b.dias_envio = 10
+        b.save()
+        plan = plan_ferralla(self.ferralla.pk, LUNES)
+        # B saca un camion el 21, el 23, el 25, el 30 y el 02; A, 2 el 24 y 3 el 25.
+        self.assertEqual((plan['envios'][b.pk]['desde'], plan['envios'][a.pk]['desde']), ('2026-09-21', '2026-09-24'))
+        # Se fabrica por camiones: el 25 tienen que estar los de B hasta ese dia
+        # y todo A (64 modulos), no B entero antes que A (que pediria 8 al dia).
+        self.assertEqual([(t['ritmo'], t['dias']) for t in plan['tramos']], [(6.4, 10), (3.2, 5)])
+        self.assertEqual(plan['proyectos'][b.pk]['fabricacion_inicio'], '2026-09-14')
+        self.assertLess(plan['proyectos'][a.pk]['fabricacion_fin'], plan['proyectos'][b.pk]['fabricacion_fin'])
+
+    def test_lo_en_estudio_no_mueve_los_camiones_de_lo_real(self):
+        real = self.forjado('Real', date(2026, 9, 29), 48)
+        estudio = self.forjado('Estudio', date(2026, 9, 28), 48, fantasma=True)
+        solo_real = plan_ferralla(self.ferralla.pk, LUNES)
+        con = plan_ferralla(self.ferralla.pk, LUNES, con_fantasmas=True)
+        self.assertEqual(con['envios'][real.pk], solo_real['envios'][real.pk])
+        self.assertEqual((con['envios'][real.pk]['desde'], con['envios'][real.pk]['hasta']), ('2026-09-24', '2026-09-28'))
+        # El que esta en estudio se acomoda antes, en los dias que quedan libres.
+        self.assertEqual((con['envios'][estudio.pk]['desde'], con['envios'][estudio.pk]['hasta']), ('2026-09-21', '2026-09-23'))
+
+    def test_la_ficha_guarda_el_dia_solo_de_los_movidos_y_avisa_si_salen_de_mas(self):
+        proyecto = self.forjado('A', date(2026, 9, 28), 12)
+        self.client.force_authenticate(self.oficina)
+        url = f'/api/proyectos/{proyecto.pk}/camiones/'
+        datos = self.client.get(url).data
+        self.assertEqual([(c['fecha_fija'], c['por_defecto']) for c in datos['camiones']], [(False, True)] * 3)
+        filas = [{'fecha': c['fecha'], 'fecha_fija': False, 'bastidores': c['bastidores']} for c in datos['camiones']]
+        filas[0] = {'fecha': '2026-12-18', 'fecha_fija': True, 'bastidores': 2}
+        respuesta = self.client.put(url, {'camiones': filas}, format='json')
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        self.assertEqual(list(Camion.objects.filter(proyecto=proyecto).values_list('fecha', 'bastidores')),
+                         [(date(2026, 12, 18), 2), (None, 4), (None, 4)])
+        # Los 2 que ya no lleva el primero van en un cuarto camion del reparto.
+        self.assertEqual([(c['fecha_fija'], c['bastidores']) for c in respuesta.data['camiones']],
+                         [(True, 2), (False, 4), (False, 4), (False, 2)])
+
+        # Todos a mano el mismo dia: salen 12 camiones donde caben 4.
+        grande = self.forjado('B', date(2026, 10, 5), 48)
+        Camion.objects.bulk_create([
+            Camion(proyecto=grande, orden=i, fecha=date(2026, 10, 2), bastidores=4) for i in range(1, 13)
+        ])
+        self.assertEqual(plan_ferralla(self.ferralla.pk, LUNES)['sobrecargas'], [(date(2026, 10, 2), 12.0)])
+
+    def test_moden_elige_los_camiones_al_dia_y_los_dias_de_envio(self):
+        from .models import UserProfile
+
+        proyecto = self.forjado('A', date(2026, 9, 28), 48)
+        otra = User.objects.create_user('reparto-otra')
+        ajeno = Proyecto.objects.create(nombre='Ajeno', usuario=otra, fecha_montaje=date(2026, 9, 28))
+        movido = Camion.objects.create(proyecto=proyecto, orden=1, fecha=date(2026, 9, 14), bastidores=4)
+        enviado = Camion.objects.create(proyecto=proyecto, orden=2, fecha=date(2026, 9, 11), bastidores=4,
+                                        enviado=True, enviado_at=timezone.now())
+        url = f'/api/planificacion-moden/camiones/{self.ferralla.pk}/'
+        self.client.force_authenticate(self.ferralla)
+        self.assertEqual(self.client.put(url, {'camiones_por_dia': 2}, format='json').status_code, 403)
+
+        self.client.force_authenticate(self.oficina)
+        for malo in ({'camiones_por_dia': 0}, {'proyectos': [{'id': proyecto.pk, 'dias_envio': 0}]},
+                     {'proyectos': [{'id': ajeno.pk, 'dias_envio': 3}]}, {'camiones_por_dia': 'muchos'}):
+            self.assertEqual(self.client.put(url, malo, format='json').status_code, 400, malo)
+        respuesta = self.client.put(url, {'camiones_por_dia': 2, 'proyectos': [{'id': proyecto.pk, 'dias_envio': 8}]},
+                                    format='json')
+        self.assertEqual(respuesta.status_code, 200, respuesta.data)
+        self.assertEqual(respuesta.data, {'camiones_por_dia': 2, 'proyectos': [{'id': proyecto.pk, 'dias_envio': 8}]})
+        self.assertEqual(UserProfile.objects.get(user=self.ferralla).camiones_por_dia, 2)
+        # El que se movio en la ficha vuelve al reparto; el enviado se queda donde salio.
+        movido.refresh_from_db()
+        enviado.refresh_from_db()
+        self.assertIsNone(movido.fecha)
+        self.assertEqual(enviado.fecha, date(2026, 9, 11))
+        # Vaciar los dias: los justos otra vez.
+        self.client.put(url, {'proyectos': [{'id': proyecto.pk, 'dias_envio': None}]}, format='json')
+        proyecto.refresh_from_db()
+        self.assertIsNone(proyecto.dias_envio)

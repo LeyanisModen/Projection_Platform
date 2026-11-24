@@ -17,7 +17,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .acopio import acopio_para_grafica, capacidades_de
-from .models import AcopioCapacidad, Proyecto
+from .models import AcopioCapacidad, Camion, Proyecto, UserProfile
 from .planificacion import _es_oficina, _ferralla, _tarjeta, kilos_de_modulos, pesos_medios, sumar_meses
 from .planning import annotated_projects, dias_laborables, fecha_de_montaje, festivos_de, plan_ferralla
 
@@ -69,6 +69,10 @@ def planificacion_ferralla(usuario, desde, hasta):
             'fantasma': proyecto.fantasma,
             'pendiente_aceptar': not proyecto.fantasma and proyecto.aceptado_por_ferralla_at is None,
             'modulos_pendientes': plan['modulos_pendientes'],
+            # Cuando se fabrica y cuando salen sus camiones, con lo que esta en estudio.
+            'fabricacion_inicio': plan['fabricacion_inicio'],
+            'fabricacion_fin': plan['fabricacion_fin'],
+            'envio': con_fantasmas['envios'].get(proyecto.pk),
         })
         filas.append(fila)
 
@@ -95,6 +99,13 @@ def planificacion_ferralla(usuario, desde, hasta):
         'ferralla': _ferralla(usuario),
         'dias': dias,
         'acopio': _acopio(real, con_fantasmas, dias_vista),
+        'camiones': {
+            'por_dia': con_fantasmas['camiones_por_dia'],
+            'sobrecargas': [
+                {'fecha': dia.isoformat(), 'camiones': round(camiones, 1)}
+                for dia, camiones in con_fantasmas['sobrecargas'] if dia <= hasta
+            ],
+        },
         'festivos': sorted(dia.isoformat() for dia in festivos if desde <= dia <= hasta),
         'entregas': entregas,
         'proyectos': filas,
@@ -124,9 +135,12 @@ def _frena(plan):
 def _acopio(real, con_fantasmas, dias):
     """El patio cada dia con lo real y con los proyectos en estudio; None sin capacidad."""
     solo_real = acopio_para_grafica(real['acopio'], dias)
-    if solo_real is None:
-        return None
     con = acopio_para_grafica(con_fantasmas['acopio'], dias)
+    if solo_real is None and con is None:
+        return None
+    # Sin nada real (o solo real) el otro lado esta vacio.
+    vacio = {'excesos': [], 'dias': [{'bastidores': 0.0} for _dia in dias]}
+    solo_real, con = solo_real or {**con, **vacio}, con or {**solo_real, **vacio}
     return {
         'capacidades': solo_real['capacidades'],
         'excesos_real': solo_real['excesos'],
@@ -170,6 +184,65 @@ class PlanificacionModenView(APIView):
 MAX_CAPACIDADES = 50
 
 
+def _ferralla_o_404(request, usuario_id):
+    if not _es_oficina(request.user):
+        return None, Response({'detail': 'Solo la oficina.'}, status=403)
+    usuario = User.objects.filter(pk=usuario_id, is_staff=False, is_superuser=False).first()
+    if usuario is None:
+        return None, Response({'detail': 'Ferralla no encontrada.'}, status=404)
+    return usuario, None
+
+
+MAX_CAMIONES_DIA = 50
+MAX_DIAS_ENVIO = 60
+
+
+class CamionesFerrallaView(APIView):
+    """``PUT /api/planificacion-moden/camiones/<usuario>/``: los camiones que
+    saca la ferralla al dia y en cuantos dias salen los de cada forjado.
+    {camiones_por_dia, proyectos: [{id, dias_envio}]} (``dias_envio`` vacio:
+    los justos). Al cambiar los dias de un forjado, sus camiones por enviar
+    vuelven al reparto aunque se movieran en la ficha. Solo la oficina."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def put(self, request, usuario_id):
+        usuario, error = _ferralla_o_404(request, usuario_id)
+        if error:
+            return error
+        datos = request.data if isinstance(request.data, dict) else {}
+        por_dia = datos.get('camiones_por_dia')
+        filas = datos.get('proyectos', [])
+        if not isinstance(filas, list):
+            return Response({'detail': 'Envia {camiones_por_dia, proyectos: [{id, dias_envio}]}.'}, status=400)
+        try:
+            por_dia = None if por_dia is None else int(por_dia)
+            cambios = {int(fila['id']): (None if fila.get('dias_envio') in (None, '') else int(fila['dias_envio']))
+                       for fila in filas}
+        except (KeyError, TypeError, ValueError):
+            return Response({'detail': 'Los camiones al dia y los dias de envio son numeros.'}, status=400)
+        if por_dia is not None and not 1 <= por_dia <= MAX_CAMIONES_DIA:
+            return Response({'detail': f'Los camiones al dia van de 1 a {MAX_CAMIONES_DIA}.'}, status=400)
+        if any(dias is not None and not 1 <= dias <= MAX_DIAS_ENVIO for dias in cambios.values()):
+            return Response({'detail': f'Los dias de envio van de 1 a {MAX_DIAS_ENVIO}.'}, status=400)
+        proyectos = {p.pk: p for p in Proyecto.objects.filter(usuario=usuario, archivado_at__isnull=True, pk__in=cambios)}
+        if len(proyectos) != len(cambios):
+            return Response({'detail': 'Algun proyecto no es de esta ferralla o esta archivado.'}, status=400)
+        with transaction.atomic():
+            if por_dia is not None and not UserProfile.objects.filter(user=usuario).update(camiones_por_dia=por_dia):
+                UserProfile.objects.create(user=usuario, camiones_por_dia=por_dia)
+            for pk, dias in cambios.items():
+                if proyectos[pk].dias_envio != dias:
+                    # update(): sin las senales de guardar un proyecto.
+                    Proyecto.objects.filter(pk=pk).update(dias_envio=dias)
+                    Camion.objects.filter(proyecto_id=pk, enviado=False).update(fecha=None)
+        perfil = UserProfile.objects.filter(user=usuario).values_list('camiones_por_dia', flat=True).first()
+        return Response({
+            'camiones_por_dia': perfil or 4,
+            'proyectos': [{'id': pk, 'dias_envio': dias} for pk, dias in sorted(cambios.items())],
+        })
+
+
 class AcopioCapacidadView(APIView):
     """``GET/PUT /api/planificacion-moden/acopio/<usuario>/``: los bastidores que
     caben en el patio de una ferralla, por fechas. PUT {capacidades: [{desde,
@@ -180,20 +253,12 @@ class AcopioCapacidadView(APIView):
     def _lista(self, usuario_id):
         return [{'desde': d.isoformat(), 'bastidores': b} for d, b in capacidades_de(usuario_id)]
 
-    def _ferralla_o_404(self, request, usuario_id):
-        if not _es_oficina(request.user):
-            return None, Response({'detail': 'Solo la oficina.'}, status=403)
-        usuario = User.objects.filter(pk=usuario_id, is_staff=False, is_superuser=False).first()
-        if usuario is None:
-            return None, Response({'detail': 'Ferralla no encontrada.'}, status=404)
-        return usuario, None
-
     def get(self, request, usuario_id):
-        usuario, error = self._ferralla_o_404(request, usuario_id)
+        usuario, error = _ferralla_o_404(request, usuario_id)
         return error or Response(self._lista(usuario.pk))
 
     def put(self, request, usuario_id):
-        usuario, error = self._ferralla_o_404(request, usuario_id)
+        usuario, error = _ferralla_o_404(request, usuario_id)
         if error:
             return error
         filas = request.data.get('capacidades') if isinstance(request.data, dict) else None

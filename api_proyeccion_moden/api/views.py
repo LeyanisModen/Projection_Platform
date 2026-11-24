@@ -3154,10 +3154,12 @@ class ProyectoViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get', 'put', 'delete'], url_path='camiones')
     def camiones(self, request, pk=None):
         """Camiones del forjado (api/acopio.py). GET: los guardados y lo que
-        queda por defecto (de 4 en 4 el dia laborable antes del montaje). PUT
-        {camiones: [{fecha, bastidores, enviado}]}: los sustituye todos, en
-        orden de bastidor. DELETE: vuelve a los de por defecto. Los mueve la
-        ferralla del forjado; por ahora tambien Moden, para los estudios."""
+        queda por defecto (de 4 en 4), cada uno con su dia en el reparto de la
+        ferralla. PUT {camiones: [{fecha, fecha_fija, bastidores, enviado}]}:
+        los sustituye todos, en orden de bastidor; solo guarda el dia de los
+        movidos a mano (``fecha_fija``) y de los enviados, los demas siguen el
+        reparto. DELETE: vuelve a los de por defecto. Los mueve la ferralla del
+        forjado; por ahora tambien Moden, para los estudios."""
         from api.acopio import BASTIDORES_POR_CAMION, camiones_del_proyecto
 
         proyecto = self.get_object()
@@ -3181,15 +3183,17 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         nuevos = []
         for orden, fila in enumerate(filas, start=1):
             try:
-                fecha = date.fromisoformat(str(fila.get('fecha')))
                 cuantos = int(fila.get('bastidores'))
+                enviado = bool(fila.get('enviado'))
+                # Sin decir, el dia es fijo (como antes de que hubiera reparto).
+                fija = bool(fila.get('fecha_fija', True))
+                fecha = date.fromisoformat(str(fila.get('fecha'))) if fija or enviado else None
             except (AttributeError, TypeError, ValueError):
                 return Response({'detail': f'El camión {orden} necesita una fecha y sus bastidores.'},
                                 status=status.HTTP_400_BAD_REQUEST)
             if not 1 <= cuantos <= BASTIDORES_POR_CAMION:
                 return Response({'detail': f'Un camión lleva de 1 a {BASTIDORES_POR_CAMION} bastidores.'},
                                 status=status.HTTP_400_BAD_REQUEST)
-            enviado = bool(fila.get('enviado'))
             if enviado and fecha > hoy:
                 return Response({'detail': f'El camión {orden} no puede estar enviado el {fecha:%d/%m}: aún no ha llegado ese día.'},
                                 status=status.HTTP_400_BAD_REQUEST)
