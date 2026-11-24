@@ -1844,3 +1844,30 @@ class AcopioCapacidad(models.Model):
 
     def __str__(self):
         return f'{self.usuario_id} desde {self.desde}: {self.bastidores} bastidores'
+
+
+class Camion(models.Model):
+    """Un camion de un forjado: sale ``fecha`` hacia la obra con ``bastidores``
+    (4 salvo el ultimo o uno compartido con la planta de al lado), en orden de
+    bastidor. Sin ninguno guardado, el forjado sale entero el dia laborable
+    anterior a su montaje, en camiones de 4 (api/acopio.py); al mover uno se
+    guardan todos. ``enviado``: ya salio ese dia (lo marca la ferralla; por
+    ahora tambien Moden, para los estudios)."""
+    proyecto = models.ForeignKey(Proyecto, on_delete=models.CASCADE, related_name='camiones')
+    orden = models.PositiveIntegerField()
+    fecha = models.DateField()
+    bastidores = models.PositiveSmallIntegerField(default=4)
+    enviado = models.BooleanField(default=False)
+    enviado_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'api_camion'
+        ordering = ['proyecto_id', 'orden']
+        constraints = [
+            models.UniqueConstraint(fields=['proyecto', 'orden'], name='camion_orden_unico_por_proyecto'),
+        ]
+        verbose_name = 'camion'
+        verbose_name_plural = 'camiones'
+
+    def __str__(self):
+        return f'{self.proyecto_id} camion {self.orden}: {self.fecha} ({self.bastidores})'

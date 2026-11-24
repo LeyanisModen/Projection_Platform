@@ -8,7 +8,7 @@ import sqlite3
 import tempfile
 import unicodedata
 import uuid
-from datetime import timedelta
+from datetime import date, timedelta
 
 from django.contrib.auth.models import User
 from django.utils.text import get_valid_filename
@@ -37,7 +37,7 @@ from api.models import (
     DetalleModuloFase, MesaQueueStatus, ModuloEstado, Fase,
     GrupoBastidor, MaterialPieza, MaterialInformado, MaterialOrigenCheck,
     MaterialTipo, MesaTipo, UserProfile, EstrategiaColaSuperior,
-    EventoFabricacion, EventoFabricacionTipo, LogMiniPC, IncidenciaOrden, IncidenciaOrdenTipo, HojaIncidencias,
+    EventoFabricacion, EventoFabricacionTipo, LogMiniPC, IncidenciaOrden, IncidenciaOrdenTipo, HojaIncidencias, Camion,
 )
 from api.project_media import (
     collect_module_media,
@@ -3150,6 +3150,58 @@ class ProyectoViewSet(viewsets.ModelViewSet):
             hoja.delete()
             transaction.on_commit(lambda: delete_unreferenced_storage_files([fichero]), robust=True)
         return Response(self._hojas_incidencias(proyecto, request.user))
+
+    @action(detail=True, methods=['get', 'put', 'delete'], url_path='camiones')
+    def camiones(self, request, pk=None):
+        """Camiones del forjado (api/acopio.py). GET: los guardados y lo que
+        queda por defecto (de 4 en 4 el dia laborable antes del montaje). PUT
+        {camiones: [{fecha, bastidores, enviado}]}: los sustituye todos, en
+        orden de bastidor. DELETE: vuelve a los de por defecto. Los mueve la
+        ferralla del forjado; por ahora tambien Moden, para los estudios."""
+        from api.acopio import BASTIDORES_POR_CAMION, camiones_del_proyecto
+
+        proyecto = self.get_object()
+        if request.method == 'GET':
+            return Response(camiones_del_proyecto(proyecto))
+        if not (_is_admin(request.user) or _de_la_ferralla(request.user, proyecto)):
+            return Response({'detail': 'No puedes mover los camiones de otra ferralla.'},
+                            status=status.HTTP_403_FORBIDDEN)
+        if proyecto.archivado_at:
+            return Response({'detail': 'El proyecto está archivado.'}, status=status.HTTP_400_BAD_REQUEST)
+        if request.method == 'DELETE':
+            proyecto.camiones.all().delete()
+            return Response(camiones_del_proyecto(proyecto))
+
+        filas = request.data.get('camiones') if isinstance(request.data, dict) else None
+        if not isinstance(filas, list) or not filas or len(filas) > 100:
+            return Response({'detail': 'Envía {camiones: [{fecha, bastidores, enviado}]}.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        hoy = timezone.localdate()
+        antes = {c.orden: c for c in proyecto.camiones.all()}
+        nuevos = []
+        for orden, fila in enumerate(filas, start=1):
+            try:
+                fecha = date.fromisoformat(str(fila.get('fecha')))
+                cuantos = int(fila.get('bastidores'))
+            except (AttributeError, TypeError, ValueError):
+                return Response({'detail': f'El camión {orden} necesita una fecha y sus bastidores.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            if not 1 <= cuantos <= BASTIDORES_POR_CAMION:
+                return Response({'detail': f'Un camión lleva de 1 a {BASTIDORES_POR_CAMION} bastidores.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            enviado = bool(fila.get('enviado'))
+            if enviado and fecha > hoy:
+                return Response({'detail': f'El camión {orden} no puede estar enviado el {fecha:%d/%m}: aún no ha llegado ese día.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            anterior = antes.get(orden)
+            nuevos.append(Camion(
+                proyecto=proyecto, orden=orden, fecha=fecha, bastidores=cuantos, enviado=enviado,
+                enviado_at=(anterior.enviado_at if anterior and anterior.enviado else timezone.now()) if enviado else None,
+            ))
+        with transaction.atomic():
+            proyecto.camiones.all().delete()
+            Camion.objects.bulk_create(nuevos)
+        return Response(camiones_del_proyecto(proyecto))
 
     @action(detail=True, methods=['get'], url_path='lista-materiales')
     def lista_materiales(self, request, pk=None):

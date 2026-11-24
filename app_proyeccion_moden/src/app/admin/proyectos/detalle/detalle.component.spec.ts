@@ -34,6 +34,10 @@ describe('Project detail rack order switch', () => {
         http.expectOne('/api/proyecto-checklist/7/').flush([]);
         // El panel de hojas de incidencias carga las suyas.
         http.expectOne('/api/proyectos/7/hojas-incidencias/').flush([]);
+        // Y el de camiones, los suyos.
+        http.expectOne('/api/proyectos/7/camiones/').flush({
+            bastidores: 0, bastidores_estimados: true, salida: null, por_defecto: true, sobran: 0, camiones: [],
+        });
         fixture.detectChanges();
     });
 

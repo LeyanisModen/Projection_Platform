@@ -222,6 +222,29 @@ export interface Proyecto {
     hojas_incidencias_ultima?: string | null;
 }
 
+/** Un camion de un forjado: sale ese dia con sus bastidores (en orden de bastidor). */
+export interface Camion {
+    orden?: number;
+    fecha: string;
+    bastidores: number;
+    enviado: boolean;
+    enviado_at?: string | null;
+    /** No esta guardado: lo que queda del forjado, el dia antes del montaje. */
+    por_defecto?: boolean;
+}
+
+export interface CamionesProyecto {
+    bastidores: number;
+    /** Sin bastidores calculados (o con modulos por subir): a la media de la ferralla. */
+    bastidores_estimados: boolean;
+    /** Dia laborable antes del montaje: cuando salen por defecto. */
+    salida: string | null;
+    por_defecto: boolean;
+    /** Los guardados llevan mas bastidores de los que tiene ahora el forjado. */
+    sobran: number;
+    camiones: Camion[];
+}
+
 /** PDF escaneado de las hojas que firma el supervisor al terminar los módulos. */
 export interface HojaIncidencias {
     id: number;
@@ -1222,6 +1245,24 @@ export class ApiService {
     }
 
     /** Excel de elementos sueltos del proyecto, leido como tablas (una por hoja). */
+    getCamiones(proyectoId: number): Observable<CamionesProyecto> {
+        return this.http.get<CamionesProyecto>(`${this.baseUrl}/proyectos/${proyectoId}/camiones/`, { headers: this.getHeaders() });
+    }
+
+    /** Sustituye los camiones del forjado (en orden de bastidor). */
+    guardarCamiones(proyectoId: number, camiones: Camion[]): Observable<CamionesProyecto> {
+        return this.http.put<CamionesProyecto>(
+            `${this.baseUrl}/proyectos/${proyectoId}/camiones/`,
+            { camiones: camiones.map(c => ({ fecha: c.fecha, bastidores: c.bastidores, enviado: c.enviado })) },
+            { headers: this.getHeaders() },
+        );
+    }
+
+    /** Vuelve a los camiones por defecto (de 4 en 4 el dia antes del montaje). */
+    camionesPorDefecto(proyectoId: number): Observable<CamionesProyecto> {
+        return this.http.delete<CamionesProyecto>(`${this.baseUrl}/proyectos/${proyectoId}/camiones/`, { headers: this.getHeaders() });
+    }
+
     getHojasIncidencias(proyectoId: number): Observable<HojaIncidencias[]> {
         return this.http.get<HojaIncidencias[]>(
             `${this.baseUrl}/proyectos/${proyectoId}/hojas-incidencias/`, { headers: this.getHeaders() },

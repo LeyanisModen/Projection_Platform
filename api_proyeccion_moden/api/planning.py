@@ -14,12 +14,12 @@ llegar hay que doblar turno, eso lo decide la ferralla.
   otro, por montaje) y la holgura que le queda hasta su ultimo dia.
 - El objetivo de un periodo es la suma del ritmo de cada dia laborable.
 """
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 
 from django.db.models import Count, Q
 from django.utils import timezone
 
-from .acopio import almacen, capacidades_de, plan_con_acopio
+from .acopio import almacen, capacidades_de, hay_camiones_guardados, plan_con_acopio, primera_salida
 
 DAY_CODES = ('MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN')
 # Dias de fabricacion: de lunes a viernes. Un turno de noche o un domingo
@@ -319,8 +319,9 @@ def plan_ferralla(usuario_id, today=None, override=None, con_fantasmas=False):
     forjados = [(fecha_de_montaje(p), filas[p.pk]['modulos_pendientes'], p.pk) for p in serie]
     capacidades = capacidades_de(usuario_id)
     acopio = None
-    if capacidades:
-        # El patio limita lo que se puede adelantar (api/acopio.py).
+    if capacidades or hay_camiones_guardados([p.pk for p in proyectos]):
+        # El patio limita lo que se puede adelantar y cada camion movido fija
+        # cuando tienen que estar sus bastidores (api/acopio.py).
         cuentas = {p.pk: _counts(p) for p in proyectos}
         info = almacen(
             proyectos,
@@ -329,6 +330,9 @@ def plan_ferralla(usuario_id, today=None, override=None, con_fantasmas=False):
             totales={p.pk: max(cuentas[p.pk][0], p.modulos_previstos or 0) for p in proyectos},
             festivos=festivos, desde=today,
         )
+        # Se fabrica antes lo que sale antes (con los camiones por defecto, por montaje).
+        serie.sort(key=lambda p: (primera_salida(info[p.pk]) or date.max, fecha_de_montaje(p), p.orden_planta, p.pk))
+        forjados = [(fecha_de_montaje(p), filas[p.pk]['modulos_pendientes'], p.pk) for p in serie]
         tramos, acopio = plan_con_acopio(forjados, info, today, festivos, capacidades)
     else:
         tramos = tramos_de_ritmo(forjados, today, festivos)
@@ -507,7 +511,7 @@ def period_target_summary(projects, start, end):
             continue
         forjados.sort(key=lambda f: (f[0], f[3], f[2]))
         capacidades = capacidades_de(factory_id)
-        if capacidades:
+        if capacidades or hay_camiones_guardados([p.pk for p in factory_projects]):
             # El patio de entonces: lo hecho antes del periodo que aun no habia salido.
             info = almacen(
                 factory_projects,
@@ -516,6 +520,7 @@ def period_target_summary(projects, start, end):
                 totales={p.pk: max(p._period_total, p.modulos_previstos or 0) for p in factory_projects},
                 festivos=festivos, desde=start,
             )
+            forjados.sort(key=lambda f: (primera_salida(info[f[2]]) or date.max, f[0], f[3], f[2]))
             tramos, _acopio = plan_con_acopio([(f[0], f[1], f[2]) for f in forjados], info, start, festivos, capacidades)
         else:
             tramos = tramos_de_ritmo([(f[0], f[1], f[2]) for f in forjados], start, festivos)

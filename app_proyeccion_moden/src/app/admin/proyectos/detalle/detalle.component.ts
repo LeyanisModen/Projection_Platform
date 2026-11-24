@@ -27,6 +27,7 @@ import {
 } from './module-import.utils';
 import { getModuloPhaseAction } from './phase-action.utils';
 import { HojasIncidenciasComponent } from '../../../shared/hojas-incidencias.component';
+import { CamionesProyectoComponent } from '../../../shared/camiones-proyecto.component';
 
 /** Ficheros del proyecto que la oficina sube desde "Archivos". El plano ya no se
  *  sube: se generara a partir de la base de datos del proyecto. Los elementos
@@ -56,6 +57,7 @@ function prefijoComun(a: string, b: string): number {
         ProjectControlsComponent,
         ZoomableImageComponent,
         HojasIncidenciasComponent,
+        CamionesProyectoComponent,
     ],
     templateUrl: './detalle.component.html',
     styleUrls: ['../../admin-theme.css', './detalle.component.css', './detalle-responsive.css']

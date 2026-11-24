@@ -281,6 +281,12 @@
                 }
             </div>
 
+            <!-- Camiones a obra: cuando sale cada uno y con cuantos bastidores (cuenta en el acopio) -->
+            <div class="side-panel camiones-panel">
+                <span class="section-label">Camiones</span>
+                <app-camiones-proyecto [proyectoId]="proyecto.id" [archivado]="!!proyecto.archivado_at"></app-camiones-proyecto>
+            </div>
+
             <!-- Hojas firmadas por el supervisor junto a las mesas, escaneadas en PDF -->
             <div class="side-panel hojas-incidencias-panel">
                 <span class="section-label">Hojas de incidencias</span>
