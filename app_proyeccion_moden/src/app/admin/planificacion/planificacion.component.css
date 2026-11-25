@@ -62,6 +62,8 @@
 .pm-acopio-fila { display: grid; grid-template-columns: 1fr 1fr 34px; align-items: center; gap: 8px; }
 .pm-acopio-cabecera { color: var(--muted); font-size: 12px; }
 .pm-acopio-anadir { align-self: flex-start; }
+.pm-acopio-maximo { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 6px 0 0; color: var(--text); font-size: 13px; font-weight: 400; }
+.pm-acopio-maximo .field { width: 80px; }
 .pm-acopio-fila .field { width: 100%; min-width: 0; box-sizing: border-box; }
 
 /* La grafica y, pegado debajo con sus mismos dias, cuando se fabrica cada obra. */

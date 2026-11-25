@@ -138,6 +138,25 @@ class AcopioPlanTests(TestCase):
         self.assertEqual(round(ocupacion(date(2026, 9, 25))[0], 3), 2.333)
         self.assertEqual(ocupacion(date(2026, 9, 28))[1], 6)
 
+    def test_marca_los_dias_con_el_patio_lleno_y_dice_lo_que_no_llega(self):
+        from .models import UserProfile
+
+        proyecto = self.forjado('P', date(2026, 9, 28), 30, 6)
+        AcopioCapacidad.objects.create(usuario=self.ferralla, desde=LUNES, bastidores=4)
+        plan = plan_ferralla(self.ferralla.pk, LUNES)
+        # Caben 4 de sus 6 bastidores: el viernes empieza lleno y solo se hace lo que sale.
+        self.assertEqual(plan['acopio'].llenos, [date(2026, 9, 25)])
+        # Sin saber lo que fabrican al dia, no se puede decir que no llega.
+        self.assertEqual(plan['no_llegan'], [])
+        UserProfile.objects.create(user=self.ferralla, modulos_dia_max=5)
+        # Con 5 al dia: hasta el jueves, los 20 que caben; el viernes, 25 de sus 30.
+        self.assertEqual(plan_ferralla(self.ferralla.pk, LUNES)['no_llegan'], [{
+            'proyecto': proyecto.pk, 'nombre': 'P', 'fantasma': False, 'montaje': '2026-09-28',
+            'fecha': '2026-09-25', 'faltan': 5,
+        }])
+        UserProfile.objects.filter(user=self.ferralla).update(modulos_dia_max=10)
+        self.assertEqual(plan_ferralla(self.ferralla.pk, LUNES)['no_llegan'], [])
+
 
 class AcopioPantallasTests(APITestCase):
     """La capacidad se guarda desde la planificacion de Moden y el patio sale en las dos planificaciones."""
@@ -173,6 +192,16 @@ class AcopioPantallasTests(APITestCase):
         self.assertEqual(self.client.put(self.url, {'capacidades': [{'desde': 'ayer', 'bastidores': 3}]}, format='json').status_code, 400)
         self.assertEqual(self.client.put(self.url, {'capacidades': []}, format='json').data, [])
         self.assertFalse(AcopioCapacidad.objects.exists())
+        # Lo que fabrican al dia como mucho va con el patio; sin decirlo, no cambia.
+        from .models import UserProfile
+
+        self.assertEqual(self.client.put(self.url, {'capacidades': [], 'modulos_dia_max': 0}, format='json').status_code, 400)
+        self.assertEqual(self.client.put(self.url, {'capacidades': [], 'modulos_dia_max': 30}, format='json').status_code, 200)
+        self.assertEqual(UserProfile.objects.get(user=self.ferralla).modulos_dia_max, 30)
+        self.client.put(self.url, {'capacidades': []}, format='json')
+        self.assertEqual(UserProfile.objects.get(user=self.ferralla).modulos_dia_max, 30)
+        self.client.put(self.url, {'capacidades': [], 'modulos_dia_max': None}, format='json')
+        self.assertIsNone(UserProfile.objects.get(user=self.ferralla).modulos_dia_max)
 
     def test_el_patio_sale_en_las_dos_planificaciones(self):
         from .planificacion import planificacion_de
@@ -193,6 +222,8 @@ class AcopioPantallasTests(APITestCase):
         self.assertEqual(jueves, {'fecha': '2026-09-17', 'real': 1.6, 'con_fantasmas': 3.0, 'capacidad': 3})
         self.assertEqual(moden['excesos_real'], [])
         self.assertEqual(moden['excesos_con_fantasmas'], [])
+        # El viernes empieza con el patio lleno, solo con lo que esta en estudio.
+        self.assertEqual((moden['llenos_real'], moden['llenos_con_fantasmas']), ([], ['2026-09-18']))
 
 
 class CamionesTests(APITestCase):
@@ -329,15 +360,19 @@ class RepartoCamionesTests(APITestCase):
         self.assertEqual((envio['camiones'], envio['desde'], envio['hasta'], envio['dias'], envio['dias_minimos']),
                          (10, '2026-09-23', '2026-09-25', 3, 3))
 
-    def test_dos_forjados_seguidos_no_pasan_de_los_camiones_al_dia(self):
-        # A se monta el lunes 28 y B el martes 29, 12 camiones cada uno: B sale
-        # lo mas tarde y A justo antes, cada uno seguido.
+    def test_dos_forjados_seguidos_no_se_adelantan_y_avisan_de_los_camiones_de_mas(self):
+        # A se monta el lunes 28 y B el martes 29, 12 camiones cada uno. La obra
+        # no admite nada antes: cada uno sale en sus tres dias, aunque el 24 y
+        # el 25 salgan 8 donde caben 4.
         a = self.forjado('A', date(2026, 9, 28), 48)
         b = self.forjado('B', date(2026, 9, 29), 48)
         plan = plan_ferralla(self.ferralla.pk, LUNES)
         self.assertEqual((plan['envios'][b.pk]['desde'], plan['envios'][b.pk]['hasta']), ('2026-09-24', '2026-09-28'))
-        self.assertEqual((plan['envios'][a.pk]['desde'], plan['envios'][a.pk]['hasta']), ('2026-09-21', '2026-09-23'))
-        self.assertEqual(plan['sobrecargas'], [])
+        self.assertEqual((plan['envios'][a.pk]['desde'], plan['envios'][a.pk]['hasta']), ('2026-09-23', '2026-09-25'))
+        self.assertEqual(plan['envios'][a.pk]['salidas'], [
+            {'fecha': '2026-09-23', 'camiones': 4}, {'fecha': '2026-09-24', 'camiones': 4}, {'fecha': '2026-09-25', 'camiones': 4},
+        ])
+        self.assertEqual(plan['sobrecargas'], [(date(2026, 9, 24), 8.0), (date(2026, 9, 25), 8.0)])
 
     def test_con_un_camion_al_dia_el_patio_se_vacia_antes(self):
         self.forjado('P', date(2026, 9, 28), 6, por_bastidor=5)
@@ -384,15 +419,23 @@ class RepartoCamionesTests(APITestCase):
         self.assertEqual(plan['proyectos'][b.pk]['fabricacion_inicio'], '2026-09-14')
         self.assertLess(plan['proyectos'][a.pk]['fabricacion_fin'], plan['proyectos'][b.pk]['fabricacion_fin'])
 
-    def test_lo_en_estudio_no_mueve_los_camiones_de_lo_real(self):
+    def test_lo_en_estudio_sale_en_sus_dias_y_se_ve_lo_que_no_cabe(self):
         real = self.forjado('Real', date(2026, 9, 29), 48)
         estudio = self.forjado('Estudio', date(2026, 9, 28), 48, fantasma=True)
         solo_real = plan_ferralla(self.ferralla.pk, LUNES)
         con = plan_ferralla(self.ferralla.pk, LUNES, con_fantasmas=True)
         self.assertEqual(con['envios'][real.pk], solo_real['envios'][real.pk])
         self.assertEqual((con['envios'][real.pk]['desde'], con['envios'][real.pk]['hasta']), ('2026-09-24', '2026-09-28'))
-        # El que esta en estudio se acomoda antes, en los dias que quedan libres.
-        self.assertEqual((con['envios'][estudio.pk]['desde'], con['envios'][estudio.pk]['hasta']), ('2026-09-21', '2026-09-23'))
+        # Tampoco el que esta en estudio se adelanta: los dias que coinciden salen de mas.
+        self.assertEqual((con['envios'][estudio.pk]['desde'], con['envios'][estudio.pk]['hasta']), ('2026-09-23', '2026-09-25'))
+        self.assertEqual(solo_real['sobrecargas'], [])
+        self.assertEqual(con['sobrecargas'], [(date(2026, 9, 24), 8.0), (date(2026, 9, 25), 8.0)])
+        from .planificacion_moden import planificacion_ferralla
+
+        camiones = planificacion_ferralla(self.ferralla, LUNES, LUNES + timedelta(days=60))['camiones']
+        self.assertEqual(camiones['sobrecargas_real'], [])
+        self.assertEqual(camiones['sobrecargas_con_fantasmas'],
+                         [{'fecha': '2026-09-24', 'camiones': 8.0}, {'fecha': '2026-09-25', 'camiones': 8.0}])
 
     def test_la_ficha_guarda_el_dia_solo_de_los_movidos_y_avisa_si_salen_de_mas(self):
         proyecto = self.forjado('A', date(2026, 9, 28), 12)
@@ -400,15 +443,29 @@ class RepartoCamionesTests(APITestCase):
         url = f'/api/proyectos/{proyecto.pk}/camiones/'
         datos = self.client.get(url).data
         self.assertEqual([(c['fecha_fija'], c['por_defecto']) for c in datos['camiones']], [(False, True)] * 3)
+        self.assertEqual(datos['montaje'], '2026-09-28')
         filas = [{'fecha': c['fecha'], 'fecha_fija': False, 'bastidores': c['bastidores']} for c in datos['camiones']]
-        filas[0] = {'fecha': '2026-12-18', 'fecha_fija': True, 'bastidores': 2}
+        # Ninguno despues del montaje; el dia del montaje, si.
+        filas[0] = {'fecha': '2026-09-29', 'fecha_fija': True, 'bastidores': 2}
+        self.assertEqual(self.client.put(url, {'camiones': filas}, format='json').status_code, 400)
+        filas[0] = {'fecha': '2026-09-28', 'fecha_fija': True, 'bastidores': 2}
+        self.assertEqual(self.client.put(url, {'camiones': filas}, format='json').status_code, 200)
+        filas[0] = {'fecha': '2026-09-18', 'fecha_fija': True, 'bastidores': 2}
         respuesta = self.client.put(url, {'camiones': filas}, format='json')
         self.assertEqual(respuesta.status_code, 200, respuesta.data)
         self.assertEqual(list(Camion.objects.filter(proyecto=proyecto).values_list('fecha', 'bastidores')),
-                         [(date(2026, 12, 18), 2), (None, 4), (None, 4)])
+                         [(date(2026, 9, 18), 2), (None, 4), (None, 4)])
         # Los 2 que ya no lleva el primero van en un cuarto camion del reparto.
         self.assertEqual([(c['fecha_fija'], c['bastidores']) for c in respuesta.data['camiones']],
                          [(True, 2), (False, 4), (False, 4), (False, 2)])
+
+        # Volver al reparto no olvida lo enviado.
+        Camion.objects.filter(proyecto=proyecto, orden=2).update(fecha=date(2026, 9, 11), enviado=True, enviado_at=timezone.now())
+        vuelta = self.client.delete(url).data
+        self.assertEqual(list(Camion.objects.filter(proyecto=proyecto).values_list('orden', 'fecha', 'enviado')),
+                         [(1, date(2026, 9, 11), True)])
+        self.assertEqual([(c['fecha'], c['enviado']) for c in vuelta['camiones']],
+                         [('2026-09-11', True), ('2026-09-25', False), ('2026-09-25', False)])
 
         # Todos a mano el mismo dia: salen 12 camiones donde caben 4.
         grande = self.forjado('B', date(2026, 10, 5), 48)

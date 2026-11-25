@@ -16,7 +16,7 @@ from rest_framework import permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .acopio import acopio_para_grafica, capacidades_de
+from .acopio import acopio_para_grafica, capacidades_de, modulos_dia_max_de
 from .models import AcopioCapacidad, Camion, Proyecto, UserProfile
 from .planificacion import _es_oficina, _ferralla, _tarjeta, kilos_de_modulos, pesos_medios, sumar_meses
 from .planning import annotated_projects, dias_laborables, fecha_de_montaje, festivos_de, plan_ferralla
@@ -31,6 +31,13 @@ def _ritmo_por_dia(plan, festivos):
         for dia in dias_laborables(date.fromisoformat(tramo['desde']), date.fromisoformat(tramo['hasta']), festivos):
             ritmos[dia] = tramo['ritmo']
     return ritmos
+
+
+def _sobrecargas(plan, hasta):
+    return [
+        {'fecha': dia.isoformat(), 'camiones': round(camiones, 1)}
+        for dia, camiones in plan['sobrecargas'] if dia <= hasta
+    ]
 
 
 def planificacion_ferralla(usuario, desde, hasta):
@@ -99,12 +106,15 @@ def planificacion_ferralla(usuario, desde, hasta):
         'ferralla': _ferralla(usuario),
         'dias': dias,
         'acopio': _acopio(real, con_fantasmas, dias_vista),
+        # Lo que puede fabricar al dia como mucho (Moden) y, con eso y el patio, lo que no llega.
+        'modulos_dia_max': modulos_dia_max_de(usuario.id),
+        'no_llegan_real': real['no_llegan'],
+        'no_llegan_con_fantasmas': con_fantasmas['no_llegan'],
         'camiones': {
             'por_dia': con_fantasmas['camiones_por_dia'],
-            'sobrecargas': [
-                {'fecha': dia.isoformat(), 'camiones': round(camiones, 1)}
-                for dia, camiones in con_fantasmas['sobrecargas'] if dia <= hasta
-            ],
+            # Dias en que salen mas camiones de los que puede: con lo real y con lo que esta en estudio.
+            'sobrecargas_real': _sobrecargas(real, hasta),
+            'sobrecargas_con_fantasmas': _sobrecargas(con_fantasmas, hasta),
         },
         'festivos': sorted(dia.isoformat() for dia in festivos if desde <= dia <= hasta),
         'entregas': entregas,
@@ -141,10 +151,17 @@ def _acopio(real, con_fantasmas, dias):
     # Sin nada real (o solo real) el otro lado esta vacio.
     vacio = {'excesos': [], 'dias': [{'bastidores': 0.0} for _dia in dias]}
     solo_real, con = solo_real or {**con, **vacio}, con or {**solo_real, **vacio}
+    def llenos(plan):
+        acopio = plan['acopio']
+        return [dia.isoformat() for dia in (acopio.llenos if acopio else [])]
+
     return {
         'capacidades': solo_real['capacidades'],
         'excesos_real': solo_real['excesos'],
         'excesos_con_fantasmas': con['excesos'],
+        # Dias que empiezan con el patio lleno: solo se fabrica lo que sale.
+        'llenos_real': llenos(real),
+        'llenos_con_fantasmas': llenos(con_fantasmas),
         'dias': [
             {'fecha': a['fecha'], 'real': a['bastidores'], 'con_fantasmas': b['bastidores'], 'capacidad': a['capacidad']}
             for a, b in zip(solo_real['dias'], con['dias'])
@@ -182,6 +199,7 @@ class PlanificacionModenView(APIView):
 
 
 MAX_CAPACIDADES = 50
+MAX_MODULOS_DIA = 1000
 
 
 def _ferralla_o_404(request, usuario_id):
@@ -246,7 +264,9 @@ class CamionesFerrallaView(APIView):
 class AcopioCapacidadView(APIView):
     """``GET/PUT /api/planificacion-moden/acopio/<usuario>/``: los bastidores que
     caben en el patio de una ferralla, por fechas. PUT {capacidades: [{desde,
-    bastidores}]} las sustituye todas (lista vacia: sin limite). Solo la oficina."""
+    bastidores}], modulos_dia_max} las sustituye todas (lista vacia: sin
+    limite) y, si viene, lo que fabrica al dia como mucho (vacio: no se sabe).
+    Solo la oficina."""
 
     permission_classes = [permissions.IsAuthenticated]
 
@@ -264,6 +284,17 @@ class AcopioCapacidadView(APIView):
         filas = request.data.get('capacidades') if isinstance(request.data, dict) else None
         if not isinstance(filas, list) or len(filas) > MAX_CAPACIDADES:
             return Response({'detail': 'Envia {capacidades: [{desde, bastidores}]}.'}, status=400)
+        cambia_maximo = 'modulos_dia_max' in request.data
+        maximo = request.data.get('modulos_dia_max')
+        if cambia_maximo and maximo not in (None, ''):
+            try:
+                maximo = int(maximo)
+            except (TypeError, ValueError):
+                return Response({'detail': 'Lo que fabrican al dia es un numero.'}, status=400)
+            if not 1 <= maximo <= MAX_MODULOS_DIA:
+                return Response({'detail': f'Lo que fabrican al dia va de 1 a {MAX_MODULOS_DIA} modulos.'}, status=400)
+        else:
+            maximo = None
         limpias = {}
         for fila in filas:
             try:
@@ -277,6 +308,8 @@ class AcopioCapacidadView(APIView):
                 return Response({'detail': f'Hay dos capacidades para el {desde:%d/%m/%Y}.'}, status=400)
             limpias[desde] = bastidores
         with transaction.atomic():
+            if cambia_maximo and not UserProfile.objects.filter(user=usuario).update(modulos_dia_max=maximo):
+                UserProfile.objects.create(user=usuario, modulos_dia_max=maximo)
             AcopioCapacidad.objects.filter(usuario=usuario).delete()
             AcopioCapacidad.objects.bulk_create([
                 AcopioCapacidad(usuario=usuario, desde=desde, bastidores=bastidores)

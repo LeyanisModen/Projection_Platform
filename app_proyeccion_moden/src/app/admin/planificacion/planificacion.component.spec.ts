@@ -5,7 +5,8 @@ import { vi } from 'vitest';
 
 import { ApiService, PlanificacionModenProyecto, PlanificacionModenResponse } from '../../services/api.service';
 import {
-  PlanificacionComponent, cifra, columnaDe, obrasDe, picoEstudio, porMes, textoCapacidades, textoNoCabe, textoSobrecargas,
+  PlanificacionComponent, bandasPatio, cifra, columnaDe, obrasDe, picoEstudio, porMes, textoCapacidades, textoNoCabe,
+  textoNoLlegan, textoSobrecargas,
 } from './planificacion.component';
 
 function proyecto(id: number, nombre: string, fecha: string | null, pendientes: number, fantasma = false, kilos: number | null = 1000): PlanificacionModenProyecto {
@@ -40,18 +41,27 @@ function respuesta(): PlanificacionModenResponse {
         proyectos: [
           {
             ...proyecto(1, 'OBRA_P01', '2026-11-03', 8), fabricacion_inicio: '2026-11-02', fabricacion_fin: '2026-11-02',
-            envio: { camiones: 2, bastidores: 6, desde: '2026-11-02', hasta: '2026-11-02', dias: 1, dias_elegidos: null, dias_minimos: 1 },
+            envio: {
+              camiones: 2, bastidores: 6, desde: '2026-11-02', hasta: '2026-11-02', dias: 1, dias_elegidos: null, dias_minimos: 1,
+              salidas: [{ fecha: '2026-11-02', camiones: 2 }],
+            },
           },
           {
             ...proyecto(3, 'TORRE_P01', '2026-11-04', 10, true, 1290), fabricacion_inicio: '2026-11-02', fabricacion_fin: '2026-11-03',
-            envio: { camiones: 1, bastidores: 2, desde: '2026-11-03', hasta: '2026-11-03', dias: 1, dias_elegidos: null, dias_minimos: 1 },
+            envio: {
+              camiones: 1, bastidores: 2, desde: '2026-11-03', hasta: '2026-11-03', dias: 1, dias_elegidos: null, dias_minimos: 1,
+              salidas: [{ fecha: '2026-11-03', camiones: 1 }],
+            },
           },
           {
             ...proyecto(2, 'OBRA_P02', '2026-12-20', 4), fabricacion_inicio: '2026-11-04', fabricacion_fin: '2026-11-30',
-            envio: { camiones: 3, bastidores: 10, desde: '2026-12-17', hasta: '2026-12-18', dias: 2, dias_elegidos: 2, dias_minimos: 1 },
+            envio: {
+              camiones: 3, bastidores: 10, desde: '2026-12-17', hasta: '2026-12-18', dias: 2, dias_elegidos: 2, dias_minimos: 1,
+              salidas: [{ fecha: '2026-12-17', camiones: 2 }, { fecha: '2026-12-18', camiones: 1 }],
+            },
           },
         ],
-        camiones: { por_dia: 3, sobrecargas: [] },
+        camiones: { por_dia: 3, sobrecargas_real: [], sobrecargas_con_fantasmas: [] },
         resumen: {
           ritmo_real: 1, ritmo_con_fantasmas: 1.6, manda_real: 'OBRA_P01', manda_con_fantasmas: 'TORRE_P01',
           fantasmas: 1, modulos_real: 12, modulos_fantasmas: 10, kilos_real: 2000, kilos_fantasmas: 1290,
@@ -119,11 +129,11 @@ describe('PlanificacionComponent', () => {
 
     // Debajo, cuando se fabrica cada obra en las mismas columnas, con su nombre.
     expect(secciones.map(s => !!s.querySelector('app-fabricacion-obras'))).toEqual([true, false]);
-    expect(sanchos.obras.map(o => [o.nombre, o.desde, o.hasta, o.montaje, o.envioDesde, o.envioHasta, o.estudio])).toEqual([
-      ['OBRA_P01', 0, 0, 1, 0, 0, false],
-      ['TORRE_P01', 0, 1, 2, 1, 1, true],
-      // Se monta despues de la vista: la fabricacion sigue hasta el borde.
-      ['OBRA_P02', 2, 2, null, null, null, false],
+    expect(sanchos.obras.map(o => [o.nombre, o.desde, o.hasta, o.montaje, o.salidas.map(x => [x.columna, x.camiones]), o.estudio])).toEqual([
+      ['OBRA_P01', 0, 0, 1, [[0, 2]], false],
+      ['TORRE_P01', 0, 1, 2, [[1, 1]], true],
+      // Se monta despues de la vista: la fabricacion sigue hasta el borde y sus camiones no se ven.
+      ['OBRA_P02', 2, 2, null, [], false],
     ]);
     expect(sanchos.obras[1].detalle)
       .toBe('TORRE_P01 (en estudio) · fabricación del 02/11 al 03/11 (10 mód.) · 1 camión el 03/11 · montaje 04/11');
@@ -196,6 +206,58 @@ describe('PlanificacionComponent', () => {
     expect(api.getPlanificacionModen).toHaveBeenCalledTimes(2);
     expect(textoSobrecargas([{ fecha: '2026-12-04', camiones: 6 }, { fecha: '2026-12-07', camiones: 4.5 }], 4))
       .toBe('Salen más de 4 camiones al día: 6 el vie 04/12, 4,5 el lun 07/12');
+    // Con muchos dias: cuantos, entre cuando y el peor.
+    const muchos = ['2027-02-15', '2027-02-16', '2027-02-17', '2027-02-18'].map((fecha, i) => ({ fecha, camiones: 5 + i }));
+    expect(textoSobrecargas(muchos, 4)).toBe('Salen más de 4 camiones al día en 4 días, del lun 15/02 al jue 18/02; hasta 8 el jue 18/02');
+  });
+
+  it('marks the days the yard is full, the trucks that do not fit and what does not reach its mounting', () => {
+    const ferralla = respuesta().ferrallas[0];
+    ferralla.acopio = {
+      capacidades: [{ desde: '2026-11-02', bastidores: 4 }], excesos_real: [], excesos_con_fantasmas: [],
+      llenos_real: ['2026-11-03'], llenos_con_fantasmas: ['2026-11-03', '2026-11-04'],
+      dias: ferralla.dias.map(d => ({ fecha: d.fecha, real: 2, con_fantasmas: 3, capacidad: 4 })),
+    };
+    // Lo real llena el patio el martes; con lo que esta en estudio, tambien el miercoles.
+    expect(bandasPatio(ferralla).map(b => [b.label, b.days])).toEqual([
+      ['Patio lleno: solo se fabrica lo que sale', [false, true, false]],
+      ['Patio lleno con lo que está en estudio', [false, false, true]],
+    ]);
+    ferralla.camiones = { por_dia: 3, sobrecargas_real: [], sobrecargas_con_fantasmas: [{ fecha: '2026-11-03', camiones: 5 }] };
+    ferralla.modulos_dia_max = 6;
+    const torre = { proyecto: 3, nombre: 'TORRE_P01', fantasma: true, montaje: '2026-11-04', fecha: '2026-11-03', faltan: 4 };
+    ferralla.no_llegan_real = [];
+    ferralla.no_llegan_con_fantasmas = [torre];
+    const obras = obrasDe(ferralla, '2026-11-02');
+    expect(obras[1].salidas).toEqual([{ columna: 1, camiones: 1, demas: true }]);
+    expect(obras[1].noLlega).toBe('no llega: faltan 4 mód. el 03/11');
+    expect(obras[1].detalle).toContain('entre todas, más de 3 camiones al día el 03/11');
+    expect(textoNoLlegan([torre], 6))
+      .toBe('No llegan a su montaje, fabricando como mucho 6 mód. al día: TORRE_P01 (montaje 04/11), faltan 4 mód. el mar 03/11');
+    expect(textoNoLlegan([], 6)).toBeNull();
+
+    api.getPlanificacionModen.mockReturnValue(of({ ...respuesta(), ferrallas: [ferralla] }));
+    fixture.componentInstance.cargar();
+    fixture.detectChanges();
+    const avisos = Array.from(el().querySelectorAll('.pm-no-llegan')).map(texto);
+    expect(avisos).toEqual(['Con los proyectos en estudio, además: no llegan a su montaje, fabricando como mucho 6 mód. al día: '
+      + 'TORRE_P01 (montaje 04/11), faltan 4 mód. el mar 03/11']);
+    // De los camiones, solo el dia que anade lo que esta en estudio.
+    expect(Array.from(el().querySelectorAll('.pm-acopio-aviso')).map(texto))
+      .toContain('Con los proyectos en estudio, además: salen más de 3 camiones al día: 5 el mar 03/11');
+    // En el diagrama, el nombre de la que no llega va en rojo y los dias de patio lleno, sombreados.
+    const nombres = Array.from(el().querySelectorAll('.fo-nombre')) as SVGTextElement[];
+    expect(nombres.map(n => n.classList.contains('fo-no-llega'))).toEqual([false, true, false]);
+    expect(el().querySelectorAll('app-fabricacion-obras rect.fo-banda').length).toBeGreaterThan(0);
+    expect(Array.from(el().querySelectorAll('.fo-legend li')).map(texto)).toContain('Nombre en rojo: no llega');
+
+    // En la ventana del acopio se dice lo que fabrican al dia como mucho.
+    const componente = fixture.componentInstance;
+    componente.abrirAcopio(componente.vistas()[0]);
+    expect(componente.modulosDiaMax).toBe(6);
+    componente.modulosDiaMax = 30;
+    componente.guardarAcopio();
+    expect(api.guardarAcopio).toHaveBeenCalledWith(7, [{ desde: '2026-11-02', bastidores: 4 }], 30);
   });
 
   it('puts what was due before and what has no date around the months', () => {
@@ -250,7 +312,8 @@ describe('PlanificacionComponent', () => {
     componente.filasAcopio[1] = { desde: '2026-12-15', bastidores: '90' as unknown as number };
     expect(componente.acopioValido).toBe(true);
     componente.guardarAcopio();
-    expect(api.guardarAcopio).toHaveBeenCalledWith(7, [{ desde: '2026-11-02', bastidores: 30 }, { desde: '2026-12-15', bastidores: 90 }]);
+    // Sin decir lo que fabrican al dia, va vacio.
+    expect(api.guardarAcopio).toHaveBeenCalledWith(7, [{ desde: '2026-11-02', bastidores: 30 }, { desde: '2026-12-15', bastidores: 90 }], null);
     expect(componente.acopioEn()).toBeNull();
     expect(api.getPlanificacionModen).toHaveBeenCalledTimes(2);
   });

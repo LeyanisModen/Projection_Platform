@@ -248,13 +248,17 @@ export interface EnvioForjado {
     dias_elegidos: number | null;
     /** Los que hacen falta con los camiones al dia de la ferralla. */
     dias_minimos: number;
+    /** Cada dia que sale alguno, cuantos. */
+    salidas?: Array<{ fecha: string; camiones: number }>;
 }
 
 export interface CamionesProyecto {
     bastidores: number;
     /** Sin bastidores calculados (o con modulos por subir): a la media de la ferralla. */
     bastidores_estimados: boolean;
-    /** Dia laborable antes del montaje: el ultimo en que salen. */
+    /** Ninguno sale despues. */
+    montaje?: string | null;
+    /** Dia laborable antes del montaje: el ultimo en que salen por defecto. */
     salida: string | null;
     por_defecto: boolean;
     /** Los guardados llevan mas bastidores de los que tiene ahora el forjado. */
@@ -960,6 +964,18 @@ export interface PlanificacionModenProyecto extends PlanificacionTarjeta {
     envio?: EnvioForjado | null;
 }
 
+/** Un forjado que no llega a sus camiones con el patio y lo que fabrica la ferralla al dia. */
+export interface NoLlega {
+    proyecto: number;
+    nombre: string;
+    fantasma: boolean;
+    montaje: string | null;
+    /** Su primer camion que no llega. */
+    fecha: string;
+    /** Modulos que le faltan entre todos sus camiones. */
+    faltan: number;
+}
+
 /** Un dia en que salen mas camiones de los que saca la ferralla. */
 export interface SobrecargaCamiones {
     fecha: string;
@@ -973,13 +989,21 @@ export interface PlanificacionModenFerralla {
     festivos: string[];
     entregas: Array<PlanificacionEntrega & { fantasma: boolean }>;
     proyectos: PlanificacionModenProyecto[];
-    /** Camiones que saca al dia y dias en que, con lo que esta en estudio, salen mas. */
-    camiones?: { por_dia: number; sobrecargas: SobrecargaCamiones[] };
+    /** Camiones que saca al dia y los dias en que salen mas de los que puede, con lo real y con lo que esta en estudio. */
+    camiones?: { por_dia: number; sobrecargas_real: SobrecargaCamiones[]; sobrecargas_con_fantasmas: SobrecargaCamiones[] };
+    /** Modulos que fabrica al dia como mucho (lo pone Moden); null: no se mira lo que no llega. */
+    modulos_dia_max?: number | null;
+    /** Con el patio y ese maximo, lo que no llega a sus camiones. */
+    no_llegan_real?: NoLlega[];
+    no_llegan_con_fantasmas?: NoLlega[];
     /** Con capacidad de acopio: bastidores en el patio cada dia con lo real y con lo que esta en estudio. */
     acopio?: {
         capacidades: AcopioCapacidad[];
         excesos_real: AcopioExceso[];
         excesos_con_fantasmas: AcopioExceso[];
+        /** Dias que empiezan con el patio lleno: solo se fabrica lo que sale. */
+        llenos_real?: string[];
+        llenos_con_fantasmas?: string[];
         dias: Array<{ fecha: string; real: number; con_fantasmas: number; capacidad: number }>;
     } | null;
     resumen: {
@@ -1533,9 +1557,11 @@ export class ApiService {
     }
 
     /** Sustituye las capacidades de acopio de una ferralla (lista vacia: sin limite). */
-    guardarAcopio(usuarioId: number, capacidades: AcopioCapacidad[]): Observable<AcopioCapacidad[]> {
+    /** Capacidades del patio y, si se pasa, lo que fabrica al dia como mucho (null: no se sabe). */
+    guardarAcopio(usuarioId: number, capacidades: AcopioCapacidad[], modulosDiaMax?: number | null): Observable<AcopioCapacidad[]> {
+        const cuerpo = modulosDiaMax === undefined ? { capacidades } : { capacidades, modulos_dia_max: modulosDiaMax };
         return this.http.put<AcopioCapacidad[]>(
-            `${this.baseUrl}/planificacion-moden/acopio/${usuarioId}/`, { capacidades }, { headers: this.getHeaders() },
+            `${this.baseUrl}/planificacion-moden/acopio/${usuarioId}/`, cuerpo, { headers: this.getHeaders() },
         );
     }
 

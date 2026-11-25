@@ -14,10 +14,13 @@ cabe entero antes de salir), se pasa lo justo y lo apunta como exceso.
 Cada forjado sale en camiones de 4 bastidores. La ferralla saca como mucho
 unos camiones al dia (``UserProfile.camiones_por_dia``), asi que un forjado
 grande empieza a salir unos dias antes de su montaje: por defecto los justos,
-lo mas tarde posible; Moden puede elegir en cuantos dias sale (``dias_envio``)
-y en la ficha se cambia un camion suelto (``Camion``). Cada camion se lleva
-sus bastidores en orden: tienen que estar hechos el dia que sale, y su sitio
-en el patio queda libre ese mismo dia para lo que se fabrica.
+lo mas tarde posible. Las obras no admiten modulos antes de montar, asi que
+un forjado no se adelanta porque otro ocupe sus dias: si entre todos salen
+mas camiones de los que puede la ferralla, se avisa. Moden puede elegir en
+cuantos dias sale (``dias_envio``) y en la ficha se ponen a mano los dias y
+cuantos camiones salen cada uno (``Camion``). Cada camion se lleva sus
+bastidores en orden: tienen que estar hechos el dia que sale, y su sitio en
+el patio queda libre ese mismo dia para lo que se fabrica.
 Un bastidor de un forjado ocupa lo que sus modulos: sus modulos subidos entre
 sus bastidores; sin bastidores, la media de la ferralla.
 """
@@ -54,6 +57,15 @@ def capacidad_el(dia, capacidades):
         if desde <= dia:
             cabe = bastidores
     return cabe
+
+
+def modulos_dia_max_de(usuario_id):
+    """Lo que fabrica la ferralla al dia como mucho, segun Moden; None: no se sabe."""
+    from .models import UserProfile
+
+    if usuario_id is None:
+        return None
+    return UserProfile.objects.filter(user_id=usuario_id).values_list('modulos_dia_max', flat=True).first()
 
 
 def camiones_por_dia_de(usuario_id):
@@ -121,9 +133,9 @@ def dias_de_envio(salida, cuantos, festivos):
     return dias
 
 
-def dias_minimos(bastidores, por_dia):
-    """Dias que hacen falta para sacar un forjado con los camiones al dia de la ferralla."""
-    return max(1, ceil(bastidores / (por_dia * BASTIDORES_POR_CAMION) - _EPS))
+def dias_minimos(camiones, por_dia):
+    """Dias que hacen falta para sacar los camiones de un forjado con los que saca la ferralla al dia."""
+    return max(1, ceil(camiones / por_dia - _EPS))
 
 
 def _parejos(n, dias):
@@ -142,54 +154,52 @@ def _parejos(n, dias):
 def repartir(forjados, festivos, desde, por_dia):
     """Pone dia a los camiones que no lo tienen fijo y devuelve {dia: bastidores que salen}.
 
-    ``forjados``: [{'salida', 'dias' (los elegidos o None), 'fantasma',
-    'orden', 'camiones'}]. Al dia salen como mucho ``por_dia`` camiones (en
-    bastidores, para que dos medios camiones de dos plantas cuenten como uno).
-    Primero cuentan los fijos (movidos a mano o ya enviados); despues lo real
-    y luego lo que esta en estudio, que se acomoda sin mover lo real. Un
-    forjado con dias elegidos reparte sus camiones parejos en esos dias (nunca
-    menos de los que hacen falta); los demas salen lo mas tarde posible antes
-    de su montaje, empezando por el que se monta despues, asi cada forjado
-    sale seguido y en el orden de sus montajes. Nada sale antes de ``desde``:
-    lo que tendria que haber salido y no consta como enviado sale ese dia.
+    ``forjados``: [{'salida', 'dias' (los elegidos o None), 'camiones'}].
+    Cada forjado sale en sus dias sin mirar a los demas: las obras no admiten
+    modulos antes del montaje, asi que no se adelanta porque otro ocupe esos
+    dias; si entre todos pasan de ``por_dia`` camiones, ``Almacen.sobrecargas``
+    lo dice. Los fijos (puestos a mano o ya enviados) se quedan en su dia. Un
+    forjado con dias elegidos reparte los demas parejos en esos dias (nunca
+    menos de los que hacen falta); si no, salen lo mas tarde posible antes del
+    montaje, como mucho ``por_dia`` al dia contando sus fijos. Nada sale antes
+    de ``desde``: lo que tendria que haber salido y no consta como enviado
+    sale ese dia. La carga va en bastidores, para que dos medios camiones de
+    dos plantas cuenten como uno.
     """
-    cabe = por_dia * BASTIDORES_POR_CAMION
     carga = {}
 
     def cargar(camion, dia):
         camion['fecha'] = dia
         carga[dia] = carga.get(dia, 0) + camion['bastidores']
 
+    primero = _laborable_desde(desde, festivos, 1)
     for forjado in forjados:
+        propios = {}
         for camion in forjado['camiones']:
             if camion['fecha'] is not None:
                 carga[camion['fecha']] = carga.get(camion['fecha'], 0) + camion['bastidores']
-    primero = _laborable_desde(desde, festivos, 1)
-    for fantasma in (False, True):
-        grupo = [f for f in forjados if bool(f['fantasma']) == fantasma and f['salida'] is not None]
-        elegidos = [f for f in grupo if f['dias']]
-        solos = sorted((f for f in grupo if not f['dias']), key=lambda f: (f['salida'], f['orden']), reverse=True)
-        for forjado in elegidos + solos:
-            libres = [c for c in forjado['camiones'] if c['fecha'] is None]
-            salida = forjado['salida']
-            if not libres:
-                continue
-            if salida < primero:
-                # Su montaje ya paso: salio entonces.
-                for camion in libres:
-                    cargar(camion, salida)
-            elif forjado['dias']:
-                total = sum(c['bastidores'] for c in libres)
-                dias = dias_de_envio(salida, max(forjado['dias'], dias_minimos(total, por_dia)), festivos)
-                dias = [d for d in dias if d >= primero] or [primero]
-                for camion, dia in zip(libres, _parejos(len(libres), dias)):
-                    cargar(camion, dia)
-            else:
-                dia = salida
-                for camion in reversed(libres):
-                    while carga.get(dia, 0) + camion['bastidores'] > cabe + _EPS and dia > primero:
-                        dia = _laborable_desde(dia - timedelta(days=1), festivos, -1)
-                    cargar(camion, max(dia, primero))
+                propios[camion['fecha']] = propios.get(camion['fecha'], 0) + 1
+        libres = [c for c in forjado['camiones'] if c['fecha'] is None]
+        salida = forjado['salida']
+        if not libres or salida is None:
+            continue
+        if salida < primero:
+            # Su montaje ya paso: salio entonces.
+            for camion in libres:
+                cargar(camion, salida)
+        elif forjado['dias']:
+            dias = dias_de_envio(salida, max(forjado['dias'], dias_minimos(len(libres), por_dia)), festivos)
+            dias = [d for d in dias if d >= primero] or [primero]
+            for camion, dia in zip(libres, _parejos(len(libres), dias)):
+                cargar(camion, dia)
+        else:
+            dia = salida
+            for camion in reversed(libres):
+                while propios.get(dia, 0) >= por_dia and dia > primero:
+                    dia = _laborable_desde(dia - timedelta(days=1), festivos, -1)
+                dia = max(dia, primero)
+                cargar(camion, dia)
+                propios[dia] = propios.get(dia, 0) + 1
     return carga
 
 
@@ -253,10 +263,13 @@ class Almacen(dict):
     def envio(self, pk):
         """Cuando salen los camiones de un forjado: {camiones, bastidores,
         desde, hasta, dias (laborables de uno a otro), dias_elegidos,
-        dias_minimos}."""
+        dias_minimos, salidas [{fecha, camiones}] (cada dia que sale alguno)}."""
         datos = self[pk]
         fechas = [c['fecha'] for c in datos['camiones'] if c['fecha'] is not None]
         desde, hasta = (min(fechas), max(fechas)) if fechas else (None, None)
+        por_fecha = {}
+        for fecha in fechas:
+            por_fecha[fecha] = por_fecha.get(fecha, 0) + 1
         return {
             'camiones': len(datos['camiones']),
             'bastidores': datos['bastidores'],
@@ -264,7 +277,8 @@ class Almacen(dict):
             'hasta': hasta.isoformat() if hasta else None,
             'dias': _laborables_entre(desde, hasta, datos['festivos']) if fechas else 0,
             'dias_elegidos': datos['dias_envio'],
-            'dias_minimos': dias_minimos(datos['bastidores'], self.por_dia) if datos['bastidores'] else 0,
+            'dias_minimos': dias_minimos(len(datos['camiones']), self.por_dia) if datos['camiones'] else 0,
+            'salidas': [{'fecha': fecha.isoformat(), 'camiones': n} for fecha, n in sorted(por_fecha.items())],
         }
 
 
@@ -312,10 +326,7 @@ def almacen(proyectos, subidos, hechos, totales, festivos, desde, por_dia=None):
             'dias_envio': dias_envio,
             'festivos': festivos,
         }
-        forjados.append({
-            'salida': salida, 'dias': dias_envio, 'fantasma': getattr(proyecto, 'fantasma', False),
-            'orden': (proyecto.orden_planta, pk), 'camiones': camiones,
-        })
+        forjados.append({'salida': salida, 'dias': dias_envio, 'camiones': camiones})
     carga = repartir(forjados, festivos, desde, por_dia)
     for datos in info.values():
         # Los primeros bastidores van en el camion que sale antes.
@@ -427,9 +438,11 @@ def _salido_hasta(salidas, dia):
 
 
 class Acopio:
-    """Lo que hay en el patio cada dia con el plan, y donde no cabe."""
+    """Lo que hay en el patio cada dia con el plan, donde no cabe, los dias
+    que empiezan con el patio lleno (``llenos``) y lo que no llega a sus
+    camiones aun fabricando lo maximo (``no_llegan`` {clave: {fecha, faltan}})."""
 
-    def __init__(self, capacidades, inicial, salidas, serie, dias, hecho, excesos):
+    def __init__(self, capacidades, inicial, salidas, serie, dias, hecho, excesos, llenos=(), no_llegan=None):
         self.capacidades = capacidades
         self.inicial = inicial
         self.salidas = salidas      # {dia: bastidores que salen}
@@ -437,6 +450,8 @@ class Acopio:
         self.dias = dias
         self.hecho = hecho
         self.excesos = excesos      # [(dia, bastidores de mas)]
+        self.llenos = list(llenos)
+        self.no_llegan = no_llegan or {}
 
     def ocupacion(self, dia):
         """(bastidores en el patio al acabar el dia, ya salidos los camiones
@@ -456,12 +471,59 @@ class Acopio:
         }
 
 
-def plan_con_acopio(serie, info, desde, festivos, capacidades):
+def _dias_llenos(acopio, dias, hecho):
+    """Los dias que empiezan con el patio lleno y aun queda por fabricar: ese
+    dia solo se fabrica lo que sale en camion (sin camiones, nada)."""
+    if not acopio.capacidades or not hecho:
+        return []
+    total = hecho[-1]
+    llenos = []
+    for k, dia in enumerate(dias):
+        antes = hecho[k - 1] if k else 0.0
+        if antes >= total - _EPS:
+            break
+        en_patio = acopio.inicial + acopio.serie.bastidores(antes) - _salido_hasta(acopio.salidas, dia - timedelta(days=1))
+        if en_patio >= capacidad_el(dia, acopio.capacidades) - 0.05:
+            llenos.append(dia)
+    return llenos
+
+
+def _no_llegan(trozos, dias, caben, serie, maximo):
+    """{clave: {'fecha', 'faltan'}}: lo que no esta hecho el dia de su camion
+    aun fabricando ``maximo`` modulos cada dia, todo lo antes que deja el patio.
+    ``fecha``: su primer camion que no llega; ``faltan``: modulos que le faltan
+    entre todos sus camiones."""
+    from bisect import bisect_right
+
+    techo = [serie.modulos(c) if c < inf else inf for c in caben]
+    # Lo fabricado no vuelve atras: si mas adelante cabe menos, ya hoy cuenta.
+    for k in range(len(techo) - 2, -1, -1):
+        techo[k] = min(techo[k], techo[k + 1])
+    pronto, hecho = [], 0.0
+    for k in range(len(dias)):
+        hecho = max(hecho, min(techo[k], hecho + maximo))
+        pronto.append(hecho)
+    faltan, acumulado = {}, 0.0
+    for fecha, _p, clave, modulos in trozos:
+        inicio, fin = acumulado, acumulado + modulos
+        acumulado = fin
+        if fecha == date.max:
+            continue
+        listo = pronto[max(0, bisect_right(dias, fecha) - 1)]
+        # Medio modulo de margen: los ritmos van con decimales.
+        if listo < fin - 0.5:
+            dato = faltan.setdefault(clave, {'fecha': fecha, 'faltan': 0.0})
+            dato['faltan'] += fin - max(inicio, listo)
+    return faltan
+
+
+def plan_con_acopio(serie, info, desde, festivos, capacidades, maximo=None):
     """Tramos del plan con el limite del patio y los camiones de cada forjado.
 
     ``serie``: [(montaje, pendientes, clave)] en orden de fabricacion (como
     ``tramos_de_ritmo``); ``info``: ``almacen()`` de los forjados vivos;
-    ``capacidades`` vacio: sin limite (solo cuentan los camiones).
+    ``capacidades`` vacio: sin limite (solo cuentan los camiones). ``maximo``:
+    modulos al dia que puede fabricar como mucho (para decir que no llega).
     Cada camion se lleva sus bastidores (en orden) y tienen que estar hechos
     ese dia; su sitio queda libre ese mismo dia. Se fabrica por camiones: lo
     de cada camion en el orden en que salen (el mismo dia, por la serie), asi
@@ -580,7 +642,11 @@ def plan_con_acopio(serie, info, desde, festivos, capacidades):
             'motivo': motivo,
         })
         inicio = k
-    return tramos, Acopio(capacidades, inicial, salidas, tramos_serie, dias, hecho, excesos), rangos
+    acopio = Acopio(capacidades, inicial, salidas, tramos_serie, dias, hecho, excesos)
+    acopio.llenos = _dias_llenos(acopio, dias, hecho)
+    if maximo:
+        acopio.no_llegan = _no_llegan(trozos, dias, caben, tramos_serie, maximo)
+    return tramos, acopio, rangos
 
 
 def acopio_para_grafica(acopio, dias):
@@ -597,12 +663,11 @@ def acopio_para_grafica(acopio, dias):
 
 def camiones_del_proyecto(proyecto, desde=None):
     """Los camiones de un forjado para su ficha, cada uno con el dia que le
-    toca en el reparto de su ferralla (con lo real; uno en estudio, tambien
-    con lo demas en estudio)."""
+    toca en el reparto (o el puesto a mano), y su montaje: ninguno sale despues."""
     from django.utils import timezone
 
     from .models import Proyecto
-    from .planning import almacen_de, annotated_projects, festivos_de, proyectos_del_plan
+    from .planning import almacen_de, annotated_projects, fecha_de_montaje, festivos_de, proyectos_del_plan
 
     desde = desde or timezone.localdate()
     if proyecto.usuario_id is not None and not proyecto.archivado_at:
@@ -616,9 +681,11 @@ def camiones_del_proyecto(proyecto, desde=None):
     info = almacen_de(proyectos, festivos, desde, proyecto.usuario_id)
     datos = info[proyecto.pk]
     llevan = sum(c.bastidores for c in proyecto.camiones.all())
+    montaje = fecha_de_montaje(proyecto)
     return {
         'bastidores': datos['bastidores'],
         'bastidores_estimados': datos['bastidores'] > datos['calculados'],
+        'montaje': montaje.isoformat() if montaje else None,
         'salida': datos['salida'].isoformat() if datos['salida'] else None,
         'por_defecto': not llevan,
         # Mas bastidores en los camiones guardados que en el forjado (se recalcularon).

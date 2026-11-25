@@ -3157,10 +3157,12 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         queda por defecto (de 4 en 4), cada uno con su dia en el reparto de la
         ferralla. PUT {camiones: [{fecha, fecha_fija, bastidores, enviado}]}:
         los sustituye todos, en orden de bastidor; solo guarda el dia de los
-        movidos a mano (``fecha_fija``) y de los enviados, los demas siguen el
-        reparto. DELETE: vuelve a los de por defecto. Los mueve la ferralla del
-        forjado; por ahora tambien Moden, para los estudios."""
+        puestos a mano (``fecha_fija``) y de los enviados, los demas siguen el
+        reparto. Ninguno sale despues del montaje. DELETE: vuelve al reparto,
+        salvo los ya enviados. Los mueve la ferralla del forjado; por ahora
+        tambien Moden."""
         from api.acopio import BASTIDORES_POR_CAMION, camiones_del_proyecto
+        from api.planning import fecha_de_montaje
 
         proyecto = self.get_object()
         if request.method == 'GET':
@@ -3171,7 +3173,15 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         if proyecto.archivado_at:
             return Response({'detail': 'El proyecto está archivado.'}, status=status.HTTP_400_BAD_REQUEST)
         if request.method == 'DELETE':
-            proyecto.camiones.all().delete()
+            with transaction.atomic():
+                # Los enviados se quedan, primeros en orden; lo demas sigue el reparto detras.
+                enviados = list(proyecto.camiones.filter(enviado=True).order_by('fecha', 'orden'))
+                proyecto.camiones.all().delete()
+                Camion.objects.bulk_create([
+                    Camion(proyecto=proyecto, orden=orden, fecha=c.fecha, bastidores=c.bastidores,
+                           enviado=True, enviado_at=c.enviado_at)
+                    for orden, c in enumerate(enviados, start=1)
+                ])
             return Response(camiones_del_proyecto(proyecto))
 
         filas = request.data.get('camiones') if isinstance(request.data, dict) else None
@@ -3179,6 +3189,7 @@ class ProyectoViewSet(viewsets.ModelViewSet):
             return Response({'detail': 'Envía {camiones: [{fecha, bastidores, enviado}]}.'},
                             status=status.HTTP_400_BAD_REQUEST)
         hoy = timezone.localdate()
+        montaje = fecha_de_montaje(proyecto)
         antes = {c.orden: c for c in proyecto.camiones.all()}
         nuevos = []
         for orden, fila in enumerate(filas, start=1):
@@ -3196,6 +3207,9 @@ class ProyectoViewSet(viewsets.ModelViewSet):
                                 status=status.HTTP_400_BAD_REQUEST)
             if enviado and fecha > hoy:
                 return Response({'detail': f'El camión {orden} no puede estar enviado el {fecha:%d/%m}: aún no ha llegado ese día.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            if fecha is not None and not enviado and montaje is not None and fecha > montaje:
+                return Response({'detail': f'Ningún camión puede salir después del montaje ({montaje:%d/%m}).'},
                                 status=status.HTTP_400_BAD_REQUEST)
             anterior = antes.get(orden)
             nuevos.append(Camion(

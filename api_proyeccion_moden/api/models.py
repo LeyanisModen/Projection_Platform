@@ -1269,6 +1269,9 @@ class UserProfile(models.Model):
     capture_interval_seconds = models.PositiveIntegerField(default=20)
     # Camiones que puede sacar al dia hacia las obras (api/acopio.py).
     camiones_por_dia = models.PositiveSmallIntegerField(default=4)
+    # Modulos que puede fabricar al dia como mucho, segun Moden: con el patio
+    # lleno, dice que obras no llegan a su montaje (api/acopio.py). Vacio: no se mira.
+    modulos_dia_max = models.PositiveSmallIntegerField(null=True, blank=True)
 
     def horario_por_dia(self):
         """{'MON': (time, time), ...} solo con los dias de trabajo."""

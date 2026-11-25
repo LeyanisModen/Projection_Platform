@@ -4,18 +4,19 @@ import { Router, RouterLink } from '@angular/router';
 import { forkJoin } from 'rxjs';
 
 import {
-  AcopioCapacidad, AcopioExceso, ApiService, PlanificacionModenFerralla, PlanificacionModenProyecto,
+  AcopioCapacidad, AcopioExceso, ApiService, NoLlega, PlanificacionModenFerralla, PlanificacionModenProyecto,
   PlanificacionModenResponse, SobrecargaCamiones, User,
 } from '../../services/api.service';
-import { LineChartSeries, StatsLineChart } from '../../dashboard/stats-line-chart';
+import { ChartBand, LineChartSeries, StatsLineChart } from '../../dashboard/stats-line-chart';
 import { fechaCorta, fechaLarga } from '../../dashboard/planificacion-ferralla';
 import { diaCorto } from '../../shared/camiones-proyecto.component';
-import { FabricacionObras, ObraGantt } from './fabricacion-obras.component';
+import { FabricacionObras, ObraGantt, SalidaGantt } from './fabricacion-obras.component';
 
 // Lo real en el naranja de los modulos (como la planificacion de la ferralla);
 // con los fantasmas, en el azul de lo estimado.
 const NARANJA = '#f0640f';
 const AZUL = '#2264b8';
+const ROJO = '#c0392b';
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 
 /** "24,4" / "8.261": con punto de miles tambien en las de cuatro cifras, que vayan parejas en la lista. */
@@ -67,6 +68,43 @@ export interface VistaFerralla {
   picoEstudio: PicoEstudio | null;
   /** Sin capacidad de acopio, null: el patio no limita. */
   acopio: VistaAcopio | null;
+  /** Dias en que salen mas camiones de los que puede: con lo real y, si empeora, con lo que esta en estudio. */
+  camionesReal: string | null;
+  camionesEstudio: string | null;
+  /** Dias con el patio lleno, sombreados en las graficas y en el diagrama. */
+  bandas: ChartBand[];
+  /** Lo que no llega a su montaje por el patio y lo que fabrican al dia. */
+  noLleganReal: string | null;
+  noLleganEstudio: string | null;
+}
+
+/** Los dias que empiezan con el patio lleno (solo se fabrica lo que sale): con lo real y,
+ *  aparte, los que solo se llenan con lo que esta en estudio. */
+export function bandasPatio(ferralla: PlanificacionModenFerralla): ChartBand[] {
+  const acopio = ferralla.acopio;
+  if (!acopio) return [];
+  const real = new Set(acopio.llenos_real ?? []);
+  const estudio = new Set(acopio.llenos_con_fantasmas ?? []);
+  const bandas: ChartBand[] = [
+    { days: ferralla.dias.map(d => real.has(d.fecha)), color: ROJO, label: 'Patio lleno: solo se fabrica lo que sale' },
+  ];
+  if (ferralla.resumen.fantasmas > 0) {
+    bandas.push({
+      days: ferralla.dias.map(d => estudio.has(d.fecha) && !real.has(d.fecha)), color: AZUL,
+      label: 'Patio lleno con lo que está en estudio',
+    });
+  }
+  return bandas;
+}
+
+/** "No llegan a su montaje, fabricando como mucho 30 mód. al día: P03 (montaje 22/02), faltan 40 mód. el vie 19/02". */
+export function textoNoLlegan(lista: NoLlega[] | undefined, maximo: number | null | undefined): string | null {
+  if (!lista?.length) return null;
+  const obras = lista.slice(0, 4).map(n =>
+    `${n.nombre}${n.montaje ? ` (montaje ${fechaCorta(n.montaje)})` : ''}, faltan ${cifra(n.faltan)} mód. el ${diaCorto(n.fecha)}`);
+  const resto = lista.length > 4 ? `; y ${lista.length - 4} más` : '';
+  const cuanto = maximo ? `, fabricando como mucho ${cifra(maximo)} mód. al día` : '';
+  return `No llegan a su montaje${cuanto}: ${obras.join('; ')}${resto}`;
 }
 
 /** "Caben 30 bastidores · desde el 15/12, 90". */
@@ -100,7 +138,8 @@ export function vistaAcopio(ferralla: PlanificacionModenFerralla): VistaAcopio |
   return {
     series,
     capacidad: acopio.dias.map(d => d.capacidad),
-    texto: textoCapacidades(acopio.capacidades),
+    texto: textoCapacidades(acopio.capacidades)
+      + (ferralla.modulos_dia_max ? ` · fabrican como mucho ${cifra(ferralla.modulos_dia_max)} mód. al día` : ''),
     noCabeReal: textoNoCabe(acopio.excesos_real),
     // Solo si lo que esta en estudio empeora lo real.
     noCabeEstudio: conFantasmas && JSON.stringify(acopio.excesos_con_fantasmas) !== JSON.stringify(acopio.excesos_real)
@@ -122,11 +161,16 @@ function rango(desde: string, hasta: string): string {
   return desde === hasta ? `el ${fechaCorta(desde)}` : `del ${fechaCorta(desde)} al ${fechaCorta(hasta)}`;
 }
 
-/** Las obras con algo que fabricar o esperando su montaje en el patio, para el diagrama. */
+/** Las obras con algo que fabricar o esperando su montaje en el patio, para el diagrama
+ *  (con lo que esta en estudio). Se marcan los dias de camiones en que la ferralla saca,
+ *  entre todas, mas de los que puede. */
 export function obrasDe(ferralla: PlanificacionModenFerralla, desde: string): ObraGantt[] {
   const dias = ferralla.dias;
   if (!dias.length) return [];
   const ultima = dias.length - 1;
+  const demas = new Set((ferralla.camiones?.sobrecargas_con_fantasmas ?? []).map(s => s.fecha));
+  const porDia = ferralla.camiones?.por_dia;
+  const noLlegan = new Map((ferralla.no_llegan_con_fantasmas ?? []).map(n => [n.proyecto, n]));
   const obras: ObraGantt[] = [];
   for (const p of ferralla.proyectos) {
     const entrega = p.fecha_entrega && p.fecha_entrega >= desde ? p.fecha_entrega : null;
@@ -143,33 +187,54 @@ export function obrasDe(ferralla: PlanificacionModenFerralla, desde: string): Ob
       const b = columnaDe(dias, p.fabricacion_fin);
       fin = b === null ? ultima : Math.max(inicio, Math.floor(b));
     }
+    const falta = noLlegan.get(p.id);
     const envio = p.envio;
-    const e0 = envio?.desde ? columnaDe(dias, envio.desde) : null;
-    const e1 = envio?.hasta ? columnaDe(dias, envio.hasta) : null;
+    const salidas: SalidaGantt[] = [];
+    for (const salida of envio?.salidas ?? []) {
+      const columna = salida.fecha >= desde ? columnaDe(dias, salida.fecha) : null;
+      if (columna !== null && columna >= 0) salidas.push({ columna, camiones: salida.camiones, demas: demas.has(salida.fecha) });
+    }
     const partes = [`${p.nombre}${p.fantasma ? ' (en estudio)' : ''}`];
     partes.push(fabrica ? `fabricación ${rango(p.fabricacion_inicio!, p.fabricacion_fin!)} (${cifra(p.modulos_pendientes)} mód.)` : 'fabricado');
-    if (envio?.desde && envio.hasta) partes.push(`${envio.camiones} ${envio.camiones === 1 ? 'camión' : 'camiones'} ${rango(envio.desde, envio.hasta)}`);
+    if (envio?.desde && envio.hasta) {
+      const camiones = `${envio.camiones} ${envio.camiones === 1 ? 'camión' : 'camiones'}`;
+      const cuando = (envio.salidas?.length ?? 0) > 1
+        ? `${camiones}: ${envio.salidas!.map(s => `${s.camiones} el ${fechaCorta(s.fecha)}`).join(', ')}`
+        : `${camiones} ${rango(envio.desde, envio.hasta)}`;
+      partes.push(cuando);
+      const apretados = (envio.salidas ?? []).filter(s => demas.has(s.fecha)).map(s => fechaCorta(s.fecha));
+      if (apretados.length && porDia) partes.push(`entre todas, más de ${porDia} camiones al día el ${apretados.join(', ')}`);
+    }
     if (p.fecha_entrega) partes.push(`montaje ${fechaCorta(p.fecha_entrega)}`);
+    const noLlega = falta ? `no llega: faltan ${cifra(falta.faltan)} mód. el ${fechaCorta(falta.fecha)}` : null;
+    if (noLlega) partes.push(noLlega);
     obras.push({
       id: p.id,
       nombre: p.nombre,
       desde: inicio,
       hasta: fin,
       montaje,
-      envioDesde: e0 === null ? null : Math.max(0, Math.ceil(e0)),
-      envioHasta: e1 === null ? (e0 === null ? null : ultima) : Math.max(0, Math.floor(e1)),
+      salidas,
       estudio: p.fantasma,
+      noLlega,
       detalle: partes.join(' · '),
     });
   }
   return obras;
 }
 
-/** "Salen más de 4 camiones al día: 6 el vie 04/12, 5 el lun 07/12". */
+/** "Salen más de 4 camiones al día: 6 el vie 04/12, 5 el lun 07/12"; con muchos dias,
+ *  cuantos, entre cuando y el peor. */
 export function textoSobrecargas(sobrecargas: SobrecargaCamiones[], porDia: number): string | null {
   if (!sobrecargas.length) return null;
-  const dias = sobrecargas.map(s => `${cifra(s.camiones, 1)} el ${diaCorto(s.fecha)}`);
-  return `Salen más de ${porDia} camiones al día: ${dias.join(', ')}`;
+  const cabecera = `Salen más de ${porDia} camiones al día`;
+  if (sobrecargas.length <= 3) {
+    return `${cabecera}: ${sobrecargas.map(s => `${cifra(s.camiones, 1)} el ${diaCorto(s.fecha)}`).join(', ')}`;
+  }
+  const peor = sobrecargas.reduce((max, s) => (s.camiones > max.camiones ? s : max));
+  const primero = sobrecargas[0].fecha;
+  const ultimo = sobrecargas[sobrecargas.length - 1].fecha;
+  return `${cabecera} en ${sobrecargas.length} días, del ${diaCorto(primero)} al ${diaCorto(ultimo)}; hasta ${cifra(peor.camiones, 1)} el ${diaCorto(peor.fecha)}`;
 }
 
 /** El dia mas alto de los que cambian por los proyectos en estudio: ahi es donde hay que centrarse. */
@@ -208,6 +273,37 @@ export function porMes(proyectos: PlanificacionModenProyecto[], desde: string): 
   return Array.from(meses.values()).sort((a, b) => orden(a.clave).localeCompare(orden(b.clave)));
 }
 
+/** Lo de ``con`` que no esta igual en ``real``: lo que anaden los proyectos en estudio. */
+function ademas<T>(con: T[], real: T[]): T[] {
+  const vistos = new Set(real.map(r => JSON.stringify(r)));
+  return con.filter(c => !vistos.has(JSON.stringify(c)));
+}
+
+/** "No llegan…" → "no llegan…", para ir detras de "Con los proyectos en estudio, además:". */
+function seguido(texto: string | null): string | null {
+  return texto ? texto.charAt(0).toLowerCase() + texto.slice(1) : null;
+}
+
+function avisosNoLlegan(ferralla: PlanificacionModenFerralla): Pick<VistaFerralla, 'noLleganReal' | 'noLleganEstudio'> {
+  const real = ferralla.no_llegan_real ?? [];
+  const con = ferralla.no_llegan_con_fantasmas ?? [];
+  const nuevos = ferralla.resumen.fantasmas > 0 ? ademas(con, real) : [];
+  return {
+    noLleganReal: textoNoLlegan(real, ferralla.modulos_dia_max),
+    noLleganEstudio: seguido(textoNoLlegan(nuevos, ferralla.modulos_dia_max)),
+  };
+}
+
+function avisosCamiones(ferralla: PlanificacionModenFerralla): Pick<VistaFerralla, 'camionesReal' | 'camionesEstudio'> {
+  const camiones = ferralla.camiones;
+  if (!camiones) return { camionesReal: null, camionesEstudio: null };
+  const nuevas = ferralla.resumen.fantasmas > 0 ? ademas(camiones.sobrecargas_con_fantasmas, camiones.sobrecargas_real) : [];
+  return {
+    camionesReal: textoSobrecargas(camiones.sobrecargas_real, camiones.por_dia),
+    camionesEstudio: seguido(textoSobrecargas(nuevas, camiones.por_dia)),
+  };
+}
+
 export function vistaDe(ferralla: PlanificacionModenFerralla, desde: string): VistaFerralla {
   const dias = ferralla.dias;
   const conFantasmas = ferralla.resumen.fantasmas > 0;
@@ -229,6 +325,9 @@ export function vistaDe(ferralla: PlanificacionModenFerralla, desde: string): Vi
     conCarga: dias.some(d => d.real || d.con_fantasmas),
     picoEstudio: conFantasmas ? picoEstudio(dias) : null,
     acopio: vistaAcopio(ferralla),
+    ...avisosCamiones(ferralla),
+    bandas: bandasPatio(ferralla),
+    ...avisosNoLlegan(ferralla),
   };
 }
 
@@ -306,6 +405,8 @@ export class PlanificacionComponent implements OnInit {
   readonly guardandoAcopio = signal(false);
   readonly errorAcopio = signal('');
   filasAcopio: AcopioCapacidad[] = [];
+  /** Lo que fabrican al dia como mucho; vacio: no se dice que no llega. */
+  modulosDiaMax: number | null = null;
 
   // Camiones de una ferralla: los que saca al dia y en cuantos dias salen sus forjados.
   readonly camionesEn = signal<VistaFerralla | null>(null);
@@ -314,7 +415,6 @@ export class PlanificacionComponent implements OnInit {
   camionesPorDia = 4;
   filasCamiones: FilaEnvio[] = [];
   readonly diaCorto = diaCorto;
-  readonly textoSobrecargas = textoSobrecargas;
 
   ngOnInit(): void {
     this.cargar();
@@ -366,6 +466,7 @@ export class PlanificacionComponent implements OnInit {
     const actuales = vista.datos.acopio?.capacidades ?? [];
     const hoy = this.datos()?.desde ?? '';
     this.filasAcopio = actuales.length ? actuales.map(c => ({ ...c })) : [{ desde: hoy, bastidores: 0 }];
+    this.modulosDiaMax = vista.datos.modulos_dia_max ?? null;
     this.errorAcopio.set('');
     this.acopioEn.set(vista);
   }
@@ -385,8 +486,10 @@ export class PlanificacionComponent implements OnInit {
 
   get acopioValido(): boolean {
     const fechas = this.filasAcopio.map(f => f.desde);
+    const maximo = this.modulosDiaMax as unknown;
+    const maximoBien = maximo === null || maximo === '' || (Number.isInteger(Number(maximo)) && Number(maximo) >= 1 && Number(maximo) <= 1000);
     return this.filasAcopio.every(f => !!f.desde && Number.isInteger(Number(f.bastidores)) && Number(f.bastidores) >= 0)
-      && new Set(fechas).size === fechas.length;
+      && new Set(fechas).size === fechas.length && maximoBien;
   }
 
   /** Guarda las capacidades (sin filas: sin limite) y recarga el plan con ellas. */
@@ -396,7 +499,8 @@ export class PlanificacionComponent implements OnInit {
     this.guardandoAcopio.set(true);
     this.errorAcopio.set('');
     const capacidades = this.filasAcopio.map(f => ({ desde: f.desde, bastidores: Number(f.bastidores) }));
-    this.api.guardarAcopio(vista.id, capacidades).subscribe({
+    const maximo = this.modulosDiaMax === null || (this.modulosDiaMax as unknown) === '' ? null : Number(this.modulosDiaMax);
+    this.api.guardarAcopio(vista.id, capacidades, maximo).subscribe({
       next: () => {
         this.guardandoAcopio.set(false);
         this.acopioEn.set(null);

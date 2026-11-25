@@ -72,18 +72,18 @@
             @if (vista.conCarga) {
             <div class="pm-graficas">
                 <app-stats-line-chart title="Módulos al día para llegar" unit="mód./día" [decimals]="1" [height]="240"
-                    [labels]="vista.labels" [fullLabels]="vista.labelsLargas" [series]="vista.series" />
+                    [labels]="vista.labels" [fullLabels]="vista.labelsLargas" [series]="vista.series" [bands]="vista.bandas" />
                 @if (vista.obras.length) {
                 <app-fabricacion-obras [title]="vista.datos.resumen.fantasmas ? 'Cuándo se fabrica cada obra, con lo que está en estudio' : 'Cuándo se fabrica cada obra'"
-                    [labels]="vista.labels" [obras]="vista.obras" [colorEstudio]="azul" (abrir)="abrirObra($event)" />
+                    [labels]="vista.labels" [obras]="vista.obras" [colorEstudio]="azul" [camionesPorDia]="vista.datos.camiones?.por_dia ?? null" [bandas]="vista.bandas"
+                    (abrir)="abrirObra($event)" />
                 }
             </div>
             }
-            @if (vista.datos.camiones; as camiones) {
-                @if (textoSobrecargas(camiones.sobrecargas, camiones.por_dia); as aviso) {
-                <p class="is-danger pm-acopio-aviso" role="note">{{ aviso }}</p>
-                }
-            }
+            @if (vista.noLleganReal) { <p class="is-danger pm-acopio-aviso pm-no-llegan" role="alert">{{ vista.noLleganReal }}</p> }
+            @if (vista.noLleganEstudio) { <p class="pm-azul pm-acopio-aviso pm-no-llegan" role="note">Con los proyectos en estudio, además: {{ vista.noLleganEstudio }}</p> }
+            @if (vista.camionesReal) { <p class="is-danger pm-acopio-aviso" role="note">{{ vista.camionesReal }}</p> }
+            @if (vista.camionesEstudio) { <p class="pm-azul pm-acopio-aviso" role="note">Con los proyectos en estudio, además: {{ vista.camionesEstudio }}</p> }
 
             @if (vista.acopio; as acopio) {
             <div class="pm-acopio">
@@ -92,7 +92,7 @@
                 @if (acopio.noCabeEstudio) { <p class="pm-azul pm-acopio-aviso" role="note">Con los proyectos en estudio: {{ acopio.noCabeEstudio }}</p> }
                 <app-stats-line-chart title="Bastidores en el patio" unit="bastidores" [decimals]="1" [height]="200"
                     [labels]="vista.labels" [fullLabels]="vista.labelsLargas" [series]="acopio.series"
-                    [target]="acopio.capacidad" targetLabel="Caben" [targetIsCeiling]="true" />
+                    [target]="acopio.capacidad" targetLabel="Caben" [targetIsCeiling]="true" [bands]="vista.bandas" />
             </div>
             }
 
@@ -166,6 +166,11 @@
             <button type="button" class="btn btn-sm pm-acopio-anadir" (click)="anadirFilaAcopio()" [disabled]="guardandoAcopio()">
                 <i class="fa fa-plus" aria-hidden="true"></i> Otra fecha
             </button>
+            <label class="pm-acopio-maximo">Fabrican como mucho
+                <input type="number" class="field" name="modulos_dia_max" min="1" max="1000" step="1" [(ngModel)]="modulosDiaMax"
+                    placeholder="—" [disabled]="guardandoAcopio()" aria-label="Módulos al día que fabrican como mucho">
+                módulos al día
+            </label>
             @if (errorAcopio()) { <p class="alert-inline" role="alert">{{ errorAcopio() }}</p> }
         </div>
         <div class="modal-footer">

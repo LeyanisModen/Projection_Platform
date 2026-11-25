@@ -20,7 +20,8 @@ from django.db.models import Count, Q
 from django.utils import timezone
 
 from .acopio import (
-    almacen, camiones_por_dia_de, capacidades_de, plan_con_acopio, primera_salida, todos_el_dia_de_salida,
+    almacen, camiones_por_dia_de, capacidades_de, modulos_dia_max_de, plan_con_acopio, primera_salida,
+    todos_el_dia_de_salida,
 )
 
 DAY_CODES = ('MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN')
@@ -308,7 +309,8 @@ def plan_ferralla(usuario_id, today=None, override=None, con_fantasmas=False):
     if not proyectos:
         return {'ritmo': None, 'tramos': [], 'manda': None, 'objetivo_hoy': 0, 'objetivo_semana': 0,
                 'cola_fuera_de_orden': [], 'trabaja_hoy': False, 'proyectos': {}, 'acopio': None,
-                'envios': {}, 'camiones_por_dia': camiones_por_dia_de(usuario_id), 'sobrecargas': []}
+                'envios': {}, 'camiones_por_dia': camiones_por_dia_de(usuario_id), 'sobrecargas': [],
+                'no_llegan': []}
 
     festivos = festivos_de(usuario_id)
     filas = {p.pk: _base_demand(p, today, festivos) for p in proyectos}
@@ -324,7 +326,8 @@ def plan_ferralla(usuario_id, today=None, override=None, con_fantasmas=False):
         # que sale antes (sin cambiar nada, por montaje).
         serie.sort(key=lambda p: (primera_salida(info[p.pk]) or date.max, fecha_de_montaje(p), p.orden_planta, p.pk))
         forjados = [(fecha_de_montaje(p), filas[p.pk]['modulos_pendientes'], p.pk) for p in serie]
-        tramos, acopio, rangos = plan_con_acopio(forjados, info, today, festivos, capacidades)
+        tramos, acopio, rangos = plan_con_acopio(forjados, info, today, festivos, capacidades,
+                                                 maximo=modulos_dia_max_de(usuario_id))
     else:
         tramos = tramos_de_ritmo(forjados, today, festivos)
     if rangos is None:
@@ -406,7 +409,28 @@ def plan_ferralla(usuario_id, today=None, override=None, con_fantasmas=False):
         'envios': {pk: info.envio(pk) for pk in info},
         'camiones_por_dia': info.por_dia,
         'sobrecargas': info.sobrecargas(),
+        # Con el patio y lo que fabrica como mucho al dia, lo que no llega a sus camiones.
+        'no_llegan': _no_llegan(acopio, serie),
     }
+
+
+def _no_llegan(acopio, serie):
+    """[{proyecto, nombre, montaje, fecha, faltan}] por su primer camion que no llega."""
+    if acopio is None or not acopio.no_llegan:
+        return []
+    proyectos = {p.pk: p for p in serie}
+    filas = []
+    for clave, dato in acopio.no_llegan.items():
+        proyecto = proyectos.get(clave)
+        if proyecto is None:
+            continue
+        montaje = fecha_de_montaje(proyecto)
+        filas.append({
+            'proyecto': clave, 'nombre': proyecto.nombre, 'fantasma': proyecto.fantasma,
+            'montaje': montaje.isoformat() if montaje else None,
+            'fecha': dato['fecha'].isoformat(), 'faltan': round(dato['faltan']),
+        })
+    return sorted(filas, key=lambda f: (f['fecha'], f['nombre']))
 
 
 def proyectos_del_plan(usuario_id, con_fantasmas=False):

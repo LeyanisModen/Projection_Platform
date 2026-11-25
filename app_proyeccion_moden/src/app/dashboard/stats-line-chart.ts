@@ -37,6 +37,13 @@ export interface ChartMark {
   partes?: Array<{ texto: string; tenue: boolean }>;
 }
 
+/** Columnas sombreadas (p. ej. los dias con el patio lleno): la primera banda que marca un dia, manda. */
+export interface ChartBand {
+  days: boolean[];
+  color: string;
+  label: string;
+}
+
 type PointState = 'normal' | 'cumple' | 'bajo' | 'curso';
 
 interface ChartPoint {
@@ -61,7 +68,7 @@ interface ChartLine {
   pico: { x: number; y: number; text: string } | null;
 }
 
-interface LegendItem { kind: 'line' | 'cumple' | 'bajo' | 'target' | 'area' | 'mark' | 'mark-tenue'; label: string; color: string; }
+interface LegendItem { kind: 'line' | 'cumple' | 'bajo' | 'target' | 'area' | 'mark' | 'mark-tenue' | 'band'; label: string; color: string; }
 
 // Alto de cada fila de etiquetas de las marcas, encima de la grafica; si no caben en tres
 // filas (un movil), solo las lineas: el nombre lo da la lectura.
@@ -125,6 +132,7 @@ let nextChartId = 0;
                   @case ('bajo') { <circle cx="10" cy="5" r="3.5" class="lc-dot-hueco" [attr.stroke]="item.color" /> }
                   @case ('area') { <rect x="2" y="1" width="16" height="8" rx="2" [attr.fill]="item.color" fill-opacity="0.45" /> }
                   @case ('mark') { <line x1="10" y1="0" x2="10" y2="10" class="lc-mark" /> }
+                  @case ('band') { <rect x="1" y="0" width="18" height="10" class="lc-band" [attr.fill]="item.color" /> }
                   @case ('mark-tenue') { <line x1="10" y1="0" x2="10" y2="10" class="lc-mark lc-mark-tenue" [style.stroke]="markTenueColor() || null" /> }
                 }
               </svg>
@@ -168,6 +176,9 @@ let nextChartId = 0;
             }
           </defs>
 
+          @for (banda of bandRects(); track $index) {
+            <rect class="lc-band" [attr.x]="banda.x" [attr.y]="plot().y" [attr.width]="banda.w" [attr.height]="plot().h" [attr.fill]="banda.color" />
+          }
           @for (tick of ticks(); track tick.value) {
             <line class="lc-grid" [class.lc-axis]="tick.value === 0" [attr.x1]="plot().x" [attr.x2]="plot().x + plot().w"
               [attr.y1]="tick.y" [attr.y2]="tick.y" />
@@ -239,6 +250,7 @@ let nextChartId = 0;
             @if (tip.objetivo) { <span class="lc-tooltip-row lc-tooltip-muted"><span class="lc-key lc-key-target"></span>{{ targetLabel() }} {{ tip.objetivo }}</span> }
             @if (tip.estado) { <span class="lc-tooltip-estado">{{ tip.estado }}</span> }
             @for (linea of tip.marcas; track $index) { <span class="lc-tooltip-marca">{{ linea }}</span> }
+            @for (banda of tip.bandas; track $index) { <span class="lc-tooltip-banda" [style.color]="banda.color">{{ banda.label }}</span> }
           </div>
         }
       }
@@ -286,6 +298,8 @@ let nextChartId = 0;
     .lc-mark-label { fill: var(--ink); font-size: 11px; font-weight: 600; paint-order: stroke; stroke: var(--surface); stroke-width: 3px; }
     .lc-mark-label.lc-mark-tenue, .lc-mark-label .lc-mark-tenue { fill: var(--muted); font-weight: 500; opacity: 1; }
     .lc-tooltip-marca { color: var(--ink); font-weight: 600; }
+    .lc-band { opacity: 0.12; }
+    .lc-tooltip-banda { font-weight: 600; }
   `,
 })
 export class StatsLineChart implements AfterViewInit, OnDestroy {
@@ -317,6 +331,8 @@ export class StatsLineChart implements AfterViewInit, OnDestroy {
   readonly markTenueLabel = input('');
   /** Color de las marcas tenues (por defecto, gris). */
   readonly markTenueColor = input('');
+  /** Columnas sombreadas con su leyenda. */
+  readonly bands = input<ChartBand[]>([]);
   readonly unit = input('');
   readonly decimals = input(0);
   readonly height = input(220);
@@ -468,6 +484,17 @@ export class StatsLineChart implements AfterViewInit, OnDestroy {
       : { d, labelX: plot.x + plot.w, labelY: last.y - 6, anchor: 'end' };
   });
 
+  readonly bandRects = computed(() => {
+    const n = this.labels().length;
+    const plot = this.plot();
+    const rects: Array<{ x: number; w: number; color: string }> = [];
+    for (let i = 0; i < n; i++) {
+      const banda = this.bands().find(b => b.days[i]);
+      if (banda) rects.push({ x: plot.x + i * plot.w / n, w: plot.w / n, color: banda.color });
+    }
+    return rects;
+  });
+
   readonly legend = computed<LegendItem[]>(() => {
     const series = this.series();
     const items: LegendItem[] = [];
@@ -489,6 +516,9 @@ export class StatsLineChart implements AfterViewInit, OnDestroy {
         items.push({ kind: 'bajo', label: 'Por debajo', color: series[0].color });
       }
       items.push({ kind: 'target', label: this.targetLabel(), color: '' });
+    }
+    for (const banda of this.bands()) {
+      if (banda.days.some(Boolean)) items.push({ kind: 'band', label: banda.label, color: banda.color });
     }
     return items;
   });
@@ -518,6 +548,7 @@ export class StatsLineChart implements AfterViewInit, OnDestroy {
       label: this.fullLabels()?.[index] ?? this.labels()[index],
       rows,
       marcas: this.marks().filter(marca => Math.ceil(marca.index) === index).flatMap(marca => marca.detalle),
+      bandas: this.bands().filter(b => b.days[index]).slice(0, 1),
       objetivo: typeof objetivoValor === 'number' ? this.format(objetivoValor) : '',
       estado,
       flip,
