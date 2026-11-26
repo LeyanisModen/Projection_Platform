@@ -1,5 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { Router, provideRouter } from '@angular/router';
+import { ActivatedRoute, Router, provideRouter } from '@angular/router';
 import { of } from 'rxjs';
 import { vi } from 'vitest';
 
@@ -103,11 +103,15 @@ describe('PlanificacionComponent', () => {
       imports: [PlanificacionComponent],
       providers: [{ provide: ApiService, useValue: api }, provideRouter([])],
     }).compileComponents();
+    // Casi todo es de la pestana 2 (con el patio y los camiones); la 1, al final.
+    TestBed.inject(ActivatedRoute).snapshot.data = { vista: 2 };
     fixture = TestBed.createComponent(PlanificacionComponent);
     fixture.detectChanges();
   });
 
   it('shows each factory with the pace it needs, with and without its ghosts', () => {
+    expect(api.getPlanificacionModen).toHaveBeenCalledWith(2);
+    expect(texto(el().querySelector('h1'))).toBe('Planificación 2');
     const secciones = Array.from(el().querySelectorAll('.pm-ferralla'));
     expect(secciones.map(s => texto(s.querySelector('.pm-nombre')))).toEqual(['Sanchos', 'Europa']);
     const casillas = (s: Element) => Array.from(s.querySelectorAll('.pm-kpi')).map(k => [texto(k.querySelector('.pm-kpi-label')), texto(k.querySelector('.pm-kpi-value'))]);
@@ -316,6 +320,49 @@ describe('PlanificacionComponent', () => {
     expect(api.guardarAcopio).toHaveBeenCalledWith(7, [{ desde: '2026-11-02', bastidores: 30 }, { desde: '2026-12-15', bastidores: 90 }], null);
     expect(componente.acopioEn()).toBeNull();
     expect(api.getPlanificacionModen).toHaveBeenCalledTimes(2);
+  });
+
+  it('tab 1: the minimum, what piles up in the yard if each job leaves whole the day before mounting, and when each one is made', () => {
+    const datos = respuesta();
+    const [sanchos, europa] = datos.ferrallas;
+    // La pestana 1 no trae camiones ni acopio: el patio si todo sale el dia antes del montaje.
+    for (const p of sanchos.proyectos) delete p.envio;
+    delete sanchos.camiones;
+    sanchos.patio = {
+      capacidades: [{ desde: '2026-11-02', bastidores: 4 }],
+      dias: [
+        { fecha: '2026-11-02', real: 1.6, con_fantasmas: 3.6, capacidad: 4 },
+        { fecha: '2026-11-03', real: 0, con_fantasmas: 5, capacidad: 4 },
+        { fecha: '2026-11-04', real: 0.8, con_fantasmas: 0.8, capacidad: 4 },
+      ],
+    };
+    europa.patio = { capacidades: [], dias: [{ fecha: '2026-11-02', real: 0, con_fantasmas: 0, capacidad: null }] };
+    api.getPlanificacionModen.mockReturnValue(of({ ...datos, vista: 1 }));
+    TestBed.inject(ActivatedRoute).snapshot.data = { vista: 1 };
+    fixture = TestBed.createComponent(PlanificacionComponent);
+    fixture.detectChanges();
+
+    expect(api.getPlanificacionModen).toHaveBeenLastCalledWith(1);
+    expect(texto(el().querySelector('h1'))).toBe('Planificación 1');
+    // Nada de acopio ni camiones que tocar: solo el proyecto en estudio.
+    expect(el().querySelector('.pm-acopio-btn')).toBeNull();
+    expect(el().querySelector('.pm-camiones-btn')).toBeNull();
+    const [vista, sinNada] = fixture.componentInstance.vistas();
+    expect(vista.patio!.series.map(s => [s.name, s.values])).toEqual([['Con proyectos en estudio', [3.6, 5, 0.8]], ['Real', [1.6, 0, 0.8]]]);
+    // Lo que cabe, solo como linea.
+    expect(vista.patio!.capacidad).toEqual([4, 4, 4]);
+    expect(sinNada.patio).toBeNull();
+    const seccion = el().querySelector('.pm-ferralla')!;
+    // Los modulos al dia, el patio y cuando se fabrica cada obra; sin avisos.
+    expect(seccion.querySelectorAll('app-stats-line-chart').length).toBe(2);
+    expect(seccion.querySelector('app-stats-line-chart.pm-patio')).not.toBeNull();
+    expect(seccion.querySelectorAll('.pm-acopio-aviso').length).toBe(0);
+    // En el diagrama no hay camiones: la barra, la espera en el patio y el montaje.
+    expect(vista.obras.every(o => !o.salidas.length)).toBe(true);
+    const leyenda = Array.from(seccion.querySelectorAll('.fo-legend li')).map(texto);
+    expect(leyenda).not.toContain('Salen camiones');
+    expect(leyenda).toContain('En el patio');
+    expect(vista.obras[1].detalle).toBe('TORRE_P01 (en estudio) · fabricación del 02/11 al 03/11 (10 mód.) · montaje 04/11');
   });
 
   it('creates a ghost in a factory and reloads the planning', () => {

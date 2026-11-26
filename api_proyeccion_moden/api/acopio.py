@@ -649,6 +649,34 @@ def plan_con_acopio(serie, info, desde, festivos, capacidades, maximo=None):
     return tramos, acopio, rangos
 
 
+def patio_al_montaje(info, serie, dias, hecho, desde):
+    """El patio con el plan de siempre si cada forjado sale entero el dia
+    antes de su montaje (la Planificacion 1 de Moden): lo que habria acopiado
+    fabricando lo que piden los montajes, sin camiones ni lo que cabe.
+
+    ``info``: ``almacen()`` de los forjados vivos (solo cuenta lo que ocupa
+    cada uno y cuando sale); ``serie``: [(clave, pendientes)] en el orden en
+    que se fabrican; ``dias``/``hecho``: los dias laborables del plan y lo
+    fabricado acumulado al acabar cada uno. Devuelve un ``Acopio`` sin
+    capacidades.
+    """
+    en_serie = dict(serie)
+    salidas, inicial = {}, 0.0
+    for clave, datos in info.items():
+        salida, por_bastidor = datos['salida'], datos['por_bastidor']
+        if salida is not None and salida < desde:
+            # Su montaje ya paso (o ya se monto): salio entonces.
+            continue
+        inicial += datos['hechos'] / por_bastidor
+        if salida is not None:
+            # Se lleva lo hecho y lo que el plan le fabrica hasta entonces; sin
+            # montaje, lo hecho se queda en el patio.
+            libera = (datos['hechos'] + en_serie.get(clave, 0)) / por_bastidor
+            salidas[salida] = salidas.get(salida, 0.0) + libera
+    fabricacion = _Serie([(pendientes, info[clave]['por_bastidor']) for clave, pendientes in serie])
+    return Acopio([], inicial, salidas, fabricacion, list(dias), list(hecho), [])
+
+
 def acopio_para_grafica(acopio, dias):
     """Capacidades, excesos y {fecha, bastidores, capacidad} de cada dia; None
     si la ferralla no tiene capacidad de acopio."""

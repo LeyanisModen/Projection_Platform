@@ -14,7 +14,9 @@ export const ADMIN_ROUTES: Routes = [
             { path: 'proyectos', component: ProyectosComponent, title: 'Admin - Proyectos' },
             { path: 'ferrallas', component: FerrallasComponent, title: 'Admin - Ferrallas' },
             { path: 'seguimiento', loadComponent: () => import('./seguimiento/seguimiento.component').then(m => m.SeguimientoComponent), title: 'Admin - Seguimiento' },
-            { path: 'planificacion', loadComponent: () => import('./planificacion/planificacion.component').then(m => m.PlanificacionComponent), title: 'Admin - Planificación' },
+            // Dos pestanas: la 1, el minimo de siempre; la 2, con el patio y los camiones.
+            { path: 'planificacion', loadComponent: () => import('./planificacion/planificacion.component').then(m => m.PlanificacionComponent), data: { vista: 1 }, title: 'Admin - Planificación 1' },
+            { path: 'planificacion-2', loadComponent: () => import('./planificacion/planificacion.component').then(m => m.PlanificacionComponent), data: { vista: 2 }, title: 'Admin - Planificación 2' },
             { path: 'calendario', loadComponent: () => import('./calendario/calendario.component').then(m => m.CalendarioComponent), title: 'Admin - Calendario' },
             { path: 'lista-control', loadComponent: () => import('./lista-control/lista-control.component').then(m => m.ListaControlComponent), title: 'Admin - Lista de control' },
             {

@@ -19,8 +19,7 @@ export function planningPace(projects: Proyecto[]): string {
     const tramos = plan(projects)?.tramos_ferralla ?? [];
     if (!tramos.length) return 'Sin montajes por delante';
     const [primero, ...resto] = tramos;
-    // Si lo corta el patio lleno, se dice: despues sube.
-    const base = `${ritmo(primero.ritmo)} módulos/día hasta el ${ddmm(primero.hasta)}${primero.motivo === 'acopio' ? ' (patio lleno)' : ''}`;
+    const base = `${ritmo(primero.ritmo)} módulos/día hasta el ${ddmm(primero.hasta)}`;
     return resto.length ? `${base} · después ${ritmo(resto[0].ritmo)}/día` : base;
 }
 

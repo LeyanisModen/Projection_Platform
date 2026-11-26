@@ -5,6 +5,14 @@ para llegar a sus entregas (el plan por tramos de montaje de ``api.planning``),
 con su trabajo real y sumandole los proyectos fantasma: los que Moden simula
 para ver si esa ferralla los aguantaria. La capacidad la deciden ellos fuera de
 la plataforma (turnos, mesas): aqui solo sale el ritmo necesario.
+
+Dos pestanas (``?vista=``):
+
+1. El plan de siempre, el minimo que se le pide a la ferralla, y lo que eso
+   deja en su patio si cada obra sale entera el dia antes de su montaje y
+   cuando se fabrica cada obra. Informa; como se apanan, es cosa suya.
+2. Con lo que cabe en su patio y los camiones de cada obra (api/acopio.py):
+   donde frena, que sale de mas y que no llega.
 """
 from datetime import date, timedelta
 
@@ -16,12 +24,18 @@ from rest_framework import permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .acopio import acopio_para_grafica, capacidades_de, modulos_dia_max_de
+from .acopio import acopio_para_grafica, capacidad_el, capacidades_de, modulos_dia_max_de
 from .models import AcopioCapacidad, Camion, Proyecto, UserProfile
 from .planificacion import _es_oficina, _ferralla, _tarjeta, kilos_de_modulos, pesos_medios, sumar_meses
-from .planning import annotated_projects, dias_laborables, fecha_de_montaje, festivos_de, plan_ferralla
+from .planning import (
+    PATIO_AL_MONTAJE, PATIO_LIMITA, annotated_projects, dias_laborables, fecha_de_montaje, festivos_de,
+    plan_ferralla,
+)
 
 MESES_VISTA = 6
+# Las dos pestanas de la planificacion de Moden.
+VISTA_MINIMO = 1
+VISTA_PATIO = 2
 
 
 def _ritmo_por_dia(plan, festivos):
@@ -40,10 +54,11 @@ def _sobrecargas(plan, hasta):
     ]
 
 
-def planificacion_ferralla(usuario, desde, hasta):
+def planificacion_ferralla(usuario, desde, hasta, vista=VISTA_MINIMO):
     festivos = festivos_de(usuario.id)
-    real = plan_ferralla(usuario.id, desde)
-    con_fantasmas = plan_ferralla(usuario.id, desde, con_fantasmas=True)
+    patio = PATIO_LIMITA if vista == VISTA_PATIO else PATIO_AL_MONTAJE
+    real = plan_ferralla(usuario.id, desde, patio=patio)
+    con_fantasmas = plan_ferralla(usuario.id, desde, con_fantasmas=True, patio=patio)
     ritmo_real = _ritmo_por_dia(real, festivos)
     ritmo_con = _ritmo_por_dia(con_fantasmas, festivos)
     dias_vista = list(dias_laborables(desde, hasta + timedelta(days=1), festivos))
@@ -76,11 +91,13 @@ def planificacion_ferralla(usuario, desde, hasta):
             'fantasma': proyecto.fantasma,
             'pendiente_aceptar': not proyecto.fantasma and proyecto.aceptado_por_ferralla_at is None,
             'modulos_pendientes': plan['modulos_pendientes'],
-            # Cuando se fabrica y cuando salen sus camiones, con lo que esta en estudio.
+            # Cuando se fabrica y (en la vista del patio) cuando salen sus
+            # camiones, con lo que esta en estudio.
             'fabricacion_inicio': plan['fabricacion_inicio'],
             'fabricacion_fin': plan['fabricacion_fin'],
-            'envio': con_fantasmas['envios'].get(proyecto.pk),
         })
+        if vista == VISTA_PATIO:
+            fila['envio'] = con_fantasmas['envios'].get(proyecto.pk)
         filas.append(fila)
 
     entregas = [
@@ -102,20 +119,9 @@ def planificacion_ferralla(usuario, desde, hasta):
     def kilos_de(fantasma):
         return round(sum(fila['kilos']['total'] or 0 for fila in filas if fila['fantasma'] == fantasma), 2)
 
-    return {
+    datos = {
         'ferralla': _ferralla(usuario),
         'dias': dias,
-        'acopio': _acopio(real, con_fantasmas, dias_vista),
-        # Lo que puede fabricar al dia como mucho (Moden) y, con eso y el patio, lo que no llega.
-        'modulos_dia_max': modulos_dia_max_de(usuario.id),
-        'no_llegan_real': real['no_llegan'],
-        'no_llegan_con_fantasmas': con_fantasmas['no_llegan'],
-        'camiones': {
-            'por_dia': con_fantasmas['camiones_por_dia'],
-            # Dias en que salen mas camiones de los que puede: con lo real y con lo que esta en estudio.
-            'sobrecargas_real': _sobrecargas(real, hasta),
-            'sobrecargas_con_fantasmas': _sobrecargas(con_fantasmas, hasta),
-        },
         'festivos': sorted(dia.isoformat() for dia in festivos if desde <= dia <= hasta),
         'entregas': entregas,
         'proyectos': filas,
@@ -134,6 +140,43 @@ def planificacion_ferralla(usuario, desde, hasta):
             'kilos_real': kilos_de(False),
             'kilos_fantasmas': kilos_de(True),
         },
+    }
+    if vista != VISTA_PATIO:
+        # Lo que habria en el patio si cada obra sale entera el dia antes de su montaje.
+        datos['patio'] = _patio_al_montaje(usuario, real, con_fantasmas, dias_vista)
+        return datos
+    datos.update({
+        'acopio': _acopio(real, con_fantasmas, dias_vista),
+        # Lo que puede fabricar al dia como mucho (Moden) y, con eso y el patio, lo que no llega.
+        'modulos_dia_max': modulos_dia_max_de(usuario.id),
+        'no_llegan_real': real['no_llegan'],
+        'no_llegan_con_fantasmas': con_fantasmas['no_llegan'],
+        'camiones': {
+            'por_dia': con_fantasmas['camiones_por_dia'],
+            # Dias en que salen mas camiones de los que puede: con lo real y con lo que esta en estudio.
+            'sobrecargas_real': _sobrecargas(real, hasta),
+            'sobrecargas_con_fantasmas': _sobrecargas(con_fantasmas, hasta),
+        },
+    })
+    return datos
+
+
+def _patio_al_montaje(usuario, real, con_fantasmas, dias):
+    """Bastidores en el patio cada dia con lo real y con lo que esta en
+    estudio, y lo que cabe (None si Moden no lo ha dicho), solo para verlo."""
+    capacidades = capacidades_de(usuario.id)
+
+    def en_patio(plan, dia):
+        return round(plan['acopio'].ocupacion(dia)[0], 1) if plan['acopio'] else 0.0
+
+    return {
+        'capacidades': [{'desde': d.isoformat(), 'bastidores': b} for d, b in capacidades],
+        'dias': [{
+            'fecha': dia.isoformat(),
+            'real': en_patio(real, dia),
+            'con_fantasmas': en_patio(con_fantasmas, dia),
+            'capacidad': capacidad_el(dia, capacidades),
+        } for dia in dias],
     }
 
 
@@ -177,25 +220,28 @@ def ferrallas():
     return sorted(usuarios, key=lambda u: (u.first_name or u.username).lower())
 
 
-def planificacion_moden(desde=None):
+def planificacion_moden(desde=None, vista=VISTA_MINIMO):
     desde = desde or timezone.localdate()
     hasta = sumar_meses(desde, MESES_VISTA)
     return {
         'desde': desde.isoformat(),
         'hasta': hasta.isoformat(),
-        'ferrallas': [planificacion_ferralla(usuario, desde, hasta) for usuario in ferrallas()],
+        'vista': vista,
+        'ferrallas': [planificacion_ferralla(usuario, desde, hasta, vista) for usuario in ferrallas()],
     }
 
 
 class PlanificacionModenView(APIView):
-    """``GET /api/planificacion-moden/``: solo la oficina."""
+    """``GET /api/planificacion-moden/?vista=1|2``: la pestana 1 (el minimo,
+    por defecto) o la 2 (con el patio y los camiones). Solo la oficina."""
 
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
         if not _es_oficina(request.user):
             return Response({'detail': 'Solo la oficina.'}, status=403)
-        return Response(planificacion_moden())
+        vista = VISTA_PATIO if request.query_params.get('vista') == str(VISTA_PATIO) else VISTA_MINIMO
+        return Response(planificacion_moden(vista=vista))
 
 
 MAX_CAPACIDADES = 50

@@ -53,7 +53,7 @@ const ROJO = '#c0392b';
  * Cuando se fabrica cada obra, debajo de la grafica de modulos al dia y con sus
  * mismos dias: la barra es la fabricacion, la linea fina lo que espera en el
  * patio, cada trazo grueso un dia en que salen sus camiones (en rojo si ese dia
- * salen mas de los que puede la ferralla) y la raya el montaje. Las columnas
+ * salen mas de los que puede la ferralla; sin camiones, no hay) y la raya el montaje. Las columnas
  * sombreadas son dias con el patio lleno: solo se fabrica lo que sale. Una obra
  * que no llega lleva el nombre en rojo. Las que no caben en una fila bajan a otra.
  */
@@ -66,7 +66,9 @@ const ROJO = '#c0392b';
       <ul class="fo-legend">
         <li><svg width="20" height="10" aria-hidden="true"><rect x="1" y="1" width="18" height="8" rx="2" [attr.fill]="colorReal()" /></svg>Fabricación</li>
         <li><svg width="20" height="10" aria-hidden="true"><line x1="1" y1="5" x2="19" y2="5" class="fo-espera" [attr.stroke]="colorReal()" /></svg>En el patio</li>
-        <li><svg width="20" height="10" aria-hidden="true"><line x1="7" y1="5" x2="13" y2="5" class="fo-envio" [attr.stroke]="colorReal()" /></svg>Salen camiones</li>
+        @if (hayCamiones()) {
+          <li><svg width="20" height="10" aria-hidden="true"><line x1="7" y1="5" x2="13" y2="5" class="fo-envio" [attr.stroke]="colorReal()" /></svg>Salen camiones</li>
+        }
         @if (hayDemas()) {
           <li><svg width="20" height="10" aria-hidden="true"><line x1="7" y1="5" x2="13" y2="5" class="fo-envio" [attr.stroke]="rojo" /></svg>{{ textoDemas() }}</li>
         }
@@ -168,6 +170,8 @@ export class FabricacionObras implements AfterViewInit, OnDestroy {
   private observer: ResizeObserver | null = null;
 
   readonly hayEstudio = computed(() => this.obras().some(o => o.estudio));
+  /** Sin camiones (la planificacion 1: todo sale el dia antes del montaje), solo barra, patio y montaje. */
+  readonly hayCamiones = computed(() => this.obras().some(o => o.salidas.length));
   readonly hayDemas = computed(() => this.obras().some(o => o.salidas.some(s => s.demas)));
   readonly hayNoLlega = computed(() => this.obras().some(o => !!o.noLlega));
   readonly bandasVisibles = computed(() => this.bandas().filter(b => b.days.some(Boolean)));

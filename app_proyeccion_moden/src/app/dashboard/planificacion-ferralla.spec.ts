@@ -173,27 +173,6 @@ describe('PlanificacionFerralla', () => {
     expect(cabeceras.map(c => texto(c.querySelector(':scope > .pl-tenue')))).toEqual(['1 forjado', '4 forjados · 2 sin kilos']);
   });
 
-  it('with a yard capacity, shows the yard against what fits and says when it does not fit', () => {
-    expect(fixture.componentInstance.acopio()).toBeNull();
-    const datos = respuesta();
-    datos.acopio = {
-      capacidades: [{ desde: '2026-11-02', bastidores: 3 }],
-      excesos: [{ fecha: '2026-11-09', bastidores: 1.2 }],
-      dias: [
-        { fecha: '2026-11-05', bastidores: 1, capacidad: 3 }, { fecha: '2026-11-06', bastidores: 3, capacidad: 3 },
-        { fecha: '2026-11-09', bastidores: 4.2, capacidad: 3 }, { fecha: '2026-11-10', bastidores: 0, capacidad: 3 },
-      ],
-    };
-    api.getPlanificacion.mockReturnValue(of(datos));
-    fixture.componentInstance.cargar();
-    fixture.detectChanges();
-    const patio = fixture.componentInstance.acopio()!;
-    expect(patio.series[0].values).toEqual([1, 3, 4.2, 0]);
-    expect(patio.capacidad).toEqual([3, 3, 3, 3]);
-    expect(Array.from(el().querySelectorAll('[role="note"]')).map(texto)).toContain('No cabe el 09/11: faltan hasta 2 bastidores de sitio en el patio.');
-    expect(el().querySelectorAll('app-stats-line-chart').length).toBe(2);
-  });
-
   it('offers a retry when it cannot load', () => {
     api.getPlanificacion.mockReturnValue(throwError(() => new Error('caida')));
     fixture.componentInstance.cargar();

@@ -37,7 +37,7 @@ export function textoEnvio(datos: CamionesProyecto): string | null {
   if (datos.camiones.some(c => c.fecha_fija && !c.enviado)) return `${cuando}, a mano`;
   // Lo elegido nunca baja de los dias que hacen falta.
   return envio.dias_elegidos
-    ? `${cuando}; el reparto, en ${Math.max(envio.dias_elegidos, envio.dias_minimos)} días elegidos en Planificación`
+    ? `${cuando}; el reparto, en ${Math.max(envio.dias_elegidos, envio.dias_minimos)} días elegidos en Planificación 2`
     : `${cuando}, como mucho ${datos.camiones_por_dia} al día`;
 }
 

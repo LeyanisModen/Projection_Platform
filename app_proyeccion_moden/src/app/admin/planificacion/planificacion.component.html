@@ -1,6 +1,6 @@
 <div class="page page-wide">
     <div class="page-header">
-        <h1>Planificación</h1>
+        <h1>Planificación {{ pestana }}</h1>
         @if (datos(); as d) { <span class="meta">Del {{ fechaLarga(d.desde) }} al {{ fechaLarga(d.hasta) }}</span> }
     </div>
 
@@ -17,12 +17,14 @@
             <header class="pm-cabecera">
                 <h2 class="pm-nombre">{{ vista.nombre }}</h2>
                 <span class="pm-acciones">
+                    @if (pestana === 2) {
                     <button type="button" class="btn btn-sm pm-acopio-btn" (click)="abrirAcopio(vista)">
                         <i class="fa fa-cubes" aria-hidden="true"></i> Acopio
                     </button>
                     <button type="button" class="btn btn-sm pm-camiones-btn" (click)="abrirCamiones(vista)">
                         <i class="fa fa-truck" aria-hidden="true"></i> Camiones
                     </button>
+                    }
                     <button type="button" class="btn btn-sm" (click)="abrirNuevo(vista)">
                         <i class="fa fa-plus" aria-hidden="true"></i> Proyecto en estudio
                     </button>
@@ -73,6 +75,11 @@
             <div class="pm-graficas">
                 <app-stats-line-chart title="Módulos al día para llegar" unit="mód./día" [decimals]="1" [height]="240"
                     [labels]="vista.labels" [fullLabels]="vista.labelsLargas" [series]="vista.series" [bands]="vista.bandas" />
+                @if (vista.patio; as patio) {
+                <app-stats-line-chart class="pm-patio" title="Bastidores en el patio si cada obra sale entera el día antes del montaje"
+                    unit="bastidores" [decimals]="1" [height]="200" [labels]="vista.labels" [fullLabels]="vista.labelsLargas"
+                    [series]="patio.series" [target]="patio.capacidad" targetLabel="Caben" [targetIsCeiling]="true" />
+                }
                 @if (vista.obras.length) {
                 <app-fabricacion-obras [title]="vista.datos.resumen.fantasmas ? 'Cuándo se fabrica cada obra, con lo que está en estudio' : 'Cuándo se fabrica cada obra'"
                     [labels]="vista.labels" [obras]="vista.obras" [colorEstudio]="azul" [camionesPorDia]="vista.datos.camiones?.por_dia ?? null" [bandas]="vista.bandas"

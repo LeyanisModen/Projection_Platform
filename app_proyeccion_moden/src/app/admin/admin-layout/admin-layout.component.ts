@@ -29,7 +29,8 @@ import { ApiService } from '../../services/api.service';
             Ferrallas
           </a>
           <a routerLink="/admin-dashboard/seguimiento" routerLinkActive="active" ariaCurrentWhenActive="page">Seguimiento</a>
-          <a routerLink="/admin-dashboard/planificacion" routerLinkActive="active" ariaCurrentWhenActive="page">Planificación</a>
+          <a routerLink="/admin-dashboard/planificacion" routerLinkActive="active" ariaCurrentWhenActive="page">Planificación 1</a>
+          <a routerLink="/admin-dashboard/planificacion-2" routerLinkActive="active" ariaCurrentWhenActive="page">Planificación 2</a>
           <a routerLink="/admin-dashboard/calendario" routerLinkActive="active" ariaCurrentWhenActive="page">Calendario</a>
           <a routerLink="/admin-dashboard/lista-control" routerLinkActive="active" ariaCurrentWhenActive="page">Lista de control</a>
         </nav>

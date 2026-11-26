@@ -117,26 +117,6 @@ export class PlanificacionFerralla implements OnInit {
 
   readonly proyectos = computed(() => this.datos()?.proyectos ?? []);
 
-  /** Con capacidad de acopio: los bastidores en el patio cada dia contra lo que cabe. */
-  readonly acopio = computed(() => {
-    const acopio = this.datos()?.acopio;
-    if (!acopio) return null;
-    const excesos = acopio.excesos;
-    let noCabe: string | null = null;
-    if (excesos.length) {
-      const faltan = Math.ceil(Math.max(...excesos.map(e => e.bastidores)) - 1e-9);
-      const desde = excesos[0].fecha;
-      const hasta = excesos[excesos.length - 1].fecha;
-      const cuando = desde === hasta ? `el ${fechaCorta(desde)}` : `entre el ${fechaCorta(desde)} y el ${fechaCorta(hasta)}`;
-      noCabe = `No cabe ${cuando}: faltan hasta ${faltan} ${faltan === 1 ? 'bastidor' : 'bastidores'} de sitio en el patio.`;
-    }
-    return {
-      series: [{ name: 'Bastidores en el patio', color: CHART_NARANJA, values: acopio.dias.map(d => d.bastidores) }] as LineChartSeries[],
-      capacidad: acopio.dias.map(d => d.capacidad),
-      noCabe,
-    };
-  });
-
   /** Una columna por edificio, por orden de su primera entrega; lo que no es de un edificio, al final. */
   readonly columnas = computed<ColumnaEdificio[]>(() => {
     const columnas = new Map<string, ColumnaEdificio>();

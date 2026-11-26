@@ -25,7 +25,6 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import DetalleModuloFase, Proyecto
-from .acopio import acopio_para_grafica
 from .planning import annotated_projects, dias_laborables, fecha_de_montaje, festivos_de, plan_ferralla
 
 MESES_VISTA = 3
@@ -209,8 +208,10 @@ def planificacion_de(usuario_id, desde=None):
     for tramo in plan['tramos']:
         for dia in dias_laborables(date.fromisoformat(tramo['desde']), date.fromisoformat(tramo['hasta']), festivos):
             ritmos[dia] = tramo['ritmo']
-    dias_vista = list(dias_laborables(desde, hasta + timedelta(days=1), festivos))
-    dias = [{'fecha': dia.isoformat(), 'modulos': ritmos.get(dia, 0)} for dia in dias_vista]
+    dias = [
+        {'fecha': dia.isoformat(), 'modulos': ritmos.get(dia, 0)}
+        for dia in dias_laborables(desde, hasta + timedelta(days=1), festivos)
+    ]
 
     # Lo que la ferralla ve en su dashboard (aceptado y sin archivar): lo que
     # se entrega en estos tres meses y lo que aun no esta hecho (sin fecha o
@@ -248,9 +249,7 @@ def planificacion_de(usuario_id, desde=None):
         'hasta': hasta.isoformat(),
         'dias': dias,
         'festivos': sorted(dia.isoformat() for dia in festivos if desde <= dia <= hasta),
-        'tramos': [{'desde': t['desde'], 'hasta': t['hasta'], 'ritmo': t['ritmo'], 'motivo': t['motivo']} for t in plan['tramos']],
-        # Con capacidad de acopio: lo que hay en el patio cada dia y donde no cabe.
-        'acopio': acopio_para_grafica(plan['acopio'], dias_vista),
+        'tramos': [{'desde': t['desde'], 'hasta': t['hasta'], 'ritmo': t['ritmo']} for t in plan['tramos']],
         'entregas': entregas,
         'proyectos': [
             _tarjeta(proyecto, kilos.get(proyecto.pk), plan['proyectos'][proyecto.pk], medios)

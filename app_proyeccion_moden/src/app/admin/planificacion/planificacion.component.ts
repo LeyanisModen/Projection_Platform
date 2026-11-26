@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { forkJoin } from 'rxjs';
 
 import {
@@ -43,6 +43,16 @@ export interface PicoEstudio {
   hasta: string;
 }
 
+/** Las dos pestanas: 1, el minimo de siempre; 2, con el patio y los camiones. */
+export type PestanaPlanificacion = 1 | 2;
+
+/** Pestana 1: lo que habria en el patio si cada obra sale entera el dia antes de su montaje. */
+export interface VistaPatio {
+  series: LineChartSeries[];
+  /** Lo que cabe, si Moden lo ha dicho: solo la linea, sin avisos. */
+  capacidad: Array<number | null> | null;
+}
+
 /** El patio de la ferralla: bastidores cada dia contra lo que cabe. */
 export interface VistaAcopio {
   series: LineChartSeries[];
@@ -66,7 +76,9 @@ export interface VistaFerralla {
   /** Algo que fabricar en estos seis meses: sin nada, la grafica sobra. */
   conCarga: boolean;
   picoEstudio: PicoEstudio | null;
-  /** Sin capacidad de acopio, null: el patio no limita. */
+  /** Pestana 1: lo que se acopia con el minimo (null si nunca hay nada en el patio). */
+  patio: VistaPatio | null;
+  /** Pestana 2, sin capacidad de acopio, null: el patio no limita. */
   acopio: VistaAcopio | null;
   /** Dias en que salen mas camiones de los que puede: con lo real y, si empeora, con lo que esta en estudio. */
   camionesReal: string | null;
@@ -125,6 +137,16 @@ export function textoNoCabe(excesos: AcopioExceso[]): string | null {
   const hasta = excesos[excesos.length - 1].fecha;
   const cuando = desde === hasta ? `el ${fechaCorta(desde)}` : `entre el ${fechaCorta(desde)} y el ${fechaCorta(hasta)}`;
   return `No cabe ${cuando}: faltan hasta ${cifra(faltan)} ${faltan === 1 ? 'bastidor' : 'bastidores'} de sitio`;
+}
+
+export function vistaPatio(ferralla: PlanificacionModenFerralla): VistaPatio | null {
+  const patio = ferralla.patio;
+  if (!patio || !patio.dias.some(d => d.real || d.con_fantasmas)) return null;
+  const real: LineChartSeries = { name: 'Real', color: NARANJA, values: patio.dias.map(d => d.real) };
+  const series = ferralla.resumen.fantasmas > 0
+    ? [{ name: 'Con proyectos en estudio', color: AZUL, values: patio.dias.map(d => d.con_fantasmas) }, real]
+    : [real];
+  return { series, capacidad: patio.capacidades.length ? patio.dias.map(d => d.capacidad) : null };
 }
 
 export function vistaAcopio(ferralla: PlanificacionModenFerralla): VistaAcopio | null {
@@ -324,6 +346,7 @@ export function vistaDe(ferralla: PlanificacionModenFerralla, desde: string): Vi
     meses: porMes(ferralla.proyectos, desde),
     conCarga: dias.some(d => d.real || d.con_fantasmas),
     picoEstudio: conFantasmas ? picoEstudio(dias) : null,
+    patio: vistaPatio(ferralla),
     acopio: vistaAcopio(ferralla),
     ...avisosCamiones(ferralla),
     bandas: bandasPatio(ferralla),
@@ -366,7 +389,10 @@ export function filasEnvio(ferralla: PlanificacionModenFerralla, desde: string):
 /**
  * Planificacion de Moden: cada ferralla a seis meses, con cuantos modulos al dia
  * tendria que fabricar para llegar a sus entregas, con lo real y sumando los
- * proyectos fantasma (los que Moden simula y la ferralla no ve).
+ * proyectos fantasma (los que Moden simula y la ferralla no ve). Dos pestanas
+ * (``data.vista`` de la ruta): la 1, el minimo de siempre con lo que eso acopia
+ * si todo sale el dia antes del montaje y cuando se fabrica cada obra; la 2,
+ * con lo que cabe en el patio y los camiones de cada obra.
  */
 @Component({
   selector: 'app-planificacion-moden',
@@ -378,6 +404,7 @@ export function filasEnvio(ferralla: PlanificacionModenFerralla, desde: string):
 export class PlanificacionComponent implements OnInit {
   private readonly api = inject(ApiService);
   private readonly router = inject(Router);
+  readonly pestana: PestanaPlanificacion = inject(ActivatedRoute).snapshot.data['vista'] === 2 ? 2 : 1;
 
   readonly datos = signal<PlanificacionModenResponse | null>(null);
   readonly cargando = signal(true);
@@ -516,7 +543,7 @@ export class PlanificacionComponent implements OnInit {
   cargar(): void {
     this.cargando.set(true);
     this.error.set(false);
-    forkJoin({ plan: this.api.getPlanificacionModen(), usuarios: this.api.getUsers() }).subscribe({
+    forkJoin({ plan: this.api.getPlanificacionModen(this.pestana), usuarios: this.api.getUsers() }).subscribe({
       next: ({ plan, usuarios }) => {
         this.usuarios = usuarios;
         this.datos.set(plan);
