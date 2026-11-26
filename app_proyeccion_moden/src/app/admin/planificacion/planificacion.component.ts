@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Injectable, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { forkJoin } from 'rxjs';
@@ -386,13 +386,20 @@ export function filasEnvio(ferralla: PlanificacionModenFerralla, desde: string):
     });
 }
 
+/** La ferralla que se ha elegido, para que siga al pasar de una pestana a otra (hasta recargar). */
+@Injectable({ providedIn: 'root' })
+export class FerrallaPlanificacion {
+  readonly elegida = signal<number | null>(null);
+}
+
 /**
- * Planificacion de Moden: cada ferralla a seis meses, con cuantos modulos al dia
+ * Planificacion de Moden: una ferralla a seis meses, con cuantos modulos al dia
  * tendria que fabricar para llegar a sus entregas, con lo real y sumando los
  * proyectos fantasma (los que Moden simula y la ferralla no ve). Dos pestanas
  * (``data.vista`` de la ruta): la 1, el minimo de siempre con lo que eso acopia
  * si todo sale el dia antes del montaje y cuando se fabrica cada obra; la 2,
- * con lo que cabe en el patio y los camiones de cada obra.
+ * con lo que cabe en el patio y los camiones de cada obra. Se elige la ferralla
+ * arriba; sin elegir, la que mas fabrico el ultimo dia (lo decide el servidor).
  */
 @Component({
   selector: 'app-planificacion-moden',
@@ -405,11 +412,16 @@ export class PlanificacionComponent implements OnInit {
   private readonly api = inject(ApiService);
   private readonly router = inject(Router);
   readonly pestana: PestanaPlanificacion = inject(ActivatedRoute).snapshot.data['vista'] === 2 ? 2 : 1;
+  private readonly eleccion = inject(FerrallaPlanificacion);
 
   readonly datos = signal<PlanificacionModenResponse | null>(null);
   readonly cargando = signal(true);
   readonly error = signal(false);
   private usuarios: User[] = [];
+  /** Las ferrallas para elegir y la que se ve. */
+  readonly opciones = signal<Array<{ id: number; nombre: string }>>([]);
+  readonly elegida = signal<number | null>(null);
+  private peticion = 0;
 
   readonly cifra = cifra;
   readonly azul = AZUL;
@@ -540,16 +552,32 @@ export class PlanificacionComponent implements OnInit {
     });
   }
 
+  /** Ver otra ferralla: se queda elegida tambien en la otra pestana. */
+  elegirFerralla(id: number): void {
+    if (id === this.elegida()) return;
+    this.eleccion.elegida.set(id);
+    this.elegida.set(id);
+    this.datos.set(null);
+    this.cargar();
+  }
+
   cargar(): void {
+    const peticion = ++this.peticion;
     this.cargando.set(true);
     this.error.set(false);
-    forkJoin({ plan: this.api.getPlanificacionModen(this.pestana), usuarios: this.api.getUsers() }).subscribe({
+    const plan = this.api.getPlanificacionModen(this.pestana, this.eleccion.elegida());
+    forkJoin({ plan, usuarios: this.api.getUsers() }).subscribe({
       next: ({ plan, usuarios }) => {
+        // Si entretanto se eligio otra, esta respuesta ya no vale.
+        if (peticion !== this.peticion) return;
         this.usuarios = usuarios;
+        this.opciones.set(plan.opciones ?? []);
+        this.elegida.set(plan.elegida ?? plan.ferrallas[0]?.ferralla.id ?? null);
         this.datos.set(plan);
         this.cargando.set(false);
       },
       error: () => {
+        if (peticion !== this.peticion) return;
         this.error.set(true);
         this.cargando.set(false);
       },

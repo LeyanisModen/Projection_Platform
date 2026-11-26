@@ -80,6 +80,46 @@ class FantasmasTests(APITestCase):
         self.assertEqual(respuesta.status_code, 200)
         self.assertEqual(len(respuesta.data['ferrallas']), 1)
 
+    def test_moden_sees_one_factory_at_a_time_by_default_the_one_that_made_most_the_last_day(self):
+        from datetime import datetime, timedelta
+        from unittest.mock import patch
+
+        from .planificacion_moden import ferralla_por_defecto, ferrallas
+
+        otra = Proyecto.objects.create(nombre='OTRA_P01', usuario=self.otra, fecha_montaje=date(2026, 11, 30))
+        modulos = [Modulo.objects.create(nombre=f'C{indice:02d}', proyecto=otra) for indice in range(3)]
+        lista = ferrallas()
+        self.assertEqual([u.username for u in lista], ['ferralla', 'otra'])
+        # Sin fabricacion en dos semanas: la que mas tiene por fabricar (Ferralia, 12).
+        self.assertEqual(ferralla_por_defecto(lista, LUNES), self.ferralla)
+
+        def terminar(modulo, dia):
+            modulo.estado = 'COMPLETADO'
+            modulo.completado_at = timezone.make_aware(datetime.combine(dia, datetime.min.time()) + timedelta(hours=10))
+            modulo.save()
+
+        # El viernes, 2 de la otra; el jueves, 3 de Ferralia: manda el ultimo dia (el viernes).
+        for modulo in modulos[:2]:
+            terminar(modulo, date(2026, 10, 30))
+        for modulo in self.p1.modulos.all()[:3]:
+            terminar(modulo, date(2026, 10, 29))
+        self.assertEqual(ferralla_por_defecto(lista, LUNES), self.otra)
+        # Lo de hoy no cuenta.
+        terminar(modulos[2], LUNES)
+        self.assertEqual(ferralla_por_defecto(lista, LUNES), self.otra)
+
+        datos = planificacion_moden(LUNES)
+        self.assertEqual(datos['opciones'], [{'id': self.ferralla.pk, 'nombre': 'Ferralia'}, {'id': self.otra.pk, 'nombre': 'otra'}])
+        self.assertEqual((datos['elegida'], [f['ferralla']['id'] for f in datos['ferrallas']]), (self.otra.pk, [self.otra.pk]))
+        # Se puede elegir otra; una que no esta, la de por defecto.
+        self.assertEqual(planificacion_moden(LUNES, ferralla=self.ferralla.pk)['elegida'], self.ferralla.pk)
+        self.assertEqual(planificacion_moden(LUNES, ferralla=self.oficina.pk)['elegida'], self.otra.pk)
+        self.client.force_authenticate(self.oficina)
+        respuesta = self.client.get(f'/api/planificacion-moden/?vista=2&ferralla={self.ferralla.pk}')
+        self.assertEqual((respuesta.data['elegida'], respuesta.data['ferrallas'][0]['ferralla']['id']), (self.ferralla.pk, self.ferralla.pk))
+        with patch('api.planificacion_moden.timezone.localdate', return_value=LUNES):
+            self.assertEqual(self.client.get('/api/planificacion-moden/?ferralla=x').data['elegida'], self.otra.pk)
+
     def test_a_ghost_does_not_exist_for_the_factory(self):
         self.client.force_authenticate(self.ferralla)
         for ruta in (

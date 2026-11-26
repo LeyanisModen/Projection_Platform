@@ -1,8 +1,9 @@
-/* Una ferralla detras de otra: rotulo, casillas, grafica y sus entregas por mes. */
-.pm-ferralla { display: grid; gap: 14px; padding: 18px 0 28px; border-top: 1px solid var(--line-strong); }
-.pm-ferralla:first-of-type { border-top: 0; padding-top: 0; }
-.pm-cabecera { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.pm-nombre { margin: 0; color: var(--ink); font-size: 13px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+/* La ferralla elegida: fechas y botones, casillas, graficas y sus entregas por mes. */
+.page-header { flex-wrap: wrap; }
+.pm-elegir { min-width: 220px; }
+/* minmax(0, 1fr): nada de dentro (botones, casillas) ensancha la seccion mas que la pantalla. */
+.pm-ferralla { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; padding: 0 0 28px; }
+.pm-cabecera { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
 
 /* Casillas en dos lineas, nombre y dato; el ancho lo pide el dato. */
 .pm-kpis { display: flex; flex-wrap: wrap; gap: 10px; }
@@ -49,13 +50,14 @@
 
 @media (max-width: 760px) {
     .page-wide { padding-left: 12px; padding-right: 12px; }
+    .pm-elegir { flex: 1 1 100%; }
     .pm-fila { flex-wrap: wrap; padding-left: 12px; }
     .pm-datos { flex-basis: 100%; margin-left: 0; text-align: left; justify-content: flex-start; }
     .pm-chevron { display: none; }
 }
 
 /* Acopio: lo que cabe en el patio y la grafica de bastidores. */
-.pm-acciones { display: flex; gap: 8px; }
+.pm-acciones { display: flex; flex-wrap: wrap; gap: 8px; }
 .pm-acopio { display: flex; flex-direction: column; gap: 4px; margin-top: 18px; }
 .pm-acopio-texto, .pm-acopio-aviso { margin: 0; font-size: 13px; }
 .pm-acopio-modal { display: flex; flex-direction: column; gap: 8px; }

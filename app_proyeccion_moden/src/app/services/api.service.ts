@@ -1027,6 +1027,10 @@ export interface PlanificacionModenResponse {
     hasta: string;
     /** La pestana: 1, el minimo de siempre; 2, con el patio y los camiones. */
     vista?: 1 | 2;
+    /** Las ferrallas para elegir y la que se ve (sin elegir, la que mas fabrico el ultimo dia). */
+    opciones?: Array<{ id: number; nombre: string }>;
+    elegida?: number | null;
+    /** La elegida (una sola). */
     ferrallas: PlanificacionModenFerralla[];
 }
 
@@ -1552,9 +1556,11 @@ export class ApiService {
         return this.http.get<PlanificacionResponse>(`${this.baseUrl}/planificacion/${qs}`, { headers: this.getHeaders() });
     }
 
-    /** Planificacion de Moden: todas las ferrallas a seis meses, con sus fantasmas; la pestana 1 o la 2. */
-    getPlanificacionModen(vista: 1 | 2 = 1): Observable<PlanificacionModenResponse> {
-        return this.http.get<PlanificacionModenResponse>(`${this.baseUrl}/planificacion-moden/?vista=${vista}`, { headers: this.getHeaders() });
+    /** Planificacion de Moden de una ferralla a seis meses, con sus fantasmas; la pestana 1 o la 2.
+     *  Sin ferralla, la que elige el servidor. */
+    getPlanificacionModen(vista: 1 | 2 = 1, ferralla: number | null = null): Observable<PlanificacionModenResponse> {
+        const elegida = ferralla ? `&ferralla=${ferralla}` : '';
+        return this.http.get<PlanificacionModenResponse>(`${this.baseUrl}/planificacion-moden/?vista=${vista}${elegida}`, { headers: this.getHeaders() });
     }
 
     /** Sustituye las capacidades de acopio de una ferralla (lista vacia: sin limite). */

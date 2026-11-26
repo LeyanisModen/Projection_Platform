@@ -6,7 +6,8 @@ con su trabajo real y sumandole los proyectos fantasma: los que Moden simula
 para ver si esa ferralla los aguantaria. La capacidad la deciden ellos fuera de
 la plataforma (turnos, mesas): aqui solo sale el ritmo necesario.
 
-Dos pestanas (``?vista=``):
+Se ve una ferralla cada vez (``?ferralla=``); sin decir cual, la que mas
+fabrico el ultimo dia con fabricacion. Dos pestanas (``?vista=``):
 
 1. El plan de siempre, el minimo que se le pide a la ferralla, y lo que eso
    deja en su patio si cada obra sale entera el dia antes de su montaje y
@@ -18,14 +19,14 @@ from datetime import date, timedelta
 
 from django.contrib.auth.models import User
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.utils import timezone
 from rest_framework import permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .acopio import acopio_para_grafica, capacidad_el, capacidades_de, modulos_dia_max_de
-from .models import AcopioCapacidad, Camion, Proyecto, UserProfile
+from .models import AcopioCapacidad, Camion, Modulo, Proyecto, UserProfile
 from .planificacion import _es_oficina, _ferralla, _tarjeta, kilos_de_modulos, pesos_medios, sumar_meses
 from .planning import (
     PATIO_AL_MONTAJE, PATIO_LIMITA, annotated_projects, dias_laborables, fecha_de_montaje, festivos_de,
@@ -33,6 +34,8 @@ from .planning import (
 )
 
 MESES_VISTA = 6
+# Hasta cuantos dias atras se busca el ultimo dia con fabricacion.
+DIAS_ULTIMA_FABRICACION = 14
 # Las dos pestanas de la planificacion de Moden.
 VISTA_MINIMO = 1
 VISTA_PATIO = 2
@@ -220,20 +223,54 @@ def ferrallas():
     return sorted(usuarios, key=lambda u: (u.first_name or u.username).lower())
 
 
-def planificacion_moden(desde=None, vista=VISTA_MINIMO):
+def ferralla_por_defecto(lista, hoy):
+    """La que mas modulos termino el ultimo dia con fabricacion antes de hoy
+    (ayer, o el viernes un lunes); sin fabricacion en dos semanas, la que mas
+    tiene por fabricar; si no, la primera."""
+    if not lista:
+        return None
+    por_id = {usuario.pk: usuario for usuario in lista}
+    hechos = Modulo.objects.filter(
+        proyecto__usuario__in=lista,
+        completado_at__date__lt=hoy,
+        completado_at__date__gte=hoy - timedelta(days=DIAS_ULTIMA_FABRICACION),
+    )
+    ultimo = hechos.order_by('-completado_at').values_list('completado_at', flat=True).first()
+    if ultimo is not None:
+        dia = timezone.localtime(ultimo).date()
+        cuentas = hechos.filter(completado_at__date=dia).values('proyecto__usuario').annotate(n=Count('id'))
+    else:
+        cuentas = (
+            Modulo.objects.filter(proyecto__usuario__in=lista, proyecto__archivado_at__isnull=True, proyecto__fantasma=False)
+            .exclude(estado__in=['COMPLETADO', 'CERRADO'])
+            .values('proyecto__usuario').annotate(n=Count('id'))
+        )
+    orden = {usuario.pk: indice for indice, usuario in enumerate(lista)}
+    mejor = sorted(cuentas, key=lambda c: (-c['n'], orden[c['proyecto__usuario']]))
+    return por_id[mejor[0]['proyecto__usuario']] if mejor else lista[0]
+
+
+def planificacion_moden(desde=None, vista=VISTA_MINIMO, ferralla=None):
+    """La planificacion de una ferralla (``ferralla``: su id; sin el o si no
+    esta, la de ``ferralla_por_defecto``) y la lista para elegir otra."""
     desde = desde or timezone.localdate()
     hasta = sumar_meses(desde, MESES_VISTA)
+    lista = ferrallas()
+    elegida = next((usuario for usuario in lista if usuario.pk == ferralla), None) or ferralla_por_defecto(lista, desde)
     return {
         'desde': desde.isoformat(),
         'hasta': hasta.isoformat(),
         'vista': vista,
-        'ferrallas': [planificacion_ferralla(usuario, desde, hasta, vista) for usuario in ferrallas()],
+        'opciones': [_ferralla(usuario) for usuario in lista],
+        'elegida': elegida.pk if elegida else None,
+        'ferrallas': [planificacion_ferralla(elegida, desde, hasta, vista)] if elegida else [],
     }
 
 
 class PlanificacionModenView(APIView):
-    """``GET /api/planificacion-moden/?vista=1|2``: la pestana 1 (el minimo,
-    por defecto) o la 2 (con el patio y los camiones). Solo la oficina."""
+    """``GET /api/planificacion-moden/?vista=1|2&ferralla=<id>``: la pestana 1
+    (el minimo, por defecto) o la 2 (con el patio y los camiones) de una
+    ferralla. Solo la oficina."""
 
     permission_classes = [permissions.IsAuthenticated]
 
@@ -241,7 +278,11 @@ class PlanificacionModenView(APIView):
         if not _es_oficina(request.user):
             return Response({'detail': 'Solo la oficina.'}, status=403)
         vista = VISTA_PATIO if request.query_params.get('vista') == str(VISTA_PATIO) else VISTA_MINIMO
-        return Response(planificacion_moden(vista=vista))
+        try:
+            ferralla = int(request.query_params.get('ferralla') or 0) or None
+        except ValueError:
+            ferralla = None
+        return Response(planificacion_moden(vista=vista, ferralla=ferralla))
 
 
 MAX_CAPACIDADES = 50

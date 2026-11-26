@@ -5,7 +5,7 @@ import { vi } from 'vitest';
 
 import { ApiService, PlanificacionModenProyecto, PlanificacionModenResponse } from '../../services/api.service';
 import {
-  PlanificacionComponent, bandasPatio, cifra, columnaDe, obrasDe, picoEstudio, porMes, textoCapacidades, textoNoCabe,
+  FerrallaPlanificacion, PlanificacionComponent, bandasPatio, cifra, columnaDe, obrasDe, picoEstudio, porMes, textoCapacidades, textoNoCabe,
   textoNoLlegan, textoSobrecargas,
 } from './planificacion.component';
 
@@ -25,6 +25,8 @@ function respuesta(): PlanificacionModenResponse {
   return {
     desde: '2026-11-02',
     hasta: '2027-05-02',
+    opciones: [{ id: 8, nombre: 'Europa' }, { id: 7, nombre: 'Sanchos' }],
+    elegida: 7,
     ferrallas: [
       {
         ferralla: { id: 7, nombre: 'Sanchos' },
@@ -110,10 +112,11 @@ describe('PlanificacionComponent', () => {
   });
 
   it('shows each factory with the pace it needs, with and without its ghosts', () => {
-    expect(api.getPlanificacionModen).toHaveBeenCalledWith(2);
+    // Sin elegir, la que decide el servidor.
+    expect(api.getPlanificacionModen).toHaveBeenCalledWith(2, null);
     expect(texto(el().querySelector('h1'))).toBe('Planificación 2');
     const secciones = Array.from(el().querySelectorAll('.pm-ferralla'));
-    expect(secciones.map(s => texto(s.querySelector('.pm-nombre')))).toEqual(['Sanchos', 'Europa']);
+    expect(texto(secciones[0].querySelector('.pm-cabecera .meta'))).toBe('Del lun 2 nov al dom 2 may');
     const casillas = (s: Element) => Array.from(s.querySelectorAll('.pm-kpi')).map(k => [texto(k.querySelector('.pm-kpi-label')), texto(k.querySelector('.pm-kpi-value'))]);
     expect(casillas(secciones[0])).toEqual([
       // Primero lo real; despues lo que suman los proyectos en estudio.
@@ -342,7 +345,7 @@ describe('PlanificacionComponent', () => {
     fixture = TestBed.createComponent(PlanificacionComponent);
     fixture.detectChanges();
 
-    expect(api.getPlanificacionModen).toHaveBeenLastCalledWith(1);
+    expect(api.getPlanificacionModen).toHaveBeenLastCalledWith(1, null);
     expect(texto(el().querySelector('h1'))).toBe('Planificación 1');
     // Nada de acopio ni camiones que tocar: solo el proyecto en estudio.
     expect(el().querySelector('.pm-acopio-btn')).toBeNull();
@@ -363,6 +366,29 @@ describe('PlanificacionComponent', () => {
     expect(leyenda).not.toContain('Salen camiones');
     expect(leyenda).toContain('En el patio');
     expect(vista.obras[1].detalle).toBe('TORRE_P01 (en estudio) · fabricación del 02/11 al 03/11 (10 mód.) · montaje 04/11');
+  });
+
+  it('shows one factory at a time, chosen at the top, and keeps the choice in the other tab', () => {
+    const select = el().querySelector('select.pm-elegir') as HTMLSelectElement;
+    expect(Array.from(select.options).map(o => o.textContent?.trim())).toEqual(['Europa', 'Sanchos']);
+    fixture.detectChanges();
+    expect(fixture.componentInstance.elegida()).toBe(7);
+
+    const europa = respuesta();
+    europa.elegida = 8;
+    europa.ferrallas = [europa.ferrallas[1]];
+    api.getPlanificacionModen.mockReturnValue(of(europa));
+    fixture.componentInstance.elegirFerralla(8);
+    fixture.detectChanges();
+    expect(api.getPlanificacionModen).toHaveBeenLastCalledWith(2, 8);
+    expect(fixture.componentInstance.vistas().map(v => v.nombre)).toEqual(['Europa']);
+    expect(TestBed.inject(FerrallaPlanificacion).elegida()).toBe(8);
+
+    // La otra pestana abre con la misma.
+    TestBed.inject(ActivatedRoute).snapshot.data = { vista: 1 };
+    const otra = TestBed.createComponent(PlanificacionComponent);
+    otra.detectChanges();
+    expect(api.getPlanificacionModen).toHaveBeenLastCalledWith(1, 8);
   });
 
   it('creates a ghost in a factory and reloads the planning', () => {

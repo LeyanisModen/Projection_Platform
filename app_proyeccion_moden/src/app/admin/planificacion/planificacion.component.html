@@ -1,7 +1,13 @@
 <div class="page page-wide">
     <div class="page-header">
         <h1>Planificación {{ pestana }}</h1>
-        @if (datos(); as d) { <span class="meta">Del {{ fechaLarga(d.desde) }} al {{ fechaLarga(d.hasta) }}</span> }
+        @if (opciones().length) {
+        <select class="field pm-elegir" aria-label="Ferralla" [ngModel]="elegida()" (ngModelChange)="elegirFerralla($event)">
+            @for (opcion of opciones(); track opcion.id) {
+            <option [ngValue]="opcion.id">{{ opcion.nombre }}</option>
+            }
+        </select>
+        }
     </div>
 
     @if (cargando() && !datos()) {
@@ -15,7 +21,7 @@
         @for (vista of vistas(); track vista.id) {
         <section class="pm-ferralla" [attr.aria-label]="vista.nombre">
             <header class="pm-cabecera">
-                <h2 class="pm-nombre">{{ vista.nombre }}</h2>
+                <span class="meta">Del {{ fechaLarga(datos()!.desde) }} al {{ fechaLarga(datos()!.hasta) }}</span>
                 <span class="pm-acciones">
                     @if (pestana === 2) {
                     <button type="button" class="btn btn-sm pm-acopio-btn" (click)="abrirAcopio(vista)">
