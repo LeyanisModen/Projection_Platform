@@ -76,16 +76,12 @@
 .custom-modal .modal-content.pm-camiones-dialogo { width: min(760px, 100%); }
 .pm-camiones-modal { display: flex; flex-direction: column; gap: 10px; max-height: 70vh; overflow-y: auto; }
 .pm-camiones-dia { display: grid; gap: 4px; width: 220px; color: var(--muted); font-size: 12px; }
+/* Cada obra: nombre y montaje a la izquierda; sus dias de camiones a la derecha. */
 .pm-camiones-lista { display: grid; }
-.pm-camiones-fila { display: grid; grid-template-columns: minmax(0, 1.6fr) 84px 70px 120px minmax(0, 1.4fr); align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
-.pm-camiones-cabecera { padding-top: 0; border-bottom-color: var(--line-strong); color: var(--muted); font-size: 12px; }
+.pm-camiones-obra-fila { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 16px; padding: 12px 0; border-top: 1px solid var(--line); }
+.pm-camiones-obra-datos { display: flex; flex-direction: column; gap: 4px; min-width: 0; font-size: 13px; }
 .pm-camiones-obra { min-width: 0; color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
 .pm-camiones-obra.pm-azul { color: var(--estudio); }
-.pm-camiones-fila .field { width: 100%; min-width: 0; box-sizing: border-box; }
-.pm-camiones-fila .field::placeholder { color: var(--muted); opacity: 0.8; }
-.pm-camiones-nota { margin: 0; font-size: 12px; }
 @media (max-width: 760px) {
-    .pm-camiones-cabecera { display: none; }
-    .pm-camiones-fila { grid-template-columns: minmax(0, 1fr) 110px; }
-    .pm-camiones-obra { grid-column: 1 / -1; }
+    .pm-camiones-obra-fila { grid-template-columns: minmax(0, 1fr); gap: 8px; }
 }

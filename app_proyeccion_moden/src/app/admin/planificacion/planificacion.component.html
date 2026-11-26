@@ -206,26 +206,22 @@
             <label class="pm-camiones-dia">Camiones al día, como mucho
                 <input type="number" class="field" name="por_dia" min="1" max="50" step="1" [(ngModel)]="camionesPorDia" required [disabled]="guardandoCamiones()">
             </label>
-            @if (filasCamiones.length) {
-            <div class="pm-camiones-fila pm-camiones-cabecera" aria-hidden="true">
-                <span>Obra</span><span>Montaje</span><span>Camiones</span><span>Días de envío</span><span>Salen</span>
-            </div>
+            @if (camionesObras(); as obras) {
             <div class="pm-camiones-lista">
-                @for (fila of filasCamiones; track fila.id; let i = $index) {
-                <div class="pm-camiones-fila">
-                    <span class="pm-camiones-obra" [class.pm-azul]="fila.fantasma">{{ fila.nombre }}</span>
-                    <span class="meta">{{ diaCorto(fila.montaje) }}</span>
-                    <span class="meta">{{ fila.camiones }}</span>
-                    <input type="number" class="field" [name]="'dias' + i" min="1" max="60" step="1" [(ngModel)]="fila.dias"
-                        [placeholder]="'Justos (' + fila.minimos + ')'" [disabled]="guardandoCamiones()"
-                        [attr.aria-label]="'Días de envío de ' + fila.nombre">
-                    <span class="meta">{{ fila.salen }}</span>
+                @for (obra of obras; track obra.id) {
+                <div class="pm-camiones-obra-fila">
+                    <div class="pm-camiones-obra-datos">
+                        <span class="pm-camiones-obra" [class.pm-azul]="obra.fantasma">{{ obra.nombre }}@if (obra.fantasma) { <span class="fantasma-chip">En estudio</span> }</span>
+                        <span class="meta">Montaje {{ diaCorto(obra.montaje ?? null) }}</span>
+                    </div>
+                    <app-camiones-proyecto [proyectoId]="obra.id" [precargados]="obra" [enLista]="true" />
                 </div>
+                } @empty {
+                <p class="meta">Sin forjados por montar con camiones.</p>
                 }
             </div>
-            <p class="meta pm-camiones-nota">Días de envío: en cuántos días laborables salen sus camiones, el último el día antes del montaje. Vacío: los justos con los camiones al día. Al cambiarlos, los camiones movidos a mano en la ficha vuelven al reparto.</p>
-            } @else {
-            <p class="meta">Sin forjados por montar con camiones.</p>
+            } @else if (!errorCamiones()) {
+            <p class="meta">Cargando los camiones…</p>
             }
             @if (errorCamiones()) { <p class="alert-inline" role="alert">{{ errorCamiones() }}</p> }
         </div>

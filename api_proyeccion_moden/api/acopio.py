@@ -16,9 +16,10 @@ unos camiones al dia (``UserProfile.camiones_por_dia``), asi que un forjado
 grande empieza a salir unos dias antes de su montaje: por defecto los justos,
 lo mas tarde posible. Las obras no admiten modulos antes de montar, asi que
 un forjado no se adelanta porque otro ocupe sus dias: si entre todos salen
-mas camiones de los que puede la ferralla, se avisa. Moden puede elegir en
-cuantos dias sale (``dias_envio``) y en la ficha se ponen a mano los dias y
-cuantos camiones salen cada uno (``Camion``). Cada camion se lleva sus
+mas camiones de los que puede la ferralla, se avisa. En la ficha del forjado
+y en la ventana «Camiones» de la Planificacion 2 se ponen a mano los dias y
+cuantos camiones salen cada uno (``Camion``); ``dias_envio`` (en cuantos dias
+sale) queda de antes y «Por defecto» lo borra. Cada camion se lleva sus
 bastidores en orden: tienen que estar hechos el dia que sale, y su sitio en
 el patio queda libre ese mismo dia para lo que se fabrica.
 Un bastidor de un forjado ocupa lo que sus modulos: sus modulos subidos entre
@@ -689,6 +690,31 @@ def acopio_para_grafica(acopio, dias):
     return {**acopio.resumen(), 'dias': filas}
 
 
+def _ficha_camiones(info, pk, montaje, llevan):
+    """Los camiones de un forjado del ``Almacen`` ``info`` como los ve su ficha."""
+    datos = info[pk]
+    return {
+        'bastidores': datos['bastidores'],
+        'bastidores_estimados': datos['bastidores'] > datos['calculados'],
+        'montaje': montaje.isoformat() if montaje else None,
+        'salida': datos['salida'].isoformat() if datos['salida'] else None,
+        'por_defecto': not llevan,
+        # Mas bastidores en los camiones guardados que en el forjado (se recalcularon).
+        'sobran': max(0, llevan - datos['bastidores']),
+        'camiones_por_dia': info.por_dia,
+        'envio': info.envio(pk),
+        'camiones': [{
+            'orden': camion['orden'],
+            'fecha': camion['fecha'].isoformat() if camion['fecha'] else None,
+            'fecha_fija': camion['fija'],
+            'bastidores': camion['bastidores'],
+            'enviado': camion['enviado'],
+            'enviado_at': camion['enviado_at'],
+            'por_defecto': not camion['guardado'],
+        } for camion in sorted(datos['camiones'], key=lambda c: c['orden'])],
+    }
+
+
 def camiones_del_proyecto(proyecto, desde=None):
     """Los camiones de un forjado para su ficha, cada uno con el dia que le
     toca en el reparto (o el puesto a mano), y su montaje: ninguno sale despues."""
@@ -707,26 +733,42 @@ def camiones_del_proyecto(proyecto, desde=None):
     if not any(p.pk == proyecto.pk for p in proyectos):
         proyectos += list(annotated_projects(Proyecto.objects.filter(pk=proyecto.pk)))
     info = almacen_de(proyectos, festivos, desde, proyecto.usuario_id)
-    datos = info[proyecto.pk]
     llevan = sum(c.bastidores for c in proyecto.camiones.all())
-    montaje = fecha_de_montaje(proyecto)
-    return {
-        'bastidores': datos['bastidores'],
-        'bastidores_estimados': datos['bastidores'] > datos['calculados'],
-        'montaje': montaje.isoformat() if montaje else None,
-        'salida': datos['salida'].isoformat() if datos['salida'] else None,
-        'por_defecto': not llevan,
-        # Mas bastidores en los camiones guardados que en el forjado (se recalcularon).
-        'sobran': max(0, llevan - datos['bastidores']),
-        'camiones_por_dia': info.por_dia,
-        'envio': info.envio(proyecto.pk),
-        'camiones': [{
-            'orden': camion['orden'],
-            'fecha': camion['fecha'].isoformat() if camion['fecha'] else None,
-            'fecha_fija': camion['fija'],
-            'bastidores': camion['bastidores'],
-            'enviado': camion['enviado'],
-            'enviado_at': camion['enviado_at'],
-            'por_defecto': not camion['guardado'],
-        } for camion in sorted(datos['camiones'], key=lambda c: c['orden'])],
-    }
+    return _ficha_camiones(info, proyecto.pk, fecha_de_montaje(proyecto), llevan)
+
+
+def camiones_de_la_ferralla(usuario_id, desde=None):
+    """Los camiones de cada forjado por montar de una ferralla (lo real y lo
+    que esta en estudio), como en su ficha y por fecha de montaje: la ventana
+    «Camiones» de la Planificacion 2. Un solo reparto para todos: cada forjado
+    sale en sus dias sin mirar a los demas, asi que sale lo mismo que en su
+    ficha."""
+    from django.db.models import Sum
+    from django.utils import timezone
+
+    from .models import Camion
+    from .planning import almacen_de, fecha_de_montaje, festivos_de, proyectos_del_plan
+
+    desde = desde or timezone.localdate()
+    proyectos = proyectos_del_plan(usuario_id, con_fantasmas=True)
+    info = almacen_de(proyectos, festivos_de(usuario_id), desde, usuario_id)
+    llevan = dict(
+        Camion.objects.filter(proyecto_id__in=[p.pk for p in proyectos])
+        .values('proyecto_id').annotate(n=Sum('bastidores')).values_list('proyecto_id', 'n')
+    )
+    forjados = []
+    for proyecto in proyectos:
+        montaje = fecha_de_montaje(proyecto)
+        montado = getattr(proyecto, 'montaje_realizado_at', None)
+        if montaje is None or montaje < desde or not info[proyecto.pk]['bastidores']:
+            continue
+        if montado is not None and montado.date() < desde:
+            continue
+        forjados.append({
+            'id': proyecto.pk,
+            'nombre': proyecto.nombre,
+            'fantasma': proyecto.fantasma,
+            **_ficha_camiones(info, proyecto.pk, montaje, llevan.get(proyecto.pk, 0)),
+        })
+    forjados.sort(key=lambda f: (f['montaje'], f['nombre']))
+    return {'camiones_por_dia': info.por_dia, 'proyectos': forjados}

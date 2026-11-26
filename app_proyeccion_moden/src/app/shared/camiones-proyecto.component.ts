@@ -2,6 +2,7 @@ import {
   ChangeDetectionStrategy, ChangeDetectorRef, Component, EventEmitter, Input, OnChanges, Output, SimpleChanges, inject,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { Observable } from 'rxjs';
 import { ApiService, Camion, CamionesProyecto } from '../services/api.service';
 
 const DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
@@ -37,7 +38,7 @@ export function textoEnvio(datos: CamionesProyecto): string | null {
   if (datos.camiones.some(c => c.fecha_fija && !c.enviado)) return `${cuando}, a mano`;
   // Lo elegido nunca baja de los dias que hacen falta.
   return envio.dias_elegidos
-    ? `${cuando}; el reparto, en ${Math.max(envio.dias_elegidos, envio.dias_minimos)} días elegidos en Planificación 2`
+    ? `${cuando}; el reparto, en ${Math.max(envio.dias_elegidos, envio.dias_minimos)} días elegidos`
     : `${cuando}, como mucho ${datos.camiones_por_dia} al día`;
 }
 
@@ -118,8 +119,10 @@ export function ajustar(dias: DiaCamiones[], total: number, fija: number | null,
  * salen (4 bastidores cada uno, salvo el ultimo o un primero que comparte con
  * la planta de antes). Por defecto, los dias justos antes del montaje con los
  * camiones al dia de la ferralla; aqui se cambia cuantos salen cada dia (la
- * diferencia va a otro dia) y que dia, nunca despues del montaje. Lo usa la
- * ficha del proyecto en el admin.
+ * diferencia va a otro dia) y que dia, nunca despues del montaje. Lo usan la
+ * ficha del proyecto en el admin (carga y guarda sola) y, con ``enLista``, la
+ * ventana «Camiones» de la Planificacion 2: le llegan los datos ya cargados y
+ * guarda la ventana, todas las obras a la vez (``peticion()``).
  */
 @Component({
   selector: 'app-camiones-proyecto',
@@ -133,8 +136,10 @@ export function ajustar(dias: DiaCamiones[], total: number, fija: number | null,
         {{ datos.bastidores }} {{ datos.bastidores === 1 ? 'bastidor' : 'bastidores' }}@if (datos.bastidores_estimados) { <span class="cam-meta">(estimados)</span>}
         · {{ total }} {{ total === 1 ? 'camión' : 'camiones' }}@if (ultimo; as lleva) {&ngsp;<span class="cam-meta">· el último lleva {{ lleva }}</span>}
       </p>
-      @if (envio; as texto) { <p class="cam-meta cam-envio">{{ texto }}</p> }
-      @if (dias.length) {
+      @if (!enLista && envio; as texto) { <p class="cam-meta cam-envio">{{ texto }}</p> }
+      @if (aDefecto) {
+        <p class="cam-meta cam-a-defecto">Por defecto al guardar</p>
+      } @else if (dias.length) {
       <div class="cam-dia cam-cabecera" aria-hidden="true"><span>Día</span><span>Camiones</span><span></span></div>
       <ul class="cam-lista">
         @for (dia of dias; track $index; let i = $index) {
@@ -152,7 +157,7 @@ export function ajustar(dias: DiaCamiones[], total: number, fija: number | null,
           </li>
         }
       </ul>
-      @if (datos.bastidores > 4) {
+      @if (!enLista && datos.bastidores > 4) {
       <label class="cam-primero">El primero lleva
         <select class="field" [ngModel]="primero" (ngModelChange)="cambiarPrimero(+$event)" [disabled]="guardando || archivado"
           aria-label="Bastidores del primer camión">
@@ -166,7 +171,18 @@ export function ajustar(dias: DiaCamiones[], total: number, fija: number | null,
       }
       @for (texto of avisos(); track texto) { <p class="cam-aviso" role="note">{{ texto }}</p> }
       @if (error) { <p class="cam-error" role="alert">{{ error }}</p> }
-      @if (!archivado) {
+      @if (enLista) {
+        @if (aDefecto || !datos.por_defecto || cambiado) {
+        <div class="cam-acciones">
+          @if (aDefecto) {
+            <button type="button" class="btn btn-sm" (click)="deshacerDefecto()">Deshacer</button>
+          } @else {
+            <button type="button" class="btn btn-sm" (click)="marcarDefecto()"
+              title="Los días justos antes del montaje; lo enviado se queda">Por defecto</button>
+          }
+        </div>
+        }
+      } @else if (!archivado) {
       <div class="cam-acciones">
         @if (!datos.por_defecto || cambiado) {
           <button type="button" class="btn btn-sm" (click)="porDefecto()" [disabled]="guardando"
@@ -211,6 +227,10 @@ export class CamionesProyectoComponent implements OnChanges {
 
   @Input({ required: true }) proyectoId!: number;
   @Input() archivado = false;
+  /** Ya cargados (la ventana de Planificacion): no se piden. */
+  @Input() precargados: CamionesProyecto | null = null;
+  /** En la ventana de Planificacion: sin el texto de envio ni lo que lleva el primero, y guarda la ventana. */
+  @Input() enLista = false;
   @Output() cambio = new EventEmitter<CamionesProyecto>();
 
   datos: CamionesProyecto | null = null;
@@ -218,12 +238,18 @@ export class CamionesProyectoComponent implements OnChanges {
   /** Bastidores del primer camion (menos de 4 si comparte con la planta de antes). */
   primero = BASTIDORES_POR_CAMION;
   cambiado = false;
+  /** En la lista: vuelve al reparto por defecto al guardar. */
+  aDefecto = false;
   cargando = false;
   guardando = false;
   error = '';
 
   ngOnChanges(changes: SimpleChanges): void {
-    if (changes['proyectoId'] && this.proyectoId) this.cargar();
+    if (changes['precargados'] && this.precargados) {
+      this.poner(this.precargados);
+    } else if (changes['proyectoId'] && this.proyectoId && !this.precargados) {
+      this.cargar();
+    }
   }
 
   cargar(): void {
@@ -305,30 +331,63 @@ export class CamionesProyectoComponent implements OnChanges {
     this.tocado();
   }
 
+  /** Los camiones para guardar, en orden de salida; o lo que lo impide. */
+  private paraGuardar(): Camion[] | string {
+    if (this.dias.some(d => !d.fecha)) return 'Cada día necesita su fecha.';
+    const montaje = this.datos!.montaje;
+    if (montaje && this.dias.some(d => !d.enviado && d.fecha! > montaje)) {
+      return `Ningún camión puede salir después del montaje (${diaCorto(montaje)}).`;
+    }
+    // En orden de salida: el primero lleva los primeros bastidores. Al tocar algo, todos a mano.
+    const lleva = cargas(this.datos!.bastidores, this.primero);
+    const camiones: Camion[] = [];
+    for (const dia of [...this.dias].sort((a, b) => a.fecha!.localeCompare(b.fecha!))) {
+      for (let n = 0; n < dia.camiones && camiones.length < lleva.length; n++) {
+        camiones.push({ fecha: dia.fecha, fecha_fija: true, bastidores: lleva[camiones.length], enviado: dia.enviado });
+      }
+    }
+    return camiones;
+  }
+
+  /** En la lista: lo que hay que guardar de este forjado (null: nada; texto: por que no se puede). */
+  peticion(): Observable<CamionesProyecto> | string | null {
+    if (!this.datos) return null;
+    if (this.aDefecto || (this.cambiado && !this.dias.length)) return this.api.camionesPorDefecto(this.proyectoId);
+    if (!this.cambiado) return null;
+    const camiones = this.paraGuardar();
+    this.error = typeof camiones === 'string' ? camiones : '';
+    this.cdr.markForCheck();
+    return typeof camiones === 'string' ? camiones : this.api.guardarCamiones(this.proyectoId, camiones);
+  }
+
+  /** En la lista: si ya estaba por defecto, deshace lo tocado; si no, vuelve al reparto al guardar. */
+  marcarDefecto(): void {
+    if (!this.datos) return;
+    if (this.datos.por_defecto) {
+      this.poner(this.datos);
+      return;
+    }
+    this.aDefecto = true;
+    this.error = '';
+    this.cdr.markForCheck();
+  }
+
+  deshacerDefecto(): void {
+    this.aDefecto = false;
+    this.cdr.markForCheck();
+  }
+
   guardar(): void {
     if (this.guardando || !this.datos) return;
     if (!this.dias.length) {
       this.porDefecto();
       return;
     }
-    if (this.dias.some(d => !d.fecha)) {
-      this.error = 'Cada día necesita su fecha.';
+    const camiones = this.paraGuardar();
+    if (typeof camiones === 'string') {
+      this.error = camiones;
       this.cdr.markForCheck();
       return;
-    }
-    const montaje = this.datos.montaje;
-    if (montaje && this.dias.some(d => !d.enviado && d.fecha! > montaje)) {
-      this.error = `Ningún camión puede salir después del montaje (${diaCorto(montaje)}).`;
-      this.cdr.markForCheck();
-      return;
-    }
-    // En orden de salida: el primero lleva los primeros bastidores. Al tocar algo, todos a mano.
-    const lleva = cargas(this.datos.bastidores, this.primero);
-    const camiones: Camion[] = [];
-    for (const dia of [...this.dias].sort((a, b) => a.fecha!.localeCompare(b.fecha!))) {
-      for (let n = 0; n < dia.camiones && camiones.length < lleva.length; n++) {
-        camiones.push({ fecha: dia.fecha, fecha_fija: true, bastidores: lleva[camiones.length], enviado: dia.enviado });
-      }
     }
     this.guardando = true;
     this.api.guardarCamiones(this.proyectoId, camiones).subscribe({
@@ -366,6 +425,7 @@ export class CamionesProyectoComponent implements OnChanges {
     this.primero = porOrden.length > 1 ? porOrden[0].bastidores : BASTIDORES_POR_CAMION;
     this.dias = diasDe(datos.camiones);
     this.cambiado = false;
+    this.aDefecto = false;
     // Guardados con otra carga (el forjado cambio de bastidores): se rehacen y hay que guardar.
     const tienen = this.dias.reduce((suma, d) => suma + d.camiones, 0);
     if (tienen !== this.total) {

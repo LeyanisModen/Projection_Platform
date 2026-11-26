@@ -562,3 +562,44 @@ class RepartoCamionesTests(APITestCase):
         self.client.put(url, {'proyectos': [{'id': proyecto.pk, 'dias_envio': None}]}, format='json')
         proyecto.refresh_from_db()
         self.assertIsNone(proyecto.dias_envio)
+
+    def test_la_planificacion_2_trae_los_camiones_de_todas_las_obras_como_su_ficha(self):
+        from unittest.mock import patch
+
+        from .acopio import camiones_de_la_ferralla, camiones_del_proyecto
+
+        grande = self.forjado('Grande', date(2026, 9, 28), 48)
+        estudio = self.forjado('Estudio', date(2026, 9, 21), 10, fantasma=True)
+        self.forjado('Pasado', date(2026, 9, 11), 8)
+        Camion.objects.create(proyecto=grande, orden=1, fecha=date(2026, 9, 21), bastidores=4)
+        datos = camiones_de_la_ferralla(self.ferralla.pk, LUNES)
+        self.assertEqual(datos['camiones_por_dia'], 4)
+        # Por montaje; lo ya montado no.
+        self.assertEqual([(f['nombre'], f['fantasma'], f['montaje']) for f in datos['proyectos']],
+                         [('Estudio', True, '2026-09-21'), ('Grande', False, '2026-09-28')])
+        for fila in datos['proyectos']:
+            proyecto = Proyecto.objects.get(pk=fila['id'])
+            ficha = {k: v for k, v in fila.items() if k not in ('id', 'nombre', 'fantasma')}
+            self.assertEqual(ficha, camiones_del_proyecto(proyecto, LUNES), fila['nombre'])
+        self.assertFalse(datos['proyectos'][1]['por_defecto'])
+
+        url = f'/api/planificacion-moden/camiones/{self.ferralla.pk}/'
+        self.client.force_authenticate(self.ferralla)
+        self.assertEqual(self.client.get(url).status_code, 403)
+        self.client.force_authenticate(self.oficina)
+        with patch('django.utils.timezone.localdate', return_value=LUNES):
+            respuesta = self.client.get(url)
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual([f['id'] for f in respuesta.data['proyectos']], [estudio.pk, grande.pk])
+
+    def test_por_defecto_vuelve_a_los_dias_justos(self):
+        proyecto = self.forjado('A', date(2026, 9, 28), 48)
+        Proyecto.objects.filter(pk=proyecto.pk).update(dias_envio=8)
+        Camion.objects.create(proyecto=proyecto, orden=1, fecha=date(2026, 9, 14), bastidores=4)
+        self.client.force_authenticate(self.oficina)
+        respuesta = self.client.delete(f'/api/proyectos/{proyecto.pk}/camiones/')
+        self.assertEqual(respuesta.status_code, 200)
+        proyecto.refresh_from_db()
+        self.assertIsNone(proyecto.dias_envio)
+        self.assertIsNone(respuesta.data['envio']['dias_elegidos'])
+        self.assertTrue(respuesta.data['por_defecto'])

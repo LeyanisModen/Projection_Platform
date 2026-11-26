@@ -1,9 +1,11 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { ActivatedRoute, Router, provideRouter } from '@angular/router';
 import { of } from 'rxjs';
 import { vi } from 'vitest';
 
-import { ApiService, PlanificacionModenProyecto, PlanificacionModenResponse } from '../../services/api.service';
+import { ApiService, CamionesForjado, PlanificacionModenProyecto, PlanificacionModenResponse } from '../../services/api.service';
+import { CamionesProyectoComponent } from '../../shared/camiones-proyecto.component';
 import {
   FerrallaPlanificacion, PlanificacionComponent, bandasPatio, cifra, columnaDe, obrasDe, picoEstudio, porMes, textoCapacidades, textoNoCabe,
   textoNoLlegan, textoSobrecargas,
@@ -18,6 +20,20 @@ function proyecto(id: number, nombre: string, fecha: string | null, pendientes: 
       previstos: null, confirmado: kilos, previsto: null, total: kilos,
     },
     fantasma, pendiente_aceptar: false, modulos_pendientes: pendientes,
+  };
+}
+
+/** Los camiones de una obra en la ventana: de 4 en 4 (el ultimo, lo que quede), 4 al dia en ``dias``. */
+function camionesObra(id: number, nombre: string, montaje: string, dias: string[], bastidores: number, fantasma = false, porDefecto = true): CamionesForjado {
+  const camiones = Math.ceil(bastidores / 4);
+  return {
+    id, nombre, fantasma, bastidores, bastidores_estimados: false, montaje, salida: dias[dias.length - 1], por_defecto: porDefecto, sobran: 0,
+    camiones_por_dia: 4,
+    envio: { camiones, bastidores, desde: dias[0], hasta: dias[dias.length - 1], dias: dias.length, dias_elegidos: null, dias_minimos: dias.length },
+    camiones: Array.from({ length: camiones }, (_v, i) => ({
+      orden: i + 1, fecha: dias[Math.floor(i / 4)], fecha_fija: !porDefecto, bastidores: Math.min(4, bastidores - 4 * i),
+      enviado: false, por_defecto: porDefecto,
+    })),
   };
 }
 
@@ -89,6 +105,7 @@ describe('PlanificacionComponent', () => {
   let api: {
     getPlanificacionModen: ReturnType<typeof vi.fn>; getUsers: ReturnType<typeof vi.fn>; createProyecto: ReturnType<typeof vi.fn>;
     guardarAcopio: ReturnType<typeof vi.fn>; guardarCamionesFerralla: ReturnType<typeof vi.fn>;
+    getCamionesFerralla: ReturnType<typeof vi.fn>; guardarCamiones: ReturnType<typeof vi.fn>; camionesPorDefecto: ReturnType<typeof vi.fn>;
   };
   const el = (): HTMLElement => fixture.nativeElement;
   const texto = (nodo: Element | null | undefined): string => nodo?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
@@ -100,6 +117,16 @@ describe('PlanificacionComponent', () => {
       createProyecto: vi.fn().mockReturnValue(of({ id: 9 })),
       guardarAcopio: vi.fn().mockReturnValue(of([])),
       guardarCamionesFerralla: vi.fn().mockReturnValue(of({ camiones_por_dia: 2, proyectos: [] })),
+      // Arkaiate: 46 bastidores, 12 camiones, 4 al dia los tres dias antes del montaje; la torre, en estudio y movida a mano.
+      getCamionesFerralla: vi.fn().mockReturnValue(of({
+        camiones_por_dia: 4,
+        proyectos: [
+          camionesObra(1, 'ARKAIATE_P03', '2027-03-01', ['2027-02-24', '2027-02-25', '2027-02-26'], 46),
+          camionesObra(2, 'TORRE_P01', '2027-03-02', ['2027-03-01'], 6, true, false),
+        ],
+      })),
+      guardarCamiones: vi.fn().mockReturnValue(of(camionesObra(1, 'ARKAIATE_P03', '2027-03-01', ['2027-02-24'], 4))),
+      camionesPorDefecto: vi.fn().mockReturnValue(of(camionesObra(2, 'TORRE_P01', '2027-03-02', ['2027-03-01'], 6, true))),
     };
     await TestBed.configureTestingModule({
       imports: [PlanificacionComponent],
@@ -189,28 +216,64 @@ describe('PlanificacionComponent', () => {
       .toEqual([['HECHO', null, null, 2, 'HECHO · fabricado · montaje 04/11']]);
   });
 
-  it('saves the trucks a day and the shipping days that changed, and reloads the planning', () => {
+  it('shows each work with its truck days, four a day, and saves the ones touched and the trucks a day', () => {
     const componente = fixture.componentInstance;
     componente.abrirCamiones(componente.vistas()[0]);
-    expect(componente.camionesPorDia).toBe(3);
-    expect(componente.filasCamiones.map(f => [f.nombre, f.camiones, f.salen, f.dias, f.minimos])).toEqual([
-      ['OBRA_P01', 2, 'el lun 02/11', null, 1],
-      ['TORRE_P01', 1, 'el mar 03/11', null, 1],
-      ['OBRA_P02', 3, 'del jue 17/12 al vie 18/12', 2, 1],
-    ]);
+    expect(api.getCamionesFerralla).toHaveBeenCalledWith(7);
+    expect(componente.camionesPorDia).toBe(4);
     fixture.detectChanges();
-    expect(Array.from(el().querySelectorAll('.pm-camiones-lista .pm-camiones-obra')).map(texto)).toEqual(['OBRA_P01', 'TORRE_P01', 'OBRA_P02']);
-    componente.camionesPorDia = 2;
-    componente.filasCamiones[0].dias = 3;
-    // Vaciar el campo: los justos.
-    componente.filasCamiones[2].dias = '' as unknown as number;
-    expect(componente.camionesValido).toBe(true);
+    const obras = Array.from(el().querySelectorAll('.pm-camiones-obra-fila'));
+    expect(obras.map(o => [texto(o.querySelector('.pm-camiones-obra')), texto(o.querySelector('.pm-camiones-obra-datos .meta'))])).toEqual([
+      ['ARKAIATE_P03', 'Montaje lun 01/03'], ['TORRE_P01En estudio', 'Montaje mar 02/03'],
+    ]);
+    // Una fila por dia; entre todas, los 12 camiones de la obra.
+    const dias = (obra: Element) => Array.from(obra.querySelectorAll('li.cam-dia')).length;
+    expect(obras.map(dias)).toEqual([3, 1]);
+    expect(texto(obras[0].querySelector('.cam-resumen'))).toBe('46 bastidores · 12 camiones · el último lleva 2');
+    // En la ventana no van el texto de envio ni lo que lleva el primero.
+    expect(el().querySelector('.pm-camiones-modal .cam-envio')).toBeNull();
+    expect(el().querySelector('.pm-camiones-modal .cam-primero')).toBeNull();
+
+    const [arkaiate, torre] = fixture.debugElement.queryAll(By.directive(CamionesProyectoComponent))
+      .map(d => d.componentInstance as CamionesProyectoComponent);
+    // Bajar un dia a 3: otro dia con 1, el laborable antes del primero.
+    arkaiate.cambiarCamiones(0, 3);
+    fixture.detectChanges();
+    expect(arkaiate.dias.map(d => [d.fecha, d.camiones])).toEqual([
+      ['2027-02-24', 3], ['2027-02-25', 4], ['2027-02-26', 4], ['2027-02-23', 1],
+    ]);
+    // Despues del montaje no se guarda nada.
+    arkaiate.cambiarFecha(1, '2027-03-02');
     componente.guardarCamiones();
-    expect(api.guardarCamionesFerralla).toHaveBeenCalledWith(7, {
-      camiones_por_dia: 2, proyectos: [{ id: 1, dias_envio: 3 }, { id: 2, dias_envio: null }],
-    });
+    expect(componente.errorCamiones()).toBe('ARKAIATE_P03: Ningún camión puede salir después del montaje (lun 01/03).');
+    expect(api.guardarCamiones).not.toHaveBeenCalled();
+    arkaiate.cambiarFecha(1, '2027-02-25');
+    // La torre, movida a mano, vuelve a los dias justos al guardar.
+    (obras[1].querySelector('.cam-acciones button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(texto(obras[1].querySelector('.cam-a-defecto'))).toBe('Por defecto al guardar');
+
+    componente.camionesPorDia = 3;
+    componente.guardarCamiones();
+    expect(api.guardarCamionesFerralla).toHaveBeenCalledWith(7, { camiones_por_dia: 3, proyectos: [] });
+    const [id, camiones] = api.guardarCamiones.mock.calls[0] as [number, Array<{ fecha: string; fecha_fija: boolean; bastidores: number }>];
+    const porDia: Record<string, number> = {};
+    for (const c of camiones) porDia[c.fecha] = (porDia[c.fecha] ?? 0) + 1;
+    expect([id, porDia]).toEqual([1, { '2027-02-23': 1, '2027-02-24': 3, '2027-02-25': 4, '2027-02-26': 4 }]);
+    expect(camiones.every(c => c.fecha_fija)).toBe(true);
+    expect(api.camionesPorDefecto).toHaveBeenCalledWith(2);
     expect(componente.camionesEn()).toBeNull();
     expect(api.getPlanificacionModen).toHaveBeenCalledTimes(2);
+    fixture.detectChanges();
+    expect(el().querySelector('.pm-camiones-dialogo')).toBeNull();
+
+    // Sin tocar nada, se cierra sin guardar.
+    componente.abrirCamiones(componente.vistas()[0]);
+    fixture.detectChanges();
+    componente.guardarCamiones();
+    expect(api.guardarCamiones).toHaveBeenCalledTimes(1);
+    expect(api.guardarCamionesFerralla).toHaveBeenCalledTimes(1);
+    expect(componente.camionesEn()).toBeNull();
     expect(textoSobrecargas([{ fecha: '2026-12-04', camiones: 6 }, { fecha: '2026-12-07', camiones: 4.5 }], 4))
       .toBe('Salen más de 4 camiones al día: 6 el vie 04/12, 4,5 el lun 07/12');
     // Con muchos dias: cuantos, entre cuando y el peor.

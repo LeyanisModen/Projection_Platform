@@ -303,13 +303,25 @@ MAX_DIAS_ENVIO = 60
 
 
 class CamionesFerrallaView(APIView):
-    """``PUT /api/planificacion-moden/camiones/<usuario>/``: los camiones que
-    saca la ferralla al dia y en cuantos dias salen los de cada forjado.
-    {camiones_por_dia, proyectos: [{id, dias_envio}]} (``dias_envio`` vacio:
-    los justos). Al cambiar los dias de un forjado, sus camiones por enviar
-    vuelven al reparto aunque se movieran en la ficha. Solo la oficina."""
+    """``/api/planificacion-moden/camiones/<usuario>/``, solo la oficina.
+
+    GET: los camiones de cada forjado por montar, como en su ficha
+    (``acopio.camiones_de_la_ferralla``); se cambian con el PUT de cada
+    proyecto. PUT: los camiones que saca la ferralla al dia y en cuantos dias
+    salen los de cada forjado. {camiones_por_dia, proyectos: [{id,
+    dias_envio}]} (``dias_envio`` vacio: los justos). Al cambiar los dias de
+    un forjado, sus camiones por enviar vuelven al reparto aunque se movieran
+    en la ficha."""
 
     permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, usuario_id):
+        from .acopio import camiones_de_la_ferralla
+
+        usuario, error = _ferralla_o_404(request, usuario_id)
+        if error:
+            return error
+        return Response(camiones_de_la_ferralla(usuario.pk))
 
     def put(self, request, usuario_id):
         usuario, error = _ferralla_o_404(request, usuario_id)

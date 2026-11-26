@@ -78,7 +78,7 @@ describe('Camiones de un forjado', () => {
     expect(texto('.cam-resumen')).toEqual(['46 bastidores · 12 camiones · el último lleva 2']);
     expect(texto('p.cam-envio')).toEqual(['Salen del mié 25/11 al vie 27/11, como mucho 4 al día']);
     expect(textoEnvio({ ...porDefecto(), envio: { ...porDefecto().envio, dias: 5, dias_elegidos: 5, desde: '2026-11-23' } }))
-      .toBe('Salen del lun 23/11 al vie 27/11; el reparto, en 5 días elegidos en Planificación 2');
+      .toBe('Salen del lun 23/11 al vie 27/11; el reparto, en 5 días elegidos');
     const filas = fixture.componentInstance.dias;
     expect(filas.map(d => [d.fecha, d.camiones])).toEqual([['2026-11-25', 4], ['2026-11-26', 4], ['2026-11-27', 4]]);
     expect(fixture.nativeElement.querySelectorAll('li.cam-defecto').length).toBe(3);

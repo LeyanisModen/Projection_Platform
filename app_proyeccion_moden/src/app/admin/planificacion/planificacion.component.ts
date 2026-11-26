@@ -1,15 +1,15 @@
-import { ChangeDetectionStrategy, Component, Injectable, OnInit, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Injectable, OnInit, computed, inject, signal, viewChildren } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { forkJoin } from 'rxjs';
+import { Observable, forkJoin, of, switchMap } from 'rxjs';
 
 import {
-  AcopioCapacidad, AcopioExceso, ApiService, NoLlega, PlanificacionModenFerralla, PlanificacionModenProyecto,
+  AcopioCapacidad, AcopioExceso, ApiService, CamionesForjado, NoLlega, PlanificacionModenFerralla, PlanificacionModenProyecto,
   PlanificacionModenResponse, SobrecargaCamiones, User,
 } from '../../services/api.service';
 import { ChartBand, LineChartSeries, StatsLineChart } from '../../dashboard/stats-line-chart';
 import { fechaCorta, fechaLarga } from '../../dashboard/planificacion-ferralla';
-import { diaCorto } from '../../shared/camiones-proyecto.component';
+import { CamionesProyectoComponent, diaCorto } from '../../shared/camiones-proyecto.component';
 import { FabricacionObras, ObraGantt, SalidaGantt } from './fabricacion-obras.component';
 
 // Lo real en el naranja de los modulos (como la planificacion de la ferralla);
@@ -354,38 +354,6 @@ export function vistaDe(ferralla: PlanificacionModenFerralla, desde: string): Vi
   };
 }
 
-/** Un forjado en la ventana de camiones: cuantos lleva y en cuantos dias salen. */
-export interface FilaEnvio {
-  id: number;
-  nombre: string;
-  fantasma: boolean;
-  montaje: string;
-  camiones: number;
-  /** Lo que sale ahora ("del lun 23/11 al vie 27/11"). */
-  salen: string;
-  minimos: number;
-  /** Lo que hay en el campo: vacio, los justos. */
-  dias: number | null;
-  elegidos: number | null;
-}
-
-/** Los forjados por montar con camiones, por fecha de montaje. */
-export function filasEnvio(ferralla: PlanificacionModenFerralla, desde: string): FilaEnvio[] {
-  return ferralla.proyectos
-    .filter(p => p.envio && p.envio.camiones > 0 && p.fecha_entrega && p.fecha_entrega >= desde)
-    .sort((a, b) => a.fecha_entrega!.localeCompare(b.fecha_entrega!))
-    .map(p => {
-      const envio = p.envio!;
-      const salen = envio.desde && envio.hasta
-        ? envio.desde === envio.hasta ? `el ${diaCorto(envio.desde)}` : `del ${diaCorto(envio.desde)} al ${diaCorto(envio.hasta)}`
-        : '';
-      return {
-        id: p.id, nombre: p.nombre, fantasma: p.fantasma, montaje: p.fecha_entrega!, camiones: envio.camiones,
-        salen, minimos: envio.dias_minimos, dias: envio.dias_elegidos, elegidos: envio.dias_elegidos,
-      };
-    });
-}
-
 /** La ferralla que se ha elegido, para que siga al pasar de una pestana a otra (hasta recargar). */
 @Injectable({ providedIn: 'root' })
 export class FerrallaPlanificacion {
@@ -404,7 +372,7 @@ export class FerrallaPlanificacion {
 @Component({
   selector: 'app-planificacion-moden',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FabricacionObras, FormsModule, RouterLink, StatsLineChart],
+  imports: [CamionesProyectoComponent, FabricacionObras, FormsModule, RouterLink, StatsLineChart],
   templateUrl: './planificacion.component.html',
   styleUrls: ['../admin-theme.css', './planificacion.component.css'],
 })
@@ -447,12 +415,15 @@ export class PlanificacionComponent implements OnInit {
   /** Lo que fabrican al dia como mucho; vacio: no se dice que no llega. */
   modulosDiaMax: number | null = null;
 
-  // Camiones de una ferralla: los que saca al dia y en cuantos dias salen sus forjados.
+  // Camiones de una ferralla: los que saca al dia y, de cada obra por montar,
+  // sus dias (fecha y cuantos), que entre todos llevan la obra entera.
   readonly camionesEn = signal<VistaFerralla | null>(null);
+  readonly camionesObras = signal<CamionesForjado[] | null>(null);
   readonly guardandoCamiones = signal(false);
   readonly errorCamiones = signal('');
   camionesPorDia = 4;
-  filasCamiones: FilaEnvio[] = [];
+  private camionesPorDiaAntes = 4;
+  private readonly editoresCamiones = viewChildren(CamionesProyectoComponent);
   readonly diaCorto = diaCorto;
 
   ngOnInit(): void {
@@ -464,10 +435,20 @@ export class PlanificacionComponent implements OnInit {
   }
 
   abrirCamiones(vista: VistaFerralla): void {
-    this.camionesPorDia = vista.datos.camiones?.por_dia ?? 4;
-    this.filasCamiones = filasEnvio(vista.datos, this.datos()?.desde ?? '');
+    this.camionesPorDia = this.camionesPorDiaAntes = vista.datos.camiones?.por_dia ?? 4;
+    this.camionesObras.set(null);
     this.errorCamiones.set('');
     this.camionesEn.set(vista);
+    this.api.getCamionesFerralla(vista.id).subscribe({
+      next: datos => {
+        if (this.camionesEn() !== vista) return;
+        this.camionesPorDia = this.camionesPorDiaAntes = datos.camiones_por_dia;
+        this.camionesObras.set(datos.proyectos);
+      },
+      error: () => {
+        if (this.camionesEn() === vista) this.errorCamiones.set('No se pudieron cargar los camiones.');
+      },
+    });
   }
 
   cerrarCamiones(): void {
@@ -475,20 +456,35 @@ export class PlanificacionComponent implements OnInit {
   }
 
   get camionesValido(): boolean {
-    const entero = (v: unknown, min: number, max: number) => Number.isInteger(Number(v)) && Number(v) >= min && Number(v) <= max;
-    return entero(this.camionesPorDia, 1, 50)
-      && this.filasCamiones.every(f => f.dias === null || (f.dias as unknown) === '' || entero(f.dias, 1, 60));
+    const porDia = Number(this.camionesPorDia);
+    return this.camionesObras() !== null && Number.isInteger(porDia) && porDia >= 1 && porDia <= 50;
   }
 
-  /** Guarda los camiones al dia y los dias que han cambiado, y recarga el plan con ellos. */
+  /** Guarda los camiones al dia y las obras que se han tocado, y recarga el plan con ellos. */
   guardarCamiones(): void {
     const vista = this.camionesEn();
     if (!vista || !this.camionesValido || this.guardandoCamiones()) return;
-    const dias = (f: FilaEnvio) => (f.dias === null || (f.dias as unknown) === '' ? null : Number(f.dias));
-    const proyectos = this.filasCamiones.filter(f => dias(f) !== f.elegidos).map(f => ({ id: f.id, dias_envio: dias(f) }));
-    this.guardandoCamiones.set(true);
     this.errorCamiones.set('');
-    this.api.guardarCamionesFerralla(vista.id, { camiones_por_dia: Number(this.camionesPorDia), proyectos }).subscribe({
+    const nombres = new Map((this.camionesObras() ?? []).map(o => [o.id, o.nombre]));
+    const obras: Observable<unknown>[] = [];
+    for (const editor of this.editoresCamiones()) {
+      const peticion = editor.peticion();
+      if (typeof peticion === 'string') {
+        this.errorCamiones.set(`${nombres.get(editor.proyectoId) ?? 'Una obra'}: ${peticion}`);
+        return;
+      }
+      if (peticion) obras.push(peticion);
+    }
+    const porDia = Number(this.camionesPorDia);
+    if (!obras.length && porDia === this.camionesPorDiaAntes) {
+      this.camionesEn.set(null);
+      return;
+    }
+    const primero: Observable<unknown> = porDia !== this.camionesPorDiaAntes
+      ? this.api.guardarCamionesFerralla(vista.id, { camiones_por_dia: porDia, proyectos: [] })
+      : of(null);
+    this.guardandoCamiones.set(true);
+    primero.pipe(switchMap(() => (obras.length ? forkJoin(obras) : of([])))).subscribe({
       next: () => {
         this.guardandoCamiones.set(false);
         this.camionesEn.set(null);

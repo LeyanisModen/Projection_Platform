@@ -267,6 +267,13 @@ export interface CamionesProyecto {
     camiones: Camion[];
 }
 
+/** Los camiones de un forjado por montar en la ventana «Camiones» de la Planificacion 2. */
+export interface CamionesForjado extends CamionesProyecto {
+    id: number;
+    nombre: string;
+    fantasma: boolean;
+}
+
 /** PDF escaneado de las hojas que firma el supervisor al terminar los módulos. */
 export interface HojaIncidencias {
     id: number;
@@ -1569,6 +1576,13 @@ export class ApiService {
         const cuerpo = modulosDiaMax === undefined ? { capacidades } : { capacidades, modulos_dia_max: modulosDiaMax };
         return this.http.put<AcopioCapacidad[]>(
             `${this.baseUrl}/planificacion-moden/acopio/${usuarioId}/`, cuerpo, { headers: this.getHeaders() },
+        );
+    }
+
+    /** Los camiones de cada forjado por montar de una ferralla (lo real y lo en estudio), por montaje. */
+    getCamionesFerralla(usuarioId: number): Observable<{ camiones_por_dia: number; proyectos: CamionesForjado[] }> {
+        return this.http.get<{ camiones_por_dia: number; proyectos: CamionesForjado[] }>(
+            `${this.baseUrl}/planificacion-moden/camiones/${usuarioId}/`, { headers: this.getHeaders() },
         );
     }
 

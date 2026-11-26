@@ -3158,8 +3158,8 @@ class ProyectoViewSet(viewsets.ModelViewSet):
         ferralla. PUT {camiones: [{fecha, fecha_fija, bastidores, enviado}]}:
         los sustituye todos, en orden de bastidor; solo guarda el dia de los
         puestos a mano (``fecha_fija``) y de los enviados, los demas siguen el
-        reparto. Ninguno sale despues del montaje. DELETE: vuelve al reparto,
-        salvo los ya enviados. Los mueve la ferralla del forjado; por ahora
+        reparto. Ninguno sale despues del montaje. DELETE: vuelve al reparto
+        en los dias justos (borra los ``dias_envio``), salvo los ya enviados. Los mueve la ferralla del forjado; por ahora
         tambien Moden."""
         from api.acopio import BASTIDORES_POR_CAMION, camiones_del_proyecto
         from api.planning import fecha_de_montaje
@@ -3182,6 +3182,10 @@ class ProyectoViewSet(viewsets.ModelViewSet):
                            enviado=True, enviado_at=c.enviado_at)
                     for orden, c in enumerate(enviados, start=1)
                 ])
+                if proyecto.dias_envio is not None:
+                    # update(): sin las senales de guardar un proyecto.
+                    Proyecto.objects.filter(pk=proyecto.pk).update(dias_envio=None)
+                    proyecto.dias_envio = None
             return Response(camiones_del_proyecto(proyecto))
 
         filas = request.data.get('camiones') if isinstance(request.data, dict) else None
